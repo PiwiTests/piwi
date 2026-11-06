@@ -71,6 +71,7 @@ import {
   EditLog,
   RUN_COMMANDS,
   SHARE_WARNING,
+  RESUMED_KEY_MS,
   STOP_ACTIONS,
   StopsShown,
   asideColumn,
@@ -134,12 +135,6 @@ const STARTING_MS = 120_000;
 
 /** How long a stop's file is waited for as it opens, before the next stop's turn. */
 const OPEN_MS = 5_000;
-
-/**
- * How long `F5` stays Piwi's after a stop is answered: it does nothing until the next stop, rather than start a debug
- * session.
- */
-const RESUMED_KEY_MS = 2_000;
 
 export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
@@ -232,7 +227,12 @@ export function registerRunControl(
     gutterIconSize: 'contain',
   });
   let panel: vscode.WebviewPanel | null = null;
-  const workerPanel = createWorkerPanel(context, lc);
+  /** The person acted on a stop: a code action, input or a pick on its page (`StopsShown.acted`). */
+  const acted = (stop: ShownStop) => {
+    stopsShown.acted(stop);
+    wakeWhenWaited();
+  };
+  const workerPanel = createWorkerPanel(context, lc, { acted, changed: () => changed() });
   let page: PausedPageView | null = null;
   /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
@@ -485,6 +485,7 @@ export function registerRunControl(
     const events =
       m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
+    if (m.type === 'input' && pageShows) acted(pageShows);
     const answer = await lc
       .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...watchingPage, events, release: m.type === 'release' })
       .catch(() => null);
@@ -590,6 +591,7 @@ export function registerRunControl(
     const point = pagePoint(click, view.image);
     if (!point) return;
     showPage({ ...view, note: 'Picking the element under the click…' });
+    acted(stop);
     const params: PickAtParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, ...point };
     const answer = await lc.sendRequest<PickAtResult>(PICK_AT_REQUEST, params).catch(() => null);
     if (page?.pick?.shown !== click.shown) return;
@@ -651,12 +653,14 @@ export function registerRunControl(
   };
 
   /**
-   * The stop a control acts on: the command's own (`went-on` when that stop ended), else the one at the caret's line,
-   * else the one chosen; among those `offers` keeps, when it keeps any.
+   * The stop a command acts on: its own (`went-on` when that stop ended), else the one `StopsShown.choose` gives for the
+   * caret (none for a `control` in the moments after an answer), else the one chosen; among those `offers` keeps, when
+   * it keeps any.
    */
   const chooseStop = async (
     arg: unknown,
     offers?: (stop: ShownStop) => boolean,
+    control = false,
   ): Promise<ShownStop | 'went-on' | null> => {
     const all = stops();
     const target = runTargetArg(arg);
@@ -665,7 +669,8 @@ export function registerRunControl(
     const caret = editor ? { uri: editor.document.uri.toString(), line: editor.selection.active.line } : null;
     const offering = offers ? all.filter(offers) : all;
     const candidates = stopsFor(offering.length ? offering : all, caret);
-    if (candidates.length < 2) return candidates[0] ?? null;
+    const chosen = stopsShown.choose(candidates, caret, control);
+    if (chosen !== 'ask') return chosen;
     const picked = await vscode.window.showQuickPick(
       candidates.map((s) => ({ ...stopPick(s), s })),
       { placeHolder: 'Which stopped test?' },
@@ -699,7 +704,7 @@ export function registerRunControl(
     arg: unknown,
     placeOf?: (stop: ShownStop) => RunPlace | string,
   ) => {
-    const stop = await chooseStop(arg, action === 'end' ? canEnd : undefined);
+    const stop = await chooseStop(arg, action === 'end' ? canEnd : undefined, true);
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) {
       // A key pressed again after an answer, before the next stop: nothing to do.
@@ -711,7 +716,9 @@ export function registerRunControl(
     const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
     stopsShown.answered(stop, action);
     wakeWhenWaited();
-    if (await control(place ? { ...params, place } : params)) answered();
+    if (await control(place ? { ...params, place } : params)) return answered();
+    stopsShown.refused(stop);
+    wakeWhenWaited();
   };
 
   /**
@@ -743,6 +750,7 @@ export function registerRunControl(
     const stop = await chooseStop(arg, (s) => stopActions(s).some((a) => a.action === action));
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) return say('no test is stopped.');
+    acted(stop);
     const params: StopActionParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, action };
     if (action === 'mock') {
       const listed = await lc

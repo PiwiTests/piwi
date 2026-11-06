@@ -403,18 +403,21 @@ stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its proce
 (`RunSession.runner`), whose reporter follows the IDE as one in a terminal does: its stops say `run by the editor's
 test runner`, and the Run tool window's Stop ends it.
 
-**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.StopsShown`), at the line it stands on
-now. It takes the focus, decided as it opens, only while no other stop held has its file open, or as a stop of the
-worker slot (`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop
-last took the focus (one chosen in the status bar item's menu included), or whose stop a control from the IDE
-answered last, counted as the control is sent. The slot the Worker tab watches is not the person's for that: the tab
-shows its page whatever the focus, while the focus chooses the stop the actions and the caret act on. A file that
-never opened counts as none. Without the focus, the editor in use is left alone (`PiwiRunSessions.reveal`): a file
-open in an editor already keeps its caret, so the actions still act on the stop at the caret, and while an editor
-shows a file, another stays closed, the stop drawn when it opens, and counts as shown as an open file does; the
-platform opens no file without selecting it (`FileEditorOpenOptions` is internal). With no editor shown, it opens
-with `navigate(false)`. The status bar item's menu lists each stop (`GoToStopAction`, `Glue.stopLabel`), which opens
-its line with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
+**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.StopsShown`), at the line it stands on now. It
+takes the focus, decided as it opens, only as a stop of the worker slot (`parallelIndex`, which a worker restarted after
+a failure keeps) the person is on, or while no other stop held had its file opened or left closed (its tab closed since
+or not) and no Step or Run to Caret from the IDE waits for its slot's next stop (`Glue.RESERVED_MILLIS` at most, while a
+worker of the run holds the slot; that next stop opening ends the wait). The slot the person is on is the one whose stop
+last took the focus (one chosen in the status bar item's menu included), or that they last acted on: a control from the
+IDE (counted as it is sent, and forgotten if the run refuses it: `refused`), a code action (`start`), or input or a pick
+on the Paused Page (`acted`). The slot the Worker tab watches is not the person's for that: the tab shows its page
+whatever the focus, while the focus chooses the stop the actions and the caret act on. A file that never opened counts
+as none. Without the focus, the editor in use is left alone (`PiwiRunSessions.reveal`): a file open in an editor already
+keeps its caret, so the actions still act on the stop at the caret, and while an editor shows a file, another stays
+closed, the stop drawn when it opens, and counts as shown as an open file does; the platform opens no file without
+selecting it (`FileEditorOpenOptions` is internal). With no editor shown, it opens with `navigate(false)`. The status
+bar item's menu lists each stop (`GoToStopAction`, `Glue.stopLabel`), which opens its line with the focus
+(`PiwiRunSessions.goTo`). It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -427,8 +430,8 @@ its line with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution p
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
-(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; its Paused Page
-shows meanwhile.
+(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; the Paused Page
+tab does not wait for it, and shows its page meanwhile when `Glue.StopsShown` gives it.
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
 first heard, a rerun under the ref of a run that ended included). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
@@ -443,8 +446,11 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
 
 - They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists;
   the item reads `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
-- They are enabled only while they apply (`Glue.runControls`), and act on the stop at the caret's line, else the only
-  one, else one chosen in a popup (`Glue.stopsFor`).
+- They are enabled only while they apply (`Glue.runControls`), and act on the stop at the caret's line; else, within
+  `Glue.RESUMED_MILLIS` of an answer and before the next stop, on none but the stop answered, so a key pressed again
+  answers no other stop; else on the only stop whose file or page the person was shown; else on one chosen in a popup
+  (`Glue.stopsFor`, `Glue.StopsShown.choose`). The code actions, Show the Paused Page and Share follow the same rule,
+  the moments after an answer aside.
 - They send `piwi/runControl` on a pooled thread, naming the stop they answer (`since`); an answer with `ok: false` is a
   balloon.
 - **Pause the Run** pauses every run of the project. **Stop the Run** ends the process of the ref (`track`, from
@@ -464,9 +470,9 @@ Test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
-other worker's is, and while the Worker tab is in sight, the Paused Page shows a new page without being selected, so
-the Worker tab stays in sight. The watch ends while the tab is hidden and starts again as it shows;
-the run's end turns Watch off.
+other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected), the Paused Page shows
+a new page without being selected, so the Worker tab stays in sight. The watch ends while the tab is hidden and starts
+again as it shows; the run's end turns Watch off.
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool

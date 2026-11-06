@@ -340,12 +340,15 @@ palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.r
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
 `OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the
-focus, decided as it opens, only while no other stop held has its file open, or as a stop of the worker slot
-(`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop last took the
-focus, or whose stop a control from the editor answered last, counted as the control is sent. A slot the worker panel
-watches is not the person's for that: the panel shows its page whatever the focus, while the focus chooses the stop
-the keys and the cursor act on, which a watched worker's stop would take from the one in use. A file that never
-opened counts as none. It never opens over a panel in sight (the paused page view, the worker panel). With the focus,
+focus, decided as it opens, only as a stop of the worker slot (`parallelIndex`, which a worker restarted after a
+failure keeps) the person is on, or while no other stop held had its file opened by the extension (its tab closed
+since or not) and no Step or Run to the cursor from the editor waits for its slot's next stop (`RESERVED_MS` at most,
+while a worker of the run holds the slot; that next stop opening ends the wait). The slot the person is on is the one
+whose stop last took the focus, or that they last acted on: a control from the editor (counted as it is sent, and
+forgotten if the run refuses it: `refused`), a code action (`piwi/stopAction`), or input or a pick on the paused page
+or the worker panel (`acted`). A slot the worker panel watches is not the person's for that: the panel shows its page
+whatever the focus, while the focus chooses the stop the keys and the cursor act on. A file that never opened counts
+as none. It never opens over a panel in sight (the paused page view, the worker panel). With the focus,
 it opens as a debugger's does, where the file shows already, else in the active group. Without it, the editor in use
 is left alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and
 another opens with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the
@@ -355,8 +358,10 @@ stack frame color by default), with a hover that holds the controls. A CodeLens 
 (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
 Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says `the test went
 on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused
-page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line, else the only
-one, else asks (`stopsFor`).
+page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line; else, for a
+control within `RESUMED_KEY_MS` of an answer and before the next stop, on none but the stop answered, so a key pressed
+again answers no other stop; else on the only stop whose file or page the person was shown; else it asks (`stopsFor`,
+`StopsShown.choose`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -394,7 +399,9 @@ open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows
 and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). Each stop, and each
 stretch the worker runs between them, is drawn anew (`shown`), so Interact starts off and a message of the view before
 reaches nothing; at a stop, Interact and the pick on a click name that stop, as on the paused page. A headless stop of
-the slot the panel watches, in sight, opens no paused page, and no stop's file opens over the panel.
+the slot the panel watches, in sight, opens no paused page, and no stop's file opens over the panel. Input and a pick
+there make the slot the person's; hiding or closing the panel shows the stops again (`WorkerPanelHooks`), so a held
+stop it showed gets the paused page at once.
 Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
 (`pausedPageViewChange`).
 

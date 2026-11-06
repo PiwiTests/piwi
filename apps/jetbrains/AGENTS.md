@@ -118,13 +118,18 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A new stop takes the focus only while no other held stop's file is open, or on the worker slot the person is on
-  (the last to take the focus or be answered from the IDE, never one only watched); while an editor is in use, any
-  other stays closed (2024.1 opens no file without selecting it), counts as shown and is listed in the status bar
-  item's menu, and the Paused Page tab keeps a held stop, then waits `Glue.RESERVED_MILLIS` at most for a slot stepped
-  or run to the caret from the IDE.** `Glue.StopsShown` decides and `PiwiRunSessions.draw` opens, an `Alarm` drawing
-  again as a wait ends, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service sends.
-  ([Run control](ARCHITECTURE.md#run-control))
+- **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
+  control, a code action, input or a pick on the Paused Page; never one only watched), or while no other held stop's
+  file was opened or left closed and no Step or Run to Caret from the IDE waits, `Glue.RESERVED_MILLIS` at most. While
+  an editor is in use, any other stays closed (2024.1 opens no file without selecting it), counts as opened and is
+  listed in the status bar item's menu. The Paused Page tab keeps a held stop, then waits as long for the stepped
+  slot.** `Glue.StopsShown` decides, an answer the run refuses recording nothing, and `PiwiRunSessions.draw` opens, an
+  `Alarm` drawing again as a wait ends, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service
+  sends. ([Run control](ARCHITECTURE.md#run-control))
+- **An action at a stop from a key or a menu acts on the stop at the caret's line; else, for a control within
+  `Glue.RESUMED_MILLIS` of an answer and before the next stop, on none but the stop answered; else on the only stop
+  whose file or page the person was shown; else it asks** (`Glue.StopsShown.choose`, `PiwiRunSessions.atCaret`), as in
+  the VS Code extension. Checked by `GlueTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
   and only into the version the service placed it in.** A file no editor shows is opened first and written once its
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the

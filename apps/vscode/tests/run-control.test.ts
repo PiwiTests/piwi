@@ -15,6 +15,7 @@ import {
   EditLog,
   MAX_IMAGE_DATA,
   RESERVED_MS,
+  RESUMED_KEY_MS,
   StopsShown,
   asideColumn,
   breakpointUpdates,
@@ -586,20 +587,21 @@ describe('what the editor shows of the stops', () => {
       const opened = change.open
         .filter((stop) => !unopened.includes(stop.stop.line))
         .map((stop) => {
-          const focus = shown.focusFor(stop);
+          const focus = shown.focusFor(stop, now);
           shown.opened(stop, focus);
           return [stop.worker, focus];
         });
       if (change.page) shown.view(change.page);
       return { opened, page: change.page && [change.page.worker, change.page.stop.line] };
     };
+    const stopOf = (index: number, line: number) => stopsOf(sessionsOf(session('ed-1', [at(index, line)])))[0]!;
     /** A control from the editor answers the stop of worker `index` at `line`, as it is sent. */
     const answer = (action: 'resume' | 'step' | 'run-to', index: number, line: number) =>
-      shown.answered(stopsOf(sessionsOf(session('ed-1', [at(index, line)])))[0]!, action, now);
+      shown.answered(stopOf(index, line), action, now);
     const wait = (ms: number) => {
       now += ms;
     };
-    return { shown, watched, push, answer, wait, now: () => now };
+    return { shown, watched, push, answer, stopOf, wait, now: () => now };
   };
 
   test('opens the first stop with the focus, and its page', () => {
@@ -743,6 +745,115 @@ describe('what the editor shows of the stops', () => {
     const alone = editor();
     alone.watched.add(0);
     expect(alone.push(at(0, 3))).toEqual({ opened: [[0, true]], page: null });
+  });
+
+  test('keeps the focus off another worker’s stop while a stepped worker’s next stop is awaited', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    // No other stop's file is open, and worker 1's stop still leaves the caret to worker 0.
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
+    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
+    // In one push, worker 1's stop first.
+    const together = editor();
+    together.push(at(0, 3), running(1));
+    together.answer('step', 0, 3);
+    together.push(running(0), running(1));
+    expect(together.push(at(1, 5), at(0, 4))).toEqual({
+      opened: [
+        [1, false],
+        [0, true],
+      ],
+      page: [0, 4],
+    });
+  });
+
+  test('ends the wait as the stepped worker’s next stop opens, with the focus or, past its turn, without', () => {
+    const { shown, push, answer, stopOf } = editor([4]);
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    push(at(0, 4), running(1));
+    expect(shown.waitsUntil()).not.toBeNull();
+    shown.opened(stopOf(0, 4), false);
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('lets another worker’s stop take the focus once the wait for a stepped worker is over', () => {
+    const { push, answer, wait } = editor();
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    wait(RESERVED_MS);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, true]], page: [1, 5] });
+  });
+
+  test('makes the slot the person acted on theirs: a code action, input or a pick on a page', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 0, 3);
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    // The person types on worker 1's page: worker 0's next stop leaves them there.
+    shown.acted(stopOf(1, 5));
+    expect(push(at(0, 4), at(1, 5)).opened).toEqual([[0, false]]);
+    push(at(0, 4), running(1));
+    expect(push(at(0, 4), at(1, 6)).opened).toEqual([[1, true]]);
+    // Acting on another worker ends the wait for a stepped one.
+    answer('step', 0, 4);
+    shown.acted(stopOf(1, 6));
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('forgets an answer the run refused: no wait, and the slot the person was on', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 1, 5);
+    push(at(0, 3), running(1));
+    // A Step on worker 0's stop, which went on meanwhile.
+    answer('step', 0, 3);
+    shown.refused(stopOf(0, 3));
+    expect(shown.waitsUntil()).toBeNull();
+    expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
+    // Another stop's refusal undoes nothing.
+    answer('step', 0, 3);
+    shown.refused(stopOf(1, 6));
+    expect(shown.waitsUntil()).not.toBeNull();
+  });
+
+  test('gives a run key the stop at the caret, else none but the one just answered, else the only one shown', () => {
+    const { shown, push, answer, stopOf } = editor([5]);
+    push(at(0, 3), at(1, 5), at(2, 7));
+    const caret = (line: number) => ({ uri: spec, line });
+    const [a, b, c] = [stopOf(0, 3), stopOf(1, 5), stopOf(2, 7)];
+    expect(shown.choose([a, b, c], caret(5), true)).toEqual(b);
+    expect(shown.choose([a, b, c], caret(1), true)).toBe('ask');
+    // The only stop left: one whose file never opened is asked for.
+    expect(shown.choose([b], caret(1), true)).toBe('ask');
+    expect(shown.choose([c], caret(1), true)).toEqual(c);
+    // Worker 0 resumed from the caret: a second press before the next stop answers no other stop, but a code action
+    // takes the only one shown.
+    answer('resume', 0, 3);
+    expect(shown.choose([a], caret(9), true, 150)).toEqual(a);
+    expect(shown.choose([c], caret(3), true, 150)).toBeNull();
+    expect(shown.choose([c], caret(3), false, 150)).toEqual(c);
+    expect(shown.choose([c], caret(3), true, 100 + RESUMED_KEY_MS)).toEqual(c);
+    // A stop whose page shows is one the person was shown.
+    shown.view(b);
+    expect(shown.choose([b], caret(3), true, 5_000)).toEqual(b);
+    expect(shown.choose([], caret(3), true)).toBeNull();
+  });
+
+  test('ends the moments after an answer at the next stop', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    push(running(0), at(1, 5));
+    expect(shown.choose([stopOf(1, 5)], null, true, 400)).toBeNull();
+    push(at(0, 4), at(1, 5));
+    expect(shown.choose([stopOf(1, 5)], null, true, 500)).toEqual(stopOf(1, 5));
   });
 
   test('opens a file aside in a group neither active nor a panel’s, else in a new one at the right', () => {

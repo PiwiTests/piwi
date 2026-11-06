@@ -548,8 +548,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val file = fileOf(stop.stop.uri) ?: continue
             unopened.remove(key)
             val focus = shownStops.focusFor(stop)
-            reveal(stop, file, focus)
-            shownStops.opened(stop, focus)
+            shownStops.opened(stop, focus, reveal(stop, file, focus))
         }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
@@ -590,18 +589,25 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Open a stop's file at its line. With the focus, as the debugger does. Without it, the editor in use is left alone:
-     * a file open in an editor already keeps its caret, and while an editor shows a file, another stays closed, the stop
-     * drawn in it when it opens (the platform opens no file without selecting it); with no editor shown, it opens
-     * without the focus. On the event thread.
+     * Open a stop's file at its line; whether the file is in sight then. With the focus, as the debugger does. Without
+     * it, the editor in use is left alone: a file open in an editor already keeps its caret, and while an editor shows a
+     * file, another stays closed, the stop drawn in it when it opens; with no editor shown, it opens without the focus.
+     * On the event thread.
      */
-    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean) {
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean): Boolean {
         val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
         val manager = FileEditorManager.getInstance(project)
-        when {
-            focus -> descriptor.navigate(true)
-            manager.isFileOpen(file) || manager.selectedFiles.isNotEmpty() -> return
-            else -> descriptor.navigate(false)
+        return when {
+            focus -> {
+                descriptor.navigate(true)
+                true
+            }
+            manager.isFileOpen(file) -> file in manager.selectedFiles
+            manager.selectedFiles.isNotEmpty() -> false
+            else -> {
+                descriptor.navigate(false)
+                true
+            }
         }
     }
 
@@ -611,8 +617,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun goTo(stop: Glue.ShownStop) {
         val file = fileOf(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
-        reveal(stop, file, true)
-        shownStops.opened(stop, true)
+        shownStops.opened(stop, true, reveal(stop, file, true))
     }
 
     /** Draw again once the Paused Page tab stops waiting for a slot's next stop. On the event thread. */
@@ -714,7 +719,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val panel = content.component as PausedPagePanel
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks")) { on -> watchPage(stop, on) }
         panel.viewport = null
-        panel.input = { events -> pageInput(stop, events) }
+        panel.input = { events ->
+            shownStops.acted(stop)
+            wakeWhenWaited()
+            pageInput(stop, events)
+        }
         panel.releaseInput = {
             if (pageStop == key && watchingPage != null) {
                 pageRelease = true
@@ -759,6 +768,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
         val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
         panel.note("Picking the element under the click…")
+        shownStops.acted(stop)
+        wakeWhenWaited()
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
             ApplicationManager.getApplication().invokeLater({
@@ -849,10 +860,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (watchingLane == null) watchLane(true)
     }
 
-    /** Whether the Worker tab is the tab of the Piwi tool window in sight. On the event thread. */
+    /** Whether the Worker tab is in sight: the Piwi tool window shows, with it selected. On the event thread. */
     private fun workerTabInSight(): Boolean {
         val tab = liveWorkerTab() ?: return false
-        return toolWindow()?.contentManager?.selectedContent == tab
+        val window = toolWindow() ?: return false
+        return window.isVisible && window.contentManager.selectedContent == tab
     }
 
     /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
@@ -1001,12 +1013,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`, a line of the run's code), naming it, off the
-     * event thread, saying why not.
+     * event thread, saying why not: what `Glue.StopsShown` recorded of it goes then. On the event thread.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
         shownStops.answered(stop, action)
         wakeWhenWaited()
-        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since))
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) {
+            shownStops.refused(stop)
+            wakeWhenWaited()
+        }
     }
 
     /** Pause every run started here: each of its workers stops before its next call. */
@@ -1014,13 +1029,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         sessions.keys.forEach { control(RunControlParams(it, action = "pause")) }
     }
 
-    private fun control(params: RunControlParams) {
+    /** Send a control off the event thread, saying why not; `refused` runs on the event thread then. */
+    private fun control(params: RunControlParams, refused: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
             }
+            if (result?.ok != true) ApplicationManager.getApplication().invokeLater({ refused() }, gone)
         }
     }
 
@@ -1084,14 +1101,25 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     } ?: false
 
     /**
-     * Run `action` on the stop the caret of `editor` is at, else the only one, else the one chosen; among those `offers`
-     * keeps, when it keeps any. On the event thread.
+     * Run `action` on the stop `Glue.StopsShown.choose` gives for the caret of `editor` (none for a `control` in the
+     * moments after an answer), else on the one chosen; among those `offers` keeps, when it keeps any. On the event
+     * thread.
      */
-    fun atCaret(editor: Editor?, offers: (Glue.ShownStop) -> Boolean = { true }, action: (Glue.ShownStop) -> Unit) {
+    fun atCaret(
+        editor: Editor?,
+        offers: (Glue.ShownStop) -> Boolean = { true },
+        control: Boolean = false,
+        action: (Glue.ShownStop) -> Unit,
+    ) {
         val uri = editor?.virtualFile?.let { fileUri(it) }
+        val line = editor?.caretModel?.logicalPosition?.line
         val all = stops()
-        val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, editor?.caretModel?.logicalPosition?.line)
-        if (candidates.size < 2) return candidates.firstOrNull()?.let(action) ?: PiwiCommands.notify(project, "No test is stopped.")
+        val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, line)
+        when (val chosen = shownStops.choose(candidates, uri, line, control)) {
+            is Glue.StopChoice.One -> return action(chosen.stop)
+            Glue.StopChoice.None -> return if (candidates.isEmpty()) PiwiCommands.notify(project, "No test is stopped.") else Unit
+            Glue.StopChoice.Ask -> Unit
+        }
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(candidates)
             .setRenderer(
@@ -1203,6 +1231,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun start(stop: Glue.ShownStop, action: Glue.StopAction, request: Int? = null) {
         val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        shownStops.acted(stop)
+        wakeWhenWaited()
         ApplicationManager.getApplication().executeOnPooledThread {
             if (action == Glue.StopAction.MOCK && request == null) {
                 val listed = remote.requests(StopRequestsParams(stop.ref, stop.worker, since))
@@ -2036,7 +2066,7 @@ abstract class StopControlAction(private val control: Glue.StopControl) : RunCon
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
         val sessions = sessions(e) ?: return
-        sessions.atCaret(editor, { control in Glue.stopControls(it) }) { sessions.perform(it, control, editor) }
+        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true) { sessions.perform(it, control, editor) }
     }
 }
 

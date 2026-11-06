@@ -27,17 +27,16 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | **Stop the Run**, or the Run tool window's Stop |
 
-The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's), Piwi's only while their control applies
-and no debug session runs, and first where a JetBrains keymap gives one to another action too. On macOS, `Cmd+F10`
-runs to the cursor in VS Code. **Pause** and **End the test** have no key in VS Code: bind one in
-**Preferences: Open Keyboard Shortcuts** (search `piwi`). There, `F5` pressed again within two seconds of an answer
-waits for the next stop rather than start a debug session.
+The keys are the IDE's own debugger keys (in a JetBrains IDE, [your keymap's](./jetbrains)), Piwi's only while their
+control applies and no debug session runs. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** and **End the
+test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Pressed again
+within two seconds of an answer, a key answers no other stop nor starts a debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
   paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**). The
   progress (`3 of 9`, and how many failed) comes from the run itself, so it counts offline and with the desktop app.
-- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and first in the status bar
-  item's menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped, and `Piwi: 3 of 9` while the
+- **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
+  menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped, and `Piwi: 3 of 9` while the
   run goes on.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
@@ -66,10 +65,11 @@ stopped at**. The mark goes when the test goes on (from the editor or the bar), 
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
-With several workers stopped, each has its own mark. Only the first stop shown, or one of the worker you last answered,
-takes the cursor; another opens beside your editor, or, in a JetBrains IDE in use, waits in the status bar item's menu.
-The controls above a line act on its worker, a key or command on the one at the cursor's line, else it asks which. A
-control answers the stop it was shown for: when the test went on meanwhile, it says so and asks nothing.
+With several workers stopped, each has its own mark. A stop takes the cursor only on the worker you last answered or
+worked on, or as the first shown while no step waits; another opens beside your editor, or, in a busy JetBrains IDE,
+waits in the status bar's menu. The controls above a line act on its worker, a key or command on the one at the
+cursor's line, else the only one shown, else it asks which. A control answers the stop it was shown for: when the test
+went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
 **Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test
@@ -79,8 +79,9 @@ has none.
 
 A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
-Piwi tool window, which keeps its stop until that test goes on, and after a **Step** waits up to 10 seconds for its
-next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) opens it at any stop.
+Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to cursor** from the editor
+waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**)
+opens it at any stop.
 
 <figure>
   <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
