@@ -165,8 +165,8 @@ export interface IssueIncludeOptions {
 }
 
 /** The prefilled draft `GET issue-draft` returns; the modal edits it and POSTs it back. */
-/** What an issue can be filed for: a failure cluster, one failing execution, or a bug report. */
-export type IssueEntityType = 'failure_cluster' | 'test_runs_case' | 'bug_report';
+/** What an issue can be filed for: a failure cluster, one execution, a whole run, or a bug report. */
+export type IssueEntityType = 'failure_cluster' | 'test_runs_case' | 'test_run' | 'bug_report';
 
 export interface IssueDraft {
   entityType: IssueEntityType;
@@ -191,6 +191,8 @@ export interface IssueDraft {
   /** The project's values for tracker fields — the binding's field defaults. */
   fieldValues: FieldValues;
   include: IssueIncludeOptions;
+  /** The name the issue gives the person filing it (their comment's heading); null with authentication off. */
+  filedBy?: string | null;
   /** Markdown preview of the body — what the modal renders through `MarkdownPreview`. */
   markdown: string;
   /** The neutral document the preview renders, for inspection. */
@@ -214,6 +216,8 @@ export interface CreateIssueResponse {
   url?: string;
   /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
   alreadyFiled?: boolean;
+  /** The comment was added to that earlier issue instead. */
+  commentAdded?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];

@@ -598,6 +598,15 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     });
   } else if (canFileIssue.value && failureCluster.value) {
     issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+  } else if (canFileIssue.value && testCase.value?.id) {
+    // An execution with no failure cluster files an issue of its own: a test that
+    // passed but misses a case, a skipped one, a failure not grouped.
+    issue.push({
+      label: 'Create issue',
+      icon: 'i-lucide-file-plus',
+      'data-tour': 'execution-create-issue',
+      onSelect: () => (issueModalOpen.value = true),
+    });
   }
   if (canEditLinks.value && failureCluster.value) {
     issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });

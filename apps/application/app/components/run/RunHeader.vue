@@ -51,6 +51,14 @@ const toast = useToast();
 const config = useRuntimeConfig();
 const { onOpenReport } = useDesktopReportLink();
 
+// Create issue about the run: a person's comment, with its tests and clusters attached.
+const { hasTracker } = useTrackerStatus();
+const { can } = useAuth();
+const canFileRunIssue = computed(
+  () => hasTracker.value && !!props.testRun?.id && can('issue:create', props.testRun?.projectId),
+);
+const runIssueOpen = ref(false);
+
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
@@ -350,6 +358,27 @@ function onLabelKeydown(e: KeyboardEvent) {
       >
         <span class="hidden sm:inline">{{ primaryReport.label }}</span>
       </UButton>
+
+      <UButton
+        v-if="canFileRunIssue"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-simple-icons-jira"
+        aria-label="Create issue"
+        data-tour="run-create-issue"
+        @click="runIssueOpen = true"
+      >
+        <span class="hidden sm:inline">Create issue</span>
+      </UButton>
+      <CreateIssueModal
+        v-if="canFileRunIssue && testRun"
+        v-model:open="runIssueOpen"
+        entity-type="test_run"
+        :entity-id="testRun.id"
+        @created="emit('label-updated')"
+        @queued="emit('label-updated')"
+      />
     </template>
 
     <template #facts>

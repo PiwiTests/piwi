@@ -686,6 +686,7 @@ export const HELP_TOPICS = {
       "- **Workers** — `--workers`, or your Playwright config's number when left to the config.",
       "- **Project** — runs every test under one Playwright project instead of each test's own.",
     ].join('\n'),
+    doc: 'features/ci-rerun',
   },
   'run.metadata': {
     title: 'Tags, links & custom data',

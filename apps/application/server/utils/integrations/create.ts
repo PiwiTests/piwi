@@ -22,14 +22,23 @@ import { DEFAULT_ISSUE_OPTS, issueLabels } from '#shared/integrations/build-issu
 import type { AutomaticFiling } from '#shared/integrations/automation';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
-import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
+import {
+  buildBugReportIssue,
+  buildClusterIssue,
+  buildExecutionIssue,
+  buildRunIssue,
+  buildStandaloneExecutionIssue,
+  type BuiltRunIssue,
+} from './documents';
 import { redactedShareTokenMinter } from './share-url';
 import {
+  enqueueAction,
   enqueueOrReplaceAction,
   findActionByKey,
   recordRefusedAction,
   retireAction,
   runActionNow,
+  type CommentActionPayload,
   type CreateIssueActionPayload,
   type CreateIssueResult,
 } from './actions';
@@ -46,7 +55,9 @@ import {
 import type { IssueFieldProblem } from '#shared/integrations/types';
 import { readProjectIntegration } from './binding';
 import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
-import { createIssueKey } from '#shared/integrations/action-keys';
+import { commentOnFiledIssueKey, createIssueKey, createIssueSubmissionKey } from '#shared/integrations/action-keys';
+import { commentNodes, normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
+import { t } from '#shared/integrations/messages';
 import { resolveClusterOwner } from './owner';
 import type { DraftEntityType } from './draft';
 
@@ -67,6 +78,15 @@ export interface CreateIssueParams {
   siteUrl?: string | null;
   /** Set when a rule files the issue: the body opens with what it counted. */
   automatic?: AutomaticFiling | null;
+  /** What the person wrote: placed first in the issue, under their name. */
+  comment?: string | null;
+  /** The display name of the person filing it, null when unknown. */
+  filedBy?: string | null;
+  /**
+   * The id of one submission of the create dialog. A run, or an execution with
+   * no failure cluster, may get several issues: each submission files at most one.
+   */
+  submissionId?: string | null;
 }
 
 export interface CreateIssueOutcome {
@@ -77,6 +97,8 @@ export interface CreateIssueOutcome {
   url?: string;
   /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
   alreadyFiled?: boolean;
+  /** The comment was added to that earlier issue instead. */
+  commentAdded?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];
@@ -140,10 +162,25 @@ async function resolveTarget(
   return { clusterId, projectId: cluster.projectId };
 }
 
+/** The name the issue gives the person filing it: their display name, else their username; null with authentication off. */
+export function filedByName(user: { id: number; username: string; name?: string | null }): string | null {
+  if (!user.id) return null;
+  return user.name?.trim() || user.username;
+}
+
+/** The person's comment with their name, or null when they wrote nothing. */
+function issueComment(params: CreateIssueParams): IssueComment | null {
+  const text = normalizeIssueComment(params.comment);
+  return text ? { text, author: params.filedBy ?? null } : null;
+}
+
 export async function createIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
   if (params.entityType === 'bug_report') return createBugReportIssue(db, params);
+  if (params.entityType === 'test_run') return createRunIssue(db, params);
   const target = await resolveTarget(db, params.entityType, params.entityId);
-  if (!target) return null;
+  if (!target) {
+    return params.entityType === 'test_runs_case' ? createRunIssue(db, params) : null;
+  }
 
   const include = { ...DEFAULT_ISSUE_OPTS, ...(params.include ?? {}) };
   const locale = params.locale ?? DEFAULT_LOCALE;
@@ -154,6 +191,7 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     siteUrl: params.siteUrl,
     mintShareToken: redactedShareTokenMinter,
     automatic: params.automatic ?? null,
+    comment: issueComment(params),
   };
   const built =
     params.entityType === 'failure_cluster'
@@ -199,7 +237,11 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
  */
 async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
   const locale = params.locale ?? DEFAULT_LOCALE;
-  const built = await buildBugReportIssue(db, params.entityId, { locale, siteUrl: params.siteUrl });
+  const built = await buildBugReportIssue(db, params.entityId, {
+    locale,
+    siteUrl: params.siteUrl,
+    comment: issueComment(params),
+  });
   if (!built) return null;
   const binding = await readProjectIntegration(db, built.projectId);
   const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
@@ -217,6 +259,41 @@ async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Pr
   });
 }
 
+/**
+ * File an issue for a run, or for an execution with no failure cluster: the
+ * run's document, scoped to the execution for one, the created link on the
+ * entity. Each submission of the dialog files once; a new one files again.
+ */
+async function createRunIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  const opts = {
+    locale: params.locale ?? DEFAULT_LOCALE,
+    siteUrl: params.siteUrl,
+    comment: issueComment(params),
+    filedBy: params.filedBy ?? null,
+  };
+  const built: BuiltRunIssue | null =
+    params.entityType === 'test_run'
+      ? await buildRunIssue(db, params.entityId, opts)
+      : await buildStandaloneExecutionIssue(db, params.entityId, opts);
+  if (!built) return null;
+  const binding = await readProjectIntegration(db, built.projectId);
+  const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
+  const linkEntityType = params.entityType === 'test_run' ? 'test_run' : 'test_runs_case';
+
+  return fileIssue(db, params, binding, {
+    projectId: built.projectId,
+    title: built.title,
+    document: built.document,
+    labels,
+    componentId: null,
+    linkEntityType,
+    linkEntityId: params.entityId,
+    include: null,
+    shareUrl: null,
+    perSubmission: true,
+  });
+}
+
 /** What an issue is filed with, once the entity it is filed for is resolved. */
 interface IssueToFile {
   projectId: number;
@@ -231,6 +308,49 @@ interface IssueToFile {
   include: CreateIssueActionPayload['include'];
   /** The share link the body carries, its token redacted. */
   shareUrl: string | null;
+  /** One issue per submission of the dialog, rather than one per entity. */
+  perSubmission?: boolean;
+}
+
+/**
+ * Add the person's comment to the issue already filed for the cluster, so the
+ * words they wrote reach it instead of being dropped. Queued once per
+ * submission. False when there is no comment.
+ */
+async function commentOnFiledIssue(
+  db: DbClient,
+  params: CreateIssueParams,
+  issue: IssueToFile,
+  connectionId: number,
+  issueKey: string,
+): Promise<boolean> {
+  const comment = issueComment(params);
+  if (!comment) return false;
+  const locale = params.locale ?? DEFAULT_LOCALE;
+  const base = params.siteUrl?.trim().replace(/\/$/, '') || null;
+  const path =
+    params.entityType === 'test_runs_case'
+      ? `/test-run-cases/${params.entityId}`
+      : `/failure-clusters/${params.entityId}`;
+  const where = base ? `${base}${path}` : path;
+  const document = {
+    nodes: [
+      ...commentNodes(locale, comment),
+      { type: 'paragraph' as const, inlines: [t(locale, 'comment.addedFrom', { where })] },
+    ],
+  };
+  const action = await enqueueAction(db, {
+    connectionId,
+    projectId: issue.projectId,
+    kind: 'comment',
+    entityType: issue.linkEntityType,
+    entityId: issue.linkEntityId,
+    dedupeKey: commentOnFiledIssueKey(issueKey, params.submissionId || globalThis.crypto.randomUUID()),
+    payload: { issueKey, document } satisfies CommentActionPayload,
+    requestedBy: params.requestedBy ?? null,
+  });
+  await runActionNow(db, action.id);
+  return true;
 }
 
 /**
@@ -249,11 +369,18 @@ async function fileIssue(
 ): Promise<CreateIssueOutcome> {
   // An issue already filed for this cluster is the answer, whatever the request
   // says, while it still tracks the cluster.
-  const dedupeKey = createIssueKey(issue.linkEntityType, issue.linkEntityId, params.connectionId);
+  const dedupeKey = issue.perSubmission
+    ? createIssueSubmissionKey(
+        issue.linkEntityType,
+        issue.linkEntityId,
+        params.connectionId,
+        params.submissionId || globalThis.crypto.randomUUID(),
+      )
+    : createIssueKey(issue.linkEntityType, issue.linkEntityId, params.connectionId);
   // A filing recorded against the execution it was asked from still answers for it.
   const filed =
     (await findActionByKey(db, dedupeKey)) ??
-    (params.entityType === 'test_runs_case'
+    (params.entityType === 'test_runs_case' && !issue.perSubmission
       ? await findActionByKey(db, createIssueKey('test_runs_case', params.entityId, params.connectionId))
       : null);
   // A skipped filing (no usable connection, or a rule that left the failure to
@@ -261,13 +388,21 @@ async function fileIssue(
   if (filed?.status === 'skipped') await retireAction(db, filed.id);
   if (filed?.status === 'done') {
     const result = filed.result as CreateIssueResult | null;
+    if (issue.perSubmission) {
+      // The same submission sent again: the issue it filed is the answer.
+      return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
+    }
     if (await filedIssueStillTracks(db, issue.linkEntityType, issue.linkEntityId, result)) {
+      const commentAdded = result?.key
+        ? await commentOnFiledIssue(db, params, issue, filed.connectionId, result.key)
+        : false;
       return {
         actionId: filed.id,
         status: 'done',
         key: result?.key,
         url: result?.url,
         alreadyFiled: true,
+        ...(commentAdded ? { commentAdded } : {}),
         projectId: issue.projectId,
       };
     }
@@ -291,6 +426,7 @@ async function fileIssue(
     automatic: params.automatic ?? null,
     include: issue.include,
     shareUrl: issue.shareUrl,
+    comment: issueComment(params),
   };
 
   // Required fields: refuse before calling the tracker when the defaults and

@@ -40,6 +40,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
   write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
   Jira's reason atop the modal and on the Issue or Cluster line; creating again replaces it.
+- **Comment** places your words first in the issue, or adds them to the cluster's issue already filed. Runs and
+  tests: [Issues about a run or a test](./run-issues).
 
 ## The key travels
 
@@ -77,10 +79,8 @@ Both status policies act on a **move** of the ticket, so a cluster a person reop
 
 Every comment is written in the [ticket's language](#language), for the [runs that
 write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
-description updates. A Jira admin can register an optional
-[inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen shows at once; it only
-refreshes a link. The failure inbox gains a **Needs ticket** queue — open clusters on
-the default branch, older than the binding's age (default 2 days), with no issue.
+description updates. An optional [inbound webhook](/operate/integrations#registering-the-inbound-webhook) shows a
+close or reopen at once. The failure inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
 
 ## The project binding
 

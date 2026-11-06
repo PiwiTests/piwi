@@ -123,6 +123,21 @@ export const EXECUTIONS_ANCHORS = [
     sample: { route: '/test-run-cases/37', expect: CHECKOUT_FAILURE },
   },
   {
+    id: 'execution-create-issue',
+    kind: 'action',
+    pages: ['/test-run-cases/[id]'],
+    reveal: [{ open: 'execution-more-actions' }],
+    describes:
+      'The More actions menu’s Create issue for a test with no failure cluster: files a Jira issue with the person’s comment, the test’s result and its run.',
+    shownWhen: 'When a tracker is connected and the execution belongs to no failure cluster.',
+    requires: { capability: 'integrations', permission: 'issue:create' },
+    doc: 'features/run-issues',
+    sample: {
+      route: '/test-run-cases/709',
+      expect: { execution: { id: 709, title: 'signs in with SSO redirect' } },
+    },
+  },
+  {
     id: 'quarantine-test',
     kind: 'action',
     pages: ['/test-run-cases/[id]'],

@@ -32,6 +32,7 @@ import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
 import type { IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
+import type { IssueComment } from '#shared/integrations/run-issue';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
@@ -95,6 +96,8 @@ export interface CreateIssueActionPayload {
    * when the issue is sent, and its id kept on the issue's link with this URL.
    */
   shareUrl?: string | null;
+  /** What the person filing it wrote, kept on the link so a description update puts it back first. */
+  comment?: IssueComment | null;
 }
 
 /** An update action's snapshot: the rebuilt title and description of an issue Piwi filed. */
@@ -121,6 +124,8 @@ export interface FiledIssueMeta {
   shareUrl?: string | null;
   /** The id of that share link, whose token a description update reads back from the issue. */
   shareLinkId?: number | null;
+  /** What the person filing it wrote, with their name. */
+  comment?: IssueComment | null;
 }
 
 /** A comment action's snapshot — the rendered body, keyed to an issue. */
@@ -251,6 +256,7 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
       status: 'pending',
       attempts: 0,
       error: null,
+      result: null,
       scheduledFor: new Date(),
       finishedAt: null,
       requestedBy: input.requestedBy ?? action.requestedBy,
@@ -400,6 +406,12 @@ async function applyCreateIssue(
 ): Promise<CreateIssueResult> {
   const payload = action.payload as CreateIssueActionPayload;
   const share = await issueShareLink(db, action, payload);
+  // Committed before the tracker is called: a row that still holds it when an
+  // attempt begins belongs to a worker that stopped during the call.
+  await db
+    .update(integrationActions)
+    .set({ result: { createStartedAt: Date.now() } satisfies CreateStartedMarker as never })
+    .where(eq(integrationActions.id, action.id));
   let created: Awaited<ReturnType<IssueTracker['createIssue']>>;
   try {
     created = await tracker.createIssue({
@@ -415,6 +427,8 @@ async function applyCreateIssue(
     });
   } catch (err) {
     if (share) await discardShareLink(db, share.id);
+    // The attempt ended here, with an answer or a timeout: the next one may file.
+    await db.update(integrationActions).set({ result: null }).where(eq(integrationActions.id, action.id));
     throw err;
   }
   // The create response carries no status; read it back once so the chip shows a
@@ -430,6 +444,7 @@ async function applyCreateIssue(
     ...(payload.include ? { include: payload.include } : {}),
     ...(payload.shareUrl ? { shareUrl: payload.shareUrl } : {}),
     ...(share ? { shareLinkId: share.id } : {}),
+    ...(payload.comment ? { comment: payload.comment } : {}),
   };
 
   await db.transaction(async (tx) => {
@@ -597,6 +612,26 @@ async function applyTransition(tracker: IssueTracker, action: IntegrationAction)
   await tracker.transition(payload.issueKey, target.id, fieldPayload(values, screen, TRANSITION_SKIPPED_FIELDS));
 }
 
+/** What a create-issue row holds while its call to the tracker is under way. */
+export interface CreateStartedMarker {
+  createStartedAt: number;
+}
+
+/**
+ * Whether a create-issue row still holds the marker of a call that never
+ * ended: the worker stopped during it (a restart, or a call past the lease), so
+ * the issue may exist. Filing again could file it twice.
+ */
+export function createOutcomeUnknown(result: unknown): boolean {
+  const value = result as Partial<CreateStartedMarker & CreateIssueResult> | null;
+  return typeof value?.createStartedAt === 'number' && !value.key;
+}
+
+/** The failure an unknown outcome records: what to look for, and what to do then. */
+export function outcomeUnknownMessage(title: string): string {
+  return `Outcome unknown: check the tracker for an issue titled "${title}", then create it again if it is not there`;
+}
+
 /** Why an action whose project is bound to another connection, or to none, was not run. */
 const NOT_BOUND = 'the project is not bound to this connection';
 
@@ -629,6 +664,16 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .set({ status: 'skipped', error: NOT_BOUND, attempts, finishedAt: now })
       .where(eq(integrationActions.id, action.id));
     return { status: 'skipped', reason: NOT_BOUND };
+  }
+
+  if (action.kind === 'create-issue' && createOutcomeUnknown(action.result)) {
+    const payload = action.payload as CreateIssueActionPayload;
+    const error = outcomeUnknownMessage(payload.title);
+    await db
+      .update(integrationActions)
+      .set({ status: 'failed', error, result: null, attempts, finishedAt: now })
+      .where(eq(integrationActions.id, action.id));
+    return { status: 'failed', error, final: true };
   }
 
   const tracker = await createTracker(db, action.connectionId);

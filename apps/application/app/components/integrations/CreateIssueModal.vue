@@ -22,6 +22,8 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
+import { commentNodes, MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment } from '#shared/integrations/run-issue';
+import { renderMarkdown } from '#shared/integrations/render-markdown';
 
 const props = defineProps<{
   entityType: IssueEntityType;
@@ -64,6 +66,28 @@ function showError(message: string, title = 'Could not create the issue') {
 
 /** What an already-filed issue was filed for, in the toast that names it. */
 const filedFor = computed(() => (props.entityType === 'bug_report' ? 'this bug report' : 'this cluster'));
+
+/**
+ * A run, or an execution with no failure cluster, may get several issues: the
+ * ones already linked are listed, and never stand in for a new one.
+ */
+const perSubmission = computed(
+  () => props.entityType === 'test_run' || (props.entityType === 'test_runs_case' && draft.value?.clusterId == null),
+);
+
+/** What the person writes, placed first in the issue under their name. */
+const comment = ref('');
+/** One id per opening of the dialog: sending it again files nothing new. */
+const submissionId = ref('');
+/** The comment block as the issue will open, rendered with the server's own builder. */
+const commentMarkdown = computed(() => {
+  const text = normalizeIssueComment(comment.value);
+  if (!text || !draft.value) return '';
+  return renderMarkdown({ nodes: commentNodes(locale.value, { text, author: draft.value.filedBy ?? null }) });
+});
+const previewMarkdown = computed(() =>
+  commentMarkdown.value ? `${commentMarkdown.value}\n${draft.value?.markdown ?? ''}` : (draft.value?.markdown ?? ''),
+);
 
 // The editable form, seeded from the draft.
 const title = ref('');
@@ -184,6 +208,10 @@ const blockedReason = computed(() => {
 const description = computed(() => {
   if (props.entityType === 'bug_report')
     return 'File a Jira issue from this bug report, with its steps, evidence and failing test.';
+  if (props.entityType === 'test_run')
+    return 'File a Jira issue about this run, with its tests, results and failure clusters. A run can have several issues.';
+  if (perSubmission.value)
+    return 'File a Jira issue about this test, with its result and its run. A test with no failure cluster can have several issues.';
   const id = draft.value?.clusterId;
   if (props.knownIssueKey)
     return `Files a new issue for ${id ? `cluster #${id}` : 'the cluster'} next to ${props.knownIssueKey}, which stays linked. The new issue, with the fix plan as its body, becomes the cluster's issue on the cluster page and on each of its executions.`;
@@ -340,6 +368,8 @@ const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value ==
 
 watch(open, (isOpen) => {
   if (isOpen) {
+    comment.value = '';
+    submissionId.value = newSubmissionId();
     projects.value = [];
     issueTypes.value = [];
     showAllCreate.value = false;
@@ -375,11 +405,18 @@ async function create() {
         locale: locale.value,
         include: include.value,
         fields: fieldValues.value,
+        comment: normalizeIssueComment(comment.value) ?? undefined,
+        submissionId: submissionId.value,
       },
     });
     if (res.status === 'done' && res.key && res.url) {
       toast.add({
-        title: res.alreadyFiled ? `${res.key} was already filed for ${filedFor.value}` : `${res.key} created`,
+        title: res.commentAdded
+          ? `Your comment was added to ${res.key}`
+          : res.alreadyFiled
+            ? `${res.key} was already filed for ${filedFor.value}`
+            : `${res.key} created`,
+        ...(res.commentAdded ? { description: `${res.key} was already filed for ${filedFor.value}.` } : {}),
         color: res.alreadyFiled ? 'info' : 'success',
         actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
@@ -414,8 +451,11 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     await $fetch('/api/links', {
       method: 'POST',
       body: {
-        entityType: props.entityType === 'bug_report' ? 'bug_report' : 'failure_cluster',
-        entityId: props.entityType === 'bug_report' ? props.entityId : (draft.value?.clusterId ?? props.entityId),
+        entityType: props.entityType === 'bug_report' || perSubmission.value ? props.entityType : 'failure_cluster',
+        entityId:
+          props.entityType === 'bug_report' || perSubmission.value
+            ? props.entityId
+            : (draft.value?.clusterId ?? props.entityId),
         url: candidate.url,
         title: candidate.title,
       },
@@ -458,7 +498,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </div>
         <!-- Dedupe: lead with an issue that already tracks this failure. -->
         <UAlert
-          v-if="existing.length && !showAllCreate"
+          v-if="existing.length && !showAllCreate && !perSubmission"
           color="warning"
           variant="subtle"
           icon="i-lucide-link"
@@ -473,7 +513,17 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
           </template>
         </UAlert>
 
-        <template v-if="!existing.length || showAllCreate">
+        <p v-if="perSubmission && existing.length" class="text-xs text-muted" data-testid="create-issue-linked">
+          Already linked:
+          <template v-for="(issue, i) in existing" :key="issue.key"
+            ><template v-if="i">, </template
+            ><a :href="issue.url" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">{{
+              issue.key
+            }}</a></template
+          >. A new issue is filed next to them.
+        </p>
+
+        <template v-if="!existing.length || showAllCreate || perSubmission">
           <!-- No connection: a project's issues go only through the one it is bound to, with credentials. -->
           <p v-if="!draft.connectionId" class="text-xs text-muted" data-testid="create-issue-no-connection">
             This project has no Jira connection to file through: its issues go only through the connection its settings
@@ -495,6 +545,20 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               >Set the defaults</NuxtLink
             ><template v-else> A project admin can set them in the project settings.</template>
           </p>
+          <UFormField
+            label="Comment"
+            hint="Optional"
+            :description="`What is wrong, what to improve, what test is missing. It opens the issue${draft.filedBy ? `, under your name` : ''}.`"
+          >
+            <UTextarea
+              v-model="comment"
+              :rows="3"
+              autoresize
+              :maxlength="MAX_ISSUE_COMMENT_LENGTH"
+              class="w-full"
+              data-testid="create-issue-comment"
+            />
+          </UFormField>
           <UFormField label="Title">
             <UInput v-model="title" class="w-full" />
           </UFormField>
@@ -608,7 +672,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </UFormField>
           </div>
 
-          <UFormField label="Include">
+          <UFormField v-if="!perSubmission" label="Include">
             <div class="flex flex-wrap gap-4">
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
@@ -633,7 +697,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 
           <div>
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
-            <MarkdownPreview :text="draft.markdown" max-height="16rem" />
+            <MarkdownPreview :text="previewMarkdown" max-height="16rem" />
           </div>
         </template>
       </div>
@@ -642,7 +706,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     <template #footer>
       <div class="flex flex-wrap items-center justify-end gap-2 w-full">
         <span
-          v-if="draft && (!existing.length || showAllCreate) && (blockedReason || missingNames)"
+          v-if="draft && (!existing.length || showAllCreate || perSubmission) && (blockedReason || missingNames)"
           class="mr-auto text-xs text-muted"
           data-testid="create-issue-missing"
         >
@@ -651,7 +715,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </span>
         <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
         <UButton
-          v-if="draft && (!existing.length || showAllCreate)"
+          v-if="draft && (!existing.length || showAllCreate || perSubmission)"
           icon="i-simple-icons-jira"
           :loading="creating"
           :disabled="!canCreate"

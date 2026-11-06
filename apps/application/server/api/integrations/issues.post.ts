@@ -3,22 +3,23 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { readProjectIntegration } from '../../utils/integrations/binding';
-import { createIssue } from '../../utils/integrations/create';
+import { createIssue, filedByName } from '../../utils/integrations/create';
+import { MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
 import type { CreateIssueResponse } from '#shared/integrations/types';
 import { normalizeFieldValues } from '#shared/integrations/fields';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
-    summary: 'Create an issue from a failure or a bug report',
+    summary: 'Create an issue from a failure, a run or a bug report',
     description:
-      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`; once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. `include.includeShareLink` creates one share link for the issue, recorded as the caller's, and needs `share:create` on the project: without it the issue carries no share link. `connectionId` must be the connection the project is bound to (its Issue tracker settings): any other connection, or a project bound to none, is refused with 403. Requires `issue:create` (Contributor and above on the project).",
+      "Enqueues a create-issue action and makes one immediate attempt. `comment` is the caller's own words, placed first in the issue under their name. A run (`test_run`), and an execution with no failure cluster, may get several issues: each `submissionId` (one per opening of the create dialog) files at most one, and a request without it always files a new one. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`, and its `comment`, when given, is added to that issue (`commentAdded`); once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. A filing whose attempt stopped during the call to the tracker (a restart) fails with *Outcome unknown* rather than filing twice: check the tracker, then create again. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. `include.includeShareLink` creates one share link for the issue, recorded as the caller's, and needs `share:create` on the project: without it the issue carries no share link. `connectionId` must be the connection the project is bound to (its Issue tracker settings): any other connection, or a project bound to none, is refused with 403. Requires `issue:create` (Contributor and above on the project).",
     'x-required-permission': 'issue:create',
   },
 });
 
 const schema = z.object({
-  entityType: z.enum(['failure_cluster', 'test_runs_case', 'bug_report']),
+  entityType: z.enum(['failure_cluster', 'test_runs_case', 'test_run', 'bug_report']),
   entityId: z.number().int().positive(),
   connectionId: z.number().int().positive(),
   title: z.string().min(1).max(255),
@@ -36,6 +37,8 @@ const schema = z.object({
     })
     .optional(),
   fields: z.record(z.string(), z.object({ value: z.unknown(), label: z.string().optional() })).optional(),
+  comment: z.string().max(MAX_ISSUE_COMMENT_LENGTH).optional(),
+  submissionId: z.string().uuid().optional(),
 });
 
 export default eventHandler(async (event): Promise<CreateIssueResponse> => {
@@ -85,6 +88,9 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
     fields: normalizeFieldValues(input.fields),
     requestedBy: user.id || null,
     siteUrl: process.env.PIWI_SITE_URL ?? null,
+    comment: input.comment ?? null,
+    filedBy: filedByName(user),
+    submissionId: input.submissionId ?? null,
   });
   if (!outcome) throw apiError({ statusCode: 404, message: 'Entity or cluster unavailable' });
 
@@ -94,6 +100,7 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
     key: outcome.key,
     url: outcome.url,
     alreadyFiled: outcome.alreadyFiled,
+    commentAdded: outcome.commentAdded,
     error: outcome.error,
     missingFields: outcome.missingFields,
     fieldErrors: outcome.fieldErrors,

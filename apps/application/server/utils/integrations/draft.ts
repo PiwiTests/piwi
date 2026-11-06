@@ -21,7 +21,15 @@ import type {
   IssueIncludeOptions,
   TrackerSummary,
 } from '#shared/integrations/types';
-import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue, type BuiltClusterIssue } from './documents';
+import {
+  buildBugReportIssue,
+  buildClusterIssue,
+  buildExecutionIssue,
+  buildRunIssue,
+  buildStandaloneExecutionIssue,
+  type BuiltClusterIssue,
+} from './documents';
+import { resolveLinkEntityProjectId } from '../project-access';
 import { draftShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
 import { bindingRowToResolved } from './binding';
@@ -36,7 +44,7 @@ export type DraftEntityType = IssueEntityType;
 /** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
 async function resolveClusterId(db: DbClient, entityType: DraftEntityType, entityId: number): Promise<number | null> {
   if (entityType === 'failure_cluster') return entityId;
-  if (entityType === 'bug_report') return null;
+  if (entityType === 'bug_report' || entityType === 'test_run') return null;
   const [row] = await db
     .select({ clusterId: testRunsCases.failureClusterId })
     .from(testRunsCases)
@@ -141,6 +149,8 @@ export interface DraftOptions {
   /** A per-issue language override (the modal's Language select); else resolved. */
   locale?: IssueLocale | null;
   siteUrl?: string | null;
+  /** The display name of the person filing it, for the line that says who filed it. */
+  filedBy?: string | null;
 }
 
 /** Resolution order: binding `locale` → connection `config.locale` → `en`. */
@@ -175,9 +185,13 @@ export async function buildIssueDraft(
   if (!connections.length) return null;
 
   if (entityType === 'bug_report') return buildBugReportDraft(db, entityId, connections, opts);
+  if (entityType === 'test_run') return buildRunDraft(db, entityType, entityId, connections, opts);
 
   const clusterId = await resolveClusterId(db, entityType, entityId);
-  if (clusterId == null) return null;
+  // An execution with no failure cluster files for itself.
+  if (clusterId == null) {
+    return entityType === 'test_runs_case' ? buildRunDraft(db, entityType, entityId, connections, opts) : null;
+  }
 
   const projectId = (
     await db
@@ -248,9 +262,81 @@ export async function buildIssueDraft(
     locale,
     fieldValues: resolved.fieldDefaults,
     include,
+    filedBy: opts.filedBy ?? null,
     markdown: renderMarkdown(built.document),
     document: built.document,
     existing: candidates,
+  };
+}
+
+/** The issues linked to an entity, as the draft's existing candidates. */
+function linkedIssueCandidates(links: (typeof entityLinks.$inferSelect)[]): ExistingIssueCandidate[] {
+  return links
+    .filter((l) => l.provider === 'jira' || l.connectionId != null)
+    .map((l) => ({
+      key: l.key ?? '',
+      url: l.url,
+      title: l.title ?? null,
+      statusText: l.statusText ?? null,
+      statusColor: l.statusColor ?? null,
+      reason: 'linked' as const,
+    }));
+}
+
+/**
+ * The draft for a run, or for an execution with no failure cluster: the run's
+ * document, and the issues already linked to the entity. Those never stop a new
+ * one: a run may get several issues.
+ */
+async function buildRunDraft(
+  db: DbClient,
+  entityType: 'test_run' | 'test_runs_case',
+  entityId: number,
+  connections: TrackerSummary[],
+  opts: DraftOptions,
+): Promise<IssueDraft | null> {
+  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+  if (projectId == null) return null;
+  const bindingRow = await getProjectBinding(db, projectId);
+  const resolved = bindingRowToResolved(bindingRow);
+  const chosenId = boundConnection(connections, resolved);
+  const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
+  const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
+  const buildOpts = { locale, siteUrl: opts.siteUrl, filedBy: opts.filedBy ?? null };
+  const built =
+    entityType === 'test_run'
+      ? await buildRunIssue(db, entityId, buildOpts)
+      : await buildStandaloneExecutionIssue(db, entityId, buildOpts);
+  if (!built) return null;
+  const linked = await db
+    .select()
+    .from(entityLinks)
+    .where(
+      and(
+        entityType === 'test_run' ? eq(entityLinks.testRunId, entityId) : eq(entityLinks.testRunsCaseId, entityId),
+        isNotNull(entityLinks.key),
+      ),
+    );
+  return {
+    entityType,
+    entityId,
+    clusterId: null,
+    projectId,
+    projectBound: Boolean(resolved.projectKey && resolved.issueType),
+    linksBack: Boolean(opts.siteUrl),
+    title: built.title,
+    connectionId: chosenId,
+    projectKey: resolved.projectKey,
+    issueType: resolved.issueType,
+    labels: [...new Set([...resolved.labels, ...built.labels])],
+    assignee: resolved.defaultAssignee,
+    locale,
+    fieldValues: resolved.fieldDefaults,
+    include: { ...resolved.include, ...(opts.include ?? {}) },
+    filedBy: opts.filedBy ?? null,
+    markdown: renderMarkdown(built.document),
+    document: built.document,
+    existing: linkedIssueCandidates(linked),
   };
 }
 
@@ -293,17 +379,9 @@ async function buildBugReportDraft(
     locale,
     fieldValues: resolved.fieldDefaults,
     include: { ...resolved.include, ...(opts.include ?? {}) },
+    filedBy: opts.filedBy ?? null,
     markdown: renderMarkdown(built.document),
     document: built.document,
-    existing: linked
-      .filter((l) => l.provider === 'jira' || l.connectionId != null)
-      .map((l) => ({
-        key: l.key ?? '',
-        url: l.url,
-        title: l.title ?? null,
-        statusText: l.statusText ?? null,
-        statusColor: l.statusColor ?? null,
-        reason: 'linked' as const,
-      })),
+    existing: linkedIssueCandidates(linked),
   };
 }

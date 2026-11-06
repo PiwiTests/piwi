@@ -8,8 +8,8 @@
  * own logic (patch, locator edits, verify command, reproduce recipe) is reused,
  * never duplicated.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { testRuns, testRunsCases } from '../../database/schema';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { notLabRun } from '#shared/run-eligibility';
 import { clusterKnownIssues } from '#shared/handlers/known-issues';
 import type { AutomaticFiling } from '#shared/integrations/automation';
@@ -33,6 +33,16 @@ import {
   type RelatedIssueFact,
 } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, formatDate } from '#shared/integrations/messages';
+import {
+  buildRunIssue as buildRunIssueFromFacts,
+  listedRunTests,
+  withComment,
+  type IssueComment,
+  type RunIssueFacts,
+  type RunTestFact,
+  type RunTestResult,
+} from '#shared/integrations/run-issue';
+import { isFlakyExecution } from '#shared/utils/test-counts';
 import type { DrizzleDB } from '#shared/handlers/db';
 
 function scmCommit(metadata: unknown): string | null {
@@ -65,6 +75,13 @@ export interface DocumentBuildOpts extends IssueBuildOpts {
   shareUrl?: string | null;
   /** Set when a rule files the issue: the body opens with what it counted. */
   automatic?: AutomaticFiling | null;
+  /** What the person filing it wrote: the body opens with it. */
+  comment?: IssueComment | null;
+}
+
+/** The built issue with the person's comment first, when they wrote one. */
+function commented<T extends BuiltIssue>(built: T, opts: DocumentBuildOpts): T {
+  return { ...built, document: withComment(built.document, opts.locale ?? DEFAULT_LOCALE, opts.comment) };
 }
 
 /** The cluster's share URL when the toggle is on: the one given, else one on the minter's token. */
@@ -265,7 +282,10 @@ export async function buildClusterIssue(
 ): Promise<BuiltClusterIssue | null> {
   const gathered = await gatherClusterFacts(db, clusterId, null, opts);
   if (!gathered) return null;
-  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
+  return commented(
+    { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl },
+    opts,
+  );
 }
 
 /**
@@ -290,7 +310,10 @@ export async function buildExecutionIssue(
   // title is the same from either entry point.
   const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, opts);
   if (!gathered) return null;
-  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
+  return commented(
+    { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl },
+    opts,
+  );
 }
 
 /**
@@ -329,5 +352,180 @@ export async function buildBugReportIssue(
       .catch(() => null),
     reportUrl: link(base, `/bug-reports/${report.id}`),
   };
-  return { ...buildBugIssue(facts, { locale }), projectId: report.projectId, shareUrl: null };
+  return commented({ ...buildBugIssue(facts, { locale }), projectId: report.projectId, shareUrl: null }, opts);
+}
+
+// ---------------------------------------------------------------------------
+// Runs, and executions with no failure cluster
+
+/** What a person adds when they file a run's or an execution's issue. */
+export interface RunIssueBuildOpts {
+  locale?: DocumentBuildOpts['locale'];
+  siteUrl?: string | null;
+  comment?: IssueComment | null;
+  filedBy?: string | null;
+}
+
+export interface BuiltRunIssue extends BuiltIssue {
+  projectId: number;
+  runId: number;
+}
+
+/** A stored status as the issue names it, a pass after a failed attempt counting as flaky. */
+function runTestResult(row: { status: string; retries: number | null; attempts: unknown }): RunTestResult {
+  const status = row.status.toLowerCase();
+  if (status === 'passed') {
+    return isFlakyExecution(row as Parameters<typeof isFlakyExecution>[0]) ? 'flaky' : 'passed';
+  }
+  if (status === 'failed') return 'failed';
+  if (status === 'timedout') return 'timedOut';
+  if (status === 'skipped') return 'skipped';
+  if (status === 'interrupted') return 'interrupted';
+  return 'didNotRun';
+}
+
+/** The facts of a run, or of one of its executions when `executionId` is given. Null when either is gone. */
+async function gatherRunFacts(
+  db: DrizzleDB,
+  runId: number,
+  executionId: number | null,
+  opts: RunIssueBuildOpts,
+): Promise<{ facts: RunIssueFacts; projectId: number } | null> {
+  const [run] = await db
+    .select({
+      id: testRuns.id,
+      projectId: testRuns.projectId,
+      projectName: projects.name,
+      branch: testRuns.branch,
+      commit: testRuns.commit,
+      environment: testRuns.environment,
+      startTime: testRuns.startTime,
+      total: testRuns.totalTests,
+      passed: testRuns.passedTests,
+      failed: testRuns.failedTests,
+      flaky: testRuns.flakyTests,
+      skipped: testRuns.skippedTests,
+    })
+    .from(testRuns)
+    .innerJoin(projects, eq(projects.id, testRuns.projectId))
+    .where(eq(testRuns.id, runId));
+  if (!run) return null;
+
+  const rows = await db
+    .select({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      retries: testRunsCases.retries,
+      attempts: testRunsCases.attempts,
+      line: testRunsCases.line,
+      browser: testRunsCases.browser,
+      error: testRunsCases.error,
+      clusterId: testRunsCases.failureClusterId,
+      title: testCases.title,
+      filePath: testCases.filePath,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
+    .where(
+      executionId != null
+        ? and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.id, executionId))
+        : and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.finalAttempt, true)),
+    )
+    .orderBy(asc(testRunsCases.id));
+  if (executionId != null && rows.length === 0) return null;
+
+  const base = site(opts);
+  const tests: RunTestFact[] = rows.map((row) => ({
+    title: row.title,
+    filePath: row.filePath,
+    line: row.line,
+    project: (row.browser as { projectName?: string } | null)?.projectName ?? null,
+    result: runTestResult(row),
+    url: link(base, `/test-run-cases/${row.id}`),
+    errorExcerpt: errorExcerpt(row.error) ?? null,
+  }));
+  const listed = executionId != null ? { tests, moreTests: 0 } : listedRunTests(tests);
+
+  const clusterIds = [...new Set(rows.map((r) => r.clusterId).filter((id): id is number => id != null))];
+  const clusterRows = clusterIds.length
+    ? await db
+        .select({
+          id: failureClusters.id,
+          title: failureClusters.title,
+          signature: failureClusters.signature,
+          errorType: failureClusters.errorType,
+          selector: failureClusters.selector,
+          sampleError: failureClusters.sampleError,
+        })
+        .from(failureClusters)
+        .where(inArray(failureClusters.id, clusterIds))
+    : [];
+  const issues = await clusterKnownIssues(db, clusterIds);
+
+  const facts: RunIssueFacts = {
+    runId: run.id,
+    projectName: run.projectName,
+    branch: run.branch,
+    commit: run.commit ? run.commit.slice(0, 12) : null,
+    environment: run.environment,
+    startedAt: formatDate(opts.locale ?? DEFAULT_LOCALE, run.startTime),
+    counts: { total: run.total, passed: run.passed, failed: run.failed, flaky: run.flaky, skipped: run.skipped },
+    tests: listed.tests,
+    moreTests: listed.moreTests,
+    clusters: clusterRows.map((cluster) => {
+      const issue = issues.get(cluster.id);
+      return {
+        id: cluster.id,
+        title: describeCluster(cluster),
+        url: link(base, `/failure-clusters/${cluster.id}`),
+        issueKey: issue?.key ?? null,
+        issueUrl: issue?.url ?? null,
+      };
+    }),
+    runUrl: link(base, `/test-runs/${run.id}`),
+    executionUrl: executionId != null ? link(base, `/test-run-cases/${executionId}`) : null,
+    filedBy: opts.filedBy ?? null,
+  };
+  return { facts, projectId: run.projectId };
+}
+
+/** Build the issue a person files for a run. Null when the run is gone. */
+export async function buildRunIssue(
+  db: DrizzleDB,
+  runId: number,
+  opts: RunIssueBuildOpts = {},
+): Promise<BuiltRunIssue | null> {
+  const gathered = await gatherRunFacts(db, runId, null, opts);
+  if (!gathered) return null;
+  return {
+    ...buildRunIssueFromFacts(gathered.facts, { locale: opts.locale, comment: opts.comment }),
+    projectId: gathered.projectId,
+    runId,
+  };
+}
+
+/**
+ * Build the issue a person files for one execution that belongs to no failure
+ * cluster: a passed test missing a case, a skipped one, a failure not yet
+ * grouped. Titled after the test. Null when the execution is gone.
+ */
+export async function buildStandaloneExecutionIssue(
+  db: DrizzleDB,
+  executionId: number,
+  opts: RunIssueBuildOpts = {},
+): Promise<BuiltRunIssue | null> {
+  const [row] = await db
+    .select({ runId: testRunsCases.testRunId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.id, executionId));
+  if (!row) return null;
+  const gathered = await gatherRunFacts(db, row.runId, executionId, opts);
+  if (!gathered) return null;
+  const built = buildRunIssueFromFacts(gathered.facts, { locale: opts.locale, comment: opts.comment });
+  return {
+    ...built,
+    title: gathered.facts.tests[0]?.title ?? built.title,
+    projectId: gathered.projectId,
+    runId: row.runId,
+  };
 }

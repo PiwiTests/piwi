@@ -17,6 +17,10 @@ that run recorded no branch. An execution's Verify section offers **Re-run this 
 line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. In the
 Verify section, the last dispatch says where it went (_dispatched to Jenkins_), when, by whom, and links to the build.
 
+*Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run them on your machine.
+Its menu adds run options (headed, trace, repeat each up to 10, workers up to 4, and one project for a run of several),
+which the browser remembers, the project aside.
+
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and pick what it dispatches through:
 
