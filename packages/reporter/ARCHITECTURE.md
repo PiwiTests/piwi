@@ -260,15 +260,18 @@ What the package does to a user's run, process by process.
   stop's image and the agent's), which its own timeout bounds, and is made again when one
   began meanwhile; else a bar laid out nowhere in the viewport (a `body` with a transform,
   scrolled down) reads as such, and no band is painted or kept from presses. A frame waits
-  for such an image to be taken, then a second at most for the read; a frame the page
-  painted before the bar came down keeps the last read that found it. The band from the
+  for such an image to be taken, then a second at most for the read; a frame whose read
+  did not answer by then, or at all, and one the page painted before the bar came down,
+  keep the last read that found the bar laid out, and go as they are when none did. A read
+  made once is kept while the viewport keeps its size: a bar the page moves (a `body` with
+  a transform, scrolled) keeps its band until the next read. The band from the
   viewport's top to that edge is painted gray across the frame with the `jpeg-js` of
   `live-mask.ts`, in the same pass as the secret fields' masks, outside their rest, at the
   lighter quality when too long at the view's, on the worker's thread. A frame the page
   painted after the bar came down goes as it is (one that names no time, before Playwright
   1.61, once the bar has been down a second; Firefox's screencast dates a frame as it
-  arrives, so one it took just before can go unpainted), and so does one whose bar is not
-  read within that second, or with no `jpeg-js`. A painted frame holds the next one back as
+  arrives, so one it took just before can go unpainted), and so does every frame with no
+  `jpeg-js`. A painted frame holds the next one back as
   long again as its decoding, painting and encoding took. An image of the page taken in
   place of a frame names the viewport as the screencast does, the page's own
   (`page.viewportSize()`), else, for a page without one, the image's size at CSS scale,
@@ -285,9 +288,10 @@ What the package does to a user's run, process by process.
   view showing it, is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
   None reaches the pause bar the view paints over: a press or a click on its band, read as
-  each is played (`laneBarBand`), is not played, nor the release of a button pressed there
-  and not pressed again since, and the answer says how many were not played. A key's
-  release always plays, as the bar listens to presses alone; a key's press plays while no
+  each is played (`laneBarBand`), is not played, and the answer says how many were not
+  played. A release, of a button or a key, always plays: the bar's buttons answer a click
+  alone, which needs its press on the same button, and the bar listens to key presses
+  alone. A key's press plays while no
   bar shows, or once the draw of the bar that shows is held inert by the message's token
   (`keyMayPlay`: the bar's `inert`, and its `__piwiKeyHolds`), each draw the message meets
   held once, one drawn again after a navigation included, so Tab passes it by, no key

@@ -241,8 +241,6 @@ interface InputState {
   playing: Promise<unknown>;
   waiting: number;
   buttons: Set<ViewButton>;
-  /** The buttons pressed on the pause bar's band, whose presses and releases are not played. */
-  barButtons: Set<ViewButton>;
   keys: Set<string>;
   over: Promise<void>;
   end(): void;
@@ -256,7 +254,6 @@ function freshInput(): InputState {
     playing: Promise.resolve(),
     waiting: 0,
     buttons: new Set(),
-    barButtons: new Set(),
     keys: new Set(),
     over,
     end,
@@ -774,7 +771,8 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
  * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band,
  * read as each press is played, is not played (`offPauseBar`), and a key's press only once the bar that shows is held
- * inert for the message (`keyMayPlay`), which lets go of it as it ends; the answer says how many were not played.
+ * inert for the message (`keyMayPlay`), which lets go of it as it ends; a release, of a button or a key, always plays.
+ * The answer says how many were not played.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
@@ -906,20 +904,13 @@ function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
 
 /**
  * Whether a viewer's `event` may be played: not a press or a click within the band of the pause bar the view paints
- * over, read as it is played (`laneBarBand`), nor the release of a button pressed there and not pressed since.
+ * over, read as it is played (`laneBarBand`). A button's release always plays: the bar's buttons answer a click alone,
+ * which needs its press on the same button.
  */
 async function offPauseBar(page: Page, event: ViewInput, own: InputState): Promise<boolean> {
-  if (event.type !== 'mouse') return true;
-  if (event.action === 'up') return !own.barButtons.delete(event.button);
-  if (event.action !== 'down' && event.action !== 'click') return true;
+  if (event.type !== 'mouse' || (event.action !== 'down' && event.action !== 'click')) return true;
   const band = await Promise.race([laneBarBand(page), own.over.then(() => null)]);
-  if (band !== null && event.y < band) {
-    if (event.action === 'down') own.barButtons.add(event.button);
-    return false;
-  }
-  // A press played elsewhere is the one its button's next release lets go of.
-  own.barButtons.delete(event.button);
-  return true;
+  return band === null || event.y >= band;
 }
 
 /** Play one event on the page as trusted input, keeping what it holds down. */

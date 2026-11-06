@@ -15,8 +15,8 @@ import { jpegBand, startServer, type FakeServer, withoutCi } from './_helpers.js
  * the run names asks the worker's lane once, as Piwi Picker's Runs window does when a person clicks Watch on a running
  * row, and hears its frames through the worker's tests and its stop, plays a click at the stop through them, sees the
  * page's secret field painted over, and hears no frame once it turned the view off. A worker of a headed project then
- * stops with its pause bar drawn: the lane's frames have the bar painted over, no click on its band is played, and the
- * release of a button pressed on the band, then again below it, plays.
+ * stops with its pause bar drawn: the lane's frames have the bar painted over, no click on its band is played, and a
+ * button's release always plays, none of the bar's buttons answering a release alone.
  * Under `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`).
  */
@@ -113,13 +113,25 @@ let offAt = Infinity;
 /** What the stop of the still page sent: its own view's frames, and the lane's frames naming it. */
 const still: { viewFrames: number; laneFrames: number } = { viewFrames: 0, laneFrames: 0 };
 /**
- * The headed stop: what the clicks across its pause bar's band were answered, what a press on the band and a click
- * elsewhere after it were, and whether the stop still held after them.
+ * The headed stop: what the clicks across its pause bar's band were answered, what a press on the band, a click below
+ * it, a press below it whose release is lost, a press on the band and a release there, and presses below the band let
+ * go across it, were answered, then a click on the band again, and whether the stop still held after them.
  */
-const headed: { clicks: string[]; pressOnBand: string; pressElsewhere: string; heldAfter: boolean } = {
+const headed: {
+  clicks: string[];
+  pressOnBand: string;
+  pressElsewhere: string;
+  lostRelease: string[];
+  releasesOnBand: string[];
+  clickAfter: string;
+  heldAfter: boolean;
+} = {
   clicks: [],
   pressOnBand: '',
   pressElsewhere: '',
+  lostRelease: [],
+  releasesOnBand: [],
+  clickAfter: '',
   heldAfter: false,
 };
 let tests: Array<{ title: string; status: string; errors: string[] }> = [];
@@ -210,6 +222,27 @@ async function onMessage(message: RunToHub): Promise<void> {
           { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
           { type: 'mouse', action: 'up', x: 500, y: 400, button: 'left' },
         ])
+      ).message;
+      // A press below the band whose release is lost, a press on the band, then a release there: it lets go of the
+      // button the page holds down.
+      for (const event of [
+        { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
+        { type: 'mouse', action: 'down', x: 500, y: 6, button: 'left' },
+        { type: 'mouse', action: 'up', x: 500, y: 6, button: 'left' },
+      ]) {
+        headed.lostRelease.push((await play([event])).message);
+      }
+      // A press below the band let go on each of the bar's buttons in turn: none of them answers a release alone.
+      for (let x = 20; x < VIEWPORT.width; x += 40) {
+        const answer = await play([
+          { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
+          { type: 'mouse', action: 'up', x, y: 6, button: 'left' },
+        ]);
+        headed.releasesOnBand.push(answer.message);
+      }
+      // The bar still shows: a click on its band is still not played.
+      headed.clickAfter = (
+        await play([{ type: 'mouse', action: 'click', x: 500, y: 6, button: 'left', clickCount: 1 }])
       ).message;
       await sleep(300);
       headed.heldAfter = !heard.slice(since).some(({ message: m }) => m.type === 'running' && m.stop === stop);
@@ -452,6 +485,10 @@ describe('the lane view of a worker', () => {
       'Played 0 of 1 event: 1 not played, as the pause bar the view paints over would take it.',
     );
     expect(headed.pressElsewhere).toBe('Played 2 events.');
+    const NOT_PLAYED = 'Played 0 of 1 event: 1 not played, as the pause bar the view paints over would take it.';
+    expect(headed.lostRelease).toEqual(['Played 1 event.', NOT_PLAYED, 'Played 1 event.']);
+    expect(new Set(headed.releasesOnBand)).toEqual(new Set(['Played 2 events.']));
+    expect(headed.clickAfter).toBe(NOT_PLAYED);
     expect(headed.heldAfter).toBe(true);
   });
 });

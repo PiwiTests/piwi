@@ -65,7 +65,8 @@ responsibilities.
      `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
      view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
      stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, none on the pause
-     bar's band nor a key the bar was not held inert for, `tests/page-view-bar.spec.ts`), runs the bar's actions in a headless page through
+     bar's band nor a key press the bar was not held inert for, a release always played,
+     `tests/page-view-bar.spec.ts`), runs the bar's actions in a headless page through
      it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
      never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
      each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's

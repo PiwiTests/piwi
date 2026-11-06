@@ -28,7 +28,7 @@ import { callMethod, internalCall } from './quiet-capture.js';
 const SCREENCAST_LAG_MS = 100;
 /**
  * How long a frame waits for the pause bar's box to be read, once no image of the page is being taken without the bar,
- * before it goes as it is.
+ * before the latest read that found the bar laid out stands in for it.
  */
 const BAR_READ_MS = 1000;
 /** How old a frame that names no time (before Playwright 1.61) is taken to be, against when the pause bar came down. */
@@ -225,8 +225,9 @@ const sameSize = (a: Size, b: Size): boolean => Math.abs(a.width - b.width) <= 1
  * pixels, as `screen` hands it over. The bar's bottom edge is read with the viewport's size; while the bar shows, it is
  * read again for a view that began after the latest read, after a read without a band, and for a frame that names
  * another size than that read, unless the read was made for it already. The frame waits for an image of the page
- * taken without the bar to end, then `BAR_READ_MS` at most for the read. None when the frame shows no bar, the bar is
- * laid out nowhere in the viewport, or no read answered.
+ * taken without the bar to end, then `BAR_READ_MS` at most for the read: one that did not answer by then, or at all,
+ * gives way to the latest read that found the bar laid out. None when the frame shows no bar, the bar is laid out
+ * nowhere in the viewport, or no read found it laid out.
  */
 async function pauseBarBoxes(page: Page, frame: PageFrame, since: number): Promise<FrameBox[]> {
   const bar = PAUSE_BARS.get(page);
