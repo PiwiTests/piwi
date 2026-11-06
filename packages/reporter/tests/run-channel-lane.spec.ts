@@ -15,7 +15,8 @@ import { jpegBand, startServer, type FakeServer, withoutCi } from './_helpers.js
  * the run names asks the worker's lane once, as Piwi Picker's Runs window does when a person clicks Watch on a running
  * row, and hears its frames through the worker's tests and its stop, plays a click at the stop through them, sees the
  * page's secret field painted over, and hears no frame once it turned the view off. A worker of a headed project then
- * stops with its pause bar drawn: the lane's frames have the bar painted over, and no click on its band is played.
+ * stops with its pause bar drawn: the lane's frames have the bar painted over, no click on its band is played, and the
+ * release of a button pressed on the band, then again below it, plays.
  * Under `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`).
  */
@@ -111,8 +112,16 @@ const answers: Record<string, unknown[]> = {};
 let offAt = Infinity;
 /** What the stop of the still page sent: its own view's frames, and the lane's frames naming it. */
 const still: { viewFrames: number; laneFrames: number } = { viewFrames: 0, laneFrames: 0 };
-/** The headed stop: what the clicks across its pause bar's band were answered, and whether it still held after them. */
-const headed: { clicks: string[]; heldAfter: boolean } = { clicks: [], heldAfter: false };
+/**
+ * The headed stop: what the clicks across its pause bar's band were answered, what a press on the band and a click
+ * elsewhere after it were, and whether the stop still held after them.
+ */
+const headed: { clicks: string[]; pressOnBand: string; pressElsewhere: string; heldAfter: boolean } = {
+  clicks: [],
+  pressOnBand: '',
+  pressElsewhere: '',
+  heldAfter: false,
+};
 let tests: Array<{ title: string; status: string; errors: string[] }> = [];
 let output = '';
 
@@ -193,6 +202,15 @@ async function onMessage(message: RunToHub): Promise<void> {
         })) as { message: string };
         headed.clicks.push(answer.message);
       }
+      // A press on the band, never let go there, then a press and its release on the page below the band.
+      const play = async (events: unknown[]) => ((await ask({ what: 'input', stop, events })) as { message: string });
+      headed.pressOnBand = (await play([{ type: 'mouse', action: 'down', x: 500, y: 6, button: 'left' }])).message;
+      headed.pressElsewhere = (
+        await play([
+          { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
+          { type: 'mouse', action: 'up', x: 500, y: 400, button: 'left' },
+        ])
+      ).message;
       await sleep(300);
       headed.heldAfter = !heard.slice(since).some(({ message: m }) => m.type === 'running' && m.stop === stop);
     } finally {
@@ -429,6 +447,11 @@ describe('the lane view of a worker', () => {
     expect(new Set(headed.clicks)).toEqual(
       new Set(['Played 1 of 2 events: 1 not played, as the pause bar the view paints over would take it.']),
     );
+    // The release of a button pressed again below the band plays: none stays held down in the page.
+    expect(headed.pressOnBand).toBe(
+      'Played 0 of 1 event: 1 not played, as the pause bar the view paints over would take it.',
+    );
+    expect(headed.pressElsewhere).toBe('Played 2 events.');
     expect(headed.heldAfter).toBe(true);
   });
 });

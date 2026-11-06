@@ -162,8 +162,8 @@ What the package does to a user's run, process by process.
   or, for a stop whose page the worker cannot tell, any page of its context closed) ends
   the same way with or without a bar, and the editor gets `running`.
 - The editor can ask for an image of the stopped page: a JPEG screenshot without the
-  pause bar, at the viewport's size in CSS pixels, its secret fields painted over
-  (`maskedImage`), taken through an internal call. It gets none for a stop whose page the
+  pause bar (`withoutPauseBar`, as the agent's image is), at the viewport's size in CSS
+  pixels, its secret fields painted over (`maskedImage`), taken through an internal call. It gets none for a stop whose page the
   worker cannot tell (a navigation or a key press in a context with several pages), and
   none of another shape than the viewport's. The live view's frames are painted over as
   the instance's are (`maskSecretFields`). The titles of the stops and calls the run
@@ -251,26 +251,28 @@ What the package does to a user's run, process by process.
   what the sinks ask changes. Nothing runs while no sink subscribes.
 - At a headed stop, that view paints the pause bar over in each frame, for every sink, as
   the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views
-  as it draws the bar and once it is down (`pauseBarShows`). The bar's bottom edge and the
-  viewport's size, in CSS pixels, are read through an internal call as soon as it is drawn,
-  and again for a view that began after that read, for a frame that names another viewport
-  than the read was made for (the bar wraps onto a second row on a narrower one), and after
-  a read that did not find it. A read that finds the bar laid out nowhere, as while an image
-  of the page is taken without it, tries again every 50 ms for a second, then counts as not
-  found; a frame the page painted before the bar came down keeps the last read that found
-  it. A read made for the frame's viewport that still names another size, at one scale on
-  both axes, is of a page zoomed in, whose screencast names its viewport in more pixels than
-  CSS ones: the band is scaled to it; no other read is. The band from the viewport's top to
-  that edge is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
-  (`paintBoxes`), in the same pass as the secret fields' masks, outside their rest, at the
-  lighter quality when too long at the view's. A frame the page painted after the bar came
-  down goes as it is (one that names no time, before Playwright 1.61, once the bar has been
-  down a second; Firefox's screencast dates a frame as it arrives, so one it took just
-  before can go unpainted), and so does one whose bar is not read within a second, or with
-  no `jpeg-js`. A painted frame holds the next one back as long again as its decoding,
-  painting and encoding took. An image of the page taken in place of a frame names the
-  viewport as the screencast does, the page's own (`page.viewportSize()`), else, for a page
-  without one, the image's size at CSS scale, which Playwright gives in no other pixels.
+  as it draws the bar and once it is down (`pauseBarShows`). The mask hands the view each
+  frame it lets go, in CSS pixels, and the bar's bottom edge and the viewport's size are
+  read through an internal call as soon as the bar is drawn, and again for a view that
+  began after that read, for a frame that names another viewport than the read was made for
+  (the bar wraps onto a second row on a narrower one), and after a read without a band. A
+  read waits for an image of the page being taken without the bar (`withoutPauseBar`, the
+  stop's image and the agent's), which its own timeout bounds, and is made again when one
+  began meanwhile; else a bar laid out nowhere in the viewport (a `body` with a transform,
+  scrolled down) reads as such, and no band is painted or kept from presses. A frame waits
+  for such an image to be taken, then a second at most for the read; a frame the page
+  painted before the bar came down keeps the last read that found it. The band from the
+  viewport's top to that edge is painted gray across the frame with the `jpeg-js` of
+  `live-mask.ts`, in the same pass as the secret fields' masks, outside their rest, at the
+  lighter quality when too long at the view's, on the worker's thread. A frame the page
+  painted after the bar came down goes as it is (one that names no time, before Playwright
+  1.61, once the bar has been down a second; Firefox's screencast dates a frame as it
+  arrives, so one it took just before can go unpainted), and so does one whose bar is not
+  read within that second, or with no `jpeg-js`. A painted frame holds the next one back as
+  long again as its decoding, painting and encoding took. An image of the page taken in
+  place of a frame names the viewport as the screencast does, the page's own
+  (`page.viewportSize()`), else, for a page without one, the image's size at CSS scale,
+  which Playwright gives in no other pixels.
 - `view-lane`, to a worker whose `run-attach` lists it in `features` (`takes` holds 16
   entries at most), shows the lane until it is turned off or the connection closes, through
   the worker's tests and stops: each frame goes as `lane-frame` with the test it shows and
@@ -283,15 +285,16 @@ What the package does to a user's run, process by process.
   view showing it, is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
   None reaches the pause bar the view paints over: a press or a click on its band, read as
-  each is played (`laneBarBand`), is not played, nor the release of a button pressed there,
-  and the answer says how many were not played. A key plays while no bar shows, or once the
-  draw of the bar that shows is held inert by the message's token (`keyMayPlay`: the bar's
-  `inert`, and its `__piwiKeyHolds`), each draw the message meets held once, one drawn again
-  after a navigation included, so Tab passes it by, no key presses its buttons, and Escape,
-  which an inert bar leaves to the page, closes the page's own dialog and resumes nothing.
-  A draw the page did not answer the hold for within 10 seconds takes none of the message's
-  keys. The message lets go of its own hold as it ends while its stop holds; once the stop
-  ended, it sends neither, the bar taken down with the stop.
+  each is played (`laneBarBand`), is not played, nor the release of a button pressed there
+  and not pressed again since, and the answer says how many were not played. A key's
+  release always plays, as the bar listens to presses alone; a key's press plays while no
+  bar shows, or once the draw of the bar that shows is held inert by the message's token
+  (`keyMayPlay`: the bar's `inert`, and its `__piwiKeyHolds`), each draw the message meets
+  held once, one drawn again after a navigation included, so Tab passes it by, no key
+  presses its buttons, and Escape, which an inert bar leaves to the page, closes the page's
+  own dialog and resumes nothing. A draw the page did not answer the hold for within 10
+  seconds takes none of the message's presses. The message lets go of its own hold as it
+  ends while its stop holds; once the stop ended, it sends neither.
 - At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the

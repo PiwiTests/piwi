@@ -8,7 +8,7 @@ import {
   laneTestEnded,
   subscribeLane,
 } from '../src/internal/capture/lane-feed.js';
-import { jpegCodec, maskSecretFields } from '../src/internal/capture/live-mask.js';
+import { jpegCodec, maskSecretFields, withoutPauseBar } from '../src/internal/capture/live-mask.js';
 import {
   openPageView,
   pauseBarShows,
@@ -20,14 +20,16 @@ import { keyMayPlay, type BarHold } from '../src/internal/capture/run-channel.js
 import { jpegBand } from './_helpers.js';
 
 /**
- * The pause bar painted over in a live view's frames, in a real page (`page-view.ts`): its band read again as the
- * viewport changes, the bar wrapping on a narrower one, for the paint and for the band a viewer's presses keep from,
- * whether the view watched it change or opened after; a read made while an image of the page hid the bar kept for no
- * later frame; a frame held back until the bar came down painted from the read made as it was drawn; the band painted
- * in the same pass as the secret fields' masks, at the lighter quality when the frame is too long at the view's, and
- * the next frame held back for that paint alone; the lane's frames painted for every sink, its band following the bar
- * drawn again. Each frame is decoded and its pixels checked. A viewer's key waits for the bar to be held inert, plays
- * once no bar shows, and holds nothing once its stop ended (`keyMayPlay`).
+ * The pause bar painted over in a live view's frames, in a real page (`page-view.ts`), each frame screened by the
+ * secret fields' mask as the lane's are: its band read again as the viewport changes, the bar wrapping on a narrower
+ * one, for the paint and for the band a viewer's presses keep from, whether the view watched it change or opened
+ * after; a frame from before an image of the page taken without the bar, its bar read while that image is taken,
+ * painted once it is; a bar laid out nowhere in the viewport painted nowhere, at one read a frame; a frame held back
+ * until the bar came down painted from the read made as it was drawn; the band painted in the same pass as the secret
+ * fields' masks, at the lighter quality when the frame is too long at the view's, and the next frame held back for
+ * that paint alone; the lane's frames painted for every sink, its band following the bar drawn again. Each frame is
+ * decoded and its pixels checked. A viewer's key press waits for the bar to be held inert, plays once no bar shows,
+ * and holds nothing once its stop ended; a key's release always plays (`keyMayPlay`).
  */
 
 /** A page of noise below where the bar shows, which no JPEG makes small. */
@@ -44,8 +46,9 @@ const ANIMATED = `<!doctype html><style>body { margin: 0; padding: 200px 20px 20
 #spin { width: 80px; height: 80px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <div id="spin"></div>`;
 
-/** What an image of the page taken without the pause bar applies while it is taken. */
-const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+/** A page whose `body` has a transform, which the fixed pause bar is laid out in: scrolled down, the bar is too. */
+const TRANSFORMED = `<!doctype html><style>body { margin: 0; height: 4000px; background: white; transform: translateZ(0) }</style>
+<h1>Shop</h1>`;
 
 /** A white page, its content and a password field below where the bar shows. */
 const PAGE = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; padding: 200px 20px 20px; background: white }
@@ -96,9 +99,10 @@ describe('the pause bar in a live view of its page', () => {
   /** The bar's bottom edge as the page lays it out now, in CSS pixels. */
   const barBottom = () => page.locator('#__piwi-pause-bar').evaluate((bar) => bar.getBoundingClientRect().bottom);
 
-  /** A view of the page, the frames it sends kept. */
+  /** A view of the page, the frames it sends kept, each screened by the secret fields' mask unless `screen` says. */
   const watch = async (screen?: PageViewOptions['screen']) => {
     const sent: PageFrame[] = [];
+    const mask = maskSecretFields(page, { masks: () => [], quality: 60, lightQuality: 30, maxBytes: 384 * 1024 });
     const view = await openPageView(page, {
       size: (viewport) => viewport,
       quality: 60,
@@ -108,7 +112,7 @@ describe('the pause bar in a live view of its page', () => {
       shotMs: 500,
       busy: () => false,
       live: () => true,
-      ...(screen ? { screen } : {}),
+      screen: screen ?? ((frame, also) => mask.screen(frame, also)),
       send: (frame) => void sent.push(frame),
       refuse: () => undefined,
     });
@@ -173,34 +177,66 @@ describe('the pause bar in a live view of its page', () => {
     }
   });
 
-  it('reads the bar again once an image of the page taken without it is done, briefly or past a read’s wait', async () => {
-    for (const hiddenMs of [300, 1600]) {
-      page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
-      await page.setContent(PAGE);
-      const { view, sent } = await watch();
-      await waitFor(() => sent[0]);
-      // The bar is drawn while the page is taken without it, as the stop's image is: the read made then finds no box.
-      const hidden = await page.addStyleTag({ content: BAR_HIDDEN });
-      const takeDown = await drawBar();
-      try {
-        await sleep(hiddenMs);
-        const from = sent.length;
-        await hidden.evaluate((style) => (style as unknown as { remove(): void }).remove());
-        const bottom = await barBottom();
-        // The first frame that shows the bar again, the page's white gone from its band, is painted over, and presses
-        // keep from its band.
-        const shown = await waitFor(() =>
-          sent.slice(from).find((frame) => !white(jpegBand(frame.data, frame.height, 2, bottom - 2).mean)),
-        );
-        const band = jpegBand(shown.data, shown.height, 2, bottom - 2);
-        expect(band.violet, `hidden ${hiddenMs} ms`).toBe(0);
-        expect(gray(band.mean), `hidden ${hiddenMs} ms: ${band.mean.join(', ')}`).toBe(true);
-        expect(await view.barBand()).toBeCloseTo(bottom, 0);
-      } finally {
-        await view.close();
-        await takeDown();
-        await page.close();
+  it('paints a frame from before an image of the page taken without the bar, its bar read once that image is taken', async () => {
+    page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+    await page.setContent(PAGE);
+    const takeDown = await drawBar();
+    const bottom = await barBottom();
+    let reached!: () => void;
+    const held = new Promise<void>((resolve) => (reached = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const boxes: FrameBox[][] = [];
+    // The view's first frame, which reads the bar again, held back as the masks' reads hold one.
+    const { view } = await watch(async (frame, also) => {
+      reached();
+      await gate;
+      boxes.push(await also(frame));
+      return frame;
+    });
+    try {
+      await held;
+      // An image of the page taken without the bar, which hides it longer than a read waits: the frame's read is made
+      // while it is taken, and waits for it.
+      const taken = withoutPauseBar(page, async (style) => {
+        const hidden = await page.addStyleTag({ content: style });
+        await sleep(1500);
+        await hidden.evaluate((tag) => (tag as unknown as { remove(): void }).remove());
+      });
+      await sleep(100);
+      release();
+      const [box] = await waitFor(() => boxes[0]);
+      expect(box?.height).toBeCloseTo(bottom, 0);
+      await taken;
+    } finally {
+      release();
+      await view.close();
+      await takeDown();
+      await page.close();
+    }
+  }, 30_000);
+
+  it('paints no band and keeps presses from none for a bar laid out nowhere in the viewport, at one read a frame', async () => {
+    page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+    await page.setContent(TRANSFORMED);
+    // Drawn, then scrolled out of the viewport with the body it is laid out in: the read made as it was drawn is stale.
+    const takeDown = await drawBar();
+    expect(await barBottom()).toBeGreaterThan(0);
+    await page.evaluate(() => (globalThis as unknown as { scrollTo(x: number, y: number): void }).scrollTo(0, 2000));
+    expect(await barBottom()).toBeLessThanOrEqual(0);
+    const { view, sent } = await watch();
+    try {
+      const [frame] = await waitFor(() => sent.length > 0 && sent);
+      expect(white(jpegBand(frame!.data, frame!.height, 2, 40).mean)).toBe(true);
+      for (let i = 0; i < 3; i++) {
+        const asked = Date.now();
+        expect(await view.barBand()).toBeNull();
+        expect(Date.now() - asked).toBeLessThan(300);
       }
+    } finally {
+      await view.close();
+      await takeDown();
+      await page.close();
     }
   }, 30_000);
 
@@ -353,6 +389,7 @@ describe('the pause bar in a live view of its page', () => {
     }
   });
 
+  const PRESS = { action: 'press' } as const;
   /** A message's hold on the bar, before it met any. */
   const freshHold = (token: number): BarHold => ({ token, drawn: null, held: false, sent: false });
   const never = new Promise<void>(() => undefined);
@@ -363,16 +400,19 @@ describe('the pause bar in a live view of its page', () => {
     const takeDown = await drawBar();
     try {
       const hold = freshHold(1);
-      expect(await keyMayPlay(page, hold, never, () => true)).toBe(true);
+      expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(true);
       expect(hold).toMatchObject({ held: true, sent: true });
       expect(await page.locator('#__piwi-pause-bar').evaluate((bar) => (bar as unknown as { inert: boolean }).inert)).toBe(true);
       // A draw the hold is not answered for, as one a navigation takes away, takes none of the message's keys.
       const failed = pauseBarShows(page, Promise.reject(new Error('Execution context was destroyed')));
-      expect(await keyMayPlay(page, hold, never, () => true)).toBe(false);
-      expect(await keyMayPlay(page, hold, never, () => true)).toBe(false);
+      expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(false);
+      expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(false);
+      // A key's release plays all the same: the bar listens to presses alone.
+      expect(await keyMayPlay(page, { action: 'up' }, hold, never, () => true)).toBe(true);
+      expect(await keyMayPlay(page, { action: 'down' }, hold, never, () => true)).toBe(false);
       // Once that bar is down, with none drawn again, the message's next keys play.
       failed();
-      expect(await keyMayPlay(page, hold, never, () => true)).toBe(true);
+      expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(true);
     } finally {
       await takeDown();
       await page.close();
@@ -390,7 +430,7 @@ describe('the pause bar in a live view of its page', () => {
     let going = true;
     const hold = freshHold(2);
     try {
-      const asked = keyMayPlay(page, hold, over, () => going);
+      const asked = keyMayPlay(page, PRESS, hold, over, () => going);
       await sleep(200);
       going = false;
       end();

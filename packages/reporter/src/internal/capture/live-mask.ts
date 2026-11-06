@@ -86,7 +86,7 @@ const UNREADABLE_MASKS =
   'The project masks elements this reporter cannot read: no image goes. Update @piwitests/reporter.';
 
 type Image = { width: number; height: number; data: Uint8Array };
-export type JpegJs = {
+type JpegJs = {
   decode(data: Buffer, options: { useTArray: true; formatAsRGBA: true }): Image;
   encode(image: Image, quality: number): { data: Buffer };
 };
@@ -359,7 +359,7 @@ function shrink(image: Image, width: number, height: number): Image {
 }
 
 /** `frame` with `boxes` painted over, at most `size` and at `quality`. */
-export function paintBoxes(
+function paintBoxes(
   jpeg: JpegJs,
   frame: PageFrame,
   boxes: Box[],
@@ -433,28 +433,63 @@ async function secretBoxes(page: Page): Promise<Omit<Read, 'began' | 'ended'> | 
   return { ...read, boxes: [...read.boxes, ...(measured as Box[][]).flat()] };
 }
 
+/** What an image of a page taken without Piwi's pause bar applies to the page while it is taken. */
+const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+
+/** The images of a page being taken without the pause bar, and how many began. */
+interface BarHiddenShots {
+  running: Set<Promise<unknown>>;
+  begun: number;
+}
+
+const BAR_HIDDEN_SHOTS = new WeakMap<Page, BarHiddenShots>();
+
+/**
+ * Take an image of `page` without Piwi's pause bar: `take` applies `style` to the page while it runs, and each read of
+ * the bar (`page-view.ts`) waits for it to end, which its own timeout bounds.
+ */
+export function withoutPauseBar<T>(page: Page, take: (style: string) => Promise<T>): Promise<T> {
+  let shots = BAR_HIDDEN_SHOTS.get(page);
+  if (!shots) BAR_HIDDEN_SHOTS.set(page, (shots = { running: new Set(), begun: 0 }));
+  const own = shots;
+  const taken = take(BAR_HIDDEN);
+  const ended = taken.catch(() => undefined);
+  own.running.add(ended);
+  own.begun++;
+  void ended.then(() => own.running.delete(ended));
+  return taken;
+}
+
+/** How many images of `page` without the pause bar began so far, and what settles once none is being taken. */
+export function barHiddenShots(page: Page): { begun: number; ended: Promise<unknown> } {
+  const shots = BAR_HIDDEN_SHOTS.get(page);
+  return { begun: shots?.begun ?? 0, ended: Promise.all(shots ? [...shots.running] : []) };
+}
+
 /**
  * An image of `page`'s viewport, at its size in CSS pixels, with its secret fields (`SECRET_FIELD_SELECTOR`, in every
  * frame) painted over in the image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
  * boxes (`secretBoxes`), through `internalCall`, which must agree. Null when they do not, when the page cannot be read
- * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is
- * taken.
+ * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. With `withoutBar`, the image is
+ * taken without Piwi's pause bar (`withoutPauseBar`).
  */
 export async function maskedImage(
   page: Page,
-  options: { quality: number; style?: string; timeout: number },
+  options: { quality: number; withoutBar?: boolean; timeout: number },
 ): Promise<Buffer | null> {
   const before = await secretBoxes(page);
   if (!before) return null;
-  const shot = await internalCall(page, () =>
-    page.screenshot({
-      type: 'jpeg',
-      quality: options.quality,
-      scale: 'css',
-      timeout: options.timeout,
-      ...(options.style ? { style: options.style } : {}),
-    }),
-  ).catch(() => null);
+  const screenshot = (style?: string) =>
+    internalCall(page, () =>
+      page.screenshot({
+        type: 'jpeg',
+        quality: options.quality,
+        scale: 'css',
+        timeout: options.timeout,
+        ...(style ? { style } : {}),
+      }),
+    );
+  const shot = await (options.withoutBar ? withoutPauseBar(page, screenshot) : screenshot()).catch(() => null);
   if (!shot) return null;
   const after = await secretBoxes(page);
   if (!after || !sameBoxes(before.boxes, after.boxes)) return null;

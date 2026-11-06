@@ -70,7 +70,9 @@ responsibilities.
      never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
      each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's
      secret fields painted over as the instance's are (`live-mask.ts`), each frame of a headed stop with the pause bar
-     painted over in the same pass (`page-view.ts`), and every call's and stop's title, the pause
+     painted over in the same pass (`page-view.ts`; not without `jpeg-js`, for a bar laid out nowhere in the viewport,
+     nor in Firefox's frames dated late or the undated ones before Playwright 1.61, which may show it as it comes
+     down), and every call's and stop's title, the pause
      bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
      (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
      held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
