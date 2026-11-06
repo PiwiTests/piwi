@@ -268,13 +268,13 @@ views are exempt only where a rule says so.
   on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
   a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
 - **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
-  from `plugins/desktop-run-hub.client.ts`, the main window alone): as it opens, then while a local run runs, in the
-  window or the shell, or the hub has a live run (`holdsDesktopRunHub`). While it is open every headless stop waits for
-  the window, so the Local runs tray, in `app.vue` and `error.vue`, opens on each stop once, one heard before it
-  mounted included, and says `show` only for the running runs whose **Hold failures** switch is on (off by default, on
-  for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
-  steps' names (`hubRefs`); expanding a run, closing the tray, TV mode or an error page changes none: the choices live
-  in the runs store (`choices`; `tests/desktop-run-view.spec.ts`, `tests/unit/desktop-run-choices.test.ts`).
+  from `plugins/desktop-run-hub.client.ts`, whatever the layout: a run of the Local runs tray runs, or the hub says it
+  has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
+  window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
+  **Hold failures** switch is on (off by default, on for a reproduction, `desktopHoldsByDefault`; never for a run
+  nobody attends, `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted
+  (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
+  `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

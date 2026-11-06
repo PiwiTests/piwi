@@ -785,9 +785,11 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
    IDE's `…/send` takes a POST alone). The answer must carry `editorTokenProof` for the port the request was sent to,
    compared in constant time.
    - An endpoint without the proof, or with a wrong one, gets nothing, and no hub kept is connected (`unproven`,
-     asked again later).
-   - One answering 404 without it predates the proof (`outdated`). Send to editor then asks to update the editor's
-     Piwi extension or plugin (`common_editorOutdated`).
+     asked again on the backoff `UNPROVEN_RETRIES` times in a row at most, then only as a window asks, the pairing
+     changes or the minute's look again comes).
+   - One answering 404 without it is no editor's Piwi extension of this age (`not-editor` in the Runs window, which
+     drops the hubs kept). Send to editor asks to update the editor's Piwi extension or plugin
+     (`common_editorOutdated`).
 4. Then `GET …/live` with the pairing's token as a bearer token. `parseLiveAnswer` reads the answer: each hub's
    address and token, the address on 127.0.0.1 whatever loopback name the editor gave it (a remote VS Code window
    lists its hub at the port it forwards). The token goes in `hello` before the hub proves anything, so a hub named
@@ -818,22 +820,16 @@ The hubs are found again:
 - when a hub's connection fails, after a wait of 1 s that doubles up to 30 s. The count of failures starts again only
   once a connection opens, never because another hub's runs change. With no Runs window open the worker tries four
   times in a row, then waits to be asked; while a Runs window is open it tries without end;
-- every minute while a Runs window is open and the editor answered with its hubs, so a window of the editor opened
-  since (a second VS Code window, WebStorm beside it) is found;
-- when the popup, the Runs window or the run shortcut asks, the window's **Look again** included.
+- when a hub names a peer no hub found holds (`peers`, an editor window opened since), once for each such peer: a
+  peer carries no token, which the editor's `…/live` gives;
+- every minute (`REFIND_MS`) while a Runs window is open;
+- when the popup, the Runs window or the run shortcut asks.
 
-What each side (the editor, the desktop app) answers decides its connections (`held`), and the state shows each
-side's latest answer:
-
-- `found`: its hubs are those it names. A hub connected already stays; one it no longer names is closed.
-- `unreachable` (closed, a timeout, a server error, an answer it could not read): its connections that answer stay.
-  An unreachable editor also leaves the hubs found last to try, but not at the minute look, which connects nothing
-  without a proof.
-- `unproven` at the minute look: its connections that answer stay, and none is connected. The full find that follows,
-  after the retry's wait (1 s, doubling to 30 s), asks again, and closes them if the program on the port still does not
-  prove itself, as any full find does.
-- Any other answer (`refused`: the pairing was revoked; a pairing gone) closes the side's connections, its runs going
-  with them.
+An unreachable editor leaves the hubs found last to try. A hub whose connection was lost keeps its runs as last heard
+(`away`), which `state` lists with the hub not connected, until it tells its runs again, it refuses its token, or it is
+no longer named; ten minutes at most, and none for a hub whose service said it stopped (1001), which starts again at
+another address. The run shortcut and the popup's count read the runs of the hubs that answer alone (`answeringRuns`). The Runs window shows such a run grayed, its controls held, and its Watch live
+starts again once the hub answers.
 
 ### A connection per hub
 
@@ -861,11 +857,6 @@ side's latest answer:
   stopped there: a `LatestPacer` per window and stop sends at most `MAX_VIEW_FPS` a second, the latest one waiting, no
   other. The latest frame of each view is kept in memory alone, while the view lasts, and goes at once to a window
   that comes to it: the hub sends this connection none for it, and a still page paints no other. None is stored.
-- A connection lost keeps its runs as the hub told them last, marked `lost` with the hub's name then (`RunsRun.lost`),
-  out of the live runs the popup's tile counts and the shortcut steers. They go as the hub's next connection has told
-  its runs (at once, not when a state is next read), as another process welcomes it at that address (`welcome.pid`:
-  the editor or the app started again, its refs counting from the start), as the editor or the desktop app answers
-  `found` without naming it, or ten minutes later, as for an ended run.
 - A connection lost, or closed as the hubs change, ends the views it carried: each window that watched one hears
   `view-ended` (`RunsViewer.ended`).
 - A window's `input` goes on only for a stop it watches itself, else the worker answers `unwatched`; `pick-at` from
@@ -893,8 +884,9 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - The popup's **Runs** tile opens it (`piwi-open-runs`). An open one is brought to the front, found from its port or
   `runtime.getContexts`. Otherwise the worker opens it in a small window of its own
   (`windows.create({ type: 'popup' })`).
-- The tile asks `piwi-runs-summary`, and shows only while a hub answers. Both messages are the extension pages' alone
-  (`EXTENSION_PAGE_MESSAGES`).
+- The tile asks `piwi-runs-summary`, and shows while an editor or the desktop app is paired: muted while none of its
+  hubs answers, its line saying the window tells why (`popup_runsHintAway`). Both messages are the extension pages'
+  alone (`EXTENSION_PAGE_MESSAGES`).
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
@@ -938,17 +930,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   the image's place once one is decoded (aside first, the latest one waiting meanwhile, the others dropped), at the
   window's width, its aspect kept, with a still **Live** badge. Neither the frames nor the badge are read out: the
   view's name says it is live. The view ends with its stop, as the window hides (`visibilitychange`) or closes, and
-  when the person turns it off. While it stays on (`watchLive`, kept by run and slot: `slotKey`, `parallelIndex`), each
-  next stop in the worker's slot is watched too, whichever worker Playwright runs there (one it starts in place of a
-  worker that failed has another index), and the window watches again as it shows. It goes once its run ended or is
-  gone from the state, lost runs counting as there (`watchLiveHolds`), so a later run of the same ref starts without
-  it; after the background worker started again, it waits for the run's hub to answer (`rejoining`): the window
-  draws nothing from the gone worker's state, and asks for no view while it has no worker. The commands
-  still name the worker's index. A view whose hub's connection was lost ends, and why is read out (`runs_liveLost`);
-  its run then shows lost, without its page, and the view is asked again at that stop once a state showed the hub
-  away and the run comes back (`away`). When the hub says why the view sends no frame (`refused`: the page is too
-  heavy for it), its sentence shows under the stop's image in place of the view's start, and is read out, until a
-  frame comes.
+  when the person turns it off. While it stays on (`watchLive`, kept by run and slot, `slotKey`), each next stop of the
+  worker is watched too, a worker Playwright starts in its place after a failure included, and the window watches
+  again as it shows. A view whose hub's connection was lost shows as ended, with why, and starts again at its stop once
+  the hub answers. When the hub says why the view sends no frame (`refused`: the page is too heavy for it), its
+  sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
 - Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
   `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
@@ -980,18 +966,15 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   again (Step, at the next stop); meanwhile another control of the same worker holds it.
 - `#announce` (a polite live region) says when a test stops, goes on, or a run ends, and what a command answered
   under the test.
-- The line under the heading says the window follows the editor while any of its hubs is connected, and the desktop
-  app while its hub is. A run of the app's hub is marked **Desktop app** beside its name. The app holds no editor: it
+- The lines under the heading say how each paired tool stands, one each: the editor's windows it follows, the desktop
+  app's hub, or why one follows none (the empty box's sentence, which the box leaves to the line while there are runs),
+  a broken pairing included. A run of a hub not connected now shows grayed and as last heard (`.run.away`), its
+  controls held (`aria-disabled`, and `send` sends nothing) until the hub answers. A command the worker does not answer
+  within `COMMAND_TIMEOUT_MS` answers `timeout` and frees its buttons. A run of the app's hub is marked **Desktop app**
+  beside its name. The app holds no editor: it
   declines Pick, Record and Assert, which its stops never offer, and the code a stop makes goes to the app's window to
   copy, the hub's sentence saying so (`…: copy it in the desktop app's window.`). With no editor paired, the empty box
   says what the app answered.
-- A run lost with its hub's connection (`lost`) is drawn as an ended one is, its frame dashed and its tests named,
-  with no control and a line saying the connection to its editor was lost (`runs_lost`), the hub named as it was. Its
-  stops' image, view and Watch live stay for its return; a command's answer, a list of requests and Pick on the image
-  go, and an answer that comes after the loss is dropped: a lost run has no stop for commands (`isLiveRun`).
-- The empty box's **Look again** asks the worker to find the hubs at once (`find`), the no-runs state included
-  (`runs.spec.ts`, which counts the editor's answers): a window of the editor opened since is found then, else
-  within the minute.
 - The window pings the worker every 20 s (`RUNS_PING_MS`), which keeps the worker alive while the window is open.
 
 ### The run shortcut
@@ -1010,15 +993,11 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
 
 ### How the runs are tested
 
-- `run-hubs.test.ts` plays the editor's endpoint and each hub's socket: the proof, discovery, the editor asked again
-  every minute while a window is open (a hub opened since connected, the others kept), hello, subscribe, `follow` with
-  the windows, answers, what a code came to, keepalive, backoff and the shortcut; and the live view: `view` as the
-  first window asks and the last one leaves, the frames to the windows that watch alone, the latest one at ten a
-  second, input refused to a window that does not watch, a stop that ended, a connection lost (its runs kept `lost`
-  until the hub tells its runs again, another process answers there, ten minutes pass or the editor names it no more,
-  each shown once, and the view asked again on the next connection); a side's passing failure keeping its
-  connections that answer, the minute look connecting no hub without a fresh proof, and a refused pairing closing its
-  side's connections; and the state narrowed to each window.
+- `run-hubs.test.ts` plays the editor's endpoint and each hub's socket: the proof, discovery, hello, subscribe,
+  `follow` with the windows, answers, what a code came to, keepalive, backoff and the shortcut; and the live view:
+  `view` as the first window asks and the last one leaves, the frames to the windows that watch alone, the latest one
+  at ten a second, input refused to a window that does not watch, a stop that ended, a connection lost, and the state
+  narrowed to each window.
 - `view-input.test.ts` covers which keys go to the page and as what, and the input's batches: coalesced moves, double
   and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
@@ -1030,9 +1009,7 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   control with the desktop token): its run beside the editor's, steered, its mock made for the app's window, and the
   window following the app alone.
 - `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands field by field,
-  `stopIntents` and its fallback, `stateForViewer`, `pagePoint`, the lost runs the shortcut leaves alone, and Watch
-  live kept by slot (`slotKey`, `watchLiveHolds`) through a worker Playwright replaces, gone with its run, and kept
-  while a restarted background worker reconnects.
+  `stopIntents` and its fallback, `stateForViewer`, and `pagePoint`.
 - `runs.spec.ts` runs the real extension against the real editor service, started in-process
   (`tests/e2e/runs-fixtures.ts`, on `packages/editor/tests/run-fixtures.ts`). A stub stands in for the Send to editor
   endpoint, and a fake worker plays a run on the run channel. It covers the popup's tile; the window's Pause, Step

@@ -17,7 +17,8 @@ const histories = new WeakMap<object, RunningTestHistory>();
 /**
  * Check the running attempts of this server's live runs (`runEventBus`) against `#shared/stuck-tests`, and tell each
  * attempt stuck once: its begin payload carries it (`stuck`, for a page that connects later), the run's stream says it
- * (`test-stuck`), and `test.stuck` goes to the project's notification channels. An attempt that has run less than
+ * (`test-stuck`), and `test.stuck` goes to the project's notification channels for a run that sends it
+ * (`emitTestStuck`: never one a local hub steers, whose attempt is still marked). An attempt that has run less than
  * `STUCK_FLOOR_MS` costs no query; past it, its test's history is read once. Returns how many were found stuck.
  */
 export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<number> {

@@ -38,7 +38,6 @@ fn main() {
             "desktop_set_project_link",
             "desktop_run_local_tests",
             "desktop_stop_local_tests",
-            "desktop_local_runs",
             "desktop_run_repro",
             "desktop_reproduce_here",
             "desktop_bisect_here",

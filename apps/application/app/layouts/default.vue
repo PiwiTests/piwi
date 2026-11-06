@@ -595,6 +595,9 @@ onMounted(async () => {
     <!-- Desktop shell: Piwi Picker asks to pair, waiting for the developer's Allow -->
     <DesktopPickerPairingModal />
 
+    <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
+    <DesktopLocalRunsTray />
+
     <!-- The assistant's panel: opened from the sidebar's Ask Piwi and the command palette, kept across navigation -->
     <AssistantPanel />
   </UDashboardGroup>

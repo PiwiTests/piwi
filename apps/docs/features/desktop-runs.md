@@ -27,8 +27,7 @@ end without stopping again, and [**End the test**](./end-the-test) skips the res
 it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
 which runs to show you the failure; while [Piwi Picker's Runs window](./runs-window) is open, failures are held too. A
 run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure. Their failures never bounce the Dock icon or flash the
-taskbar button.
+`--repeat-each` above 1 and UI mode go on past each failure.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
@@ -36,9 +35,12 @@ taskbar button.
 </figure>
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
-tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens from its
-start, on every page (error pages too): after a reload, the tray shows the runs still going, their workers and
-stops. When no run of the app is going on, the window stops listening, and a stop goes on at once.
+tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every
+page, and again as soon as it reloads while a run of the app goes on. On a page without the tray, as an analytics
+dashboard in TV mode or an error page, the system tells you of every stop, whatever the window shows, and no failure
+is held; a `page.pause()`, a step or a breakpoint still waits there until something answers it: the tray once a page
+shows it again, [Piwi Picker's Runs window](./runs-window) or [an agent](#for-agents). When no run of the app is going
+on, the window stops listening, and a stop goes on at once.
 
 ## Its output
 
@@ -87,14 +89,8 @@ A run that reports to your team's Piwi instance, as a **Re-run** in a folder who
 names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
 live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
 to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
-link** and **Stop sharing**. A run that cannot be shared says why: [Share a run
-live](./share-live).
-
-A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance, a run
-your editor started) cannot be shared: the app hands out no live view key, since no teammate reaches it. The tray
-offers no **Share live** for it, the app's project settings have no **Live view** section, and on the run's page its
-running tests offer [**Pause and watch**](#watch-live) where **Watch** would be. A run your editor started says **See
-its page at a stop** there: its page shows where the editor steers it.
+link** and **Stop sharing**. A run that cannot be shared, as one that reports to the app itself, says why: [Share a
+run live](./share-live#from-the-desktop-app).
 
 ## From Piwi Picker
 
@@ -126,6 +122,8 @@ for an agent that left.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
   stops make no code.
 - **A file changed since the run started** makes no code: run the test again.
+- **A reload forgets the tray's runs.** A run still going shows among the app's other runs, without **Hold
+  failures**: its failures go on, a reproduction's included.
 - **Run to cursor** stays in the editor, which has the file.
 - **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
   passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 40 seconds at most

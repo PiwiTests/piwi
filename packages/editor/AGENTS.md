@@ -139,6 +139,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
   and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included
   (`PIWI_EDITOR_SEND`). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **`peers` names hubs, never their tokens.** A hub names the other live hubs by their address alone (`hubPeersOf`);
+  their tokens go only through the editor's `GET …/live`, to the pairing's holder. Checked by `tests/run-hub.test.ts`
+  ("the other live hubs"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))

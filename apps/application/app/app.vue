@@ -1,12 +1,6 @@
 <script setup lang="ts">
 const config = useRuntimeConfig();
 const colorMode = useColorMode();
-const route = useRoute();
-// Desktop shell only: the Local runs tray loads once the page has the shell's bridge, never in another build.
-const desktopBridge = ref(false);
-onMounted(() => {
-  desktopBridge.value = !!tauriCore();
-});
 
 // Matches --ui-bg-canvas (zinc-950 / zinc-100) so mobile browser chrome
 // blends with the page background.
@@ -53,10 +47,6 @@ if (!config.public.demoMode) {
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
-
-    <!-- Desktop shell: the Local runs tray, outside the layouts so a layout change keeps its runs and their windows.
-         A page without a layout (a run's output window) has none. -->
-    <LazyDesktopLocalRunsTray v-if="desktopBridge && route.meta.layout !== false" />
 
     <LazyDemoTour v-if="config.public.demoTour" />
   </UApp>

@@ -779,7 +779,7 @@
     "message": "Desktop-App"
   },
   "options_desktopHint": {
-    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen."
+    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen. Die Läufe, die sie startet, erscheinen auch im Fenster „Läufe“ (Läufe, im Menü der Erweiterung)."
   },
   "options_desktopUrl": {
     "message": "Adresse der Desktop-App"
@@ -1201,7 +1201,7 @@
     "message": "An den Editor senden"
   },
   "options_editorHint": {
-    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt."
+    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt. Die Läufe, die er startet, erscheinen dann im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen."
   },
   "options_editorAddress": {
     "message": "Kopplungsadresse"
@@ -6231,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Anhalten, Schritt, weiter"
   },
+  "popup_runsHintAway": {
+    "message": "Nicht verbunden: warum?"
+  },
   "popup_runsHint_one": {
     "message": "$count$ Lauf im Editor",
     "placeholders": {
@@ -6325,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Stand der letzten Meldung: Die Bedienelemente kehren zurück, sobald die Verbindung mit $editor$ wieder steht.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "Ihrem Editor"
   },
@@ -6371,7 +6383,10 @@
     "message": "Die Piwi-Erweiterung Ihres Editors kann ihre Läufe nicht teilen: Aktualisieren Sie sie."
   },
   "runs_statusUnproven": {
-    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
+    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt jede Minute erneut, solange dieses Fenster geöffnet ist. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
+  },
+  "runs_statusNotEditor": {
+    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Öffnen Sie Ihren Editor, führen Sie erneut „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse in den Einstellungen ein."
   },
   "runs_statusNoHub": {
     "message": "Ihr Editor antwortet, aber keines seiner Fenster teilt seine Läufe: Aktualisieren Sie dort die Piwi-Erweiterung."
@@ -6393,24 +6408,6 @@
   },
   "runs_followingDesktop": {
     "message": "Mit der Desktop-App verbunden"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "$count$ Editorfenster und die Desktop-App verbunden",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "$count$ Editorfenster und die Desktop-App verbunden",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Läufe der Desktop-App werden gesucht…"
@@ -6435,15 +6432,6 @@
   },
   "runs_ended": {
     "message": "Der Lauf ist beendet."
-  },
-  "runs_lost": {
-    "message": "Die Verbindung mit $editor$ ging verloren: Der Lauf ist so zu sehen, wie er zuletzt stand. Neue Verbindung…",
-    "placeholders": {
-      "editor": {
-        "content": "$1",
-        "example": "Visual Studio Code"
-      }
-    }
   },
   "runs_stoppedBreakpoint": {
     "message": "An einem Haltepunkt angehalten"
@@ -6687,7 +6675,7 @@
     "message": "Die Live-Ansicht startet…"
   },
   "runs_liveLost": {
-    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Sie startet wieder, sobald die Verbindung zurück ist."
+    "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
   },
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."

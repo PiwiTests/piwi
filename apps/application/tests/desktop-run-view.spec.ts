@@ -28,12 +28,9 @@ interface Command {
 
 declare global {
   interface Window {
-    /** The hub's streams: `open` counts those still open, `opened` every one the page opened. */
-    __hub: { send(event: unknown): void; open(): number; opened(): number };
+    __hub: { send(event: unknown): void; open(): number };
     /** The native notifications the page asked the shell for, as `title | body`. */
     __notes: string[];
-    /** Every command the page sent the shell, in order. */
-    __invoked: string[];
     /** What the page asked the shell to run its tests with, last. */
     __runArgs?: { originRef?: string };
   }
@@ -45,17 +42,13 @@ async function installBridge(page: Page) {
     const listeners: ((event: { payload: unknown }) => void)[] = [];
     Object.assign(window, {
       __notes: [],
-      __invoked: [],
       __endRun: () => {
         for (const cb of listeners) cb({ payload: { id: 41, kind: 'exit', line: null, code: 0 } });
       },
       __TAURI__: {
         core: {
           invoke: async (cmd: string, args?: Record<string, unknown>) => {
-            window.__invoked.push(cmd);
             switch (cmd) {
-              case 'desktop_open_output_window':
-                return `output-${String(args?.name)}_1`;
               case 'desktop_notify':
                 window.__notes.push(`${String(args?.title)} | ${String(args?.body)}`);
                 return null;
@@ -83,7 +76,6 @@ async function installBridge(page: Page) {
             return () => {};
           },
         },
-        window: { getCurrentWindow: () => ({ label: 'main' }) },
       },
     });
   });
@@ -121,7 +113,6 @@ async function playHub(page: Page, answer: (command: Command) => Record<string, 
           for (const stream of open) if (!stream.closed) stream.onmessage?.({ data: JSON.stringify(event) });
         },
         open: () => open.filter((stream) => !stream.closed).length,
-        opened: () => open.length,
       },
     });
   });
@@ -602,36 +593,6 @@ test.describe('Desktop run live view', () => {
     // Turned off: the run is shown no more, and its failures go on.
     await holdSwitch(page).click();
     await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
-  });
-
-  test('keeps the stream, the tray and a run’s separate window through an analytics dashboard’s TV mode', async ({
-    page,
-  }) => {
-    await installBridge(page);
-    await playHub(page);
-    await page.goto(`/test-runs/${runId}`);
-    await waitForHydration(page);
-    await page.getByRole('button', { name: RERUN_FAILED }).click();
-    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
-    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
-    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
-    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
-    await expect.poll(() => page.evaluate(() => window.__invoked)).toContain('desktop_open_output_window');
-    await tray(page).getByRole('button', { name: 'Close local runs' }).click();
-
-    // Into TV mode, in the same page: another layout, without the sidebar.
-    await page.getByRole('link', { name: 'Analytics', exact: true }).first().click();
-    await page.getByTestId('dashboard-more').click();
-    await page.getByRole('menuitem', { name: 'TV mode' }).click();
-    await expect(page.getByTestId('dashboard-tv')).toBeVisible({ timeout: 30_000 });
-
-    // The same stream and the output's window stay, and a stop still opens the tray.
-    expect(await page.evaluate(() => [window.__hub.open(), window.__hub.opened()])).toEqual([1, 1]);
-    expect(await page.evaluate(() => window.__invoked)).not.toContain('desktop_close_output_window');
-    await page.evaluate((event) => window.__hub.send(event), session(stopped('s2', { reason: 'page-pause' })));
-    await expect(
-      tray(page).locator('[data-shot="desktop-run-worker"]').getByText('Stopped at page.pause()'),
-    ).toBeVisible();
   });
 
   test('offers no Hold failures for a run nobody attends, and says why', async ({ page }) => {

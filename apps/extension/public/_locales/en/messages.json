@@ -958,7 +958,7 @@
     "description": "Options: heading of the section pairing the desktop app."
   },
   "options_desktopHint": {
-    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project.",
+    "message": "Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in your project. The runs it starts show in the Runs window too (Runs, in the popup).",
     "description": "Options: what pairing the desktop app is for and where the address and token come from."
   },
   "options_desktopUrl": {
@@ -1464,7 +1464,7 @@
     "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer."
   },
   "options_editorHint": {
-    "message": "In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and are inserted at its cursor.",
+    "message": "In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and are inserted at its cursor. The runs it starts then show in the Runs window (Runs, in the popup), where you pause, step and watch them.",
     "description": "Explains how to pair with an editor and what is sent. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
   },
   "options_editorAddress": {
@@ -7381,6 +7381,10 @@
     "message": "Pause, step, resume",
     "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A compact tile’s hint: one short line, about 25 characters."
   },
+  "popup_runsHintAway": {
+    "message": "Not connected: see why",
+    "description": "Popup, the line under the Runs tile while an editor or the desktop app is paired and none of its windows answers: the Runs window says why. A compact tile’s hint: one short line, about 25 characters."
+  },
   "popup_runsHint_one": {
     "message": "$count$ run in your editor",
     "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile’s hint: one short line, about 25 characters.",
@@ -7491,9 +7495,19 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "As last heard: its controls come back once $editor$ answers again.",
+    "description": "Runs window, under a run whose editor window does not answer now: the run shows as it was last heard, grayed, and its buttons wait. $editor$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "your editor",
-    "description": "Runs window, in runs_reconnecting and runs_lost when the editor does not say its name. Lower case."
+    "description": "Runs window, in runs_reconnecting when the editor does not say its name. Lower case."
   },
   "runs_following_one": {
     "message": "Following $count$ editor window",
@@ -7548,8 +7562,12 @@
     "description": "Runs window, when the paired editor’s Piwi extension is older than the Runs window."
   },
   "runs_statusUnproven": {
-    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again in a moment. If your editor moved to another port, pair Piwi Picker with it again in the settings.",
+    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again every minute while this window is open. If your editor moved to another port, pair Piwi Picker with it again in the settings.",
     "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port, or the editor moved to another one. Nothing was sent to it."
+  },
+  "runs_statusNotEditor": {
+    "message": "The program on the paired port is not your editor’s Piwi extension, or one too old to prove it: Piwi Picker sent it nothing. Open your editor, run “Piwi: Pair with Piwi Picker” again and paste the address it copies in the settings.",
+    "description": "Runs window, when the program on the paired editor’s port answers with no proof and no live page: another program took the port, or an editor too old to prove it holds the pairing’s token. Nothing was sent to it. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
   },
   "runs_statusNoHub": {
     "message": "Your editor answers, but none of its windows shares its runs: update Piwi’s extension there.",
@@ -7573,31 +7591,11 @@
   },
   "runs_desktopName": {
     "message": "the desktop app",
-    "description": "Runs window, in runs_reconnecting and runs_lost for the Piwi desktop app’s hub. Lower case, inside a sentence."
+    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
   },
   "runs_followingDesktop": {
     "message": "Following the desktop app",
     "description": "Runs window, under the heading: the window follows the runs the Piwi desktop app starts, and no editor window."
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "Following $count$ editor window and the desktop app",
-    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "Following $count$ editor windows and the desktop app",
-    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Looking for the desktop app’s runs…",
@@ -7630,16 +7628,6 @@
   "runs_ended": {
     "message": "The run ended.",
     "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
-  },
-  "runs_lost": {
-    "message": "The connection to $editor$ was lost: this is the run as it stood last. Connecting again…",
-    "description": "Runs window, on a run whose editor connection was lost, in place of its controls: the run is grayed, as the editor told it last. $editor$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
-    "placeholders": {
-      "editor": {
-        "content": "$1",
-        "example": "Visual Studio Code"
-      }
-    }
   },
   "runs_stoppedBreakpoint": {
     "message": "Stopped at a breakpoint",
@@ -7942,8 +7930,8 @@
     "description": "Runs window, under the image while the live view starts."
   },
   "runs_liveLost": {
-    "message": "The live view ended: the connection to the editor was lost. It starts again once the connection is back.",
-    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. While Watch live stays on, the view starts again by itself once the connection is back."
+    "message": "The connection to the editor was lost: the live view starts again once it is back.",
+    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
   },
   "runs_liveHint": {
     "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",

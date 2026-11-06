@@ -1,19 +1,18 @@
 /**
  * The runs the editor started, as the extension shows and steers them, with no VS Code API, so it is tested without
  * an editor: the sessions kept from `piwi/runSessionChanged` (the latest of each ref, one that ended dropped), where
- * each stopped worker stands, what a new stop opens and where (its file, with the focus or without, and its page),
- * what the controls and the code actions offer in each state, the line shown above a stop, the stop a control acts on,
- * the breakpoints sent to each run as they change, the page a stop shows as an image, the responses Mock a request
- * lists, the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
- * (Share live: what it sends, how it stands), and the edits of the documents since a run started, which map a line of
- * the run's code to the document as it stands and back.
+ * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
+ * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
+ * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
+ * a run shared live on the team instance (Share live: what it sends, how it stands), and the edits of the documents
+ * since a run started, which map a line of the run's code to the document as it stands
+ * and back.
  */
 import type {
   EditorBreakpoint,
   LocatorAtCaretParams,
   LocatorAtCaretResult,
   PausedImage,
-  RunControlAction,
   RunLive,
   RunSession,
   RunStop,
@@ -188,15 +187,13 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
 }
 
 /**
- * A worker stopped: its run, the worker and its slot (`RunWorker.parallelIndex`, which the worker Playwright starts in
- * its place after a failure keeps), where it stands, the test it runs, what its reporter takes there, and whether its
- * run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
+ * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and whether
+ * its run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
  * (`RunSession.runner`).
  */
 export interface ShownStop {
   ref: string;
   worker: number;
-  slot: number;
   stop: RunStop;
   test: RunTest | null;
   takes: readonly RunTake[];
@@ -213,7 +210,6 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
             {
               ref: s.ref,
               worker: w.worker,
-              slot: w.parallelIndex,
               stop: w.stop,
               test: w.test,
               takes: w.takes ?? [],
@@ -229,112 +225,6 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
 /** What tells a stop from another: its run, its worker and when it stopped. */
 export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
-}
-
-/** What tells a worker's slot from another: its run and its slot. */
-function slotKey(stop: { ref: string; slot: number }): string {
-  return `${stop.ref}\0${stop.slot}`;
-}
-
-/** How long the paused page view waits for the next stop of a worker stepped or run to the cursor from the editor. */
-export const RESERVED_MS = 10_000;
-
-/** What a change of the stops shows: the stops new to the editor, and a page. */
-export interface StopsChange {
-  /** The stops new to the editor, in order: each opens its file at its line in its turn (`focusFor`, `opened`). */
-  open: ShownStop[];
-  /** The stop whose page the paused page view opens; null leaves the view as it is. */
-  page: ShownStop | null;
-}
-
-/**
- * What the editor shows of the stops as they change, each stop once.
- *
- * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only while no other
- *   stop held has its file open (`opened`), or as a stop of the slot the person is on: the one whose stop last took
- *   the focus, or whose stop a control answered last (`answered`).
- * - The paused page view keeps the stop it shows (`view`) while that stop is held. Once it went on after a Step or a
- *   Run to the cursor from the editor, the view waits for that slot's next stop while a worker holds the slot,
- *   `RESERVED_MS` at most (`waitsUntil`, when the editor asks again); otherwise it opens the first new stop no pause
- *   bar shows, else the first such stop held. A view that is closed opens the first new such stop.
- */
-export class StopsShown {
-  /** The stops heard, and those whose file opened, by `stopKey`. */
-  private readonly heard = new Set<string>();
-  private readonly files = new Set<string>();
-  private held = new Set<string>();
-  /** The stop the paused page view shows, or showed last; null while it is closed. */
-  private viewed: ShownStop | null = null;
-  /** The slot whose next stop the view waits for, by `slotKey`, and until when. */
-  private reserved: { slot: string; until: number } | null = null;
-  /** The slot the person is on, by `slotKey`. */
-  private followed: string | null = null;
-
-  /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
-  changed(sessions: Sessions, stops: readonly ShownStop[], now = Date.now()): StopsChange {
-    const slots = new Set(
-      [...sessions.values()].flatMap((s) => s.workers.map((w) => slotKey({ ref: s.ref, slot: w.parallelIndex }))),
-    );
-    if (this.reserved && (this.reserved.until <= now || !slots.has(this.reserved.slot))) this.reserved = null;
-    this.held = new Set(stops.map(stopKey));
-    for (const key of [...this.heard]) if (!this.held.has(key)) this.heard.delete(key);
-    for (const key of [...this.files]) if (!this.held.has(key)) this.files.delete(key);
-    const open = stops.filter((s) => !this.heard.has(stopKey(s)));
-    for (const stop of open) this.heard.add(stopKey(stop));
-    const headless = (s: ShownStop) => !s.stop.bar;
-    const viewed = this.viewed;
-    if (!viewed) return { open, page: open.find(headless) ?? null };
-    if (this.held.has(stopKey(viewed))) return { open, page: null };
-    const slot = this.reserved?.slot === slotKey(viewed) ? this.reserved.slot : null;
-    if (slot) {
-      const next = stops.find((s) => slotKey(s) === slot);
-      if (!next) return { open, page: null };
-      this.reserved = null;
-      if (headless(next)) return { open, page: next };
-    }
-    return { open, page: open.find(headless) ?? stops.find(headless) ?? null };
-  }
-
-  /** The paused page view shows `stop`'s page; null once it is closed. */
-  view(stop: ShownStop | null): void {
-    this.viewed = stop;
-  }
-
-  /** When the view stops waiting for a slot's next stop, for `changed` to run then; null while it waits for none. */
-  waitsUntil(): number | null {
-    return this.reserved?.until ?? null;
-  }
-
-  /** Whether `stop`'s file, opening now, takes the focus. */
-  focusFor(stop: ShownStop): boolean {
-    return slotKey(stop) === this.followed || [...this.files].every((key) => key === stopKey(stop));
-  }
-
-  /** `stop`'s file opened, with the focus or without it. */
-  opened(stop: ShownStop, focus: boolean): void {
-    if (!this.held.has(stopKey(stop))) return;
-    this.files.add(stopKey(stop));
-    if (focus) this.followed = slotKey(stop);
-  }
-
-  /**
-   * A control from the editor answered `stop` (`action`): the person is on its slot, and after a Step or a Run to the
-   * cursor the view waits for its next stop.
-   */
-  answered(stop: ShownStop, action: RunControlAction, now = Date.now()): void {
-    this.followed = slotKey(stop);
-    if (action === 'step' || action === 'run-to') this.reserved = { slot: slotKey(stop), until: now + RESERVED_MS };
-    else if (this.reserved?.slot === slotKey(stop)) this.reserved = null;
-  }
-}
-
-/**
- * The column a stop's file opens in to leave the editor in use alone: the first group that is neither the active one
- * nor the paused page view's (`pageColumn`), else a new group at the right, the ninth at most.
- */
-export function asideColumn(groups: readonly { viewColumn: number; isActive: boolean }[], pageColumn?: number): number {
-  const free = groups.find((g) => !g.isActive && g.viewColumn !== pageColumn);
-  return free?.viewColumn ?? Math.min(9, Math.max(0, ...groups.map((g) => g.viewColumn)) + 1);
 }
 
 /**

@@ -13,16 +13,19 @@ import { WebSocket } from 'ws';
 import {
   MAX_HUB_COMMAND,
   MAX_HUB_MESSAGE,
+  MAX_HUB_PEERS,
   MAX_HUB_ROOTS,
   MAX_HUB_WARNINGS,
   parseHubMessage,
   type HubAnswer,
   type HubMessage,
   type HubSession,
+  type LiveHub,
 } from '@piwitests/core/run-hub';
 import { RUN_TAKES } from '@piwitests/core/run-channel';
 import type { RunSession } from '../src/protocol';
-import { RunHub } from '../src/run-hub';
+import { writeDiscovery } from '../src/discovery';
+import { RunHub, type RunHubOptions } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
 import { FakeWorker, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
@@ -136,6 +139,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
+      features: ['peers'],
     });
     client.socket.close();
   });
@@ -593,6 +597,7 @@ function ownHub(
     roots: string[];
   },
   refusal = 'No action here.',
+  extra: Partial<RunHubOptions> = {},
 ): Promise<RunHub | null> {
   const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
   const sessions = {
@@ -615,6 +620,7 @@ function ownHub(
       roots: welcome?.roots ?? [],
     }),
     surfacesChanged: () => {},
+    ...extra,
   });
 }
 
@@ -715,6 +721,10 @@ describe('a failure held at its line', () => {
 function readWhole(data: unknown): HubMessage {
   const unreadable = { type: 'unreadable' } as unknown as HubMessage;
   const message = parseHubMessage(String(data));
+  if (message?.type === 'peers') {
+    const sent = JSON.parse(String(data)) as { hubs: unknown[] };
+    return message.hubs.length === sent.hubs.length ? message : unreadable;
+  }
   if (message?.type !== 'session') return message ?? unreadable;
   const sent = JSON.parse(String(data)) as { session: { workers: unknown[]; live?: unknown } };
   const { workers, live } = message.session;
@@ -802,6 +812,144 @@ describe('what the hub sends', () => {
       socket.close();
     } finally {
       small.close();
+    }
+  });
+});
+
+/** A live hub as an editor's discovery file names it. */
+function liveHub(port: number, client = 'Visual Studio Code'): LiveHub {
+  return {
+    url: `ws://127.0.0.1:${port}/piwi/hub`,
+    token: `token-of-the-hub-${port}`,
+    pid: 4000 + port,
+    version: '0.67.0',
+    client,
+    roots: [`/work/app-${port}`],
+    startedAt: '2026-11-05T10:00:00.000Z',
+  };
+}
+
+describe('the other live hubs', () => {
+  test('are named to a subscribed connection after its runs, never with their tokens, and again only as they change', async () => {
+    let live: LiveHub[] = [];
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      peers: () => live,
+      peersMs: 40,
+    }))!;
+    live = [liveHub(own.port), liveHub(51_001)];
+    try {
+      const connect = async (subscribe: boolean) => {
+        const socket = new WebSocket(own.url, { origin: ORIGIN });
+        const heard: HubMessage[] = [];
+        socket.on('message', (data) => {
+          heard.push(readWhole(data));
+          expect(String(data)).not.toContain('token-of-the-hub');
+        });
+        await new Promise((resolve) => socket.on('open', resolve));
+        socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+        await waitFor(() => heard.find((m) => m.type === 'welcome'));
+        if (subscribe) socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+        return { socket, heard };
+      };
+      const peersOf = (heard: HubMessage[]) =>
+        heard.flatMap((m) => (m.type === 'peers' ? [m.hubs.map((hub) => hub.url)] : []));
+      const follower = await connect(true);
+      const quiet = await connect(false);
+      await waitFor(() => peersOf(follower.heard)[0]);
+      // The runs first, then the hubs: itself left out.
+      expect(follower.heard.map((m) => m.type)).toEqual(['welcome', 'answer', 'session', 'peers']);
+      const { token: _token, ...peer } = liveHub(51_001);
+      expect(follower.heard[3]).toEqual({ type: 'peers', hubs: [peer] });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(peersOf(follower.heard)).toHaveLength(1);
+
+      live = [...live, liveHub(51_002, 'IntelliJ IDEA')];
+      await waitFor(() => peersOf(follower.heard)[1]);
+      expect(peersOf(follower.heard)[1]).toEqual(['ws://127.0.0.1:51001/piwi/hub', 'ws://127.0.0.1:51002/piwi/hub']);
+      live = [];
+      await waitFor(() => peersOf(follower.heard)[2]);
+      expect(peersOf(follower.heard)[2]).toEqual([]);
+      expect(peersOf(quiet.heard)).toEqual([]);
+      expect(follower.heard.map((m) => m.type)).not.toContain('unreadable');
+      follower.socket.close();
+      quiet.socket.close();
+    } finally {
+      own.close();
+    }
+  });
+
+  test('are named up to their limit, and a folder that cannot be read sends none and keeps the connection', async () => {
+    let live: LiveHub[] = Array.from({ length: MAX_HUB_PEERS + 10 }, (_, i) => liveHub(52_000 + i));
+    let fail = false;
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      peers: () => {
+        if (fail) throw new Error('EACCES');
+        return live;
+      },
+      peersMs: 40,
+    }))!;
+    try {
+      const socket = new WebSocket(own.url, { origin: ORIGIN });
+      const heard: HubMessage[] = [];
+      socket.on('message', (data) => void heard.push(readWhole(data)));
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const first = await waitFor(() => heard.find((m) => m.type === 'peers'));
+      expect((first as Extract<HubMessage, { type: 'peers' }>).hubs).toHaveLength(MAX_HUB_PEERS);
+      fail = true;
+      live = [];
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(heard.filter((m) => m.type === 'peers')).toHaveLength(1);
+      expect(socket.readyState).toBe(WebSocket.OPEN);
+      socket.close();
+    } finally {
+      own.close();
+    }
+  });
+
+  test('are read by the service from the editors’ folder it is given', async () => {
+    const editors = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editors-'));
+    fs.chmodSync(editors, 0o700);
+    const other = await service(dir, false, { editorsDir: editors, hubPeersMs: 40 });
+    try {
+      const published = await waitFor(() => other.published[0] ?? undefined);
+      writeDiscovery(editors, {
+        pid: process.pid,
+        host: os.hostname(),
+        version: '0.67.0',
+        client: 'IntelliJ IDEA',
+        startedAt: '2026-11-05T10:00:00.000Z',
+        roots: ['/work/api'],
+        hub: { url: 'ws://127.0.0.1:53001/piwi/hub', token: 'token-of-the-hub-53001' },
+        runChannel: null,
+        recorderBundle: null,
+      });
+      const socket = new WebSocket(published.hub!.url, { origin: ORIGIN });
+      const heard: HubMessage[] = [];
+      socket.on('message', (data) => void heard.push(readWhole(data)));
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: published.hub!.token }));
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const peers = await waitFor(() => heard.find((m) => m.type === 'peers'));
+      expect(peers).toEqual({
+        type: 'peers',
+        hubs: [
+          {
+            url: 'ws://127.0.0.1:53001/piwi/hub',
+            pid: process.pid,
+            version: '0.67.0',
+            client: 'IntelliJ IDEA',
+            roots: ['/work/api'],
+            startedAt: '2026-11-05T10:00:00.000Z',
+          },
+        ],
+      });
+      socket.close();
+    } finally {
+      other.stop();
+      fs.rmSync(editors, { recursive: true, force: true });
     }
   });
 });

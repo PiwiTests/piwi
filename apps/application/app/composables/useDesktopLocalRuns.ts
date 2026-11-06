@@ -31,7 +31,7 @@ import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
-import { desktopRunRef, type DesktopRunChoices } from '~/utils/desktop-run-view';
+import { desktopRunRef } from '~/utils/desktop-run-view';
 import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
@@ -321,26 +321,6 @@ export function localRunCompareTo(run: Pick<LocalRun, 'piwiRunId' | 'sourceRunId
   return `/test-runs/${run.piwiRunId}?tab=changes&baseline=${run.sourceRunId}`;
 }
 
-/**
- * Whether another local run shares the origin reference of `run` while both go: the same project, origin and reference,
- * at overlapping times. A Piwi run the reporter recorded no name for is then neither's to claim.
- */
-export function localRunReferenceShared(
-  runs: readonly LocalRun[],
-  run: Pick<LocalRun, 'projectId' | 'originRef' | 'kind' | 'startedAt' | 'finishedAt'>,
-): boolean {
-  const until = (r: Pick<LocalRun, 'finishedAt'>) => r.finishedAt ?? Date.now();
-  return runs.some(
-    (other) =>
-      other !== run &&
-      other.projectId === run.projectId &&
-      other.originRef === run.originRef &&
-      localRunOriginKind(other.kind) === localRunOriginKind(run.kind) &&
-      other.startedAt <= until(run) &&
-      run.startedAt <= until(other),
-  );
-}
-
 /** One key per set of cases, whatever their order: a button finds the runs of its own tests by it. */
 function localRunCasesKey(cases: readonly RetryCase[]): string {
   return cases
@@ -433,6 +413,8 @@ let startingSteps = 0;
 let pendingEvents: LocalRunEventPayload[] = [];
 const runByShellId = new Map<number, LocalRun>();
 const exitResolvers = new Map<number, (code: number | null) => void>();
+/** Who hears each run's end (`onRunEnded`), before the tray can drop it. */
+const endListeners = new Set<(run: LocalRun) => void>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
@@ -449,13 +431,11 @@ export function useDesktopLocalRuns() {
   const trayOpen = useState<boolean>('desktop-local-runs-tray', () => false);
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
-  /** What the person chose on each run in the tray, kept for the window whichever tray shows it. */
-  const choices = useState<DesktopRunChoices>('desktop-local-runs-choices', () => ({
-    hold: {},
-    separate: {},
-    expanded: {},
-  }));
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
+  /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
+  /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
+  const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
   if (import.meta.client) {
     toastApi = useToast();
     routerApi = useRouter();
@@ -618,6 +598,13 @@ export function useDesktopLocalRuns() {
       if (run.kind === 'repro') await finishRepro(run);
       if (run.jobRequestId) await finishJob(run);
       run.finishedAt = Date.now();
+      for (const listener of endListeners) {
+        try {
+          listener(run);
+        } catch {
+          // One listener failing must not keep the run from ending.
+        }
+      }
       notifyFinished(run);
       trimFinished();
     }
@@ -1021,7 +1008,12 @@ export function useDesktopLocalRuns() {
     const tracked = runs.value[0]!;
     trayOpen.value = true;
     if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
-    else void drive(tracked);
+    else {
+      // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
+      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile.
+      void captureBaseline(tracked);
+      void drive(tracked);
+    }
     return tracked;
   }
 
@@ -1139,9 +1131,10 @@ export function useDesktopLocalRuns() {
   /**
    * Record the project's newest Piwi run id. `spawn` awaits it before starting
    * the process, so the run this local process produces (the reporter finds the
-   * app via `~/.piwi/desktop.json`) is newer than the baseline. A lookup that
-   * fails or takes longer than `BASELINE_TIMEOUT_MS` leaves no baseline: the run
-   * starts, without a Piwi link.
+   * app via `~/.piwi/desktop.json`) is newer than the baseline; a Flake Lab
+   * session does not wait for it. A lookup that fails or takes longer than
+   * `BASELINE_TIMEOUT_MS` leaves no baseline: the run starts, without a Piwi
+   * link.
    */
   async function captureBaseline(run: LocalRun) {
     try {
@@ -1166,6 +1159,13 @@ export function useDesktopLocalRuns() {
    * as soon as the reporter checks in.
    */
   async function correlatePiwiRuns() {
+    const until = (run: LocalRun) => run.finishedAt ?? Date.now();
+    const sharesReference = (a: LocalRun, b: LocalRun) =>
+      a.projectId === b.projectId &&
+      a.originRef === b.originRef &&
+      localRunOriginKind(a.kind) === localRunOriginKind(b.kind) &&
+      a.startedAt <= until(b) &&
+      b.startedAt <= until(a);
     const cutoff = Date.now() - 2 * 60_000;
     for (const run of runs.value) {
       if (run.piwiRunId != null || run.piwiRunBaseline == null) continue;
@@ -1181,7 +1181,7 @@ export function useDesktopLocalRuns() {
           },
         );
         if (!latest || latest.id <= run.piwiRunBaseline) continue;
-        if (latest.name == null && localRunReferenceShared(runs.value, run)) continue;
+        if (latest.name == null && runs.value.some((other) => other !== run && sharesReference(other, run))) continue;
         run.piwiRunId = latest.id;
       } catch {
         // Server briefly unavailable — the next stream event retries.
@@ -1376,8 +1376,14 @@ export function useDesktopLocalRuns() {
   return {
     runs,
     trayOpen,
-    choices,
     shownWorker,
+    holds,
+    trayMounts,
+    /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
+    onRunEnded(listener: (run: LocalRun) => void): () => void {
+      endListeners.add(listener);
+      return () => endListeners.delete(listener);
+    },
     showWorker,
     activeCount,
     startRun,

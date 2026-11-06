@@ -333,6 +333,15 @@ export function isLabRun(metadata: unknown): boolean {
   return (LAB_RUN_ORIGINS as readonly string[]).includes(runOrigin(metadata));
 }
 
+/**
+ * True for the origin of a lab run or of a run at a commit chosen to investigate a failure: a Flake Lab or probe run,
+ * a bisect step, a reproduction. Such a run is a step of a job whose verdict says what its failures mean: no use
+ * reading the suite as it behaves today reads it, and it sends no notification (`RUN_USES`).
+ */
+export function isLabOrInvestigationOrigin(origin: string): boolean {
+  return (LAB_AND_INVESTIGATION as readonly string[]).includes(origin);
+}
+
 /** The fields of a run the rule reads. */
 export interface EligibleRunInput {
   metadata?: unknown;

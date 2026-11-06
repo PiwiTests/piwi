@@ -18,16 +18,14 @@ import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
-  isLiveRun,
   pageHintOf,
   pagePoint,
   shareRefusalOf,
-  slotKey,
   stopError,
   stopIntents,
   stopPlace,
   testName,
-  watchLiveHolds,
+  slotKey,
   workerKey,
   type RunsAnswer,
   type RunsCode,
@@ -47,15 +45,14 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../s
  * code made there for the app's window to copy), each worker's test and where it stands, an image of a stopped page or
  * its live view, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a
  * request) as the stop takes them from this window (`stopIntents`); while none of a run's tests stands stopped, the run
- * says that a test's page shows here at a stop, and how a test stops (`pageHintOf`). A run whose hub's connection was
- * lost shows as the hub told it last, grayed and with no control, until the hub answers again. Opened from the popup's
- * Runs tile in a small window of its own. It reads everything from the background worker through its port
- * (`RUNS_PORT`), and makes no network call: the worker holds the hubs' connections and tokens. The code itself never
- * comes here: it goes to the editor, which writes it and says there whether it did, and the window shows what the hub
- * answered and what each code made at the stop came to (sent to the editor to write, or refused), whoever asked for
- * it. What a hub sends is shown as text, and its image and the frames of a live view as images, the latest frame alone
- * kept, in memory. Each part of the window is drawn again only when what it shows changes (`part`), so a button under
- * the pointer or the keyboard stays the same element while the run goes on around it.
+ * says that a test's page shows here at a stop, and how a test stops (`pageHintOf`). Opened from the popup's Runs tile
+ * in a small window of its own. It reads everything from the background worker through its port (`RUNS_PORT`), and
+ * makes no network call: the worker holds the hubs' connections and tokens. The code itself never comes here: it goes
+ * to the editor, which writes it and says there whether it did, and the window shows what the hub answered and what
+ * each code made at the stop came to (sent to the editor to write, or refused), whoever asked for it. What a hub sends
+ * is shown as text, and its image and the frames of a live view as images, the latest frame alone kept, in memory. Each
+ * part of the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the
+ * keyboard stays the same element while the run goes on around it.
  *
  * **Share live** shares a run on the team instance its reporter reports to, for anyone who can open it there: the first
  * share in this window says what goes out and to whom, and waits for a yes; shared, the run says where and how many
@@ -63,10 +60,9 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../s
  * place of Share live.
  *
  * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
- * stop does, the window hides or Watch live is turned off. While Watch live stays on, it comes again at each next stop
- * in the worker's slot, whichever worker Playwright runs there, and at the same stop once a hub's connection that was
- * lost is back. Where the stop takes input from this window (`input`), the pointer and the keys on the live view go to
- * the page, the left and right buttons with the click count the system gave them where the stop takes it
+ * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
+ * stays on. Where the stop takes input from this window (`input`), the pointer and the keys on the live view go to the
+ * page, the left and right buttons with the click count the system gave them where the stop takes it
  * (`input-clicks`), Control, Alt and Meta held around a click: Tab moves the focus on unless a click into the view
  * took the keyboard, and Escape gives it back, as it does the browser's shortcuts. Pick on the image, or a Shift+click
  * on the image or the view, names the element under the pointer.
@@ -99,6 +95,8 @@ const images = new Map<
     img: HTMLImageElement | null;
     note: string;
     viewport: { width: number; height: number } | null;
+    /** Its hub's connection was lost before it answered: it is asked again once the hub answers. */
+    lost?: string;
   }
 >();
 /**
@@ -135,6 +133,8 @@ let liveSeen = new Set<string>();
 
 let port: chrome.runtime.Port | null = null;
 let nextId = 1;
+/** How long a command waits for the worker's answer: past the hub's own wait for one, which the worker says. */
+const COMMAND_TIMEOUT_MS = 25_000;
 const waiting = new Map<number, (answer: RunsAnswer) => void>();
 
 function post(request: RunsRequest): void {
@@ -171,15 +171,10 @@ function connect(): void {
   });
   opened.onDisconnect.addListener(() => {
     if (port === opened) port = null;
-    // Nothing is drawn from the state of a worker that is gone: the next worker's first state draws the window again.
-    state = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
-    // The worker that relayed the views is gone: the next one watches each again that Watch live left on, once the
-    // run's hub answers it, and is asked again for an image on its way.
-    for (const key of views.keys()) endView(key, false);
-    for (const entry of watchLive.values()) entry.rejoining = true;
-    for (const [key, image] of images) if (image.loading) images.delete(key);
+    // The worker that relayed the views is gone: the next one watches each again that Watch live left on.
+    for (const [key, view] of views) if (isLive(view)) endView(key, false);
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -208,7 +203,15 @@ function command(
       resolve({ ok: false, message: '', failure: 'offline' });
       return;
     }
-    waiting.set(id, resolve);
+    // A command the worker drops, or never answers, frees its buttons: a later answer finds nobody waiting.
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      resolve({ ok: false, message: '', failure: 'timeout' });
+    }, COMMAND_TIMEOUT_MS);
+    waiting.set(id, (answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    });
     post({ type: 'command', id, hub, ref, worker, since, what, ...extra });
   });
 }
@@ -222,12 +225,9 @@ function failureText(answer: RunsAnswer): string {
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * The stop a worker stands at in the state shown last: its `since`, null while it is not stopped, or is gone, its run
- * ended or lost with its hub's connection.
- */
+/** The stop a worker stands at in the state shown last: its `since`, null while it is not stopped, or is gone. */
 function stopNow(run: RunsRun, worker: number): string | null {
-  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && isLiveRun(r));
+  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && !r.session.ended);
   const found = shown?.session.workers.find((w) => w.worker === worker);
   return found?.state === 'stopped' ? (found.stop?.since ?? null) : null;
 }
@@ -244,8 +244,9 @@ async function send(
   extra: CommandExtra = {},
 ): Promise<RunsAnswer | null> {
   const key = workerKey(run.hub, run.session.ref, { worker });
-  // A command on its way: the buttons say so (`aria-disabled`) and take no other until it is answered.
-  if (busy.has(key)) return null;
+  // A command on its way: the buttons say so (`aria-disabled`) and take no other until it is answered. So do those of
+  // a run whose hub's connection was lost, until it answers again.
+  if (busy.has(key) || !hubAnswers(run.hub)) return null;
   // Every control but Pause answers the stop shown.
   if (what !== 'pause' && since === null) return null;
   busy.add(key);
@@ -279,7 +280,7 @@ function say(
  * refused, shown under the test and read out while its worker stands at that stop; dropped otherwise.
  */
 function heardCode(code: RunsCode): void {
-  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && isLiveRun(r));
+  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
   if (!run || stopNow(run, code.worker) !== code.since) return;
   const key = workerKey(code.hub, code.ref, { worker: code.worker });
   say(key, { ok: code.ok, message: code.message }, code.since, { sent: true, warnings: code.warnings });
@@ -403,7 +404,14 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       });
       img = made;
     }
-    images.set(key, { since: stop.since, loading: false, img, note: img ? '' : failureText(answer), viewport });
+    images.set(key, {
+      since: stop.since,
+      loading: false,
+      img,
+      note: img ? '' : failureText(answer),
+      viewport,
+      ...(answer.failure === 'offline' ? { lost: run.hub } : {}),
+    });
     render();
   });
 }
@@ -437,21 +445,16 @@ interface LiveView extends RunsView {
   input: ViewInputBatcher | null;
   /** Whether a click into the view took the keyboard, Tab included, until Escape gives it back. */
   captured: boolean;
-  /**
-   * Ended with its hub's connection, and a state since showed the hub away: the view is asked again as the hub's runs
-   * come back at its stop, while Watch live stays on.
-   */
-  away: boolean;
 }
 
 /** Each stopped worker's live view, by worker. */
 const views = new Map<string, LiveView>();
 /**
- * The workers' slots (`slotKey`) whose Watch live the person left on, each with its run: each new stop in the slot is
- * watched too, whichever worker stands there. `rejoining` once the background worker started again, until the run's
- * hub answers it (`watchLiveHolds`).
+ * The slots whose Watch live the person left on (`slotKey`), each with its hub and run: each new stop of the worker in
+ * the slot is watched too, a worker Playwright starts in its place after a failure included, until it is turned off or
+ * the run ends.
  */
-const watchLive = new Map<string, { hub: string; ref: string; rejoining: boolean }>();
+const watchLive = new Map<string, { hub: string; run: string }>();
 /** The workers whose Pick on the image waits for a click on the image. */
 const picking = new Set<string>();
 /** The view (worker and stop) the hint on its input shows under: the first one this window gave input to. */
@@ -475,10 +478,10 @@ function isLive(view: LiveView | undefined): view is LiveView {
   return !!view && (view.status === 'starting' || view.status === 'on');
 }
 
-/** The run, the worker and the stop a worker of a live run stands at, while it does. */
+/** The run, the worker and the stop a worker of the state stands at, while it does. */
 function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubStop } | null {
   for (const run of state?.runs ?? []) {
-    if (!isLiveRun(run)) continue;
+    if (run.session.ended) continue;
     for (const worker of run.session.workers) {
       if (workerKey(run.hub, run.session.ref, worker) !== key) continue;
       return worker.state === 'stopped' && worker.stop ? { run, worker, stop: worker.stop } : null;
@@ -487,24 +490,34 @@ function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubSto
   return null;
 }
 
-/** Watch live, on or off for a worker; on, every next stop in its slot is watched too, until it is turned off. */
-function toggleLive(run: RunsRun, worker: HubWorker, stop: HubStop): void {
-  const key = workerKey(run.hub, run.session.ref, worker);
-  const slot = slotKey(run.hub, run.session.ref, worker);
+/**
+ * Watch live, on or off for a worker's slot; on, every next stop in the slot is watched too, until it is turned off.
+ */
+function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex ?? worker;
+  const slot = slotKey(run.hub, run.session.ref, lane);
+  // The run of a hub not connected now is shown as last heard: its Watch live waits for the hub.
+  if (!hubAnswers(run.hub)) return;
   const view = views.get(key);
   if (view?.since === stop.since && isLive(view)) {
     watchLive.delete(slot);
     endView(key, true);
   } else {
-    watchLive.set(slot, { hub: run.hub, ref: run.session.ref, rejoining: false });
-    startView(run, worker.worker, stop);
+    watchLive.set(slot, { hub: run.hub, run: run.session.ref });
+    startView(run, worker, stop);
   }
   render();
 }
 
+/** Whether a hub's connection answers now: its runs are not shown as last heard. */
+function hubAnswers(hub: string): boolean {
+  return !!state?.hubs.some((h) => h.id === hub && h.connected);
+}
+
 /**
- * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing is asked
- * while the window has no worker: Watch live, left on, asks once the next one draws the window.
+ * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing while
+ * the port to the worker is down: Watch live left on starts it once the worker is back.
  */
 function startView(run: RunsRun, worker: number, stop: HubStop): void {
   if (!port) return;
@@ -525,7 +538,6 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
     inputOn: false,
     input: null,
     captured: false,
-    away: false,
   };
   liveImage(key, view);
   views.set(key, view);
@@ -535,8 +547,10 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
       view.status = 'on';
     } else {
       stopInput(view);
-      view.status = 'refused';
-      view.note = failureText(answer);
+      // A view asked as its hub's connection was lost ends as the loss does, to start again once it answers.
+      const lost = answer.failure === 'offline';
+      view.status = lost ? 'ended' : 'refused';
+      view.note = lost ? t('runs_liveLost') : failureText(answer);
       view.next = null;
       announce(view.note);
     }
@@ -898,6 +912,8 @@ function place(parent: HTMLElement, children: readonly HTMLElement[]): void {
 
 function showState(next: RunsState): void {
   state = next;
+  // An image its hub's lost connection answered is asked again once the hub answers.
+  for (const [key, image] of images) if (image.lost && hubAnswers(image.lost)) images.delete(key);
   announceChanges(next);
   render();
   document.documentElement.dataset.ready = '';
@@ -966,52 +982,111 @@ function render(): void {
 
 /**
  * Drops what is kept for a stop a worker no longer stands at: its image, its live view, its list of requests, an
- * answer for it; and Watch live for a slot whose run is gone or ended (`watchLiveHolds`). A run lost with its hub's
- * connection keeps its image and its view, ended, so the view is asked again as the run comes back at the same stop;
- * an answer, a list and Pick on the image go with the loss, as its commands reach no hub.
+ * answer for it; and Watch live for a worker whose run ended. A view whose hub's connection was lost stays shown as
+ * ended while the hub is away, so the run that comes back at the same stop says so.
  */
 function forgetGone(current: RunsState): void {
-  /** Each worker's stop, null while it is not stopped: of the live runs, and of those lost with their hub. */
+  /** Each live worker's stop, null while it is not stopped. */
   const at = new Map<string, string | null>();
-  const lostAt = new Map<string, string | null>();
   for (const run of current.runs) {
     if (run.session.ended) continue;
     for (const worker of run.session.workers) {
-      (run.lost ? lostAt : at).set(
+      at.set(
         workerKey(run.hub, run.session.ref, worker),
         worker.state === 'stopped' ? (worker.stop?.since ?? null) : null,
       );
     }
   }
-  const kept = (key: string) => at.get(key) ?? lostAt.get(key) ?? null;
-  for (const key of images.keys()) if (!kept(key)) images.delete(key);
+  for (const key of images.keys()) if (!at.get(key)) images.delete(key);
   const connected = (hub: string) => current.hubs.some((h) => h.id === hub && h.connected);
+  const named = (hub: string) => current.hubs.some((h) => h.id === hub);
   for (const [key, view] of views) {
-    if (view.status === 'ended' && !connected(view.hub)) view.away = true;
-    if (kept(key) !== view.since) endView(key, false);
+    if (at.get(key) === view.since) continue;
+    if (!at.has(key) && view.status === 'ended' && !connected(view.hub) && named(view.hub)) continue;
+    endView(key, false);
   }
-  for (const [slot, entry] of watchLive) {
-    if (connected(entry.hub)) entry.rejoining = false;
-    if (!watchLiveHolds(current, entry)) watchLive.delete(slot);
+  // A slot's Watch live lasts while its run does: a worker Playwright starts in its place keeps it.
+  const liveRuns = new Set(current.runs.filter((r) => !r.session.ended).map((r) => `${r.hub}|${r.session.ref}`));
+  for (const [slot, { hub, run }] of watchLive) {
+    if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
   }
   for (const key of picking) if (!at.get(key)) picking.delete(key);
   for (const [key, list] of requestLists) if (at.get(key) !== list.since) requestLists.delete(key);
   for (const [key, answer] of answers) if (!at.has(key) || at.get(key) !== answer.since) answers.delete(key);
 }
 
+/**
+ * One line for each paired tool: the editor's windows it follows, or why it follows none, then the desktop app's, so a
+ * broken pairing of one shows beside the other's runs, with the buttons its sentence names. A tool whose state the
+ * empty box says already has no line.
+ */
 function renderHubs(current: RunsState): void {
-  const connected = current.hubs.filter((hub) => hub.connected && !hub.desktop).length;
-  const desktop = current.hubs.some((hub) => hub.connected && hub.desktop);
+  const lines: HubLine[] = [];
+  const editorPaired = current.discovery !== 'unpaired';
+  const desktopPaired = current.desktop !== 'unpaired';
+  // With no run, the empty box says the editor's state, else, with no editor paired, the desktop app's.
+  const boxSays = current.runs.length === 0 ? (editorPaired ? 'editor' : 'desktop') : null;
+  if (editorPaired) {
+    const line = editorLine(current);
+    if (!(boxSays === 'editor' && line.boxed)) lines.push(line);
+  }
+  if (desktopPaired) {
+    const line = desktopLine(current);
+    if (!(boxSays === 'desktop' && line.boxed)) lines.push(line);
+  }
+  hubsLine.hidden = lines.length === 0;
+  const shown = JSON.stringify(lines);
+  if (shown === hubsShown) return;
+  hubsShown = shown;
+  hubsLine.replaceChildren(
+    ...lines.map(({ icon, text, actions }, index) => {
+      const line = iconText(element('p'), icon, text);
+      line.classList.toggle('waiting', icon !== 'check-circle');
+      for (const action of actions) line.append(emptyActionButton(action, `hubs|${index}|${action}`));
+      return line;
+    }),
+  );
+}
+
+/** A status line: its icon and sentence, whether the empty box says the same, and the buttons the sentence names. */
+interface HubLine {
+  icon: IconName;
+  text: string;
+  boxed: boolean;
+  actions: EmptyAction[];
+}
+
+/** The status lines as last drawn. */
+let hubsShown = '';
+
+/** The editor's line. */
+function editorLine(current: RunsState): HubLine {
+  const hubs = current.hubs.filter((hub) => !hub.desktop);
+  const connected = hubs.filter((hub) => hub.connected).length;
+  if (connected > 0) return { icon: 'check-circle', text: tn('runs_following', connected), boxed: false, actions: [] };
   // The window follows the editor while any of its windows answers: one that does not is found again meanwhile.
-  const away = connected === 0 && !desktop ? current.hubs[0] : undefined;
-  hubsLine.hidden = current.hubs.length === 0;
-  hubsLine.classList.toggle('waiting', !!away);
-  if (away) {
-    const name = away.desktop ? t('runs_desktopName') : (away.client ?? t('runs_editor'));
-    iconText(hubsLine, 'clock', t('runs_reconnecting', { editor: name }));
-  } else if (desktop && connected > 0) iconText(hubsLine, 'check-circle', tn('runs_followingWithDesktop', connected));
-  else if (desktop) iconText(hubsLine, 'check-circle', t('runs_followingDesktop'));
-  else iconText(hubsLine, 'check-circle', tn('runs_following', connected));
+  if (hubs.length > 0 && current.discovery !== 'searching') {
+    const editor = hubs[0]!.client ?? t('runs_editor');
+    return { icon: 'clock', text: t('runs_reconnecting', { editor }), boxed: false, actions: [] };
+  }
+  const [icon, text, actions] = editorEmptyOf(current);
+  return { icon, text, boxed: true, actions };
+}
+
+/** The desktop app's line, as the editor's. */
+function desktopLine(current: RunsState): HubLine {
+  const hub = current.hubs.find((h) => h.desktop);
+  if (hub?.connected) return { icon: 'check-circle', text: t('runs_followingDesktop'), boxed: false, actions: [] };
+  if (hub) {
+    return {
+      icon: 'clock',
+      text: t('runs_reconnecting', { editor: t('runs_desktopName') }),
+      boxed: false,
+      actions: [],
+    };
+  }
+  const [icon, text, actions] = desktopEmptyOf(current);
+  return { icon, text, boxed: true, actions };
 }
 
 type EmptyAction = 'settings' | 'again';
@@ -1022,6 +1097,11 @@ type EmptyAction = 'settings' | 'again';
  */
 function emptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
   if (current.discovery === 'unpaired' && current.desktop !== 'unpaired') return desktopEmptyOf(current);
+  return editorEmptyOf(current);
+}
+
+/** Why the paired editor shows no run, and what to do. */
+function editorEmptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
   switch (current.discovery) {
     case 'searching':
       return ['clock', t('runs_statusSearching'), []];
@@ -1039,11 +1119,12 @@ function emptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
     case 'unproven':
       // An editor that moved to another port is paired again from the settings, at its new address.
       return ['alert', t('runs_statusUnproven'), ['settings', 'again']];
+    case 'not-editor':
+      return ['alert', t('runs_statusNotEditor'), ['settings', 'again']];
     default:
       if (current.hubs.length === 0) return ['plug', t('runs_statusNoHub'), ['again']];
       if (!current.hubs.some((hub) => hub.connected)) return ['clock', t('runs_statusSearching'), []];
-      // A window of the editor opened since: Look again finds it at once.
-      return ['play', t('runs_statusNoRuns'), ['again']];
+      return ['play', t('runs_statusNoRuns'), []];
   }
 }
 
@@ -1077,16 +1158,17 @@ function renderEmpty(current: RunsState): void {
   if (shown === emptyShown) return;
   emptyShown = shown;
   iconText(emptyText, icon, text);
-  emptyActions.replaceChildren(
-    ...actions.map((action) => {
-      const button =
-        action === 'settings'
-          ? makeButton(t('runs_openSettings'), () => void chrome.runtime.openOptionsPage(), { icon: 'settings' })
-          : makeButton(t('runs_findAgain'), () => post({ type: 'find' }), { icon: 'refresh' });
-      button.dataset.focus = `empty|${action}`;
-      return button;
-    }),
-  );
+  emptyActions.replaceChildren(...actions.map((action) => emptyActionButton(action, `empty|${action}`)));
+}
+
+/** Open the settings, or Look again: a button the empty box or a status line shows, named for the focus by `focus`. */
+function emptyActionButton(action: EmptyAction, focus: string): HTMLButtonElement {
+  const button =
+    action === 'settings'
+      ? makeButton(t('runs_openSettings'), () => void chrome.runtime.openOptionsPage(), { icon: 'settings' })
+      : makeButton(t('runs_findAgain'), () => post({ type: 'find' }), { icon: 'refresh' });
+  button.dataset.focus = focus;
+  return button;
 }
 
 /** The ids of the runs' headings, one per run drawn. */
@@ -1101,13 +1183,13 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     return made;
   });
   section.classList.toggle('ended', session.ended);
-  section.classList.toggle('lost', !!run.lost);
   const headingId = section.getAttribute('aria-labelledby') ?? '';
   const name = runName(session);
   const hub = current.hubs.find((h) => h.id === run.hub);
-  // A lost run names its hub as it was: one that refused its token is gone from the hubs.
-  const named = run.lost ?? hub;
-  const client = named?.desktop ? t('runs_desktopApp') : (named?.client ?? null);
+  const client = hub?.desktop ? t('runs_desktopApp') : (hub?.client ?? null);
+  // A live run of a hub whose connection was lost shows as last heard, grayed, until the hub answers again.
+  const away = !session.ended && !hub?.connected;
+  section.classList.toggle('away', away);
   const children = [
     part(
       `${runKey}|head`,
@@ -1135,16 +1217,16 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     ),
   ];
   // A run that cannot be shared says why under its workers, after what steers it.
-  const refused = session.ended || run.lost ? null : (session.live?.refused ?? null);
+  const refused = session.ended ? null : (session.live?.refused ?? null);
   if (session.ended) {
     children.push(
       part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
     );
-  } else if (run.lost) {
-    const editor = run.lost.desktop ? t('runs_desktopName') : (run.lost.client ?? t('runs_editor'));
+  } else if (away) {
+    const editor = hub?.desktop ? t('runs_desktopName') : (hub?.client ?? t('runs_editor'));
     children.push(
-      part(`${runKey}|lost`, editor, () =>
-        iconText(element('p', 'run-ended run-lost'), 'plug', t('runs_lost', { editor })),
+      part(`${runKey}|away`, editor, () =>
+        iconText(element('p', 'note run-note run-away'), 'clock', t('runs_runAway', { editor })),
       ),
     );
   } else if (session.live && !refused) {
@@ -1155,7 +1237,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     const list = part(`${runKey}|workers`, null, () => element('ul', 'workers'));
     place(
       list,
-      workers.map((worker) => renderWorker(run, worker, workers.length)),
+      workers.map((worker) => renderWorker(run, worker, workers.length, away)),
     );
     children.push(list);
   }
@@ -1478,16 +1560,18 @@ function renderRequests(run: RunsRun, worker: HubWorker, list: RequestList): HTM
   return box;
 }
 
-function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLElement {
+/** A worker of a run; `away` while its hub's connection is lost, its controls held until it answers again. */
+function renderWorker(run: RunsRun, worker: HubWorker, count: number, away: boolean): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
-  // An ended run, or one lost with its hub's connection, names the tests it ran last, and nothing of where they stand.
-  const ended = run.session.ended || !!run.lost;
+  const held = away || busy.has(key);
+  const { ended } = run.session;
   const item = part(`${key}|item`, null, () => element('li', 'worker'));
-  item.dataset.state = run.lost ? 'lost' : ended ? 'ended' : worker.state;
+  item.dataset.state = ended ? 'ended' : worker.state;
   const parts: HTMLElement[] = [];
   const stop = !ended && worker.state === 'stopped' ? worker.stop : null;
   const where = stop ? stopPlace(stop, run.session.root) : null;
   item.toggleAttribute('data-failed', stop?.reason === 'failure');
+  // An ended run names the tests it ran last; the hub says nothing of how they ended.
   if (!ended) {
     const shown = {
       state: worker.state,
@@ -1515,8 +1599,8 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
     if (stop && where) {
       const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
       parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
-      wantImage(run, worker, stop);
-      parts.push(renderPage(run, worker, stop));
+      if (!away) wantImage(run, worker, stop);
+      parts.push(renderPage(run, worker, stop, away));
     }
     const since = stop?.since ?? null;
     const list = stop ? requestLists.get(key) : undefined;
@@ -1528,7 +1612,7 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
       const actions = part(`${key}|actions`, { controls, since, failure }, () =>
         renderActions(run, worker, controls, stop),
       );
-      markBusy(actions.querySelectorAll('button'), busy.has(key));
+      markBusy(actions.querySelectorAll('button'), held);
       const mock = actions.querySelector(`[data-focus="${CSS.escape(`${key}|mock`)}"]`);
       mock?.setAttribute('aria-expanded', String(!!listed));
       if (listed) mock?.setAttribute('aria-controls', `requests-${listed.serial}`);
@@ -1550,7 +1634,7 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
       const requests = part(`${key}|requests`, { since: listed.since, serial: listed.serial }, () =>
         renderRequests(run, worker, listed),
       );
-      markBusy(requests.querySelectorAll('button.request'), busy.has(key));
+      markBusy(requests.querySelectorAll('button.request'), held);
       parts.push(requests);
     }
   }
@@ -1594,17 +1678,17 @@ function stopView(stop: HubStop, where: string): HTMLElement {
  * (the Live badge on it), else its image; under it, why there is none, or why the view ended, and the first time the
  * view takes input, how. The image's box stays the same element for the stop, so the live view keeps the focus.
  */
-function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop): HTMLElement {
+function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolean): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
-  const slot = slotKey(run.hub, run.session.ref, worker);
   const intents: HubAction[] = stopIntents(worker, stop);
   const kept = images.get(key);
   const still = kept?.since === stop.since ? kept : undefined;
-  // A view of another stop goes; one that ended with its hub's connection is asked again, the run being back.
-  const before = views.get(key);
-  if (before && (before.since !== stop.since || (before.away && watchLive.has(slot)))) endView(key, false);
+  if (views.get(key)?.since !== stop.since) endView(key, false);
   const canView = intents.includes('view');
-  if (canView && watchLive.has(slot) && !views.has(key) && !document.hidden) startView(run, worker.worker, stop);
+  // Watch live left on for the slot watches this stop, and starts again on its own once a lost hub answers.
+  const watched = watchLive.has(slotKey(run.hub, run.session.ref, worker.parallelIndex));
+  const restart = !views.has(key) || views.get(key)!.status === 'ended';
+  if (canView && watched && restart && !away && !document.hidden) startView(run, worker.worker, stop);
   const view = views.get(key);
   const live = isLive(view);
   const framed = live && !!view.viewport;
@@ -1618,9 +1702,13 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop): HTMLElement
   figure.toggleAttribute('data-picking', picking.has(key));
   const children: HTMLElement[] = [];
   if (canView || pickable) {
-    const tools = { canView, live, pickable, picking: picking.has(key) };
-    const row = part(`${key}|page-tools`, tools, () => pageTools(run, worker, stop, tools));
-    markBusy(row.querySelectorAll(`[data-focus="${CSS.escape(`${key}|pick-at`)}"]`), busy.has(key));
+    // While its hub is away, Watch live shows as the person left it, for when the hub answers.
+    const tools = { canView, live: live || (away && watched), pickable, picking: picking.has(key) };
+    const row = part(`${key}|page-tools`, tools, () => pageTools(run, worker.worker, stop, tools));
+    const pickAt = `[data-focus="${CSS.escape(`${key}|pick-at`)}"]`;
+    for (const button of row.querySelectorAll('button')) {
+      markBusy([button], away || (button.matches(pickAt) && busy.has(key)));
+    }
     children.push(row);
   }
   const shown = framed ? view.img : (still?.img ?? null);
@@ -1673,11 +1761,11 @@ function pageNote(
 /** Watch live and Pick on the image, each a toggle saying whether it is on. */
 function pageTools(
   run: RunsRun,
-  worker: HubWorker,
+  worker: number,
   stop: HubStop,
   shown: { canView: boolean; live: boolean; pickable: boolean; picking: boolean },
 ): HTMLElement {
-  const key = workerKey(run.hub, run.session.ref, worker);
+  const key = workerKey(run.hub, run.session.ref, { worker });
   const row = element('div', 'piwi-actions page-tools');
   if (shown.canView) {
     const live = makeButton(t('runs_live'), () => toggleLive(run, worker, stop), {

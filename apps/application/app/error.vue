@@ -6,12 +6,6 @@ const props = defineProps<{
 }>();
 
 const route = useRoute();
-// Desktop shell only: the Local runs tray, which an error page of the dashboard window keeps, so a run's stops still
-// show. A run's output window and the app's other windows have the bridge without its grant: no tray there.
-const desktopWindow = ref(false);
-onMounted(() => {
-  desktopWindow.value = !!tauriCore() && tauriWindowLabel() === 'main';
-});
 
 const statusCode = computed(() => props.error.statusCode || 500);
 // A refusal or a missing page keeps the dashboard around it, so the sidebar
@@ -78,7 +72,5 @@ useHead({
         </template>
       </UDashboardPanel>
     </NuxtLayout>
-
-    <LazyDesktopLocalRunsTray v-if="desktopWindow" />
   </UApp>
 </template>

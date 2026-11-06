@@ -17,11 +17,11 @@ locator on its image. The editor shows the same stops: [Pause and step from the 
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), or with the
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), the popup shows a **Runs** tile under
-**More tools** while one of them answers. It opens the Runs window, to keep beside the test's
-browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
-and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. While
-none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A run
-[started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
+**More tools**, muted with **Not connected** while none of them answers. It opens the Runs window, to keep beside the
+test's browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each
+worker's test and whether it runs or where it stopped: the file and line, the call about to run, and an image of the
+page. While none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A
+run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
 
 ## The controls
 
@@ -61,7 +61,8 @@ background worker, on your machine or through the port your IDE forwards from a 
 window](/guide/remote-development).
 
 The view ends with the stop, when you turn **Watch live** off, minimize the window, or close it. Left on, it starts
-again at that worker's next stop, or its replacement's, as the window shows again, and once the editor answers again.
+again at the worker's next stop, at the next stop of the worker Playwright starts in its place after a failure, as the
+window shows again, and once a lost connection to the editor is back.
 
 At a headless stop, nobody sees the test's page: **Pick**, **Record**, **Assert** and **Assert a region** show once you
 watch it. The picker, the recorder's panel and the check panel appear in the view, and you answer them there as in a
@@ -111,14 +112,8 @@ runs](./desktop-runs).
 
 ## How it connects
 
-The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
-pairing's token ([how the pieces connect](./editor-run-control#how-it-works)), as the desktop app proves it holds its
-own. The window talks to that worker alone, and makes no network call of its own. An older editor extension gives the
-image and the controls alone.
-
-Every minute, the window asks the editor for its windows, so one opened later shows its runs; **Look again** asks at
-once. A run whose editor stops answering stays grayed for up to ten minutes, until the editor answers or no longer
-names that window.
+Through the editor's pairing, on your machine alone, and the desktop app's: what it reaches, the windows it finds as
+they open, and what it says when one does not answer are in [Piwi Picker and your editor](./editor-pairing).
 
 ## Limits
 
@@ -143,3 +138,4 @@ names that window.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
 - [Remote development](/guide/remote-development): the runs of a dev container or a remote window.
 - [Desktop app runs](./desktop-runs): the same runs, in the desktop app's window.
+- [Piwi Picker and your editor](./editor-pairing): how the pairing reaches each editor window.

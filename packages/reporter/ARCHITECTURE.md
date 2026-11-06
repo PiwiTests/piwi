@@ -116,6 +116,10 @@ What the package does to a user's run, process by process.
 - The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
   sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
   or bug report they were started for; its bundled server is their hub.
+- A run whose workers connect to a hub (`runChannelRef` in `internal/config/editors.ts`, which `openRunChannel` reads
+  too) says so in its metadata from `onBegin`: `piwiInteractive`, `{ client, ref }` (`runInteractive`), the hub's
+  client being the editor it follows by its discovery file's name, else the launcher `PIWI_ORIGIN` names. The
+  dashboard sends no `test.stuck` for such a run.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined
@@ -158,8 +162,13 @@ What the package does to a user's run, process by process.
   or, for a stop whose page the worker cannot tell, any page of its context closed) ends
   the same way with or without a bar, and the editor gets `running`.
 - The editor can ask for an image of the stopped page: a JPEG screenshot without the
-  pause bar, taken through an internal call. It gets none for a stop whose page the
-  worker cannot tell (a navigation or a key press in a context with several pages).
+  pause bar, at the viewport's size in CSS pixels, its secret fields painted over
+  (`maskedImage`), taken through an internal call. It gets none for a stop whose page the
+  worker cannot tell (a navigation or a key press in a context with several pages), and
+  none of another shape than the viewport's. The live view's frames are painted over as
+  the instance's are (`maskSecretFields`). The titles of the stops and calls the run
+  channel tells, and the call the pause bar and the terminal name, go through
+  `hideTypedText` and `hideSecretsInText`.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
@@ -230,33 +239,12 @@ What the package does to a user's run, process by process.
   memory until the view ends, and sent again as the view is asked again (a viewer that
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
-- At a headed stop, every view of its page, this one and the instance's live view, paints the pause bar over in each
-  frame, as the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views as it draws the
-  bar and once it is down (`pauseBarShows`). The bar's bottom edge and the viewport's size, in CSS pixels, are read
-  through an internal call as soon as it is drawn, and again for a frame that names another viewport than that read,
-  each view's first included, unless a read was made for that viewport already (the bar wraps onto a second row on a
-  narrower one); a frame the page painted before the bar came down keeps the last read that found it. A read made for
-  the frame's viewport that still names another size, at one scale on both axes, is of a page zoomed in, whose
-  screencast names its viewport in more pixels than CSS ones: the band is scaled to it; a size change never is. The
-  band from the viewport's top to that edge is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
-  (`paintBoxes`), in the instance's view in the same pass as its masks, outside their rest, at the lighter quality when
-  too long at the view's. A frame the page painted after the bar came down goes as it is (one that names no time,
-  before Playwright 1.61, once the bar has been down a second), and so does one whose bar is not read within a second,
-  or with no `jpeg-js`. A painted frame holds the next one back as long again as its paint took. An image of the page
-  taken in place of a frame names the viewport as the screencast does, the page's own (`page.viewportSize()`), else,
-  for a page without one, the image's size at CSS scale, which Playwright gives in no other pixels.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
   through internal calls: trusted input that reaches whatever is at the point, Piwi's
-  overlays included (the picker, the recorder). Only while that stop's view is watched,
+  overlays included (the picker, the recorder, a headed stop's pause bar, whose buttons
+  answer the stop as a click in the window does). Only while that stop's view is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
-  None reaches the pause bar the view paints over: a press or a click on its band, while it
-  shows and the view paints it (`barBand`), is not played, nor the release of a button
-  pressed there, and the answer says how many were not. Before a key, each draw of the bar
-  the message meets, one drawn again after a navigation included, is held inert by that
-  message's token until it ends (`holdBarFrom`), so Tab passes it by, no key presses its
-  buttons, and Escape, which an inert bar leaves to the page, closes the page's own dialog
-  and resumes nothing; a message that ends late lets go of its own hold alone.
 - At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
@@ -402,8 +390,7 @@ What the package does to a user's run, process by process.
   frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
-  title, a headed stop's pause bar painted over as in the editor's view. Nobody watching, no screencast runs and no
-  frame goes.
+  title. Nobody watching, no screencast runs and no frame goes.
 - In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
   `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
   (`live-call-log.ts`): it listens to the context's call stream, then turns it on

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
 import { HUB_CLOSE, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
 import type { HubSocket } from '../../src/background/hub-connection.js';
-import { RunHubs, type DesktopHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
-import { liveRuns, type RunsFrame, type RunsView } from '../../src/shared/runs.js';
+import { RunHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
+import type { RunsFrame, RunsView } from '../../src/shared/runs.js';
 
 /**
  * The worker's hub client against a stub: the editor's live endpoint as a fetch that answers what a test says (a
@@ -27,9 +27,6 @@ const OTHER_HUB: LiveHub = {
   token: 'other_token_abcdefghijkl',
   pid: 4243,
 };
-
-/** How a run lost with its hub's connection names the hub: as the hub's welcome named it. */
-const LOST = { client: 'Visual Studio Code', desktop: false };
 
 /** The paired desktop app's hub, which its server is, with the app's token. */
 const DESKTOP_HUB: LiveHub = {
@@ -310,12 +307,36 @@ describe('finding the hubs through the pairing', () => {
     expect(fetches).toHaveLength(1);
   });
 
-  it('takes an endpoint that answers 404 with no proof as an editor older than the live endpoint', async () => {
+  it('takes an endpoint that answers 404 with no proof as no editor, and sends it nothing', async () => {
     const { hubs, fetches, prove } = setup();
     prove('none-404');
     await hubs.find();
-    expect(hubs.state().discovery).toBe('outdated');
+    expect(hubs.state().discovery).toBe('not-editor');
     expect(fetches).toEqual([]);
+  });
+
+  it('asks a program that cannot prove it holds the token again a few times in a row, then once a minute', async () => {
+    const { hubs, prove, challenges } = setup();
+    /** Whether a look for the hubs is under way: its proof runs outside the fake timers. */
+    const finding = () => (hubs as unknown as { finding: Promise<void> | null }).finding !== null;
+    hubs.listen(() => {});
+    prove('wrong');
+    await hubs.find();
+    // The backoff asks again at 1, 3, 7 and 15 s, then no more: the minute's look again alone.
+    for (let second = 1; second <= 55; second++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      await until(() => !finding());
+    }
+    expect(challenges).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(5000);
+    await until(() => challenges.length === 6);
+    expect(challenges).toHaveLength(6);
+    // Proven again, it is found.
+    prove('editor');
+    await until(() => !finding());
+    await hubs.find();
+    await until(() => hubs.state().discovery === 'found');
+    expect(hubs.state().discovery).toBe('found');
   });
 
   it('leaves out an entry it cannot read', async () => {
@@ -323,139 +344,6 @@ describe('finding the hubs through the pairing', () => {
     answer(async () => Response.json({ hubs: [{ ...HUB, url: 'ws://evil.example/piwi/hub' }, HUB] }));
     await hubs.find();
     expect(sockets.map((s) => s.url)).toEqual([HUB.url]);
-  });
-
-  it('asks the editor again every minute while a Runs window is open, and connects a window of it opened since', async () => {
-    const { hubs, sockets, fetches, answer } = setup();
-    const close = hubs.listen(() => {});
-    await hubs.find();
-    // Hubs whose keepalive comes once an hour: the minutes the test waits leave their connections open.
-    await welcome(sockets[0]!, [session([RUNNING])], 3_600_000);
-    // Another window of the editor opens, and runs a test.
-    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
-    await vi.advanceTimersByTimeAsync(59_000);
-    await settle();
-    expect(fetches).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => sockets.length === 2);
-    expect(fetches).toHaveLength(2);
-    expect(sockets.map((s) => s.url)).toEqual([HUB.url, OTHER_HUB.url]);
-    // The hub connected already is left as it is.
-    expect(sockets[0]!.closedWith).toBeNull();
-    await welcome(sockets[1]!, [session([STOPPED], { ref: 'r2' })], 3_600_000);
-    expect(hubs.state().runs.map((run) => [run.hub, run.session.ref])).toEqual([
-      [HUB.url, 'r1'],
-      [OTHER_HUB.url, 'r2'],
-    ]);
-    // With no window open, the editor is asked no more.
-    close();
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
-    await settle();
-    expect(fetches).toHaveLength(2);
-  });
-
-  it('keeps the connections that answer through a side’s passing failure, and shows its answer', async () => {
-    let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
-    const { hubs, sockets, prove } = setup({ desktopHubs: () => desktop() });
-    let changes = 0;
-    hubs.listen(() => changes++);
-    await hubs.find();
-    const [editorSocket, desktopSocket] = sockets;
-    await welcome(editorSocket!, [session([RUNNING])], 3_600_000);
-    await welcome(desktopSocket!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
-    const runs = () => hubs.state().runs.map((run) => [run.session.ref, !!run.lost]);
-    const both = [
-      ['r1', false],
-      ['desktop-1', false],
-    ];
-    /** Time passes until the hubs are settled once more: a minute look, or a retry. */
-    const after = async (ms: number) => {
-      const before = changes;
-      await vi.advanceTimersByTimeAsync(ms);
-      await until(() => changes > before);
-    };
-    // The desktop app does not answer, at the minute look and at the full find that follows it.
-    desktop = async () => ({ discovery: 'unreachable', hubs: [] });
-    await after(60_000);
-    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'unreachable' });
-    await after(1000);
-    expect(desktopSocket!.closedWith).toBeNull();
-    expect(runs()).toEqual(both);
-    desktop = async () => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
-    await after(2000);
-    expect(hubs.state().desktop).toBe('found');
-    // The program on the editor's port does not prove itself at a minute look: the full find right after asks again.
-    prove('wrong');
-    await after(57_000);
-    expect(hubs.state().discovery).toBe('unproven');
-    expect(editorSocket!.closedWith).toBeNull();
-    expect(runs()).toEqual(both);
-    prove('editor');
-    await after(4000);
-    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'found' });
-    expect(editorSocket!.closedWith).toBeNull();
-    expect(desktopSocket!.closedWith).toBeNull();
-    expect(sockets).toHaveLength(2);
-    // A full find the editor does not prove itself to lets its hubs go.
-    prove('wrong');
-    await hubs.find();
-    expect(editorSocket!.closedWith).toBe(1000);
-    expect(hubs.state().discovery).toBe('unproven');
-  });
-
-  it('connects no hub again at a minute look without a fresh proof, the desktop app’s included', async () => {
-    let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
-    const { hubs, sockets, prove } = setup({ desktopHubs: () => desktop() });
-    let changes = 0;
-    hubs.listen(() => changes++);
-    await hubs.find();
-    await welcome(sockets[0]!, [session([RUNNING])], 3_600_000);
-    await welcome(sockets[1]!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
-    // Both connections drop just before the minute look, as neither side proves itself or answers any more.
-    await vi.advanceTimersByTimeAsync(59_500);
-    prove('wrong');
-    desktop = async () => ({ discovery: 'unreachable', hubs: [] });
-    sockets[0]!.hangUp(1006);
-    sockets[1]!.hangUp(1006);
-    const before = changes;
-    await vi.advanceTimersByTimeAsync(500);
-    await until(() => changes > before);
-    expect(sockets).toHaveLength(2);
-    expect(hubs.state().runs.map((run) => [run.session.ref, !!run.lost])).toEqual([
-      ['desktop-1', true],
-      ['r1', true],
-    ]);
-    // Nor does the full find that follows.
-    const again = changes;
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => changes > again);
-    expect(sockets).toHaveLength(2);
-  });
-
-  it('closes a side’s connections when its pairing is refused at a minute look, and says so', async () => {
-    for (const side of ['editor', 'desktop'] as const) {
-      let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
-      const { hubs, sockets, answer } = setup({ desktopHubs: () => desktop() });
-      let changes = 0;
-      hubs.listen(() => changes++);
-      await hubs.find();
-      const [editorSocket, desktopSocket] = sockets;
-      await welcome(editorSocket!, [session([RUNNING])], 3_600_000);
-      await welcome(desktopSocket!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
-      if (side === 'editor') answer(async () => Response.json({ error: 'not paired' }, { status: 401 }));
-      else desktop = async () => ({ discovery: 'refused', hubs: [] });
-      const before = changes;
-      await vi.advanceTimersByTimeAsync(60_000);
-      await until(() => changes > before);
-      const [refused, kept] = side === 'editor' ? [editorSocket, desktopSocket] : [desktopSocket, editorSocket];
-      expect(refused!.closedWith, side).toBe(1000);
-      expect(kept!.closedWith, side).toBeNull();
-      expect(hubs.state()).toMatchObject(
-        side === 'editor' ? { discovery: 'refused', desktop: 'found' } : { discovery: 'found', desktop: 'refused' },
-      );
-      // Its runs go with the pairing, not kept as lost.
-      expect(hubs.state().runs.map((run) => run.session.ref)).toEqual([side === 'editor' ? 'desktop-1' : 'r1']);
-    }
   });
 });
 
@@ -862,7 +750,8 @@ describe('connections that fail', () => {
     await hubs.find();
     await welcome(sockets[0]!, [session([RUNNING])]);
     sockets[0]!.hangUp(1006);
-    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]), lost: LOST }]);
+    // Its runs stay as last heard while it does not answer.
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
     expect(hubs.state().hubs).toEqual([
       { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false },
     ]);
@@ -981,6 +870,127 @@ describe('connections that fail', () => {
     expect(sockets[0]!.closedWith).toBe(1000);
     expect(hubs.state()).toEqual({ discovery: 'unpaired', desktop: 'unpaired', hubs: [], runs: [] });
     expect(stored.hubs).toEqual([]);
+  });
+});
+
+describe('the hubs of windows opened since', () => {
+  const { token: _token, ...OTHER_PEER } = OTHER_HUB;
+
+  it('are found as a hub names them, the editor asked once for each, and connected', async () => {
+    const { hubs, sockets, fetches, answer } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    expect(fetches).toHaveLength(1);
+    // A hub names one this side knows: nothing to ask.
+    const { token: _own, ...ownPeer } = HUB;
+    sockets[0]!.hear({ type: 'peers', hubs: [ownPeer] });
+    await settle();
+    expect(fetches).toHaveLength(1);
+    // A window opened since: the editor names it with its token.
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await until(() => sockets.length === 2);
+    expect(fetches).toHaveLength(2);
+    expect(sockets.map((socket) => socket.url)).toEqual([HUB.url, OTHER_HUB.url]);
+    // Named again, it is known: nothing more to ask.
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await settle();
+    expect(fetches).toHaveLength(2);
+  });
+
+  it('are asked of the editor once while it does not name them, however often a hub names them', async () => {
+    const { hubs, sockets, fetches } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await until(() => fetches.length === 2);
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await settle();
+    expect(fetches).toHaveLength(2);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('are looked for every minute while a Runs window is open, for a hub that names none', async () => {
+    const { hubs, sockets, fetches } = setup();
+    const leave = hubs.listen(() => {});
+    await hubs.find();
+    // A hub whose keepalive is far apart stays connected meanwhile.
+    await welcome(sockets[0]!, [session([RUNNING])], 600_000);
+    await vi.advanceTimersByTimeAsync(59_000);
+    await settle();
+    expect(fetches).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => fetches.length === 2);
+    expect(fetches).toHaveLength(2);
+    expect(sockets).toHaveLength(1);
+    leave();
+    await vi.advanceTimersByTimeAsync(180_000);
+    await settle();
+    expect(fetches).toHaveLength(2);
+  });
+});
+
+describe('a hub whose connection was lost', () => {
+  it('keeps its runs as last heard, the hub not connected, until it tells them again', async () => {
+    const { hubs, sockets } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([STOPPED])]);
+    sockets[0]!.hangUp(1006);
+    expect(hubs.state()).toMatchObject({
+      hubs: [{ id: HUB.url, connected: false }],
+      runs: [{ hub: HUB.url, session: session([STOPPED]) }],
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 2);
+    // Connected again, its runs are those it tells: the test went on meanwhile.
+    await welcome(sockets[1]!, [session([RUNNING])]);
+    expect(hubs.state()).toMatchObject({
+      hubs: [{ id: HUB.url, connected: true }],
+      runs: [{ hub: HUB.url, session: session([RUNNING]) }],
+    });
+  });
+
+  it('takes no command from the run shortcut, and keeps none once its service said it stopped', async () => {
+    const { hubs, sockets, answer } = setup();
+    hubs.listen(() => {});
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    await welcome(sockets[0]!, [session([STOPPED])]);
+    await welcome(sockets[1]!, [session([RUNNING], { ref: 'r2' })]);
+    sockets[0]!.hangUp(1006);
+    expect(hubs.state().runs).toHaveLength(2);
+    // The stopped test of the lost hub is no reason to resume: the shortcut pauses the run that answers.
+    const sent = hubs.shortcut();
+    await vi.advanceTimersByTimeAsync(10);
+    const pause = sockets[1]!.last('runControl')!;
+    expect(pause).toMatchObject({ ref: 'r2', action: 'pause' });
+    sockets[1]!.hear({ type: 'answer', id: pause.id, ok: true, message: 'Pausing.' });
+    expect(await sent).toEqual([{ ok: true, message: 'Pausing.' }]);
+    expect(hubs.answeringRuns().map((run) => run.session.ref)).toEqual(['r2']);
+    // A hub whose service stopped starts again elsewhere: its runs go.
+    sockets[1]!.hangUp(HUB_CLOSE.goingAway);
+    expect(hubs.state().runs.map((run) => run.session.ref)).toEqual(['r1']);
+  });
+
+  it('drops them once the hub refuses its token, or the editor no longer names it', async () => {
+    const { hubs, sockets, answer } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hangUp(HUB_CLOSE.unauthorized);
+    expect(hubs.state().runs).toEqual([]);
+
+    answer(async () => Response.json({ hubs: [HUB] }));
+    await hubs.find();
+    await welcome(sockets[1]!, [session([RUNNING])]);
+    sockets[1]!.hangUp(1006);
+    expect(hubs.state().runs).toHaveLength(1);
+    answer(async () => Response.json({ hubs: [] }));
+    await hubs.find();
+    expect(hubs.state().runs).toEqual([]);
   });
 });
 
@@ -1209,124 +1219,6 @@ describe('a stop’s live view', () => {
     expect(await hubs.command({ ...AT, what: 'input', events: [{ type: 'text', text: 'a' }] }, a)).toMatchObject({
       failure: 'offline',
     });
-  });
-
-  it('keeps a lost hub’s run as the hub told it last, and the view is asked again on its next connection', async () => {
-    const { hubs, sockets } = setup();
-    const counts: number[] = [];
-    hubs.listen(() => counts.push(hubs.state().runs.length));
-    await hubs.find();
-    await welcome(sockets[0]!, [session([HEADLESS])]);
-    const a = viewer();
-    const on = hubs.command({ ...AT, what: 'view', on: true }, a);
-    answerLast(sockets[0]!, 'view');
-    await on;
-    sockets[0]!.hangUp(1006);
-    expect(a.ended).toHaveBeenCalledWith(AT);
-    // The run stays as it was, at its stop, marked lost: neither the popup's tile nor the shortcut counts it.
-    expect(hubs.state(a)).toMatchObject({
-      hubs: [{ id: HUB.url, connected: false }],
-      runs: [{ hub: HUB.url, lost: LOST, session: { ref: 'r1', workers: [{ worker: 1, stop: { since: 's7' } }] } }],
-    });
-    expect(liveRuns(hubs.state())).toEqual([]);
-    // The hub answers again at the same stop: the run is the one it tells, and the window watches it there again.
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => sockets.length === 2);
-    const socket = sockets[1]!;
-    await welcome(socket, [session([HEADLESS])]);
-    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([HEADLESS]) }]);
-    const again = hubs.command({ ...AT, what: 'view', on: true }, a);
-    expect(socket.last('view')).toMatchObject({ ref: 'r1', worker: 1, since: 's7', on: true });
-    answerLast(socket, 'view');
-    expect(await again).toMatchObject({ ok: true });
-    socket.hear(frame('AAAA'));
-    expect(a.frames).toHaveLength(1);
-    // A window never saw the run twice.
-    expect(Math.max(...counts)).toBe(1);
-  });
-
-  it('lets a lost hub’s runs go as soon as it tells its runs again, nothing reading the state meanwhile', async () => {
-    const { hubs, sockets } = setup();
-    await hubs.find();
-    await welcome(sockets[0]!, [session([RUNNING]), session([STOPPED], { ref: 'r2' })]);
-    sockets[0]!.hangUp(1006);
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => sockets.length === 2);
-    // The hub answers again without r2, which ended meanwhile; r1 ends there, and the connection is lost again.
-    await welcome(sockets[1]!, [session([RUNNING])]);
-    sockets[1]!.hear({ type: 'session', session: session([], { ended: true }) });
-    sockets[1]!.hangUp(1006);
-    // Each run shows once at most: r1 ended, r2 not at all.
-    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING], { ended: true }) }]);
-  });
-
-  it('shows a lost run once as it ends on the hub’s next connection, before that one told all its runs', async () => {
-    const { hubs, sockets } = setup();
-    await hubs.find();
-    await welcome(sockets[0]!, [session([RUNNING])]);
-    sockets[0]!.hangUp(1006);
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => sockets.length === 2);
-    const socket = sockets[1]!;
-    socket.open();
-    socket.hear({
-      type: 'welcome',
-      pid: 4242,
-      version: '0.60.0',
-      client: 'Visual Studio Code',
-      roots: [],
-      keepaliveMs: 20_000,
-    });
-    socket.hear({ type: 'answer', id: socket.last('subscribe')!.id, ok: true, message: 'Following 0 runs.' });
-    socket.hear({ type: 'session', session: session([], { ended: true }) });
-    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([], { ended: true }) }]);
-  });
-
-  it('keeps a lost hub’s runs through a connection that tells none, and lets them go as another process answers', async () => {
-    const { hubs, sockets } = setup();
-    await hubs.find();
-    await welcome(sockets[0]!, [session([RUNNING], { ref: 'desktop-1' })]);
-    sockets[0]!.hangUp(HUB_CLOSE.goingAway);
-    const hello = { type: 'welcome', version: '0.60.0', client: 'Visual Studio Code', roots: [], keepaliveMs: 20_000 };
-    // The same process welcomes the next connection, which is lost before it tells its runs: the run stays lost.
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => sockets.length === 2);
-    sockets[1]!.open();
-    sockets[1]!.hear({ ...hello, pid: 4242 });
-    expect(hubs.state().runs).toMatchObject([{ session: { ref: 'desktop-1' }, lost: LOST }]);
-    sockets[1]!.hangUp(1006);
-    expect(hubs.state().runs).toMatchObject([{ session: { ref: 'desktop-1' }, lost: LOST }]);
-    // Another process answers at the address (the app started again): its runs are its own, of the same refs or not.
-    await vi.advanceTimersByTimeAsync(2000);
-    await until(() => sockets.length === 3);
-    sockets[2]!.open();
-    sockets[2]!.hear({ ...hello, pid: 5151 });
-    expect(hubs.state().runs).toEqual([]);
-  });
-
-  it('lets a lost hub’s runs go ten minutes later, or as soon as the editor names the hub no more', async () => {
-    const closed = setup();
-    await closed.hubs.find();
-    await welcome(closed.sockets[0]!, [session([HEADLESS])]);
-    // The editor closes: the hub found last is tried again, in vain.
-    closed.prove('unreachable');
-    closed.sockets[0]!.hangUp(1006);
-    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1000);
-    expect(closed.hubs.state().runs).toMatchObject([{ lost: LOST }]);
-    await vi.advanceTimersByTimeAsync(1001);
-    expect(closed.hubs.state().runs).toEqual([]);
-
-    // The editor's window that held the hub closes, another one answers: the run goes as the editor answers.
-    const moved = setup();
-    await moved.hubs.find();
-    await welcome(moved.sockets[0]!, [session([HEADLESS])]);
-    moved.answer(async () => Response.json({ hubs: [OTHER_HUB] }));
-    moved.sockets[0]!.hangUp(HUB_CLOSE.goingAway);
-    expect(moved.hubs.state().runs).toMatchObject([{ lost: LOST }]);
-    await vi.advanceTimersByTimeAsync(1000);
-    await until(() => moved.sockets.length === 2);
-    expect(moved.sockets[1]!.url).toBe(OTHER_HUB.url);
-    expect(moved.hubs.state().runs).toEqual([]);
   });
 
   it('asks nothing of the view without the window, its worker or its stop', async () => {

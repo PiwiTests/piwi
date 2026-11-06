@@ -3,7 +3,7 @@ import type { Frame, Locator, Page } from '@playwright/test';
 import { SECRET_FIELD_SELECTOR } from '@piwitests/core/mask';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { locatorOn } from './chain-locator.js';
-import type { FrameBox, PageFrame } from './page-view.js';
+import type { PageFrame } from './page-view.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 
 /**
@@ -85,7 +85,7 @@ const UNREADABLE_MASKS =
   'The project masks elements this reporter cannot read: no image goes. Update @piwitests/reporter.';
 
 type Image = { width: number; height: number; data: Uint8Array };
-export type JpegJs = {
+type JpegJs = {
   decode(data: Buffer, options: { useTArray: true; formatAsRGBA: true }): Image;
   encode(image: Image, quality: number): { data: Buffer };
 };
@@ -215,7 +215,7 @@ async function childOrigin(
 }
 
 /** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
-export async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -358,7 +358,7 @@ function shrink(image: Image, width: number, height: number): Image {
 }
 
 /** `frame` with `boxes` painted over, at most `size` and at `quality`. */
-export function paintBoxes(
+function paintBoxes(
   jpeg: JpegJs,
   frame: PageFrame,
   boxes: Box[],
@@ -433,8 +433,8 @@ async function secretBoxes(page: Page): Promise<Omit<Read, 'began' | 'ended'> | 
 }
 
 /**
- * An image of `page`'s viewport with its secret fields (`SECRET_FIELD_SELECTOR`, in every frame) painted over in the
- * image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
+ * An image of `page`'s viewport, at its size in CSS pixels, with its secret fields (`SECRET_FIELD_SELECTOR`, in every
+ * frame) painted over in the image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
  * boxes (`secretBoxes`), through `internalCall`, which must agree. Null when they do not, when the page cannot be read
  * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is
  * taken.
@@ -449,6 +449,7 @@ export async function maskedImage(
     page.screenshot({
       type: 'jpeg',
       quality: options.quality,
+      scale: 'css',
       timeout: options.timeout,
       ...(options.style ? { style: options.style } : {}),
     }),
@@ -474,27 +475,26 @@ export interface SecretFieldMaskOptions {
   masks(): readonly string[] | null;
   /** The JPEG quality of an image painted over, or taken in a frame's place. */
   quality: number;
-  /** The JPEG quality an image painted over is encoded at again when it is too long at `quality`. */
-  lightQuality: number;
+  /**
+   * The quality of an image taken in a frame's place, or of a frame painted over, when one at `quality` is longer than
+   * `maxBytes`.
+   */
+  lightQuality?: number;
   /** The longest image that goes, in bytes of JPEG. */
   maxBytes: number;
 }
 
 export interface SecretFieldMask {
-  /** Whether an image that shows a masked element went less than `MASKED_SPACING_MS` ago: the next one waits. */
+  /** Whether an image painted over went less than `MASKED_SPACING_MS` ago: the next one waits. */
   readonly resting: boolean;
-  /**
-   * The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. The
-   * boxes `also` names for that image (the pause bar's band) are painted over in the same pass where there is
-   * `jpeg-js`; without it, an image that shows no masked element goes without them.
-   */
-  screen(frame: PageFrame, also?: (image: PageFrame) => Promise<FrameBox[]>): Promise<PageFrame | string | null>;
+  /** The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. */
+  screen(frame: PageFrame): Promise<PageFrame | string | null>;
 }
 
 /** Mask the secret fields and the project's locators in each image of `page` the view would send. */
 export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): SecretFieldMask {
   const reads: Read[] = [];
-  /** When the latest image that shows a masked element was given to send. */
+  /** When the latest image painted over was given to send. */
   let maskedAt = -Infinity;
   /** How many reads failed in a row. */
   let failed = 0;
@@ -517,32 +517,31 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
 
   /**
    * The image to send for a frame its reads agree on, at `size` at most (the size of the frame it stands for): as it
-   * is, or with the masked elements' `boxes` and the `also` boxes painted over.
+   * is, or painted over.
    */
   const shown = (
     frame: PageFrame,
     boxes: Box[],
-    also: FrameBox[],
     size: { width: number; height: number },
   ): PageFrame | string | null => {
     const own = jpegSize(frame.data);
     const fits = own === null || (own.width <= size.width && own.height <= size.height);
     const jpeg = jpegCodec();
-    if (!boxes.length && (!jpeg || (fits && !also.length))) {
-      return frame.data.length <= options.maxBytes ? frame : null;
-    }
+    if (!boxes.length && (fits || !jpeg)) return frame.data.length <= options.maxBytes ? frame : null;
     if (!jpeg) return NO_CODEC;
-    let data: Buffer | null = null;
+    let data: Buffer;
     try {
-      for (const quality of [options.quality, options.lightQuality]) {
-        data = paintBoxes(jpeg, frame, [...boxes, ...also], size, quality);
-        if (data.length <= options.maxBytes) break;
+      data = paintBoxes(jpeg, frame, boxes, size, options.quality);
+      // A page too heavy for an image at the view's quality is painted at the lighter one.
+      if (data.length > options.maxBytes && options.lightQuality !== undefined) {
+        data = paintBoxes(jpeg, frame, boxes, size, options.lightQuality);
       }
     } catch {
       return null;
     }
-    if (!data || data.length > options.maxBytes) return null;
-    if (boxes.length) maskedAt = Date.now();
+    if (!boxes.length) return data.length <= options.maxBytes ? { ...frame, data } : null;
+    if (data.length > options.maxBytes) return null;
+    maskedAt = Date.now();
     return { ...frame, data };
   };
 
@@ -550,7 +549,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
     get resting() {
       return Date.now() - maskedAt < MASKED_SPACING_MS;
     },
-    async screen(frame, also) {
+    async screen(frame) {
       const before = [...reads].reverse().find((r) => r.ended <= frame.at && r.ended >= frame.at - FRESH_MS) ?? null;
       const after = await read();
       if (typeof after === 'string' || !after) return after;
@@ -561,14 +560,20 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
         showsViewportOf(frame, before) &&
         showsViewportOf(frame, after)
       ) {
-        return shown(frame, after.boxes, (await also?.(frame)) ?? [], size);
+        return shown(frame, after.boxes, size);
       }
       // No read brackets the frame: a screenshot taken between two reads goes in its place.
       if (page.isClosed()) return null;
       const at = Date.now();
-      const shot = await internalCall(page, () =>
-        page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
-      ).catch(() => null);
+      const take = (quality: number) =>
+        internalCall(page, () =>
+          page.screenshot({ type: 'jpeg', quality, scale: 'css', caret: 'initial', timeout: 5000 }),
+        ).catch(() => null);
+      let shot = await take(options.quality);
+      // A page too heavy for an image at the view's quality goes at the lighter one, as the view's own images do.
+      if (shot && shot.length > options.maxBytes && options.lightQuality !== undefined) {
+        shot = await take(options.lightQuality);
+      }
       if (!shot) return null;
       const again = await read();
       if (typeof again === 'string' || !again) return again;
@@ -576,11 +581,9 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       const { width, height } = again.viewport;
       if (!near(width, after.viewport.width) || !near(height, after.viewport.height)) return null;
       // The screenshot shows the viewport the reads measured, whatever size the frame it stands for named.
-      const taken = { data: shot, width, height, at };
       return shown(
-        taken,
+        { data: shot, width, height, at },
         again.boxes,
-        (await also?.(taken)) ?? [],
         fitViewSize({ width, height }, size.width, size.height),
       );
     },

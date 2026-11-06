@@ -401,14 +401,7 @@ stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its proce
 (`RunSession.runner`), whose reporter follows the IDE as one in a terminal does: its stops say `run by the editor's
 test runner`, and the Run tool window's Stop ends it.
 
-**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.StopsShown`), at the line it stands on
-now. It takes the focus, decided as it opens, only while no other stop held has its file open, or as a stop of the
-worker slot (`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop
-last took the focus, or that a control answered last. A file that never opened counts as none. Without it, the editor
-in use is left alone (`PiwiRunSessions.reveal`): a file open in an editor already keeps its caret, so the actions
-still act on the stop at the caret, and while an editor shows a file, another stays closed, the stop drawn when it
-opens, and counts as shown as an open file does; the platform opens no file without selecting it
-(`FileEditorOpenOptions` is internal). With no editor shown, it opens with `navigate(false)`. It is drawn as the
+**A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
 execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
@@ -422,8 +415,7 @@ execution point:
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
-(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; its Paused Page
-shows meanwhile.
+(`refreshAndFindFileByNioFile`); its Paused Page shows meanwhile.
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
 first heard, a rerun under the ref of a run that ended included). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
@@ -455,11 +447,7 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
-window. The tab keeps the stop it shows while that stop is held (`Glue.StopsShown`). Once it went on after a Step or
-a Run to Caret from the IDE, the tab says so and waits for that slot's next stop while a worker holds the slot,
-`Glue.RESERVED_MILLIS` at most (`waitsUntil`: an `Alarm` draws again then); otherwise it opens the first new stop no
-pause bar shows, else the first such stop held. **Show the Paused Page**
-moves it to the stop chosen. Where its worker takes `pick-at` and the image names its viewport
+window, again at each such stop. Where its worker takes `pick-at` and the image names its viewport
 (`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
 CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.
 
@@ -470,8 +458,7 @@ coalesced pointer moves, and a release only after the input queued before it. A 
 click with its count, a left click waiting 250 ms for a second one, and a drag once the pointer moves 4 pixels, as the
 Runs window's `ViewInputBatcher` sends them. While interacting, the image takes the Undo, Redo and Select All
 shortcuts for the page (a shortcut set registered on it, which the IDE runs before its keymap). Escape releases held
-input; Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another worker's new stop
-does not.
+input; Shift+click picks. Hiding, closing or resuming ends the watch.
 Watch live is remembered within the tab, while each watch resets Interact. No Picker pairing or port forwarding is
 needed for the panel, and older reporters keep the still image.
 

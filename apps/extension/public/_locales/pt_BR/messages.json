@@ -779,7 +779,7 @@
     "message": "Aplicativo de desktop"
   },
   "options_desktopHint": {
-    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto."
+    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. As execuções que ele inicia também aparecem na janela Execuções (Execuções, no menu da extensão)."
   },
   "options_desktopUrl": {
     "message": "Endereço do aplicativo de desktop"
@@ -1201,7 +1201,7 @@
     "message": "Enviar ao editor"
   },
   "options_editorHint": {
-    "message": "No VS Code ou em um IDE JetBrains com a extensão Piwi, execute “Piwi: Pair with Piwi Picker” e cole aqui o endereço copiado. Os locators escolhidos e os passos gravados podem então ser enviados a esse editor, somente neste computador, e são inseridos no cursor."
+    "message": "No VS Code ou em um IDE JetBrains com a extensão Piwi, execute “Piwi: Pair with Piwi Picker” e cole aqui o endereço copiado. Os locators escolhidos e os passos gravados podem então ser enviados a esse editor, somente neste computador, e são inseridos no cursor. As execuções que ele inicia aparecem então na janela Execuções (Execuções, no menu da extensão), onde você as pausa, avança passo a passo e assiste."
   },
   "options_editorAddress": {
     "message": "Endereço de pareamento"
@@ -6231,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Pausar, passo, retomar"
   },
+  "popup_runsHintAway": {
+    "message": "Sem conexão: veja o motivo"
+  },
   "popup_runsHint_one": {
     "message": "$count$ execução no editor",
     "placeholders": {
@@ -6325,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Como visto por último: os controles voltam quando $editor$ responder de novo.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "seu editor"
   },
@@ -6371,7 +6383,10 @@
     "message": "A extensão do Piwi no seu editor não compartilha as execuções: atualize-a."
   },
   "runs_statusUnproven": {
-    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo em instantes. Se o seu editor mudou de porta, pareie o Piwi Picker com ele de novo nas configurações."
+    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo a cada minuto enquanto esta janela estiver aberta. Se o seu editor mudou de porta, pareie o Piwi Picker com ele de novo nas configurações."
+  },
+  "runs_statusNotEditor": {
+    "message": "O programa na porta pareada não é a extensão do Piwi do seu editor, ou é uma antiga demais para comprovar isso: o Piwi Picker não enviou nada a ele. Abra o seu editor, execute de novo “Piwi: Pair with Piwi Picker” e cole nas configurações o endereço copiado."
   },
   "runs_statusNoHub": {
     "message": "Seu editor responde, mas nenhuma janela dele compartilha as execuções: atualize lá a extensão do Piwi."
@@ -6393,24 +6408,6 @@
   },
   "runs_followingDesktop": {
     "message": "Acompanhando o aplicativo de desktop"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "Acompanhando $count$ janela do editor e o aplicativo de desktop",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "Acompanhando $count$ janelas do editor e o aplicativo de desktop",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Procurando as execuções do aplicativo de desktop…"
@@ -6435,15 +6432,6 @@
   },
   "runs_ended": {
     "message": "A execução terminou."
-  },
-  "runs_lost": {
-    "message": "A conexão com $editor$ foi perdida: esta é a execução como estava da última vez. Conectando de novo…",
-    "placeholders": {
-      "editor": {
-        "content": "$1",
-        "example": "Visual Studio Code"
-      }
-    }
   },
   "runs_stoppedBreakpoint": {
     "message": "Parado em um ponto de interrupção"
@@ -6687,7 +6675,7 @@
     "message": "Iniciando a visualização ao vivo…"
   },
   "runs_liveLost": {
-    "message": "A visualização ao vivo terminou: a conexão com o editor foi perdida. Ela recomeça quando a conexão voltar."
+    "message": "A conexão com o editor foi perdida: a visualização ao vivo recomeça quando ela voltar."
   },
   "runs_liveHint": {
     "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."

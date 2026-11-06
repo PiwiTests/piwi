@@ -59,7 +59,7 @@ use updates::{
 };
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
-    desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
     desktop_set_project_link, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
@@ -1194,9 +1194,7 @@ fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
 }
 
 /// Watch the local runs, once a second, for the rest of the app's life: list
-/// them in the tray, each with its Stop item (`refresh_tray_runs`), enable the
-/// Windows taskbar thumbnail's Stop while any runs (`set_stop_enabled`), tell
-/// the dashboard window their ids when they change (`LOCAL_RUNS_EVENT`), and keep the
+/// them in the tray, each with its Stop item (`refresh_tray_runs`), and keep the
 /// machine from sleeping while one is going: a run, a reproduction, a bisect
 /// or a Flake Lab session can take an hour, and a sleeping machine stops it. Idle sleep only: the display still turns off, and
 /// closing a laptop's lid still puts it to sleep. On Linux it also takes
@@ -1214,14 +1212,8 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
             let runs = app.try_state::<runner::LocalRuns>().map(|runs| runs.listed()).unwrap_or_default();
             if runs != listed {
                 listed = runs.clone();
-                let ids: Vec<u32> = runs.iter().map(|(id, _)| *id).collect();
-                let _ = app.emit(LOCAL_RUNS_EVENT, ids);
                 let handle = app.clone();
-                let _ = app.run_on_main_thread(move || {
-                    #[cfg(windows)]
-                    taskbar_win::set_stop_enabled(!runs.is_empty());
-                    refresh_tray_runs(&handle, &runs);
-                });
+                let _ = app.run_on_main_thread(move || refresh_tray_runs(&handle, &runs));
             }
             let running = !listed.is_empty();
             match awake_change(running, held.is_some(), tried) {
@@ -1279,11 +1271,6 @@ fn tray_run_entries(runs: &[(u32, String)]) -> Vec<(String, String)> {
 /// the tray's Stop item asks to stop: the window stops it as its own Stop does
 /// (`stopRun`), so a run of several steps ends as stopped.
 const TRAY_STOP_RUN_EVENT: &str = "piwi:tray-stop";
-
-/// Event the shell emits to the dashboard window with the ids of the local runs
-/// it is running, each time they change; `desktop_local_runs` answers the same
-/// list on request.
-const LOCAL_RUNS_EVENT: &str = "piwi:local-runs";
 
 /// The run a tray Stop item stops, `None` for any other item.
 fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
@@ -2786,7 +2773,6 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
-            desktop_local_runs,
             desktop_run_repro,
             desktop_reproduce_here,
             desktop_bisect_here,

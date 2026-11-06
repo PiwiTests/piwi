@@ -185,8 +185,10 @@ import {
   liveHubsHere,
   loopbackPort,
   onLoopback,
+  oneStartAtATime,
   sendPairing,
   startSendListener,
+  takeSavedPort,
   type PairingStore,
   type SendListener,
   type SendResult,
@@ -857,7 +859,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
-  const listen = async (port: number) => {
+  const startListener = async (port: number) => {
     sendListener = await startSendListener({
       port,
       token: () => sendStore.token,
@@ -873,11 +875,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     });
     return sendListener;
   };
-  // Another window may hold the port: that window keeps the pairing. A remote window forwards it again, as it was.
-  if (sendStore.port && sendStore.token) {
-    const started = await listen(sendStore.port).catch(() => null);
-    if (started && vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
-  }
+  // A pairing asked while another start is on its way waits for that one.
+  const listen = oneStartAtATime(startListener);
+  // Another window may hold the port: that window keeps the pairing, and this one takes the port once it lets it go.
+  // A remote window forwards it again, as it was.
+  const savedPort = takeSavedPort({
+    // Another window may have paired since this one started: the port and the token are read again each time.
+    saved: async () => {
+      sendStore.port = context.globalState.get<number>(SEND_PORT);
+      sendStore.token = (await context.secrets.get(SEND_TOKEN)) ?? '';
+      return sendStore;
+    },
+    listener: () => sendListener,
+    listen,
+    started: (started) => {
+      if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+    },
+  });
+  context.subscriptions.push(savedPort);
+  // A pairing another window makes is this window's too: a run's pairing here never mints another token over it.
+  context.subscriptions.push(
+    context.secrets.onDidChange((change) => {
+      if (change.key !== SEND_TOKEN) return;
+      void context.secrets.get(SEND_TOKEN).then((token) => {
+        sendStore.token = token ?? '';
+      });
+    }),
+  );
+  await savedPort.ready;
   const pairing = sendPairing({
     store: sendStore,
     listener: () => sendListener,

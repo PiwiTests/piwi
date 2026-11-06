@@ -118,11 +118,6 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A new stop takes the focus only while no other stop's file is open, or as a stop of the worker slot the person is
-  on; any other leaves the editor in use, its caret and the Paused Page tab alone. The tab keeps its stop while held,
-  then waits for a slot stepped or run to the caret from the IDE while a worker holds it, `Glue.RESERVED_MILLIS` at
-  most, an `Alarm` drawing again then** (`Glue.StopsShown`, `waitsUntil`), as in the VS Code extension. Checked by
-  `GlueTest`, fed the pushes the service sends. ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
   and only into the version the service placed it in.** A file no editor shows is opened first and written once its
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the

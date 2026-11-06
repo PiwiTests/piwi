@@ -15,6 +15,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -175,6 +176,8 @@ exports.expect = expect;
     token: TOKEN,
     version: '0.62.0',
     links: () => [{ id: 1, path: fs.realpathSync(project) }],
+    // No editor of this machine is a peer of the hub under test.
+    editorsDir: path.join(os.tmpdir(), 'piwi-no-editors-here'),
   });
   const [hub] = runs.live();
   picker = new WebSocket(hub!.url, { origin: ORIGIN });

@@ -136,11 +136,6 @@ impl LocalRuns {
             .collect()
     }
 
-    /// The ids of the running runs, in order (`listed` without their labels).
-    pub fn running_ids(&self) -> Vec<u32> {
-        self.listed().into_iter().map(|(id, _)| id).collect()
-    }
-
     /// Name run `id` for the tray (`run_label`).
     pub(crate) fn label(&self, id: u32, label: String) {
         self.labels.lock().unwrap().insert(id, label);
@@ -779,16 +774,6 @@ pub async fn desktop_run_local_tests(
     });
 
     Ok(id)
-}
-
-/// The ids of the local runs the shell is running, as the tray lists them. The
-/// dashboard window holds the stream of its runs' hub while there is any, after
-/// a reload too, when its own list of runs starts empty.
-#[tauri::command]
-pub fn desktop_local_runs(app: AppHandle) -> Vec<u32> {
-    app.try_state::<LocalRuns>()
-        .map(|runs| runs.running_ids())
-        .unwrap_or_default()
 }
 
 /// Stop a running local process as Ctrl+C would in a terminal (see

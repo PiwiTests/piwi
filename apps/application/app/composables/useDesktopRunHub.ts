@@ -1,12 +1,10 @@
 /**
  * Desktop shell only: the window's side of the hub the bundled server is for the Playwright runs the shell starts
  * (`server/utils/desktop-runs.ts`). One stream for the whole window (`GET /api/desktop/runs/events`), opened only
- * while the window wants it (`want`, from `plugins/desktop-run-hub.client.ts`): as the window starts, then while a
- * local run runs, in the window or the shell, or the hub still has a live run. While it is open the window is a
- * surface that answers stops, so a headless stop waits for it: the tray shows every stop it hears (`onStop`), once, a
- * stream that opens again included, and the stop waits there; a stop heard while no tray listens (an error page, the
- * tray still loading) goes to the next listener, while its worker still stands there. Closed, nobody here answers and
- * such a stop goes on at once, unless Piwi Picker follows the runs.
+ * while the window wants it (`want`, from `plugins/desktop-run-hub.client.ts`): while a run of the Local runs tray
+ * runs, or the hub still has a live run. While it is open the window is a surface that answers stops, so a headless
+ * stop waits for it: the tray shows every stop it hears (`onStop`), once, a stream that opens again included, and the
+ * stop waits there; closed, nobody here answers and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, what each code made at a stop came to, the codes and the
  * locators picked, to copy, and the workers whose **Watch live** is on, which the tray and the run page both turn on.
@@ -98,8 +96,6 @@ const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>(
  * again: the runs it hears again after `hello` bring no stop heard before.
  */
 const heardAt = new Map<string, Map<number, string>>();
-/** The stops heard while no listener listened, by worker (`desktopWorkerKey`): `onStop` gives them to the next one. */
-const unshown = new Map<string, { ref: string; worker: number; since: string }>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 /** The window said what Share live sends since the app started: it asks no more. */
 let shareWarned = false;
@@ -167,7 +163,6 @@ function heardSession(session: HubSession): void {
   if (session.ended) {
     delete state.sessions[session.ref];
     heardAt.delete(session.ref);
-    for (const [key, stop] of unshown) if (stop.ref === session.ref) unshown.delete(key);
     delete state.watchLive[session.ref];
     return;
   }
@@ -178,9 +173,6 @@ function heardSession(session: HubSession): void {
     const since = worker.state === 'stopped' ? worker.stop?.since : undefined;
     if (!since || heard.get(worker.worker) === since) continue;
     heard.set(worker.worker, since);
-    if (stopListeners.size === 0) {
-      unshown.set(desktopWorkerKey(session.ref, worker.worker), { ref: session.ref, worker: worker.worker, since });
-    }
     for (const listener of stopListeners) listener(session, worker);
   }
 }
@@ -222,7 +214,6 @@ function close(): void {
   told = new Set();
   latestFrames.clear();
   heardAt.clear();
-  unshown.clear();
   Object.assign(state, { connected: false, sessions: {}, outcomes: {}, epoch: state.epoch + 1, watchLive: {} });
 }
 
@@ -289,16 +280,9 @@ export function useDesktopRunHub() {
       else if (others.length) state.watchLive[ref] = others;
       else delete state.watchLive[ref];
     },
-    /** Hears each stop as a worker comes to it, and at once those no listener heard; returns the unsubscribe. */
+    /** Hears each stop as a worker comes to it; returns the unsubscribe. */
     onStop(listener: (session: HubSession, worker: HubWorker) => void): () => void {
       stopListeners.add(listener);
-      // The stops no listener heard, each while its worker still stands there.
-      for (const { ref, worker, since } of unshown.values()) {
-        const session = state.sessions[ref];
-        const stopped = session?.workers.find((w) => w.worker === worker);
-        if (session && stopped?.state === 'stopped' && stopped.stop?.since === since) listener(session, stopped);
-      }
-      unshown.clear();
       return () => stopListeners.delete(listener);
     },
     /**

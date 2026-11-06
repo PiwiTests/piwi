@@ -262,9 +262,7 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`, loaded in `app.vue` and `error.vue` with the shell's bridge): `useDesktopRunHub` holds the
-  hub's stream and commands and each worker's Watch live, the stream held from the window's start by
-  `plugins/desktop-run-hub.client.ts` (`app/utils/desktop-run-hub-hold.ts`),
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands and each worker's Watch live,
   `DesktopRunSession`, `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live
   view (with the Runs window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live,
   and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the

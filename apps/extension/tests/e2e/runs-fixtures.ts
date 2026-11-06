@@ -73,8 +73,6 @@ export interface Editor {
   /** The editor's endpoint's origin, which also serves a plain page at `/`. */
   origin: string;
   hub: LiveHub;
-  /** How many times the endpoint named its hubs: `GET /piwi/live` with the pairing's token. */
-  readonly liveAsked: number;
   close(): Promise<void>;
 }
 
@@ -92,7 +90,6 @@ export async function startEditor(): Promise<Editor> {
   const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
   const published = await waitFor(() => svc.published[0] ?? undefined);
   const [hub] = liveHubsOf([published]);
-  let liveAsked = 0;
   const server: Server = createServer(async (req, res) => {
     await proveTo(req, res, (server.address() as AddressInfo).port);
     if (req.url === '/piwi/live' && req.method === 'GET') {
@@ -102,7 +99,6 @@ export async function startEditor(): Promise<Editor> {
         res.end('{"error":"not paired"}');
         return;
       }
-      liveAsked++;
       res.end(JSON.stringify({ hubs: [hub] }));
       return;
     }
@@ -122,9 +118,6 @@ export async function startEditor(): Promise<Editor> {
     svc,
     origin,
     hub: hub!,
-    get liveAsked() {
-      return liveAsked;
-    },
     close: async () => {
       svc.stop();
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -1,16 +1,19 @@
-import { afterEach, describe, test, expect, vi } from 'vitest';
-import { nextTick, ref, watch } from 'vue';
+import { describe, test, expect } from 'vitest';
 import {
   aggregateRunProgress,
+  finishedJobFlash,
   finishedRunFlash,
-  isUnattendedLiveRun,
-  runsOfStoppedLocalRun,
+  liveRunFacts,
+  runsOfLocalRun,
+  unbegunRunsOf,
   FAIL_FLASH_MS,
+  NO_LIVE_RUN_FACTS,
   NO_RUN_PROGRESS,
   PASS_FLASH_MS,
+  type FinishedJob,
   type LiveRun,
+  type LocalRunOwner,
   type RunCounts,
-  type StoppedLocalRun,
 } from '../../app/utils/desktop-run-progress';
 
 function run(status: string, done: number, total: number, failed = 0): RunCounts {
@@ -90,6 +93,38 @@ describe('aggregateRunProgress', () => {
   test('a finished run with failures does not make the active ones failing', () => {
     expect(aggregateRunProgress([run('failed', 10, 10, 4), run('running', 2, 10)]).failing).toBe(false);
   });
+
+  test('a step of a job counts its tests, never its failures, which its verdict judges', () => {
+    const step = { ...run('running', 3, 4, 2), job: true };
+    expect(aggregateRunProgress([step])).toEqual({
+      state: 'normal',
+      fraction: 0.75,
+      label: 'Running 3/4…',
+      failing: false,
+    });
+    // Another run's failure still shows beside it.
+    expect(aggregateRunProgress([step, run('running', 1, 4, 1)])).toMatchObject({
+      state: 'error',
+      failing: true,
+      label: 'Running 4/8 · 2 runs · 1 failed',
+    });
+  });
+});
+
+describe('liveRunFacts', () => {
+  test('reads what launched a run from a message of the desktop event stream, none before it began', () => {
+    expect(liveRunFacts({ origin: 'bisect', originRef: '37', name: 'desktop-8-unattended', job: true })).toEqual({
+      origin: 'bisect',
+      originRef: '37',
+      name: 'desktop-8-unattended',
+      job: true,
+    });
+    expect(liveRunFacts({ origin: 'ci', originRef: null, name: null, job: false })).toEqual({
+      ...NO_LIVE_RUN_FACTS,
+      origin: 'ci',
+    });
+    expect(liveRunFacts({})).toBeNull();
+  });
 });
 
 describe('finishedRunFlash', () => {
@@ -120,217 +155,195 @@ describe('finishedRunFlash', () => {
   });
 });
 
-describe('isUnattendedLiveRun', () => {
-  test('a bisect step and a lab run are attended by nobody', () => {
-    for (const origin of ['bisect', 'flake-lab', 'probe']) {
-      expect(isUnattendedLiveRun({ origin, runName: null })).toBe(true);
-    }
+describe('finishedJobFlash', () => {
+  const job = (over: Partial<FinishedJob>): FinishedJob => ({
+    kind: 'bisect',
+    status: 'passed',
+    exitCode: 0,
+    phase: null,
+    bisect: null,
+    repro: null,
+    ...over,
   });
-
-  test('a run the shell names unattended is attended by nobody, whatever launched it', () => {
-    expect(isUnattendedLiveRun({ origin: 'desktop', runName: 'desktop-7-unattended' })).toBe(true);
-  });
-
-  test('a run of the app, a reproduction, an editor or CI run is attended', () => {
-    for (const origin of ['desktop', 'reproduce', 'editor', 'ci', 'local', null]) {
-      expect(isUnattendedLiveRun({ origin, runName: origin === 'desktop' ? 'desktop-7' : null })).toBe(false);
-    }
-  });
-});
-
-const live = (projectId: number | null, origin: Partial<LiveRun> = {}): LiveRun => ({
-  status: 'running',
-  done: 1,
-  total: 10,
-  failed: 0,
-  projectId,
-  origin: null,
-  originRef: null,
-  runName: null,
-  ...origin,
-});
-
-const stopped = (run: Partial<StoppedLocalRun> = {}): StoppedLocalRun => ({
-  kind: 'tests',
-  projectId: '1',
-  originRef: 'desktop:abc',
-  hubRefs: ['desktop-3'],
-  piwiRunId: null,
-  piwiRunBaseline: 4,
-  ...run,
-});
-
-describe('runsOfStoppedLocalRun', () => {
-  test('picks the runs its steps named, and none of another run of the same project', () => {
-    const active = new Map<number, LiveRun>([
-      [4, live(1, { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-3' })], // before the spawn
-      [7, live(1, { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-3' })],
-      [8, live(1, { origin: 'desktop', originRef: 'desktop:def', runName: 'desktop-5' })], // another local run
-      [9, live(1, { origin: 'editor' })], // an editor's run
-      [10, live(1, { origin: 'ci' })],
-      [11, live(2, { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-3' })], // another project
-    ]);
-    expect(runsOfStoppedLocalRun(active, stopped(), false)).toEqual([7]);
-  });
-
-  test('picks the run it is linked to', () => {
-    const active = new Map<number, LiveRun>([
-      [6, live(1)],
-      [7, live(1, { origin: 'desktop', originRef: 'desktop:xyz' })],
-    ]);
-    expect(runsOfStoppedLocalRun(active, stopped({ piwiRunId: 6 }), false)).toEqual([6]);
-  });
-
-  test("picks a Flake Lab session's runs by the name of its step, with no baseline nor link", () => {
-    // As `startFlakeLab` leaves it: no origin, so no baseline, no reference and no Piwi run linked.
-    const session = stopped({ kind: 'flake', originRef: null, piwiRunId: null, piwiRunBaseline: null });
-    const active = new Map<number, LiveRun>([
-      [7, live(1, { origin: 'flake-lab', runName: 'desktop-3-unattended' })],
-      [8, live(1, { origin: 'flake-lab', runName: 'desktop-4-unattended' })], // another session's
-      [9, live(1, { origin: 'flake-lab' })], // a reporter that recorded no name
-    ]);
-    expect(runsOfStoppedLocalRun(active, session, false)).toEqual([7]);
-  });
-
-  test('picks a run with no name by its origin and reference, unless another local run shares the reference', () => {
-    const active = new Map<number, LiveRun>([
-      [7, live(1, { origin: 'bisect', originRef: '12' })],
-      [8, live(1, { origin: 'reproduce', originRef: '12' })],
-    ]);
-    const bisect = stopped({ kind: 'bisect', originRef: '12' });
-    expect(runsOfStoppedLocalRun(active, bisect, false)).toEqual([7]);
-    expect(runsOfStoppedLocalRun(active, bisect, true)).toEqual([]);
-  });
-
-  test('picks no run older than its baseline, and no run without a name when it has no baseline', () => {
-    const named = live(1, { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-3' });
-    expect(runsOfStoppedLocalRun(new Map([[3, named]]), stopped({ piwiRunBaseline: 3 }), false)).toEqual([]);
-    const nameless = live(1, { origin: 'desktop', originRef: 'desktop:abc' });
-    expect(runsOfStoppedLocalRun(new Map([[9, nameless]]), stopped({ piwiRunBaseline: null }), false)).toEqual([]);
-  });
-});
-
-/** What the plugin asked the shell to show, in order. */
-interface Shown {
-  state: string;
-  fraction: number | null;
-  label: string | null;
-  failing: boolean;
-}
-
-/**
- * The OS progress plugin with its Nuxt auto-imports and the desktop bridge stubbed: `emit` plays the desktop event
- * stream, `shown` holds what the plugin asked the shell to show, `invoked` every other command it sent the shell,
- * `shellEvent` plays an event of the shell's, `localRuns` is the window's local runs store and `stopped` the runs its
- * `stopRun` was called with.
- */
-async function progressPlugin() {
-  const shown: Shown[] = [];
-  const invoked: Array<{ cmd: string; args: unknown }> = [];
-  const stopped: unknown[] = [];
-  let emit: (message: Record<string, unknown>) => void = () => {};
-  const shellListeners = new Map<string, (event: { payload: unknown }) => void>();
-  const localRuns = ref<Array<Record<string, unknown>>>([]);
-  vi.stubGlobal('defineNuxtPlugin', (setup: () => void) => setup);
-  vi.stubGlobal('watch', watch);
-  vi.stubGlobal('tauriCore', () => ({
-    invoke: async (cmd: string, args: Shown) => {
-      if (cmd === 'desktop_set_run_progress') shown.push(args);
-      else invoked.push({ cmd, args });
-    },
-  }));
-  vi.stubGlobal('tauriEvent', () => ({
-    listen: async (name: string, handler: (event: { payload: unknown }) => void) => {
-      shellListeners.set(name, handler);
-      return () => {};
-    },
-  }));
-  vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
-    emit = listener;
-    return () => {};
-  });
-  vi.stubGlobal('useDesktopLocalRuns', () => ({ runs: localRuns, stopRun: (run: unknown) => stopped.push(run) }));
-  const { default: setup } = await import('../../app/plugins/desktop-run-progress.client');
-  (setup as unknown as () => void)();
-  return {
-    shown,
-    invoked,
-    stopped,
-    emit: (message: Record<string, unknown>) => emit(message),
-    shellEvent: (name: string, payload: unknown) => shellListeners.get(name)?.({ payload }),
-    localRuns,
+  const flash = (over: Partial<FinishedJob>) => {
+    const shown = finishedJobFlash(job(over));
+    return shown && { state: shown.progress.state, label: shown.progress.label, failing: shown.progress.failing };
   };
-}
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.resetModules();
+  test('a bisect flashes the commit it found, or that it did not finish', () => {
+    expect(finishedJobFlash(job({ bisect: { firstBad: { sha: 'abcdef1234567' } } }))).toEqual({
+      progress: { state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false },
+      durationMs: PASS_FLASH_MS,
+    });
+    expect(finishedJobFlash(job({ status: 'failed', exitCode: 1, bisect: { firstBad: null } }))).toEqual({
+      progress: { state: 'error', fraction: 1, label: 'Bisect did not finish', failing: false },
+      durationMs: FAIL_FLASH_MS,
+    });
+  });
+
+  test('a reproduction flashes red when it reproduced, green when it did not', () => {
+    expect(flash({ kind: 'reproduce', status: 'failed', exitCode: 1, phase: 'test' })).toEqual({
+      state: 'error',
+      label: 'Reproduced',
+      failing: false,
+    });
+    expect(flash({ kind: 'reproduce', phase: 'test' })).toMatchObject({ state: 'normal', label: 'Not reproduced' });
+    expect(flash({ kind: 'reproduce', status: 'failed', exitCode: 1, phase: 'install' })).toMatchObject({
+      state: 'error',
+      label: 'Reproduction could not run',
+    });
+  });
+
+  test('a bug report’s steps flash their verdict', () => {
+    const verdict = { kind: 'reproduced', step: 1, found: null } as const;
+    expect(flash({ kind: 'repro', status: 'failed', exitCode: 1, repro: { verdict } })).toMatchObject({
+      state: 'error',
+      label: 'Bug reproduced',
+    });
+    expect(flash({ kind: 'repro', repro: { verdict: { kind: 'not-reproduced' } } })).toMatchObject({
+      state: 'normal',
+      label: 'Not reproduced',
+    });
+  });
+
+  test('a Flake Lab session flashes whether it reproduced the flake, red when it could not run', () => {
+    expect(flash({ kind: 'flake' })).toMatchObject({ state: 'normal', label: 'Flake reproduced' });
+    expect(flash({ kind: 'flake', exitCode: 1 })).toMatchObject({ state: 'normal', label: 'Flake not reproduced' });
+    expect(flash({ kind: 'flake', status: 'failed', exitCode: 2 })).toMatchObject({
+      state: 'error',
+      label: 'Flake Lab could not run',
+    });
+  });
+
+  test('a job that could not start flashes red, one stopped or still running flashes nothing', () => {
+    expect(flash({ status: 'error', exitCode: null })).toMatchObject({ state: 'error', label: 'Bisect could not run' });
+    expect(flash({ status: 'stopped' })).toBeNull();
+    expect(flash({ status: 'running' })).toBeNull();
+  });
 });
 
-describe('the OS progress of the runs in flight', () => {
-  const counts = { totalTests: 1, passedTests: 0, failedTests: 1, skippedTests: 0, didNotRunTests: 0 };
-
-  test("a bisect's failed step ends without a flash, so the shell neither shows nor calls for a failure", async () => {
-    const { shown, emit } = await progressPlugin();
-    emit({ type: 'snapshot', runs: [] });
-    const origin = { origin: 'bisect', originRef: '12', runName: 'desktop-3-unattended' };
-    emit({ type: 'run-started', runId: 5, projectId: 1, ...origin });
-    emit({ type: 'run-progress', runId: 5, projectId: 1, ...counts });
-    emit({ type: 'run-finished', runId: 5, projectId: 1, status: 'failed', ...origin });
-    expect(shown.map((s) => s.label)).not.toContain('Run failed');
-    expect(shown.at(-1)).toEqual({ state: 'none', fraction: null, label: null, failing: false });
+describe('runsOfLocalRun', () => {
+  const live = (over: Partial<LiveRun> = {}): LiveRun => ({
+    status: 'running',
+    done: 1,
+    total: 10,
+    failed: 0,
+    projectId: 1,
+    origin: 'desktop',
+    originRef: 'desktop:a1',
+    name: 'desktop-7',
+    job: false,
+    ...over,
+  });
+  const owner = (over: Partial<LocalRunOwner> = {}): LocalRunOwner => ({
+    key: 1,
+    kind: 'tests',
+    projectId: '1',
+    originRef: 'desktop:a1',
+    hubRefs: ['desktop-7', 'desktop-8'],
+    piwiRunBaseline: 4,
+    flakeTestCaseId: null,
+    startedAt: 1000,
+    finishedAt: 5000,
+    ...over,
   });
 
-  test('a run nobody attends is known by its start when its end names no origin', async () => {
-    const { shown, emit } = await progressPlugin();
-    emit({ type: 'snapshot', runs: [{ id: 5, projectId: 1, status: 'running', origin: 'flake-lab' }] });
-    emit({ type: 'run-finished', runId: 5, projectId: 1, status: 'failed' });
-    expect(shown.at(-1)?.state).toBe('none');
+  test('picks the runs its own steps reported, leaving every other run of the project that began', () => {
+    const active = new Map<number, LiveRun>([
+      [4, live()], // before the local process was spawned
+      [7, live()],
+      [8, live({ name: 'desktop-8' })],
+      [9, live({ origin: 'editor', originRef: 'editor:x', name: null })], // an editor's run
+      [10, live({ origin: 'ci', originRef: null, name: null })], // a CI run
+      [11, live({ originRef: 'desktop:b2', name: 'desktop-9' })], // another local run of the window
+      [12, live({ projectId: 2 })], // another project
+    ]);
+    expect(runsOfLocalRun(active, owner(), [])).toEqual([7, 8]);
   });
 
-  test('a failed run someone attends flashes its failure', async () => {
-    const { shown, emit } = await progressPlugin();
-    emit({ type: 'snapshot', runs: [] });
-    const origin = { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-4' };
-    emit({ type: 'run-started', runId: 6, projectId: 1, ...origin });
-    emit({ type: 'run-finished', runId: 6, projectId: 1, status: 'failed', ...origin });
-    expect(shown.at(-1)).toEqual({ state: 'error', fraction: 1, label: 'Run failed', failing: false });
+  test('also takes a run of its project that never began, stopped in its global setup, whose origin nothing names', () => {
+    const active = new Map<number, LiveRun>([
+      [3, live({ ...NO_LIVE_RUN_FACTS })], // before the baseline
+      [7, live({ ...NO_LIVE_RUN_FACTS, status: 'initializing', total: 0, done: 0 })],
+      [8, live({ ...NO_LIVE_RUN_FACTS, projectId: 2 })], // another project
+      [9, live({ origin: 'ci', originRef: null, name: null })],
+    ]);
+    expect(runsOfLocalRun(active, owner(), [])).toEqual([7]);
+    // A bisect's step whose setup failed leaves its job too.
+    expect(runsOfLocalRun(active, owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] }), [])).toEqual([7]);
   });
 
-  test('a stopped local run takes its own run off the bar, and leaves the other run of its project', async () => {
-    const { shown, emit, localRuns } = await progressPlugin();
-    emit({
-      type: 'snapshot',
-      runs: [
-        {
-          id: 7,
-          projectId: 1,
-          status: 'running',
-          totalTests: 10,
-          passedTests: 2,
-          origin: 'desktop',
-          originRef: 'desktop:abc',
-          runName: 'desktop-3',
-        },
-        { id: 8, projectId: 1, status: 'running', totalTests: 20, passedTests: 5, origin: 'editor' },
-      ],
-    });
-    expect(shown.at(-1)?.label).toBe('Running 7/30 · 2 runs');
-    const run = { key: 1, ...stopped(), status: 'running', startedAt: 0, finishedAt: null };
-    localRuns.value = [run];
-    await nextTick();
-    localRuns.value = [{ ...run, status: 'stopped', finishedAt: 1 }];
-    await nextTick();
-    expect(shown.at(-1)?.label).toBe('Running 5/20…');
+  test('leaves a run that never began above the baseline of another run of the tray still going in the project', () => {
+    const unbegun = { ...NO_LIVE_RUN_FACTS, status: 'initializing', total: 0, done: 0 };
+    const active = new Map<number, LiveRun>([
+      [6, live(unbegun)],
+      [9, live(unbegun)],
+      [10, live({ origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7' })],
+    ]);
+    const ended = owner();
+    const going = owner({ key: 2, originRef: 'desktop:b2', piwiRunBaseline: 8, finishedAt: null });
+    expect(unbegunRunsOf(active, ended, [ended, going])).toEqual([6]);
+    expect(runsOfLocalRun(active, ended, [ended, going])).toEqual([6, 10]);
+    // Once that one ended too, both are its.
+    expect(unbegunRunsOf(active, ended, [ended, { ...going, finishedAt: 6000 }])).toEqual([6, 9]);
   });
 
-  test("the taskbar's Stop stops the window's runs, and the shell's processes none of them owns", async () => {
-    const { invoked, stopped: stoppedRuns, shellEvent, localRuns } = await progressPlugin();
-    const own = { key: 1, ...stopped(), shellId: 3, status: 'running' };
-    localRuns.value = [own];
-    // Shell run 9 is a process a reload left: no window run owns it.
-    shellEvent('piwi:taskbar-stop', [3, 9]);
-    expect(stoppedRuns).toEqual([own]);
-    expect(invoked).toEqual([{ cmd: 'desktop_stop_local_tests', args: { runId: 9 } }]);
+  test('tells two runs of one reference apart by the names their steps gave them', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7' })],
+      [8, live({ origin: 'reproduce', originRef: '42', name: 'desktop-9' })],
+      // A reporter that recorded no name: its origin and reference alone, while no other run shares them.
+      [9, live({ origin: 'reproduce', originRef: '42', name: null })],
+      // A step nobody attends carries the mark the shell gives it.
+      [10, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-unattended', job: true })],
+    ]);
+    const reproduction = owner({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] });
+    expect(runsOfLocalRun(active, reproduction, [reproduction])).toEqual([7, 9]);
+    const bisect = owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] });
+    expect(runsOfLocalRun(active, bisect, [reproduction, bisect])).toEqual([10]);
+  });
+
+  test('leaves a run with no name when another run of the tray goes on under the same reference', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'reproduce', originRef: '42', name: null })],
+      [8, live({ origin: 'reproduce', originRef: '42', name: null })],
+    ]);
+    const first = owner({ key: 1, kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] });
+    const second = owner({ key: 2, kind: 'reproduce', originRef: '42', hubRefs: ['desktop-9'], finishedAt: null });
+    expect(runsOfLocalRun(active, first, [first, second])).toEqual([]);
+    // One that ended before the other started shares nothing with it.
+    const earlier = owner({ key: 3, kind: 'reproduce', originRef: '42', startedAt: 0, finishedAt: 900 });
+    expect(runsOfLocalRun(active, first, [first, earlier])).toEqual([7, 8]);
+  });
+
+  test('takes the lab runs of a Flake Lab session, any experiment’s', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'flake-lab', originRef: 'local-4242', name: null, job: true })],
+      [8, live({ origin: 'flake-lab', originRef: '31', name: null, job: true })],
+      [9, live({ origin: 'ci', originRef: null, name: null })],
+    ]);
+    const session = owner({ kind: 'flake', originRef: 'flake:x' });
+    expect(runsOfLocalRun(active, session, [session])).toEqual([7, 8]);
+  });
+
+  test('takes the lab runs of a bisect that runs a Flake Lab arm at each step', () => {
+    const lab = { origin: 'flake-lab', originRef: 'local-4242', name: null, job: true };
+    const active = new Map<number, LiveRun>([
+      [7, live(lab)],
+      [8, live({ ...lab, projectId: 2 })],
+      [9, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-unattended', job: true })],
+    ]);
+    const bisect = owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'], flakeTestCaseId: 12 });
+    expect(runsOfLocalRun(active, bisect, [bisect])).toEqual([7]);
+    // A Flake Lab session of the tray going on at once in the project could have started them.
+    const session = owner({ key: 2, kind: 'flake', originRef: 'flake:x', piwiRunBaseline: null, finishedAt: null });
+    expect(runsOfLocalRun(active, bisect, [bisect, session])).toEqual([]);
+  });
+
+  test('picks nothing without a baseline, nor a run that began under another origin', () => {
+    const active = new Map<number, LiveRun>([[7, live()]]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: null }), [])).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ kind: 'flake' }), [])).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: 7 }), [])).toEqual([]);
   });
 });

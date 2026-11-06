@@ -1,13 +1,12 @@
 import * as net from 'node:net';
 import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
-  RUN_REF_ENV,
   RUN_TAKES,
   TERMINAL_REF_PREFIX,
   parseHubToRun,
@@ -40,16 +39,17 @@ import {
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
-import { startedByTestRunner } from '../config/editors.js';
-import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
+import { runChannelRef, startedByTestRunner } from '../config/editors.js';
+import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { playwrightVersionAtLeast } from '../support/playwright-version.js';
 import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
+import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, pauseBarUp, viewportOf } from './page-view.js';
+import { openPageView, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -66,9 +66,8 @@ import { internalCall } from './quiet-capture.js';
  * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
  * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
- * most `MAX_VIEW_FPS` a second, a headed stop's pause bar painted over in them, the latest one when the connection is
- * backed up, the latest sent kept in memory for a viewer that comes later until the view ends, never stored), plays
- * the viewer's input
+ * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
+ * viewer that comes later until the view ends, never stored), plays the viewer's input
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
@@ -199,8 +198,6 @@ interface View {
   screencast: boolean;
   /** Send the latest frame sent again, or why none goes, for a viewer that came since: a still page paints no other. */
   resend(): void;
-  /** The bottom edge of the pause bar's band in the latest frame sent, while the bar shows painted over; else null. */
-  barBand(): Promise<number | null>;
   close(): Promise<void>;
 }
 
@@ -218,8 +215,6 @@ interface InputState {
   playing: Promise<unknown>;
   waiting: number;
   buttons: Set<ViewButton>;
-  /** The buttons pressed on the pause bar's band, whose presses and releases are not played. */
-  barButtons: Set<ViewButton>;
   keys: Set<string>;
 }
 
@@ -229,7 +224,6 @@ function freshInput(): InputState {
     playing: Promise.resolve(),
     waiting: 0,
     buttons: new Set(),
-    barButtons: new Set(),
     keys: new Set(),
   };
 }
@@ -284,8 +278,8 @@ export async function openRunChannel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const channel = parseRecordChannel(env[RUN_CHANNEL_ENV]);
-  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
-  if (socket || !channel || !ref || !/^[\w-]{1,64}$/.test(ref)) return false;
+  const ref = runChannelRef(env);
+  if (socket || !channel || !ref) return false;
   const opening = net.connect(channel.path);
   opening.setEncoding('utf8');
   const opened = await new Promise<boolean>((resolve) => {
@@ -503,7 +497,8 @@ export function holdStop(
     type: 'stopped',
     stop: id,
     reason: stop.reason,
-    title: stop.title,
+    // The text the stopped call types stays in the worker, as on every surface.
+    title: hideSecretsInText(hideTypedText(stop.title)),
     place: stop.place,
     locator: stop.locator,
     bar: stop.bar,
@@ -628,6 +623,13 @@ function startView(holding: HeldStop): Promise<IntentAnswer> {
  * stops as its page closes. Null when the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
+  // The page's secret fields and the pause bar are painted over in each frame, or the frame does not go.
+  const mask = maskSecretFields(page, {
+    masks: () => [],
+    quality: VIEW_QUALITY,
+    lightQuality: LIGHT_QUALITY,
+    maxBytes: MAX_VIEW_FRAME,
+  });
   const opened = await openPageView(page, {
     size: viewSize,
     quality: VIEW_QUALITY,
@@ -635,12 +637,13 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     maxFrameBytes: MAX_VIEW_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
-    busy: () => !!socket && socket.writableLength > MAX_FRAME_BACKLOG,
+    busy: () => (!!socket && socket.writableLength > MAX_FRAME_BACKLOG) || mask.resting,
     // Once its stop began to end, no frame of it goes.
     live: () => held?.stop === stop,
+    screen: (frame) => mask.screen(frame),
     send: (frame) =>
       tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
-    refuse: () => tellHub({ type: 'frame', stop, refused: TOO_HEAVY }),
+    refuse: (why) => tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY }),
   });
   if (!opened) return null;
   const onClose = () => {
@@ -651,7 +654,6 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     stop,
     screencast: opened.screencast,
     resend: opened.resend,
-    barBand: opened.barBand,
     close: async () => {
       page.off('close', onClose);
       await opened.close();
@@ -669,9 +671,7 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band is
- * not played (`onPauseBar`), and the answer says how many were not; before a key, each draw of the bar the message
- * meets is held inert until the message ends (`holdBarFrom`), Escape then left to the page.
+ * of a stop that ends meanwhile are not played.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
@@ -686,128 +686,25 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   own.waiting++;
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      const band = view?.stop === holding.stop ? await view.barBand() : null;
-      const keys: BarHold = { token: ++barHolds, drawn: null, held: true };
-      let skipped = 0;
-      try {
-        for (const [i, event] of events.entries()) {
-          if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
-            return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
-          }
-          if (onPauseBar(event, band, own)) {
-            skipped++;
-            continue;
-          }
-          if (event.type === 'key' && holding.bar) {
-            // A key goes only to a page that held its bar inert, and only while the stop still waits.
-            await holdBar(page, keys);
-            if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
-              return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
-            }
-            if (!keys.held) {
-              skipped++;
-              continue;
-            }
-          }
-          try {
-            await internalCall(page, () => playEvent(page, event, own));
-          } catch (error) {
-            // A page's error may name the address it was at: its credentials stay in the worker.
-            return {
-              ok: false,
-              message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
-            };
-          }
+      for (const [i, event] of events.entries()) {
+        if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
+          return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
         }
-        return { ok: true, message: playedAnswer(events.length, skipped) };
-      } finally {
-        if (keys.drawn && !page.isClosed()) {
-          const release = { token: keys.token, hold: false };
-          await within(
-            internalCall(page, () => page.evaluate(holdBarFrom, release)).catch(() => undefined),
-            VIEW_END_MS,
-          );
+        try {
+          await internalCall(page, () => playEvent(page, event, own));
+        } catch (error) {
+          // A page's error may name the address it was at: its credentials stay in the worker.
+          return {
+            ok: false,
+            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+          };
         }
       }
+      return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
     })
     .finally(() => own.waiting--);
   own.playing = played.catch(() => undefined);
   return played;
-}
-
-/** What a message of `count` events answers, `skipped` of them not played: the pause bar would take them. */
-function playedAnswer(count: number, skipped: number): string {
-  if (!skipped) return count === 1 ? 'Played 1 event.' : `Played ${count} events.`;
-  return (
-    `Played ${count - skipped} of ${count} ${count === 1 ? 'event' : 'events'}: ${skipped} not played, as the pause ` +
-    `bar the view paints over would take ${skipped === 1 ? 'it' : 'them'}.`
-  );
-}
-
-/**
- * A message of a viewer's input, by its token, the draw of the pause bar it holds inert, and whether the page answered
- * that hold: while it has not, the message's keys are not played.
- */
-interface BarHold {
-  token: number;
-  drawn: object | null;
-  held: boolean;
-}
-
-/** The messages of a viewer's input so far: each holds the pause bar by its own token. */
-let barHolds = 0;
-
-/**
- * Hold the pause bar `page` shows inert for the message `hold`, once for each draw of it the message meets: `hold.held`
- * says whether the page answered within `PAGE_ANSWER_MS`.
- */
-async function holdBar(page: Page, hold: BarHold): Promise<void> {
-  const bar = pauseBarUp(page);
-  if (!bar || bar === hold.drawn) return;
-  hold.drawn = bar;
-  const drawn = await answerWithin(
-    Promise.resolve(bar.drawn).then(() => true),
-    PAGE_ANSWER_MS,
-    false,
-  );
-  const request = { token: hold.token, hold: true };
-  hold.held =
-    drawn &&
-    (await answerWithin(
-      internalCall(page, () => page.evaluate(holdBarFrom, request)).then(() => true),
-      PAGE_ANSWER_MS,
-      false,
-    ));
-}
-
-/**
- * Runs in the page: the pause bar is inert while a message of a viewer's input holds it (`token`, `hold`), so Tab passes
- * it by, the focus leaves it, no key presses its buttons and it leaves Escape to the page; once none holds it, it is as
- * it was. A message that lets go of a bar another holds leaves it inert. Must stay self-contained.
- */
-function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
-  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
-  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
-  const doc = (globalThis as unknown as { document?: Document }).document;
-  const bar = doc?.getElementById('__piwi-pause-bar');
-  if (!doc || !bar) return;
-  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
-  if (hold) holds.push(token);
-  bar.__piwiKeyHolds = holds;
-  bar.inert = holds.length > 0;
-  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
-}
-
-/**
- * Whether `event` presses or clicks within the pause bar's band (`band`, its bottom edge), or releases a button pressed
- * there: such an event is not played.
- */
-function onPauseBar(event: ViewInput, band: number | null, own: InputState): boolean {
-  if (event.type !== 'mouse') return false;
-  if (event.action === 'up') return own.barButtons.delete(event.button);
-  if (band === null || event.y >= band || (event.action !== 'down' && event.action !== 'click')) return false;
-  if (event.action === 'down') own.barButtons.add(event.button);
-  return true;
 }
 
 /** Play one event on the page as trusted input, keeping what it holds down. */
@@ -1092,18 +989,30 @@ async function bindAt(at: HeldStop | null, on: boolean): Promise<BindAnswer> {
 }
 
 /**
- * An image of a stopped page, without the pause bar, with its viewport in CSS pixels (which `pick-at` names a point
- * in, whatever the image's size); null when there is no page or it cannot be taken.
+ * An image of a stopped page, without the pause bar, its secret fields painted over (`maskedImage`), at its viewport's
+ * size in CSS pixels (which `pick-at` names a point in); null when there is no page, it cannot be taken, or it is not
+ * of the viewport's shape.
  */
 async function imageOf(page: Page | null): Promise<PausedImage | null> {
   if (!page || page.isClosed()) return null;
   try {
-    const shot = await internalCall(page, () =>
-      page.screenshot({ type: 'jpeg', quality: 60, style: BAR_HIDDEN, timeout: 5000 }),
-    );
+    const shot = await maskedImage(page, { quality: 60, style: BAR_HIDDEN, timeout: 5000 });
+    if (!shot) return null;
     const viewport = await viewportOf(page);
+    const size = jpegSize(shot);
+    if (viewport && (!size || !sameShape(size, viewport))) return null;
     return { mime: 'image/jpeg', data: shot.toString('base64'), ...viewport };
   } catch {
     return null;
   }
+}
+
+/** Whether an image has a viewport's shape: their widths over their heights within 2 %. */
+export function sameShape(
+  image: { width: number; height: number },
+  viewport: { width: number; height: number },
+): boolean {
+  if (image.height <= 0 || viewport.height <= 0) return false;
+  const shape = viewport.width / viewport.height;
+  return Math.abs(image.width / image.height - shape) <= shape * 0.02;
 }

@@ -49,6 +49,7 @@ import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
+import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -410,6 +411,12 @@ export interface ServerOptions {
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
+  /**
+   * The editors' discovery folder the hub names its peers from (`readLiveHubs`), and how often it reads it while a
+   * connection is subscribed; `editorsDir()` and `PEERS_MS` by default.
+   */
+  editorsDir?: string;
+  hubPeersMs?: number;
   /** How long an agent follows a run after its last call on it; `FOLLOW_IDLE_S` by default. */
   agentFollowIdleMs?: number;
 }
@@ -2272,6 +2279,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
         forwarded: () => hubForwarded,
+        peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        peersMs: options.hubPeersMs,
         keepaliveMs: options.hubKeepaliveMs,
         helloMs: options.hubHelloMs,
       }),
