@@ -896,7 +896,7 @@ defineExpose({ scrollToCase });
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
         />
-        <UPopover v-else>
+        <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">
           <UButton
             size="xs"
             color="neutral"

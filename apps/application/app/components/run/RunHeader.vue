@@ -311,7 +311,8 @@ function onLabelKeydown(e: KeyboardEvent) {
       <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
            tests in the desktop app; the report leads on a green one, where the desktop
            app offers to re-run the flaky tests, else all of them. -->
-      <UPopover v-if="retryShown && !desktopBridge">
+      <!-- The copy's fallback selects a hidden textarea: focus leaving the menu keeps it open. -->
+      <UPopover v-if="retryShown && !desktopBridge" :content="KEEP_OPEN_ON_FOCUS_OUT">
         <UButton
           size="xs"
           :color="retryIsPrimary ? 'primary' : 'neutral'"

@@ -3808,7 +3808,6 @@ const SCENES = [
       route: '/test-runs/63',
       viewport,
       async run({ page, shoot, settle }) {
-        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
         await page.locator('[data-tour="run-retry-command"]').click();
         await page.locator('[data-shot="retry-command-options"]').waitFor();
         await settle();

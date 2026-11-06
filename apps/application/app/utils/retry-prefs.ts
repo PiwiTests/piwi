@@ -52,3 +52,10 @@ export function parseRetryPrefs(raw: unknown): RetryPrefs {
     workers: inRange(value.workers, RETRY_OPTION_LIMITS.workers) ? value.workers : null,
   };
 }
+
+/**
+ * Popover content options for a menu whose trigger also copies: the copy's fallback, without clipboard permission or
+ * over plain HTTP, selects a hidden textarea, and focus leaving the menu must not close it. A click outside and
+ * Escape still do.
+ */
+export const KEEP_OPEN_ON_FOCUS_OUT = { onFocusOutside: (event: Event) => event.preventDefault() };

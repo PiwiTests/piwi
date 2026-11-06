@@ -14,7 +14,7 @@ export function useRetryOptions() {
     default: () => ({ ...DEFAULT_RETRY_PREFS }),
     decode: (value) => {
       try {
-        return parseRetryPrefs(decodeURIComponent(value));
+        return parseRetryPrefs(decodeURIComponent(value ?? ''));
       } catch {
         return { ...DEFAULT_RETRY_PREFS };
       }
