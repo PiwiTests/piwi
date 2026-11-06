@@ -11,11 +11,13 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  *
  * One live view of the page shown (`openPageView`) feeds every sink that subscribes: the editor's views of a stop and
  * of the lane through the run connection (`run-channel.ts`), and the team instance's (`live-view.ts`). Its frames are
- * masked once (`live-mask.ts`: the page's secret fields, and the masks every sink names), each sink then taking them at
- * its own pace (`LatestPacer`), the latest alone while its way out is busy. The view asks the page for the largest size
- * and the highest quality and pace a sink asks, keeps each frame within the smallest size in bytes one takes, and opens
- * again when the page shown or what the sinks ask changes. Nothing runs while no sink subscribes, and nothing here
- * stores a frame: each sink keeps the latest it was given, in memory, for a viewer that comes later.
+ * masked once (`live-mask.ts`: the page's secret fields, and the masks every sink names), a headed stop's pause bar
+ * painted over in the same pass (`page-view.ts`), each sink then taking them at its own pace (`LatestPacer`), the
+ * latest alone while its way out is busy. A viewer's press on that bar's band is not played (`laneBarBand`). The view
+ * asks the page for the largest size and the highest quality and pace a sink asks, keeps each frame within the
+ * smallest size in bytes one takes, and opens again when the page shown or what the sinks ask changes. Nothing runs
+ * while no sink subscribes, and nothing here stores a frame: each sink keeps the latest it was given, in memory, for a
+ * viewer that comes later.
  */
 
 /** How long closing the view may take before the test goes on without waiting for it. */
@@ -346,7 +348,7 @@ function openView(shown: Source, options: Asked): Promise<PageView | null> {
     shotMs: options.shotMs,
     busy: () => shown.mask.resting || sinks().every((sink) => sink.busy()),
     live,
-    screen: (frame) => shown.mask.screen(frame),
+    screen: (frame, also) => shown.mask.screen(frame, also),
     send: (frame) => {
       if (!live()) return;
       const framed: LaneFrame = { ...frame, test: test?.id ?? null, stop: stop?.id ?? null };
@@ -360,6 +362,17 @@ function openView(shown: Source, options: Asked): Promise<PageView | null> {
       for (const subscriber of subscribers) give(subscriber, kept);
     },
   }).catch(() => null);
+}
+
+/**
+ * The bottom edge of the pause bar's band in the lane's frames of `page`, in the pixels they name its viewport in,
+ * while the bar shows there and the view paints it over (`PageView.barBand`); null otherwise.
+ */
+export async function laneBarBand(page: Page): Promise<number | null> {
+  const shown = source;
+  if (shown?.page !== page) return null;
+  const view = await shown.view;
+  return view ? view.barBand() : null;
 }
 
 /** `run`, for `ms` at most: settles once it did or they passed, never throwing. */

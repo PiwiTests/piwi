@@ -3,14 +3,15 @@ import type { Frame, Locator, Page } from '@playwright/test';
 import { SECRET_FIELD_SELECTOR } from '@piwitests/core/mask';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { locatorOn } from './chain-locator.js';
-import type { PageFrame } from './page-view.js';
+import type { FrameBox, PageFrame } from './page-view.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 
 /**
  * The live view's images with the page's secret fields painted over, in the worker, before an image leaves it: the
  * fields of `SECRET_FIELD_SELECTOR` (a password field, and a one-time code or a card's number or security code by its
  * `autocomplete`) and the project's own locators (`masks`), in every frame of the page. Each image the view would send
- * comes here first (`page-view.ts`'s `screen`). The boxes of those elements, and the viewport's size, are read through
+ * comes here first (`page-view.ts`'s `screen`), with the boxes the view paints over beside them (a headed stop's
+ * pause bar), painted in the same pass. The boxes of those elements, and the viewport's size, are read through
  * `internalCall` just after it, and compared with a read made just before the page showed it: a frame whose two reads
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
  * them painted over, two a second at most (`MASKED_SPACING_MS`); any other is replaced by a screenshot taken between two
@@ -215,7 +216,7 @@ async function childOrigin(
 }
 
 /** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
-async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+export async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -432,28 +433,63 @@ async function secretBoxes(page: Page): Promise<Omit<Read, 'began' | 'ended'> | 
   return { ...read, boxes: [...read.boxes, ...(measured as Box[][]).flat()] };
 }
 
+/** What an image of a page taken without Piwi's pause bar applies to the page while it is taken. */
+const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+
+/** The images of a page being taken without the pause bar, and how many began. */
+interface BarHiddenShots {
+  running: Set<Promise<unknown>>;
+  begun: number;
+}
+
+const BAR_HIDDEN_SHOTS = new WeakMap<Page, BarHiddenShots>();
+
+/**
+ * Take an image of `page` without Piwi's pause bar: `take` applies `style` to the page while it runs, and each read of
+ * the bar (`page-view.ts`) waits for it to end, which its own timeout bounds.
+ */
+export function withoutPauseBar<T>(page: Page, take: (style: string) => Promise<T>): Promise<T> {
+  let shots = BAR_HIDDEN_SHOTS.get(page);
+  if (!shots) BAR_HIDDEN_SHOTS.set(page, (shots = { running: new Set(), begun: 0 }));
+  const own = shots;
+  const taken = take(BAR_HIDDEN);
+  const ended = taken.catch(() => undefined);
+  own.running.add(ended);
+  own.begun++;
+  void ended.then(() => own.running.delete(ended));
+  return taken;
+}
+
+/** How many images of `page` without the pause bar began so far, and what settles once none is being taken. */
+export function barHiddenShots(page: Page): { begun: number; ended: Promise<unknown> } {
+  const shots = BAR_HIDDEN_SHOTS.get(page);
+  return { begun: shots?.begun ?? 0, ended: Promise.all(shots ? [...shots.running] : []) };
+}
+
 /**
  * An image of `page`'s viewport, at its size in CSS pixels, with its secret fields (`SECRET_FIELD_SELECTOR`, in every
  * frame) painted over in the image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
  * boxes (`secretBoxes`), through `internalCall`, which must agree. Null when they do not, when the page cannot be read
- * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is
- * taken.
+ * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. With `withoutBar`, the image is
+ * taken without Piwi's pause bar (`withoutPauseBar`).
  */
 export async function maskedImage(
   page: Page,
-  options: { quality: number; style?: string; timeout: number },
+  options: { quality: number; withoutBar?: boolean; timeout: number },
 ): Promise<Buffer | null> {
   const before = await secretBoxes(page);
   if (!before) return null;
-  const shot = await internalCall(page, () =>
-    page.screenshot({
-      type: 'jpeg',
-      quality: options.quality,
-      scale: 'css',
-      timeout: options.timeout,
-      ...(options.style ? { style: options.style } : {}),
-    }),
-  ).catch(() => null);
+  const screenshot = (style?: string) =>
+    internalCall(page, () =>
+      page.screenshot({
+        type: 'jpeg',
+        quality: options.quality,
+        scale: 'css',
+        timeout: options.timeout,
+        ...(style ? { style } : {}),
+      }),
+    );
+  const shot = await (options.withoutBar ? withoutPauseBar(page, screenshot) : screenshot()).catch(() => null);
   if (!shot) return null;
   const after = await secretBoxes(page);
   if (!after || !sameBoxes(before.boxes, after.boxes)) return null;
@@ -485,16 +521,20 @@ export interface SecretFieldMaskOptions {
 }
 
 export interface SecretFieldMask {
-  /** Whether an image painted over went less than `MASKED_SPACING_MS` ago: the next one waits. */
+  /** Whether an image that shows a masked element went less than `MASKED_SPACING_MS` ago: the next one waits. */
   readonly resting: boolean;
-  /** The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. */
-  screen(frame: PageFrame): Promise<PageFrame | string | null>;
+  /**
+   * The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. The
+   * boxes `also` names for that image (the pause bar's band), asked once right before the paint, are painted over in
+   * the same pass where there is `jpeg-js`; without it, an image that shows no masked element goes without them.
+   */
+  screen(frame: PageFrame, also?: (image: PageFrame) => Promise<FrameBox[]>): Promise<PageFrame | string | null>;
 }
 
 /** Mask the secret fields and the project's locators in each image of `page` the view would send. */
 export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): SecretFieldMask {
   const reads: Read[] = [];
-  /** When the latest image painted over was given to send. */
+  /** When the latest image that shows a masked element was given to send. */
   let maskedAt = -Infinity;
   /** How many reads failed in a row. */
   let failed = 0;
@@ -517,31 +557,33 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
 
   /**
    * The image to send for a frame its reads agree on, at `size` at most (the size of the frame it stands for): as it
-   * is, or painted over.
+   * is, or with the masked elements' `boxes` and the `also` boxes painted over.
    */
   const shown = (
     frame: PageFrame,
     boxes: Box[],
+    also: FrameBox[],
     size: { width: number; height: number },
   ): PageFrame | string | null => {
     const own = jpegSize(frame.data);
     const fits = own === null || (own.width <= size.width && own.height <= size.height);
     const jpeg = jpegCodec();
-    if (!boxes.length && (fits || !jpeg)) return frame.data.length <= options.maxBytes ? frame : null;
+    if (!boxes.length && (!jpeg || (fits && !also.length))) {
+      return frame.data.length <= options.maxBytes ? frame : null;
+    }
     if (!jpeg) return NO_CODEC;
     let data: Buffer;
     try {
-      data = paintBoxes(jpeg, frame, boxes, size, options.quality);
+      data = paintBoxes(jpeg, frame, [...boxes, ...also], size, options.quality);
       // A page too heavy for an image at the view's quality is painted at the lighter one.
       if (data.length > options.maxBytes && options.lightQuality !== undefined) {
-        data = paintBoxes(jpeg, frame, boxes, size, options.lightQuality);
+        data = paintBoxes(jpeg, frame, [...boxes, ...also], size, options.lightQuality);
       }
     } catch {
       return null;
     }
-    if (!boxes.length) return data.length <= options.maxBytes ? { ...frame, data } : null;
     if (data.length > options.maxBytes) return null;
-    maskedAt = Date.now();
+    if (boxes.length) maskedAt = Date.now();
     return { ...frame, data };
   };
 
@@ -549,7 +591,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
     get resting() {
       return Date.now() - maskedAt < MASKED_SPACING_MS;
     },
-    async screen(frame) {
+    async screen(frame, also) {
       const before = [...reads].reverse().find((r) => r.ended <= frame.at && r.ended >= frame.at - FRESH_MS) ?? null;
       const after = await read();
       if (typeof after === 'string' || !after) return after;
@@ -560,7 +602,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
         showsViewportOf(frame, before) &&
         showsViewportOf(frame, after)
       ) {
-        return shown(frame, after.boxes, size);
+        return shown(frame, after.boxes, (await also?.(frame)) ?? [], size);
       }
       // No read brackets the frame: a screenshot taken between two reads goes in its place.
       if (page.isClosed()) return null;
@@ -581,9 +623,11 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       const { width, height } = again.viewport;
       if (!near(width, after.viewport.width) || !near(height, after.viewport.height)) return null;
       // The screenshot shows the viewport the reads measured, whatever size the frame it stands for named.
+      const taken = { data: shot, width, height, at };
       return shown(
-        { data: shot, width, height, at },
+        taken,
         again.boxes,
+        (await also?.(taken)) ?? [],
         fitViewSize({ width, height }, size.width, size.height),
       );
     },

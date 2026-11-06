@@ -66,7 +66,9 @@ starts again once it answers; the Runs window says how each paired tool stands, 
 times on its backoff, then once a minute while it is open, reads a proofless 404 as no editor, and frees a command's buttons after 25 s; the popup keeps a muted Runs tile
 while a paired tool does not answer; and the local live view and stop image are masked as the team's, the image at
 CSS scale and of the viewport's shape, every call's and stop's title through `hideTypedText`, the pause bar's and the
-terminal's included, so the bar itself carries nothing to paint over.
+terminal's included; the pause bar's band is painted over in every frame of a headed stop's lane view, in the
+same pass, a viewer's press on it not played, and while a viewer's keys play the bar is inert and leaves Escape to
+the page.
 In the desktop app, a client plugin holds the hub stream from the window's start, through the TV layout and again after
 a reload while the hub says runs go on (`hub-runs`); stopping a local run takes its own progress alone off the OS bar;
 and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. P3 is built;
@@ -87,13 +89,17 @@ it running or stopped, with Interact at its stops, and JetBrains' **Worker N** t
 the call a test runs, the worker says which (`waiting`, from a reporter that lists `give-up` in its `features`), and the
 editors' status bars and lane views, the Runs window and the desktop app's tray say it with how long it has run, and
 offer **End the test** there (`give-up`): a locator call is given up through its end signal, and after any other call
-the test is skipped at its next locator call. P4's showcase beat is not built yet. The later phases are proposed. The bugs the analysis
+the test is skipped at its next locator call. In both editors, a new stop takes the focus only while no other held
+stop's file is open or on the worker slot the person is on, a slot only watched in a lane view not counting, and the
+paused page keeps its stop while held, waiting 10 s at most for a slot stepped from the editor. The Windows
+thumbnail's Open restores a minimized window, and its Stop is disabled while no local run runs. P4's showcase beat is
+not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
 shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). The phases below fix the first six: P0
 to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
-#1111's stopped state and thumbnail in P6). #1109's notification is fixed already: no run started on a developer's
+#1111's stopped state and the thumbnail's Stop on one run in P6). #1109's notification is fixed already: no run started on a developer's
 machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
 `stuck-notifications` use of `run-eligibility.ts`. #1112 is fixed on its own: the default trace takes no ARIA
 snapshots. Nothing

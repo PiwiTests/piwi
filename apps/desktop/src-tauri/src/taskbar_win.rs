@@ -8,16 +8,19 @@
 //! Windows-only, and reachable only through `ITaskbarList3` plus a window
 //! subclass to receive the button clicks (Windows routes them as `WM_COMMAND`
 //! with `THBN_CLICKED`, which Tauri does not surface). Clicks are turned into
-//! app actions: **Open** shows/focuses the window here in the shell; **Stop**
-//! emits `piwi:taskbar-stop`, which the dashboard's run store listens for and
-//! stops its active runs (the shell does not own which run is "current").
+//! app actions: **Open** restores, shows and focuses the window here in the
+//! shell (`bring_to_front`); **Stop**, enabled only while a local run is running
+//! (`set_stop_enabled`), emits `piwi:taskbar-stop`, which the dashboard's run
+//! store listens for and stops its active runs (the shell does not own which
+//! run is "current").
 //!
 //! NOTE: this module is compile-verified (native build + a Windows cross-check)
 //! but its COM / subclass / GDI behaviour has not been exercised on a real
 //! Windows desktop yet — it needs a functional pass there before being trusted.
 #![cfg(windows)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use tauri::{AppHandle, Emitter as _, Manager as _, WebviewWindow};
@@ -29,7 +32,7 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::{
     DefSubclassProc, ITaskbarList3, SetWindowSubclass, TaskbarList, THB_FLAGS, THB_ICON,
-    THB_TOOLTIP, THBF_ENABLED, THUMBBUTTON,
+    THB_TOOLTIP, THBF_DISABLED, THBF_ENABLED, THUMBBUTTON, THUMBBUTTONFLAGS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, RegisterWindowMessageW, HICON, ICONINFO, WM_COMMAND,
@@ -47,8 +50,12 @@ const SUBCLASS_ID: usize = 0x7177_0001;
 /// taskbar button now exists and buttons may be added. Resolved once.
 static TASKBAR_BUTTON_CREATED: OnceLock<u32> = OnceLock::new();
 /// Thumb buttons can be *added* only once per window; later changes must go
-/// through `ThumbBarUpdateButtons`. We only ever add, so guard against a second.
+/// through `ThumbBarUpdateButtons`. Guards against a second add.
 static BUTTONS_ADDED: AtomicBool = AtomicBool::new(false);
+/// The window the buttons were added to, as its handle's address; 0 until they are.
+static BUTTONS_WINDOW: AtomicUsize = AtomicUsize::new(0);
+/// Whether **Stop** is enabled: while a local run is running (`set_stop_enabled`).
+static STOP_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Which glyph a thumb button shows.
 #[derive(Clone, Copy)]
@@ -107,8 +114,7 @@ unsafe extern "system" fn subclass_proc(
             }
             ID_OPEN => {
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    crate::bring_to_front(&window);
                 }
             }
             _ => {}
@@ -117,36 +123,77 @@ unsafe extern "system" fn subclass_proc(
     DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
-/// Add the Stop/Open buttons to the window's taskbar thumbnail, once.
+/// The shell's taskbar list, initialised; `None` when COM gives none.
+unsafe fn taskbar_list() -> Option<ITaskbarList3> {
+    let taskbar: ITaskbarList3 = CoCreateInstance(&TaskbarList, None, CLSCTX_INPROC_SERVER).ok()?;
+    taskbar.HrInit().ok()?;
+    Some(taskbar)
+}
+
+/// Add the Stop/Open buttons to the window's taskbar thumbnail, once; Stop as
+/// `set_stop_enabled` last left it.
 unsafe fn add_buttons(hwnd: HWND) {
     if BUTTONS_ADDED.swap(true, Ordering::SeqCst) {
         return;
     }
-    let taskbar: ITaskbarList3 = match CoCreateInstance(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
-        Ok(t) => t,
-        Err(_) => {
-            // Allow a later attempt (e.g. on TaskbarButtonCreated) to retry.
-            BUTTONS_ADDED.store(false, Ordering::SeqCst);
-            return;
-        }
-    };
-    if taskbar.HrInit().is_err() {
+    let Some(taskbar) = taskbar_list() else {
+        // Allow a later attempt (e.g. on TaskbarButtonCreated) to retry.
         BUTTONS_ADDED.store(false, Ordering::SeqCst);
         return;
-    }
+    };
     let buttons = [
-        thumb_button(ID_STOP, Glyph::Stop, "Stop run"),
-        thumb_button(ID_OPEN, Glyph::Open, "Open Piwi Dashboard"),
+        thumb_button(
+            ID_STOP,
+            Glyph::Stop,
+            "Stop run",
+            STOP_ENABLED.load(Ordering::SeqCst),
+        ),
+        thumb_button(ID_OPEN, Glyph::Open, "Open Piwi Dashboard", true),
     ];
-    let _ = taskbar.ThumbBarAddButtons(hwnd, &buttons);
+    if taskbar.ThumbBarAddButtons(hwnd, &buttons).is_ok() {
+        BUTTONS_WINDOW.store(hwnd.0 as usize, Ordering::SeqCst);
+    }
 }
 
-/// Build one `THUMBBUTTON` with an icon, tooltip and enabled flag.
-fn thumb_button(id: u16, glyph: Glyph, tip: &str) -> THUMBBUTTON {
+/// Enable the thumbnail's **Stop** while a local run is running, and disable it
+/// while none is. On the main thread, which owns the window the buttons are on;
+/// before they are added, `add_buttons` reads the state it leaves.
+pub fn set_stop_enabled(running: bool) {
+    if STOP_ENABLED.swap(running, Ordering::SeqCst) == running {
+        return;
+    }
+    let window = BUTTONS_WINDOW.load(Ordering::SeqCst);
+    if window == 0 {
+        return;
+    }
+    let stop = THUMBBUTTON {
+        dwMask: THB_FLAGS,
+        iId: ID_STOP as u32,
+        dwFlags: button_flags(running),
+        ..Default::default()
+    };
+    unsafe {
+        if let Some(taskbar) = taskbar_list() {
+            let _ = taskbar.ThumbBarUpdateButtons(HWND(window as *mut c_void), &[stop]);
+        }
+    }
+}
+
+/// A thumb button's flags: clickable, or greyed out.
+fn button_flags(enabled: bool) -> THUMBBUTTONFLAGS {
+    if enabled {
+        THBF_ENABLED
+    } else {
+        THBF_DISABLED
+    }
+}
+
+/// Build one `THUMBBUTTON` with an icon, tooltip and its enabled state.
+fn thumb_button(id: u16, glyph: Glyph, tip: &str, enabled: bool) -> THUMBBUTTON {
     let mut button = THUMBBUTTON {
         dwMask: THB_ICON | THB_TOOLTIP | THB_FLAGS,
         iId: id as u32,
-        dwFlags: THBF_ENABLED,
+        dwFlags: button_flags(enabled),
         ..Default::default()
     };
     if let Some(icon) = make_icon(glyph) {

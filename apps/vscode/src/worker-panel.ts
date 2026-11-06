@@ -5,8 +5,9 @@
  * Interact sends clicks and keys to the page (`piwi/pageInput`) and Shift+click picks the element under it
  * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is drawn anew, so a
  * message of the panel names the stop it was drawn for, and Interact starts off. One slot at a time; a stop elsewhere
- * never takes it over. The view ends while the panel is hidden and starts again as it shows. The pure half is
- * `run-control.ts`.
+ * never takes it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the
+ * wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the
+ * paused page as new ones (`hooks`). The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -26,6 +27,7 @@ import {
   type RunSession,
 } from '@piwitests/editor/protocol';
 import {
+  actsOnPage,
   frameIsCurrent,
   imageClickOf,
   laneShown,
@@ -56,7 +58,19 @@ export interface WorkerPanel extends vscode.Disposable {
 
 const NO_ANSWER = 'The editor service did not answer.';
 
-export function createWorkerPanel(context: vscode.ExtensionContext, lc: LanguageClient): WorkerPanel {
+/** What the run view hears of the panel. */
+interface WorkerPanelHooks {
+  /** The person sent a press, a key, text, the wheel or a pick to `stop`'s page (`actsOnPage`). */
+  acted(stop: ShownStop): void;
+  /** The panel was hidden or closed, or stopped watching: the stops it showed may go to the paused page. */
+  changed(): void;
+}
+
+export function createWorkerPanel(
+  context: vscode.ExtensionContext,
+  lc: LanguageClient,
+  hooks: WorkerPanelHooks,
+): WorkerPanel {
   let panel: vscode.WebviewPanel | null = null;
   let target: { ref: string; lane: number } | null = null;
   let sessions: ReadonlyMap<string, RunSession> = new Map();
@@ -74,6 +88,8 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
   let refused: string | null = null;
   let interacting = false;
   let view: PausedPageView | null = null;
+  /** The extension disposes of the panel: nothing is shown again. */
+  let disposed = false;
 
   const script = () =>
     panel!.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'paused-page.js')).toString();
@@ -115,6 +131,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
     const slot = target;
     if (!on || !slot || !panel?.visible) {
       draw();
+      hooks.changed();
       return { ok: true, message: 'You no longer watch the worker.' };
     }
     const params: LaneViewParams = { ...slot, on: true };
@@ -130,6 +147,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
       watching = null;
       note = answer?.message ?? NO_ANSWER;
       draw();
+      hooks.changed();
     }
     return answer ?? { ok: false, message: NO_ANSWER };
   };
@@ -143,6 +161,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
     if (!point) return;
     note = 'Picking the element under the click…';
     draw();
+    hooks.acted(stop);
     const params: PickAtParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, ...point };
     const answer = await lc.sendRequest<PickAtResult>(PICK_AT_REQUEST, params).catch(() => null);
     if (click.shown !== shown) return;
@@ -171,6 +190,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
     const events =
       m.type === 'release' ? [] : m.type === 'input' && view.live?.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
+    if (m.type === 'input' && actsOnPage(events)) hooks.acted(stop);
     const at = { ref: stop.ref, worker: stop.worker, since: stop.stop.since };
     const answer = await lc
       .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...at, events, release: m.type === 'release' })
@@ -204,6 +224,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
         stopWatching();
         interacting = false;
         draw();
+        hooks.changed();
       } else if (change === 'watch') void watch(true);
     });
     made.onDidDispose(() => {
@@ -212,6 +233,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
       panel = null;
       target = null;
       view = null;
+      if (!disposed) hooks.changed();
     });
     return made;
   };
@@ -273,6 +295,7 @@ export function createWorkerPanel(context: vscode.ExtensionContext, lc: Language
       draw(true);
     },
     dispose() {
+      disposed = true;
       subscription.dispose();
       stopWatching();
       panel?.dispose();

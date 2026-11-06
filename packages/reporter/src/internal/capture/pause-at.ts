@@ -14,6 +14,7 @@ import {
   type PauseChoice,
 } from '@piwitests/picker-dom';
 import { detectCi } from '../support/ci.js';
+import { pauseBarShows } from './page-view.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
@@ -889,7 +890,8 @@ export function highlightAtStop(page: Page, locator: Locator, what: 'call' | 'co
  * ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and the
  * recording then end at once, whether the bar or an intent started them, leaving nothing of theirs in the page. The bar
  * and the highlight are gone once it returns, unless the page stops answering (a highlight its frame draws later
- * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. Every page call
+ * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. The page's live
+ * views paint the bar over from the moment it is drawn until it is known to be down (`pauseBarShows`). Every page call
  * it makes must run inside an internal call.
  */
 export async function pauseHere(
@@ -903,6 +905,8 @@ export async function pauseHere(
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
   let highlight: StopHighlight | null = null;
+  /** Tells the page's live views that the bar drawn last came down. */
+  let barDown: (() => void) | null = null;
   try {
     if (point.target) {
       highlight = point.target.highlight();
@@ -933,13 +937,16 @@ export async function pauseHere(
     for (;;) {
       try {
         if (ended?.aborted) return 'resume';
-        await unlessEnded(page.evaluate(showPauseBar, arg), ended);
+        const drawn = page.evaluate(showPauseBar, arg);
+        barDown = pauseBarShows(page, drawn);
+        await unlessEnded(drawn, ended);
         const answered = page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }).then(() => null);
         const intent = await unlessEnded(intents ? Promise.race([answered, intents.wait()]) : answered, ended);
         intents?.answered();
         if (ended?.aborted) return 'resume';
         const taken = (await unlessEnded(page.evaluate(takePauseState), ended)) as PauseChoice | null | undefined;
         if (ended?.aborted) return 'resume';
+        barDown();
         const choice = taken ?? intent ?? null;
         // An intent's pick or recording runs in the test's window: it comes to the front first.
         const raised = intent && choice === intent ? page.bringToFront().catch(() => undefined) : null;
@@ -965,6 +972,8 @@ export async function pauseHere(
         const picked = await pickLocator(page, probe, null, ended).catch(() => null);
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
+        // The document the bar was drawn in is gone, or the page broke.
+        barDown?.();
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
         await unlessEnded(
           page.waitForLoadState('domcontentloaded').catch(() => undefined),
@@ -982,5 +991,6 @@ export async function pauseHere(
       ended?.aborted ? within(page.evaluate(takePauseState), TAKE_DOWN_MS).catch(() => undefined) : undefined,
       highlight?.hide(),
     ]);
+    barDown?.();
   }
 }

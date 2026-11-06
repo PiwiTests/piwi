@@ -158,7 +158,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     }
 
     /**
-     * The popup's actions: the controls of a run started here while one is live, then what the item's state calls for
+     * The popup's actions: while a run started here is live, each stop, named as the choice among several names it,
+     * which goes to its line, and the run's controls; then what the item's state calls for
      * (going to the recorded lines while a recording runs, with its controls), then the failing tests, the failures, the
      * dashboard and the baseline, the test at the caret and Record Here, then Refresh, Connect and the settings. The
      * registered actions keep their own logic, and the popup leaves out those that do not apply.
@@ -180,6 +181,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         fun registered(vararg ids: String) = ids.mapNotNull { manager.getAction(it) }.filter { it !== first }
         return DefaultActionGroup().apply {
             if (runs()?.controls()?.active == true) {
+                val stops = runs()?.stops().orEmpty()
+                stops.forEach { add(GoToStopAction(it)) }
+                if (stops.isNotEmpty()) addSeparator()
                 addAll(registered(*RUN_ACTIONS))
                 addSeparator()
             }
@@ -211,6 +215,26 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             ActionPlaces.STATUS_BAR_PLACE,
         )
         popup.show(RelativePoint(label, Point(0, -popup.content.preferredSize.height)))
+    }
+
+    /**
+     * A stop, as the choice among several names it (`Glue.stopLabel`): its file opened at its line with the focus, a
+     * stop whose file was left closed included.
+     */
+    private inner class GoToStopAction(private val stop: Glue.ShownStop) : DumbAwareAction(
+        Glue.stopLabel(stop),
+        "Go to the line the test is stopped at",
+        if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement,
+    ) {
+        init {
+            templatePresentation.setText(Glue.stopLabel(stop), false)
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            runs()?.goTo(stop)
+        }
     }
 
     /** **Read the Latest Run Again**: `piwi/refreshRun`, then the status, the item saying so meanwhile. */
