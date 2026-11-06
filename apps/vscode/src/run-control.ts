@@ -653,6 +653,15 @@ export function waitingWorkers(sessions: Sessions, target: RunTarget | null = nu
   );
 }
 
+/**
+ * What End the test answers: a stop, when the command names one (`since`, from a lens or a hover) or a stop can end;
+ * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.
+ */
+export function endChoice(sessions: Sessions, stopCanEnd: boolean, target: RunTarget | null): 'stop' | WaitingWorker[] {
+  if (stopCanEnd || target?.since !== undefined) return 'stop';
+  return waitingWorkers(sessions, target);
+}
+
 /** How long a call has run, from when it began to `now`: `12 s`, `3 min 5 s`; null when its start is not known. */
 export function waitedFor(since: string | null, now: number): string | null {
   const began = since === null ? NaN : Date.parse(since);
@@ -698,6 +707,27 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
   const stop = state.stoppable
     ? [{ text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop }]
     : [];
+  // The call a pausing worker's test waits in, how long it has, and End the test there.
+  const waits: ControlItem[] = [];
+  if (state.pausing && state.waiting) {
+    const { title, since, endable } = state.waiting.waiting;
+    const waited = waitedFor(since, now);
+    waits.push(
+      {
+        text: `$(loading~spin) Pausing…${waited ? ` ${waited}` : ''}`,
+        tooltip: `Piwi: the test waits in ${title}${waited ? ` for ${waited}` : ''}, and stops once it returns`,
+        command: null,
+      },
+      {
+        key: 'give-up',
+        text: '$(circle-slash)',
+        tooltip: endable
+          ? `Piwi: End the test now: ${title} is given up, and the rest of the test skipped`
+          : `Piwi: End the test as ${title} returns: the rest of it is skipped`,
+        command: RUN_COMMANDS.end,
+      },
+    );
+  }
   if (state.stopped) {
     const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
@@ -708,6 +738,7 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
         tooltip: 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
+      // End the test answers a stop that can end, else a call a Pause waits in.
       ...(state.endable
         ? [
             {
@@ -716,7 +747,7 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
               command: RUN_COMMANDS.end,
             },
           ]
-        : []),
+        : waits),
       ...(titles.length
         ? [
             {
@@ -732,29 +763,11 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
   if (state.pausable) {
     return [
       { text: '$(debug-pause)', tooltip: 'Piwi: Pause the run at its next call', command: RUN_COMMANDS.pause },
+      ...waits,
       ...stop,
     ];
   }
-  if (state.pausing && state.waiting) {
-    const { title, since, endable } = state.waiting.waiting;
-    const waited = waitedFor(since, now);
-    return [
-      {
-        text: `$(loading~spin) Pausing…${waited ? ` ${waited}` : ''}`,
-        tooltip: `Piwi: the test waits in ${title}${waited ? ` for ${waited}` : ''}, and stops once it returns`,
-        command: null,
-      },
-      {
-        key: 'give-up',
-        text: '$(circle-slash)',
-        tooltip: endable
-          ? `Piwi: End the test now: ${title} is given up, and the rest of the test skipped`
-          : `Piwi: End the test as ${title} returns: the rest of it is skipped`,
-        command: RUN_COMMANDS.end,
-      },
-      ...stop,
-    ];
-  }
+  if (waits.length) return [...waits, ...stop];
   if (state.pausing) {
     return [
       { text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null },

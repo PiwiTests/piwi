@@ -102,15 +102,65 @@ describe('a Pause that waits for the call a test runs', () => {
       ok: true,
       message: "Ending the test: Click getByRole('button', { name: 'Pay' }) is given up.",
     });
-    expect(w.heard()).toContainEqual({ type: 'control', action: 'give-up' });
+    expect(w.heard()).toContainEqual({ type: 'control', action: 'give-up', testId: 't0' });
     expect(await waitFor(() => (last(sent)?.workers[0]?.pausing === false ? last(sent) : undefined))).toMatchObject({
       workers: [{ pausing: false, waiting: null }],
     });
     expect(sessions.intentsOf('ed-1', 0)).not.toContain('give-up');
     expect(sessions.control({ ref: 'ed-1', action: 'give-up' })).toEqual({
       ok: false,
-      message: 'No test waits for a Pause.',
+      message: 'No test waits in a call for a Pause.',
     });
+  });
+
+  test('forgets the call once the worker waits in none, and as the test ends or the next begins', async () => {
+    const { sessions, sent, join } = harness();
+    const w = join();
+    const waits = () => last(sent)?.workers[0]?.waiting ?? null;
+    const said = (want: boolean) => waitFor(() => ((waits() !== null) === want ? true : undefined));
+    sessions.control({ ref: 'ed-1', action: 'pause' });
+    w.read(WAITING);
+    await said(true);
+    // Between calls: still pausing, and nothing to end.
+    w.read({ type: 'waiting', title: null, place: null, ms: null, endable: false });
+    await said(false);
+    expect(last(sent)?.workers[0]?.pausing).toBe(true);
+    expect(sessions.intentsOf('ed-1', 0)).not.toContain('give-up');
+    expect(sessions.control({ ref: 'ed-1', action: 'give-up' })).toEqual({
+      ok: false,
+      message: 'No test waits in a call for a Pause.',
+    });
+
+    w.read(WAITING);
+    await said(true);
+    w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+    await said(false);
+    // The Pause carries to the next test, which waits in no call yet: End the test reaches neither.
+    w.read({
+      type: 'test-begin',
+      testId: 't1',
+      title: ['checkout', 'refunds'],
+      file: 'tests/a.spec.ts',
+      line: 9,
+      project: '',
+      retry: 0,
+      cannotPause: null,
+    });
+    expect(sessions.control({ ref: 'ed-1', action: 'give-up' })).toMatchObject({ ok: false });
+    w.read(WAITING);
+    await said(true);
+    w.read({
+      type: 'test-begin',
+      testId: 't2',
+      title: ['checkout', 'cancels'],
+      file: 'tests/a.spec.ts',
+      line: 14,
+      project: '',
+      retry: 0,
+      cannotPause: null,
+    });
+    await said(false);
+    expect(w.heard()).not.toContainEqual(expect.objectContaining({ action: 'give-up' }));
   });
 
   test('forgets the call as the test stops, goes on or ends, and hears none while no Pause waits', async () => {
@@ -163,6 +213,6 @@ describe('a Pause that waits for the call a test runs', () => {
       message:
         '@piwitests/reporter 0.70.0 cannot end a test while it waits for a Pause: update it, or let the call finish.',
     });
-    expect(w.heard()).not.toContainEqual({ type: 'control', action: 'give-up' });
+    expect(w.heard()).not.toContainEqual(expect.objectContaining({ action: 'give-up' }));
   });
 });

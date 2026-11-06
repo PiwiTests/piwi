@@ -27,8 +27,8 @@ or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **
 
 ## The controls
 
-**Pause** stops a running test before its next call; while the test waits in a long one, its row says which and
-for how long, with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
+**Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
+locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
 stays in the editor.
 

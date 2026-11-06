@@ -328,8 +328,10 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
   terminates the ref's task), while a run is live;
 - **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
   `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped;
-- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`, the
-  `piwi.runCanEnd` context key), with no key.
+- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`), else,
+  while no stop can end and the command names none, where a Pause waits for the call a test runs (`give-up`, to the
+  worker `endChoice` gives, naming no stop); the `piwi.runCanEnd` context key holds in both cases; with no key. The
+  status bar shows the call a Pause waits in beside Pause and Stop, with how long it has run, and End the test there.
 
 All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
 as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the

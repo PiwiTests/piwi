@@ -1596,14 +1596,15 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
  * the stopped call never runs where the worker holds it (a locator call, a `page.pause()`), else it runs first and the
  * test ends before its next locator call. At a failure, or once the test function ended (an `afterEach` hook), `end`
  * lets the test end as Resume does, its result kept. `give-up` ends a test a Pause waits for, naming no stop: the call
- * it waits in (`RunWorker.waiting`) is given up where it can be, else the test is skipped as the call returns, and the
- * Pause is dropped.
+ * it waits in (`RunWorker.waiting`) is given up where it can be, else the test is skipped at its next locator call, and
+ * the Pause is dropped.
  */
 export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end' | 'give-up';
 
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
- * between tests, and the other actions to the one stopped (refused when several are). `place` is required for
+ * between tests, `give-up` to the one whose test waits in a call (`RunWorker.waiting`), and the other actions to the
+ * one stopped (each refused when several are). `place` is required for
  * `run-to`, as the line of the run's code: a client maps a line of a document edited since the run started back to
  * it.
  */

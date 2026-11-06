@@ -1646,11 +1646,18 @@ object Glue {
         return when {
             stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
             stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
-            controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${controls.waiting.title}$shared"
+            controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
             controls.pausing -> "Piwi: pausing…$shared"
             else -> null
         }
     }
+
+    /** The longest call the status bar names before it cuts it, in characters. */
+    private const val STATUS_CALL_MAX = 60
+
+    /** A call's title as the status bar names it: cut past `STATUS_CALL_MAX` characters, with an ellipsis. */
+    private fun clipped(title: String): String =
+        if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
     /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
     fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }

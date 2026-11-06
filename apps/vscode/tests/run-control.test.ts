@@ -30,6 +30,7 @@ import {
   frameIsCurrent,
   waitedFor,
   waitingWorkers,
+  endChoice,
   laneShown,
   watchTargetsFor,
   watchableWorkers,
@@ -278,9 +279,24 @@ describe('what the controls offer', () => {
       "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
       'Piwi: Stop the run (Shift+F5)',
     ]);
+    // Beside Pause for another worker, and in place of End at a stop that cannot end.
+    const keys = (sessions: ReturnType<typeof sessionsOf>) =>
+      controlItems(controlState(sessions)).map((i) => i.key ?? i.command);
+    expect(
+      keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')]))),
+    ).toEqual(['piwi.pauseRun', null, 'give-up', 'piwi.stopRun']);
+    const failed = worker(1, 'stopped', { stop: { ...stopAt(spec, 5), reason: 'failure' } });
+    expect(keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed])))).toContain(
+      'give-up',
+    );
     const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
     expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
+    expect(endChoice(waitingSessions, true, null)).toBe('stop');
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
     expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(

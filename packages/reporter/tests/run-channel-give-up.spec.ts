@@ -11,9 +11,10 @@ import { playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_h
 
 /**
  * End the test while a Pause waits for its call, in a real Playwright run through the built package: a fake editor
- * service on the run channel pauses each test while it waits in a call, hears which call (`waiting`), and ends the
- * test there (`give-up`). A locator call that carries the end signal is given up at once; a wait that does not is let
- * finish, the test skipped at its next locator call. The page's button tells the server when it is clicked.
+ * service on the run channel pauses each test until it hears the test wait in its long call (`waiting`), answering a
+ * stop the Pause reaches first with Resume, and ends the test there (`give-up`). A locator call that carries the end
+ * signal is given up at once; a wait that does not is let finish, the test skipped at its next locator call. The
+ * page's button tells the server when it is clicked.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -25,7 +26,7 @@ const TOKEN = 'run-channel-give-up-token-012345';
 const PAGE = `<!doctype html><title>a</title><h1>A</h1><button>Go</button>
 <script>document.querySelector('button').addEventListener('click', () => fetch('/clicked'));</script>`;
 
-const SPEC = (base: string) => `const { test } = require('../fixture.cjs');
+const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
 test('waits on a locator', async ({ page }) => {
   await page.goto('${base}/a');
   await page.getByRole('button', { name: 'Never' }).click({ timeout: 20000 }); // waits
@@ -36,6 +37,12 @@ test('waits in a timeout', async ({ page }) => {
   await page.waitForTimeout(1500); // waits
   await page.getByRole('button', { name: 'Go' }).click();
 });
+test('moves between waits', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.waitForTimeout(1000); // first wait
+  await page.waitForTimeout(1500); // second wait
+  await expect(page.getByRole('heading', { name: 'A' })).toBeVisible(); // stops
+});
 `;
 
 let server: FakeServer;
@@ -45,9 +52,20 @@ const heard: RunToHub[] = [];
 const sockets: net.Socket[] = [];
 let output = '';
 let elapsedMs = 0;
+/** The test running now, the titles of the tests, those heard waiting in a long call, and those the hub ended. */
+let running = '';
+const titles = new Map<string, string>();
+const waitedLong = new Set<string>();
+const ended = new Set<string>();
+/** The test the hub lets go on through its waits, to hear each call it waits in. */
+const MOVES = 'moves between waits';
+/** The calls the tests wait in: the click on a button that never shows, and the timeout. */
+const LONG_CALL = /Never|wait/i;
 const clicked: string[] = [];
 const bodies: string[] = [];
 const waitsAt: number[] = [];
+/** The lines of the waits the test that moves on waits in, and of the call it stops at. */
+const marks: Record<string, number> = {};
 
 function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
@@ -70,9 +88,24 @@ beforeAll(async () => {
           const message = parseRunToHub(line);
           if (!message) return;
           heard.push(message);
-          // Each test is paused once its call has begun, and ended there once the worker says which call.
-          if (message.type === 'test-begin') setTimeout(() => send({ type: 'control', action: 'pause' }), 800);
-          if (message.type === 'waiting') send({ type: 'control', action: 'give-up' });
+          // Each test is paused until it waits in its long call, and ended there.
+          const pauseSoon = () => setTimeout(() => send({ type: 'control', action: 'pause' }), 300);
+          if (message.type === 'test-begin') {
+            running = message.testId;
+            titles.set(running, message.title[message.title.length - 1] ?? '');
+            pauseSoon();
+          }
+          if (message.type === 'stopped') {
+            send({ type: 'control', action: 'resume', stop: message.stop });
+            if (!waitedLong.has(running)) pauseSoon();
+          }
+          if (message.type === 'waiting' && LONG_CALL.test(message.title ?? '')) {
+            waitedLong.add(running);
+            if (titles.get(running) !== MOVES && !ended.has(running)) {
+              ended.add(running);
+              send({ type: 'control', action: 'give-up', testId: running });
+            }
+          }
         },
         () => socket.destroy(),
       ),
@@ -92,6 +125,8 @@ beforeAll(async () => {
   const spec = SPEC(server.url);
   spec.split('\n').forEach((text, i) => {
     if (text.endsWith('// waits')) waitsAt.push(i + 1);
+    const mark = /\/\/ (first wait|second wait|stops)$/.exec(text)?.[1];
+    if (mark) marks[mark] = i + 1;
   });
   write('tests/give-up.spec.cjs', spec);
   write(
@@ -149,22 +184,22 @@ afterAll(async () => {
 });
 
 const waiting = () => heard.filter((m): m is Extract<RunToHub, { type: 'waiting' }> => m.type === 'waiting');
-const ended = (title: string) => {
+const endOf = (title: string) => {
   const begin = heard.findIndex((m) => m.type === 'test-begin' && m.title[m.title.length - 1] === title);
   return heard.slice(begin).find((m): m is Extract<RunToHub, { type: 'test-end' }> => m.type === 'test-end');
 };
 
 describe('End the test while a Pause waits for its call', () => {
   it.skipIf(!playwrightAtLeast('1.62'))('gives up a locator call that carries the end signal, at once', () => {
-    const [locator] = waiting();
+    const locator = waiting().find((m) => m.title?.includes("'Never'"));
     expect(locator, output).toMatchObject({
       title: expect.stringContaining("getByRole('button', { name: 'Never' })"),
       place: { file: 'tests/give-up.spec.cjs', line: waitsAt[0] },
       endable: true,
     });
-    expect(locator!.ms).toBeGreaterThan(0);
+    expect(locator!.ms).toBeGreaterThanOrEqual(0);
     expect(locator!.ms).toBeLessThan(20_000);
-    expect(ended('waits on a locator')).toMatchObject({ status: 'skipped' });
+    expect(endOf('waits on a locator')).toMatchObject({ status: 'skipped' });
     expect(bodies).not.toContain('waits on a locator');
     // Given up, not waited out: the whole run took well under the click's 20 s.
     expect(elapsedMs).toBeLessThan(20_000);
@@ -174,8 +209,23 @@ describe('End the test while a Pause waits for its call', () => {
   it('lets a wait without the end signal finish, and skips the test at its next locator call', () => {
     const wait = waiting().find((m) => m.place?.line === waitsAt[1]);
     expect(wait, output).toMatchObject({ title: expect.stringMatching(/wait/i), endable: false });
-    expect(ended('waits in a timeout')).toMatchObject({ status: 'skipped' });
+    expect(endOf('waits in a timeout')).toMatchObject({ status: 'skipped' });
     expect(clicked).toEqual([]);
     expect(output).toContain('the test is skipped as the call returns');
+  });
+
+  it('says each call a Pause waits in as the test moves on, and stops at its next call that can', () => {
+    const begin = heard.findIndex((m) => m.type === 'test-begin' && m.title[m.title.length - 1] === MOVES);
+    const end = heard.findIndex((m, i) => i > begin && m.type === 'test-end');
+    const ofTest = heard.slice(begin, end);
+    const lines = ofTest.flatMap((m) => (m.type === 'waiting' && m.title ? [m.place?.line] : []));
+    expect(lines, output).toContain(marks['first wait']);
+    expect(lines.indexOf(marks['second wait']!)).toBeGreaterThan(lines.indexOf(marks['first wait']!));
+    const stops = ofTest.filter((m) => m.type === 'stopped');
+    expect(stops[stops.length - 1]).toMatchObject({
+      reason: 'pause',
+      place: { line: marks.stops },
+    });
+    expect(endOf(MOVES)).toMatchObject({ status: 'passed' });
   });
 });

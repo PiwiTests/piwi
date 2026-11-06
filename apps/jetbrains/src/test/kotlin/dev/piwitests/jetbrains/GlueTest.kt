@@ -733,6 +733,11 @@ class GlueTest {
             "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
             Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
         )
+        // A long call is cut in the status bar.
+        val long = waiting.copy(title = "Click " + "getByRole('row').".repeat(10))
+        val longSessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = long)))
+        val status = Glue.runControlStatus(Glue.runControls(longSessions), emptyList())!!
+        assertEquals("Piwi: pausing… · waits in " + long.title.take(59).trimEnd() + "…", status)
         // A worker no Pause reached waits in nothing.
         val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
         assertNull(Glue.runControls(going).waiting)

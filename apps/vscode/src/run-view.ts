@@ -103,7 +103,7 @@ import {
   stopsFor,
   stopsOf,
   targetStop,
-  waitingWorkers,
+  endChoice,
   watchTargetsFor,
   watchableWorkers,
   writtenLines,
@@ -666,13 +666,13 @@ export function registerRunControl(
   };
 
   /**
-   * End the test: at a stop (the command's, the caret's or the one chosen), else, while no stop can end, where a Pause
-   * waits for the call a test runs (`give-up`): the command's worker, the only one, or the one chosen.
+   * End the test: at a stop (the command's, the caret's or the one chosen), else, while no stop can end and the
+   * command names none, where a Pause waits for the call a test runs (`give-up`): the command's worker, the only one,
+   * or the one chosen.
    */
   const endTest = async (arg: unknown) => {
-    const target = runTargetArg(arg);
-    const waiting = waitingWorkers(sessions, target && target.since === undefined ? target : null);
-    if (stops().some(canEnd) || !waiting.length) return answerStop('end', arg);
+    const waiting = endChoice(sessions, stops().some(canEnd), runTargetArg(arg));
+    if (waiting === 'stop' || !waiting.length) return answerStop('end', arg);
     const chosen =
       waiting.length === 1
         ? waiting[0]

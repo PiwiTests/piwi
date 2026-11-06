@@ -136,8 +136,8 @@ const NO_PAGE =
 export interface RunControl {
   /** Stop before the next call: of the running test, else of the next one; and say the call it waits in. */
   pause(): void;
-  /** End the test while a Pause waits for its call: the call given up where it carries the end signal. */
-  giveUp(): void;
+  /** End the test `testId` while a Pause waits for its call: the call given up where it carries the end signal. */
+  giveUp(testId: string): void;
   /** The run's breakpoints from now on. */
   breakpoints(places: Place[]): void;
   /** Stop at the first call on this place's line. */
@@ -899,7 +899,12 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       if (message.action === 'pause') {
         if (!held) control?.pause();
       } else if (message.action === 'give-up') {
-        if (!held) control?.giveUp();
+        if (!held) control?.giveUp(message.testId);
+        else
+          tellHub({
+            type: 'notice',
+            message: 'The test stopped before it could be ended: End the test answers its stop.',
+          });
       } else if (held?.stop === message.stop) held.answer(message.action);
       return;
     case 'run-to':

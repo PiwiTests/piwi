@@ -430,9 +430,10 @@ export type RunToHub =
    * Asked to pause (`give-up` among its `features`), the test waits in a call before it can stop: the call's title
    * (through `hideTypedText` and `hideSecretsInText`), its place, how long it has waited (`ms`, null when the worker
    * cannot tell), and whether ending the test there gives it up (`endable`, a locator call that carries the attempt's
-   * end signal) or lets it finish first.
+   * end signal) or lets it finish first. Said again as the call it waits in changes, with a null `title` (and no
+   * place, time or end signal) once it waits in none: between calls, or past the test's function.
    */
-  | { type: 'waiting'; title: string; place: Place | null; ms: number | null; endable: boolean }
+  | { type: 'waiting'; title: string | null; place: Place | null; ms: number | null; endable: boolean }
   /** The test ended: its status as Playwright gives it, and how long it stood stopped. */
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   /** The answer to a `request`: an image of the stopped page, null when there is none. */
@@ -517,10 +518,11 @@ export type HubToRun =
   /** Stop before the next call of the running test, or of the next test. */
   | { type: 'control'; action: 'pause' }
   /**
-   * End the test while a Pause waits for the call it runs (to a worker that lists `give-up`): the call is given up
-   * where it carries the attempt's end signal, else the test is skipped as it returns; the rest of it never runs.
+   * End the test `testId` while a Pause waits for the call it runs (to a worker that lists `give-up`): the call is
+   * given up where it carries the attempt's end signal, else the test is skipped at its next locator call; the rest of
+   * it never runs. A worker running another test, or past the test's function, leaves it running and drops the Pause.
    */
-  | { type: 'control'; action: 'give-up' }
+  | { type: 'control'; action: 'give-up'; testId: string }
   /**
    * Answer the stop `stop`: go on and stop before the next call, go on to the next breakpoint, go on with no
    * breakpoint more in this attempt, or end the test (`end`, to a worker that takes it): the rest of it is skipped,
@@ -932,6 +934,7 @@ export function parseRunToHub(line: string): RunToHub | null {
       return isInt(value.stop, 1) ? { type: 'running', stop: value.stop } : null;
     case 'waiting': {
       const { title, ms, endable } = value;
+      if (title === null) return { type: 'waiting', title: null, place: null, ms: null, endable: false };
       const place = value.place === null ? null : readPlace(value.place);
       if (typeof title !== 'string' || !title || (ms !== null && !isInt(ms, 0)) || typeof endable !== 'boolean') {
         return null;
@@ -1098,7 +1101,11 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'control': {
       const { action, stop } = value;
-      if (action === 'pause' || action === 'give-up') return { type: 'control', action };
+      if (action === 'pause') return { type: 'control', action };
+      if (action === 'give-up') {
+        const { testId } = value;
+        return typeof testId === 'string' && testId ? { type: 'control', action, testId } : null;
+      }
       if (action === 'step' || action === 'resume' || action === 'finish' || action === 'end') {
         return isInt(stop, 1) ? { type: 'control', action, stop } : null;
       }

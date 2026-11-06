@@ -51,6 +51,10 @@ const stateText = computed(() => desktopWorkerState(props.worker, props.session.
 /** The clock that counts how long the call a Pause waits in has run. */
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 const waitedText = computed(() => desktopWaitedFor(props.worker, now.value));
+/** The call a Pause waits in, set in code type after the state line's words. */
+const waitingCall = computed(() =>
+  props.worker.pausing && !stop.value && props.worker.waiting ? props.worker.waiting.title : null,
+);
 const testText = computed(() => desktopWorkerTest(props.worker));
 const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
@@ -235,7 +239,8 @@ function restoreFocus(): void {
     same.focus();
     return;
   }
-  const near = root.value.querySelector<HTMLElement>('[data-focus^="steer:"]');
+  // Never End the test, which a key pressed again would answer.
+  const near = root.value.querySelector<HTMLElement>('[data-focus^="steer:"]:not([data-focus="steer:give-up"])');
   if (!near) return;
   lending = true;
   near.focus();
@@ -270,18 +275,21 @@ onBeforeUnmount(() => {
             ? 'i-lucide-circle-x'
             : stop
               ? 'i-lucide-circle-pause'
-              : worker.state === 'running' || worker.state === 'other'
-                ? 'i-lucide-circle-play'
-                : 'i-lucide-circle-dot'
+              : worker.pausing
+                ? 'i-lucide-clock'
+                : worker.state === 'running' || worker.state === 'other'
+                  ? 'i-lucide-circle-play'
+                  : 'i-lucide-circle-dot'
         "
         class="size-4 shrink-0"
         :class="failed ? 'text-error' : stop ? 'text-warning' : 'text-muted'"
         aria-hidden="true"
       />
-      <span class="min-w-0 break-words">
-        {{ stateText }}
-        <span v-if="waitedText" class="text-muted" data-testid="desktop-waited">{{ waitedText }}</span>
+      <span v-if="waitingCall" class="min-w-0 break-words">
+        Pausing: waits in <code class="font-mono text-xs text-highlighted">{{ waitingCall }}</code>
+        <span v-if="waitedText" class="ml-1 text-muted" data-testid="desktop-waited">{{ waitedText }}</span>
       </span>
+      <span v-else class="min-w-0 break-words">{{ stateText }}</span>
       <span v-if="count > 1" class="ml-auto text-xs text-muted shrink-0">Worker {{ worker.parallelIndex + 1 }}</span>
     </p>
     <div v-if="testText">

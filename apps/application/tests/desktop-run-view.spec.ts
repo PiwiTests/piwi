@@ -316,6 +316,9 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByTestId('desktop-waited')).toHaveText(/^for 1\d s$/);
     const endTest = worker.getByRole('button', { name: 'End the test' });
     await expect(endTest).toHaveAttribute('title', /the call it waits in is given up/);
+    // The focus Pause had never goes to End the test, which a key pressed again would answer.
+    await expect(endTest).not.toBeFocused();
+    await expect(worker.locator('code', { hasText: "Click getByRole('button', { name: 'Never' })" })).toBeVisible();
     await endTest.click();
     await expect
       .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))

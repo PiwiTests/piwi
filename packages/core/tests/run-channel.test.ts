@@ -827,10 +827,22 @@ describe('the run channel', () => {
       for (const wrong of [{ title: '' }, { ms: -1 }, { endable: 'yes' }, { place: { file: '', line: 0 } }]) {
         expect(parseRunToHub(line({ ...waiting, ...wrong }))).toBeNull();
       }
-      expect(parseHubToRun(line({ type: 'control', action: 'give-up' }))).toEqual({
+      // Once it waits in no call, a null title, whatever else the line says.
+      expect(parseRunToHub(line({ ...waiting, title: null }))).toEqual({
+        type: 'waiting',
+        title: null,
+        place: null,
+        ms: null,
+        endable: false,
+      });
+      // End the test names the test the call was waited in.
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: 't1' }))).toEqual({
         type: 'control',
         action: 'give-up',
+        testId: 't1',
       });
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
     });
 
     test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {

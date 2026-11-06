@@ -1724,9 +1724,13 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   else if (worker.pausing && worker.waiting) {
     // How long it has waited, kept up to date each second (`tickWaits`).
     const waited = element('span', 'waited');
-    if (worker.waiting.since) waited.dataset.since = worker.waiting.since;
-    iconText(line, 'clock', t('runs_statePausingIn', { call: worker.waiting.title }), ' ', waited);
-    tickWaits();
+    const { since, title } = worker.waiting;
+    if (since) {
+      waited.dataset.since = since;
+      waited.textContent = waitedText(since, Date.now());
+    }
+    const call = element('span', 'call', ...richText(title));
+    iconText(line, 'clock', ...tNodes('runs_statePausingIn', { call }), ' ', waited);
   } else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
   else if (worker.state === 'running' || worker.state === 'other') iconText(line, 'play', t('runs_stateRunning'));
   else iconText(line, 'dot', t('runs_stateBetween'));
@@ -1734,12 +1738,17 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   return line;
 }
 
+/** How long a call has run, from `since` to `now` (`for 12 s`); empty for a time that does not read. */
+function waitedText(since: string, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
+  return Number.isFinite(seconds) ? t('runs_waitedFor', { time: formatUnit(seconds, 'second') }) : '';
+}
+
 /** Each `.waited` with a `data-since`: how long since then, as the time goes. */
 function tickWaits(): void {
   const now = Date.now();
   for (const waited of document.querySelectorAll<HTMLElement>('.waited[data-since]')) {
-    const seconds = Math.max(0, Math.floor((now - Date.parse(waited.dataset.since ?? '')) / 1000));
-    if (Number.isFinite(seconds)) waited.textContent = t('runs_waitedFor', { time: formatUnit(seconds, 'second') });
+    waited.textContent = waitedText(waited.dataset.since ?? '', now);
   }
 }
 
@@ -2449,7 +2458,10 @@ function restoreFocus(): void {
     return;
   }
   const owner = focusKey.slice(0, focusKey.lastIndexOf('|') + 1);
-  const near = owner ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]`) : null;
+  // Never End the test, which a key pressed again would answer.
+  const near = owner
+    ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+    : null;
   if (!near) return;
   lending = true;
   near.focus();

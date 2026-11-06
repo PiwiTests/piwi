@@ -250,8 +250,8 @@ const QUERY_WORDS: Record<Query, string> = {
 /** Why the input of a viewer that does not watch the stop is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
-/** Why End the test while a Pause waits finds no test waiting. */
-const NOT_PAUSING = 'No test waits for a Pause.';
+/** Why End the test while a Pause waits finds no test waiting in a call. */
+const NOT_WAITING = 'No test waits in a call for a Pause.';
 
 /** Why a run none of whose workers said how it stands on the instance yet is not shared. */
 const NOT_SAID = "The run's workers have not said yet whether it can be shared live: try again in a moment.";
@@ -791,22 +791,25 @@ export class RunSessions {
         };
       }
       case 'give-up': {
-        const waiting = workers.filter((w) => w.pausing && !w.stop && w.test);
+        const pausing = workers.filter((w) => w.pausing && !w.stop && w.test);
+        // A worker says the call it waits in only where it ends a test there.
+        const waiting = pausing.filter((w) => w.waiting);
+        const older = pausing.find((w) => !w.features.has('give-up'));
+        if (!waiting.length && older) {
+          return refuse(
+            `@piwitests/reporter ${older.reporter || ''}`.trimEnd() +
+              ' cannot end a test while it waits for a Pause: update it, or let the call finish.',
+          );
+        }
         if (!waiting.length) {
           return refuse(
-            workers.some((w) => w.stop) ? 'The test is stopped: End the test answers its stop.' : NOT_PAUSING,
+            workers.some((w) => w.stop) ? 'The test is stopped: End the test answers its stop.' : NOT_WAITING,
           );
         }
         if (waiting.length > 1) return refuse(`${waiting.length} workers wait for a Pause: choose one.`);
         const worker = waiting[0]!;
-        if (!worker.features.has('give-up')) {
-          return refuse(
-            `@piwitests/reporter ${worker.reporter || ''}`.trimEnd() +
-              ' cannot end a test while it waits for a Pause: update it, or let the call finish.',
-          );
-        }
         const call = worker.waiting;
-        this.send(worker, { type: 'control', action: 'give-up' });
+        this.send(worker, { type: 'control', action: 'give-up', testId: worker.test!.id });
         worker.pausing = false;
         worker.waiting = null;
         worker.askedBy = null;
@@ -1550,7 +1553,13 @@ export class RunSessions {
         if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
         return;
       case 'waiting': {
-        // Said while a Pause waits for the call, by a reporter that ends a test there.
+        // Said while a Pause waits for the call, by a reporter that ends a test there; a null title once it waits in
+        // none.
+        if (message.title === null) {
+          if (!worker.waiting) return;
+          worker.waiting = null;
+          return this.changed(session, true);
+        }
         if (!worker.pausing || worker.stop || !worker.test || !worker.features.has('give-up')) return;
         const { place, ms } = message;
         worker.waiting = {

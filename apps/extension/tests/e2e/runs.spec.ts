@@ -289,7 +289,9 @@ test('a Pause that waits for a call says which and for how long, and End the tes
     const run = await startLaneRun(editor, 'pays');
     try {
       const card = liveRun(runs);
-      await card.getByRole('button', { name: 'Pause', exact: true }).click();
+      // Paused from the keyboard: the focus it loses goes to another control, never End the test.
+      await card.getByRole('button', { name: 'Pause', exact: true }).focus();
+      await runs.keyboard.press('Enter');
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
       run.worker.send({
         type: 'waiting',
@@ -301,11 +303,18 @@ test('a Pause that waits for a call says which and for how long, and End the tes
       await expect(card.locator('.state')).toContainText(
         "Pausing: waits in Click getByRole('button', { name: 'Pay' })",
       );
-      await expect(card.locator('.waited')).toHaveText(/^for \d+\s?s$/);
+      // The time shows as the line is drawn, and the call as a locator.
+      await expect(card.locator('.waited')).toHaveText(/^for \d+\s?s$/, { timeout: 500 });
+      await expect(card.locator('.state .call .piwi-loc')).toBeVisible();
       const end = card.getByRole('button', { name: 'End the test' });
       await expect(end).toHaveAttribute('title', /the call it waits in is given up/);
+      await expect(end).not.toBeFocused();
       await end.click();
-      expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'give-up' });
+      expect(await run.worker.next('control', 1)).toEqual({
+        type: 'control',
+        action: 'give-up',
+        testId: expect.any(String),
+      });
       // The Pause is dropped with the test: the row runs on, with Pause again.
       await expect(end).toHaveCount(0);
       await expect(card.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
