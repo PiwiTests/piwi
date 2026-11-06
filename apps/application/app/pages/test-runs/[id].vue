@@ -15,7 +15,14 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { streamReopener } from '~/utils/stream-reopen';
-import { refetchKeeping } from '~/utils/refetch-keeping';
+import {
+  isFinalRefetch,
+  refetchKeeping,
+  refetchReason,
+  settleInOrder,
+  type FinalRefetchFailure,
+} from '~/utils/refetch-keeping';
+import { runReadEndedNotice } from '~/utils/run-read-ended';
 import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
@@ -42,12 +49,74 @@ const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/$/, '');
 const isDesktop = useIsDesktop();
 const { can } = useAuth();
+const toast = useToast();
 
 const { data: testRun, error: testRunError } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 if (testRunError.value) showPageLoadError(testRunError.value, 'test run');
-// Every later read of the run goes through `reloadRun`: a read that fails (a proxy's 502 while the instance restarts)
-// leaves the run the page shows, and resolves to false.
-const reloadRun = refetchKeeping(testRun, () => $fetch<TestRunDetails>(`/api/test-runs/${runId}`));
+// Every later read of the run goes through `reloadRun`: a read that fails (a proxy's 502 while the instance restarts, a
+// run deleted meanwhile) leaves the run the page shows, and resolves to why it failed.
+let lastReadError: unknown = null;
+const readRun = refetchKeeping(testRun, () =>
+  $fetch<TestRunDetails>(`/api/test-runs/${runId}`).catch((error: unknown) => {
+    lastReadError = error;
+    throw error;
+  }),
+);
+/**
+ * Why the page can no longer read the run, after a final failure (`isFinalRefetch`): the run was deleted, the session
+ * ended, or the viewer's access was removed. The page stops following the run and says why, until a read answers.
+ */
+const runReadEnded = ref<FinalRefetchFailure | null>(null);
+// Each result acts in the order its read started: an older read's answer never undoes a newer one's.
+const reloadRun = settleInOrder(readRun, (result) => {
+  if (isFinalRefetch(result)) {
+    runReadEnded.value = result;
+    disconnectStream();
+  } else if (result === 'answered' && runReadEnded.value) {
+    runReadEnded.value = null;
+    if (shouldStream.value) connectToStream();
+  }
+});
+/** A read the person asked for (Refresh, a keep, a label change): one that failed says so, with why. */
+async function reloadRunAsked(): Promise<void> {
+  if ((await reloadRun()) !== 'failed') return;
+  const reason = refetchReason(lastReadError) ?? 'The instance did not answer.';
+  toast.add({
+    title: 'The run could not be read again',
+    description: `${reason} The page shows the run as it last read it.`,
+    color: 'error',
+  });
+}
+const authEnabled = Boolean(useRuntimeConfig().public.authEnabled);
+/** What the page says once it can no longer read the run, and the action it offers. */
+const runReadEndedView = computed(() =>
+  runReadEnded.value ? runReadEndedNotice(runReadEnded.value, authEnabled) : null,
+);
+/** The notice's action as a button: Piwi's sign-in page, coming back here, or the page loaded again. */
+const runReadEndedActions = computed(() => {
+  const action = runReadEndedView.value?.action;
+  if (action === 'sign-in')
+    return [
+      {
+        label: 'Sign in again',
+        color: 'neutral' as const,
+        variant: 'outline' as const,
+        to: { path: '/login', query: { redirect: route.fullPath } },
+      },
+    ];
+  if (action === 'reload')
+    return [
+      {
+        label: 'Load the page again',
+        color: 'neutral' as const,
+        variant: 'outline' as const,
+        onClick: () => reloadNuxtApp(),
+      },
+    ];
+  return [];
+});
+// The page left: nothing opens a stream for it any more.
+let pageLeft = false;
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
@@ -60,12 +129,18 @@ useRunStream(refreshLatestRun);
 
 // Which of this project's tests are quarantined — marks the matching rows in the
 // executions list. `candidates=false` skips the heavier flaky-analysis proposal.
-const { data: quarantineData, refresh: refreshQuarantine } = projectId
-  ? await useFetch<{ entries: Array<{ testCaseId: number }> }>(
-      `/api/projects/${projectId}/quarantine?candidates=false`,
-      { key: `run-quarantine-${projectId}` },
+type RunQuarantine = { entries: Array<{ testCaseId: number }> };
+const { data: quarantineData } = projectId
+  ? await useFetch<RunQuarantine>(`/api/projects/${projectId}/quarantine?candidates=false`, {
+      key: `run-quarantine-${projectId}`,
+    })
+  : { data: ref<RunQuarantine | null>(null) };
+// A read that fails keeps the marks the list shows.
+const reloadQuarantine = projectId
+  ? refetchKeeping(quarantineData, () =>
+      $fetch<RunQuarantine>(`/api/projects/${projectId}/quarantine?candidates=false`),
     )
-  : { data: ref<{ entries: Array<{ testCaseId: number }> } | null>(null), refresh: async () => {} };
+  : async () => 'answered' as const;
 const quarantinedCaseIds = computed(() => new Set((quarantineData.value?.entries ?? []).map((e) => e.testCaseId)));
 
 const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
@@ -660,8 +735,8 @@ function onRunEnded(): void {
   liveViewState.value = null;
   disconnectStream();
   // A run read running again (one its reporter revived) is live again, and its next end runs as the first did.
-  void reloadRun().then((answered) => {
-    if (answered && testRun.value?.status === 'running') liveRunEnded.value = false;
+  void reloadRun().then((result) => {
+    if (result === 'answered' && testRun.value?.status === 'running') liveRunEnded.value = false;
   });
   // Nudge the Changes tab to refetch — it keeps its own fetch state and
   // would otherwise show stale/partial data from before the run finalized.
@@ -719,7 +794,7 @@ function connectToDemoStream() {
 }
 
 function connectToStream() {
-  if (!import.meta.client) return;
+  if (!import.meta.client || pageLeft) return;
   // A run that streams again is live again: its next end runs as the first did.
   liveRunEnded.value = false;
 
@@ -766,7 +841,8 @@ function connectToStream() {
 
 // The browser gives up on a stream whose reconnection gets an error answer (a proxy's 502 while the instance restarts,
 // an expired session): the page reads the run again and opens the stream again, waiting longer each time. While the
-// run cannot be read, the page keeps the run it shows, says the stream stalled, and tries again later.
+// instance does not answer, the page keeps the run it shows, says the stream stalled, and tries again later. A run
+// deleted, a session ended or an access removed stops the tries: `reloadRun` says why (`runReadEnded`).
 const reopener = streamReopener(reloadRun, () => {
   if (shouldStream.value) connectToStream();
 });
@@ -815,8 +891,9 @@ watch(
   { immediate: true },
 );
 
-// Leaving drops a reopening that waits or reads the run: it opens no stream after.
+// Leaving drops a reopening that waits or reads the run: it opens no stream after, nor does a read that answers late.
 onUnmounted(() => {
+  pageLeft = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
   disconnectStream();
 });
@@ -1028,6 +1105,10 @@ watch(
   { immediate: true },
 );
 
+// A read asked from outside the page (the assistant, once a proposal is applied) goes through the page's own reads,
+// which keep what it shows when they fail.
+usePageReload(() => Promise.all([reloadRun(), reloadQuarantine(), showFailureTabs.value ? fetchClusterMeta() : null]));
+
 // Increments when a live run finishes, so child tabs that keep their own
 // fetch state can refetch instead of showing stale pre-finish data.
 const runRefreshKey = ref(0);
@@ -1174,7 +1255,7 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => reloadRun() });
+  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => reloadRunAsked() });
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
     items.push({
@@ -1188,7 +1269,7 @@ const moreMenuItems = computed(() => {
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
       onSelect: async () => {
-        if (await releaseKeep(Number(runId))) reloadRun();
+        if (await releaseKeep(Number(runId))) await reloadRunAsked();
       },
     });
   }
@@ -1274,6 +1355,19 @@ const moreMenuItems = computed(() => {
       <template #body>
         <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
           <template #summary>
+            <UAlert
+              v-if="runReadEndedView"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :title="runReadEndedView.title"
+              :description="runReadEndedView.description"
+              :actions="runReadEndedActions"
+              class="mb-4 max-sm:rounded-none max-sm:border-x-0"
+              data-testid="run-read-ended"
+              data-shot="run-read-ended"
+              :data-state="runReadEnded"
+            />
             <RunHeader
               v-if="testRun"
               :test-run="testRun"
@@ -1283,8 +1377,9 @@ const moreMenuItems = computed(() => {
               :live-cases="isLive ? dedupedDisplayCases : null"
               :active-statuses="testCaseActiveStatuses"
               :total-wasted-time="totalWastedTime"
+              :stopped="runReadEnded !== null"
               @toggle-status="handleFilterStatus"
-              @label-updated="reloadRun"
+              @label-updated="reloadRunAsked"
             />
           </template>
 
@@ -1299,7 +1394,9 @@ const moreMenuItems = computed(() => {
               :is-live="isLive"
               :total="displayProgress?.totalTests"
               :waiting-since="
-                testRun?.status === 'initializing' || testRun?.status === 'running' ? testRun?.startTime : null
+                !runReadEnded && (testRun?.status === 'initializing' || testRun?.status === 'running')
+                  ? testRun?.startTime
+                  : null
               "
               :hears-run="liveViewConnected || isDemoMode"
               :live-steps="liveSteps"
@@ -1313,12 +1410,12 @@ const moreMenuItems = computed(() => {
               :project-name="testRun?.project?.name"
               :run-id="Number(runId)"
               class="flex-1 min-h-0"
-              @quarantine-changed="refreshQuarantine"
+              @quarantine-changed="reloadQuarantine"
               @watch="watchWorker"
             >
               <template #toolbar-extra>
                 <RunLiveViewStatus
-                  v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded"
+                  v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded && !runReadEnded"
                   :project-id="testRun.projectId"
                   :readiness="{
                     desktop: isDesktop,
@@ -1404,7 +1501,7 @@ const moreMenuItems = computed(() => {
   </div>
 
   <ClientOnly>
-    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="reloadRun" />
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="reloadRunAsked" />
   </ClientOnly>
 
   <ClientOnly>

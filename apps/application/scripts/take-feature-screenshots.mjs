@@ -5175,6 +5175,52 @@ const SCENES = [
     },
   },
   {
+    name: 'run-read-ended',
+    description:
+      'A running run the page can no longer read: deleted while it was open, then the instance refusing it, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['run-read-ended.png', 'run-read-ended-narrow.png', 'run-read-ended-refused.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const run = await (
+        await postRetrying(request, base, '/api/test-runs/start', {
+          data: { projectName: 'web-dashboard', startTime: new Date().toISOString() },
+        })
+      ).json();
+      /** The stream closes on an error answer and the run's read gets Piwi's own `status` error. */
+      const refuse = async (status) => {
+        await page.unrouteAll();
+        const body = JSON.stringify({ statusCode: status, message: 'Refused' });
+        await page.route(`**/api/test-runs/${run.runId}/stream`, (route) => route.fulfill({ status, body }));
+        await page.route(`**/api/test-runs/${run.runId}`, (route) =>
+          route.fulfill({ status, contentType: 'application/json', body }),
+        );
+      };
+      const capture = async (state, name = '') => {
+        await page.locator(`[data-shot="run-read-ended"][data-state="${state}"]`).waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot(name);
+      };
+      try {
+        await refuse(404);
+        await goto(`/test-runs/${run.runId}`);
+        await capture('gone');
+        await page.setViewportSize({ width: 390, height: 800 });
+        await capture('gone', 'narrow');
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await refuse(401);
+        await goto(`/test-runs/${run.runId}`);
+        await capture('signed-out', 'refused');
+      } finally {
+        await page.unrouteAll();
+        await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+          data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+        });
+      }
+    },
+  },
+  {
     name: 'run-live-view',
     description:
       'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',

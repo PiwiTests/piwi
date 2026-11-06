@@ -17,21 +17,24 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * applicable or never offered by the desktop build, `canDecide` gates the controls to holders of `project:manage` on
  * the project, `decide` writes one decision and `decideMany` writes several at
  * once (`enabled` overrides an instance decline; `null` clears a decision). A
- * read failure resolves to an empty list.
+ * read that fails keeps the states already shown; the first one resolves to an
+ * empty list.
  */
 export async function useProjectCapabilities(projectId: number) {
   const { can } = useAuth();
   const requestFetch = useRequestFetch();
   const isDesktop = useIsDesktop();
 
+  let shown: Ref<CapabilityStateItem[]> | null = null;
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     `capabilities-project-${projectId}`,
     () =>
       requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
         .then((r) => r.items)
-        .catch(() => []),
+        .catch(() => shown?.value ?? []),
     { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender },
   );
+  shown = items;
 
   const stateMap = computed(() => {
     const map = new Map<CapabilityId, CapabilityState>();

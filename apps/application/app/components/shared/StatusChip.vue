@@ -12,6 +12,8 @@ const props = defineProps<{
   /** The execution passed after an earlier attempt failed or timed out (`passedAfterFailure`). */
   flaky?: boolean | null;
   size?: BadgeProps['size'];
+  /** The page no longer follows the object (it can no longer read it): an in-flight status's icon stands still. */
+  still?: boolean;
 }>();
 
 const key = computed(() => (statusPaletteKey(props.status, props.flaky) === 'flaky' ? 'flaky' : props.status));
@@ -19,7 +21,11 @@ const key = computed(() => (statusPaletteKey(props.status, props.flaky) === 'fla
 
 <template>
   <UBadge :color="getStatusColor(key)" :size="size" variant="subtle" class="gap-1 items-center font-semibold shrink-0">
-    <UIcon :name="getStatusIcon(key)" class="size-3.5 shrink-0" :class="{ 'animate-spin': isStatusInFlight(status) }" />
+    <UIcon
+      :name="getStatusIcon(key)"
+      class="size-3.5 shrink-0"
+      :class="{ 'animate-spin': !still && isStatusInFlight(status) }"
+    />
     {{ statusChipLabel(status, flaky) }}
   </UBadge>
 </template>

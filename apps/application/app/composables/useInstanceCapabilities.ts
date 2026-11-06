@@ -17,21 +17,24 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * renders nothing), `canDecide` gates
  * the decline controls to administrators (`settings:manage`), `decide` writes
  * one decision and `decideMany` writes several at once (`null` clears a
- * decision). A read failure resolves to an empty list.
+ * decision). A read that fails keeps the states already shown; the first one
+ * resolves to an empty list.
  */
 export async function useInstanceCapabilities() {
   const { canSeeAdmin } = useAuth();
   const requestFetch = useRequestFetch();
   const isDesktop = useIsDesktop();
 
+  let shown: Ref<CapabilityStateItem[]> | null = null;
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     'capabilities-instance',
     () =>
       requestFetch<CapabilityStates>('/api/capabilities')
         .then((r) => r.items)
-        .catch(() => []),
+        .catch(() => shown?.value ?? []),
     { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender },
   );
+  shown = items;
 
   const stateMap = computed(() => {
     const map = new Map<CapabilityId, CapabilityState>();

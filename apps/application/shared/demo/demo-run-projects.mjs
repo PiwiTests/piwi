@@ -8,14 +8,25 @@
 
 /**
  * A run's `htmlReport`: one project per distinct project name of its
- * executions, in the order they first appear, each with the run's `baseURL`
- * when it has one. Values that are not a non-empty string are skipped.
+ * executions' browser configs, in the order they first appear, each with the
+ * `use` the reporter records for a project: its `browserName`, the run's
+ * `baseURL` when it has one, and its `viewport` when the config sets one. A
+ * config whose `projectName` is not a non-empty string is skipped.
  *
- * @param {Iterable<unknown>} projectNames the project name of each execution of the run
+ * @param {Iterable<{ projectName?: unknown, browserName?: unknown, viewport?: unknown } | null | undefined>} browsers
+ *   the browser config of each execution of the run
  * @param {string | null} [baseURL] the `use.baseURL` of the run's projects
  */
-export function demoHtmlReport(projectNames, baseURL = null) {
-  const names = new Set();
-  for (const name of projectNames) if (typeof name === 'string' && name) names.add(name);
-  return { projects: [...names].map((name) => (baseURL ? { name, use: { baseURL } } : { name })) };
+export function demoHtmlReport(browsers, baseURL = null) {
+  const projects = new Map();
+  for (const browser of browsers) {
+    const name = browser?.projectName;
+    if (typeof name !== 'string' || !name || projects.has(name)) continue;
+    const use = {};
+    if (typeof browser.browserName === 'string' && browser.browserName) use.browserName = browser.browserName;
+    if (baseURL) use.baseURL = baseURL;
+    if (browser.viewport !== undefined) use.viewport = browser.viewport;
+    projects.set(name, { name, use });
+  }
+  return { projects: [...projects.values()] };
 }

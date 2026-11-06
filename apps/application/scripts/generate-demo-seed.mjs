@@ -6564,17 +6564,18 @@ for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null
 // ── Configured projects (rng-free) ─────────────────────────────────────────
 // Each run's metadata lists the Playwright projects its executions ran
 // (`htmlReport.projects`, as the reporter records the config's projects), with
-// the run's baseURL, so the list and the executions' `browser_name` agree.
+// each project's browser and viewport and the run's baseURL, so the list and
+// the executions' `browser_name` agree.
 {
-  const projectNamesByRun = new Map();
+  const browsersByRun = new Map();
   for (const row of [...TEST_RUNS_CASES].sort((a, b) => a.id - b.id)) {
-    if (!projectNamesByRun.has(row.test_run_id)) projectNamesByRun.set(row.test_run_id, []);
-    projectNamesByRun.get(row.test_run_id).push(row.browser_name);
+    if (!browsersByRun.has(row.test_run_id)) browsersByRun.set(row.test_run_id, []);
+    browsersByRun.get(row.test_run_id).push(row.browser);
   }
   for (const run of TEST_RUNS) {
-    const names = projectNamesByRun.get(run.id);
-    if (!names) continue;
-    run.metadata = { ...run.metadata, htmlReport: demoHtmlReport(names, RUN_BASE_URLS.get(run.id) ?? null) };
+    const browsers = browsersByRun.get(run.id);
+    if (!browsers) continue;
+    run.metadata = { ...run.metadata, htmlReport: demoHtmlReport(browsers, RUN_BASE_URLS.get(run.id) ?? null) };
   }
 }
 

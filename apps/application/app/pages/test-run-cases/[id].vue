@@ -32,18 +32,21 @@ import { hasHealingAlternatives } from '#shared/locator-healing';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 import { coverageLossPreview } from '~/utils/coverage-insights';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const {
-  data: testCase,
-  error: testCaseError,
-  refresh,
-} = await useFetch<ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>>(
-  `/api/test-run-cases/${testCaseId}`,
-);
+type ExecutionDetail = ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>;
+const { data: testCase, error: testCaseError } = await useFetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`);
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
+// Every later read of the execution keeps the one the page shows when it fails.
+const readExecution = refetchKeeping(testCase, () => $fetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`));
+async function refresh(): Promise<void> {
+  await readExecution();
+}
+// A read asked from outside the page (the assistant, once a proposal is applied); the diagnosis panel adds its own.
+usePageReload(refresh);
 provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
 
 // Server-rendered fetches carry the viewer's session.
