@@ -49,10 +49,18 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
-import { laneAt, laneStopped, laneWentOn, subscribeLane, type LaneSink, type LaneSubscription } from './lane-feed.js';
+import {
+  laneAt,
+  laneBarBand,
+  laneStopped,
+  laneWentOn,
+  subscribeLane,
+  type LaneSink,
+  type LaneSubscription,
+} from './lane-feed.js';
 import { jpegSize, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { viewportOf } from './page-view.js';
+import { pauseBarUp, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -69,10 +77,11 @@ import { internalCall } from './quiet-capture.js';
  * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
  * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
- * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
- * viewer that comes later until the view ends, never stored), plays the viewer's input
- * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
- * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
+ * most `MAX_VIEW_FPS` a second, a headed stop's pause bar painted over in them, the latest one when the connection is
+ * backed up, the latest sent kept in memory for a viewer that comes later until the view ends, never stored), plays
+ * the viewer's input on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE`
+ * events a second, none on the pause bar the view paints over, what it holds down let go before the test goes on),
+ * and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
  * its page or the connection closes. For an agent (the editor's MCP server), it reads the stopped page's ARIA snapshot
  * in AI mode (`snapshot`), acts on one of its elements by its ref as trusted input (`act`) and ranks that element's
@@ -226,22 +235,34 @@ let viewTurn: Promise<unknown> = Promise.resolve();
 /** What ends with the view of the stop held: a pick or a recording driven through it. */
 const viewEnds = new Set<() => void>();
 
-/** The input of the stop held: its pace, the message playing, how many wait, and what it holds down. */
+/**
+ * The input of the stop held: its pace, the message playing, how many wait, what it holds down, and what settles as
+ * its stop ends.
+ */
 interface InputState {
   rate: RateWindow;
   playing: Promise<unknown>;
   waiting: number;
   buttons: Set<ViewButton>;
+  /** The buttons pressed on the pause bar's band, whose presses and releases are not played. */
+  barButtons: Set<ViewButton>;
   keys: Set<string>;
+  over: Promise<void>;
+  end(): void;
 }
 
 function freshInput(): InputState {
+  let end = (): void => undefined;
+  const over = new Promise<void>((resolve) => (end = resolve));
   return {
     rate: new RateWindow(MAX_VIEW_EVENT_RATE),
     playing: Promise.resolve(),
     waiting: 0,
     buttons: new Set(),
+    barButtons: new Set(),
     keys: new Set(),
+    over,
+    end,
   };
 }
 
@@ -596,6 +617,7 @@ async function endView(stop: number, page: Page | null): Promise<void> {
   endDriven();
   const own = input;
   input = freshInput();
+  own.end();
   await within(own.playing, VIEW_END_MS);
   if (page && !page.isClosed() && (own.buttons.size || own.keys.size)) {
     await within(
@@ -753,7 +775,9 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played.
+ * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band,
+ * read as each press is played, is not played (`offPauseBar`), and a key only once the bar that shows is held inert for
+ * the message (`keyMayPlay`), which lets go of it as it ends; the answer says how many were not played.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
@@ -766,27 +790,130 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
     return Promise.resolve({ ok: false, message: `Too much input: ${MAX_VIEW_EVENT_RATE} events a second at most.` });
   }
   own.waiting++;
+  /** Whether the message goes on: its stop still holds and is watched. */
+  const going = (): boolean => held === holding && input === own && watched(holding.stop) && !page.isClosed();
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      for (const [i, event] of events.entries()) {
-        if (held !== holding || input !== own || !watched(holding.stop) || page.isClosed()) {
-          return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+      const keys: BarHold = { token: ++barHolds, drawn: null, held: false, sent: false };
+      let skipped = 0;
+      try {
+        for (const [i, event] of events.entries()) {
+          const wentOn = { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+          if (!going()) return wentOn;
+          const playable =
+            event.type === 'key' ? await keyMayPlay(page, keys, own.over, going) : await offPauseBar(page, event, own);
+          if (!going()) return wentOn;
+          if (!playable) {
+            skipped++;
+            continue;
+          }
+          try {
+            await internalCall(page, () => playEvent(page, event, own));
+          } catch (error) {
+            // A page's error may name the address it was at: its credentials stay in the worker.
+            return {
+              ok: false,
+              message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+            };
+          }
         }
-        try {
-          await internalCall(page, () => playEvent(page, event, own));
-        } catch (error) {
-          // A page's error may name the address it was at: its credentials stay in the worker.
-          return {
-            ok: false,
-            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
-          };
+        return { ok: true, message: playedAnswer(events.length, skipped) };
+      } finally {
+        // The hold is let go while the stop holds; once it ended, the bar is taken down with it and nothing is sent.
+        if (keys.sent && held === holding && !page.isClosed()) {
+          const release = { token: keys.token, hold: false };
+          await within(
+            internalCall(page, () => page.evaluate(holdBarFrom, release)),
+            VIEW_END_MS,
+          );
         }
       }
-      return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
     })
     .finally(() => own.waiting--);
   own.playing = played.catch(() => undefined);
   return played;
+}
+
+/** What a message of `count` events answers, `skipped` of them not played: the pause bar would take them. */
+function playedAnswer(count: number, skipped: number): string {
+  if (!skipped) return count === 1 ? 'Played 1 event.' : `Played ${count} events.`;
+  return (
+    `Played ${count - skipped} of ${count} ${count === 1 ? 'event' : 'events'}: ${skipped} not played, as the pause ` +
+    `bar the view paints over would take ${skipped === 1 ? 'it' : 'them'}.`
+  );
+}
+
+/**
+ * A message of a viewer's input, by its token: the draw of the pause bar it met last, whether the page answered that
+ * it holds that draw inert for the message, and whether a hold was sent, which the message lets go of as it ends.
+ */
+export interface BarHold {
+  token: number;
+  drawn: object | null;
+  held: boolean;
+  sent: boolean;
+}
+
+/** The messages of a viewer's input so far: each holds the pause bar by its own token. */
+let barHolds = 0;
+
+/**
+ * Whether a key of the message `hold` may be played on `page` now: no pause bar shows, or the draw of it that shows is
+ * held inert for the message. Each draw the message meets is held once, after it is drawn and while the message goes
+ * on (`going`), the bar's draw and the page's answer `PAGE_ANSWER_MS` each at most; nothing is sent once `over` (its
+ * stop ended) settled. A draw the page did not answer the hold for takes none of the message's keys.
+ */
+export async function keyMayPlay(
+  page: Page,
+  hold: BarHold,
+  over: Promise<unknown>,
+  going: () => boolean,
+): Promise<boolean> {
+  const bar = pauseBarUp(page);
+  if (!bar) return true;
+  if (bar === hold.drawn) return hold.held;
+  hold.drawn = bar;
+  hold.held = false;
+  const ended = over.then(() => false);
+  const drawn = Promise.resolve(bar.drawn).then(() => true);
+  if (!(await answerWithin(Promise.race([drawn, ended]), PAGE_ANSWER_MS, false)) || !going()) return false;
+  hold.sent = true;
+  const request = { token: hold.token, hold: true };
+  const answered = internalCall(page, () => page.evaluate(holdBarFrom, request)).then(() => true);
+  hold.held = await answerWithin(Promise.race([answered, ended]), PAGE_ANSWER_MS, false);
+  return hold.held;
+}
+
+/**
+ * Runs in the page: the pause bar is inert while a message of a viewer's input holds it (`token`, `hold`), so Tab
+ * passes it by, the focus leaves it, no key presses its buttons and it leaves Escape to the page; once none holds it,
+ * it is as it was. A message that lets go of a bar another holds leaves it inert. Must stay self-contained.
+ */
+function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
+  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
+  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
+  const doc = (globalThis as unknown as { document?: Document }).document;
+  const bar = doc?.getElementById('__piwi-pause-bar');
+  if (!doc || !bar) return;
+  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
+  if (hold) holds.push(token);
+  bar.__piwiKeyHolds = holds;
+  bar.inert = holds.length > 0;
+  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
+}
+
+/**
+ * Whether a viewer's `event` may be played: not a press or a click within the band of the pause bar the view paints
+ * over, read as it is played (`laneBarBand`), nor the release of a button pressed there.
+ */
+async function offPauseBar(page: Page, event: ViewInput, own: InputState): Promise<boolean> {
+  if (event.type !== 'mouse') return true;
+  if (event.action === 'up') return !own.barButtons.delete(event.button);
+  if (event.action !== 'down' && event.action !== 'click') return true;
+  const band = await Promise.race([laneBarBand(page), own.over.then(() => null)]);
+  if (band === null || event.y >= band) return true;
+  if (event.action === 'down') own.barButtons.add(event.button);
+  return false;
 }
 
 /** Play one event on the page as trusted input, keeping what it holds down. */

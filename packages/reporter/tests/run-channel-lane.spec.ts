@@ -8,13 +8,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS } from '@piwitests/core/run-view';
-import { startServer, type FakeServer, withoutCi } from './_helpers.js';
+import { jpegBand, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The lane view of a worker, in a real Playwright run through the built package: a fake editor service on the socket
  * the run names asks the worker's lane once, as Piwi Picker's Runs window does when a person clicks Watch on a running
  * row, and hears its frames through the worker's tests and its stop, plays a click at the stop through them, sees the
- * page's secret field painted over, and hears no frame once it turned the view off.
+ * page's secret field painted over, and hears no frame once it turned the view off. A worker of a headed project then
+ * stops with its pause bar drawn: the lane's frames have the bar painted over, and no click on its band is played.
+ * Under `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
+ * (`--headless=new`).
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -25,6 +28,8 @@ const TOKEN = 'run-lane-token-0123456789';
 /** How long each test looks at its page. */
 const LOOK_MS = 1200;
 const requireHere = createRequire(import.meta.url);
+const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
+const VIEWPORT = { width: 1000, height: 640 };
 const jpeg = (
   createRequire(requireHere.resolve('playwright-core/package.json'))('playwright-core/lib/utilsBundle') as {
     jpegjs: {
@@ -74,6 +79,14 @@ test('third', async ({ page }) => {
 });
 `;
 
+/** The headed project's test: it stops at its breakpoint, its pause bar drawn in the test's window. */
+const HEADED_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('headed', async ({ page }) => {
+  await page.goto('${base}/animated');
+  await expect(page.locator('#go')).toBeVisible(); // bp
+});
+`;
+
 const RESULTS_REPORTER = `const fs = require('node:fs');
 module.exports = class {
   constructor(options) { this.file = options.outputFile; this.tests = []; }
@@ -98,6 +111,8 @@ const answers: Record<string, unknown[]> = {};
 let offAt = Infinity;
 /** What the stop of the still page sent: its own view's frames, and the lane's frames naming it. */
 const still: { viewFrames: number; laneFrames: number } = { viewFrames: 0, laneFrames: 0 };
+/** The headed stop: what the clicks across its pause bar's band were answered, and whether it still held after them. */
+const headed: { clicks: string[]; heldAfter: boolean } = { clicks: [], heldAfter: false };
 let tests: Array<{ title: string; status: string; errors: string[] }> = [];
 let output = '';
 
@@ -159,6 +174,32 @@ async function onMessage(message: RunToHub): Promise<void> {
   }
   if (message.type !== 'stopped' || message.reason === 'failure') return;
   const stop = message.stop;
+  if (connectionTest() === ids.headed) {
+    // Each worker numbers its own stops: what this one says from its stop on.
+    const since = heard.length;
+    try {
+      // The lane's frames show the bar painted over once it is drawn: clicks across its band play nothing there.
+      const barBand = ({ message: m }: { message: LaneFrame }) =>
+        m.stop === stop && gray(jpegBand(Buffer.from(m.data, 'base64'), m.height, 2, 30).mean);
+      await waitFor(() => laneFrames(ids.headed).some(barBand));
+      for (let x = 20; x < VIEWPORT.width; x += 80) {
+        const answer = (await ask({
+          what: 'input',
+          stop,
+          events: [
+            { type: 'mouse', action: 'move', x, y: 6 },
+            { type: 'mouse', action: 'click', x, y: 6, button: 'left', clickCount: 1 },
+          ],
+        })) as { message: string };
+        headed.clicks.push(answer.message);
+      }
+      await sleep(300);
+      headed.heldAfter = !heard.slice(since).some(({ message: m }) => m.type === 'running' && m.stop === stop);
+    } finally {
+      socket!.write(`${JSON.stringify({ type: 'control', action: 'resume', stop })}\n`);
+    }
+    return;
+  }
   if (connectionTest() === ids.still) {
     try {
       // On a page that paints nothing, the lane's latest frame names the stop, and a view of it starts with it.
@@ -190,6 +231,10 @@ async function onMessage(message: RunToHub): Promise<void> {
     socket!.write(`${JSON.stringify({ type: 'control', action: 'resume', stop })}\n`);
   }
 }
+
+/** Whether a band's mean color is the gray the view paints over. */
+const gray = (mean: number[]) => mean.every((channel) => Math.abs(channel - 96) < 16);
+const white = (mean: number[]) => mean.every((channel) => channel > 235);
 
 function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
@@ -225,6 +270,7 @@ beforeAll(async () => {
   });
   const spec = SPEC(server.url);
   write('tests/lane.spec.cjs', spec);
+  write('tests/headed.spec.cjs', HEADED_SPEC(server.url));
   write(
     'fixture.cjs',
     `const { test: base, expect } = require('@playwright/test');
@@ -243,14 +289,24 @@ module.exports = defineConfig({
   timeout: 15000,
   workers: 1,
   reporter: [['./results-reporter.cjs', { outputFile: 'results.json' }]],
-  use: { headless: true, viewport: { width: 1000, height: 640 } },
+  projects: [
+    { name: 'lane', testMatch: 'lane.spec.cjs', use: { headless: true, viewport: ${JSON.stringify(VIEWPORT)} } },
+    {
+      name: 'headed',
+      testMatch: 'headed.spec.cjs',
+      use: { headless: false, viewport: ${JSON.stringify(VIEWPORT)}, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
+      dependencies: ['lane'],
+    },
+  ],
 });
 `,
   );
-  const lines = spec
-    .split('\n')
-    .flatMap((text, i) => (text.endsWith('// bp') ? [`tests/lane.spec.cjs:${i + 1}`] : []))
-    .join(';');
+  const breakpoints = (file: string, text: string) =>
+    text.split('\n').flatMap((line, i) => (line.endsWith('// bp') ? [`tests/${file}:${i + 1}`] : []));
+  const lines = [
+    ...breakpoints('lane.spec.cjs', spec),
+    ...breakpoints('headed.spec.cjs', HEADED_SPEC(server.url)),
+  ].join(';');
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
@@ -294,6 +350,7 @@ describe('the lane view of a worker', () => {
       ['still', 'passed'],
       ['second', 'passed'],
       ['third', 'passed'],
+      ['headed', 'passed'],
     ]);
     const attach = heard.find(({ message: m }) => m.type === 'run-attach')?.message;
     expect(attach).toMatchObject({ features: ['view-lane', 'give-up'] });
@@ -354,7 +411,24 @@ describe('the lane view of a worker', () => {
 
   it('sends no frame once the view is off', () => {
     expect(answers['view-lane']?.[2]).toEqual({ ok: true, message: 'The live view is off.' });
-    expect(laneFrames().filter(({ at }) => at > offAt + 200)).toEqual([]);
+    // The headed project's worker, which comes after, asks its own lane.
+    expect(laneFrames().filter(({ at, message }) => at > offAt + 200 && message.test !== ids.headed)).toEqual([]);
     expect(laneFrames(ids.third)).toEqual([]);
+  });
+
+  it('paints a headed stop’s pause bar over in each of the lane’s frames, and plays no click on its band', () => {
+    const frames = laneFrames(ids.headed).filter(({ message }) => message.stop !== null);
+    expect(frames.length).toBeGreaterThan(0);
+    const bands = frames.map(({ message }) => jpegBand(Buffer.from(message.data, 'base64'), message.height, 2, 30));
+    for (const band of bands) {
+      // Gray where the bar is, or the page's white in a frame from before the bar was drawn: never the bar itself.
+      expect(band.violet).toBe(0);
+      expect(gray(band.mean) || white(band.mean), `the band of the bar: ${band.mean.join(', ')}`).toBe(true);
+    }
+    expect(gray(bands[bands.length - 1]!.mean)).toBe(true);
+    expect(new Set(headed.clicks)).toEqual(
+      new Set(['Played 1 of 2 events: 1 not played, as the pause bar the view paints over would take it.']),
+    );
+    expect(headed.heldAfter).toBe(true);
   });
 });

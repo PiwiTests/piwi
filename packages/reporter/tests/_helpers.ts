@@ -246,3 +246,44 @@ export function withoutCi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
   return env;
 }
+
+/**
+ * The band of a JPEG image of a viewport `viewportHeight` CSS pixels high, from `top` to `bottom` in CSS pixels, across
+ * its width or from `left` to `right`: its mean color, and how many of its pixels are violet (far more blue than
+ * green), as the pause bar's Resume and border are. Decoded with the `jpeg-js` Playwright bundles.
+ */
+export function jpegBand(
+  data: Buffer,
+  viewportHeight: number,
+  top: number,
+  bottom: number,
+  left = 0,
+  right = Infinity,
+): { mean: number[]; violet: number } {
+  const playwright = createRequire(createRequire(__filename).resolve('playwright-core/package.json'));
+  const { jpegjs } = playwright('playwright-core/lib/utilsBundle') as {
+    jpegjs: {
+      decode(
+        data: Buffer,
+        options: { useTArray: true; formatAsRGBA: true },
+      ): { width: number; height: number; data: Uint8Array };
+    };
+  };
+  const image = jpegjs.decode(data, { useTArray: true, formatAsRGBA: true });
+  const scale = image.height / viewportHeight;
+  const sum = [0, 0, 0];
+  let violet = 0;
+  let count = 0;
+  for (let y = Math.ceil(top * scale); y < Math.floor(bottom * scale); y++) {
+    for (let x = Math.ceil(left * scale); x < Math.min(image.width, Math.floor(right * scale)); x++) {
+      const i = (y * image.width + x) * 4;
+      const [r, g, b] = [image.data[i]!, image.data[i + 1]!, image.data[i + 2]!];
+      sum[0] += r;
+      sum[1] += g;
+      sum[2] += b;
+      if (b - g > 80) violet++;
+      count++;
+    }
+  }
+  return { mean: sum.map((total) => total / count), violet };
+}

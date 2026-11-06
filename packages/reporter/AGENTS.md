@@ -34,9 +34,11 @@ responsibilities.
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
-     bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
-     (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
-     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
+     bar (made `inert` while a viewer's keys play, each input message holding it by its token in the bar's
+     `__piwiKeyHolds` and letting go as it ends, `keyMayPlay` in `run-channel.ts`), `PW_CODEGEN_NO_INSPECTOR`, the
+     wrapped `Page.prototype.pause`, the runner internals it reads (`_onDidFinishTestFunctionCallbacks`,
+     `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses` attachment and the locator posted to
+     `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
      and outlines, which Piwi draws itself in its own layer of the page, a manual popover in the top layer
      (`highlightAtStop`, `showStopHighlight` of `@piwitests/picker-dom`), never through Playwright's highlight, so the
      test's own highlights and screencast overlays stay as they were: drawn again every `REDRAW_MS` in the frame the
@@ -62,11 +64,13 @@ responsibilities.
      viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
      `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
      view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
-     stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
+     stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, none on the pause
+     bar's band nor a key the bar was not held inert for, `tests/page-view-bar.spec.ts`), runs the bar's actions in a headless page through
      it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
      never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
      each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's
-     secret fields painted over as the instance's are (`live-mask.ts`), and every call's and stop's title, the pause
+     secret fields painted over as the instance's are (`live-mask.ts`), each frame of a headed stop with the pause bar
+     painted over in the same pass (`page-view.ts`), and every call's and stop's title, the pause
      bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
      (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
      held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
@@ -88,7 +92,8 @@ responsibilities.
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
-     feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`). Never a frame while nobody
+     feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a
+     headed stop's pause bar is painted over in the same pass, as in the editor's views. Never a frame while nobody
      watches, never stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
      `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`,
      `tests/live-view-mask.spec.ts`). The key is
