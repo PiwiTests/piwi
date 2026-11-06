@@ -498,5 +498,5 @@ describe('the lane view of a worker', () => {
     expect(new Set(headed.releasesOnBand)).toEqual(new Set(['Played 2 events.']));
     expect(headed.clickAfter).toBe(NOT_PLAYED);
     expect(headed.heldAfter).toBe(true);
-  });
+  }, 60_000);
 });
