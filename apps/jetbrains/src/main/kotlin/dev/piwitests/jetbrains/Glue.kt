@@ -1384,9 +1384,10 @@ object Glue {
     }
 
     /**
-     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and
-     * whether its run was started in a terminal (`RunSession.terminal`), and of those by the IDE's own test runner
-     * (`RunSession.runner`).
+     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, whether
+     * its run was started in a terminal (`RunSession.terminal`), and of those by the IDE's own test runner
+     * (`RunSession.runner`), and its slot (`RunWorker.parallelIndex`, which the worker Playwright starts in its place
+     * after a failure keeps).
      */
     data class ShownStop(
         val ref: String,
@@ -1396,6 +1397,7 @@ object Glue {
         val takes: List<String> = emptyList(),
         val terminal: Boolean = false,
         val runner: Boolean = false,
+        val slot: Int = worker,
     )
 
     /** Every stopped worker of the sessions, in their order. */
@@ -1410,6 +1412,7 @@ object Glue {
                     w.takes.orEmpty(),
                     session.terminal,
                     session.terminal && session.runner,
+                    w.parallelIndex,
                 )
             }
         }
@@ -1417,6 +1420,102 @@ object Glue {
 
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
+
+    /** What tells a worker's slot from another: its run and its slot. */
+    private fun slotKey(ref: String, slot: Int): String = "$ref\u0000$slot"
+
+    private fun slotKey(stop: ShownStop): String = slotKey(stop.ref, stop.slot)
+
+    /** How long the Paused Page tab waits for the next stop of a worker stepped or run to the caret from the IDE. */
+    const val RESERVED_MILLIS = 10_000L
+
+    /**
+     * What a change of the stops shows: the stops new to the IDE, in order, each opening its file at its line in its
+     * turn (`StopsShown.focusFor`, `StopsShown.opened`), and the stop whose page the Paused Page tab opens (null leaves
+     * the tab as it is).
+     */
+    data class StopsChange(val open: List<ShownStop>, val page: ShownStop?)
+
+    /**
+     * What the IDE shows of the stops as they change, each stop once.
+     *
+     * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only while no other
+     *   stop held has its file open (`opened`, which counts a file left closed), or as a stop of the slot the person is
+     *   on: the one whose stop last took the focus, or whose stop a control from the IDE answered last (`answered`).
+     *   Watching a slot in the Worker tab does not make it the person's.
+     * - The Paused Page tab keeps the stop it shows (`view`) while that stop is held, a stop of the slot the Worker tab
+     *   watches included: the tab takes its input. Once it went on after a Step or a Run to Caret from the IDE, the tab
+     *   waits for that slot's next stop while a worker of the run holds the slot, `RESERVED_MILLIS` at most
+     *   (`waitsUntil`, when the IDE asks again); otherwise it opens the first new stop no pause bar shows, else the
+     *   first such stop held. A tab that is closed opens the first new such stop.
+     */
+    class StopsShown {
+        /** The stops heard, and those whose file opened or was left closed, by `stopKey`. */
+        private val heard = HashSet<String>()
+        private val files = HashSet<String>()
+        private var held: Set<String> = emptySet()
+
+        /** The stop the Paused Page tab shows, or showed last; null while it is closed. */
+        private var viewed: ShownStop? = null
+
+        /** The slot whose next stop the tab waits for, by `slotKey`, and until when. */
+        private var reserved: Pair<String, Long>? = null
+
+        /** The slot the person is on, by `slotKey`. */
+        private var followed: String? = null
+
+        /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
+        fun changed(
+            sessions: Map<String, RunSession>,
+            stops: List<ShownStop>,
+            now: Long = System.currentTimeMillis(),
+        ): StopsChange {
+            val slots = sessions.values.flatMap { s -> s.workers.orEmpty().map { slotKey(s.ref ?: "", it.parallelIndex) } }.toSet()
+            if (reserved?.let { it.second <= now || it.first !in slots } == true) reserved = null
+            held = stops.map(::stopKey).toSet()
+            heard.retainAll(held)
+            files.retainAll(held)
+            val open = stops.filter { stopKey(it) !in heard }
+            open.forEach { heard.add(stopKey(it)) }
+            val shown = viewed ?: return StopsChange(open, open.firstOrNull { !it.stop.bar })
+            if (stopKey(shown) in held) return StopsChange(open, null)
+            val slot = reserved?.first?.takeIf { it == slotKey(shown) }
+            if (slot != null) {
+                val next = stops.firstOrNull { slotKey(it) == slot } ?: return StopsChange(open, null)
+                reserved = null
+                if (!next.stop.bar) return StopsChange(open, next)
+            }
+            return StopsChange(open, open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar })
+        }
+
+        /** The Paused Page tab shows `stop`'s page; null once it is closed. */
+        fun view(stop: ShownStop?) {
+            viewed = stop
+        }
+
+        /** When the tab stops waiting for a slot's next stop, for `changed` to run then; null while it waits for none. */
+        fun waitsUntil(): Long? = reserved?.second
+
+        /** Whether `stop`'s file, opening now, takes the focus. */
+        fun focusFor(stop: ShownStop): Boolean = slotKey(stop) == followed || files.all { it == stopKey(stop) }
+
+        /** `stop`'s file opened, or was left closed while an editor is in use, with the focus or without it. */
+        fun opened(stop: ShownStop, focus: Boolean) {
+            if (stopKey(stop) !in held) return
+            files.add(stopKey(stop))
+            if (focus) followed = slotKey(stop)
+        }
+
+        /**
+         * A control from the IDE answers `stop` (`action`), as it is sent: the person is on its slot, and after a Step or
+         * a Run to Caret the tab waits for its next stop.
+         */
+        fun answered(stop: ShownStop, action: String, now: Long = System.currentTimeMillis()) {
+            followed = slotKey(stop)
+            if (action == "step" || action == "run-to") reserved = slotKey(stop) to now + RESERVED_MILLIS
+            else if (reserved?.first == slotKey(stop)) reserved = null
+        }
+    }
 
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,

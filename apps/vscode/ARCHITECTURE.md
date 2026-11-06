@@ -338,7 +338,18 @@ as an information message. The commands show in the status bar beside the run's 
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
-**A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
+**A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
+`OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the
+focus, decided as it opens, only while no other stop held has its file open, or as a stop of the worker slot
+(`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop last took the
+focus, or whose stop a control from the editor answered last, counted as the control is sent. A slot the worker panel
+watches is not the person's for that: the panel shows its page whatever the focus, while the focus chooses the stop
+the keys and the cursor act on, which a watched worker's stop would take from the one in use. A file that never
+opened counts as none. It never opens over a panel in sight (the paused page view, the worker panel). With the focus,
+it opens as a debugger's does, where the file shows already, else in the active group. Without it, the editor in use
+is left alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and
+another opens with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the
+right (`asideColumn`). It is drawn as the execution point:
 `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
 stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
 (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
@@ -354,22 +365,26 @@ the line it stands on now (the mark, the lens, the caret's match), and the caret
 the cursor, which is refused on a line written since. An event of several changes (the code a stop made, its undo) is
 read change by change in the document after them all (`linesAbove`), so the mark follows it.
 
-**The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
-**Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The webview takes images from `data:` only (`img-src data:`) and its one style by nonce
-(`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a click on the
-image picks the element under it: a script by the same nonce, the webview's only one, posts the click's offset and the
-size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the page's CSS pixels
-(`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
-click on an image the view no longer shows picks nothing.
+**The paused page.** A stop with no pause bar (`bar: false`) that the worker panel does not show asks
+`piwi/pausedPage` and shows the JPEG in the **Piwi: paused page** webview beside the editor, as **Piwi: Show the
+paused page** (`piwi.showPausedPage`) does at any stop. The view keeps the stop it shows while that stop is held
+(`StopsShown`). Once it went on after a Step or a Run to the cursor from the editor, the view says so and waits for
+that slot's next stop while a worker of the run holds the slot, `RESERVED_MS` at most (`waitsUntil`: a timer asks
+again then); otherwise it opens the first new stop no pause bar or worker panel shows, else the first such stop held.
+A view already shown stays in its group. The webview takes images from `data:` only (`img-src data:`) and its one
+style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a
+click on the image picks the element under it: a script by the same nonce, the webview's only one, posts the click's
+offset and the size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the
+page's CSS pixels (`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under
+the caption. A click on an image the view no longer shows picks nothing.
 
 When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
 `piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
 `dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
 replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
 and typing, batched through the Runs window's input helper. Escape releases held input and focuses Watch live;
-Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch. The panel
-remembers Watch live until closed, but each watch starts with Interact off.
+Shift+click still picks. Help is collapsed. Hiding, closing, showing another stop or resuming ends the watch; another
+worker's new stop does not. The panel remembers Watch live until closed, but each watch starts with Interact off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
 (`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar
@@ -379,7 +394,7 @@ open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows
 and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). Each stop, and each
 stretch the worker runs between them, is drawn anew (`shown`), so Interact starts off and a message of the view before
 reaches nothing; at a stop, Interact and the pick on a click name that stop, as on the paused page. A headless stop of
-the slot the panel watches, in sight, opens no paused page, and its file opens beside the panel rather than over it.
+the slot the panel watches, in sight, opens no paused page, and no stop's file opens over the panel.
 Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
 (`pausedPageViewChange`).
 

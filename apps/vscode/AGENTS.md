@@ -62,6 +62,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
+- **A new stop takes the focus only while no other held stop's file is open, or on the worker slot the person is on
+  (the last to take the focus or be answered from the editor, never one only watched); any other opens beside the
+  editor in use, never over a panel, and the paused page keeps a held stop, then waits `RESERVED_MS` at most for a slot
+  stepped or run to the cursor from the editor.** `StopsShown` decides and `run-view.ts` opens, as in the JetBrains
+  plugin; checked by `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service
+  sends. ([Run control](ARCHITECTURE.md#run-control))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
@@ -113,8 +119,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
   messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
   `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
-  for the paused page, a new stop ends or restarts its watch, never a focus change (`pausedPageViewChange`, checked by
-  `tests/run-control.test.ts`).
+  for the paused page, another stop shown in it ends or restarts its watch, never a focus change
+  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow

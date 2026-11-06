@@ -173,11 +173,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /**
-     * The stops whose file was opened at their line, whose page was shown, and what is drawn of each, by
-     * `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
+     * What the IDE shows of the stops (`Glue.StopsShown`), the stops whose file opens once found, in order, and what is
+     * drawn of each, by `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
      */
-    private val revealed = HashSet<String>()
-    private val paged = HashSet<String>()
+    private val shownStops = Glue.StopsShown()
+    private val unopened = LinkedHashSet<String>()
     private val drawn = HashMap<String, DrawnStop>()
     private val refreshed = HashSet<String>()
 
@@ -194,6 +194,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageInputBusy = false
     private var pageRelease = false
     private val pageInputAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
+    /** Draws again once the Paused Page tab stops waiting for a slot's next stop (`Glue.StopsShown.waitsUntil`). */
+    private val waitAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
     /** The Worker tab, and the slot it watches (a run's ref, a parallel index); on the event thread. */
     private var workerTab: Content? = null
@@ -522,27 +525,39 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Draw each stop at the line it stands on now: its file opened at its line the first time, its execution point and
-     * an inlay in each editor of its file; a stop no pause bar shows, its page in the Paused Page tab, whether its file
-     * is found or not. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a
-     * stop that went on drew goes. On the event thread.
+     * Draw each stop at the line it stands on now: a new stop's file opened at its line once found, with the focus as
+     * `Glue.StopsShown` decides then (`reveal`), its execution point and an inlay in each editor of its file; the page
+     * `Glue.StopsShown` gives in the Paused Page tab, whether its file is found or not, the tab selected unless the
+     * Worker tab is. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a stop
+     * that went on drew goes. On the event thread.
      */
     private fun draw() {
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
-        revealed.retainAll(keys)
-        paged.retainAll(keys)
+        unopened.retainAll(keys)
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
+        val shownPage = livePage()
+        if (shownPage == null) shownStops.view(null)
+        val show = shownStops.changed(sessions, stops)
+        wakeWhenWaited()
+        show.open.forEach { unopened.add(Glue.stopKey(it)) }
+        val byKey = stops.associateBy(Glue::stopKey)
+        for (key in unopened.toList()) {
+            val stop = byKey[key] ?: continue
+            val file = fileOf(stop.stop.uri) ?: continue
+            unopened.remove(key)
+            val focus = shownStops.focusFor(stop)
+            reveal(stop, file, focus)
+            shownStops.opened(stop, focus)
+        }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
             val file = fileOf(stop.stop.uri)
-            if (file == null) refresh(stop.stop.uri)
-            if (file != null && revealed.add(key)) {
-                OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(true)
+            if (file == null) {
+                refresh(stop.stop.uri)
+                continue
             }
-            if (!stop.stop.bar && paged.add(key)) showPage(stop, select = !workerTabShows(stop))
-            if (file == null) continue
             val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
             if (stop.stop.line < 0 || stop.stop.line >= document.lineCount) continue
             val shown = drawn.getOrPut(key) { DrawnStop(highlight(document, stop)) }
@@ -552,8 +567,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     ?.let { shown.inlays[editor] = it }
             }
         }
-        val shownPage = livePage()
-        if (shownPage != null && pageStop != null && pageStop !in keys) {
+        if (show.page != null) {
+            showPage(show.page, select = !workerTabInSight())
+        } else if (shownPage != null && pageStop != null && pageStop !in keys) {
             stopPageView()
             pageStop = null
             (shownPage.component as PausedPagePanel).ended("The test went on.")
@@ -571,6 +587,39 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 worker.liveWanted = false
             }
         }
+    }
+
+    /**
+     * Open a stop's file at its line. With the focus, as the debugger does. Without it, the editor in use is left alone:
+     * a file open in an editor already keeps its caret, and while an editor shows a file, another stays closed, the stop
+     * drawn in it when it opens (the platform opens no file without selecting it); with no editor shown, it opens
+     * without the focus. On the event thread.
+     */
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean) {
+        val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
+        val manager = FileEditorManager.getInstance(project)
+        when {
+            focus -> descriptor.navigate(true)
+            manager.isFileOpen(file) || manager.selectedFiles.isNotEmpty() -> return
+            else -> descriptor.navigate(false)
+        }
+    }
+
+    /**
+     * Open a stop's file at its line with the focus, from the status bar item's menu: the person is then on its slot.
+     * On the event thread.
+     */
+    fun goTo(stop: Glue.ShownStop) {
+        val file = fileOf(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
+        reveal(stop, file, true)
+        shownStops.opened(stop, true)
+    }
+
+    /** Draw again once the Paused Page tab stops waiting for a slot's next stop. On the event thread. */
+    private fun wakeWhenWaited() {
+        waitAlarm.cancelAllRequests()
+        val until = shownStops.waitsUntil() ?: return
+        waitAlarm.addRequest({ draw() }, (until - System.currentTimeMillis()).coerceAtLeast(0L).toInt())
     }
 
     private fun toolWindow() = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)
@@ -643,12 +692,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker, the tab selected unless
-     * `select` is false (the Worker tab shows the stop's slot, and keeps the place). On the event thread.
+     * `select` is false (the Worker tab is in sight, and keeps the place). On the event thread.
      */
     fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
         stopPageView()
         val key = Glue.stopKey(stop)
         pageStop = key
+        shownStops.view(stop)
         val window = toolWindow() ?: return
         val content = livePage() ?: ContentFactory.getInstance()
             .createContent(PausedPagePanel(), PAUSED_PAGE, false)
@@ -799,11 +849,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (watchingLane == null) watchLane(true)
     }
 
-    /** Whether the Worker tab is the one in sight, on the slot of a stop's worker. On the event thread. */
-    private fun workerTabShows(stop: Glue.ShownStop): Boolean {
+    /** Whether the Worker tab is the tab of the Piwi tool window in sight. On the event thread. */
+    private fun workerTabInSight(): Boolean {
         val tab = liveWorkerTab() ?: return false
-        val lane = sessions[stop.ref]?.workers.orEmpty().firstOrNull { it.worker == stop.worker }?.parallelIndex
-        return laneTarget == (stop.ref to lane) && toolWindow()?.contentManager?.selectedContent == tab
+        return toolWindow()?.contentManager?.selectedContent == tab
     }
 
     /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
@@ -955,6 +1004,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * event thread, saying why not.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
+        shownStops.answered(stop, action)
+        wakeWhenWaited()
         control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since))
     }
 

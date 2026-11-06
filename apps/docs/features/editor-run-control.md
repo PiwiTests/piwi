@@ -66,9 +66,10 @@ stopped at**. The mark goes when the test goes on (from the editor or the bar), 
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
-With several workers stopped, each has its own mark, and the controls above a line act on its worker; a key or command
-acts on the one at the cursor's line, else asks which. A control answers the stop it was shown for: when the test went
-on meanwhile, it says so and asks nothing.
+With several workers stopped, each has its own mark. Only the first stop shown, or one of the worker you last answered,
+takes the cursor; another opens beside your editor, or, in a JetBrains IDE in use, waits in the status bar item's menu.
+The controls above a line act on its worker, a key or command on the one at the cursor's line, else it asks which. A
+control answers the stop it was shown for: when the test went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
 **Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test
@@ -78,7 +79,8 @@ has none.
 
 A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
-Piwi tool window. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) opens it at any stop.
+Piwi tool window, which keeps its stop until that test goes on, and after a **Step** waits up to 10 seconds for its
+next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) opens it at any stop.
 
 <figure>
   <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
@@ -116,9 +118,6 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 ## Limits
 
-- **The IDE's own runs** (the gutter's Run, a run configuration) are [runs started outside Piwi](./terminal-runs): no
-  Stop, and no Pick, Record or Assert in the test's window. With **Run the tests in the IDE's Playwright runner** on,
-  Piwi's commands run there with every control, the runner's Rerun and Debug included.
 - **No mark on a breakpoint that never stops.** One on a line with no call Playwright's debugger stops at looks like
   any other and does nothing.
 - **Playwright calls, not JavaScript.** **Step** goes from one Playwright call to the next; stepping through the
