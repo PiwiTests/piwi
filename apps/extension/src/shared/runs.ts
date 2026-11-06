@@ -127,6 +127,7 @@ const WHATS: readonly string[] = [
   'pick-at',
   'share',
   'watch',
+  'give-up',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -272,8 +273,10 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
       // Share live names the run alone, and Watch the run and its lane.
       if ((what === 'share' || what === 'watch') && (worker !== null || since !== null)) return null;
-      // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
-      if (!['pause', 'image', 'share', 'watch'].includes(what) && since === null) return null;
+      // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
+      // test while a Pause waits for a call names none, and its worker.
+      if (what === 'give-up' && (since !== null || worker === null)) return null;
+      if (!['pause', 'image', 'share', 'watch', 'give-up'].includes(what) && since === null) return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
       // its events, a pick on the image its point, Watch the lane and whether it is on.

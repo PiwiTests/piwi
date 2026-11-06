@@ -343,6 +343,7 @@ export class RunHubs {
       case 'resume':
       case 'finish':
       case 'end':
+      case 'give-up':
         return connection.command({ type: 'runControl', ref, worker, action: what, since });
       case 'mock':
         // `parseRunsRequest` takes none without the stop it answers and the response it mocks.

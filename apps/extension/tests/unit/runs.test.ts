@@ -54,6 +54,12 @@ describe('the Runs window’s requests, as the worker reads them', () => {
     expect(parseRunsRequest({ ...command, what: 'step' })).toEqual({ ...command, what: 'step' });
     expect(parseRunsRequest({ ...command, what: 'end' })).toEqual({ ...command, what: 'end' });
     expect(parseRunsRequest({ ...command, worker: null, since: null, what: 'pause' })).toMatchObject({ worker: null });
+    // End the test while a Pause waits for a call: its worker, and no stop.
+    expect(parseRunsRequest({ ...command, since: null, what: 'give-up' })).toEqual({
+      ...command,
+      since: null,
+      what: 'give-up',
+    });
     expect(parseRunsRequest({ type: 'window', windowId: 7 })).toEqual({ type: 'window', windowId: 7 });
     expect(parseRunsRequest({ type: 'find' })).toEqual({ type: 'find' });
   });
@@ -78,6 +84,9 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       { ...command, since: null, what: 'pick' },
       { ...command, since: null, what: 'assert' },
       { ...command, since: null, what: 'requests' },
+      // End the test while a Pause waits names its worker, and no stop.
+      { ...command, what: 'give-up' },
+      { ...command, worker: null, since: null, what: 'give-up' },
       { type: 'window', windowId: 'w' },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();

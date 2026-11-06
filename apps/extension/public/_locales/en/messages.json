@@ -7751,6 +7751,30 @@
     "message": "Pausing…",
     "description": "Runs window, the state of a test a Pause reached, until it stops before its next call."
   },
+  "runs_statePausingIn": {
+    "message": "Pausing: waits in $call$",
+    "description": "Runs window, the state of a test a Pause reached while it waits in a call (call, as Playwright titles it): it stops once the call returns.",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "for $time$",
+    "description": "Runs window, after runs_statePausingIn: how long the call has run so far (time, a number of seconds).",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped",
+    "description": "Runs window, the tooltip of End the test while a Pause waits for the call the test runs: the call is given up, or the test is skipped as it returns."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."

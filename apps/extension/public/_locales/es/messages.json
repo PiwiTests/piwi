@@ -6537,6 +6537,27 @@
   "runs_statePausing": {
     "message": "Pausando…"
   },
+  "runs_statePausingIn": {
+    "message": "Pausando: espera en $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "desde hace $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "Terminar la prueba ahora: la llamada en la que espera se abandona si se puede y se omite el resto de la prueba"
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },
