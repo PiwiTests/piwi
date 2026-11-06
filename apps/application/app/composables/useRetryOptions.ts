@@ -22,7 +22,7 @@ export function useRetryOptions() {
     encode: (value) => encodeURIComponent(JSON.stringify(value)),
   });
   const prefs = useState<RetryPrefs>('retry-command-prefs', () => parseRetryPrefs(cookie.value));
-  const project = useState<string | null>('retry-command-project', () => null);
+  const project = useState<string | null>(`retry-command-project:${useRoute().path}`, () => null);
 
   function update(patch: Partial<RetryPrefs>) {
     prefs.value = parseRetryPrefs({ ...prefs.value, ...patch });

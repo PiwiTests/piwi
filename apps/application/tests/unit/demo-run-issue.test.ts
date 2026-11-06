@@ -30,6 +30,7 @@ beforeAll(async () => {
   // The demo's sql.js database enforces no foreign key, and seeds no row for its canned Jira connection.
   await db.run(sql`PRAGMA foreign_keys = OFF`);
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
+  await db.insert(schema.testRuns).values({ id: 6, projectId: 1, status: 'passed', startTime: new Date() });
   await db.insert(schema.testRuns).values({
     id: 5,
     projectId: 1,
@@ -79,6 +80,19 @@ describe('the demo issue draft and create for a run', () => {
     const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.testRunId, 5));
     expect(links.map((l) => l.key).sort()).toEqual([first.key, other.key].sort());
     expect((await draft('entityType=test_run&entityId=5')).existing).toHaveLength(2);
+  });
+
+  test('a submission id sent for another run files there, and a malformed body is refused', async () => {
+    const submissionId = '00000000-0000-4000-8000-00000000000c';
+    const onFive = await create({ entityType: 'test_run', entityId: 5, submissionId });
+    const onSix = await create({ entityType: 'test_run', entityId: 6, submissionId });
+    expect(onSix.key).not.toBe(onFive.key);
+    await expect(create({ entityType: 'test_run', entityId: 5, comment: 5 })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(create({ entityType: 'test_run', entityId: 5, submissionId: 'twice' })).rejects.toMatchObject({
+      statusCode: 400,
+    });
   });
 
   test('an execution with no cluster files for itself', async () => {

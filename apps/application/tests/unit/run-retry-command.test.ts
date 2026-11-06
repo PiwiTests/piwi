@@ -14,6 +14,7 @@ async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown)
   vi.stubGlobal('isFailedStatus', isFailedStatus);
   vi.stubGlobal('statusPaletteKey', statusPaletteKey);
   vi.stubGlobal('useCookie', () => ref(cookie));
+  vi.stubGlobal('useRoute', () => ({ path: '/test-runs/1' }));
   const { useRetryOptions } = await import('../../app/composables/useRetryOptions');
   vi.stubGlobal('useRetryOptions', useRetryOptions);
   const { useRunRetryCommand } = await import('../../app/composables/useRunRetryCommand');

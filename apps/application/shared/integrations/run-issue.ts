@@ -11,6 +11,14 @@ import type { BuiltIssue } from './build-issue';
 /** The longest comment a person may write on an issue. */
 export const MAX_ISSUE_COMMENT_LENGTH = 5000;
 
+/** Whether `value` is a submission id the create route takes: a UUID, as zod's `uuid()` reads one. */
+export function isSubmissionId(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
 /** What a person wrote when filing, and who they are (null with authentication off). */
 export interface IssueComment {
   text: string;

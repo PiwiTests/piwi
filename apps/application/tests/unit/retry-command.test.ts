@@ -214,7 +214,7 @@ describe('a spec whose path holds a character a regular expression reads', () =>
 });
 
 describe('run options', () => {
-  test('no options give the same command as before', () => {
+  test('no options add no flag', () => {
     for (const mode of ['file-line', 'grep', 'file'] as const) {
       expect(buildRetryCommand(sampleCases, { mode, options: {} })).toBe(buildRetryCommand(sampleCases, { mode }));
       expect(buildRetryCommand(sampleCases, { mode, options: null })).toBe(buildRetryCommand(sampleCases, { mode }));

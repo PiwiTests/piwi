@@ -72,12 +72,14 @@ const filedFor = computed(() => (props.entityType === 'bug_report' ? 'this bug r
  * ones already linked are listed, and never stand in for a new one.
  */
 const perSubmission = computed(
-  () => props.entityType === 'test_run' || (props.entityType === 'test_runs_case' && draft.value?.clusterId == null),
+  () =>
+    props.entityType === 'test_run' ||
+    (props.entityType === 'test_runs_case' && draft.value != null && draft.value.clusterId == null),
 );
 
 /** What the person writes, placed first in the issue under their name. */
 const comment = ref('');
-/** One id per opening of the dialog: sending it again files nothing new. */
+/** One id per opening of the dialog, or the one a queued filing holds: sending it again files nothing new. */
 const submissionId = ref('');
 /** The comment block as the issue will open, rendered with the server's own builder. */
 const commentMarkdown = computed(() => {
@@ -85,6 +87,18 @@ const commentMarkdown = computed(() => {
   if (!text || !draft.value) return '';
   return renderMarkdown({ nodes: commentNodes(locale.value, { text, author: draft.value.filedBy ?? null }) });
 });
+/** What the Comment field says it does: on a cluster already tracked, it may go to the issue Piwi filed. */
+const commentDescription = computed(() => {
+  const under = draft.value?.filedBy ? ', under your name' : '';
+  const tracked = !perSubmission.value && existing.value.length > 0;
+  return tracked
+    ? `What is wrong, what to improve, what test is missing. It opens the new issue${under}, or is added to the issue Piwi already filed for this cluster.`
+    : `What is wrong, what to improve, what test is missing. It opens the issue${under}.`;
+});
+/** The linked issues with a key, as the per-submission list names them. */
+const linkedKeys = computed(() => existing.value.filter((issue) => issue.key));
+/** What the held submission ids are kept for. */
+const submissionSubject = computed(() => `${props.entityType}:${props.entityId}`);
 const previewMarkdown = computed(() =>
   commentMarkdown.value ? `${commentMarkdown.value}\n${draft.value?.markdown ?? ''}` : (draft.value?.markdown ?? ''),
 );
@@ -369,7 +383,7 @@ const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value ==
 watch(open, (isOpen) => {
   if (isOpen) {
     comment.value = '';
-    submissionId.value = newSubmissionId();
+    submissionId.value = submissionIdFor(submissionSubject.value);
     projects.value = [];
     issueTypes.value = [];
     showAllCreate.value = false;
@@ -420,6 +434,7 @@ async function create() {
         color: res.alreadyFiled ? 'info' : 'success',
         actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
+      releaseSubmission(submissionSubject.value);
       emit('created', { key: res.key, url: res.url });
       open.value = false;
     } else if (res.status === 'pending') {
@@ -428,6 +443,7 @@ async function create() {
         description: 'Jira did not answer yet. Piwi retries and links the issue once it is created.',
         color: 'info',
       });
+      holdSubmission(submissionSubject.value, submissionId.value);
       emit('queued');
       open.value = false;
     } else {
@@ -513,9 +529,9 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
           </template>
         </UAlert>
 
-        <p v-if="perSubmission && existing.length" class="text-xs text-muted" data-testid="create-issue-linked">
+        <p v-if="perSubmission && linkedKeys.length" class="text-xs text-muted" data-testid="create-issue-linked">
           Already linked:
-          <template v-for="(issue, i) in existing" :key="issue.key"
+          <template v-for="(issue, i) in linkedKeys" :key="issue.key"
             ><template v-if="i">, </template
             ><a :href="issue.url" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">{{
               issue.key
@@ -545,11 +561,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               >Set the defaults</NuxtLink
             ><template v-else> A project admin can set them in the project settings.</template>
           </p>
-          <UFormField
-            label="Comment"
-            hint="Optional"
-            :description="`What is wrong, what to improve, what test is missing. It opens the issue${draft.filedBy ? `, under your name` : ''}.`"
-          >
+          <UFormField label="Comment" hint="Optional" :description="commentDescription">
             <UTextarea
               v-model="comment"
               :rows="3"

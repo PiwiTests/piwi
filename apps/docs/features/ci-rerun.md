@@ -17,10 +17,6 @@ that run recorded no branch. An execution's Verify section offers **Re-run this 
 line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. In the
 Verify section, the last dispatch says where it went (_dispatched to Jenkins_), when, by whom, and links to the build.
 
-*Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run them on your machine.
-Its menu adds run options (headed, trace, repeat each up to 10, workers up to 4, and one project for a run of several),
-which the browser remembers, the project aside.
-
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and pick what it dispatches through:
 
@@ -30,6 +26,10 @@ under **CI re-run**. Turn it on and pick what it dispatches through:
 Its buttons, and a next step that runs in CI, show to people with
 [`run:control`](/operate/project-access#what-each-role-can-do) once the feature is on and a target is set; through the
 repository, an SCM token must be set too. A CI server request goes without a credential when none applies.
+
+*Copy retry command* is the local counterpart of **Re-run in CI**: it copies an `npx playwright test` command to run
+the same tests on your machine. Its menu adds run options (headed, trace, repeat each up to 10, workers up to 4, and
+one project for a run of several), which the browser remembers, the project aside.
 
 An optional **Flake Lab** target names a second workflow, pipeline or job that runs `piwi flake` for one flaky test,
 started from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the GitHub workflow, and

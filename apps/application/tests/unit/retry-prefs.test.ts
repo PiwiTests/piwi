@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_RETRY_PREFS, hasRetryOptions, parseRetryPrefs } from '../../app/utils/retry-prefs';
+import { DEFAULT_RETRY_PREFS, parseRetryPrefs } from '../../app/utils/retry-prefs';
 
 describe('parseRetryPrefs', () => {
   test('reads a cookie value written by the options', () => {
@@ -20,10 +20,5 @@ describe('parseRetryPrefs', () => {
       parseRetryPrefs({ mode: 'all', headed: 'yes', trace: 'off', repeatEach: 11, workers: 5, project: 'webkit' }),
     ).toEqual(DEFAULT_RETRY_PREFS);
     expect(parseRetryPrefs({ repeatEach: 2.5, workers: 0 })).toEqual(DEFAULT_RETRY_PREFS);
-  });
-
-  test('the defaults carry no run option', () => {
-    expect(hasRetryOptions(DEFAULT_RETRY_PREFS)).toBe(false);
-    expect(hasRetryOptions({ ...DEFAULT_RETRY_PREFS, workers: 1 })).toBe(true);
   });
 });

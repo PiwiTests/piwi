@@ -23,7 +23,7 @@
  * runs: one whose project is bound to another connection, or to none, is
  * skipped.
  */
-import { and, eq, inArray, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, lte } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
@@ -49,6 +49,7 @@ import {
 import {
   claimOutboxRows,
   failAbandonedOutboxRows,
+  OUTBOX_ABANDONED_ERROR,
   nextAttempt,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_PROCESSING,
@@ -248,7 +249,8 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
   const action = await enqueueAction(db, input);
   const failedBefore =
     action.status === 'failed' || action.status === 'skipped' || (action.status === 'pending' && action.attempts > 0);
-  if (!failedBefore) return action;
+  // A create that may have reached the tracker keeps its marker: its next attempt fails as Outcome unknown.
+  if (!failedBefore || createOutcomeUnknown(action.result)) return action;
   const [replaced] = await db
     .update(integrationActions)
     .set({
@@ -398,6 +400,15 @@ async function issueShareLink(
   return { id: minted.id, document: withShareToken(payload.document, minted.token) };
 }
 
+/**
+ * A tracker answer that says the issue was not created: a refusal, a rate limit or a 503. A timeout, a lost
+ * connection or another 5xx may come after the tracker created it.
+ */
+function trackerDeclined(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === 'number' && (status < 500 || status === 503);
+}
+
 /** Perform one create-issue against the tracker and record the link + result. */
 async function applyCreateIssue(
   db: DbClient,
@@ -427,8 +438,10 @@ async function applyCreateIssue(
     });
   } catch (err) {
     if (share) await discardShareLink(db, share.id);
-    // The attempt ended here, with an answer or a timeout: the next one may file.
-    await db.update(integrationActions).set({ result: null }).where(eq(integrationActions.id, action.id));
+    // Only an answer that says nothing was created lets the next attempt file; a timeout keeps the marker.
+    if (trackerDeclined(err)) {
+      await db.update(integrationActions).set({ result: null }).where(eq(integrationActions.id, action.id));
+    }
     throw err;
   }
   // The create response carries no status; read it back once so the chip shows a
@@ -780,6 +793,28 @@ export async function runActionNow(db: DbClient, id: number): Promise<ActionOutc
   return runAction(db, action);
 }
 
+/** A create given up while it held its marker fails as Outcome unknown, so the person checks the tracker first. */
+async function nameAbandonedCreates(db: DbClient): Promise<void> {
+  const rows = await db
+    .select()
+    .from(integrationActions)
+    .where(
+      and(
+        eq(integrationActions.kind, 'create-issue'),
+        eq(integrationActions.status, 'failed'),
+        eq(integrationActions.error, OUTBOX_ABANDONED_ERROR),
+        isNotNull(integrationActions.result),
+      ),
+    );
+  for (const row of rows) {
+    if (!createOutcomeUnknown(row.result)) continue;
+    await db
+      .update(integrationActions)
+      .set({ error: outcomeUnknownMessage((row.payload as CreateIssueActionPayload).title), result: null })
+      .where(eq(integrationActions.id, row.id));
+  }
+}
+
 /**
  * Process queued integration actions that are due now, including a claimed one
  * whose lease ran out. Each is claimed first and skipped when another attempt
@@ -792,6 +827,7 @@ export async function sweepIntegrationActions(
   const now = new Date();
   let done = 0;
   let failed = await failAbandonedOutboxRows(db, integrationActions, { finishedAt: now });
+  await nameAbandonedCreates(db);
   let skipped = 0;
 
   const due = await db

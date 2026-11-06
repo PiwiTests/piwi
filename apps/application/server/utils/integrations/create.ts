@@ -317,6 +317,14 @@ interface IssueToFile {
  * words they wrote reach it instead of being dropped. Queued once per
  * submission. False when there is no comment.
  */
+/** The dashboard page of each entity an issue is filed from. */
+const ENTITY_PAGES: Record<CreateIssueParams['entityType'], string> = {
+  failure_cluster: '/failure-clusters',
+  test_runs_case: '/test-run-cases',
+  test_run: '/test-runs',
+  bug_report: '/bug-reports',
+};
+
 async function commentOnFiledIssue(
   db: DbClient,
   params: CreateIssueParams,
@@ -328,10 +336,7 @@ async function commentOnFiledIssue(
   if (!comment) return false;
   const locale = params.locale ?? DEFAULT_LOCALE;
   const base = params.siteUrl?.trim().replace(/\/$/, '') || null;
-  const path =
-    params.entityType === 'test_runs_case'
-      ? `/test-run-cases/${params.entityId}`
-      : `/failure-clusters/${params.entityId}`;
+  const path = `${ENTITY_PAGES[params.entityType]}/${params.entityId}`;
   const where = base ? `${base}${path}` : path;
   const document = {
     nodes: [

@@ -341,7 +341,7 @@ export async function demoCreateIssue(
   // A run, and an execution with no failure cluster, get one issue per submission.
   const clusterId = await resolveClusterId(db, entityType, entityId);
   if (entityType === 'test_run' || (entityType === 'test_runs_case' && clusterId == null)) {
-    const submission = request.submissionId ?? null;
+    const submission = request.submissionId ? `${entityType}:${entityId}:${request.submissionId}` : null;
     const sent = submission ? DEMO_SUBMISSIONS.get(submission) : undefined;
     if (sent) return sent;
     const built = await demoRunIssue(db, entityType, entityId, { comment, filedBy: request.filedBy ?? null });

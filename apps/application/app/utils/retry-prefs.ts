@@ -52,8 +52,3 @@ export function parseRetryPrefs(raw: unknown): RetryPrefs {
     workers: inRange(value.workers, RETRY_OPTION_LIMITS.workers) ? value.workers : null,
   };
 }
-
-/** Whether any run option differs from a plain re-run. */
-export function hasRetryOptions(prefs: RetryPrefs): boolean {
-  return prefs.headed || prefs.trace !== null || prefs.repeatEach > 1 || prefs.workers !== null;
-}

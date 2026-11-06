@@ -23,7 +23,9 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 const { createConnection } = await import('../../server/utils/integrations/connections');
 const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { createIssue } = await import('../../server/utils/integrations/create');
-const { enqueueAction, runActionNow, outcomeUnknownMessage } = await import('../../server/utils/integrations/actions');
+const { enqueueAction, runActionNow, outcomeUnknownMessage, sweepIntegrationActions } =
+  await import('../../server/utils/integrations/actions');
+const { OUTBOX_MAX_ATTEMPTS } = await import('../../server/utils/outbox');
 const { enqueueDescriptionUpdate } = await import('../../server/utils/integrations/policies');
 const { buildRunIssue, listedRunTests, runIssueTitle, RUN_ISSUE_MAX_TESTS } =
   await import('../../shared/integrations/run-issue');
@@ -40,6 +42,8 @@ const issues = new Map<string, { summary: string; description: unknown }>();
 let issueSeq = 0;
 /** Answers the next creates with this status instead of creating. */
 let failCreatesWith: number | null = null;
+/** Creates the next issues, then loses the connection before Jira's answer arrives. */
+let dropCreateAnswers = false;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -54,6 +58,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
     creates.push(String(init.body));
     const { fields } = JSON.parse(String(init.body));
     issues.set(`PROJ-${issueSeq}`, { summary: fields.summary, description: fields.description });
+    if (dropCreateAnswers) throw new TypeError('fetch failed');
     return json({ id: String(10000 + issueSeq), key: `PROJ-${issueSeq}` }, 201);
   }
   const comment = /\/rest\/api\/3\/issue\/([^/]+)\/comment$/.exec(url.pathname);
@@ -174,6 +179,7 @@ beforeEach(() => {
   comments = [];
   updates = [];
   failCreatesWith = null;
+  dropCreateAnswers = false;
 });
 
 const file = (entityType: 'test_run' | 'test_runs_case' | 'failure_cluster', entityId: number, extra = {}) =>
@@ -297,6 +303,42 @@ describe('a create whose worker stopped during the call', () => {
     const retried = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000006' });
     expect(retried).toMatchObject({ status: 'done' });
     expect(creates).toHaveLength(1);
+  });
+
+  test('a create whose answer never came keeps the marker, so sending it again files nothing', async () => {
+    dropCreateAnswers = true;
+    const submissionId = '00000000-0000-4000-8000-000000000007';
+    const pending = await file('test_run', 7, { submissionId });
+    expect(pending).toMatchObject({ status: 'pending' });
+    dropCreateAnswers = false;
+    const again = await file('test_run', 7, { submissionId });
+    expect(again).toMatchObject({ status: 'failed', error: expect.stringContaining('Outcome unknown') });
+    expect(creates).toHaveLength(1);
+  });
+
+  test('a create given up on its last attempt while it held the marker fails as outcome unknown', async () => {
+    const action = await enqueueAction(dbc, {
+      connectionId,
+      projectId: 1,
+      kind: 'create-issue',
+      entityType: 'test_run',
+      entityId: 7,
+      dedupeKey: 'create-issue:test_run:7:abandoned',
+      payload: { projectKey: 'PROJ', issueType: 'Bug', title: 'Run #7', document: { nodes: [] }, labels: [] },
+    });
+    await db
+      .update(schema.integrationActions)
+      .set({
+        status: 'processing',
+        attempts: OUTBOX_MAX_ATTEMPTS,
+        scheduledFor: new Date(Date.now() - 1000),
+        result: { createStartedAt: Date.now() } as never,
+      })
+      .where(eq(schema.integrationActions.id, action.id));
+    await sweepIntegrationActions(dbc);
+    const [row] = await db.select().from(schema.integrationActions).where(eq(schema.integrationActions.id, action.id));
+    expect(row).toMatchObject({ status: 'failed', error: outcomeUnknownMessage('Run #7'), result: null });
+    expect(creates).toHaveLength(0);
   });
 });
 

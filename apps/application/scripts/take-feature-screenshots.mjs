@@ -3764,6 +3764,58 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 1100 } },
+    { suffix: '-phone', viewport: { width: 390, height: 844 } },
+  ].flatMap(({ suffix, viewport }) => [
+    {
+      name: `run-create-issue${suffix}`,
+      description: "Create issue on a run's header: the modal with its Comment field and the run's body in the preview",
+      prepare: prepareJiraSceneConnection,
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await routeJiraScreen(page);
+        await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+          route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+        );
+        await page.route('**/api/integrations/issue-draft*', async (route) => {
+          const draft = await (await route.fetch()).json();
+          await route.fulfill({
+            json: {
+              ...draft,
+              connectionId: jiraSceneConnectionId,
+              projectKey: 'CHK',
+              issueType: '10004',
+              projectBound: true,
+              fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+            },
+          });
+        });
+        await page.locator('[data-tour="run-create-issue"]').click();
+        await page.getByRole('dialog').waitFor();
+        await page
+          .getByRole('dialog')
+          .getByLabel('Comment')
+          .fill('The coupon is accepted twice when the page reloads during checkout.');
+        await settle();
+        await shoot(undefined, suffix ? {} : { of: '[role="dialog"]', pad: 0 });
+      },
+    },
+    {
+      name: `retry-command-options${suffix}`,
+      description: "Copy retry command's menu on a red run: how the tests are named and the run options",
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.locator('[data-tour="run-retry-command"]').click();
+        await page.locator('[data-shot="retry-command-options"]').waitFor();
+        await settle();
+        await shoot();
+      },
+    },
+  ]),
   {
     name: 'cluster-issue-line',
     description:

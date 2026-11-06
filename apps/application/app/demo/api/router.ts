@@ -371,7 +371,7 @@ import {
 } from './integrations';
 import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
-import { MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
+import { isSubmissionId, MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -3631,9 +3631,10 @@ const routes: RouteEntry[] = [
         comment?: string;
         submissionId?: string;
       };
-      if (typeof b.comment === 'string' && b.comment.length > MAX_ISSUE_COMMENT_LENGTH) {
-        throw demoHttpError(400, 'Invalid request body');
-      }
+      const commentOk =
+        b.comment === undefined || (typeof b.comment === 'string' && b.comment.length <= MAX_ISSUE_COMMENT_LENGTH);
+      const submissionOk = b.submissionId === undefined || isSubmissionId(b.submissionId);
+      if (!commentOk || !submissionOk) throw demoHttpError(400, 'Invalid request body');
       if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
         throw demoHttpError(400, 'Invalid request body');
       }

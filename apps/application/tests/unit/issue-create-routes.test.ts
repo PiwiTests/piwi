@@ -230,6 +230,7 @@ describe('POST /api/integrations/issues', () => {
 
   test("files a run's issue through the project's own connection, and refuses another", async () => {
     state.caller = robin;
+    // Each project's run has its cluster's id.
     const run = { ...body(CLUSTER[WEB], webJira, 'WEB'), entityType: 'test_run', entityId: CLUSTER[WEB] };
     expect(await refusal(createIssue({ body: { ...run, connectionId: billingJira } }))).toMatchObject({
       statusCode: 403,
