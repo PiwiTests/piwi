@@ -39,11 +39,10 @@ on, a restarted instance taking the run's key back. A run the instance no longer
 
 A test of a run on your machine stops at a breakpoint, a `page.pause()`, a step or **Run to here**, and its row on the
 run's page says why, at the stopped call: **Stopped at a breakpoint**, **Stopped at page.pause()**, **Paused**. The
-call's place opens in your editor, and the row says for how long once the stop has stood a minute. A shared run's row
-tells it from its live view. A run nobody shares tells it as text, with `@piwitests/reporter` 0.68.0 or later: its
-results stream sends the call's title, its file and line, the test's title and since when, only while someone has the
-run's page open, and a stop that began before, once someone opens it. Never an image. A test that stands stopped is
-never marked [**Stuck?**](./stuck-tests).
+call's place opens in your editor. A shared run's row tells it from its live view. A run nobody shares tells it as
+text, with `@piwitests/reporter` 0.68.0 or later, and says for how long once the stop has stood a minute: its results
+stream sends the call's title, its file and line, the test's title and since when, as each stop shows and ends. Never
+an image. A test that stands stopped is never marked [**Stuck?**](./stuck-tests).
 
 ## From the desktop app
 

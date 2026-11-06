@@ -50,14 +50,12 @@ interface RunStart {
   plannedTotal?: number;
 }
 
-/** An event only someone watching the run reads: a step's, a stop's. Nobody watching, it is not sent. */
+/**
+ * An event only someone watching the run reads: a step's. Nobody watching, it is not sent. A test's stops always are:
+ * the instance's stuck check reads them, whoever watches.
+ */
 function liveOnly(event: StreamEvent): boolean {
-  return (
-    event.type === 'step-begin' ||
-    event.type === 'step-end' ||
-    event.type === 'test-stopped' ||
-    event.type === 'test-resumed'
-  );
+  return event.type === 'step-begin' || event.type === 'step-end';
 }
 
 /**
@@ -146,12 +144,12 @@ export class StreamManager {
   get enabled(): boolean {
     return this._enabled;
   }
-  /** Server-assigned run ID (`null` until the stream opens, and once the dashboard ended the run) */
   /** The run's page once the stream opened: the one the instance named, else under the reporter's address. */
   get runUrl(): string | null {
     return this._runUrl;
   }
 
+  /** Server-assigned run ID (`null` until the stream opens, and once the dashboard ended the run) */
   get runId(): number | null {
     return this.ended ? null : this._runId;
   }
@@ -415,7 +413,7 @@ export class StreamManager {
 
   /**
    * Queue a test-case event, held until the stream opens. Triggers an immediate flush when the batch size is
-   * reached, otherwise schedules a timer-based flush. A step or a stop event is dropped while nobody watches the run
+   * reached, otherwise schedules a timer-based flush. A step event is dropped while nobody watches the run
    * (`liveOnly`), and every event once the dashboard ended it or the stream will never open.
    */
   queueEvent(event: StreamEvent): void {

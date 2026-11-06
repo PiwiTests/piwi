@@ -19,8 +19,8 @@ import type { StreamEvent } from '../../types.js';
 const DROP_TIER: Record<StreamEvent['type'], number> = {
   'step-begin': 0,
   'step-end': 0,
-  'test-stopped': 0,
-  'test-resumed': 0,
+  'test-stopped': 1,
+  'test-resumed': 1,
   begin: 1,
   complete: 2,
 };

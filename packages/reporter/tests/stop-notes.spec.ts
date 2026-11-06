@@ -37,13 +37,16 @@ describe('the stops a worker notes for the reporter’s process', () => {
   it('hands the reporter each note the workers append, in order, the last ones as it stops reading', () => {
     const env: NodeJS.ProcessEnv = {};
     const heard: StopNote[] = [];
-    const done = readStopNotes((note) => heard.push(note), env);
-    expect(done).not.toBeNull();
+    const reader = readStopNotes((note) => heard.push(note), env);
+    expect(reader).not.toBeNull();
     const file = env.PIWI_STOP_NOTES;
     expect(file).toEqual(expect.any(String));
     noteStop(file, { kind: 'stopped', testId: 't1', retry: 0, stop: STOP });
+    // Read at once when asked, as at a test's end, before the timer's next read.
+    reader!.read();
+    expect(heard.map((note) => note.kind)).toEqual(['stopped']);
     noteStop(file, { kind: 'resumed', testId: 't1', retry: 0, pausedMs: 1200 });
-    done!();
+    reader!.stop();
     expect(heard.map((note) => note.kind)).toEqual(['stopped', 'resumed']);
     expect(env.PIWI_STOP_NOTES).toBeUndefined();
     // A note to a file no run reads is dropped, never thrown.

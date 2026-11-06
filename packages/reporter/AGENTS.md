@@ -22,8 +22,7 @@ responsibilities.
      (`terminal-<pid>-<time>`) of the editor whose workspace holds it (`internal/config/editors.ts`: never under CI,
      Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
      `PIWI_EDITOR=on`), with one line saying so; and outside CI `PIWI_STOP_NOTES`, the private file each worker notes
-     its stops in for the run's stream, told only while the instance says someone watches (`internal/support/stop-notes.ts`,
-     `tests/stop-text.spec.ts`);
+     its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
      in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page

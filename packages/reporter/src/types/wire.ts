@@ -278,6 +278,8 @@ interface StoppedTestOf {
   /** The worker's lane: Playwright's `parallelIndex`. */
   parallelIndex?: number | null;
   shardIndex: number | null;
+  /** The test's Playwright project, as its `begin` named it: part of the attempt's identity. */
+  browser?: BrowserConfig | null;
 }
 
 /** A test of a run outside CI stopped (a breakpoint, a step, a Pause, `page.pause()`, a failure held): what and where. */

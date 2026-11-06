@@ -54,8 +54,9 @@ export function testBeginData(
 /**
  * The run event a streamed stop publishes (`test-stopped`, `test-resumed`), naming the attempt it is about as its
  * `begin` named it; and, on that attempt's begin payload (`running`, kept for the stream's catch-up and the stuck
- * check), the stop it stands at (`stop`, null once it ended) and how long it has stood stopped before (`pausedMs`).
- * Null for an event of another type, or one whose stop does not read. Pure but for `running`, which it updates, so
+ * check), the stop it stands at (`stop`, null once it ended) and how long it has stood stopped before (`pausedMs`);
+ * an event about an earlier attempt of the test (`retries`) leaves the running one as it is. Null for an event of
+ * another type, or one whose stop does not read. Pure but for `running`, which it updates, so
  * the server's events route and the demo's ingest share it.
  */
 export function testStopRunEvent(
@@ -73,6 +74,9 @@ export function testStopRunEvent(
     parallelIndex: workerLane(tc.parallelIndex),
     shardIndex: tc.shardIndex ?? null,
   };
+  // The attempt running now, unless the event is about an earlier one of the same test.
+  const attempt = of.retries === null || count(running?.retries) === null || running?.retries === of.retries;
+  if (!attempt) running = null;
   if (tc.type === 'test-stopped') {
     const stop = parseTestStop(tc.stop);
     if (!stop) return null;

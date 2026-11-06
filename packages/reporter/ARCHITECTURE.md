@@ -503,9 +503,8 @@ What the package does to a user's run, process by process.
   names a private file in `PIWI_STOP_NOTES`; a worker appends a line as a stop shows
   (`showStop`: its reason, call, place, since when and the time its test stood stopped
   before) and as it ends, and an unref'd timer reads the new lines every 500 ms. The
-  reporter sends each as `test-stopped` or `test-resumed` on the run's stream only while
-  the dashboard says someone watches, and sends the stops still standing again as someone
-  opens the run (`onWatched`).
+  reporter sends each as `test-stopped` or `test-resumed` on the run's stream, whoever
+  watches: the dashboard's stuck check reads them too.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
   or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`

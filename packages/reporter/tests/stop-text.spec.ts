@@ -11,11 +11,11 @@ import { detectCi } from '../src/internal/support/ci.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
- * A run outside CI tells the instance where its tests stand stopped, as text, while someone has the run open, in a
- * real Playwright run through the built package against a fake instance and a fake editor on the run channel. The
- * editor pauses each test; the first stops while the instance says someone watches, and its stop and its end reach the
- * instance (`test-stopped`, `test-resumed`); the second stops while nobody watches, and its stop reaches the instance
- * only once someone opens the run. The instance names the run's page under its public address (`runUrl`), which the
+ * A run outside CI tells the instance where its tests stand stopped, as text, whoever watches, in a real Playwright
+ * run through the built package against a fake instance and a fake editor on the run channel. The editor pauses each
+ * test; the first stops while the instance says someone watches and goes on once nobody does, the second stops and
+ * goes on while nobody watches, and each stop and its end reach the instance (`test-stopped`, `test-resumed`), named
+ * as the test's `begin` named the attempt. The instance names the run's page under its public address (`runUrl`), which the
  * run prints and puts in its output in place of the address the reporter reached it at.
  */
 
@@ -45,6 +45,7 @@ interface Event {
   at: number;
   type: string;
   title: string;
+  browser?: unknown;
   stop?: Record<string, unknown>;
   pausedMs?: number;
 }
@@ -60,8 +61,8 @@ let metadata: Record<string, unknown> = {};
 let watched = true;
 let saidUnwatchedAt = 0;
 const events: Event[] = [];
-/** When the instance began to say someone watches the second test's stop. */
-let watchedAgainAt = 0;
+/** When the reporter first heard nobody watches, before the first test's stop ended. */
+let unwatchedBeforeResumeAt = 0;
 let stops = 0;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,26 +83,24 @@ function tell(message: HubToRun): void {
 
 const stoppedOf = (title: string) => events.find((e) => e.type === 'test-stopped' && e.title === title);
 
-/** A test began: the editor pauses it, the second once the instance said nobody watches. */
+/** A test began: the editor pauses it, the second while the instance says nobody watches. */
 async function onBegin(title: string): Promise<void> {
-  if (title === 'stops while nobody watches') {
-    watched = false;
-    saidUnwatchedAt = 0;
-    await waitFor(() => saidUnwatchedAt > 0);
-  }
+  // Nobody watches since the first test's stop: the reporter heard so before its end went.
+  if (title === 'stops while nobody watches') await waitFor(() => !watched && saidUnwatchedAt > 0);
   tell({ type: 'control', action: 'pause' });
 }
 
-/** A test stopped: once the instance heard it (opened again for the second), the editor resumes it. */
+/** A test stopped: once the instance heard it, the editor resumes it, nobody watching the run any more. */
 async function onStopped(stop: number): Promise<void> {
   stops++;
   if (stops === 1) {
     await waitFor(() => stoppedOf('stops while watched'));
+    // Nobody watches any more as the test goes on: its stop's end reaches the instance all the same.
+    watched = false;
+    saidUnwatchedAt = 0;
+    await waitFor(() => saidUnwatchedAt > 0);
+    unwatchedBeforeResumeAt = saidUnwatchedAt;
   } else {
-    // Nobody watches: the stop stays in the run's process.
-    await sleep(1500);
-    watchedAgainAt = Date.now();
-    watched = true;
     await waitFor(() => stoppedOf('stops while nobody watches'));
   }
   await sleep(300);
@@ -171,6 +170,7 @@ module.exports = wrapConfig(defineConfig({
   workers: 1,
   reporter: 'line',
   use: { headless: true, trace: 'off' },
+  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
 }), { serverUrl: ${JSON.stringify(server.url)}, projectName: 'stop-text-spec', streamingBatchDelay: 50 });
 `,
   );
@@ -218,17 +218,27 @@ describe('a stop told as text', () => {
     });
     expect(stopped!.stop!.line).toBeGreaterThan(1);
     expect(stopped!.stop!.title).toEqual(expect.any(String));
+    // It names the attempt as its begin did, the test's project included.
+    const begun = events.find((e) => e.type === 'begin' && e.title === 'stops while watched');
+    expect(begun?.browser).toMatchObject({ projectName: 'chromium' });
+    expect(stopped!.browser).toEqual(begun!.browser);
     const resumed = events.find((e) => e.type === 'test-resumed' && e.title === 'stops while watched');
-    // It stood stopped at least while the instance heard it and the editor waited.
+    // It stood stopped at least while the instance heard it and the editor waited, and its end went while nobody
+    // watched.
     expect(resumed?.pausedMs).toBeGreaterThanOrEqual(300);
+    expect(resumed!.at).toBeGreaterThanOrEqual(unwatchedBeforeResumeAt);
+    expect(resumed!.browser).toEqual(begun!.browser);
   });
 
-  it('reaches it only once someone opens the run, while nobody watches', () => {
+  it('reaches it while nobody watches too, as it shows and as it ends', () => {
     const stopped = stoppedOf('stops while nobody watches');
     expect(stopped, output).toBeDefined();
-    expect(stopped!.at).toBeGreaterThanOrEqual(watchedAgainAt);
-    // It names when it stopped, before anyone watched.
-    expect(Number(stopped!.stop!.since)).toBeLessThan(watchedAgainAt);
+    expect(stopped!.at).toBeGreaterThan(unwatchedBeforeResumeAt);
+    expect(Number(stopped!.stop!.since)).toBeLessThanOrEqual(stopped!.at);
+    const resumed = events.find((e) => e.type === 'test-resumed' && e.title === 'stops while nobody watches');
+    expect(resumed?.pausedMs).toBeGreaterThanOrEqual(300);
+    // The first test's stop, ended before, is counted in neither.
+    expect(stopped!.stop!.pausedMs).toBe(0);
   });
 
   it('prints the page the instance names, and records the run’s own name', () => {

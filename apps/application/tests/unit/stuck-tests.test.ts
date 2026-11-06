@@ -190,6 +190,21 @@ describe('the stuck check of a live run', () => {
     expect(later.map((e) => e.elapsedMs)).toEqual([5 * 60_000]);
   });
 
+  test("leaves the running attempt as it is for a stop of the test's earlier attempt", async () => {
+    const data = begin({ retries: 1 });
+    runEventBus.recordRunningCase(LIVE_RUN, 'k', data);
+    const of = { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:12:3', retries: 0 };
+    const stop = { reason: 'pause', title: 'Click', file: null, line: null, bar: false, since: now, pausedMs: 0 };
+    expect(testStopRunEvent({ type: 'test-stopped', ...of, stop } as never, data)).toMatchObject({
+      type: 'test-stopped',
+      data: { retries: 0 },
+    });
+    testStopRunEvent({ type: 'test-resumed', ...of, pausedMs: 4 * 60_000 } as never, data);
+    expect(data.stop).toBeUndefined();
+    expect(data.pausedMs).toBeUndefined();
+    expect((await stuckEvents(() => checkStuckTests(db as never, now))).map((e) => e.elapsedMs)).toEqual([5 * 60_000]);
+  });
+
   test('tells a retry, another attempt, again', async () => {
     runEventBus.recordRunningCase(LIVE_RUN, 'k', begin());
     await checkStuckTests(db as never, now);

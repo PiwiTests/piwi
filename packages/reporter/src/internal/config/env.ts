@@ -235,7 +235,7 @@ export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
 
 /**
  * The file each worker of a run outside CI appends a line to as a stop shows and as it ends, for the reporter's own
- * process to tell the instance while someone has the run open: the reporter names it in `onBegin`, before any worker
+ * process to tell the instance: the reporter names it in `onBegin`, before any worker
  * starts (`internal/support/stop-notes.ts`). Not an option.
  */
 export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';

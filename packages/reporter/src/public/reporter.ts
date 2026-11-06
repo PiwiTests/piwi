@@ -126,7 +126,7 @@ import type {
   WireResourceReport,
   WireRunError,
 } from '../types.js';
-import { readStopNotes, type StopNote } from '../internal/support/stop-notes.js';
+import { readStopNotes, type StopNote, type StopNotesReader } from '../internal/support/stop-notes.js';
 
 /**
  * Relative `file:line:column` location string for a test, normalized to POSIX
@@ -229,10 +229,8 @@ export class PiwiDashboardReporter {
   private openSteps = new Map<unknown, StreamEvent>();
   /** The attempts running now, by test id, for the stops their workers note (`heardStop`). */
   private runningTests = new Map<string, { test: TestCase; result: TestResult }>();
-  /** The stops showing now, by test id, sent again when someone opens the run (`onWatched`). */
-  private openStops = new Map<string, StreamEvent>();
-  /** Stops reading the stops the workers note, the last ones told (`readStopNotes`). */
-  private stopNotesDone: (() => void) | null = null;
+  /** Reads the stops the workers note (`readStopNotes`). */
+  private stopNotes: StopNotesReader | null = null;
   /**
    * The failed attempts with retries left, by `test.id`: each is its test's last failure when no later attempt has a
    * say in its outcome (`decidesOutcome`), the run stopping before the retry or the retry not running.
@@ -576,11 +574,11 @@ export class PiwiDashboardReporter {
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
-        const open = [...this.openSteps.values(), ...this.openStops.values()];
+        const open = [...this.openSteps.values()];
         if (open.length > 0) this.streamManager?.queueEventsNow(open);
       };
-      // A test outside CI may stop, at a breakpoint or a Pause: the run page says so, as text, while it is open.
-      if (!detectCi(process.env)) this.stopNotesDone = readStopNotes((note) => this.heardStop(note));
+      // A test outside CI may stop, at a breakpoint or a Pause: the run page says so, as text.
+      if (!detectCi(process.env)) this.stopNotes = readStopNotes((note) => this.heardStop(note));
     }
     if (this.streamManager && this.options.captureResources !== false) {
       const live = new LiveResources(
@@ -682,8 +680,8 @@ export class PiwiDashboardReporter {
   }
 
   /**
-   * A stop a worker noted (`stop-notes.ts`), of an attempt running now: a `test-stopped` event as it shows, kept to be
-   * sent again when someone opens the run, and a `test-resumed` as it ends. Sent while someone may watch the run.
+   * A stop a worker noted (`stop-notes.ts`), of an attempt running now: a `test-stopped` event as it shows and a
+   * `test-resumed` as it ends, named as its `begin` named the attempt, sent whoever watches.
    */
   private heardStop(note: StopNote): void {
     const running = this.runningTests.get(note.testId);
@@ -697,13 +695,11 @@ export class PiwiDashboardReporter {
       workerIndex: workerIndexOf(result),
       parallelIndex: parallelIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
+      browser: this.metadataCollector.getBrowserConfig(test) || undefined,
     };
     if (note.kind === 'stopped') {
-      const event: StreamEvent = { type: 'test-stopped', ...of, stop: note.stop };
-      this.openStops.set(note.testId, event);
-      this.streamManager.queueEvent(event);
+      this.streamManager.queueEvent({ type: 'test-stopped', ...of, stop: note.stop });
     } else {
-      this.openStops.delete(note.testId);
       this.streamManager.queueEvent({ type: 'test-resumed', ...of, pausedMs: note.pausedMs });
     }
   }
@@ -906,8 +902,9 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
+    // The worker noted the end of the test's last stop before the test ended: it goes before the test's end.
+    this.stopNotes?.read();
     this.runningTests.delete(test.id);
-    this.openStops.delete(test.id);
     this.hubLink?.testEnded(test, result);
     this.totalTests++;
     // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
@@ -1295,8 +1292,8 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
-    this.stopNotesDone?.();
-    this.stopNotesDone = null;
+    this.stopNotes?.stop();
+    this.stopNotes = null;
     await this.hubLink?.end(result?.status ?? 'other');
     this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;

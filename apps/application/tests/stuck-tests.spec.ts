@@ -127,10 +127,24 @@ test.describe('Stuck tests', () => {
       expect((await request.post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } })).ok()).toBe(
         true,
       );
-    // It stood stopped at a breakpoint for four of its five minutes, and stands stopped again now.
+    // It stood stopped for one of its five minutes, and stands at a `page.pause()` now: the four minutes it ran are
+    // past its stuck threshold, so only its standing stop keeps the mark away.
     await send([
       { type: 'begin', ...of, startedAt },
-      { type: 'test-resumed', ...of, pausedMs: 4 * 60_000 },
+      { type: 'test-resumed', ...of, pausedMs: 60_000 },
+      {
+        type: 'test-stopped',
+        ...of,
+        stop: {
+          reason: 'page-pause',
+          title: 'Pause',
+          file: 'tests/checkout.spec.ts',
+          line: 16,
+          bar: true,
+          since: Date.now() - 30_000,
+          pausedMs: 60_000,
+        },
+      },
     ]);
     const stop = {
       reason: 'breakpoint',
@@ -139,18 +153,23 @@ test.describe('Stuck tests', () => {
       line: 18,
       bar: true,
       since: Date.now() - 2 * 60_000,
-      pausedMs: 4 * 60_000,
+      pausedMs: 90_000,
     };
 
     try {
       await page.goto(`/test-runs/${runId}`);
       await expect(page.getByTestId('run-started-from')).toHaveText('from VS Code');
-      // Its row shows as the page's stream catches up; the stop then reaches it live.
-      await expect(page.getByText(TITLE).first()).toBeVisible({ timeout: 45_000 });
-      await send([{ type: 'test-stopped', ...of, stop }]);
+      // Its row shows with its stop as the page's stream catches up.
       const paused = page.getByTestId('live-paused');
-      await expect(paused).toBeVisible({ timeout: 15_000 });
-      await expect(paused).toHaveAttribute('data-reason', 'breakpoint');
+      await expect(paused).toBeVisible({ timeout: 45_000 });
+      await expect(paused).toHaveAttribute('data-reason', 'page-pause');
+      await expect(paused).toContainText('Stopped at page.pause()');
+      // It goes on and stops again at a breakpoint, both in one batch: the row hears it live.
+      await send([
+        { type: 'test-resumed', ...of, pausedMs: 90_000 },
+        { type: 'test-stopped', ...of, stop },
+      ]);
+      await expect(paused).toHaveAttribute('data-reason', 'breakpoint', { timeout: 15_000 });
       await expect(paused).toContainText('Stopped at a breakpoint');
       await expect(paused).toContainText("Click getByRole('button', { name: 'Pay' })");
       await expect(paused.getByText('tests/checkout.spec.ts:18', { exact: true })).toBeVisible();
@@ -163,7 +182,7 @@ test.describe('Stuck tests', () => {
 
       // A page opened later shows it too; the server's check, every 15 seconds, never marks it while it stands stopped.
       await page.reload();
-      await expect(page.getByTestId('live-paused')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('live-paused')).toHaveAttribute('data-reason', 'breakpoint', { timeout: 30_000 });
       await page.waitForTimeout(16_000);
       await expect(page.getByText('Stuck?', { exact: true })).toHaveCount(0);
 

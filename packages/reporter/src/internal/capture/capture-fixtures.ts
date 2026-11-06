@@ -204,7 +204,7 @@ import {
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
-import { configDirFromConfig } from '../support/test-paths.js';
+import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
 import {
   codeReachRoots,
@@ -1914,7 +1914,7 @@ async function showStop(
     stop: {
       reason,
       title,
-      file: stoppedAt ? runFile(stoppedAt.file) : null,
+      file: stoppedAt ? stopFile(stoppedAt.file, configDirFromConfig(testInfo.config)) : null,
       line: stoppedAt?.line ?? null,
       bar,
       since: record.startedAt,
@@ -3887,6 +3887,12 @@ function watchWaiting(sink: CaptureSink): void {
 }
 
 /** A file of the run as the run channel names it: relative to the working directory, with forward slashes. */
+/** A stop's file as the instance names test files: relative to the config's folder, none on another drive. */
+function stopFile(file: string, base: string): string | null {
+  const relative = relativeTestPath(file, base);
+  return relative && !path.isAbsolute(relative) ? relative : null;
+}
+
 function runFile(file: string): string {
   return path.relative(process.cwd(), file).split(path.sep).join('/') || file;
 }

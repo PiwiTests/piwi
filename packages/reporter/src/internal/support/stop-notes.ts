@@ -54,15 +54,20 @@ export function readStopNote(line: string): StopNote | null {
   return null;
 }
 
+/** Reading the notes: `read` hears the ones appended since, `stop` hears the last ones and removes the file. */
+export interface StopNotesReader {
+  read: () => void;
+  stop: () => void;
+}
+
 /**
  * Hand `hear` each stop the workers that start from now on note: a new private file, named in `env` for them, read
- * every `READ_MS`. Returns what hears the notes left and removes the file. Null when no file can be made: the run then
- * tells no stop.
+ * every `READ_MS` and whenever `read` is called. Null when no file can be made: the run then tells no stop.
  */
 export function readStopNotes(
   hear: (note: StopNote) => void,
   env: NodeJS.ProcessEnv = process.env,
-): (() => void) | null {
+): StopNotesReader | null {
   const file = path.join(privateTempDir(), `piwi-stop-notes-${randomBytes(12).toString('hex')}.txt`);
   try {
     writePrivateFile(file, '');
@@ -87,15 +92,23 @@ export function readStopNotes(
     read = end;
     for (const line of lines) {
       const note = line ? readStopNote(line) : null;
-      if (note) hear(note);
+      if (!note) continue;
+      try {
+        hear(note);
+      } catch {
+        // A note the reporter could not tell is lost, never the run.
+      }
     }
   };
   const timer = setInterval(flush, READ_MS);
   timer.unref();
-  return () => {
-    clearInterval(timer);
-    flush();
-    delete env[PIWI_STOP_NOTES_ENV];
-    fs.rmSync(file, { force: true });
+  return {
+    read: flush,
+    stop: () => {
+      clearInterval(timer);
+      flush();
+      delete env[PIWI_STOP_NOTES_ENV];
+      fs.rmSync(file, { force: true });
+    },
   };
 }

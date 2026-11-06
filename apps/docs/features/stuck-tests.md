@@ -28,8 +28,8 @@ reporter's begin events name none.
 Each attempt is said to be stuck once; a retry is a new attempt.
 
 A test of a run on a developer's machine may stand stopped at a breakpoint or a `page.pause()`. With
-`@piwitests/reporter` 0.68.0 or later its run tells the dashboard so, while someone has the run's page open: the
-test is never said to be stuck while it stands stopped, and the time it stood stopped is left out of how long it ran.
+`@piwitests/reporter` 0.68.0 or later its run tells the dashboard so: the test is never said to be stuck while it
+stands stopped, and the time it stood stopped is left out of how long it ran.
 
 The question mark is meant: a test can be slow for a good reason, a large import or a cold cache. The rule says only
 that this attempt is far outside what its passing runs took.

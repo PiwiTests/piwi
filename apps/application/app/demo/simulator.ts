@@ -1770,7 +1770,8 @@ async function runSingleSimulation(
                   file: at.filePath,
                   line: at.line,
                   bar: true,
-                  since: virtualNow,
+                  // The page reads how long it has stood against its own clock.
+                  since: Date.now(),
                   pausedMs: 0,
                 };
                 await postEvents([{ type: 'test-stopped', ...of, stop }]);
