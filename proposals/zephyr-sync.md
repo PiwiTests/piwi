@@ -12,6 +12,8 @@ connection endpoints, a provider-neutral interface and tables, one binding table
 when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
 twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
 run-data checklist, a `zephyr-scale` link provider, and the remedy for cut tags matched to Playwright's tag order.
+Revised a third time: the cycle key is committed as soon as the upload returns, so a failed link step retries without
+a person, and *Sync again* is spelled out for a `findRun` that finds nothing.
 
 **Summary.** A test declares the test cases it covers with a Playwright tag (`@SHOP-T123`), which the reporter already
 sends, or with its external ID. When a CI run on a branch in scope has finished, Piwi collapses its executions to one
@@ -318,37 +320,46 @@ result       { runKey, runUrl, sent } | { dryRun: true }
 
 Sending, stage 1:
 
-1. Write an *upload started* marker (`{ uploadStartedAt }`) to the row's `result` and commit it before any call to
-   the tool. Then send the results of the payload. Keys the catalog did not know at enqueue (see
-   [9](#9-the-key-catalog)) are in `unknownKeys`, reported on the run, never sent.
-2. No result in the payload: mark the action `skipped` (`no mapped test cases`). Nothing is sent.
+1. No result in the payload: mark the action `skipped` (`no mapped test cases`). Nothing is sent and no marker is
+   written.
+2. Write an *upload started* marker (`{ uploadStartedAt }`) to the row's `result` and commit it before any call to
+   the tool. Keys the catalog did not know at enqueue (see [9](#9-the-key-catalog)) are in `unknownKeys`, reported on
+   the run, never sent.
 3. `uploadRun`. For Zephyr: the custom-format JSON, zipped with `fflate` (already a dependency) and checked under
    10 MB, to `POST /automations/executions/custom?projectKey=SHOP&autoCreateTestCases=false` with the `file` and
    `testCycle` parts. **`autoCreateTestCases` is always `false`**: Zephyr cannot delete a test case, so one created by
    mistake stays forever.
-4. `linkRun` with the run URL.
-5. Write the run's entity link (`provider: 'zephyr-scale'`, `origin: 'created'`, the cycle key and URL) in the same
-   transaction as the action's result. `'zephyr-scale'` joins the `LinkProvider` union in `shared/link-detect.ts`,
-   with its icon in the link chip.
+4. **Commit the cycle key as soon as the upload returns**: `{ uploadStartedAt, runKey, runUrl }` on the row's
+   `result`, before any other call. From here a retry never uploads; it resumes at step 5.
+5. `linkRun` with the run URL.
+6. Write the run's entity link (`provider: 'zephyr-scale'`, `origin: 'created'`, the cycle key and URL) in the same
+   transaction as the action's final result (`{ runKey, runUrl, sent }`). `'zephyr-scale'` joins the `LinkProvider`
+   union in `shared/link-detect.ts`, with its icon in the link chip.
 
 Retries and idempotency:
 
 - The upload is not idempotent: each call creates a cycle. **When an attempt ends without a response** (timeout,
   network error, 502/503/504), the action does not retry blind: it fails with *Outcome unknown: check the tool for a
-  cycle named "… Piwi #<runId>", then use Sync again*, and waits for a person. *Sync again* first asks `findRun`; a
-  found run is recorded and only the link step runs.
+  cycle named "… Piwi #<runId>", then use Sync again*, and waits for a person.
+- ***Sync again*** first asks `findRun`. A found run is committed as `{ runKey, runUrl }` and only steps 5 and 6 run.
+  When `findRun` finds nothing, *Sync again* replaces the old marker with a new `uploadStartedAt`, commits it, and
+  uploads from step 3, so an attempt that dies during that upload is again an outcome unknown.
 - **A reclaimed row never uploads twice.** The outbox lease (`OUTBOX_LEASE_MS`, 10 minutes) lets a later sweep claim
   a `processing` row whose worker died or ran past the lease. A claim that finds the *upload started* marker and no
-  `runKey` treats the attempt as an outcome unknown, the same failure as above, and waits for *Sync again*. The
-  client's request timeout stays well under the lease (2 minutes), so a live upload ends before its row can be
-  reclaimed.
+  `runKey` treats the attempt as an outcome unknown, the same failure as above, and waits for *Sync again*. A claim
+  or a backoff retry that finds a `runKey` skips the upload and resumes at `linkRun`, so a 429 or a 5xx on `linkRun`
+  is an ordinary retry, never an outcome unknown. The client's request timeout stays well under the lease
+  (2 minutes), so a live upload ends before its row can be reclaimed.
+- **A 429 on the upload clears the marker.** The tool answered without creating a cycle, so the action removes
+  `uploadStartedAt` in the same write that schedules the backoff, and the retry uploads normally. Any 5xx on the
+  upload is an outcome unknown.
 - `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>
   &onlyLastExecutions=true`, then the cycle of each hit, matched on `Piwi #<runId>` in its name. It depends on the
   upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun` itself before a
   retry; until then, the safe default above stands.
 - Final refusals (400, 401, 403, 404, 413, 422) fail the action at once with the tool's message, as the Jira actions
   do; 401 also marks the connection `failed` so the settings page shows the token is rejected.
-- 429 and 5xx with a response follow the outbox backoff; `Retry-After` wins (seconds or an HTTP date, capped at one
+- Other calls' 429 and 5xx with a response follow the outbox backoff; `Retry-After` wins (seconds or an HTTP date, capped at one
   hour), and the connection pauses until then.
 - **Dry run**: a binding setting, on by default for a new binding. The action builds the payload and stores it as its
   result without calling the tool. The activity list shows exactly what would be sent.
@@ -555,7 +566,9 @@ in `proposals/1.0-stabilization.md`.
   connection pause; the `test-management` run use (partial runs, local runs, incidents, `ci-rerun`); the Zephyr client
   with `vi.stubGlobal('fetch')`, including 401, 429 and a timeout that ends in *outcome unknown*; a `sync-results` row
   reclaimed after its lease expired, with the *upload started* marker and no result, fails as outcome unknown and never
-  calls `uploadRun` again; diffing against `test_management_results`; `migration-history.test.ts`.
+  calls `uploadRun` again; `linkRun` answering 429, and the retry linking the cycle without an *outcome unknown* or a
+  second upload; a 429 on the upload clearing the marker; *Sync again* with `findRun` finding nothing writing a new
+  marker before it uploads; an empty payload skipped with no marker; diffing against `test_management_results`; `migration-history.test.ts`.
 - **Reporter** (`packages/reporter/tests`): the tags-cut warning and `metadata.tagsTruncated`; Playwright's tag order
   (config, describe outer to inner, title, the test's own `tag` option), so an upgrade that changes it fails a test.
 - **E2E** (`apps/application/tests`): a mock Zephyr HTTP server in `tests/utils/`, as the Jira specs use; a finished run
@@ -568,7 +581,9 @@ in `proposals/1.0-stabilization.md`.
 
 - `apps/docs/features/test-management.md`: what it sends and when, mapping with tags, the 20-tag limit, the settings,
   the calls per run, what leaves the server, dry run, limits (no imports, Zephyr Scale Cloud first), and the CI-only
-  alternative with Playwright's `junit` reporter for teams without Piwi.
+  alternative with Playwright's `junit` reporter for teams without Piwi. It says that with the 2-minute request
+  timeout a large upload (around a thousand executions) will often end as *Outcome unknown* and need a person to
+  check the tool and use *Sync again*: the safe choice, since a blind retry could create a second cycle.
 - `apps/docs/reference/test-metadata.md`: test case keys as tags, and the 20-tag limit.
 - The generated configuration reference picks up `PIWI_ZEPHYR_*`.
 - `HELP_TOPICS` entries for the connection card, the binding form, the *Keys in test tags* section and the run name
