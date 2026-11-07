@@ -7555,6 +7555,96 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-team-run-request',
+    description:
+      'A run request from a team instance, asked about in the desktop window: the tests, the checks of the linked folder (off the run’s commit, so by title) and the command (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      // The desktop event stream delivers the request; outside the shell the
+      // run-target routes do not exist, so the stream is answered here.
+      const request = {
+        id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
+        instance: 'https://piwi.example.com',
+        projectId: 1,
+        tests: [
+          { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
+          {
+            filePath: 'tests/checkout.spec.ts',
+            title: 'applies a coupon to the total',
+            line: 77,
+            projectName: 'chromium',
+          },
+        ],
+        options: { headed: true, trace: 'retain-on-failure' },
+        source: { runId: 2, branch: 'main', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e' },
+        checks: [
+          { id: 'folder', level: 'ok', message: 'Linked folder: /home/dev/code/acme-checkout' },
+          { id: 'config', level: 'ok', message: 'Playwright config: playwright.config.ts' },
+          { id: 'specs', level: 'ok', message: 'Both spec files are in the folder' },
+          { id: 'playwright', level: 'ok', message: '@playwright/test 1.61.0 is installed' },
+          {
+            id: 'commit',
+            level: 'warn',
+            message:
+              'The run was on main at a1b2c3d; this folder is on feat/coupons at 9f8e7d6: the tests are picked by title',
+          },
+        ],
+        runnable: true,
+        command:
+          'npx playwright test /home/dev/code/acme-checkout/tests/checkout.spec.ts "--grep=(?:^| )(?:pays with a saved card|applies a coupon to the total)(?: @\\S+)*$" --project=chromium --headed --trace=retain-on-failure',
+        hasFolder: true,
+        answerBy: new Date(Date.now() + 600_000).toISOString(),
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      await page.locator('[data-shot="desktop-team-run-request"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-team-instance-card',
+    description:
+      'Settings → Desktop app → Run on my machine: connected to a team instance, with a linked folder (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/desktop',
+    requestFolders: { 1: '/home/dev/code/acme-checkout' },
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      const connection = {
+        state: 'online',
+        instance: 'https://piwi.example.com',
+        userCode: null,
+        verificationUrl: null,
+        error: null,
+        keyToKeep: false,
+        linkedProjectIds: [1],
+      };
+      await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-target', connection })}\n\n`,
+        }),
+      );
+      await page.reload();
+      const card = page.locator('[data-shot="desktop-team-instance-card"]');
+      await card.getByText('Connected: requests from your pages come here').waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="desktop-team-instance-card"]', pad: 16 });
+    },
+  },
+  {
     name: 'desktop-reproduce-section',
     description:
       "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",

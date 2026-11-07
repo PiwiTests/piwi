@@ -43,7 +43,7 @@ async function loadFolders() {
     folders.value = {};
     return;
   }
-  folders.value = await core.invoke<Record<string, string>>('desktop_request_folders').catch(() => ({}));
+  folders.value = (await core.invoke<Record<string, string> | null>('desktop_request_folders').catch(() => null)) ?? {};
 }
 watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')], loadFolders, { immediate: true });
 
@@ -93,12 +93,12 @@ async function unlink(projectId: string) {
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-monitor-play" title="Run on my machine">
+  <SectionCard icon="i-lucide-monitor-play" title="Run on my machine" data-shot="desktop-team-instance-card">
     <template #subtitle>
       Take run requests from your team instance: a test you open there runs here, in a browser on your screen.
     </template>
 
-    <div class="space-y-4 text-sm" data-shot="desktop-team-instance-card">
+    <div class="space-y-4 text-sm">
       <p class="text-muted">
         Each request shows in this window first, with its tests, the checks of your folder and the command: nothing runs
         until you click <strong>Run</strong>. The run reports to the instance, and only you see it there.
