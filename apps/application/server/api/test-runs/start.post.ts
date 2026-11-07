@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { testRuns } from '../../database/schema';
+import { testRuns, type User } from '../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
+import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { runEventBus } from '../../utils/run-events';
 import { pinProjectRepository } from '../../utils/scm/project-repository';
 import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
@@ -52,8 +53,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
-  const user = await requireAuth(event);
+  // A request token starts its request's run, checked once the body is read and spent once the run is stored, so a
+  // refused or failed start leaves it to a retry; otherwise `run:submit` on at least one project, from the route meta,
+  // and the project itself is checked below.
+  const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
   const body = await readBody(event);
 
@@ -64,13 +67,21 @@ export default eventHandler(async (event) => {
       message: 'Missing required field: projectName',
     });
   }
+  const grant = await checkRequestToken(event, body);
+  const user = (grant ? grant.requester : signedIn) as User;
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any, 'run:submit');
+  const project = grant
+    ? await grantedProject(db, grant)
+    : await resolveIngestProject(
+        db,
+        await getProjectScope(db, user as any, 'run:submit'),
+        body.projectName,
+        body.projectDescription,
+      );
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
-
-  const instanceId = body.instanceId || null;
+  // A requested run belongs to no instance: it cancels no other run, and no other run cancels it.
+  const instanceId = grant ? null : body.instanceId || null;
   const shardTotal = body.shardTotal as number | undefined;
   const isSharded = !!(shardTotal && shardTotal > 1);
 
@@ -174,7 +185,8 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId);
 
     const streamToken = randomBytes(32).toString('hex');
-    const metadata = sanitizeMetadata(body.metadata || null);
+    const sanitized = sanitizeMetadata(body.metadata || null);
+    const metadata = grant ? withRequestOrigin(sanitized, grant.requestId) : sanitized;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -194,6 +206,7 @@ export default eventHandler(async (event) => {
         metadata,
         origin: runOrigin(metadata),
         commit: runCommit(metadata),
+        requesterId: grant?.requester.id ?? null,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -212,8 +225,11 @@ export default eventHandler(async (event) => {
       });
     }
 
-    await applyReporterKeep(db, testRun.id, body.keep);
-    await pinProjectRepository(db, project.id, metadata);
+    // A requested run is never kept: retention and its requester remove it.
+    if (grant) await spendRequestToken(db, grant, testRun.id);
+    else await applyReporterKeep(db, testRun.id, body.keep);
+    // A private run pins nothing of the project's.
+    if (!grant) await pinProjectRepository(db, project.id, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, { streamToken: streamTokenDigest(streamToken), projectId: project.id });
 

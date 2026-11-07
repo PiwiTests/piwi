@@ -15,7 +15,8 @@
  * stored on the test case. CODEOWNERS changes without any test changing, so a
  * persisted copy would be wrong until the next run reported that spec.
  */
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, desc } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { testRuns } from '../../database/schema';
 import { createScmProvider } from './index';
 import { normalizeGitUrl } from './git-url';
@@ -39,7 +40,7 @@ async function resolveRepository(
   const rows = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(20);
 

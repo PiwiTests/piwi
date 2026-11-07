@@ -18,6 +18,7 @@
 import { testTextLabel } from '#shared/utils/test-label';
 import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import {
   bugReports,
   failureClusters,
@@ -635,7 +636,7 @@ export async function refreshCommitPrFeedback(db: DbClient, projectId: number, c
   const runs = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit)))
+    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit), notPrivateRun()))
     .orderBy(desc(testRuns.id))
     .limit(REFRESHED_RUNS_SCANNED);
   if (runs.length === 0) return;

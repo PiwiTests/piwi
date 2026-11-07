@@ -1,5 +1,6 @@
 import { markers, testRuns } from '../../server/database/schema';
 import { eq, and, asc, desc, lt, ne } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
@@ -23,12 +24,12 @@ export async function listProjectMarkers(db: DrizzleDB, projectId: number) {
   return { markers: rows };
 }
 
-/** A marker may link only to a run of its own project. */
+/** A marker may link only to a run of its own project, never a private run. */
 export async function markerRunBelongsToProject(db: DrizzleDB, projectId: number, runId: number): Promise<boolean> {
   const rows = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId)));
+    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)));
   return rows.length > 0;
 }
 
@@ -102,7 +103,9 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const candidates = await db
     .select()
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, run.projectId), lt(testRuns.startTime, run.startTime)))
+    .where(
+      and(eq(testRuns.projectId, run.projectId), lt(testRuns.startTime, run.startTime), notPrivateRun(testRuns.origin)),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(25);
   const prev = candidates.find((c) => (c.environment ?? null) === (run.environment ?? null));

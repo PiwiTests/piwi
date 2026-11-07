@@ -1,3 +1,4 @@
+import { isVisibleRun } from '#shared/run-eligibility';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../../database/schema';
@@ -74,10 +75,10 @@ function optionalCount(value: unknown): number | undefined {
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
 
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const db = await getDatabase();
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
+  if (!run || !isVisibleRun(run, user.id)) throw apiError({ statusCode: 404, message: 'Test run not found' });
 
   await requireProjectPermission(event, run.projectId);
 

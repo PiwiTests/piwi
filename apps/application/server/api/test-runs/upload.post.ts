@@ -20,7 +20,7 @@ import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { isVisibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { cancelInstanceRuns, cancelReplacedRun } from '../../utils/cancel-instance-runs';
@@ -240,7 +240,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   if (existingTestRunId) {
     const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId));
     const existingRun = existingRunRows[0];
-    if (!existingRun) {
+    if (!existingRun || !isVisibleRun(existingRun, user.id)) {
       throw apiError({ statusCode: 404, message: 'Existing test run not found' });
     }
     const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId));

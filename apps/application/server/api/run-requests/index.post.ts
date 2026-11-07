@@ -67,8 +67,8 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const projectId =
     'executionId' in source
-      ? await resolveTestRunCaseProjectId(db, source.executionId)
-      : await resolveRunProjectId(db, source.runId);
+      ? await resolveTestRunCaseProjectId(db, source.executionId, user.id)
+      : await resolveRunProjectId(db, source.runId, user.id);
   if (projectId == null) {
     throw apiError({
       statusCode: 404,
@@ -77,12 +77,6 @@ export default eventHandler(async (event) => {
   }
   await requireProjectPermission(event, projectId);
   await requireMachineRunsOn(db, projectId);
-  if ((await countWaitingRequests(db, user.id)) >= MAX_WAITING_REQUESTS) {
-    throw apiError({
-      statusCode: 429,
-      message: `${MAX_WAITING_REQUESTS} of your requests are already waiting for a claim: stop one, or wait for them`,
-    });
-  }
 
   const resolved = await resolveRequestTests(db, source);
   if (!resolved.ok) throw apiError({ statusCode: resolved.statusCode, message: resolved.message });
@@ -128,5 +122,21 @@ export default eventHandler(async (event) => {
       updatedAt: now,
     })
     .returning();
-  return { ...(await runRequestView(db, row!, now)), skipped: resolved.skipped };
+  // Counted once stored, so requests made at the same moment never pass the cap together. A request claimed before
+  // its refusal is deleted stands, and is answered as made.
+  let stored = row!;
+  if ((await countWaitingRequests(db, user.id, now)) > MAX_WAITING_REQUESTS) {
+    const refused = await db
+      .delete(runRequests)
+      .where(and(eq(runRequests.id, stored.id), eq(runRequests.state, 'waiting')))
+      .returning({ id: runRequests.id });
+    if (refused.length) {
+      throw apiError({
+        statusCode: 429,
+        message: `${MAX_WAITING_REQUESTS} of your requests are already waiting for a claim: stop one, or wait for them`,
+      });
+    }
+    stored = (await db.select().from(runRequests).where(eq(runRequests.id, stored.id)))[0] ?? stored;
+  }
+  return { ...(await runRequestView(db, stored, now)), skipped: resolved.skipped };
 });

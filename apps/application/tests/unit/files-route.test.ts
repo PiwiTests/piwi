@@ -9,6 +9,10 @@ import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, type RouteAccessState } from './route-access';
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /** `GET /api/files/**`: stored files streamed, a `Range` answered with 206, every path held to its project. */
 
@@ -48,6 +52,7 @@ const handler = (await import('../../server/api/files/[...path].get')).default;
 const VIDEO = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
 const SECRET = Buffer.from('project 2 only');
 const BLOB = 'a'.repeat(64);
+const PRIVATE_BLOB = 'b'.repeat(64);
 /**
  * Stored names that hold `..` but are no `..` segment, each with the type it is served as: a step's file, and
  * screenshots named after step titles that end in `.` or hold `...`.
@@ -87,6 +92,45 @@ function get(path: string, headers: Record<string, string> = {}): Promise<Answer
 }
 
 beforeAll(async () => {
+  const db = drizzle(createClient({ url: ':memory:' }), { schema });
+  await migrateToLatest(db);
+  await db.insert(schema.users).values([
+    { id: 5, username: 'rae', password: 'x', role: 'member' },
+    { id: 6, username: 'sol', password: 'x', role: 'member' },
+  ]);
+  await db.insert(schema.projects).values([
+    { id: 1, name: 'shop' },
+    { id: 2, name: 'docs' },
+  ]);
+  await db.insert(schema.testRuns).values([
+    { id: 7, projectId: 1, status: 'passed', startTime: new Date(), origin: 'ci' },
+    {
+      id: 8,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(),
+      metadata: { piwiOrigin: { kind: 'request', ref: 'a'.repeat(32) } },
+      origin: 'request',
+      requesterId: 6,
+    },
+  ]);
+  const [blob] = await db
+    .insert(schema.traceBlobs)
+    .values({ projectId: 1, hash: PRIVATE_BLOB, path: `project-1/blobs/${PRIVATE_BLOB}.zip`, size: 7 })
+    .returning();
+  await db.insert(schema.files).values([
+    { testRunId: 8, type: 'trace', path: `project-1/blobs/${PRIVATE_BLOB}.zip`, blobId: blob!.id },
+    { testRunId: 8, type: 'report', subtype: 'html', path: 'project-1/run-1-abcd1234-html-report/index.html' },
+  ]);
+  state.db = db as never;
+  mkdirSync(join(storageDir, 'project-1/run-1-abcd1234-html-report'), { recursive: true });
+  writeFileSync(join(storageDir, 'project-1/run-1-abcd1234-html-report/index.html'), SECRET);
+  mkdirSync(join(storageDir, 'project-1/run-1-abcd1234-html-report/data'), { recursive: true });
+  writeFileSync(join(storageDir, 'project-1/run-1-abcd1234-html-report/data/trace.zip'), SECRET);
+  mkdirSync(join(storageDir, 'project-1/blobs'), { recursive: true });
+  writeFileSync(join(storageDir, `project-1/blobs/${PRIVATE_BLOB}.zip`), SECRET);
+  mkdirSync(join(storageDir, 'project-1/run-8/43'), { recursive: true });
+  writeFileSync(join(storageDir, 'project-1/run-8/43/test-failed-1.png'), SECRET);
   mkdirSync(join(storageDir, 'project-1/run-7/42'), { recursive: true });
   mkdirSync(join(storageDir, 'project-2'), { recursive: true });
   writeFileSync(join(storageDir, 'project-1/run-7/42/video.webm'), VIDEO);
@@ -178,6 +222,28 @@ describe('the path checks', () => {
       expect(answer.headers['content-type'], name).toBe(type);
       expect(answer.body.toString(), name).toBe(name);
     }
+  });
+
+  test("refuse another person's private run's file as missing, and serve it to its requester", async () => {
+    expect((await get('/api/files/project-1/run-8/43/test-failed-1.png')).status).toBe(404);
+    expect((await get('/api/files/project-1//run-8/43/test-failed-1.png')).status).toBe(404);
+    expect((await get('/api/files/project-1/./run-8/43/test-failed-1.png')).status).toBe(404);
+    expect((await get('/api/files/project-1/run-8%5C43%5Ctest-failed-1.png')).status).not.toBe(200);
+    expect((await get('/api/files/project-1/RUN-8/43/test-failed-1.png')).status).toBe(404);
+    expect((await get('/api/files/project-1/run-8./43/test-failed-1.png')).status).toBe(404);
+    expect((await get(`/api/files/project-1/blobs/${PRIVATE_BLOB}.zip`)).status).toBe(404);
+    expect((await get('/api/files/project-1/run-1-abcd1234-html-report/index.html')).status).toBe(404);
+    expect((await get('/api/files/project-1/run-1-abcd1234-html-report/data/trace.zip')).status).toBe(404);
+    expect((await get('/api/files/project-1/RUN-8~1/43/test-failed-1.png')).status).toBe(404);
+    expect((await get('/api/files/project-1/run-8::$INDEX_ALLOCATION/43/test-failed-1.png')).status).toBe(404);
+    state.caller = {
+      user: { id: 6, username: 'sol', role: InstanceRole.MEMBER } as User,
+      access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]),
+    };
+    expect((await get('/api/files/project-1/run-8/43/test-failed-1.png')).status).toBe(200);
+    expect((await get(`/api/files/project-1/blobs/${PRIVATE_BLOB}.zip`)).status).not.toBe(404);
+    expect((await get('/api/files/project-1/run-1-abcd1234-html-report/index.html')).status).toBe(200);
+    expect((await get('/api/files/project-1/run-1-abcd1234-html-report/data/trace.zip')).status).toBe(200);
   });
 
   test("refuse another project's file to a reader of this one", async () => {

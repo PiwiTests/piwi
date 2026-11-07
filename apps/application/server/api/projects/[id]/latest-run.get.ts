@@ -28,7 +28,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
 
-  await requireProjectAccess(event, id);
+  const viewer = await requireProjectAccess(event, id);
 
   const { origin, ref, run } = getQuery(event);
   if (origin !== undefined && (!isRunOriginKind(origin) || typeof ref !== 'string')) {
@@ -39,7 +39,12 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
   try {
-    return await getProjectLatestRun(db, id, isRunOriginKind(origin) ? { kind: origin, ref: String(ref), runs } : null);
+    return await getProjectLatestRun(
+      db,
+      id,
+      isRunOriginKind(origin) ? { kind: origin, ref: String(ref), runs } : null,
+      viewer.id,
+    );
   } catch (e) {
     if ((e as Error)?.message === 'Project not found')
       throw apiError({ statusCode: 404, message: 'Project not found' });

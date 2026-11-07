@@ -25,7 +25,7 @@ export async function createEnrichedLink(
   input: { entityType: LinkEntityType; entityId: number; url: string; title?: string | null },
   readable: ProjectScope,
 ): Promise<EntityLink | null> {
-  const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
+  const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId, null);
   const projectConnectionId = await boundConnectionId(db, projectId);
   const { link } = await createLink(db, input, (u) => detectProviderWithConnection(db, u, projectConnectionId));
   if (!link) return null;

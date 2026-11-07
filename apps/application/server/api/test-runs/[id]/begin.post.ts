@@ -7,7 +7,7 @@ import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { pinProjectRepository } from '../../../utils/scm/project-repository';
 import { withInstanceRunLock } from '../../../utils/ingest-locks';
@@ -166,7 +166,10 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       updatedAt: new Date(),
     };
     const reported = (stored: unknown) =>
-      carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored);
+      carryRequestOrigin(
+        carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored),
+        stored,
+      );
 
     let metadata: Record<string, unknown> | null;
     if (isSharded) {
@@ -185,7 +188,8 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
         .where(eq(testRuns.id, id));
     }
 
-    await pinProjectRepository(db, testRun.projectId, metadata);
+    // A private run pins nothing of the project's.
+    if (runOrigin(metadata) !== 'request') await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and

@@ -16,6 +16,7 @@ import { extractErrorLocation } from './locator-healing';
 import { lastAttempts } from '#shared/status-classify';
 import {
   CI_RUN_ORIGINS,
+  isVisibleRun,
   LOCAL_RUN_ORIGINS,
   UNFINISHED_RUN_STATUSES,
   eligibleRunSql,
@@ -402,15 +403,22 @@ async function branchFailuresRuns(
   let run: Awaited<ReturnType<typeof newest>>[number] | undefined;
   if (options.run !== undefined) {
     const [found] = await db
-      .select({ ...runColumns(), projectId: testRuns.projectId })
+      .select({
+        ...runColumns(),
+        projectId: testRuns.projectId,
+        visibility: { origin: testRuns.origin, requesterId: testRuns.requesterId },
+      })
       .from(testRuns)
       .where(eq(testRuns.id, options.run))
       .limit(1);
-    if (!found) throw new BranchFailuresRunError(404, `Test run ${options.run} not found`);
+    // A private run reads as missing: this answer is the project's.
+    if (!found || !isVisibleRun(found.visibility, null)) {
+      throw new BranchFailuresRunError(404, `Test run ${options.run} not found`);
+    }
     if (found.projectId !== projectId) {
       throw new BranchFailuresRunError(400, `Test run ${options.run} belongs to another project`);
     }
-    const { projectId: _project, ...row } = found;
+    const { projectId: _project, visibility: _visibility, ...row } = found;
     run = row;
   } else if (local) {
     [run] = await newest(LOCAL_RUN_ORIGINS);

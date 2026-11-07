@@ -21,7 +21,7 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
-import { eligibleRunSql } from '#shared/run-eligibility';
+import { eligibleRunSql, notPrivateRun } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
 import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
@@ -1240,7 +1240,7 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
           db
             .select({ id: testRuns.id })
             .from(testRuns)
-            .where(eq(testRuns.projectId, cluster.projectId))
+            .where(and(eq(testRuns.projectId, cluster.projectId), notPrivateRun(testRuns.origin)))
             .orderBy(desc(testRuns.startTime))
             .limit(30),
         ),

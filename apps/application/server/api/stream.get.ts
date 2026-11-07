@@ -1,6 +1,6 @@
 import { requireAuth } from '../utils/auth';
 import { getDatabase } from '../database';
-import { getProjectScope, scopeAllows } from '../utils/project-access';
+import { getProjectScope, runVisibilityReader, scopeAllows } from '../utils/project-access';
 import { runEventBus } from '../utils/run-events';
 import { createSSEEndpoint } from '../utils/sse';
 
@@ -23,14 +23,21 @@ export default eventHandler(async (event) => {
   // 'all'), so nothing is filtered.
   const db = await getDatabase();
   const scope = await getProjectScope(db, user);
+  // Another person's private run is left out, and the events go out in the order they were published.
+  const sees = runVisibilityReader(db, user.id);
+  let sent = Promise.resolve();
   return createSSEEndpoint(event, (controller, encoder) => {
     const unsubscribe = runEventBus.subscribeGlobal((globalEvent) => {
       if (!scopeAllows(scope, globalEvent.projectId)) return;
-      try {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(globalEvent)}\n\n`));
-      } catch {
-        // Stream closed — unsubscribe is handled by SSE helper
-      }
+      const visible = sees(globalEvent.runId);
+      sent = sent.then(async () => {
+        if (!(await visible)) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(globalEvent)}\n\n`));
+        } catch {
+          // Stream closed — unsubscribe is handled by SSE helper
+        }
+      });
     });
     // A comment, which clients skip, sends the response now that it is subscribed: the stream opens in the browser
     // from the first moment it misses no event (`useRunEvents`' `onOpen`). Then when the last event went out, so a

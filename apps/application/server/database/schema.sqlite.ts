@@ -86,6 +86,7 @@ export const testRuns = sqliteTable(
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
     keptAt: integer('kept_at', { mode: 'timestamp' }), // Set = kept forever: retention never deletes the run
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    requesterId: integer('requester_id').references(() => users.id, { onDelete: 'set null' }), // The person who asked for a requested run (origin `request`), from its request token, never from the reporter; such a run is seen by them alone, and by nobody once null
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     serverCoverageGaps: text('server_coverage_gaps', { mode: 'json' }), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
@@ -106,6 +107,7 @@ export const testRuns = sqliteTable(
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
+    requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
@@ -2956,6 +2958,9 @@ export const runRequests = sqliteTable(
     state: text('state').notNull().default('waiting'), // RunRequestState
     outcome: text('outcome'), // RunRequestOutcome, once ended
     detail: text('detail'), // the words of a failed check, or of an error
+    runId: integer('run_id'), // the run its request token started; no foreign key, so a run's delete never waits on its request
+    requestTokenDigest: text('run_token_digest'), // the digest of the request token **Run** returned, null before
+    requestTokenExpiresAt: integer('run_token_expires_at', { mode: 'timestamp_ms' }), // when the request token stops starting a run
     stopRequestedAt: integer('stop_requested_at', { mode: 'timestamp_ms' }),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     claimedAt: integer('claimed_at', { mode: 'timestamp_ms' }),
@@ -2972,5 +2977,7 @@ export const runRequests = sqliteTable(
     targetIdx: index('idx_run_requests_target').on(t.targetId),
     projectIdx: index('idx_run_requests_project').on(t.projectId),
     stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
+    runIdx: index('idx_run_requests_run').on(t.runId),
+    requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
   }),
 );

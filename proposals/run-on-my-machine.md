@@ -12,26 +12,36 @@ option and entry D64 of the 1.0 register.
 
 **Status.** Proposed 2026-11-06. PR 1 is built: **Create issue** on runs and tests with a comment (D17) and the run
 options of **Copy retry command** (D18). Headed is off by default, so a copied command runs headless until a person
-picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in two. PR 2a is built:
+picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in three. PR 2a is built:
 `@piwitests/core/run-request`, the `run:request` and `run:receive` permissions, the `machine-runs` capability (off until
 an administrator turns it on, enforced on the server), the two tables, target keys made by the device flow (they hold
 `run:receive` alone, and only the target routes take them), and the routes below except the stream. A request needs
 sign-in turned on, and a person holds at most 5 waiting ones; a test whose stored path, title or project the parser
-refuses, or that has no line, is left out and counted. Until 2b's heartbeat, a target hears its stops by listing its
+refuses, or that has no line, is left out and counted. Until 2c's heartbeat, a target hears its stops by listing its
 requests: one the instance has not heard from for 5 minutes, or that was disconnected, has its requests ended as an
 error, so does a claim not answered in 10 minutes, and a second stop a minute after the first ends a run; a target hears
 of a request that ended at a stop for 10 minutes. The retention sweep deletes requests that ended or expired more than
-30 days ago (the notification horizon). **Run** moves a request to `starting` without a run token: the run token with
-the `request` origin and its visibility, the stream, Connected apps, the capability's **Turn on** button, the demo's
-simulated target, the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2b, so a run reaches the instance
-only once its rules ship with it. Nothing here is on the roadmap yet. The maintainer settled on 2026-11-06: the desktop
-app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7);
-every run is confirmed in the target (D2); a request carries resolved tests and is the same object as a CI dispatch,
-parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a requested run shows to its
-requester alone (D14); the administrator's switch is off by default in the first release (D15); no request comes from an
-AI agent in the first version (D6); the existing **Copy retry command** gains the run options and ships first, with
-**Create issue** (D17, D18). Every other decision is a recommendation, and says which written decision it amends. The
-plan builds on three records that are not on `main`:
+30 days ago (the notification horizon). PR 2b is built: **Run** answers a request token (D5), kept as its digest for
+30 minutes, which `/setup` or `/start` spends once, as the run is stored, to start one unsharded run of the request's
+project; a token that expires unspent ends its request as an error, and a requested run is never kept. The server stamps
+its `request` origin (a reporter's is dropped) and its requester; the run is its requester's alone, and nobody's once
+the requester is deleted, and it feeds no team use (D14): it matches only the tests the project knows, its executions of
+any other left out, and adds or changes no test or suite. It shows on its run page; the test's history and the
+requester's own runs show it in PR 2c. A request whose tests resolve to more than 200 is refused, and the cap of 5 is
+counted once the request is stored. Every check runs before the spend, so a refused start leaves the token to a retry,
+and a request its requester stopped, or whose target was disconnected, starts nothing. Its requester, or someone who
+holds `run:delete`, deletes it; its stored files read as missing to anyone else; it records no coverage and never sets
+the project's default branch. The request token is not taken by the batch upload yet, and is spent by the first start: a
+requested run that falls back to the batch upload, or from `/setup` to `/start`, is refused. The stream, the heartbeat,
+Connected apps, the capability's **Turn on** button, the demo's simulated target, the feature page and the
+[`ROADMAP.md`](../ROADMAP.md) entry are PR 2c. Nothing here is on the roadmap yet. The maintainer settled
+on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to
+runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is the
+same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a
+requested run shows to its requester alone (D14); the administrator's switch is off by default in the first release
+(D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains the run
+options and ships first, with **Create issue** (D17, D18). Every other decision is a recommendation, and says which
+written decision it amends. The plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.
@@ -57,7 +67,7 @@ Its contracts are entry D64 of [`1.0-stabilization.md`](1.0-stabilization.md).
   request host written in TypeScript beside the existing `@piwitests/editor/run-host`. Each shows the same
   confirmation, the same checks and the same states.
 - **Two credentials, both narrow.** A target key, from the device flow Piwi Picker and the editors already use, can only
-  receive and answer its owner's requests. Each accepted request gives a run token that uploads that one run, to the
+  receive and answer its owner's requests. Each accepted request gives a request token that uploads that one run, to the
   instance that issued it.
 - **A requested run never pages the team.** It carries its own origin, sends no notification, writes nothing to the
   tracker, stays out of the team's measures and shows to its requester alone. That is also why a Contributor may ask
@@ -76,7 +86,7 @@ Its contracts are entry D64 of [`1.0-stabilization.md`](1.0-stabilization.md).
 | **Piwi Runner** | The standalone target: a small app with no dashboard and no database, that takes run requests, checks the folder, asks, runs Playwright and reports. |
 | **request host** | The code both targets share to take a request: check the tests against the folder, show the confirmation, build the command, run it, report its state. |
 | **target key** | The credential a target holds on the team instance: an API key that holds one permission, `run:receive`. |
-| **run token** | A credential the instance gives a target for one accepted request: it uploads one run, with the request's id as its ref, to one project. |
+| **request token** | A credential the instance gives a target for one accepted request: it uploads one run, with the request's id as its ref, to one project. |
 | **hub** | The local process that steers a run's workers over the run channel (`@piwitests/core/run-hub`): the desktop app's server, or Piwi Runner's request host. |
 
 The word **agent** is not used for Piwi Runner: in Piwi it names the coding agents (Claude Code, Copilot), in the MCP
@@ -217,7 +227,7 @@ requests (D5), and the paths follow a rule repro requests already follow.
 - The target records each request id it has seen and refuses to start a second run for one, so a crash between the
   claim and the run leaves the request `claimed`, and the page offers **Run again**, which is a new request.
 
-### D5. A target key and a run token
+### D5. A target key and a request token
 
 **Recommended.**
 
@@ -230,9 +240,10 @@ requests (D5), and the paths follow a rule repro requests already follow.
 - **The key it gets is a target key**: it holds `run:receive` alone, which opens the request stream of its owner, reads
   and claims those requests, and writes their state. It cannot read the project's data, submit a run or act as the
   person. It is kept in the OS keychain (the `keyring` crate in the shell).
-- **Each accepted request gives a run token**: the answer to **Run** carries a token that uploads one run, with the
-  request's id as its ref, to the request's project, valid for that run and its retries of the upload. The target
-  hands it to the reporter through a file only the person can read, never on the command line.
+- **Each accepted request gives a request token**: the answer to **Run** carries a token that uploads one run, with the
+  request's id as its ref, to the request's project. PR 2b spends it on the first start; retries of the upload come
+  with the reporter work of PR 3. The target hands it to the reporter through a file only the person can read, never
+  on the command line.
 - **The reporter sends a requested run to the instance that issued the token, whatever the Playwright config names.**
   Today a server set in the config wins over `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` (`cli/configure.ts`). A requested
   run needs an override that wins over the config and that the reporter refuses to send anywhere but the token's
@@ -255,7 +266,7 @@ an explicit consent, and links that only open a page or ask in the window first.
 ### D6. Who may ask (settled for agents)
 
 **Recommended.** A new project permission, `run:request` ("Run tests on my machine from the dashboard"), from
-Contributor up. The run uploads through its run token, so it does not need `run:submit`, which Contributor lacks.
+Contributor up. The run uploads through its request token, so it does not need `run:submit`, which Contributor lacks.
 
 **Settled 2026-11-06**: only a signed-in session creates a request, never an API key or an MCP client. An Uploader key,
 which is how CI reports, cannot start runs on laptops, and an AI agent cannot either in the first version.
@@ -378,7 +389,8 @@ it. The person who asked sees the real browser on their screen and needs no rela
 ### D14. How a requested run counts, and who sees it (settled for who sees it)
 
 **Recommended.** A new origin kind, `request`, for every run started by a run request, whatever the target; the target
-is recorded beside it (`piwiInteractive.client`, as live-runs P3 records the steering tool).
+is recorded beside it (`piwiInteractive.client`, as live-runs P3 records the steering tool; not recorded yet, it comes
+with PR 3).
 
 - It sends no notification, no pull-request feedback and no `test.stuck`, makes no tracker write and does not make a
   cluster recur (the `editor` rule).
@@ -387,7 +399,10 @@ is recorded beside it (`piwiInteractive.client`, as live-runs P3 records the ste
 
 **Settled 2026-11-06**: a requested run shows to its requester alone: on its run page, in the test's history marked "on
 your machine", and in their own runs. Run lists, test histories, search and the MCP tools filter out another person's
-`request` runs; a link to one answers 404. Whether instance administrators see them is open question 2.
+`request` runs; a link to one answers 404. Whether instance administrators see them is open question 2. A requester
+can make a share link for an execution of their own requested run, to show a teammate what happened on their machine;
+the link appears in the project's share-link list like any other. With sign-in turned off nobody sees a requested run,
+but a share link made earlier still opens.
 
 Why one origin: `ci-rerun` already names a run by how it came to be rather than by its launcher, and one origin keeps
 the rule in one row of `RUN_USES` and the visibility filter in one predicate. Today a whole suite run from a laptop as
@@ -583,7 +598,7 @@ D5 and D6): `waiting` (stored, not claimed), `claimed` (shown in the target, not
 | `GET /api/run-targets/stream` | a target key | New requests and stops, with a heartbeat. |
 | `GET /api/run-targets/requests` | a target key | The requests still `waiting`, for a reconnect or polling. |
 | `POST /api/run-targets/requests/:id/claim` | a target key | `waiting` to `claimed`; 409 on a second claim. |
-| `POST /api/run-targets/requests/:id/answer` | a target key | **Run** (answers the run token), **Not now**, or a failed check. |
+| `POST /api/run-targets/requests/:id/answer` | a target key | **Run** (answers the request token), **Not now**, or a failed check. |
 | `POST /api/run-targets/requests/:id/state` | a target key | `running`, `stopping`, `ended`, and a stop obeyed. |
 | `PUT /api/run-targets/self` | a target key | Its platform, version and the projects it has a folder for. |
 
@@ -602,7 +617,7 @@ The rules every tool follows:
    delivered only to that person's targets, claimed once, expired after two minutes (D4, D6).
 4. **A `piwi://` link never carries a run.** It opens a page, starts the app, or starts a connection the person
    confirms on both sides (D5).
-5. **Narrow credentials**: a target key holds `run:receive` alone, in the OS keychain; a run token uploads one run to
+5. **Narrow credentials**: a target key holds `run:receive` alone, in the OS keychain; a request token uploads one run to
    the instance that issued it (D5).
 6. **A requested run never pages the team**, counts in nothing the team measures, and shows to its requester alone
    (D14).
@@ -613,11 +628,11 @@ The rules every tool follows:
 | A script injected in an instance page, or a stolen session | It can create requests for that person. Each is shown in the target and runs only on **Run**; the tests are the person's own checkout, the options bounded. |
 | A malicious `piwi://` link | It can open a page or ask to connect to an instance; the connection needs the same code on both sides and a signed-in person who allows it. |
 | A stolen target key | It receives that person's requests until revoked in Connected apps. It cannot read the project's data or upload a run. |
-| A run token that leaks | It uploads one run with one ref to one project, for the life of that run. |
+| A request token that leaks | It uploads one run with one ref to one project, for the life of that run. |
 | A Playwright config that names another server | The reporter sends a requested run only to the token's instance (D5). |
 | A request whose spec path climbs out of the folder | The parser refuses it, and the target checks each path against its folder before showing the confirmation (D3). |
 | Another person's account | Requests reach only the targets of the person who created them. Starting a run on someone else's machine is not possible. |
-| Another user of the machine | The key is in the person's keychain; the run token's file is readable by the person only. |
+| Another user of the machine | The key is in the person's keychain; the request token's file is readable by the person only. |
 
 What leaves the machine: what the reporter already sends for a run, and which projects have a folder. Never a
 folder's path.
@@ -632,7 +647,7 @@ folder's path.
 | A runner mode of the desktop app, or a separate app (local-runner.md prefers the separate app) | Both, the desktop app first (D7, D8) |
 | Option 2 (paired runners through the instance) with option 1 (links) as fallback; an Off / Links only / Paired setting, off by default | Option 2 alone; links only open, start or connect; the setting is a capability, off by default (D1, D15) |
 | Pairing with a single-use code that names the device; a typed code as fallback | The existing device flow, with the instance's address typed in the app as fallback (D5) |
-| A scoped runner key in the OS keychain that also uploads; Profile → Connected runners | A target key that only receives, and a run token per run; Settings → Account → Connected apps for every client (D5, D16) |
+| A scoped runner key in the OS keychain that also uploads; Profile → Connected runners | A target key that only receives, and a request token per run; Settings → Account → Connected apps for every client (D5, D16) |
 | A claim that answers 409 the second time; one run per request | Kept (D4) |
 | SSE with a polling fallback | Kept (D11) |
 | Run without asking, per project on the machine | Not in the first version (D2) |
@@ -670,7 +685,7 @@ simulator answers, so **Run on my machine**, the confirmation's outcome and the 
 | PR | Content | Size |
 | --- | --- | --- |
 | 1 | **Create issue on runs and tests, with a comment** (D17), and the run options on **Copy retry command** (D18) | M |
-| 2 | **The instance's side**: `run_requests` and `run_targets`, the routes, `@piwitests/core/run-request`, `run:request` and `run:receive`, keys that hold one permission, the stored `clientKind`, run tokens, the stream and its polling, the `request` origin with its rules and its visibility, the capability off by default, Connected apps | L |
+| 2 | **The instance's side**: `run_requests` and `run_targets`, the routes, `@piwitests/core/run-request`, `run:request` and `run:receive`, keys that hold one permission, the stored `clientKind`, request tokens, the stream and its polling, the `request` origin with its rules and its visibility, the capability off by default, Connected apps | L |
 | 3 | **The request host and the desktop app as a target**: the confirmation, the checks (browsers and branch for Run locally too, selection by title), folders per instance, `piwi://connect`, the device flow for `desktop`, the keychain, the reporter's override; on the page, the button, its menu and the progress | L |
 | 4 | **Piwi Runner**, after the spike of D8: the `runner` build, its windows, signed releases and updates | L |
 | 5 | **Share live from the confirmation** (D13), with live-runs P9 | S |
@@ -684,7 +699,7 @@ Piwi Runner, the privacy page, the connect page and the issue tracker page. PR 2
 - Unit (`@piwitests/core`): the parser refuses an unknown field, a spec path with a leading `-`, `/` or drive or a `..`,
   an option out of bounds and more than 200 tests.
 - Unit (instance): a second claim answers 409; an expired request cannot be claimed; a target key reads no project data
-  and uploads nothing; a run token uploads only its ref to its project; a `request` run is out of every team use of
+  and uploads nothing; a request token uploads only its ref to its project; a `request` run is out of every team use of
   `RUN_USES` and invisible to another user; the routes answer 403 with the capability off.
 - Unit (request host): a target that has seen a request id starts no second run for it; a differing branch selects by
   title; a path outside the folder is refused.

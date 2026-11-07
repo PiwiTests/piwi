@@ -31,6 +31,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
@@ -888,7 +889,7 @@ async function projectTestIdAttributes(db: DrizzleDB, projectId: number): Promis
   const runs = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(10);
   const names = new Set<string>();
@@ -914,7 +915,7 @@ async function projectViewports(db: DrizzleDB, projectId: number): Promise<Locat
   const runs = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(10);
   for (const run of runs) {

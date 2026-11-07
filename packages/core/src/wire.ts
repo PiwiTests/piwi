@@ -513,7 +513,9 @@ export interface WireResourceReport {
  * - `flake-lab`, `probe`: runs replaying tests under injected conditions;
  * - `bisect`, `reproduce`: steps of a bisect and reproductions of a failure
  *   at an older commit;
- * - `import`: a report imported into the dashboard, stamped by the server.
+ * - `import`: a report imported into the dashboard, stamped by the server;
+ * - `request`: a run a person asked for from the dashboard, on one of their own machines (a run request), stamped by
+ *   the server from the run token, never taken from the reporter.
  */
 export const RUN_ORIGIN_KINDS = [
   'ci',
@@ -528,6 +530,7 @@ export const RUN_ORIGIN_KINDS = [
   'bisect',
   'reproduce',
   'import',
+  'request',
 ] as const;
 
 export type RunOriginKind = (typeof RUN_ORIGIN_KINDS)[number];
