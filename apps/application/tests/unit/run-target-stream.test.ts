@@ -90,10 +90,11 @@ async function request(values: Partial<typeof schema.runRequests.$inferInsert> =
   return row!;
 }
 
-/** Open a target's stream and collect its events as they come. */
-async function open(key: string) {
+/** Open a target's stream and collect its events as they come; `whileLoading` runs before its snapshot is read. */
+async function open(key: string, whileLoading?: () => void) {
   const event = eventWithKey(key);
   const response = await stream(event);
+  whileLoading?.();
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   const events: { type: string; [key: string]: unknown }[] = [];
@@ -197,6 +198,22 @@ describe('a connected app’s stream', () => {
     await streams[0]!.settle();
     expect(streams.map((s) => s.events.filter((e) => e.type === 'request').length)).toEqual([2, 1, 0]);
     for (const s of streams) await s.leave();
+  });
+
+  test('brings what happens while its snapshot loads after the snapshot', async () => {
+    const { key, targetId } = await target();
+    const s = await open(key, () => publishToRunTarget(targetId, { type: 'stop', id: 'f'.repeat(32) }));
+    expect(s.events.map((e) => e.type)).toEqual(['snapshot', 'stop']);
+    await s.leave();
+  });
+
+  test('brings no request that is no longer waiting', async () => {
+    const { key } = await target();
+    const s = await open(key);
+    await publishRunRequest(db as never, await request({ state: 'claimed' }));
+    await s.settle();
+    expect(s.events.map((e) => e.type)).toEqual(['snapshot']);
+    await s.leave();
   });
 
   test('brings a stop of a request the app holds', async () => {

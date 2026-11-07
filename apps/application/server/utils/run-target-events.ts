@@ -54,10 +54,11 @@ export function publishToRunTarget(targetId: number, event: RunTargetEvent): voi
 }
 
 /**
- * Send a new request to the requester's targets that are online and may take it: the one it names, or any of theirs
- * whose owner holds `run:receive` on its project while **Run on my machine** is on there.
+ * Send a new request, still waiting for a claim, to the requester's targets that are online and may take it: the one
+ * it names, or any of theirs whose owner holds `run:receive` on its project while **Run on my machine** is on there.
  */
 export async function publishRunRequest(db: DbClient, row: RunRequestRow): Promise<void> {
+  if (row.state !== 'waiting') return;
   const owned = await db.select({ id: runTargets.id }).from(runTargets).where(eq(runTargets.userId, row.requesterId));
   const online = owned.filter((t) => isRunTargetOnline(t.id) && (row.targetId === null || row.targetId === t.id));
   if (!online.length) return;
