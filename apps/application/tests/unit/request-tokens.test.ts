@@ -29,10 +29,10 @@ vi.stubGlobal(
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
 
 const { generateApiKey } = await import('../../server/utils/auth');
-const { answerRequest, claimRequest, moveRequestState, requireRunTarget, stopOwnRequest } =
+const { answerRequest, claimRequest, endStaleRequests, moveRequestState, requireRunTarget, stopOwnRequest } =
   await import('../../server/utils/run-requests');
-const { RUN_TOKEN_LIFETIME_MS, bindRunToRequest, grantedProject, spendRunToken } =
-  await import('../../server/utils/run-tokens');
+const { REQUEST_TOKEN_LIFETIME_MS, checkRequestToken, grantedProject, spendRequestToken } =
+  await import('../../server/utils/request-tokens');
 const { sanitizeMetadata } = await import('../../server/utils/sanitize');
 const { resolveRunProjectId, resolveTestRunCaseProjectId } = await import('../../server/utils/project-access');
 const { carryRequestOrigin, isLabRun, isVisibleRun, runOrigin, withRequestOrigin } =
@@ -45,6 +45,9 @@ const { searchProjectsTestRunsCases } = await import('#shared/handlers/search');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 const { ADMIN_ACCESS } = await import('#shared/permissions');
 const { getBranchFailures } = await import('../../server/utils/branch-failures');
+const { resolveDefaultBranch } = await import('../../server/utils/scm/default-branch');
+const { applyReporterKeep, keepRun } = await import('#shared/handlers/run-keep');
+const { storedFileVisible } = await import('../../server/utils/stored-file-visibility');
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -103,14 +106,14 @@ async function request(values: Partial<typeof schema.runRequests.$inferInsert> =
   return id;
 }
 
-/** A request claimed and answered **Run**, with the run token the answer returned. */
+/** A request claimed and answered **Run**, with the request token the answer returned. */
 async function ranRequest() {
   const c = await caller();
   const id = await request();
   await claimRequest(c, id);
   const answered = await answerRequest(c, id, { decision: 'run' });
-  if (!answered.ok || !answered.runToken) throw new Error('Run gave no run token');
-  return { c, id, token: answered.runToken };
+  if (!answered.ok || !answered.requestToken) throw new Error('Run gave no request token');
+  return { c, id, token: answered.requestToken };
 }
 
 async function stored(id: string) {
@@ -168,61 +171,113 @@ beforeEach(async () => {
   sourceRunId = run!.id;
 });
 
-describe('a run token', () => {
+describe('a request token', () => {
+  /** Check the token, store a run for it, then spend it on that run, as `/setup` and `/start` do. */
+  async function start(event: H3Event, body: { shardTotal?: unknown } = {}, now?: Date) {
+    const grant = await checkRequestToken(event, body, now);
+    if (!grant) return null;
+    const run = await privateRun(grant.requester.id, grant.requestId);
+    await spendRequestToken(db as never, grant, run.id, now);
+    return { grant, run };
+  }
+
   test('is given by Run, kept only as a digest, and starts one run', async () => {
     const { id, token } = await ranRequest();
     expect(token).toMatch(/^pdq_[0-9a-f]{64}$/);
     const row = await stored(id);
-    expect(row.runTokenDigest).toBeTruthy();
-    expect(row.runTokenDigest).not.toContain(token);
-    expect(row.runTokenExpiresAt!.getTime()).toBeGreaterThan(Date.now() + RUN_TOKEN_LIFETIME_MS - 60_000);
+    expect(row.requestTokenDigest).toBeTruthy();
+    expect(row.requestTokenDigest).not.toContain(token);
+    expect(row.requestTokenExpiresAt!.getTime()).toBeGreaterThan(Date.now() + REQUEST_TOKEN_LIFETIME_MS - 60_000);
 
     const event = bearer(token);
-    const grant = await spendRunToken(event, {});
-    expect(grant).toMatchObject({ requestId: id, projectId, requester: { id: userId } });
+    const started = (await start(event))!;
+    expect(started.grant).toMatchObject({ requestId: id, projectId, requester: { id: userId } });
     expect(event.context.access).toBeTruthy();
-    expect((await stored(id)).runTokenDigest).toBeNull();
-    await expect(spendRunToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 401 });
+    const spent = await stored(id);
+    expect(spent.requestTokenDigest).toBeNull();
+    expect(spent.runId).toBe(started.run.id);
+    await expect(checkRequestToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  test('is checked without being spent, so a start that stores no run leaves it to a retry', async () => {
+    const { id, token } = await ranRequest();
+    expect(await checkRequestToken(bearer(token), {})).toMatchObject({ requestId: id });
+    expect((await stored(id)).requestTokenDigest).toBeTruthy();
+    expect(await start(bearer(token))).toBeTruthy();
+  });
+
+  test('starts one run however many starts present it at once: the loser’s run is deleted', async () => {
+    const { id, token } = await ranRequest();
+    const first = (await checkRequestToken(bearer(token), {}))!;
+    const second = (await checkRequestToken(bearer(token), {}))!;
+    const won = await privateRun(userId, id);
+    const lost = await privateRun(userId, id);
+    await spendRequestToken(db as never, first, won.id);
+    await expect(spendRequestToken(db as never, second, lost.id)).rejects.toMatchObject({ statusCode: 401 });
+    const runs = await db.select({ id: schema.testRuns.id }).from(schema.testRuns);
+    expect(runs.map((r) => r.id)).toContain(won.id);
+    expect(runs.map((r) => r.id)).not.toContain(lost.id);
+    expect((await stored(id)).runId).toBe(won.id);
   });
 
   test('is read from x-api-key too, and an API key or no credential is left to the route', async () => {
     const { token } = await ranRequest();
-    expect(await spendRunToken(eventWith({}), {})).toBeNull();
-    expect(await spendRunToken(bearer(generateApiKey().plaintext), {})).toBeNull();
-    expect(await spendRunToken(eventWith({ 'x-api-key': token }), {})).toMatchObject({ projectId });
+    expect(await checkRequestToken(eventWith({}), {})).toBeNull();
+    expect(await checkRequestToken(bearer(generateApiKey().plaintext), {})).toBeNull();
+    expect(await checkRequestToken(eventWith({ 'x-api-key': token }), {})).toMatchObject({ projectId });
   });
 
-  test('is refused past its lifetime, and once its request ended', async () => {
+  test('is refused past its lifetime, once its request ended, and once its target was disconnected', async () => {
     const late = await ranRequest();
     await expect(
-      spendRunToken(bearer(late.token), {}, new Date(Date.now() + RUN_TOKEN_LIFETIME_MS + 1000)),
+      checkRequestToken(bearer(late.token), {}, new Date(Date.now() + REQUEST_TOKEN_LIFETIME_MS + 1000)),
     ).rejects.toMatchObject({ statusCode: 401 });
 
     const ended = await ranRequest();
     await moveRequestState(ended.c, ended.id, { state: 'ended', outcome: 'stopped' }, null);
-    await expect(spendRunToken(bearer(ended.token), {})).rejects.toMatchObject({ statusCode: 401 });
-    await expect(spendRunToken(bearer('pdq_' + '0'.repeat(64)), {})).rejects.toMatchObject({ statusCode: 401 });
+    await expect(checkRequestToken(bearer(ended.token), {})).rejects.toMatchObject({ statusCode: 401 });
+    await expect(checkRequestToken(bearer('pdq_' + '0'.repeat(64)), {})).rejects.toMatchObject({ statusCode: 401 });
+
+    const revoked = await ranRequest();
+    await db.update(schema.runRequests).set({ targetId: null }).where(eq(schema.runRequests.id, revoked.id));
+    await expect(checkRequestToken(bearer(revoked.token), {})).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  test('ends its request once it expired unspent, and leaves a spent one alone', async () => {
+    const unspent = await ranRequest();
+    const spent = await ranRequest();
+    await start(bearer(spent.token));
+    const later = new Date(Date.now() + REQUEST_TOKEN_LIFETIME_MS + 1000);
+    await db.update(schema.runTargets).set({ lastSeenAt: later });
+    await endStaleRequests(db as never, later, unspent.id);
+    await endStaleRequests(db as never, later, spent.id);
+    expect(await stored(unspent.id)).toMatchObject({
+      state: 'ended',
+      outcome: 'error',
+      detail: 'The app did not start the run in time',
+    });
+    expect((await stored(spent.id)).state).not.toBe('ended');
   });
 
   test('is refused when the requester can no longer ask for runs, or the capability was turned off', async () => {
     const lost = await ranRequest();
     await db.update(schema.roleBindings).set({ role: 'viewer' }).where(eq(schema.roleBindings.userId, userId));
-    await expect(spendRunToken(bearer(lost.token), {})).rejects.toMatchObject({ statusCode: 403 });
+    await expect(checkRequestToken(bearer(lost.token), {})).rejects.toMatchObject({ statusCode: 403 });
 
     await db.update(schema.roleBindings).set({ role: 'contributor' }).where(eq(schema.roleBindings.userId, userId));
     const off = await ranRequest();
     state.machineRuns.delete(projectId);
-    await expect(spendRunToken(bearer(off.token), {})).rejects.toMatchObject({ statusCode: 403 });
+    await expect(checkRequestToken(bearer(off.token), {})).rejects.toMatchObject({ statusCode: 403 });
 
     // A refused start leaves the token to a retry once the project allows it again.
     state.machineRuns.add(projectId);
-    expect(await spendRunToken(bearer(off.token), {})).toMatchObject({ projectId });
+    expect(await start(bearer(off.token))).toBeTruthy();
   });
 
   test('is refused once its requester stopped the request', async () => {
     const { id, token } = await ranRequest();
     expect(await stopOwnRequest(db as never, id, userId)).toBe(true);
-    await expect(spendRunToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 401 });
+    await expect(checkRequestToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 401 });
   });
 
   test('needs sign-in turned on', async () => {
@@ -230,7 +285,7 @@ describe('a run token', () => {
     process.env.PIWI_AUTH_ENABLED = 'false';
     vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
     try {
-      await expect(spendRunToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 403 });
+      await expect(checkRequestToken(bearer(token), {})).rejects.toMatchObject({ statusCode: 403 });
     } finally {
       process.env.PIWI_AUTH_ENABLED = 'true';
     }
@@ -238,18 +293,11 @@ describe('a run token', () => {
 
   test('reports into the request’s project, never a sharded run', async () => {
     const { token } = await ranRequest();
-    await expect(spendRunToken(bearer(token), { shardTotal: 2 })).rejects.toMatchObject({ statusCode: 422 });
-    const grant = (await spendRunToken(bearer(token), { shardTotal: 1 }))!;
+    await expect(checkRequestToken(bearer(token), { shardTotal: 2 })).rejects.toMatchObject({ statusCode: 422 });
+    await expect(checkRequestToken(bearer(token), { shardTotal: '2' })).rejects.toMatchObject({ statusCode: 422 });
+    const grant = (await checkRequestToken(bearer(token), { shardTotal: 1 }))!;
     expect((await grantedProject(db as never, grant)).id).toBe(projectId);
     expect(otherProjectId).not.toBe(projectId);
-  });
-
-  test('binds the run it started to its request', async () => {
-    const { id, token } = await ranRequest();
-    const grant = (await spendRunToken(bearer(token), {}))!;
-    const run = await privateRun(userId, id);
-    await bindRunToRequest(db as never, grant, run.id);
-    expect((await stored(id)).runId).toBe(run.id);
   });
 });
 
@@ -422,6 +470,41 @@ describe('a private run', () => {
     expect(await db.select().from(schema.testSuites)).toEqual([]);
     const executions = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, run.id));
     expect(executions.map((e) => e.testCaseId)).toEqual([known!.id]);
+  });
+
+  test('never sets the project’s default branch from its metadata', async () => {
+    const hinted = { ci: false, defaultBranch: 'my-laptop-branch' };
+    expect(await resolveDefaultBranch(db as never, { id: projectId, defaultBranch: null }, hinted)).toBe(
+      'my-laptop-branch',
+    );
+    const stamped = withRequestOrigin(hinted, 'a'.repeat(32));
+    expect(await resolveDefaultBranch(db as never, { id: projectId, defaultBranch: null }, stamped)).toBe('main');
+  });
+
+  test('is never kept, by the reporter or by hand', async () => {
+    const run = await privateRun(userId);
+    await applyReporterKeep(db as never, run.id, true);
+    await keepRun(db as never, run.id, { source: 'user', userId });
+    const [row] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, run.id));
+    expect(row!.keptAt).toBeNull();
+  });
+
+  test('keeps its stored files from anyone else, under any name a filesystem reads as its folder', async () => {
+    const run = await privateRun(userId);
+    for (const folder of [
+      `run-${run.id}`,
+      `RUN-${run.id}`,
+      `run-${run.id}.`,
+      'RUN-1~1',
+      `run-${run.id}::$INDEX_ALLOCATION`,
+    ]) {
+      expect(
+        await storedFileVisible(db as never, projectId, `project-${projectId}/${folder}/1/a.png`, otherUserId),
+      ).toBe(false);
+    }
+    expect(await storedFileVisible(db as never, projectId, `project-${projectId}/run-${run.id}/1/a.png`, userId)).toBe(
+      true,
+    );
   });
 
   test('is seen by nobody once its requester is deleted', async () => {

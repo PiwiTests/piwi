@@ -115,6 +115,7 @@ async function executionCoverage(
   target: { executionId: number } | { testCaseId: number },
   file: string | null,
   lines: LineRange[] | null,
+  viewerId: number | null,
 ) {
   if ('testCaseId' in target && file && lines) {
     return getCoverageReach(db, target.testCaseId, { file, lines });
@@ -125,7 +126,7 @@ async function executionCoverage(
       .from(testRunsCases)
       .where(eq(testRunsCases.id, target.executionId));
     if (!row) return null;
-    return getCoverageReach(db, row.testCaseId, { file, lines, executionId: target.executionId });
+    return getCoverageReach(db, row.testCaseId, { file, lines, executionId: target.executionId }, viewerId);
   }
   const executionId =
     'executionId' in target ? target.executionId : await latestCoveredExecutionId(db, target.testCaseId);
@@ -179,7 +180,8 @@ const getCoverage: McpToolHandler = async (db, params, ctx) => {
   if (projectId == null) return null;
   if (!(await projectRecordsCoverage(db, projectId))) return noCoverageSentence(projectId);
 
-  if (target) return compactCoverageJson(await executionCoverage(db, projectId, target, file, lines));
+  if (target)
+    return compactCoverageJson(await executionCoverage(db, projectId, target, file, lines, ctx.user?.id ?? null));
   const branch = typeof params.branch === 'string' && params.branch.trim() ? params.branch.trim() : null;
   const view = await getFileCoverage(db, projectId, file!, branch);
   return compactCoverageJson({
@@ -197,7 +199,7 @@ const compareCoverage: McpToolHandler = async (db, params, ctx) => {
     const projectId = await scopedProject(db, ctx, executionId, resolveTestRunCaseProjectId);
     if (projectId == null) return null;
     if (!(await projectRecordsCoverage(db, projectId))) return noCoverageSentence(projectId);
-    return compactCoverageJson(await getCoverageDivergence(db, executionId));
+    return compactCoverageJson(await getCoverageDivergence(db, executionId, ctx.user?.id ?? null));
   }
   const testCaseId = positiveId(params.testCaseId, 'testCaseId');
   const projectId = await scopedProject(db, ctx, testCaseId, resolveCaseProjectId);

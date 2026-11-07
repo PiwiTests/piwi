@@ -7,7 +7,7 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
-import { bindRunToRequest, grantedProject, presentsRunToken, spendRunToken } from '../../utils/run-tokens';
+import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { runEventBus } from '../../utils/run-events';
 import { pinProjectRepository } from '../../utils/scm/project-repository';
 import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
@@ -53,9 +53,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // A run token starts its request's run, spent once the body is read so a refused start leaves it to a retry;
-  // otherwise `run:submit` on at least one project, from the route meta, and the project itself is checked below.
-  const signedIn = presentsRunToken(event) ? null : await requireAuth(event);
+  // A request token starts its request's run, checked once the body is read and spent once the run is stored, so a
+  // refused or failed start leaves it to a retry; otherwise `run:submit` on at least one project, from the route meta,
+  // and the project itself is checked below.
+  const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
   const body = await readBody(event);
 
@@ -66,7 +67,7 @@ export default eventHandler(async (event) => {
       message: 'Missing required field: projectName',
     });
   }
-  const grant = await spendRunToken(event, body);
+  const grant = await checkRequestToken(event, body);
   const user = (grant ? grant.requester : signedIn) as User;
 
   const db = await getDatabase();
@@ -224,8 +225,9 @@ export default eventHandler(async (event) => {
       });
     }
 
-    if (grant) await bindRunToRequest(db, grant, testRun.id);
-    await applyReporterKeep(db, testRun.id, body.keep);
+    // A requested run is never kept: retention and its requester remove it.
+    if (grant) await spendRequestToken(db, grant, testRun.id);
+    else await applyReporterKeep(db, testRun.id, body.keep);
     // A private run pins nothing of the project's.
     if (!grant) await pinProjectRepository(db, project.id, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });

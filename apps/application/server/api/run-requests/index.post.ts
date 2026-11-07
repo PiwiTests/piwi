@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { parseRunRequest, parseRunRequestOptions, RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { getDatabase } from '../../database';
@@ -122,15 +122,21 @@ export default eventHandler(async (event) => {
       updatedAt: now,
     })
     .returning();
-  // Counted once stored, so requests made at the same moment never pass the cap together.
+  // Counted once stored, so requests made at the same moment never pass the cap together. A request claimed before
+  // its refusal is deleted stands, and is answered as made.
+  let stored = row!;
   if ((await countWaitingRequests(db, user.id, now)) > MAX_WAITING_REQUESTS) {
-    await db
+    const refused = await db
       .delete(runRequests)
-      .where(and(eq(runRequests.id, row!.id), eq(runRequests.state, 'waiting'), isNull(runRequests.targetId)));
-    throw apiError({
-      statusCode: 429,
-      message: `${MAX_WAITING_REQUESTS} of your requests are already waiting for a claim: stop one, or wait for them`,
-    });
+      .where(and(eq(runRequests.id, stored.id), eq(runRequests.state, 'waiting')))
+      .returning({ id: runRequests.id });
+    if (refused.length) {
+      throw apiError({
+        statusCode: 429,
+        message: `${MAX_WAITING_REQUESTS} of your requests are already waiting for a claim: stop one, or wait for them`,
+      });
+    }
+    stored = (await db.select().from(runRequests).where(eq(runRequests.id, stored.id)))[0] ?? stored;
   }
-  return { ...(await runRequestView(db, row!, now)), skipped: resolved.skipped };
+  return { ...(await runRequestView(db, stored, now)), skipped: resolved.skipped };
 });

@@ -12,7 +12,7 @@ import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
-import { bindRunToRequest, grantedProject, presentsRunToken, spendRunToken } from '../../utils/run-tokens';
+import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { liveViewRelay, storeLiveViewKey } from '../../utils/live-view';
 import { publicRunUrl } from '#shared/run-url';
 
@@ -54,9 +54,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // A run token starts its request's run, spent once the body is read so a refused start leaves it to a retry;
-  // otherwise `run:submit` on at least one project, from the route meta, and the project itself is checked below.
-  const signedIn = presentsRunToken(event) ? null : await requireAuth(event);
+  // A request token starts its request's run, checked once the body is read and spent once the run is stored, so a
+  // refused or failed start leaves it to a retry; otherwise `run:submit` on at least one project, from the route meta,
+  // and the project itself is checked below.
+  const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
   const body = await readBody(event);
 
@@ -67,7 +68,7 @@ export default eventHandler(async (event) => {
       message: 'Missing required field: projectName',
     });
   }
-  const grant = await spendRunToken(event, body);
+  const grant = await checkRequestToken(event, body);
   const user = (grant ? grant.requester : signedIn) as User;
 
   const db = await getDatabase();
@@ -228,8 +229,9 @@ export default eventHandler(async (event) => {
       });
     }
 
-    if (grant) await bindRunToRequest(db, grant, testRun.id);
-    await applyReporterKeep(db, testRun.id, body.keep);
+    // A requested run is never kept: retention and its requester remove it.
+    if (grant) await spendRequestToken(db, grant, testRun.id);
+    else await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
     return {

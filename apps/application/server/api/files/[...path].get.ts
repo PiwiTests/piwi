@@ -4,7 +4,6 @@ import {
   requireProjectAccess,
   requireResolvedProjectAccess,
   resolveBugReportProjectId,
-  resolveRunProjectId,
 } from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { resolveStoredTrace } from '../../utils/trace-reconstruct';
@@ -12,6 +11,7 @@ import { traceManifestPath } from '../../utils/trace-manifest';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
+import { storedFileVisible } from '../../utils/stored-file-visibility';
 import { etagMatches } from '../../utils/json-etag';
 import { parseByteRange } from '../../utils/byte-range';
 import { escapesStorageRoot } from '../../utils/sanitize-filename';
@@ -82,13 +82,9 @@ export default eventHandler(async (event) => {
   const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
   if (projectMatch) {
     const user = await requireProjectAccess(event, Number(projectMatch[1]));
-    // A run's files are served to those who see the run: another person's private run reads as missing. Read on the
-    // path as storage resolves it, its empty and `.` segments dropped and either slash a separator.
-    const segments = path.split(/[\\/]/).filter((segment) => segment !== '' && segment !== '.');
-    const runMatch = segments[1]?.match(/^run-(\d+)$/);
-    if (runMatch) {
-      const runProject = await resolveRunProjectId(await getDatabase(), Number(runMatch[1]), user.id);
-      if (runProject !== Number(projectMatch[1])) throw apiError({ statusCode: 404, message: 'File not found' });
+    // Another person's private run's files read as missing.
+    if (!(await storedFileVisible(await getDatabase(), Number(projectMatch[1]), path, user.id))) {
+      throw apiError({ statusCode: 404, message: 'File not found' });
     }
   } else if (bugReportMatch) {
     await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');

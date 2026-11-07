@@ -70,7 +70,7 @@ outside CI records a `piwiRunRef`, with `@piwitests/reporter` 0.68.0 or later: t
 `PIWI_ORIGIN_REF`, else one of its own, `local-<pid>-<time>`. A
 [re-run dispatched from the dashboard](/features/ci-rerun) is recorded as `ci-rerun` once
 Piwi recognizes it, an imported report as `import`, and a run a person asked for from the dashboard as `request`,
-by the server from the run token that started it: a `request` the reporter sends is dropped. You rarely set them
+by the server from the request token that started it: a `request` the reporter sends is dropped. You rarely set them
 yourself.
 
 A run whose workers connect to an editor or the desktop app, which steer it at their breakpoints (a run either of them

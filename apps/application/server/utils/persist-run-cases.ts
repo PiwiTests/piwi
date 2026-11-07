@@ -58,7 +58,7 @@ import {
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isLabRun } from '#shared/handlers/probes';
-import { eligibleExecutionSql, isEligibleRun, PRIVATE_RUN_ORIGINS } from '#shared/run-eligibility';
+import { eligibleExecutionSql, isEligibleRun, isPrivateRunOrigin } from '#shared/run-eligibility';
 import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import {
@@ -390,7 +390,7 @@ export async function persistRunCases(
     { metadata: run?.metadata, historicalImport: options.keepTestState },
     'shared-state',
   );
-  const knownOnly = (PRIVATE_RUN_ORIGINS as readonly string[]).includes(run?.origin ?? '');
+  const knownOnly = isPrivateRunOrigin(run?.origin);
 
   // --- Step 1: Resolve all suites referenced in this batch ---
   const suiteIdMap = await resolveSuites(db, projectId, cases, { knownOnly });
@@ -631,7 +631,8 @@ export async function persistRunCases(
   await dedupeGreenSamples(db, runCasesRows, rowPayloads);
 
   // Coverage fragments land first, so each execution's payload can name them.
-  const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
+  // A private run's coverage joins nothing of the project's.
+  const rowFragments = knownOnly ? [] : await upsertCoverageFragments(db, projectId, rowCoverage);
   const perCaseCoverage: TestCoverageCase[] = [];
   rowFragments.forEach((fragments, i) => {
     if (!fragments) return;

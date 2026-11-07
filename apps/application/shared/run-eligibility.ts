@@ -484,12 +484,17 @@ export interface RunVisibilityFields {
   requesterId: number | null;
 }
 
+/** Whether a run of `origin` is private: its requester's alone. */
+export function isPrivateRunOrigin(origin: string | null | undefined): boolean {
+  return (PRIVATE_RUN_ORIGINS as readonly (string | null | undefined)[]).includes(origin);
+}
+
 /**
  * Whether a person sees a run: every run but a private one (`PRIVATE_RUN_ORIGINS`), which its requester alone sees.
  * A private run whose requester is gone, or read with no person (sign-in off), is seen by nobody.
  */
 export function isVisibleRun(run: RunVisibilityFields, viewerId: number | null): boolean {
-  if (!(PRIVATE_RUN_ORIGINS as readonly (string | null)[]).includes(run.origin)) return true;
+  if (!isPrivateRunOrigin(run.origin)) return true;
   return viewerId != null && run.requesterId === viewerId;
 }
 

@@ -30,7 +30,7 @@ import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
 import { extractApiKey, getUserAccessCached, isAuthEnabled, resolveApiKey } from './auth';
 import { RUN_TARGET_KEY_PERMISSIONS } from './extension-connect';
-import { newRunToken, RUN_TOKEN_LIFETIME_MS } from './run-tokens';
+import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
@@ -285,7 +285,7 @@ export interface RunRequestView {
   detail: string | null;
   stopRequested: boolean;
   target: { id: number; kind: string; deviceName: string } | null;
-  /** The run the request started, once its run token started one. */
+  /** The run the request started, once its request token started one. */
   runId: number | null;
   expiresAt: string;
   createdAt: string;
@@ -401,8 +401,9 @@ export async function stopOwnRequest(
 
 /**
  * End, as an error, the requests nobody can act on any more: one held (claimed, or its run) by a target the instance
- * has not heard from for `silentTargetMs` or that was disconnected, and one claimed but not answered within 10
- * minutes. One request when `id` is given, else every one.
+ * has not heard from for `silentTargetMs` or that was disconnected, one claimed but not answered within 10
+ * minutes, and one whose request token expired before it started a run. One request when `id` is given, else every
+ * one.
  */
 export async function endStaleRequests(db: DbClient, now = new Date(), id?: string): Promise<number> {
   const one = id === undefined ? undefined : eq(runRequests.id, id);
@@ -439,7 +440,21 @@ export async function endStaleRequests(db: DbClient, now = new Date(), id?: stri
       ),
     )
     .returning({ id: runRequests.id });
-  return unanswered.length + ended.length;
+  // A request whose token expired unspent ends as an error.
+  const unstarted = await db
+    .update(runRequests)
+    .set({ state: 'ended', outcome: 'error', detail: 'The app did not start the run in time', updatedAt: now })
+    .where(
+      and(
+        one,
+        inArray(runRequests.state, ['starting', 'running']),
+        isNull(runRequests.runId),
+        isNotNull(runRequests.requestTokenDigest),
+        lt(runRequests.requestTokenExpiresAt, now),
+      ),
+    )
+    .returning({ id: runRequests.id });
+  return unanswered.length + ended.length + unstarted.length;
 }
 
 /**
@@ -512,7 +527,7 @@ export async function requestsForTarget(
 }
 
 export type TargetMoveResult =
-  | { ok: true; row: RunRequestRow; runToken?: string }
+  | { ok: true; row: RunRequestRow; requestToken?: string }
   | { ok: false; statusCode: 403 | 404 | 409; message: string };
 
 async function moveOrExplain(
@@ -569,7 +584,7 @@ export type TargetAnswer = { decision: 'run' } | { decision: 'not-now' } | { dec
 
 /**
  * The person's answer in the target, to a request this target claimed: **Run** moves it to `starting` and answers a
- * run token (`server/utils/run-tokens.ts`), kept as its digest, **Not now** moves it to `declined`, a failed check to
+ * request token (`server/utils/request-tokens.ts`), kept as its digest, **Not now** moves it to `declined`, a failed check to
  * `refused` with its words. **Run** is refused once the requester stopped it, and checks again that the project
  * allows it, as the claim did.
  */
@@ -589,12 +604,12 @@ export async function answerRequest(
     }
   }
   const base = [eq(runRequests.id, id), eq(runRequests.targetId, target.id), eq(runRequests.state, 'claimed')];
-  const minted = answer.decision === 'run' ? newRunToken() : null;
+  const minted = answer.decision === 'run' ? newRequestToken() : null;
   const values = minted
     ? {
         state: 'starting',
-        runTokenDigest: minted.digest,
-        runTokenExpiresAt: new Date(now.getTime() + RUN_TOKEN_LIFETIME_MS),
+        requestTokenDigest: minted.digest,
+        requestTokenExpiresAt: new Date(now.getTime() + REQUEST_TOKEN_LIFETIME_MS),
       }
     : answer.decision === 'not-now'
       ? { state: 'declined' }
@@ -612,7 +627,7 @@ export async function answerRequest(
     moved,
     'This request is not waiting for an answer, or was stopped',
   );
-  return result.ok && minted ? { ...result, runToken: minted.token } : result;
+  return result.ok && minted ? { ...result, requestToken: minted.token } : result;
 }
 
 /** A run's next state, reported by the target that runs it: only forward, and an end once. */
