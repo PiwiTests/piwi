@@ -107,6 +107,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/run-requests/:id',
   'POST /api/run-requests/:id/stop',
   'GET /api/run-targets/requests',
+  'GET /api/run-targets/stream',
   'POST /api/run-targets/requests/:id/claim',
   'POST /api/run-targets/requests/:id/answer',
   'POST /api/run-targets/requests/:id/state',

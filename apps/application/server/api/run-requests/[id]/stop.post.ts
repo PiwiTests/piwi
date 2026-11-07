@@ -1,4 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
+import { runRequests } from '../../../database/schema';
+import { publishToRunTarget } from '../../../utils/run-target-events';
 import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import {
   endStaleRequests,
@@ -36,6 +39,8 @@ export default eventHandler(async (event) => {
   if (!(await stopOwnRequest(db, id, user.id))) {
     throw apiError({ statusCode: 409, message: 'This request has already ended' });
   }
+  const [held] = await db.select({ targetId: runRequests.targetId }).from(runRequests).where(eq(runRequests.id, id));
+  if (held?.targetId) publishToRunTarget(held.targetId, { type: 'stop', id });
   await endStaleRequests(db, new Date(), id);
   return runRequestView(db, (await findOwnRequest(db, id, user.id, access))!);
 });

@@ -474,7 +474,7 @@ export async function pruneRunRequests(db: DbClient, olderThanDays: number, now 
 const NOT_ALLOWED = 'Run on my machine is off for this project, or you cannot run its tests';
 
 /** Whether a target may take a request of a project: its owner holds `run:receive` there and the capability is on. */
-async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
+export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
   return can(access, 'run:receive', projectId) && (await isOptInCapabilityOn(db, projectId, 'machine-runs'));
 }
 
