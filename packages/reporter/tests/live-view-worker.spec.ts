@@ -120,10 +120,10 @@ function sayViewers(count: number): void {
   streams[0]!.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
 }
 
-/** A page as the view reads it: its viewport, and a screencast that paints when told. */
 /** The fake page's screenshot: a JPEG of its viewport, at its size in CSS pixels. */
 const SHOT = jpegCodec()!.encode({ width: 1280, height: 720, data: new Uint8Array(1280 * 720 * 4).fill(255) }, 50).data;
 
+/** A page as the view reads it: its viewport, and a screencast that paints when told. */
 function fakePage(): { page: Page; paint: (data: string) => void } {
   let onFrame: ((frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => unknown) | null = null;
   // One frame, which shows no secret field.
