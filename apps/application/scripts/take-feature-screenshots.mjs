@@ -3328,6 +3328,29 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  ...[
+    { name: 'connected-apps', width: 1280 },
+    { name: 'connected-apps-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Connected apps (shared ConnectedAppsManager) in the Users admin modal: the seeded desktop app, its version and when last seen, with Revoke, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      // The table is a card list below md: open the modal at full width, then narrow the viewport.
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await page
+        .getByRole('row')
+        .filter({ hasText: 'Avery (Admin)' })
+        .getByRole('button', { name: 'Manage API keys' })
+        .click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="connected-apps"]').waitFor({ timeout: 15000 });
+      if (width < 1280) await page.setViewportSize({ width, height: 1600 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
   {
     name: 'permission-grid-mobile',
     description:
@@ -7841,6 +7864,44 @@ const SCENES = [
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────
+  ...[
+    { name: 'opt-in-capabilities', width: 1280 },
+    { name: 'opt-in-capabilities-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Settings → Capabilities → Off until turned on: Run on my machine off, then on with Turn off, and the project's Capabilities listing it while it is on, at ${width} px`,
+    async prepare({ base, request }) {
+      await request.patch(`${base}/api/capabilities`, { data: { decisions: { 'machine-runs': null } } });
+    },
+    route: '/settings/capabilities',
+    viewport: { width, height: 1600 },
+    async run({ page, base, goto, shoot, settle }) {
+      const card = page.locator('[data-shot="opt-in-capabilities"]');
+      const turn = (decision) =>
+        page.request.patch(`${base}/api/capabilities`, { data: { decisions: { 'machine-runs': decision } } });
+      try {
+        await card.waitFor({ timeout: 90000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('off', { of: '[data-shot="opt-in-capabilities"]', pad: 12 });
+        // The screenshot server runs with sign-in off, where Turn on is disabled: turn it on through the API.
+        await turn('enabled');
+        await goto('/settings/capabilities');
+        await card.waitFor({ timeout: 90000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('on', { of: '[data-shot="opt-in-capabilities"]', pad: 12 });
+        await goto('/projects/1?tab=settings&section=capabilities');
+        const project = page.locator('[data-shot="project-capabilities"]').first();
+        await project.waitFor({ timeout: 90000 });
+        await project.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('project', { of: '[data-shot="project-capabilities"]', pad: 12 });
+      } finally {
+        await turn(null);
+      }
+    },
+  })),
   {
     name: 'setup-ladder-declined',
     description: 'Setup ladder grouped by state, with a declined capability folded under Declined',
