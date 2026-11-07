@@ -955,6 +955,7 @@ describe('the live view of a stopped page', () => {
     expect(headed.dialogClosed).toBe(true);
   });
 
+  // Each frame of the stop is decoded in JavaScript: seconds under coverage.
   it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {
     const bar = headed.bar!;
     expect(bar).toBeGreaterThan(10);
@@ -972,7 +973,7 @@ describe('the live view of a stopped page', () => {
     expect(gray(strips[strips.length - 1]!.mean)).toBe(true);
     const last = seen[seen.length - 1]!;
     expect(white(jpegBand(Buffer.from(last.data, 'base64'), last.height, bar + 40, bar + 70).mean)).toBe(true);
-  });
+  }, 60_000);
 
   it('leaves the test’s video whole, its first client’s size the view’s', () => {
     const video = tests
