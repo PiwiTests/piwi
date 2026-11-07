@@ -657,6 +657,9 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 
 [resource-consumption-next.md](resource-consumption-next.md) ranks what comes after this plan: waste in data already
 stored, deeper detection and fixes Piwi applies.
+[resource-leaks-audit.md](resource-leaks-audit.md) audits what PRs 1 to 4 built against a battery of leak patterns,
+lists its defects, and proposes each object's last use: the line a fix goes on, and lingering, over-scoped and churn
+findings.
 
 - **Memory lab** (application leaks). A lab mode that runs one test's flow repeatedly in one context, forces a garbage
   collection between rounds (`HeapProfiler.collectGarbage`) and reads the retained heap and detached DOM nodes:
