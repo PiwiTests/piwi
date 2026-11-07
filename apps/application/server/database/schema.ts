@@ -93,6 +93,8 @@ export const {
   assistantUsage,
   assistantNudgeDismissals,
   projectStars,
+  runTargets,
+  runRequests,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -186,4 +188,6 @@ export type {
   AnalyticsDashboard,
   ReportSchedule,
   ReportSnapshot,
+  RunTarget,
+  RunRequestRow,
 } from './schema.sqlite';

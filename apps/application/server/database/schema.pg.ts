@@ -1734,6 +1734,11 @@ export const apiKeys = pgTable(
     name: text('name').notNull(), // Human-readable label, e.g. "CI pipeline"
     keyHash: text('key_hash').notNull().unique(), // SHA-256 hash of the full key
     keyPrefix: text('key_prefix').notNull(), // First 8 chars after "pd_" prefix – shown in UI
+    // Which client the device flow connected ('picker' | 'editor' | 'desktop' | 'runner'); null for a key made in
+    // Settings → Account.
+    clientKind: text('client_kind'),
+    // The only permissions the key holds (a target key holds ['run:receive']); null carries its owner's access.
+    permissions: jsonb('permissions'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1756,6 +1761,7 @@ export const extensionDeviceCodes = pgTable(
     deviceCodeHash: text('device_code_hash').notNull(),
     userCodeHash: text('user_code_hash').notNull(),
     clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
+    clientKind: text('client_kind'), // 'picker' | 'editor' | 'desktop' | 'runner'; null on a row from before it was stored
     status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
@@ -2860,5 +2866,73 @@ export const projectStars = pgTable(
   (t) => ({
     userProjectIdx: uniqueIndex('idx_project_stars_user_project').on(t.userId, t.projectId),
     projectIdx: index('idx_project_stars_project').on(t.projectId),
+  }),
+);
+
+// A program on a person's machine that takes run requests: the desktop app or Piwi Runner. One row per target key,
+// created when the device flow connects it, and deleted with the key when the person revokes it. It says which
+// projects it has a folder for, never the folder.
+export const runTargets = pgTable(
+  'run_targets',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    apiKeyId: integer('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'desktop' | 'runner'
+    deviceName: text('device_name').notNull(), // "Piwi Desktop on LAPTOP-42 (macOS)", the key's name
+    platform: text('platform'),
+    version: text('version'),
+    projectIds: jsonb('project_ids'), // number[]: the projects it has a folder for
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    apiKeyIdx: uniqueIndex('idx_run_targets_api_key').on(t.apiKeyId),
+    userIdx: index('idx_run_targets_user').on(t.userId),
+  }),
+);
+
+// A run request: tests the instance resolved and options from a closed list, for one of the requester's targets
+// (`@piwitests/core/run-request`). A target claims it once; unclaimed, it expires. Its id is the run's ref.
+export const runRequests = pgTable(
+  'run_requests',
+  {
+    id: text('id').primaryKey(), // 32 hex digits
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    requesterId: integer('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    kind: text('kind').notNull(), // RunRequestKind
+    tests: jsonb('tests').notNull(), // RunRequestTest[]
+    options: jsonb('options').notNull(), // RunRequestOptions
+    source: jsonb('source').notNull(), // RunRequestSource
+    state: text('state').notNull().default('waiting'), // RunRequestState
+    outcome: text('outcome'), // RunRequestOutcome, once ended
+    detail: text('detail'), // the words of a failed check, or of an error
+    stopRequestedAt: timestamp('stop_requested_at', { mode: 'date' }),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    claimedAt: timestamp('claimed_at', { mode: 'date' }),
+    answeredAt: timestamp('answered_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    requesterIdx: index('idx_run_requests_requester').on(t.requesterId, t.createdAt),
+    targetIdx: index('idx_run_requests_target').on(t.targetId),
+    projectIdx: index('idx_run_requests_project').on(t.projectId),
+    stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
   }),
 );

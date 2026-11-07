@@ -1748,6 +1748,11 @@ export const apiKeys = sqliteTable(
     name: text('name').notNull(), // Human-readable label, e.g. "CI pipeline"
     keyHash: text('key_hash').notNull().unique(), // SHA-256 hash of the full key
     keyPrefix: text('key_prefix').notNull(), // First 8 chars after "pd_" prefix – shown in UI
+    // Which client the device flow connected ('picker' | 'editor' | 'desktop' | 'runner'); null for a key made in
+    // Settings → Account.
+    clientKind: text('client_kind'),
+    // The only permissions the key holds (a target key holds ['run:receive']); null carries its owner's access.
+    permissions: text('permissions', { mode: 'json' }),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1770,6 +1775,7 @@ export const extensionDeviceCodes = sqliteTable(
     deviceCodeHash: text('device_code_hash').notNull(),
     userCodeHash: text('user_code_hash').notNull(),
     clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
+    clientKind: text('client_kind'), // 'picker' | 'editor' | 'desktop' | 'runner'; null on a row from before it was stored
     status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
@@ -2436,6 +2442,8 @@ export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
 export type AnalyticsDashboard = typeof analyticsDashboards.$inferSelect;
 export type ReportSchedule = typeof reportSchedules.$inferSelect;
 export type ReportSnapshot = typeof reportSnapshots.$inferSelect;
+export type RunTarget = typeof runTargets.$inferSelect;
+export type RunRequestRow = typeof runRequests.$inferSelect;
 export type TestSuite = typeof testSuites.$inferSelect;
 export type NewTestSuite = typeof testSuites.$inferInsert;
 export type Project = typeof projects.$inferSelect;
@@ -2893,5 +2901,73 @@ export const projectStars = sqliteTable(
   (t) => ({
     userProjectIdx: uniqueIndex('idx_project_stars_user_project').on(t.userId, t.projectId),
     projectIdx: index('idx_project_stars_project').on(t.projectId),
+  }),
+);
+
+// A program on a person's machine that takes run requests: the desktop app or Piwi Runner. One row per target key,
+// created when the device flow connects it, and deleted with the key when the person revokes it. It says which
+// projects it has a folder for, never the folder.
+export const runTargets = sqliteTable(
+  'run_targets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    apiKeyId: integer('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'desktop' | 'runner'
+    deviceName: text('device_name').notNull(), // "Piwi Desktop on LAPTOP-42 (macOS)", the key's name
+    platform: text('platform'),
+    version: text('version'),
+    projectIds: text('project_ids', { mode: 'json' }), // number[]: the projects it has a folder for
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    apiKeyIdx: uniqueIndex('idx_run_targets_api_key').on(t.apiKeyId),
+    userIdx: index('idx_run_targets_user').on(t.userId),
+  }),
+);
+
+// A run request: tests the instance resolved and options from a closed list, for one of the requester's targets
+// (`@piwitests/core/run-request`). A target claims it once; unclaimed, it expires. Its id is the run's ref.
+export const runRequests = sqliteTable(
+  'run_requests',
+  {
+    id: text('id').primaryKey(), // 32 hex digits
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    requesterId: integer('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    kind: text('kind').notNull(), // RunRequestKind
+    tests: text('tests', { mode: 'json' }).notNull(), // RunRequestTest[]
+    options: text('options', { mode: 'json' }).notNull(), // RunRequestOptions
+    source: text('source', { mode: 'json' }).notNull(), // RunRequestSource
+    state: text('state').notNull().default('waiting'), // RunRequestState
+    outcome: text('outcome'), // RunRequestOutcome, once ended
+    detail: text('detail'), // the words of a failed check, or of an error
+    stopRequestedAt: integer('stop_requested_at', { mode: 'timestamp_ms' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    claimedAt: integer('claimed_at', { mode: 'timestamp_ms' }),
+    answeredAt: integer('answered_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    requesterIdx: index('idx_run_requests_requester').on(t.requesterId, t.createdAt),
+    targetIdx: index('idx_run_requests_target').on(t.targetId),
+    projectIdx: index('idx_run_requests_project').on(t.projectId),
+    stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
   }),
 );
