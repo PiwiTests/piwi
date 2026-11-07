@@ -619,6 +619,9 @@ onMounted(async () => {
     <!-- Desktop shell: Piwi Picker asks to pair, waiting for the developer's Allow -->
     <DesktopPickerPairingModal />
 
+    <!-- Desktop shell: a team instance asks to run tests here, waiting for the person's Run -->
+    <DesktopTeamRunRequestModal />
+
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />
 

@@ -216,7 +216,7 @@ export function finishedJobFlash(job: FinishedJob): FinishedRunFlash | null {
 /** A run of the Local runs tray (`LocalRun`), as far as finding the runs its process reported goes. */
 export interface LocalRunOwner {
   key: number;
-  kind: FinishedJob['kind'] | 'tests';
+  kind: FinishedJob['kind'] | 'tests' | 'request';
   projectId: string;
   /** The reference its runs record as their origin's (`PIWI_ORIGIN_REF`). */
   originRef: string | null;

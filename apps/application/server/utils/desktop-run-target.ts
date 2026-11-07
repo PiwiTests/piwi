@@ -443,9 +443,12 @@ export async function requestedRunStarted(id: string): Promise<void> {
   await state.host.report(id, { state: 'running' }).catch(() => {});
 }
 
+/** Playwright's exit code after an interrupt: the window's Stop, or Ctrl+C. */
+const INTERRUPTED = 130;
+
 /** The outcome of a requested run from how its Playwright process exited. */
 export function outcomeOf(code: number | null, stopRequested: boolean): RunRequestOutcome {
-  if (stopRequested) return 'stopped';
+  if (stopRequested || code === INTERRUPTED) return 'stopped';
   if (code === 0) return 'passed';
   if (code === 1) return 'failed';
   return 'error';

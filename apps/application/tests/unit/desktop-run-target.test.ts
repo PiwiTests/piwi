@@ -162,7 +162,8 @@ describe('the values the routes take', () => {
   test('an outcome from how Playwright exited', () => {
     expect(outcomeOf(0, false)).toBe('passed');
     expect(outcomeOf(1, false)).toBe('failed');
-    expect(outcomeOf(130, false)).toBe('error');
+    expect(outcomeOf(130, false)).toBe('stopped');
+    expect(outcomeOf(2, false)).toBe('error');
     expect(outcomeOf(null, false)).toBe('error');
     expect(outcomeOf(0, true)).toBe('stopped');
   });
