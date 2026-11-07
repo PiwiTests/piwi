@@ -9,6 +9,7 @@ import {
   parseRunRequestOptions,
   parseRunRequestTest,
   specFileArgument,
+  specFilePattern,
 } from '../src/run-request';
 
 const ID = '0123456789abcdef0123456789abcdef';
@@ -324,6 +325,13 @@ describe('specFileArgument', () => {
     expect(line).toBe(3);
     expect(re.test('C:/shop/app/(auth)/[id]+x.spec.ts')).toBe(true);
     expect(re.test('C:/shop/app/auth/i+x.spec.ts')).toBe(false);
+  });
+
+  test('without a line, matches every test of the one spec file', () => {
+    const { re, line } = playwrightReads(specFilePattern('/home/me/shop/tests/a.spec.ts'));
+    expect(line).toBe(null);
+    expect(re.test('/home/me/shop/tests/a.spec.ts')).toBe(true);
+    expect(re.test('/home/me/shop/tests/a.spec.tsx')).toBe(false);
   });
 
   test('refuses a line that is not a line number', () => {

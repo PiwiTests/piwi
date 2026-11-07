@@ -217,8 +217,16 @@ function isRunRequestTitle(value: unknown): value is string {
  */
 export function specFileArgument(absolutePath: string, line: number): string {
   if (!Number.isInteger(line) || line < 1) throw new RangeError(`A line number is a whole number from 1: ${line}`);
+  return `${specFilePattern(absolutePath)}:${line}`;
+}
+
+/**
+ * The Playwright CLI argument that selects every test of one spec file: {@link specFileArgument} without a line, for
+ * a target that selects the tests by title (a `--grep` beside it) because its folder is not on the request's commit.
+ */
+export function specFilePattern(absolutePath: string): string {
   const escaped = absolutePath.replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  return `/^${escaped}$/:${line}`;
+  return `/^${escaped}$/`;
 }
 
 /** Whether a value is a Playwright project name a request may carry. */

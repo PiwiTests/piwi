@@ -70,9 +70,12 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 ### Instance and connection
 
-- **`src/piwi-client.ts` is the only file that talks to an instance.** Its requests go through `src/http.ts`, which
-  follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`).
+- **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
+  Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`).
   ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
+- **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
+  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`).
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
