@@ -486,7 +486,13 @@ const authEnabled = computed(() => config.public.authEnabled);
         </p>
       </SectionCard>
 
-      <SectionCard icon="i-lucide-plug" title="Connected apps" data-shot="account-connected-apps">
+      <SectionCard
+        icon="i-lucide-plug"
+        title="Connected apps"
+        help="settings.connected-apps"
+        data-shot="account-connected-apps"
+        data-tour="account-connected-apps"
+      >
         <ConnectedAppsManager :user-id="me.user.id" />
       </SectionCard>
 

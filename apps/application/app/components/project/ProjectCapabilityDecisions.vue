@@ -39,7 +39,8 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
 
 /**
  * Every capability a project can override, with a plain label. One that is off until turned on (`optIn`) is listed
- * only while the instance has it on, and a project can only decline it.
+ * only while the instance has it on, and a project can only decline it: an `enabled` stored through the API, which
+ * changes nothing, still reads as such.
  */
 const PROJECT_CAPABILITIES = computed<{ id: CapabilityId; label: string; optIn: boolean }[]>(() =>
   CAPABILITIES.filter(
@@ -96,7 +97,7 @@ async function onChange(id: CapabilityId, value: Choice) {
         <span class="text-sm text-highlighted">{{ cap.label }}</span>
         <USelect
           :model-value="choice[cap.id]"
-          :items="cap.optIn ? OPT_IN_OPTIONS : OPTIONS"
+          :items="cap.optIn && choice[cap.id] !== 'enabled' ? OPT_IN_OPTIONS : OPTIONS"
           value-key="value"
           size="sm"
           class="w-full sm:w-56"

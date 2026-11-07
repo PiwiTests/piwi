@@ -294,7 +294,7 @@ useViewScroll(
                   <span
                     v-if="exec.runOrigin === 'request'"
                     class="text-xs text-muted shrink-0"
-                    title="A run you asked for from the dashboard: only you see it, and it counts in nothing the team reads"
+                    title="A run you asked for from the dashboard: only you see it, and it stays out of everything the team sees"
                     >On your machine</span
                   >
                   <DurationValue v-if="exec.duration !== null" :ms="exec.duration" />

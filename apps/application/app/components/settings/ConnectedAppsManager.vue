@@ -57,8 +57,8 @@ async function revoke() {
 <template>
   <div class="space-y-4">
     <p class="text-sm text-muted">
-      The apps you connected to this instance from their own window: Piwi Picker, your editor, the desktop app. Each
-      holds a key of its own; revoke one to disconnect it.
+      The apps connected to this instance from their own window: Piwi Picker, an editor, the desktop app, Piwi Runner.
+      Each holds a key of its own; revoke one to disconnect it.
     </p>
 
     <div v-if="apps.length > 0" class="space-y-2" data-shot="connected-apps">
@@ -71,13 +71,15 @@ async function revoke() {
           <div class="flex items-start gap-2">
             <UIcon :name="KIND_ICONS[app.kind] ?? 'i-lucide-plug'" class="text-muted shrink-0 mt-1" />
             <span class="font-medium min-w-0 break-words">{{ app.name }}</span>
-            <UBadge v-if="app.target?.online" color="success" variant="subtle" size="sm" label="Online" />
           </div>
           <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
             <span>Connected: <ClientDate :date="app.createdAt" date-only /></span>
-            <span v-if="app.target && !app.target.online && app.target.lastSeenAt"
-              >Last seen: <ClientDate :date="app.target.lastSeenAt"
-            /></span>
+            <span v-if="app.target?.online">Online now</span>
+            <ClientOnly v-else-if="app.target?.lastSeenAt">
+              <span :title="prettyDateFormat(app.target.lastSeenAt)"
+                >Last seen {{ formatRelativeTime(app.target.lastSeenAt) }}</span
+              >
+            </ClientOnly>
             <span v-else-if="!app.target && app.lastUsedAt"
               >Last used: <ClientDate :date="app.lastUsedAt" date-only
             /></span>
@@ -96,7 +98,7 @@ async function revoke() {
     </div>
 
     <div v-else class="text-center text-muted py-6 text-sm">
-      No connected apps. Connect Piwi Picker, an editor or the desktop app from its own window.
+      No connected apps. Connect Piwi Picker, an editor, the desktop app or Piwi Runner from its own window.
     </div>
 
     <ClientOnly>

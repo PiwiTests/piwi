@@ -1234,6 +1234,11 @@ export const HELP_TOPICS = {
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
     doc: 'operate/api-keys',
   },
+  'settings.connected-apps': {
+    title: 'Connected apps',
+    text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app, Piwi Runner), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
+    doc: 'features/run-on-my-machine#connected-apps',
+  },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
   },
