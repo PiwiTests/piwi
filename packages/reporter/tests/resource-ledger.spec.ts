@@ -613,6 +613,87 @@ describe('following the calls a test makes', () => {
     current = null;
   });
 
+  it('follows a wait as Playwright before 1.61 sends it, and keeps the line that began each wait', async () => {
+    let now = 1000;
+    const fake = fakePlaywright();
+    const { connection, call } = withConnection(fake);
+    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => info('t1'), () => now);
+    ledger.install();
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const other = await context.newPage();
+    Object.assign(browser, { _type: 'Browser', _parent: null });
+    Object.assign(context, { _type: 'BrowserContext', _parent: browser });
+    Object.assign(page, { _type: 'Page', _parent: context });
+    Object.assign(other, { _type: 'Page', _parent: context });
+    const frames = (line: number) => [{ file: path.resolve('tests/cart.spec.ts'), line }];
+    await connection.sendMessageToServer(
+      page,
+      'waitForEventInfo',
+      { info: { waitId: 'w1', phase: 'before' } },
+      { apiName: 'page.waitForEvent', frames: frames(10) },
+    );
+    now = 2000;
+    await call({ _type: 'Frame', _parent: other }, 'goto', 11);
+    now = 5000;
+    await connection.sendMessageToServer(page, 'waitForEventInfo', { info: { waitId: 'w1', phase: 'after' } }, { internal: true });
+
+    const { census } = await ledger.testEnded(info('t1'));
+    const lastUse = (id: number) => census.open.find((open) => open.id === id)?.lastUse;
+    expect(lastUse(3)).toMatchObject({ at: 5000, site: 'tests/cart.spec.ts:10' });
+    expect(lastUse(4)).toMatchObject({ at: 2000, site: 'tests/cart.spec.ts:11' });
+    // The context was last in use as the wait on its page ended.
+    expect(lastUse(2)).toMatchObject({ at: 5000, site: 'tests/cart.spec.ts:10' });
+  });
+
+  it('forgets a close that began when the test uses the object again', async () => {
+    let now = 1000;
+    const fake = fakePlaywright();
+    const { call } = withConnection(fake);
+    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => info('t1'), () => now);
+    ledger.install();
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    Object.assign(page, { _type: 'Page', _parent: null });
+    ledger.noteClosing(page);
+    now = 2000;
+    await call({ _type: 'Frame', _parent: page }, 'click', 15);
+    now = 9000;
+    await page.close();
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.closed.find((c) => c.id === 3)).not.toHaveProperty('closingAt');
+  });
+
+  it('lets a connected browser’s connection go when the browser disconnects', async () => {
+    const fake = fakePlaywright();
+    withConnection(fake);
+    const remote = { sendMessageToServer: vi.fn(async (..._args: unknown[]) => undefined) };
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = new fake.FakeBrowser();
+    Object.assign(browser, { _type: 'Browser', _parent: null, _connection: remote });
+    const original = remote.sendMessageToServer;
+    await browser.newContext();
+    expect(remote.sendMessageToServer).not.toBe(original);
+    await browser.close();
+    expect(remote.sendMessageToServer).toBe(original);
+  });
+
+  it('marks a browser as a persistent context’s only when it first comes with that context', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    await fake.apiCall('browserType.launchPersistentContext', () => undefined);
+    await browser.newContext();
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.born.find((b) => b.kind === 'browser')).not.toHaveProperty('implicit');
+  });
+
   it('follows the calls of a browser it connected to, over that browser’s own connection', async () => {
     const fake = fakePlaywright();
     withConnection(fake);

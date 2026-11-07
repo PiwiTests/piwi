@@ -45,7 +45,7 @@ The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole r
 | **piling up** | A page or context living across tests whose open pages, listeners, route handlers or DOM elements kept growing; or a worker whose open file descriptors, or heap after V8's own full garbage collections, did | Remove what each test adds or opens; in a worker, what a module variable, cache or pool keeps |
 | **handle** | A server, child process or file watcher a test started and left running in the worker; a server or process at its line | Close or kill it in the test or an `afterEach` |
 | **idle** | A page opened and never used: no navigation, and no call of the test's on it. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
-| **lingering** | Opened by the test and closed within it, but long after the test last used it: at least 2 s, and a third of the test or more. A popup checked once, then left to the `page` fixture. | Close it right after its last use |
+| **lingering** | A browser, context or page the test body opened and closed within the test, but long after its last use: at least 2 s, and a third of the test or more. A popup checked once, then left to the `page` fixture. What a hook or a fixture opens, and an API request context, never is. | Close it right after its last use |
 | **probable** | From a test that ran without the fixtures, counted from its steps: more browsers or contexts opened than closed in a spec file | Use the fixtures for exact findings |
 
 What is never reported:

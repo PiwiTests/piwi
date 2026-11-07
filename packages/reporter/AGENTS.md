@@ -29,8 +29,9 @@ responsibilities.
      (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
      covered page, in its own isolated world (`internal/capture/code-reach.ts`);
    - the boxed stack prefix `internal/capture/quiet-capture.ts` registers for this package's `dist/` in each worker;
-   - the resource ledger's listener on each worker's Playwright, its wrappers on the browser types and on the
-     worker connection's `sendMessageToServer`, which only reads each call (`internal/capture/resource-ledger.ts`),
+   - the resource ledger's listener on each worker's Playwright (its before-close hook of a context included), its
+     wrappers on the browser types and on the `sendMessageToServer` of the worker's connection and of each browser it
+     connects to while that browser is connected, which only read each call (`internal/capture/resource-ledger.ts`),
      and the `clear_refs` writes and DevTools sessions of `internal/capture/worker-metrics.ts`;
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);

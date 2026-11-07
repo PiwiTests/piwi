@@ -210,8 +210,12 @@ const CLOSE_METHODS: ReadonlySet<string> = new Set(['close', 'dispose']);
 /** Objects whose calls answer the page's own traffic (a `route()` handler's), not the test's use of it. */
 const TRAFFIC_TYPES: ReadonlySet<string> = new Set(['Route', 'WebSocketRoute']);
 
-/** The protocol message that begins and ends a wait on the client (`waitForEvent` and its kin), internal. */
+/**
+ * The protocol messages that begin and end a wait on the client (`waitForEvent` and its kin), internal:
+ * `waitForEventInfo` with its `info` up to Playwright 1.60, `__waitInfo__` with the info itself from 1.61.
+ */
 const WAIT_INFO = '__waitInfo__';
+const WAIT_INFO_CALL = 'waitForEventInfo';
 /** The most client-side waits the ledger follows at once. */
 const WAITS_CAP = 1000;
 
@@ -543,10 +547,13 @@ export class ResourceLedger {
   private lastCall: ApiZone | null = null;
   /** The page a wrapped page method is calling into: its first reported API call marks it used. */
   private usingPage: Entry | null = null;
-  /** The connections the ledger follows: every call a test makes through one marks what it lands on used. */
-  private readonly followed = new WeakSet<object>();
-  /** The client-side waits a test began, by their id, with the object each waits on. */
-  private readonly waits = new Map<unknown, ChannelOwnerLike>();
+  /**
+   * The connections the ledger follows, each with what puts it back: every call a test makes through one marks what
+   * it lands on used.
+   */
+  private readonly followed = new Map<object, () => void>();
+  /** The client-side waits a test began, by their id, with the object each waits on and the line that began it. */
+  private readonly waits = new Map<unknown, { object: ChannelOwnerLike; site: string | null }>();
   private windowStartedAt: number | null = null;
   private born: ResourceBirth[] = [];
   private closed: ResourceClose[] = [];
@@ -641,11 +648,15 @@ export class ResourceLedger {
       return result;
     };
     connection.sendMessageToServer = wrapped;
-    this.followed.add(connection);
-    this.restores.push(() => {
+    this.followed.set(connection, () => {
       if (connection.sendMessageToServer === wrapped) connection.sendMessageToServer = send;
       this.followed.delete(connection);
     });
+  }
+
+  /** Stop following a connection, and let it go: a browser the worker connected to and has left. */
+  private unfollow(connection: object | undefined): void {
+    if (connection) this.followed.get(connection)?.();
   }
 
   /** Whether the ledger follows the calls of an object's connection. */
@@ -663,6 +674,9 @@ export class ResourceLedger {
   ): void {
     if (!object) return;
     if (method === WAIT_INFO) return this.onWait(object, params, options);
+    if (method === WAIT_INFO_CALL) {
+      return this.onWait(object, (params as { info?: WaitInfo } | undefined)?.info, options);
+    }
     if (options?.internal || !options?.frames?.length || TRAFFIC_TYPES.has(String(object._type))) return;
     if (CLOSE_METHODS.has(String(method))) return this.noteClosing(object);
     const site = zoneSite(options);
@@ -683,18 +697,20 @@ export class ResourceLedger {
     if (id === undefined) return;
     if (info?.phase === 'before' && !options?.internal && options?.frames?.length) {
       if (this.waits.size >= WAITS_CAP) this.waits.clear();
-      this.waits.set(id, object);
-      this.touch(object, zoneSite(options));
+      const site = zoneSite(options);
+      this.waits.set(id, { object, site });
+      this.touch(object, site);
     } else if (info?.phase === 'after') {
       const waited = this.waits.get(id);
       this.waits.delete(id);
-      if (waited) this.touch(waited, null);
+      if (waited) this.touch(waited.object, waited.site);
     }
   }
 
   /**
-   * Mark an object, and the page, context and browser it belongs to, used now;
-   * `site` null keeps the line of the call that began it.
+   * Mark an object, and the page, context and browser it belongs to, used now
+   * by the call at `site`. A close that began before it did not end: the
+   * object is in use again.
    */
   private touch(object: ChannelOwnerLike, site: string | null): void {
     this.guard(() => {
@@ -704,7 +720,8 @@ export class ResourceLedger {
         const entry = this.byObject.get(owner);
         if (!entry || entry.closed) continue;
         entry.used = true;
-        entry.lastUse = { at, site: site ?? entry.lastUse?.site ?? null, ...(test ? { test } : {}) };
+        entry.lastUse = { at, site, ...(test ? { test } : {}) };
+        entry.closingAt = null;
       }
     });
   }
@@ -721,6 +738,7 @@ export class ResourceLedger {
     if (this.listener && typeof remove === 'function') remove.call(this.playwright._instrumentation, this.listener);
     this.listener = null;
     for (const restore of this.restores.splice(0)) restore();
+    for (const unfollow of [...this.followed.values()]) unfollow();
     this.trackingHandles = false;
   }
 
@@ -971,9 +989,16 @@ export class ResourceLedger {
     const known = this.byObject.get(browser);
     if (known) return known;
     const entry = this.track(browser, 'browser', null, site);
-    browser.on('disconnected', () => this.guard(() => this.onClosed(browser)));
-    // A browser it connected to talks over a connection of its own.
-    this.guard(() => this.followCalls((browser as unknown as { _connection?: ConnectionLike })._connection));
+    // A browser it connected to talks over a connection of its own, followed while the browser is.
+    const connection = (browser as unknown as { _connection?: ConnectionLike })._connection;
+    const own = !!connection && connection === this.playwright._connection;
+    this.guard(() => this.followCalls(connection));
+    browser.on('disconnected', () =>
+      this.guard(() => {
+        this.onClosed(browser);
+        if (!own) this.unfollow(connection);
+      }),
+    );
     return entry;
   }
 
@@ -982,11 +1007,12 @@ export class ResourceLedger {
     const zone = this.latestPendingCall();
     const browser = context.browser();
     if (browser) {
+      const seenBefore = this.byObject.has(browser);
       const browserEntry = this.onBrowser(browser, site);
-      // `launchPersistentContext` opens a browser for its context alone: closing the context closes it. Its call
-      // has ended by the time Playwright reports the context.
+      // `launchPersistentContext` opens a browser for its context alone, first seen with it: closing the context
+      // closes it. Its call has ended by the time Playwright reports the context.
       const persistent = [zone, this.lastCall].some((call) => PERSISTENT_CALL.test(call?.apiName ?? ''));
-      if (persistent && browserEntry.birth.parent === null && !browserEntry.closed) {
+      if (persistent && !seenBefore && browserEntry.birth.parent === null && !browserEntry.closed) {
         browserEntry.birth.implicit = true;
       }
     }
