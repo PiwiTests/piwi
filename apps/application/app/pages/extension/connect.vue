@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Where Piwi Picker, the VS Code extension or the JetBrains plugin sends the
-// user to allow a connection (an RFC 8628 device authorization): the client
+// Where Piwi Picker, the VS Code extension, the JetBrains plugin or a run
+// target (the desktop app, Piwi Runner) sends the user to allow a connection (an RFC 8628 device authorization): the client
 // shows the same code and polls until the signed-in user answers. The auth
 // middleware signs the user in first and comes back here. The link carries the
 // code, so anyone can send one: Allow stays disabled until the user confirms
@@ -9,6 +9,7 @@ import type { ConnectRequestView } from '~~/server/utils/extension-connect';
 
 definePageMeta({ layout: false });
 const PICKER = {
+  grant: 'with your role and project access',
   title: 'Connect Piwi Picker',
   start: 'clicked Connect in Piwi Picker',
   keyName: 'this browser',
@@ -18,6 +19,7 @@ const PICKER = {
   again: 'Start again from Piwi Picker’s settings.',
 };
 const EDITOR = {
+  grant: 'with your role and project access',
   title: 'Connect your editor',
   start: 'run Piwi: Connect in your editor',
   keyName: 'this editor',
@@ -25,6 +27,25 @@ const EDITOR = {
   client: 'Your editor',
   tick: 'Tick the box once your editor shows this same code',
   again: 'Start again from Piwi: Connect in your editor.',
+};
+/** A run target's key receives the run requests you make, and nothing else. */
+function targetWords(app: string) {
+  return {
+    grant: 'that only receives the run requests you make: it cannot read your projects or upload anything',
+    title: `Connect ${app}`,
+    start: `clicked Connect in ${app}`,
+    keyName: 'this computer',
+    confirm: `My ${app} shows this same code`,
+    client: app,
+    tick: `Tick the box once ${app} shows this same code`,
+    again: `Start again from ${app}.`,
+  };
+}
+const WORDS = {
+  picker: PICKER,
+  editor: EDITOR,
+  desktop: targetWords('Piwi Desktop'),
+  runner: targetWords('Piwi Runner'),
 };
 
 const route = useRoute();
@@ -48,7 +69,7 @@ const { request, loading, loadError, deciding, decideError, signedInAs, decide }
   answered: (current, reply) => ({ ...current, status: reply.status }),
 });
 
-const words = computed(() => (request.value?.clientKind === 'editor' ? EDITOR : PICKER));
+const words = computed(() => WORDS[request.value?.clientKind ?? 'picker'] ?? PICKER);
 
 useHead({ title: () => words.value.title });
 </script>
@@ -75,8 +96,8 @@ useHead({ title: () => words.value.title });
         <p class="text-sm text-highlighted leading-relaxed">
           If you have not just {{ words.start }}, deny: someone may have sent you this link to get access in your name.
           <template v-if="config.public.authEnabled">
-            Allowing creates an API key named after {{ words.keyName }}, with your role and project access. You can
-            revoke it in your account’s API keys.
+            Allowing creates an API key named after {{ words.keyName }}, {{ words.grant }}. You can revoke it in your
+            account’s API keys.
           </template>
           <template v-else>
             Authentication is off on this instance, so no key is needed: allowing only confirms the connection.
