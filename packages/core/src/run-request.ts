@@ -69,6 +69,26 @@ export type RunRequestOutcome = (typeof RUN_REQUEST_OUTCOMES)[number];
 /** A request id: 32 lowercase hex digits. It is also the run's ref, so it stays within `parseRunOriginRef`'s rule. */
 export const RUN_REQUEST_ID = /^[0-9a-f]{32}$/;
 
+/**
+ * The prefix of a request token: the credential **Run** gives the target for the one run it starts, presented to
+ * `/api/test-runs/setup` or `/api/test-runs/start` as a bearer token, never as an API key.
+ */
+export const REQUEST_TOKEN_PREFIX = 'pdq_';
+
+/** A request token: the prefix and 64 lowercase hex digits. */
+export const REQUEST_TOKEN = /^pdq_[0-9a-f]{64}$/;
+
+/**
+ * What a target sets on the Playwright process of a requested run, so the reporter uploads it to the instance that
+ * asked, with the request token, over any server its config, environment, `.env` or the desktop app names:
+ *  - `tokenFile` is the path of a file this user alone can read, holding the request token;
+ *  - `instance` is the origin of the instance that asked.
+ */
+export const REQUEST_RUN_ENV = {
+  tokenFile: 'PIWI_REQUEST_TOKEN_FILE',
+  instance: 'PIWI_REQUEST_INSTANCE',
+} as const;
+
 /** One test, as the instance resolved it. */
 export interface RunRequestTest {
   /** Spec path relative to the Playwright config, POSIX separators; a `\` reads as a separator too. */

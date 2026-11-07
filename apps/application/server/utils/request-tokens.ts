@@ -8,6 +8,7 @@ import { getUserAccessCached, isAuthEnabled } from './auth';
 import { hashToken } from './token-hash';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can } from '#shared/permissions';
+import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 
 /**
  * Request tokens: the credential **Run** gives the target that claimed a request, for the one run it starts. The
@@ -15,9 +16,6 @@ import { can } from '#shared/permissions';
  * it. It starts one run, of the request's project, with origin `request` and the request's id as its ref, owned by
  * the requester, and is spent as that run is stored. The run's own stream token takes over from there.
  */
-
-/** The prefix of a request token, apart from an API key's, so `extractApiKey` never reads one. */
-export const REQUEST_TOKEN_PREFIX = 'pdq_';
 
 /** How long a request token starts a run after **Run**, in milliseconds. */
 export const REQUEST_TOKEN_LIFETIME_MS = 30 * 60 * 1000;

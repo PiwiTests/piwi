@@ -77,13 +77,15 @@ describe('HttpClient (against fake http.Server)', () => {
     });
 
     it("carries the server's own word on a refusal, on one bounded line", async () => {
-      const refusal = 'With authentication off, this dashboard answers only on its local addresses.\nAdd the name you use.';
+      const refusal =
+        'With authentication off, this dashboard answers only on its local addresses.\nAdd the name you use.';
       const answers: Record<string, (res: http.ServerResponse) => void> = {
         '/plain': (res) => {
           res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
           res.end(refusal);
         },
-        '/json': (res) => jsonRes(res, 403, { statusCode: 403, statusMessage: 'Forbidden', message: 'No access to this project' }),
+        '/json': (res) =>
+          jsonRes(res, 403, { statusCode: 403, statusMessage: 'Forbidden', message: 'No access to this project' }),
         '/status-message': (res) => jsonRes(res, 403, { statusMessage: 'Forbidden' }),
         '/long': (res) => {
           res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -159,6 +161,19 @@ describe('HttpClient (against fake http.Server)', () => {
         const client = new HttpClient(url, new Logger(false));
         await client.postJSON('/api/x', {}, 'pd_secret123');
         expect(requests[0].headers['authorization']).toBe('Bearer pd_secret123');
+        expect(requests[0].headers['cookie']).toBe(undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('applies a request token as Bearer header (pdq_ prefix)', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const token = `pdq_${'b'.repeat(64)}`;
+        await client.postJSON('/api/x', {}, token);
+        expect(requests[0].headers['authorization']).toBe(`Bearer ${token}`);
         expect(requests[0].headers['cookie']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
@@ -347,7 +362,9 @@ describe('HttpClient (against fake http.Server)', () => {
 
         const later = new FormData();
         later.append('field', 'value');
-        await expect(client.postFormData('/api/upload', later, null, controller.signal)).rejects.toThrow('no time left');
+        await expect(client.postFormData('/api/upload', later, null, controller.signal)).rejects.toThrow(
+          'no time left',
+        );
         expect(requests).toHaveLength(1);
       } finally {
         (server as any).closeAllConnections?.();
@@ -425,7 +442,8 @@ describe('HttpClient (against fake http.Server)', () => {
     it('sends nothing to an address that is not a whole http:// or https:// URL', async () => {
       const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { ok: true }));
       try {
-        const request = (serverUrl: string) => new HttpClient(serverUrl, new Logger(false)).postJSON('/api/x', {}, null);
+        const request = (serverUrl: string) =>
+          new HttpClient(serverUrl, new Logger(false)).postJSON('/api/x', {}, null);
         await expect(request(url.replace('http:', 'ftp:'))).rejects.toThrow('is not an http:// or https:// URL');
         await expect(request('localhost:3000')).rejects.toThrow('is not an http:// or https:// URL');
         await expect(request('piwi.example.com')).rejects.toThrow('"piwi.example.com" is not a URL');

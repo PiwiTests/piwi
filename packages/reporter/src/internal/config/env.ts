@@ -3,6 +3,7 @@ import type { PiwiDashboardOptions } from '../../public/options.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
+import { readRequestedRun } from './requested-run.js';
 
 /**
  * Built-in option defaults, merged *under* any user-provided or env-derived
@@ -360,6 +361,8 @@ export function desktopAppMode(option: unknown, envValue: string | undefined): D
 }
 
 let desktopDiscovered = false;
+let requestedRunInstance: string | null = null;
+let requestedRunError: string | null = null;
 let desktopReplacedServerUrl: string | null = null;
 let dotEnvUse: DotEnvUse | null = null;
 let ignoredEnv: IgnoredEnvValue[] = [];
@@ -383,6 +386,20 @@ export function ignoredEnvValues(): readonly IgnoredEnvValue[] {
  */
 export function usedDesktopDiscovery(): boolean {
   return desktopDiscovered;
+}
+
+/**
+ * The team instance the last `resolveOptions` call uploads a requested run to (`REQUEST_RUN_ENV`), or `null` for any
+ * other run. A requested run makes no call its request token cannot make: no project lookup, ARIA sampling, manifest,
+ * coverage, batch upload, saved run replayed, nor `/start` once its `/setup` spent the token.
+ */
+export function requestedRunTarget(): string | null {
+  return requestedRunInstance;
+}
+
+/** Why the last `resolveOptions` call sends nothing for the requested run the environment names, or `null`. */
+export function requestedRunProblem(): string | null {
+  return requestedRunError;
 }
 
 /**
@@ -464,7 +481,11 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
   desktopReplacedServerUrl = null;
-  const mode = desktopAppMode(mergedRaw.desktopApp, env[PIWI_ENV_KEYS.desktopApp]);
+  // Over everything else: a run a team instance asked for goes to that instance, with its request token alone.
+  const requested = readRequestedRun(env);
+  requestedRunInstance = requested && 'instance' in requested ? requested.instance : null;
+  requestedRunError = requested && 'problem' in requested ? requested.problem : null;
+  const mode = requested ? 'off' : desktopAppMode(mergedRaw.desktopApp, env[PIWI_ENV_KEYS.desktopApp]);
   mergedRaw.desktopApp = mode;
   const serverUrlUnset = mergedRaw.serverUrl === undefined;
   const apiKeyUnset = mergedRaw.apiKey === undefined || mergedRaw.apiKey === null;
@@ -505,6 +526,24 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   if (externalId.onDuplicate === undefined && externalIdOnDuplicate)
     externalId.onDuplicate = externalIdOnDuplicate as ExternalIdOptions['onDuplicate'];
   if (Object.keys(externalId).length > 0) mergedRaw.externalId = externalId;
+
+  if (requested && 'instance' in requested) {
+    mergedRaw.serverUrl = requested.instance;
+    mergedRaw.apiKey = requested.token;
+    mergedRaw.username = null;
+    mergedRaw.password = null;
+    // A requested run streams, as its token starts a streamed run alone, and is never kept.
+    mergedRaw.enabled = true;
+    mergedRaw.streaming = true;
+    mergedRaw.keep = false;
+    mergedRaw.sampleAriaOnPass = false;
+    mergedRaw.uploadManifest = false;
+    mergedRaw.captureCodeReach = false;
+    delete mergedRaw.coverage;
+  } else if (requested) {
+    // A requested run the reporter cannot take sends nothing, rather than reach another server.
+    mergedRaw.enabled = false;
+  }
 
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 

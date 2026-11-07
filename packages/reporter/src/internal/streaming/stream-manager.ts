@@ -12,6 +12,7 @@ import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
 import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { answeredRunUrl } from '../support/run-url.js';
+import { requestedRunTarget } from '../config/env.js';
 import { formatDuration } from '../flake/lab.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 
@@ -254,7 +255,8 @@ export class StreamManager {
         if (!authResolved) {
           this._auth = await this.httpClient.resolveAuth(this.options);
           authResolved = true;
-          await this.recovery.tryUpload(this.httpClient, this._auth);
+          // A request token starts this run alone: a run saved earlier is sent with another run's credentials.
+          if (!requestedRunTarget()) await this.recovery.tryUpload(this.httpClient, this._auth);
         }
         const response = await this.openRun(run);
         if (!response?.runId || !response?.streamToken) {
@@ -315,7 +317,8 @@ export class StreamManager {
           { headers: runTokenHeaders(setup.setupToken) },
         );
       } catch (error) {
-        if (!(error instanceof HttpError && error.status === 409)) throw error;
+        // A requested run's `/setup` spent its request token, so no `/start` follows it.
+        if (!(error instanceof HttpError && error.status === 409) || requestedRunTarget()) throw error;
         this.logger.debug(`Setup info expired, creating fresh run...`);
         this.setupInfo = null;
       }
