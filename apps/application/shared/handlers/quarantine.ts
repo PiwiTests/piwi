@@ -19,7 +19,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { newestFlakyRunId } from './projects';
 import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '../utils/test-counts';
@@ -402,7 +402,7 @@ export async function addQuarantine(
   const [latestRun] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.id))
     .limit(1);
 

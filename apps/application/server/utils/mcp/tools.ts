@@ -1,4 +1,5 @@
 import { eq, and, desc, or, lt, inArray } from 'drizzle-orm';
+import { notPrivateExecution, notPrivateRun } from '#shared/run-eligibility';
 import {
   listProjects,
   getProjectFlakyTests,
@@ -363,10 +364,10 @@ async function checkEntityScope<T extends number | { projectId: number }>(
   db: DbClient,
   ctx: McpContext,
   id: number,
-  resolve: (db: DbClient, id: number) => Promise<T | null>,
+  resolve: (db: DbClient, id: number, viewerId: number | null) => Promise<T | null>,
   permission?: ProjectPermission,
 ): Promise<T | 'not-found'> {
-  const found = await resolve(db, id);
+  const found = await resolve(db, id, ctx.user?.id ?? null);
   if (found == null) return 'not-found';
   const projectId = typeof found === 'number' ? found : found.projectId;
   assertProject(ctx, projectId);
@@ -547,7 +548,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return null;
 
-    const conditions = [eq(testRuns.projectId, id)];
+    const conditions = [eq(testRuns.projectId, id), notPrivateRun()];
     if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
 
     const runRows = await db
@@ -609,7 +610,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const statusFilter = params.status as string | undefined;
     const branchFilter = params.branch as string | undefined;
 
-    const conditions = [eq(testRuns.projectId, projectId)];
+    const conditions = [eq(testRuns.projectId, projectId), notPrivateRun()];
     if (statusFilter) conditions.push(eq(testRuns.status, statusFilter));
     // Branch is a scalar column indexed on (project_id, branch, start_time), so
     // the filter is a plain equality served by the database — no over-fetch.
@@ -664,6 +665,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const statusFilter = (params.statusFilter as string) || 'failed';
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
+    if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
     // Slim run-summary select — counts come from denormalized columns, so we
     // never load every case just to summarize the run.
@@ -792,7 +794,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const cursor = numericCursor(params.cursor);
     const runId = params.runId ? numericParam(params.runId, 'runId') : undefined;
 
-    const conditions = [eq(testRuns.projectId, projectId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])];
+    const conditions = [
+      eq(testRuns.projectId, projectId),
+      notPrivateRun(),
+      inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]),
+    ];
     if (runId) conditions.push(eq(testRunsCases.testRunId, runId));
     if (cursor) conditions.push(lt(testRunsCases.id, cursor));
 
@@ -897,7 +903,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (tc.project?.id != null) assertProject(ctx, tc.project.id);
 
     // Fetch executions with cursor pagination
-    const execConditions = [eq(testRunsCases.testCaseId, id)];
+    const execConditions = [eq(testRunsCases.testCaseId, id), notPrivateExecution(testRunsCases.testRunId)];
     if (cursor) execConditions.push(lt(testRunsCases.id, cursor));
 
     const execRows = tc.recentExecutions
@@ -1427,7 +1433,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     // Restrict the cross-project feed to the caller's assigned projects.
     if (ctx.scope !== 'all' && ctx.scope.size === 0) return { items: [], nextCursor: null };
-    const conditions = cursor ? [lt(testRuns.startTime, new Date(cursor))] : [];
+    const conditions = [notPrivateRun()];
+    if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
     if (ctx.scope !== 'all') conditions.push(inArray(testRuns.projectId, [...ctx.scope]));
 
     const rows = await db
@@ -2051,7 +2058,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
     }
     const entityId = numericParam(params.entityId, 'entityId');
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'issue:create', projectId);
@@ -2446,7 +2453,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── explain_failure ────────────────────────────────────────────────────────
   async explain_failure(db, params, ctx) {
     const id = numericParam(params.executionId, 'executionId');
-    const projectId = await resolveTestRunCaseProjectId(db, id);
+    const projectId = await resolveTestRunCaseProjectId(db, id, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
 
@@ -2904,7 +2911,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
     if (!parsed.ok) throw new Error(parsed.message);
     const id = target.scope === 'cluster' ? target.clusterId : target.executionId;
-    const resolved = await checkEntityScope(db, ctx, id, (db) => resolveAgentDiagnosisTarget(db, target), 'ai:run');
+    const resolved = await checkEntityScope(
+      db,
+      ctx,
+      id,
+      (db, _id, viewerId) => resolveAgentDiagnosisTarget(db, target, viewerId),
+      'ai:run',
+    );
     if (resolved === 'not-found') return null;
     const result = await recordAgentDiagnosisOn(db, target, parsed.value, mcpActor(ctx), resolved);
     if (!result.ok) {
@@ -2972,7 +2985,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     }
     const { entityType, entityId } = validation.data;
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
@@ -3001,7 +3014,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     }
     const { entityType, entityId, url } = validation.data;
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);

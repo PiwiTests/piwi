@@ -1,4 +1,5 @@
 import { and, eq, gte, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm';
+import { notPrivateRun } from '../../run-eligibility';
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
@@ -228,6 +229,7 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
           inArray(testRuns.projectId, projectIds.slice(i, i + 500)),
           isNotNull(testRuns.branch),
           ne(testRuns.branch, ''),
+          notPrivateRun(testRuns.origin),
         ),
       );
     for (const row of rows) found.add(row.projectId);

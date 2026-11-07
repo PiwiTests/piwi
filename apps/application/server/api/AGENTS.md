@@ -115,6 +115,10 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **Authenticate before any lookup by a request's id**, so a caller without credentials gets 401 whether the id exists
   or not. A handler that loads the row itself calls `requireAuth(event)`, then `requireProjectPermission(event,
   projectId)` (`tests/unit/request-access.test.ts`, `tests/unit/route-permissions.test.ts`).
+- **A private run (origin `request`) is its requester's alone** (`isVisibleRun`, `notPrivateRun` in
+  `shared/run-eligibility.ts`): the run and execution resolvers take the viewer's id and answer a run they may not see
+  as missing, and every list a project's members read leaves it out (`notLabRun` sets it aside). With no viewer, or
+  authentication off, nobody sees it (`tests/unit/request-tokens.test.ts`).
 - Both refuse with 403: "No access to this project" when the user cannot read the project, "Insufficient permissions"
   when they read it without the route's permission.
 - **A list handler takes the user's project scope**: `getProjectScope(db, user, permission = 'project:read')` returns

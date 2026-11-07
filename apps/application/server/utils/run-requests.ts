@@ -30,6 +30,7 @@ import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
 import { extractApiKey, getUserAccessCached, isAuthEnabled, resolveApiKey } from './auth';
 import { RUN_TARGET_KEY_PERMISSIONS } from './extension-connect';
+import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
@@ -162,6 +163,7 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
   if (!run) return { ok: false, statusCode: 404, message: 'Test run not found' };
 
   const { max } = RUN_REQUEST_LIMITS.tests;
+  const readAtMost = RAW_TEST_ROWS * max;
   const rows = await db
     .selectDistinct({
       filePath: testCases.filePath,
@@ -174,11 +176,14 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(and(...conditions))
     .orderBy(testCases.filePath, testRunsCases.line, testCases.title, testRunsCases.browserName)
-    .limit(max + 1);
+    .limit(readAtMost + 1);
   if (rows.length === 0) return { ok: false, statusCode: 422, message: 'These tests are not in the run' };
-  if (rows.length > max) {
-    return { ok: false, statusCode: 422, message: `A request runs at most ${max} tests; these are more` };
-  }
+  const tooMany = {
+    ok: false,
+    statusCode: 422,
+    message: `A request runs at most ${max} tests; these are more`,
+  } as const;
+  if (rows.length > readAtMost) return tooMany;
 
   const tests: RunRequestTest[] = [];
   const seen = new Set<string>();
@@ -197,6 +202,7 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
     tests.push(parsed.value);
     if (projectName) projects.add(projectName);
   }
+  if (tests.length > max) return tooMany;
   if (tests.length === 0) {
     return {
       ok: false,
@@ -212,6 +218,12 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
   if (isRunRequestCommit(run.commit)) source.commit = run.commit;
   return { ok: true, projectId: run.projectId, tests, skipped, source, projects: [...projects].sort() };
 }
+
+/**
+ * How many stored rows per allowed test the instance reads before it counts the tests a request keeps: rows of a
+ * test that differ only by describe block, and tests the parser refuses, are left out after the read.
+ */
+const RAW_TEST_ROWS = 4;
 
 /** How many waiting requests one person may hold at once. */
 export const MAX_WAITING_REQUESTS = 5;
@@ -273,6 +285,8 @@ export interface RunRequestView {
   detail: string | null;
   stopRequested: boolean;
   target: { id: number; kind: string; deviceName: string } | null;
+  /** The run the request started, once its request token started one. */
+  runId: number | null;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
@@ -299,6 +313,7 @@ export async function runRequestView(db: DbClient, row: RunRequestRow, now = new
     detail: row.detail ?? null,
     stopRequested: row.stopRequestedAt != null,
     target,
+    runId: row.runId ?? null,
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -386,8 +401,9 @@ export async function stopOwnRequest(
 
 /**
  * End, as an error, the requests nobody can act on any more: one held (claimed, or its run) by a target the instance
- * has not heard from for `silentTargetMs` or that was disconnected, and one claimed but not answered within 10
- * minutes. One request when `id` is given, else every one.
+ * has not heard from for `silentTargetMs` or that was disconnected, one claimed but not answered within 10
+ * minutes, and one whose request token expired before it started a run. One request when `id` is given, else every
+ * one.
  */
 export async function endStaleRequests(db: DbClient, now = new Date(), id?: string): Promise<number> {
   const one = id === undefined ? undefined : eq(runRequests.id, id);
@@ -424,7 +440,21 @@ export async function endStaleRequests(db: DbClient, now = new Date(), id?: stri
       ),
     )
     .returning({ id: runRequests.id });
-  return unanswered.length + ended.length;
+  // A request whose token expired unspent ends as an error.
+  const unstarted = await db
+    .update(runRequests)
+    .set({ state: 'ended', outcome: 'error', detail: 'The app did not start the run in time', updatedAt: now })
+    .where(
+      and(
+        one,
+        inArray(runRequests.state, ['starting', 'running']),
+        isNull(runRequests.runId),
+        isNotNull(runRequests.requestTokenDigest),
+        lt(runRequests.requestTokenExpiresAt, now),
+      ),
+    )
+    .returning({ id: runRequests.id });
+  return unanswered.length + ended.length + unstarted.length;
 }
 
 /**
@@ -497,7 +527,7 @@ export async function requestsForTarget(
 }
 
 export type TargetMoveResult =
-  | { ok: true; row: RunRequestRow }
+  | { ok: true; row: RunRequestRow; requestToken?: string }
   | { ok: false; statusCode: 403 | 404 | 409; message: string };
 
 async function moveOrExplain(
@@ -553,9 +583,10 @@ export async function claimRequest(
 export type TargetAnswer = { decision: 'run' } | { decision: 'not-now' } | { decision: 'refused'; detail: string };
 
 /**
- * The person's answer in the target, to a request this target claimed: **Run** moves it to `starting`, **Not now**
- * to `declined`, a failed check to `refused` with its words. **Run** is refused once the requester stopped it, and
- * checks again that the project allows it, as the claim did.
+ * The person's answer in the target, to a request this target claimed: **Run** moves it to `starting` and answers a
+ * request token (`server/utils/request-tokens.ts`), kept as its digest, **Not now** moves it to `declined`, a failed check to
+ * `refused` with its words. **Run** is refused once the requester stopped it, and checks again that the project
+ * allows it, as the claim did.
  */
 export async function answerRequest(
   { db, target, access }: RunTargetCaller,
@@ -573,19 +604,30 @@ export async function answerRequest(
     }
   }
   const base = [eq(runRequests.id, id), eq(runRequests.targetId, target.id), eq(runRequests.state, 'claimed')];
-  const values =
-    answer.decision === 'run'
-      ? { state: 'starting' }
-      : answer.decision === 'not-now'
-        ? { state: 'declined' }
-        : { state: 'refused', detail: answer.detail };
+  const minted = answer.decision === 'run' ? newRequestToken() : null;
+  const values = minted
+    ? {
+        state: 'starting',
+        requestTokenDigest: minted.digest,
+        requestTokenExpiresAt: new Date(now.getTime() + REQUEST_TOKEN_LIFETIME_MS),
+      }
+    : answer.decision === 'not-now'
+      ? { state: 'declined' }
+      : { state: 'refused', detail: answer.decision === 'refused' ? answer.detail : null };
   if (answer.decision === 'run') base.push(isNull(runRequests.stopRequestedAt));
   const moved = await db
     .update(runRequests)
     .set({ ...values, answeredAt: now, updatedAt: now })
     .where(and(...base))
     .returning();
-  return moveOrExplain(db, target, id, moved, 'This request is not waiting for an answer, or was stopped');
+  const result = await moveOrExplain(
+    db,
+    target,
+    id,
+    moved,
+    'This request is not waiting for an answer, or was stopped',
+  );
+  return result.ok && minted ? { ...result, requestToken: minted.token } : result;
 }
 
 /** A run's next state, reported by the target that runs it: only forward, and an end once. */

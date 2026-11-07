@@ -13,6 +13,7 @@
  */
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { testRuns } from '../../server/database/schema';
+import { notPrivateRun } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 import type { FilterDetails } from '../types';
 import { getQuarantinedCaseIds } from './quarantine';
@@ -70,7 +71,7 @@ async function loadLastStamps(
   const rows = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime, filterDetails: testRuns.filterDetails })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), isNotNull(testRuns.filterDetails)))
+    .where(and(eq(testRuns.projectId, projectId), isNotNull(testRuns.filterDetails), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(RECENT_RUN_WINDOW);
 

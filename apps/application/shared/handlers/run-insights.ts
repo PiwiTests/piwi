@@ -10,6 +10,7 @@ import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scop
 import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '../utils/test-counts';
 import { passRatePercent } from '../utils/pass-rate';
 import { notLabRun } from './probes';
+import { isVisibleRun } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 import { liveWorkerName } from '#shared/live-view';
@@ -230,7 +231,8 @@ export async function computeRunInsights(
   let baselineMatch: RunBaselineMatch | null = null;
   if (options?.baselineId != null && options.baselineId !== runId) {
     const [picked] = await db.select().from(testRuns).where(eq(testRuns.id, options.baselineId));
-    if (picked && picked.projectId === run.projectId) {
+    // A private run is never a baseline: the page that picks one is read by the whole project.
+    if (picked && picked.projectId === run.projectId && isVisibleRun(picked, null)) {
       baselineRun = picked as TestRun;
       baselineSource = 'run';
     }

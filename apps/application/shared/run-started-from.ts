@@ -15,6 +15,7 @@ const STARTED_FROM: Record<RunOriginRead, string | null> = {
   bisect: 'a bisect',
   reproduce: 'a reproduction',
   import: 'an import',
+  request: 'a run request, on your machine',
   other: null,
 };
 

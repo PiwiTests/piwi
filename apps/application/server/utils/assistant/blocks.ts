@@ -137,7 +137,7 @@ async function patchRun(
     execution: resolveTestRunCaseProjectId,
     cluster: resolveClusterProjectId,
   }[target.type];
-  const projectId = await resolve(db, target.id);
+  const projectId = await resolve(db, target.id, ctx.user?.id ?? null);
   if (projectId === null || !scopeAllows(ctx.scope, projectId)) return null;
   if (target.type === 'run') return target.id;
   if (target.type === 'execution') {
@@ -155,7 +155,10 @@ async function patchRun(
 }
 
 /** The project an entity a proposal targets belongs to; null when it is missing. */
-const PROJECT_OF: Record<AssistantEntityType, (db: DbClient, id: number) => Promise<number | null>> = {
+const PROJECT_OF: Record<
+  AssistantEntityType,
+  (db: DbClient, id: number, viewerId: number | null) => Promise<number | null>
+> = {
   project: projectExists,
   run: resolveRunProjectId,
   execution: resolveTestRunCaseProjectId,
@@ -183,7 +186,7 @@ async function proposalProject(
   let projectId: number | null = null;
   if (block.target) {
     const { type, id } = block.target;
-    projectId = await PROJECT_OF[type](env.db, id);
+    projectId = await PROJECT_OF[type](env.db, id, env.ctx.user?.id ?? null);
     if (projectId === null || !scopeAllows(env.ctx.scope, projectId)) {
       return { error: `target: ${type} ${id} is missing or not readable by the user` };
     }

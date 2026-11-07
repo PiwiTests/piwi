@@ -54,7 +54,7 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
   const input = parsed.data;
 
   const db = await getDatabase();
-  const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
+  const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId, user.id);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
   if (!(await canAccessProject(db, user, projectId, 'issue:create'))) {
     throw apiError({ statusCode: 403, message: 'No access to this project' });

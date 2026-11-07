@@ -42,6 +42,7 @@ import {
   assistantMessages,
 } from '../../server/database/schema';
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
@@ -140,7 +141,7 @@ function fixtureEvidenceInNewestRuns(db: DrizzleDB, projectId?: number): Promise
   const newestRuns = db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(typeof projectId === 'number' ? eq(testRuns.projectId, projectId) : undefined)
+    .where(and(typeof projectId === 'number' ? eq(testRuns.projectId, projectId) : undefined, notPrivateRun()))
     .orderBy(desc(testRuns.startTime))
     .limit(FIXTURE_EVIDENCE_RUNS);
   // The sample carries a flag, not the column, so no JSON is copied while it is read.
@@ -223,8 +224,12 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
       exists(
         db,
         scoped
-          ? db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, pid)).limit(1)
-          : db.select({ id: testRuns.id }).from(testRuns).limit(1),
+          ? db
+              .select({ id: testRuns.id })
+              .from(testRuns)
+              .where(and(eq(testRuns.projectId, pid), notPrivateRun()))
+              .limit(1)
+          : db.select({ id: testRuns.id }).from(testRuns).where(notPrivateRun()).limit(1),
       ),
     // The fixtures: a captured request, or the page state they record at a test's end, in the newest runs.
     fixtures: async () =>

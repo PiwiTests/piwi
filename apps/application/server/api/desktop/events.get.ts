@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { testRuns } from '../../database/schema';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { getProjectScope, runVisibilityReader, scopeAllows } from '../../utils/project-access';
 import { runEventBus, type GlobalRunEvent } from '../../utils/run-events';
 import { desktopRunFactsReader } from '../../utils/desktop-run-facts';
 import { desktopRuns } from '../../utils/desktop-runs';
@@ -47,10 +47,20 @@ export default eventHandler(async (event) => {
     // The runs' messages heard before the snapshot is sent wait for it, in their order: a run that ended meanwhile
     // ends after the snapshot that may still hold it.
     let held: Array<() => void> | null = [];
+    // Another person's private run is left out; the runs' messages go out in the order they were heard.
+    const sees = runVisibilityReader(db, user.id);
+    let sent = Promise.resolve();
     const sendRun = (runId: number, payload: Record<string, unknown>, facts = true) => {
       const deliver = () => {
-        if (!facts) return send(payload);
-        void factsOf(runId).then((told) => send(told ? { ...payload, ...told } : payload));
+        const visible = sees(runId);
+        const told = facts ? factsOf(runId) : null;
+        sent = sent
+          .then(async () => {
+            if (!(await visible)) return;
+            const known = told ? await told : null;
+            send(known ? { ...payload, ...known } : payload);
+          })
+          .catch(() => {});
       };
       if (held) held.push(deliver);
       else deliver();

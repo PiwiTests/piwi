@@ -6,7 +6,7 @@ import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
 import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
@@ -178,8 +178,11 @@ export default eventHandler(async (event) => {
   const reportedMetadata = body.metadata
     ? keepIncidentMetadata(
         testRun.metadata,
-        carryExternalIdDuplicates(
-          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        carryRequestOrigin(
+          carryExternalIdDuplicates(
+            carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+            testRun.metadata,
+          ),
           testRun.metadata,
         ),
       )

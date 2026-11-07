@@ -55,7 +55,7 @@ export default eventHandler(async (event) => {
   const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
 
   // The execution must belong to the cluster's project: its diagnosis and evidence are that project's.
-  if (isExecutionScope && (await resolveTestRunCaseProjectId(db, body!.executionId!)) !== projectId) {
+  if (isExecutionScope && (await resolveTestRunCaseProjectId(db, body!.executionId!, null)) !== projectId) {
     throw apiError({ statusCode: 404, message: 'Test run case not found' });
   }
 

@@ -80,6 +80,12 @@ How the server merges shards:
   token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`): in `test_runs.stream_token`, in the
   in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a shard, in the run's
   `metadata.shardTokens`, which project members can read.
+- **A requested run starts only with its request token, and its origin is the server's**
+  (`server/utils/request-tokens.ts`): `/setup` and `/start` check it (`checkRequestToken`) in place of `requireAuth`,
+  store the run, then spend the token on it (`spendRequestToken`), report into the request's project, stamp `request`
+  (`withRequestOrigin`), set `requester_id` and ignore `keep`. `sanitizeMetadata` drops a `request` origin the reporter
+  sends, every later write of the reporter's metadata goes through `carryRequestOrigin`, and `runOrigin` reads `request`
+  before any lab stamp (`tests/unit/request-tokens.test.ts`).
 - **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
   `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
   with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload

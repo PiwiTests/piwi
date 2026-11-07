@@ -1,4 +1,5 @@
 import { and, or, eq, desc, inArray, type SQLWrapper } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 import { testRuns, testCases, projects, failureClusters, entityLinks } from '../../server/database/schema';
 import { foldedContains, foldedEquals } from '../utils/fold-text-sql';
 import { describeCluster } from '../describe-cluster';
@@ -42,7 +43,13 @@ export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string, scop
       })
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(isRunId ? eq(testRuns.id, runId) : matches(testRuns.label), inScope(testRuns.projectId)))
+      .where(
+        and(
+          isRunId ? eq(testRuns.id, runId) : matches(testRuns.label),
+          notPrivateRun(testRuns.origin),
+          inScope(testRuns.projectId),
+        ),
+      )
       .orderBy(desc(testRuns.startTime))
       .limit(5),
 

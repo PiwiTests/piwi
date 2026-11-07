@@ -20,7 +20,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
-vi.mock('../../server/utils/project-access', () => ({
+vi.mock('../../server/utils/project-access', async (importOriginal) => ({
+  runVisibilityReader: (await importOriginal<typeof import('../../server/utils/project-access')>()).runVisibilityReader,
   getProjectScope: async () => state.scope,
   scopeAllows: (scope: 'all' | Set<number>, projectId: number) => scope === 'all' || scope.has(projectId),
 }));
@@ -151,6 +152,27 @@ describe('the desktop event stream', () => {
     const order = stream.messages.filter((m) => m.type !== 'hub-runs').map((m) => m.type);
     expect(order).toEqual(['snapshot', 'run-finished']);
     expect((await snapshotOf(stream.messages)).runs.map((run) => run.id)).toContain(7);
+  });
+
+  test('sends nothing of a private run, in its snapshot or its messages', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({
+        projectId: 1,
+        status: 'running',
+        startTime: new Date(),
+        metadata: { piwiOrigin: { kind: 'request', ref: 'a'.repeat(32) } },
+        origin: 'request',
+      })
+      .returning();
+    const stream = await openStream();
+    runEventBus.publishGlobal({ type: 'run-started', runId: run!.id, projectId: 1 });
+    runEventBus.publishGlobal({ type: 'run-started', runId: 7, projectId: 1 });
+    await vi.waitFor(() => expect(stream.messages.some((m) => m.runId === 7)).toBe(true));
+    stream.end();
+    expect((await snapshotOf(stream.messages)).runs.map((r) => r.id)).not.toContain(run!.id);
+    expect(stream.messages.filter((m) => m.runId === run!.id)).toEqual([]);
+    await db.delete(schema.testRuns).where(eq(schema.testRuns.id, run!.id));
   });
 
   test('sends nothing of a run outside the caller’s scope, its facts included', async () => {

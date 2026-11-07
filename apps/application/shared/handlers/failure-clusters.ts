@@ -46,6 +46,7 @@ import {
   eligibleRunSql,
   incidentRunSql,
   LOCAL_RUN_ORIGINS,
+  notPrivateRun,
   runOriginIn,
   UNFINISHED_RUN_STATUSES,
   type RunOriginKind,
@@ -469,7 +470,7 @@ export async function getFailureCluster(
   const seriesRuns: Array<{ id: number; startedAt: Date }> = await db
     .select({ id: testRuns.id, startedAt: testRuns.startTime })
     .from(testRuns)
-    .where(eq(testRuns.projectId, cluster.projectId))
+    .where(and(eq(testRuns.projectId, cluster.projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(20);
   const seriesRunIds = seriesRuns.map((r) => r.id);
