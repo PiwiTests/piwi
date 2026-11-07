@@ -27,13 +27,19 @@ const { generateApiKey, getUserByApiKey, requireAuth } = await import('../../ser
 const {
   answerRequest,
   claimRequest,
+  countWaitingRequests,
   effectiveState,
+  endSilentRequests,
+  findOwnRequest,
   moveRequestState,
+  pruneRunRequests,
   requestsForTarget,
   requireRunTarget,
   resolveRequestTests,
   stopOwnRequest,
 } = await import('../../server/utils/run-requests');
+const { RUN_REQUEST_LIMITS } = await import('@piwitests/core/run-request');
+const { buildAccessSummary, InstanceRole, ProjectRole } = await import('#shared/permissions');
 
 let db: Db;
 let userId: number;
@@ -206,8 +212,69 @@ describe('resolveRequestTests', () => {
         { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: 'chromium' },
         { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: 'firefox' },
       ],
+      skipped: 0,
       source: { runId, branch: 'main', commit: '9f8e7d6' },
       projects: ['chromium', 'firefox'],
+    });
+  });
+
+  test('leaves out a test the parser refuses or that has no line, and counts it', async () => {
+    const odd = await db
+      .insert(schema.testCases)
+      .values([
+        { projectId: allowed, filePath: 'tests/.*', title: 'a pattern for a path' },
+        { projectId: allowed, filePath: 'tests/cart.spec.ts', title: 'shows the total\u202e' },
+        { projectId: allowed, filePath: 'tests/cart.spec.ts', title: 'from an older reporter' },
+        { projectId: allowed, filePath: 'tests/cart.spec.ts', title: 'on a phone' },
+      ])
+      .returning();
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: runId, testCaseId: odd[0]!.id, status: 'passed', line: 3, browserName: 'chromium' },
+        { testRunId: runId, testCaseId: odd[1]!.id, status: 'passed', line: 8, browserName: 'chromium' },
+        { testRunId: runId, testCaseId: odd[2]!.id, status: 'passed', line: null, browserName: 'chromium' },
+        { testRunId: runId, testCaseId: odd[3]!.id, status: 'passed', line: 9, browserName: 'Pixel 5 (mobile)' },
+      ]),
+    );
+    const all = await resolveRequestTests(db as never, { runId, tests: 'all' });
+    expect(all).toMatchObject({ ok: true, skipped: 3 });
+    expect(all.ok && all.tests.map((t) => t.title)).toContain('on a phone');
+
+    const only = await resolveRequestTests(db as never, { runId, filePath: 'tests/.*' });
+    expect(only).toMatchObject({ ok: false, statusCode: 422 });
+  });
+
+  test('a SHA-256 commit is kept, and a branch git refuses is left out rather than refusing the request', async () => {
+    await db
+      .update(schema.testRuns)
+      .set({ commit: 'a'.repeat(64), branch: 'main..evil' })
+      .where(eq(schema.testRuns.id, runId));
+    const resolved = await resolveRequestTests(db as never, { runId, tests: 'failed' });
+    expect(resolved).toMatchObject({ ok: true, source: { runId, commit: 'a'.repeat(64) } });
+    expect(resolved.ok && resolved.source.branch).toBeUndefined();
+  });
+
+  test('refuses more than 200 tests without reading them all', async () => {
+    const many = await db
+      .insert(schema.testCases)
+      .values(
+        Array.from({ length: 200 }, (_, i) => ({ projectId: allowed, filePath: 'tests/many.spec.ts', title: `t${i}` })),
+      )
+      .returning();
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts(
+        many.map((c, i) => ({
+          testRunId: runId,
+          testCaseId: c.id,
+          status: 'passed',
+          line: i + 1,
+          browserName: 'chromium',
+        })),
+      ),
+    );
+    expect(await resolveRequestTests(db as never, { runId, tests: 'all' })).toMatchObject({
+      ok: false,
+      statusCode: 422,
     });
   });
 
@@ -349,6 +416,73 @@ describe('the life of a request', () => {
     expect((await requestsForTarget(c)).stops).toEqual([id]);
     await moveRequestState(c, id, { state: 'ended', outcome: 'stopped' }, null);
     expect((await requestsForTarget(c)).stops).toEqual([]);
+  });
+
+  test('a second stop, past the grace, ends a run the target did not end', async () => {
+    const c = await caller();
+    const id = await request();
+    await claimRequest(c, id);
+    await answerRequest(c, id, { decision: 'run' });
+    await moveRequestState(c, id, { state: 'running' }, null);
+    const first = new Date();
+    expect(await stopOwnRequest(db as never, id, userId, first)).toBe(true);
+    expect(await stopOwnRequest(db as never, id, userId, new Date(first.getTime() + 1000))).toBe(true);
+    expect(await stored(id)).toMatchObject({ state: 'running' });
+    const later = new Date(first.getTime() + RUN_REQUEST_LIMITS.stopGraceMs + 1);
+    expect(await stopOwnRequest(db as never, id, userId, later)).toBe(true);
+    expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'stopped' });
+  });
+
+  test('a request held by a target that went silent ends as an error', async () => {
+    const c = await caller();
+    const id = await request();
+    await claimRequest(c, id);
+    await answerRequest(c, id, { decision: 'run' });
+    const seen = c.target.lastSeenAt!;
+    expect(await endSilentRequests(db as never, new Date(seen.getTime() + 60_000))).toBe(0);
+    const silent = new Date(seen.getTime() + RUN_REQUEST_LIMITS.silentTargetMs + 1);
+    expect(await endSilentRequests(db as never, silent, 'f'.repeat(32))).toBe(0);
+    expect(await endSilentRequests(db as never, silent, id)).toBe(1);
+    expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'error' });
+    expect((await stored(id)).detail).toMatch(/stopped answering/);
+  });
+
+  test('a waiting request that no longer parses ends with words, rather than vanishing', async () => {
+    const c = await caller();
+    const id = await request({ tests: [{ filePath: '.*', title: 'x', line: 1, projectName: null }] });
+    expect((await requestsForTarget(c)).requests).toEqual([]);
+    expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'error' });
+    expect((await stored(id)).detail).toMatch(/ask for the run again/);
+  });
+
+  test('counts a person’s waiting requests, and prunes old ended and expired ones', async () => {
+    await request();
+    await request();
+    await request({ expiresAt: new Date(Date.now() - 1000) });
+    await request({ requesterId: otherUserId });
+    expect(await countWaitingRequests(db as never, userId)).toBe(2);
+
+    const now = new Date('2026-12-01T00:00:00Z');
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000);
+    const oldEnded = await request({ state: 'ended', outcome: 'passed', updatedAt: old });
+    const oldExpired = await request({ expiresAt: old, updatedAt: old });
+    const oldRunning = await request({ state: 'running', updatedAt: old });
+    const recent = await request({ state: 'declined', updatedAt: now });
+    expect(await pruneRunRequests(db as never, 30, now)).toBeGreaterThanOrEqual(2);
+    const left = (await db.select({ id: schema.runRequests.id }).from(schema.runRequests)).map((r) => r.id);
+    expect(left).not.toContain(oldEnded);
+    expect(left).not.toContain(oldExpired);
+    expect(left).toContain(oldRunning);
+    expect(left).toContain(recent);
+  });
+
+  test('a requester who lost the project no longer reads their request', async () => {
+    const id = await request();
+    const viewerOf = (projectId: number) =>
+      buildAccessSummary(InstanceRole.MEMBER, [{ projectId, role: ProjectRole.VIEWER }]);
+    expect(await findOwnRequest(db as never, id, userId, viewerOf(allowed))).not.toBeNull();
+    expect(await findOwnRequest(db as never, id, userId, viewerOf(viewOnly))).toBeNull();
+    expect(await findOwnRequest(db as never, id, otherUserId, viewerOf(allowed))).toBeNull();
   });
 
   test('a request whose target was disconnected ends at its stop', async () => {

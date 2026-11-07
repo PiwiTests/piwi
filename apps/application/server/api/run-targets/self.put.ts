@@ -11,6 +11,7 @@ defineRouteMeta({
     description:
       'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored.',
     'x-required-permission': 'run:receive',
+    security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'The target' },
       400: { description: 'A field is out of bounds' },

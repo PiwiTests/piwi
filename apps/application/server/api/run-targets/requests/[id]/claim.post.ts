@@ -7,6 +7,7 @@ defineRouteMeta({
     description:
       'Claims a waiting request of the target’s owner, once: a second claim, from another target or a reconnect, answers 409, as does an expired request. Answers the request, which the target shows and runs only after the person clicks **Run**. Refused (403) on a project where **Run on my machine** is off or the owner lacks `run:receive`. Authenticated with the target’s key alone.',
     'x-required-permission': 'run:receive',
+    security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'The claimed request' },
       403: { description: 'Not a run target’s key, or the project does not allow it' },

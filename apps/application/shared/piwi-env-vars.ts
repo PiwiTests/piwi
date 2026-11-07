@@ -375,7 +375,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions, the agents' write log and run requests that ended or expired follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',

@@ -28,10 +28,10 @@ const EDITOR = {
   tick: 'Tick the box once your editor shows this same code',
   again: 'Start again from Piwi: Connect in your editor.',
 };
-/** A run target's key receives the run requests you make, and nothing else. */
+/** A run target's key receives the run requests you make and reports their runs, and nothing else. */
 function targetWords(app: string) {
   return {
-    grant: 'that only receives the run requests you make: it cannot read your projects or upload anything',
+    grant: 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
     title: `Connect ${app}`,
     start: `clicked Connect in ${app}`,
     keyName: 'this computer',

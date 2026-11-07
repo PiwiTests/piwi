@@ -7,6 +7,8 @@ import { refuseApiKey, requireAuth } from '../../utils/auth';
 import { requireProjectPermission, resolveRunProjectId, resolveTestRunCaseProjectId } from '../../utils/project-access';
 import { checkRateLimit, rateLimitedError } from '../../utils/rate-limit';
 import {
+  countWaitingRequests,
+  MAX_WAITING_REQUESTS,
   newRunRequestId,
   requireMachineRunsOn,
   requireSignInForRunRequests,
@@ -20,14 +22,14 @@ defineRouteMeta({
     tags: ['Run requests'],
     summary: 'Ask one of your own machines to run tests',
     description:
-      'Stores a run request for the caller’s own connected apps (the desktop app, Piwi Runner): one of them claims it, shows it, and runs it only after the person clicks **Run** there. The instance resolves the tests from a stored execution (`{ executionId }`), the failed or all tests of a run (`{ runId, tests: "failed" | "all" }`) or one spec file of a run (`{ runId, filePath }`); the request never takes a test list from the caller. `options` is a closed list (`headed`, `trace`, `repeatEach` 1–10, `workers` 1–4, `project` among the Playwright projects the tests ran in). `targetId` sends it to one of the caller’s targets; without it, the first to claim it takes it. A request waits 2 minutes for a claim. Needs sign-in turned on, a signed-in session (an API key is refused), `run:request` on the run’s project and **Run on my machine** on for it. Rate-limited per user.',
+      'Stores a run request for the caller’s own connected apps (the desktop app, Piwi Runner): one of them claims it, shows it, and runs it only after the person clicks **Run** there. The instance resolves the tests from a stored execution (`{ executionId }`), the failed or all tests of a run (`{ runId, tests: "failed" | "all" }`) or one spec file of a run (`{ runId, filePath }`); the request never takes a test list from the caller. `options` is a closed list (`headed`, `trace`, `repeatEach` 1–10, `workers` 1–4, `project` among the Playwright projects the tests ran in). `targetId` sends it to one of the caller’s targets; without it, the first to claim it takes it. A test whose path, title or project a request refuses, or with no recorded line, is left out, and `skipped` counts them. A request waits 2 minutes for a claim, and a person holds at most 5 waiting requests. Needs sign-in turned on, a signed-in session (an API key is refused), `run:request` on the run’s project and **Run on my machine** on for it. Rate-limited per user.',
     'x-required-permission': 'run:request',
     responses: {
-      200: { description: 'The stored request' },
+      200: { description: 'The stored request, and `skipped`, how many of the tests were left out' },
       403: { description: 'Sign-in is off, the caller used an API key, lacks `run:request`, or the capability is off' },
       404: { description: 'The run, the execution or the target does not exist' },
       422: { description: 'The tests or options are out of bounds' },
-      429: { description: 'Too many requests from this user' },
+      429: { description: 'Too many requests from this user, or 5 of theirs are already waiting' },
     },
   },
 });
@@ -75,6 +77,12 @@ export default eventHandler(async (event) => {
   }
   await requireProjectPermission(event, projectId);
   await requireMachineRunsOn(db, projectId);
+  if ((await countWaitingRequests(db, user.id)) >= MAX_WAITING_REQUESTS) {
+    throw apiError({
+      statusCode: 429,
+      message: `${MAX_WAITING_REQUESTS} of your requests are already waiting for a claim: stop one, or wait for them`,
+    });
+  }
 
   const resolved = await resolveRequestTests(db, source);
   if (!resolved.ok) throw apiError({ statusCode: resolved.statusCode, message: resolved.message });
@@ -120,5 +128,5 @@ export default eventHandler(async (event) => {
       updatedAt: now,
     })
     .returning();
-  return runRequestView(db, row!, now);
+  return { ...(await runRequestView(db, row!, now)), skipped: resolved.skipped };
 });

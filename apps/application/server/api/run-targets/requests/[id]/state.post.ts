@@ -15,6 +15,7 @@ defineRouteMeta({
     description:
       'The connected app running a request reports its next state: `running`, `stopping`, or `ended` with an `outcome` (`passed`, `failed`, `stopped`, `error`), and an optional `detail` (at most 500 characters). A run only moves forward: `starting` → `running` → `stopping` → `ended`, and ends once; any other move answers 409. Authenticated with the key of the target that claimed it.',
     'x-required-permission': 'run:receive',
+    security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'The request, in its new state' },
       404: { description: 'No request of the owner has this id' },

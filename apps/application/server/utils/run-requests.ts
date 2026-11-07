@@ -1,10 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import type { H3Event } from 'h3';
 import {
+  FINAL_RUN_REQUEST_STATES,
   RUN_REQUEST_ID,
   RUN_REQUEST_LIMITS,
+  isRunRequestBranch,
+  isRunRequestCommit,
   parseRunRequest,
+  parseRunRequestTest,
   type RunRequest,
   type RunRequestOptions,
   type RunRequestOutcome,
@@ -112,14 +116,23 @@ export type RunRequestSourceInput =
   | { runId: number; filePath: string };
 
 export type ResolvedRequestTests =
-  | { ok: true; projectId: number; tests: RunRequestTest[]; source: RunRequestSource; projects: string[] }
+  | {
+      ok: true;
+      projectId: number;
+      tests: RunRequestTest[];
+      /** How many of the tests were left out: no line was recorded, or a stored value does not pass the parser. */
+      skipped: number;
+      source: RunRequestSource;
+      projects: string[];
+    }
   | { ok: false; statusCode: 404 | 422; message: string };
 
 /**
  * The tests a request runs, read from the stored executions, never from the browser: an execution, the failed or
  * all tests of a run (final attempts only, one per test and Playwright project), or the tests of one spec file of a
- * run. Also answers what the request came from (the run, its branch and commit) and the Playwright projects the
- * tests ran in, which bound the request's `project` option.
+ * run. A test the parser refuses, or one stored without a line (which would select its whole file), is left out and
+ * counted. Also answers what the request came from (the run, and its branch and commit when they pass the parser) and
+ * the Playwright projects the tests ran in, which bound the request's `project` option.
  */
 export async function resolveRequestTests(db: DbClient, input: RunRequestSourceInput): Promise<ResolvedRequestTests> {
   let runId: number;
@@ -148,8 +161,9 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
     .where(eq(testRuns.id, runId));
   if (!run) return { ok: false, statusCode: 404, message: 'Test run not found' };
 
+  const { max } = RUN_REQUEST_LIMITS.tests;
   const rows = await db
-    .select({
+    .selectDistinct({
       filePath: testCases.filePath,
       title: testCases.title,
       suitePath: testCases.suitePath,
@@ -158,33 +172,68 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(and(...conditions));
+    .where(and(...conditions))
+    .orderBy(testCases.filePath, testRunsCases.line, testCases.title, testRunsCases.browserName)
+    .limit(max + 1);
+  if (rows.length === 0) return { ok: false, statusCode: 422, message: 'These tests are not in the run' };
+  if (rows.length > max) {
+    return { ok: false, statusCode: 422, message: `A request runs at most ${max} tests; these are more` };
+  }
 
-  const seen = new Set<string>();
   const tests: RunRequestTest[] = [];
   const projects = new Set<string>();
+  let skipped = 0;
   for (const row of rows) {
     const projectName = row.projectName || null;
-    const key = JSON.stringify([row.filePath, row.suitePath, row.title, row.line, projectName]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    tests.push({ filePath: row.filePath, title: row.title, line: row.line ?? null, projectName });
+    const parsed = parseRunRequestTest({ filePath: row.filePath, title: row.title, line: row.line, projectName });
+    if (!parsed.ok || parsed.value.line === null) {
+      skipped++;
+      continue;
+    }
+    tests.push(parsed.value);
     if (projectName) projects.add(projectName);
   }
-  if (tests.length === 0) return { ok: false, statusCode: 422, message: 'These tests are not in the run' };
-  if (tests.length > RUN_REQUEST_LIMITS.tests.max) {
+  if (tests.length === 0) {
     return {
       ok: false,
       statusCode: 422,
-      message: `A request runs at most ${RUN_REQUEST_LIMITS.tests.max} tests; these are ${tests.length}`,
+      message:
+        'None of these tests can be sent: each has no recorded line, or a path, title or project a run request refuses',
     };
   }
 
   const source: RunRequestSource = { runId };
   if (executionId !== undefined) source.executionId = executionId;
-  if (run.branch) source.branch = run.branch;
-  if (run.commit) source.commit = run.commit;
-  return { ok: true, projectId: run.projectId, tests, source, projects: [...projects].sort() };
+  if (isRunRequestBranch(run.branch)) source.branch = run.branch;
+  if (isRunRequestCommit(run.commit)) source.commit = run.commit;
+  return { ok: true, projectId: run.projectId, tests, skipped, source, projects: [...projects].sort() };
+}
+
+/** How many waiting requests one person may hold at once. */
+export const MAX_WAITING_REQUESTS = 5;
+
+/** How many of a person's requests wait for a claim, as of `now`. */
+export async function countWaitingRequests(db: DbClient, requesterId: number, now = new Date()): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(runRequests)
+    .where(
+      and(eq(runRequests.requesterId, requesterId), eq(runRequests.state, 'waiting'), gt(runRequests.expiresAt, now)),
+    );
+  return row?.n ?? 0;
+}
+
+/** End a waiting request whose stored values no longer pass the parser, so its page says so rather than expired. */
+async function endUnreadableRequest(db: DbClient, id: string, now: Date): Promise<void> {
+  await db
+    .update(runRequests)
+    .set({
+      state: 'ended',
+      outcome: 'error',
+      detail: 'This request no longer passes the checks of this version of Piwi: ask for the run again',
+      updatedAt: now,
+    })
+    .where(and(eq(runRequests.id, id), eq(runRequests.state, 'waiting')));
 }
 
 /** The request a target receives, rebuilt and checked by the one parser. Null when a stored value no longer passes. */
@@ -252,13 +301,21 @@ export async function runRequestView(db: DbClient, row: RunRequestRow, now = new
   };
 }
 
-/** A requester's own request, or null: another person's request is answered as missing. */
-export async function findOwnRequest(db: DbClient, id: string, requesterId: number): Promise<RunRequestRow | null> {
+/**
+ * A requester's own request, or null: another person's request is answered as missing, and so is one of a project
+ * the requester can no longer read.
+ */
+export async function findOwnRequest(
+  db: DbClient,
+  id: string,
+  requesterId: number,
+  access: AccessSummary,
+): Promise<RunRequestRow | null> {
   const [row] = await db
     .select()
     .from(runRequests)
     .where(and(eq(runRequests.id, id), eq(runRequests.requesterId, requesterId)));
-  return row ?? null;
+  return row && can(access, 'project:read', row.projectId) ? row : null;
 }
 
 /** The states of a request a target holds: claimed, or its run once the person clicked **Run**. */
@@ -280,8 +337,8 @@ export type RunStateUpdate = { state: 'running' | 'stopping' } | { state: 'ended
 /**
  * Stop a request from the requester's page. Waiting, claimed but not answered, or held by a target that was
  * disconnected since, it ends at once as stopped, and the target that claimed it finds it in its stops. Once the
- * person clicked **Run**, the stop is recorded for the target, which ends the run and reports it. Answers false once
- * the request has ended.
+ * person clicked **Run**, the stop is recorded for the target, which ends the run and reports it; a second stop, once
+ * the target had `stopGraceMs` to act on the first, ends the request as stopped. Answers false once it has ended.
  */
 export async function stopOwnRequest(
   db: DbClient,
@@ -290,6 +347,7 @@ export async function stopOwnRequest(
   now = new Date(),
 ): Promise<boolean> {
   const mine = and(eq(runRequests.id, id), eq(runRequests.requesterId, requesterId));
+  const graceOver = new Date(now.getTime() - RUN_REQUEST_LIMITS.stopGraceMs);
   const ended = await db
     .update(runRequests)
     .set({ state: 'ended', outcome: 'stopped', stopRequestedAt: now, updatedAt: now })
@@ -300,6 +358,7 @@ export async function stopOwnRequest(
           and(eq(runRequests.state, 'waiting'), gt(runRequests.expiresAt, now)),
           eq(runRequests.state, 'claimed'),
           and(isNull(runRequests.targetId), inArray(runRequests.state, ACTIVE_STATES)),
+          and(inArray(runRequests.state, RUN_STATES), lt(runRequests.stopRequestedAt, graceOver)),
         ),
       ),
     )
@@ -308,9 +367,60 @@ export async function stopOwnRequest(
   const stopping = await db
     .update(runRequests)
     .set({ stopRequestedAt: now, updatedAt: now })
-    .where(and(mine, inArray(runRequests.state, RUN_STATES)))
+    .where(and(mine, inArray(runRequests.state, RUN_STATES), isNull(runRequests.stopRequestedAt)))
     .returning({ id: runRequests.id });
-  return stopping.length > 0;
+  if (stopping.length) return true;
+  const [asked] = await db
+    .select({ id: runRequests.id })
+    .from(runRequests)
+    .where(and(mine, inArray(runRequests.state, RUN_STATES)));
+  return asked !== undefined;
+}
+
+/** The words of a request ended because the app that held it stopped calling the instance. */
+const SILENT_TARGET_DETAIL = 'The app that held this request stopped answering';
+
+/**
+ * End the requests whose target went silent: held (claimed, or its run) by a target the instance has not heard from
+ * for `silentTargetMs`, they end as an error. One request when `id` is given, else every one.
+ */
+export async function endSilentRequests(db: DbClient, now = new Date(), id?: string): Promise<number> {
+  const silentSince = new Date(now.getTime() - RUN_REQUEST_LIMITS.silentTargetMs);
+  const silent = db
+    .select({ id: runTargets.id })
+    .from(runTargets)
+    .where(
+      or(
+        lt(runTargets.lastSeenAt, silentSince),
+        and(isNull(runTargets.lastSeenAt), lt(runTargets.createdAt, silentSince)),
+      ),
+    );
+  const ended = await db
+    .update(runRequests)
+    .set({ state: 'ended', outcome: 'error', detail: SILENT_TARGET_DETAIL, updatedAt: now })
+    .where(
+      and(
+        id === undefined ? undefined : eq(runRequests.id, id),
+        inArray(runRequests.state, ACTIVE_STATES),
+        inArray(runRequests.targetId, silent),
+      ),
+    )
+    .returning({ id: runRequests.id });
+  return ended.length;
+}
+
+/**
+ * Delete the requests that ended, or expired unclaimed, more than `olderThanDays` days ago. A request only records
+ * what was asked: the run it started, if any, is a run of its own.
+ */
+export async function pruneRunRequests(db: DbClient, olderThanDays: number, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - olderThanDays * 24 * 60 * 60 * 1000);
+  const old = or(
+    and(eq(runRequests.state, 'waiting'), lt(runRequests.expiresAt, cutoff)),
+    and(inArray(runRequests.state, [...FINAL_RUN_REQUEST_STATES]), lt(runRequests.updatedAt, cutoff)),
+  );
+  const deleted = await db.delete(runRequests).where(old).returning({ id: runRequests.id });
+  return deleted.length;
 }
 
 const NOT_ALLOWED = 'Run on my machine is off for this project, or you cannot run its tests';
@@ -346,6 +456,7 @@ export async function requestsForTarget(
     if (!on.get(row.projectId)) continue;
     const request = runRequestOf(row);
     if (request) requests.push(request);
+    else await endUnreadableRequest(db, row.id, now);
   }
   const stops = await db
     .select({ id: runRequests.id })

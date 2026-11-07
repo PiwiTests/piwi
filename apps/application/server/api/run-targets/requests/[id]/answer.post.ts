@@ -14,6 +14,7 @@ defineRouteMeta({
     description:
       'The person’s answer in the connected app, to a request this target claimed: `{ decision: "run" }` after they clicked **Run** (the request moves to `starting`), `{ decision: "not-now" }` (`declined`), or `{ decision: "refused", detail }` when a check failed before the confirmation, with its words (at most 500 characters). **Run** is refused (409) once the requester stopped the request. Authenticated with the target’s key alone.',
     'x-required-permission': 'run:receive',
+    security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'The request, after the answer' },
       404: { description: 'No request of the owner has this id' },
