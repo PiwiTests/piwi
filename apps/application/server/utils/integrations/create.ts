@@ -327,8 +327,8 @@ const ENTITY_PAGES: Record<CreateIssueParams['entityType'], string> = {
 /**
  * Add the person's comment to the issue already filed for the cluster, so the
  * words they wrote reach it instead of being dropped. Queued once per
- * submission; the submission that filed the issue already opened its body with
- * the comment, so it adds none. Null when there is no comment, else what
+ * submission; the submission that filed the issue with this same comment
+ * already opened its body with it, so it adds none. Null when there is no comment, else what
  * became of it: added, still queued, or refused.
  */
 async function commentOnFiledIssue(
@@ -341,7 +341,11 @@ async function commentOnFiledIssue(
   const comment = issueComment(params);
   if (!comment) return null;
   const filedWith = filed.payload as CreateIssueActionPayload;
-  if (params.submissionId && filedWith.submissionId === params.submissionId && filedWith.comment) {
+  if (
+    params.submissionId &&
+    filedWith.submissionId === params.submissionId &&
+    filedWith.comment?.text === comment.text
+  ) {
     return { status: 'added' };
   }
   const connectionId = filed.connectionId;

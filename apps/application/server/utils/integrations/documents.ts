@@ -448,7 +448,7 @@ async function gatherRunFacts(
   }));
   const listed = executionId != null ? { tests, moreTests: 0 } : listedRunTests(tests);
 
-  // The clusters with the most failed tests in the run first, cut to RUN_ISSUE_MAX_CLUSTERS.
+  // The clusters with the most failures in the run first, cut to RUN_ISSUE_MAX_CLUSTERS.
   const clusterCounts = new Map<number, number>();
   for (const row of rows)
     if (row.clusterId != null) clusterCounts.set(row.clusterId, (clusterCounts.get(row.clusterId) ?? 0) + 1);

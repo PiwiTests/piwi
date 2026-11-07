@@ -27,7 +27,7 @@ and [project binding](./issue-tracking#the-project-binding) as an issue about a 
   still queued, or was refused by Jira.
 - **A run's issue** lists the run (project, branch, commit, environment, start), its results, its tests with failed
   ones first (25 listed, then a count), the failure clusters of its failures with the issue each one already has
-  (the 10 with the most failed tests, then a count), links back to the run, and who filed it from Piwi. Its proposed
+  (the 10 with the most failures, then a count), links back to the run, and who filed it from Piwi. Its proposed
   title counts the failures and names the branch.
 - **A test's issue** has the same body for that one test, titled after it, with its error when it failed.
 - Each carries the labels `piwi` and `piwi-run-<id>` and a `Piwi-Run: <id>` trailer, for JQL. A run's issue shows in

@@ -366,6 +366,13 @@ describe('an issue about an execution', () => {
     expect(again).toMatchObject({ alreadyFiled: true, key: filed!.key, commentStatus: 'added' });
     expect(comments).toHaveLength(before);
   });
+
+  test('that submission sent again with another comment adds it to the issue', async () => {
+    const submissionId = '00000000-0000-4000-8000-00000000000b';
+    const again = await file('failure_cluster', 3, { comment: 'Also on Firefox.', submissionId });
+    expect(again).toMatchObject({ alreadyFiled: true, commentStatus: 'added' });
+    expect(comments.at(-1)!.body).toContain('Also on Firefox.');
+  });
 });
 
 describe('a create whose worker stopped during the call', () => {

@@ -451,7 +451,7 @@ async function create() {
             : res.commentStatus === 'failed'
               ? {
                   title: `Your comment was not added to ${res.key}`,
-                  description: `${already} Jira refused it${res.commentError ? `: ${res.commentError}` : '.'}`,
+                  description: `${already} It was not sent${res.commentError ? `: ${res.commentError}` : '.'}`,
                 }
               : null;
       toast.add({

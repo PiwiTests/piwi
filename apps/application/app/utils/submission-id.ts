@@ -24,12 +24,20 @@ const memory = new Map<string, { id: string; at: number }>();
 function read(subject: string): string | null {
   let entry = memory.get(subject) ?? null;
   try {
-    const stored = globalThis.localStorage?.getItem(KEY_PREFIX + subject);
-    if (stored) entry = JSON.parse(stored) as { id: string; at: number };
+    const storage = globalThis.localStorage;
+    if (storage) {
+      // The storage is the record when there is one: another tab may have released the id.
+      const stored = storage.getItem(KEY_PREFIX + subject);
+      entry = stored ? (JSON.parse(stored) as { id: string; at: number }) : null;
+    }
   } catch {
     // Storage blocked or the entry unreadable: the memory copy stands.
   }
-  if (!entry || typeof entry.id !== 'string' || !(Date.now() - entry.at < HOLD_MS)) return null;
+  if (!entry || typeof entry.id !== 'string') return null;
+  if (!(Date.now() - entry.at < HOLD_MS)) {
+    releaseSubmission(subject);
+    return null;
+  }
   return entry.id;
 }
 

@@ -45,3 +45,27 @@ test('a held id outlives the page: a reload, or another tab, reads it from the b
     vi.unstubAllGlobals();
   }
 });
+
+test('an id another tab released, or one held past a day, is not sent again', async () => {
+  const store = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+    removeItem: (key: string) => void store.delete(key),
+  });
+  try {
+    vi.resetModules();
+    const ids = await import('../../app/utils/submission-id');
+    ids.holdSubmission('test_run:10', '00000000-0000-4000-8000-000000000002');
+    // Another tab released it.
+    store.clear();
+    expect(ids.submissionHeld('test_run:10')).toBe(false);
+    ids.holdSubmission('test_run:11', '00000000-0000-4000-8000-000000000003');
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 25 * 60 * 60 * 1000);
+    expect(ids.submissionHeld('test_run:11')).toBe(false);
+    expect(store.size).toBe(0);
+  } finally {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});

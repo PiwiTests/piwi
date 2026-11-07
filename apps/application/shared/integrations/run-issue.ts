@@ -91,7 +91,7 @@ export interface RunIssueFacts {
   /** The tests listed, failed first; the rest are counted in `moreTests`. */
   tests: RunTestFact[];
   moreTests: number;
-  /** The clusters listed, those with the most failed tests first; the rest are counted in `moreClusters`. */
+  /** The clusters listed, those with the most failures first; the rest are counted in `moreClusters`. */
   clusters: RunClusterFact[];
   moreClusters?: number;
   runUrl: string | null;

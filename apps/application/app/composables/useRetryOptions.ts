@@ -34,14 +34,17 @@ export function useRetryOptions() {
     set: (value) => update({ mode: value }),
   });
 
-  /** The run options for a page whose tests ran in `projects`: a project chosen on another run is left out. */
+  /**
+   * The run options for a page whose tests ran in `projects`: the chosen project applies only while the menu offers
+   * it (two projects or more), and one chosen on another run is left out.
+   */
   function optionsFor(projects: readonly string[] = []): RetryRunOptions {
     return {
       runMode: prefs.value.headed ? 'headed' : 'normal',
       trace: prefs.value.trace,
       repeatEach: prefs.value.repeatEach,
       workers: prefs.value.workers,
-      project: project.value && projects.includes(project.value) ? project.value : null,
+      project: project.value && projects.length > 1 && projects.includes(project.value) ? project.value : null,
     };
   }
 
