@@ -30,7 +30,7 @@
  * (`stuck-notifications`).
  */
 
-import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
 import {
   parseRunOrigin,
@@ -501,6 +501,18 @@ export function isVisibleRun(run: RunVisibilityFields, viewerId: number | null):
 /** SQL predicate: the run is not a private run, for the lists every member of a project reads. */
 export function notPrivateRun(origin: SQLWrapper = testRuns.origin): SQL {
   return sql`NOT ${runOriginIn(origin, PRIVATE_RUN_ORIGINS)}`;
+}
+
+/**
+ * SQL predicate: the run is set aside from team use (`notLabRun`), except the viewer's own private runs, for a list
+ * that shows them to their requester.
+ */
+export function notLabRunOrOwn(viewerId: number | null, origin: SQLWrapper = testRuns.origin): SQL {
+  if (viewerId === null) return notLabRun(origin);
+  return or(
+    notLabRun(origin),
+    and(runOriginIn(origin, PRIVATE_RUN_ORIGINS), eq(testRuns.requesterId, viewerId)),
+  ) as SQL;
 }
 
 /** `notPrivateRun` on an execution's run id, for queries over `test_runs_cases` that do not join `test_runs`. */

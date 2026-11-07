@@ -291,6 +291,12 @@ useViewScroll(
                 :project-name="testCase?.project?.name"
               >
                 <template #metrics>
+                  <span
+                    v-if="exec.runOrigin === 'request'"
+                    class="text-xs text-muted shrink-0"
+                    title="A run you asked for from the dashboard: only you see it, and it counts in nothing the team reads"
+                    >On your machine</span
+                  >
                   <DurationValue v-if="exec.duration !== null" :ms="exec.duration" />
                   <UBadge
                     v-if="exec.retries && exec.retries > 0"
