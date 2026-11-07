@@ -5,8 +5,9 @@
  *
  * A request names tests by spec path relative to the Playwright config, title, line and Playwright project, and
  * options from a closed list. It never carries an absolute path, a command line, an environment variable, a URL or
- * code: the target checks each test against its own folder and builds the command itself. The instance, the targets
- * and the dashboard read it through the one parser here, which refuses an unknown field and a value out of bounds.
+ * code: the target checks that each test's spec is an existing regular file of its own folder and builds the command
+ * itself, with {@link specFileArgument}. The instance, the targets and the dashboard read it through the one parser
+ * here, which refuses an unknown field and a value out of bounds.
  */
 
 /** What a request asks a target to do. A target refuses a kind it does not know, with a message to update. */
@@ -20,6 +21,13 @@ export const RUN_REQUEST_LIMITS = {
   workers: { min: 1, max: 4 },
   /** How long a request waits for a target to claim it, in milliseconds. */
   lifetimeMs: 2 * 60 * 1000,
+  /**
+   * How often a target that holds a request calls the instance at least, in milliseconds: it hears its stops from the
+   * list of requests. Past this silence the instance ends the request as an error.
+   */
+  silentTargetMs: 5 * 60 * 1000,
+  /** How long a stop waits for the target to end a run, in milliseconds, before a second stop ends the request. */
+  stopGraceMs: 60 * 1000,
 } as const;
 
 /**
@@ -103,11 +111,22 @@ export type RunRequestParse<T> = { ok: true; value: T } | { ok: false; problems:
 const MAX_PATH_CHARS = 500;
 const MAX_TITLE_CHARS = 500;
 const MAX_BRANCH_CHARS = 255;
-/** A Playwright project name: no leading `-` or space, so it never reads as an option. */
-const PLAYWRIGHT_PROJECT = /^[\w.:@/+][\w .:@/+-]{0,99}$/;
-// oxlint-disable-next-line no-control-regex
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
-const COMMIT = /^[0-9a-f]{7,40}$/i;
+/**
+ * A Playwright project name: letters, digits, spaces and `_ . : @ / + ( ) -`, with no leading `-`, space or
+ * parenthesis, so it never reads as an option, and no `*`, which `--project` reads as a wildcard.
+ */
+const PLAYWRIGHT_PROJECT = /^[\p{L}\p{N}_.:@/+][\p{L}\p{N}\p{M}_ .:@/+()-]{0,99}$/u;
+/**
+ * Control, format and line or paragraph separator characters: C0 and C1 controls, NUL, bidi overrides and isolates,
+ * zero-width characters, U+2028 and U+2029. Each can make what the person reads differ from what runs.
+ */
+const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+/** What a shell or a glob expands, and `:`, which Playwright reads as the start of a line number. */
+const SPEC_PATH_SPECIAL = /[*?|&%^"<>$`:!]/;
+/** What git refuses in a ref name, besides control characters: `..`, `~ ^ : ? * [ \`, a space and `@{`. */
+const BRANCH_SPECIAL = /\.\.|[~^:?*[\\ ]|@\{/;
+/** A commit SHA: SHA-1 or SHA-256, abbreviated to 7 digits at least. */
+const COMMIT = /^[0-9a-f]{7,64}$/i;
 const MAX_ID = 2_147_483_647;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -115,17 +134,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether a spec path stays inside the folder of the Playwright config: no leading `-`, `/` or `\`, no drive
- * letter, no `..` segment and no NUL character.
+ * Whether a spec path names a file inside the folder of the Playwright config: no leading `-`, `/` or `\`, no drive
+ * letter, no empty, `.` or `..` segment, no segment with a space at either end, and none of the characters a shell,
+ * a glob or Playwright's `file:line` reads (`* ? | & % ^ " < > $ : !` and a backtick) or a hidden character.
  */
 export function isRelativeSpecPath(path: string): boolean {
-  return (
-    path.length > 0 &&
-    !/^[-/\\]/.test(path) &&
-    !/^[a-z]:/i.test(path) &&
-    !path.split(/[\\/]/).includes('..') &&
-    !path.includes('\0')
-  );
+  if (path.length === 0 || /^[-/\\]/.test(path) || SPEC_PATH_SPECIAL.test(path) || HIDDEN_CHARACTER.test(path)) {
+    return false;
+  }
+  return path
+    .split(/[\\/]/)
+    .every((segment) => segment !== '' && segment !== '.' && segment !== '..' && segment.trim() === segment);
+}
+
+/**
+ * Whether a value is a branch name a request may carry: git's rules for a ref name (no `..`, `~ ^ : ? * [ \`, space,
+ * `@{` or hidden character; no segment that starts with `.` or ends with `.lock`; no leading `-` or `/`, no
+ * trailing `/` or `.`, no `//`), and at most 255 characters.
+ */
+export function isRunRequestBranch(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_BRANCH_CHARS || value === '@') return false;
+  if (value.startsWith('-') || value.endsWith('.') || BRANCH_SPECIAL.test(value) || HIDDEN_CHARACTER.test(value)) {
+    return false;
+  }
+  return value.split('/').every((segment) => segment !== '' && !segment.startsWith('.') && !segment.endsWith('.lock'));
+}
+
+/** Whether a value is a commit SHA a request may carry: 7 to 64 hex digits. */
+export function isRunRequestCommit(value: unknown): value is string {
+  return typeof value === 'string' && COMMIT.test(value);
+}
+
+/** Whether a value is a test title a request may carry: at most 500 characters, with no hidden character. */
+function isRunRequestTitle(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= MAX_TITLE_CHARS && !HIDDEN_CHARACTER.test(value);
+}
+
+/**
+ * The Playwright CLI argument that selects one test: its spec file, escaped and anchored as `/^…$/`, then `:line`.
+ * Playwright reads a file argument as a regular expression tested against each spec's absolute path, so an escaped,
+ * anchored path matches that file alone, never another whose path contains it.
+ *
+ * `absolutePath` is the spec's path as Playwright loads it: the config's folder, as Playwright resolves it (links
+ * resolved the same way, or nothing matches), joined with the test's `filePath`, which the target checked names an
+ * existing regular file. Windows separators are written as `/`, which Playwright also tests. A target passes this, the
+ * project as one `--project=<name>` element, and every other argument as elements of the argv it spawns, never through
+ * a shell.
+ */
+export function specFileArgument(absolutePath: string, line: number): string {
+  const escaped = absolutePath.replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  return `/^${escaped}$/:${line}`;
 }
 
 /** Whether a value is a Playwright project name a request may carry. */
@@ -206,8 +264,8 @@ function readTest(value: unknown, at: string, problems: string[]): RunRequestTes
   if (typeof filePath !== 'string' || filePath.length > MAX_PATH_CHARS || !isRelativeSpecPath(filePath)) {
     problems.push(`${at}.filePath must be a spec path relative to the Playwright config.`);
   }
-  if (typeof title !== 'string' || title.length > MAX_TITLE_CHARS || CONTROL_CHARACTER.test(title)) {
-    problems.push(`${at}.title must be one line of at most ${MAX_TITLE_CHARS} characters, with no control character.`);
+  if (!isRunRequestTitle(title)) {
+    problems.push(`${at}.title must be at most ${MAX_TITLE_CHARS} characters, with no control or invisible character.`);
   }
   if (line !== null && line !== undefined && !isId(line)) problems.push(`${at}.line must be a line number or null.`);
   if (projectName !== null && projectName !== undefined && !isRunRequestProjectName(projectName)) {
@@ -220,6 +278,13 @@ function readTest(value: unknown, at: string, problems: string[]): RunRequestTes
     line: (line as number | null | undefined) ?? null,
     projectName: (projectName as string | null | undefined) ?? null,
   };
+}
+
+/** One test of a request, read from untrusted input: the instance leaves out a stored test that does not pass. */
+export function parseRunRequestTest(value: unknown): RunRequestParse<RunRequestTest> {
+  const problems: string[] = [];
+  const test = readTest(value, 'test', problems);
+  return test ? { ok: true, value: test } : { ok: false, problems };
 }
 
 const SOURCE_FIELDS = ['runId', 'executionId', 'branch', 'commit'] as const;
@@ -242,18 +307,11 @@ function readSource(value: unknown, at: string, problems: string[]): RunRequestS
     else problems.push(`${at}.executionId must be an execution id.`);
   }
   if (branch !== undefined) {
-    if (
-      typeof branch === 'string' &&
-      branch.length > 0 &&
-      branch.length <= MAX_BRANCH_CHARS &&
-      !branch.startsWith('-') &&
-      !CONTROL_CHARACTER.test(branch)
-    ) {
-      source.branch = branch;
-    } else problems.push(`${at}.branch must be a branch name.`);
+    if (isRunRequestBranch(branch)) source.branch = branch;
+    else problems.push(`${at}.branch must be a branch name.`);
   }
   if (commit !== undefined) {
-    if (typeof commit === 'string' && COMMIT.test(commit)) source.commit = commit;
+    if (isRunRequestCommit(commit)) source.commit = commit;
     else problems.push(`${at}.commit must be a commit SHA.`);
   }
   return source;
@@ -282,10 +340,10 @@ export function parseRunRequest(value: unknown): RunRequestParse<RunRequest> {
   if (!Array.isArray(tests) || tests.length < min || tests.length > max) {
     problems.push(`tests must list ${min} to ${max} tests.`);
   } else {
-    tests.forEach((test, i) => {
-      const parsed = readTest(test, `tests[${i}]`, problems);
+    for (let i = 0; i < tests.length; i++) {
+      const parsed = readTest(tests[i], `tests[${i}]`, problems);
       if (parsed) parsedTests.push(parsed);
-    });
+    }
   }
   const parsedOptions = readOptions(options, 'options', problems);
   const parsedSource = readSource(source, 'source', problems);

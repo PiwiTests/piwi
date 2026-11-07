@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import { parseRunOriginRef } from '../src/wire';
-import { RUN_REQUEST_LIMITS, isRelativeSpecPath, parseRunRequest, parseRunRequestOptions } from '../src/run-request';
+import {
+  RUN_REQUEST_LIMITS,
+  isRelativeSpecPath,
+  isRunRequestBranch,
+  isRunRequestCommit,
+  parseRunRequest,
+  parseRunRequestOptions,
+  parseRunRequestTest,
+  specFileArgument,
+} from '../src/run-request';
 
 const ID = '0123456789abcdef0123456789abcdef';
 
@@ -78,6 +87,33 @@ describe('parseRunRequest', () => {
     'tests\\..\\a.spec.ts',
     'a\0.spec.ts',
     '',
+    '.',
+    './a.spec.ts',
+    'tests//a.spec.ts',
+    'tests/',
+    ' a.spec.ts',
+    'a.spec.ts ',
+    'tests/ a/b.spec.ts',
+    '.*',
+    'a|b',
+    'tests/*.spec.ts',
+    'a?.spec.ts',
+    'a.spec.ts\nrm -rf ~',
+    'a\t.spec.ts',
+    'a\u001b[2J.spec.ts',
+    'a\u0085.spec.ts',
+    'a\u2028.spec.ts',
+    'a\u202e.spec.ts',
+    'a\u200b.spec.ts',
+    'a&calc.spec.ts',
+    '%PATH%.spec.ts',
+    '$(touch x).spec.ts',
+    '`id`.spec.ts',
+    'a"b.spec.ts',
+    'a<b.spec.ts',
+    'a^b.spec.ts',
+    'a!b.spec.ts',
+    'a.spec.ts:12',
   ])('refuses the spec path %j', (filePath) => {
     expect(isRelativeSpecPath(filePath)).toBe(false);
     expect(problemsOf({ ...request, tests: [{ ...request.tests[0], filePath }] })).toEqual([
@@ -94,6 +130,79 @@ describe('parseRunRequest', () => {
   test('accepts a spec path inside the folder', () => {
     expect(isRelativeSpecPath('tests/checkout/pay.spec.ts')).toBe(true);
     expect(isRelativeSpecPath('a..b.spec.ts')).toBe(true);
+    expect(isRelativeSpecPath('app/(auth)/[locale]/sign in.spec.ts')).toBe(true);
+    expect(isRelativeSpecPath('tests/a+b.spec.ts')).toBe(true);
+  });
+
+  test('accepts the project names Playwright users write', () => {
+    for (const project of ['Pixel 5 (mobile)', 'Édge', 'Mobile Chrome', 'setup:db', 'Desktop 日本語']) {
+      expect(parseRunRequestOptions({ project }).ok, project).toBe(true);
+    }
+    for (const project of ['(mobile)', 'chrom*', 'a\u202eb', '-x']) {
+      expect(parseRunRequestOptions({ project }).ok, project).toBe(false);
+    }
+  });
+
+  test.each(['main', 'feature/pay-v2', 'release/1.2', 'user@host-fix', 'v1.0'])('accepts the branch %j', (branch) => {
+    expect(isRunRequestBranch(branch)).toBe(true);
+  });
+
+  test.each([
+    '',
+    '@',
+    '-x',
+    '/main',
+    'main/',
+    'feature//x',
+    'a..b',
+    'x.lock',
+    'feature/x.lock/y',
+    '.hidden',
+    'feature/.x',
+    'main.',
+    'a b',
+    'a~1',
+    'a^2',
+    'a:b',
+    'a?b',
+    'a*b',
+    'a[b',
+    'a\\b',
+    'a@{1}',
+    '" & calc.exe & "',
+    '$(touch x);`id`',
+    'main\u202e',
+    'main\u2028x',
+    'main\u0085',
+    'x'.repeat(256),
+  ])('refuses the branch %j', (branch) => {
+    expect(isRunRequestBranch(branch)).toBe(false);
+    expect(problemsOf({ ...request, source: { branch } })).toEqual(['source.branch must be a branch name.']);
+  });
+
+  test('takes a SHA-1 or SHA-256 commit', () => {
+    expect(isRunRequestCommit('9f8e7d6')).toBe(true);
+    expect(isRunRequestCommit('a'.repeat(40))).toBe(true);
+    expect(isRunRequestCommit('a'.repeat(64))).toBe(true);
+    expect(isRunRequestCommit('a'.repeat(65))).toBe(false);
+    expect(isRunRequestCommit('9f8e7d')).toBe(false);
+  });
+
+  test('refuses an array with holes, as every caller reads it', () => {
+    // oxlint-disable-next-line unicorn/no-new-array
+    expect(problemsOf({ ...request, tests: new Array(3) })).toEqual([
+      'tests[0] must be an object.',
+      'tests[1] must be an object.',
+      'tests[2] must be an object.',
+    ]);
+    // oxlint-disable-next-line no-sparse-arrays
+    expect(problemsOf({ ...request, tests: [, request.tests[0]] })).toEqual(['tests[0] must be an object.']);
+  });
+
+  test('keeps the shell syntax of a title, which never reaches a command line', () => {
+    expect(parseRunRequest({ ...request, tests: [{ ...request.tests[0], title: 'shows "Saved" & $5 off!' }] }).ok).toBe(
+      true,
+    );
   });
 
   test('refuses fewer than 1 or more than 200 tests', () => {
@@ -129,14 +238,12 @@ describe('parseRunRequest', () => {
     [{ source: { runId: -1 } }, 'source.runId must be a run id.'],
     [{ source: { branch: '--upload-pack=touch x' } }, 'source.branch must be a branch name.'],
     [{ source: { branch: 'main\nfeature' } }, 'source.branch must be a branch name.'],
-    [
-      { tests: [{ ...request.tests[0], title: 'pays\u001b[2J' }] },
-      'tests[0].title must be one line of at most 500 characters, with no control character.',
-    ],
-    [
-      { tests: [{ ...request.tests[0], title: 'pays\nwith a card' }] },
-      'tests[0].title must be one line of at most 500 characters, with no control character.',
-    ],
+    ...['pays\u001b[2J', 'pays\nwith a card', 'pays\u0085', 'pays\u2028', 'pays \u202ewith', 'pays\u2066'].map(
+      (title) => [
+        { tests: [{ ...request.tests[0], title }] },
+        'tests[0].title must be at most 500 characters, with no control or invisible character.',
+      ],
+    ),
   ])('refuses %j', (patch, problem) => {
     expect(problemsOf({ ...request, ...patch })).toEqual([problem]);
   });
@@ -165,5 +272,53 @@ describe('parseRunRequestOptions', () => {
       ok: false,
       problems: ['options.timeout is not a field of a run request.'],
     });
+  });
+});
+
+describe('parseRunRequestTest', () => {
+  test('reads one test, or names what is wrong with it', () => {
+    expect(parseRunRequestTest({ filePath: 'a.spec.ts', title: 'a', line: 3, projectName: null })).toEqual({
+      ok: true,
+      value: { filePath: 'a.spec.ts', title: 'a', line: 3, projectName: null },
+    });
+    expect(parseRunRequestTest({ filePath: '.*', title: 'a' })).toEqual({
+      ok: false,
+      problems: ['test.filePath must be a spec path relative to the Playwright config.'],
+    });
+  });
+});
+
+describe('specFileArgument', () => {
+  /** What Playwright 1.64 does with a file argument: `parseLocationArg`, then `forceRegExp` on the file part. */
+  function playwrightReads(arg: string): { re: RegExp; line: number | null } {
+    const location = /^(.*?):(\d+):?(\d+)?$/.exec(arg);
+    const file = location ? location[1]! : arg;
+    const literal = /^\/(.*)\/([gi]*)$/.exec(file);
+    return {
+      re: literal ? new RegExp(literal[1]!, literal[2]) : new RegExp(file, 'gi'),
+      line: location ? Number(location[2]) : null,
+    };
+  }
+
+  test('matches the one spec file, at its line', () => {
+    const arg = specFileArgument('/home/me/shop/tests/a.spec.ts', 12);
+    expect(arg).toBe('/^\\/home\\/me\\/shop\\/tests\\/a\\.spec\\.ts$/:12');
+    const { re, line } = playwrightReads(arg);
+    expect(line).toBe(12);
+    expect(re.test('/home/me/shop/tests/a.spec.ts')).toBe(true);
+    for (const other of [
+      '/home/me/shop/other-tests/a.spec.ts',
+      '/home/me/shop/tests/a.spec.tsx',
+      '/x/home/me/shop/tests/a.spec.ts',
+    ]) {
+      expect(re.test(other), other).toBe(false);
+    }
+  });
+
+  test('escapes what a regular expression reads, and writes Windows separators as /', () => {
+    const { re, line } = playwrightReads(specFileArgument('C:\\shop\\app\\(auth)\\[id]+x.spec.ts', 3));
+    expect(line).toBe(3);
+    expect(re.test('C:/shop/app/(auth)/[id]+x.spec.ts')).toBe(true);
+    expect(re.test('C:/shop/app/auth/i+x.spec.ts')).toBe(false);
   });
 });
