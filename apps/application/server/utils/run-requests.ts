@@ -181,6 +181,7 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
   }
 
   const tests: RunRequestTest[] = [];
+  const seen = new Set<string>();
   const projects = new Set<string>();
   let skipped = 0;
   for (const row of rows) {
@@ -190,6 +191,9 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
       skipped++;
       continue;
     }
+    const key = JSON.stringify([row.filePath, row.title, row.line, projectName]);
+    if (seen.has(key)) continue;
+    seen.add(key);
     tests.push(parsed.value);
     if (projectName) projects.add(projectName);
   }
@@ -322,8 +326,11 @@ export async function findOwnRequest(
 const ACTIVE_STATES: RunRequestState[] = ['claimed', 'starting', 'running', 'stopping'];
 const RUN_STATES: RunRequestState[] = ['starting', 'running', 'stopping'];
 
-/** How long a target keeps hearing of a claimed request the requester stopped before the person answered it. */
-const STOPPED_CLAIM_NOTICE_MS = 10 * 60 * 1000;
+/** How long a target keeps hearing of a request that ended at a stop, so one that polls late still ends its run. */
+const STOPPED_NOTICE_MS = 10 * 60 * 1000;
+
+/** How long a claimed request waits for the person's answer in the app before it ends. */
+const ANSWER_WINDOW_MS = 10 * 60 * 1000;
 
 /** The states a run moves through once the person clicked **Run**, and where each may go next. */
 const STATE_MOVES: Record<'running' | 'stopping' | 'ended', RunRequestState[]> = {
@@ -377,14 +384,20 @@ export async function stopOwnRequest(
   return asked !== undefined;
 }
 
-/** The words of a request ended because the app that held it stopped calling the instance. */
-const SILENT_TARGET_DETAIL = 'The app that held this request stopped answering';
-
 /**
- * End the requests whose target went silent: held (claimed, or its run) by a target the instance has not heard from
- * for `silentTargetMs`, they end as an error. One request when `id` is given, else every one.
+ * End, as an error, the requests nobody can act on any more: one held (claimed, or its run) by a target the instance
+ * has not heard from for `silentTargetMs` or that was disconnected, and one claimed but not answered within 10
+ * minutes. One request when `id` is given, else every one.
  */
-export async function endSilentRequests(db: DbClient, now = new Date(), id?: string): Promise<number> {
+export async function endStaleRequests(db: DbClient, now = new Date(), id?: string): Promise<number> {
+  const one = id === undefined ? undefined : eq(runRequests.id, id);
+  const unanswered = await db
+    .update(runRequests)
+    .set({ state: 'ended', outcome: 'error', detail: 'Nobody answered this request in the app', updatedAt: now })
+    .where(
+      and(one, eq(runRequests.state, 'claimed'), lt(runRequests.claimedAt, new Date(now.getTime() - ANSWER_WINDOW_MS))),
+    )
+    .returning({ id: runRequests.id });
   const silentSince = new Date(now.getTime() - RUN_REQUEST_LIMITS.silentTargetMs);
   const silent = db
     .select({ id: runTargets.id })
@@ -397,16 +410,21 @@ export async function endSilentRequests(db: DbClient, now = new Date(), id?: str
     );
   const ended = await db
     .update(runRequests)
-    .set({ state: 'ended', outcome: 'error', detail: SILENT_TARGET_DETAIL, updatedAt: now })
+    .set({
+      state: 'ended',
+      outcome: 'error',
+      detail: 'The app that held this request stopped answering',
+      updatedAt: now,
+    })
     .where(
       and(
-        id === undefined ? undefined : eq(runRequests.id, id),
+        one,
         inArray(runRequests.state, ACTIVE_STATES),
-        inArray(runRequests.targetId, silent),
+        or(isNull(runRequests.targetId), inArray(runRequests.targetId, silent)),
       ),
     )
     .returning({ id: runRequests.id });
-  return ended.length;
+  return unanswered.length + ended.length;
 }
 
 /**
@@ -431,8 +449,9 @@ async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: numb
 }
 
 /**
- * The requests a target should act on: those still waiting for one of its owner's targets, and its own stops (a run
- * to end, or a claimed request to stop showing).
+ * The requests a target should act on: those still waiting for one of its owner's targets, and its own stops: a run
+ * to end, or a request that ended at a stop within the last 10 minutes (a claim to stop showing, or a run the second
+ * stop ended).
  */
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
@@ -469,8 +488,7 @@ export async function requestsForTarget(
           inArray(runRequests.state, RUN_STATES),
           and(
             eq(runRequests.state, 'ended'),
-            isNull(runRequests.answeredAt),
-            gt(runRequests.stopRequestedAt, new Date(now.getTime() - STOPPED_CLAIM_NOTICE_MS)),
+            gt(runRequests.stopRequestedAt, new Date(now.getTime() - STOPPED_NOTICE_MS)),
           ),
         ),
       ),

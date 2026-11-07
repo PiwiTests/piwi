@@ -29,7 +29,7 @@ const {
   claimRequest,
   countWaitingRequests,
   effectiveState,
-  endSilentRequests,
+  endStaleRequests,
   findOwnRequest,
   moveRequestState,
   pruneRunRequests,
@@ -254,7 +254,7 @@ describe('resolveRequestTests', () => {
     expect(resolved.ok && resolved.source.branch).toBeUndefined();
   });
 
-  test('refuses more than 200 tests without reading them all', async () => {
+  test('refuses more than 200 tests', async () => {
     const many = await db
       .insert(schema.testCases)
       .values(
@@ -275,6 +275,7 @@ describe('resolveRequestTests', () => {
     expect(await resolveRequestTests(db as never, { runId, tests: 'all' })).toMatchObject({
       ok: false,
       statusCode: 422,
+      message: 'A request runs at most 200 tests; these are more',
     });
   });
 
@@ -415,7 +416,7 @@ describe('the life of a request', () => {
     expect(await stored(id)).toMatchObject({ state: 'starting' });
     expect((await requestsForTarget(c)).stops).toEqual([id]);
     await moveRequestState(c, id, { state: 'ended', outcome: 'stopped' }, null);
-    expect((await requestsForTarget(c)).stops).toEqual([]);
+    expect((await requestsForTarget(c, new Date(Date.now() + 10 * 60_000 + 1000))).stops).toEqual([]);
   });
 
   test('a second stop, past the grace, ends a run the target did not end', async () => {
@@ -431,6 +432,25 @@ describe('the life of a request', () => {
     const later = new Date(first.getTime() + RUN_REQUEST_LIMITS.stopGraceMs + 1);
     expect(await stopOwnRequest(db as never, id, userId, later)).toBe(true);
     expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'stopped' });
+    expect((await requestsForTarget(c, later)).stops).toEqual([id]);
+  });
+
+  test('a claimed request nobody answers ends, and so does a run whose target was disconnected', async () => {
+    const t = await target();
+    const c = await requireRunTarget(eventWithKey(t.plaintext));
+    const claimed = await request();
+    await claimRequest(c, claimed);
+    const running = await request();
+    await claimRequest(c, running);
+    await answerRequest(c, running, { decision: 'run' });
+    const claimedAt = (await stored(claimed)).claimedAt!;
+    expect(await endStaleRequests(db as never, new Date(claimedAt.getTime() + 60_000))).toBe(0);
+    expect(await endStaleRequests(db as never, new Date(claimedAt.getTime() + 10 * 60_000 + 1), claimed)).toBe(1);
+    expect(await stored(claimed)).toMatchObject({ state: 'ended', outcome: 'error' });
+
+    await db.delete(schema.apiKeys).where(eq(schema.apiKeys.id, t.id));
+    expect(await endStaleRequests(db as never)).toBe(1);
+    expect(await stored(running)).toMatchObject({ state: 'ended', outcome: 'error' });
   });
 
   test('a request held by a target that went silent ends as an error', async () => {
@@ -439,10 +459,10 @@ describe('the life of a request', () => {
     await claimRequest(c, id);
     await answerRequest(c, id, { decision: 'run' });
     const seen = c.target.lastSeenAt!;
-    expect(await endSilentRequests(db as never, new Date(seen.getTime() + 60_000))).toBe(0);
+    expect(await endStaleRequests(db as never, new Date(seen.getTime() + 60_000))).toBe(0);
     const silent = new Date(seen.getTime() + RUN_REQUEST_LIMITS.silentTargetMs + 1);
-    expect(await endSilentRequests(db as never, silent, 'f'.repeat(32))).toBe(0);
-    expect(await endSilentRequests(db as never, silent, id)).toBe(1);
+    expect(await endStaleRequests(db as never, silent, 'f'.repeat(32))).toBe(0);
+    expect(await endStaleRequests(db as never, silent, id)).toBe(1);
     expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'error' });
     expect((await stored(id)).detail).toMatch(/stopped answering/);
   });
@@ -468,7 +488,7 @@ describe('the life of a request', () => {
     const oldExpired = await request({ expiresAt: old, updatedAt: old });
     const oldRunning = await request({ state: 'running', updatedAt: old });
     const recent = await request({ state: 'declined', updatedAt: now });
-    expect(await pruneRunRequests(db as never, 30, now)).toBeGreaterThanOrEqual(2);
+    expect(await pruneRunRequests(db as never, 30, now)).toBe(2);
     const left = (await db.select({ id: schema.runRequests.id }).from(schema.runRequests)).map((r) => r.id);
     expect(left).not.toContain(oldEnded);
     expect(left).not.toContain(oldExpired);
@@ -515,7 +535,7 @@ describe('the life of a request', () => {
       .insert(schema.testRunsCases)
       .values(
         withStoredVerdicts([
-          { testRunId: runId, testCaseId: suiteCase!.id, status: 'passed', browserName: 'chromium', line: 4 },
+          { testRunId: runId, testCaseId: suiteCase!.id, status: 'passed', browserName: 'chromium', line: 9 },
         ]),
       );
     const file = await resolveRequestTests(db as never, { runId, filePath: 'tests/cart.spec.ts' });

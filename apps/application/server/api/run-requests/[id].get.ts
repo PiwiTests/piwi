@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import {
-  endSilentRequests,
+  endStaleRequests,
   findOwnRequest,
   requireRunRequestId,
   requireSignInForRunRequests,
@@ -27,7 +27,7 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const id = requireRunRequestId(event);
   const db = await getDatabase();
-  await endSilentRequests(db, new Date(), id);
+  await endStaleRequests(db, new Date(), id);
   const row = await findOwnRequest(db, id, user.id, await getRequestAccess(event));
   if (!row) throw apiError({ statusCode: 404, message: 'No run request has this id' });
   return runRequestView(db, row);

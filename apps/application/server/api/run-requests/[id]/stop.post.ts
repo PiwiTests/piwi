@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import {
-  endSilentRequests,
+  endStaleRequests,
   findOwnRequest,
   requireRunRequestId,
   requireSignInForRunRequests,
@@ -36,6 +36,6 @@ export default eventHandler(async (event) => {
   if (!(await stopOwnRequest(db, id, user.id))) {
     throw apiError({ statusCode: 409, message: 'This request has already ended' });
   }
-  await endSilentRequests(db, new Date(), id);
+  await endStaleRequests(db, new Date(), id);
   return runRequestView(db, (await findOwnRequest(db, id, user.id, access))!);
 });

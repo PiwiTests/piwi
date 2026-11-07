@@ -71,7 +71,7 @@ export const RUN_REQUEST_ID = /^[0-9a-f]{32}$/;
 
 /** One test, as the instance resolved it. */
 export interface RunRequestTest {
-  /** Spec path relative to the Playwright config, POSIX separators. */
+  /** Spec path relative to the Playwright config, POSIX separators; a `\` reads as a separator too. */
   filePath: string;
   title: string;
   line: number | null;
@@ -117,10 +117,11 @@ const MAX_BRANCH_CHARS = 255;
  */
 const PLAYWRIGHT_PROJECT = /^[\p{L}\p{N}_.:@/+][\p{L}\p{N}\p{M}_ .:@/+()-]{0,99}$/u;
 /**
- * Control, format and line or paragraph separator characters: C0 and C1 controls, NUL, bidi overrides and isolates,
- * zero-width characters, U+2028 and U+2029. Each can make what the person reads differ from what runs.
+ * The characters refused in every text a request carries: C0 and C1 controls, NUL, format characters (bidi overrides
+ * and isolates, zero-width characters), U+2028 and U+2029, and every default-ignorable code point (variation
+ * selectors, the Hangul fillers, the combining grapheme joiner).
  */
-const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 /** What a shell or a glob expands, and `:`, which Playwright reads as the start of a line number. */
 const SPEC_PATH_SPECIAL = /[*?|&%^"<>$`:!]/;
 /** What git refuses in a ref name, besides control characters: `..`, `~ ^ : ? * [ \`, a space and `@{`. */
@@ -134,7 +135,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether a spec path names a file inside the folder of the Playwright config: no leading `-`, `/` or `\`, no drive
+ * Whether a spec path names a file inside the folder of the Playwright config, `/` and `\` both read as separators:
+ * no leading `-`, `/` or `\`, no drive
  * letter, no empty, `.` or `..` segment, no segment with a space at either end, and none of the characters a shell,
  * a glob or Playwright's `file:line` reads (`* ? | & % ^ " < > $ : !` and a backtick) or a hidden character.
  */
@@ -177,18 +179,22 @@ function isRunRequestTitle(value: unknown): value is string {
  *
  * `absolutePath` is the spec's path as Playwright loads it: the config's folder, as Playwright resolves it (links
  * resolved the same way, or nothing matches), joined with the test's `filePath`, which the target checked names an
- * existing regular file. Windows separators are written as `/`, which Playwright also tests. A target passes this, the
- * project as one `--project=<name>` element, and every other argument as elements of the argv it spawns, never through
- * a shell.
+ * existing regular file, with `\` read as a separator as the parser reads it. Every `\` is written as `/`, which
+ * Playwright also tests on Windows. A target passes this, the project as one `--project=<name>` element, and every
+ * other argument as elements of the argv it spawns, never through a shell.
+ *
+ * A line selects every test that starts on it, and the tests of a `describe` that starts on it (tests made in a loop
+ * share one line), so the target shows what `playwright test --list` finds with these arguments before **Run**.
  */
 export function specFileArgument(absolutePath: string, line: number): string {
+  if (!Number.isInteger(line) || line < 1) throw new RangeError(`A line number is a whole number from 1: ${line}`);
   const escaped = absolutePath.replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   return `/^${escaped}$/:${line}`;
 }
 
 /** Whether a value is a Playwright project name a request may carry. */
 export function isRunRequestProjectName(value: unknown): value is string {
-  return typeof value === 'string' && PLAYWRIGHT_PROJECT.test(value);
+  return typeof value === 'string' && PLAYWRIGHT_PROJECT.test(value) && !HIDDEN_CHARACTER.test(value);
 }
 
 function isId(value: unknown): value is number {

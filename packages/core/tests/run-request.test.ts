@@ -105,6 +105,10 @@ describe('parseRunRequest', () => {
     'a\u2028.spec.ts',
     'a\u202e.spec.ts',
     'a\u200b.spec.ts',
+    'a\u034f.spec.ts',
+    'a\u3164.spec.ts',
+    'a\ufe0f.spec.ts',
+    'a\u{e0100}.spec.ts',
     'a&calc.spec.ts',
     '%PATH%.spec.ts',
     '$(touch x).spec.ts',
@@ -138,7 +142,7 @@ describe('parseRunRequest', () => {
     for (const project of ['Pixel 5 (mobile)', 'Édge', 'Mobile Chrome', 'setup:db', 'Desktop 日本語']) {
       expect(parseRunRequestOptions({ project }).ok, project).toBe(true);
     }
-    for (const project of ['(mobile)', 'chrom*', 'a\u202eb', '-x']) {
+    for (const project of ['(mobile)', 'chrom*', 'a\u202eb', '-x', 'Chrome\u180b', 'a\u115fb']) {
       expect(parseRunRequestOptions({ project }).ok, project).toBe(false);
     }
   });
@@ -320,5 +324,10 @@ describe('specFileArgument', () => {
     expect(line).toBe(3);
     expect(re.test('C:/shop/app/(auth)/[id]+x.spec.ts')).toBe(true);
     expect(re.test('C:/shop/app/auth/i+x.spec.ts')).toBe(false);
+  });
+
+  test('refuses a line that is not a line number', () => {
+    expect(() => specFileArgument('/home/me/a.spec.ts', 0)).toThrow(RangeError);
+    expect(() => specFileArgument('/home/me/a.spec.ts', 1.5)).toThrow(RangeError);
   });
 });

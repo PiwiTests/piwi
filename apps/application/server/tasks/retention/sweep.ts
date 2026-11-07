@@ -18,7 +18,7 @@ import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
 import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
 import { pruneMcpOAuth } from '../../utils/mcp-oauth';
-import { endSilentRequests, pruneRunRequests } from '../../utils/run-requests';
+import { endStaleRequests, pruneRunRequests } from '../../utils/run-requests';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
 const RECONCILE_DAYS = 7;
@@ -120,9 +120,9 @@ export default defineTask({
       if (pruned > 0) result.mcpToolCallsPruned = pruned;
     }
 
-    // …and for run requests that ended or expired, after ending those whose app went silent.
-    const silentEnded = await endSilentRequests(db);
-    if (silentEnded > 0) result.runRequestsEndedSilent = silentEnded;
+    // …and for run requests that ended or expired, after ending those nobody can act on any more.
+    const staleEnded = await endStaleRequests(db);
+    if (staleEnded > 0) result.runRequestsEnded = staleEnded;
     if (notificationDays > 0) {
       const pruned = await pruneRunRequests(db, notificationDays);
       if (pruned > 0) result.runRequestsPruned = pruned;
