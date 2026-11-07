@@ -540,6 +540,8 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
     mergedRaw.uploadManifest = false;
     mergedRaw.captureCodeReach = false;
     delete mergedRaw.coverage;
+    // AI steps only replay what the project committed: authoring reaches the server the config names.
+    mergedRaw.ai = { ...mergedRaw.ai, mode: 'replay' };
   } else if (requested) {
     // A requested run the reporter cannot take sends nothing, rather than reach another server.
     mergedRaw.enabled = false;

@@ -99,6 +99,12 @@ describe('a requested run', () => {
     expect(read && 'problem' in read ? read.problem : null).toMatch(/alone/);
   });
 
+  it.skipIf(process.platform === 'win32')('refuses a token file others may read', () => {
+    writeToken(TOKEN, 0o644);
+    const read = readRequestedRun({ PIWI_REQUEST_TOKEN_FILE: tokenFile, PIWI_REQUEST_INSTANCE: INSTANCE });
+    expect(read && 'problem' in read ? read.problem : null).toMatch(/alone/);
+  });
+
   it('uploads to the instance with the token, over the config, the environment and the desktop app', () => {
     writeToken(TOKEN);
     fs.writeFileSync(
@@ -117,6 +123,7 @@ describe('a requested run', () => {
       enabled: false,
       keep: true,
       coverage: { browser: 'on' },
+      ai: { mode: 'resolve' },
     });
     expect(opts.serverUrl).toBe(INSTANCE);
     expect(opts.apiKey).toBe(TOKEN);
@@ -129,7 +136,9 @@ describe('a requested run', () => {
     expect(opts.keep).toBe(false);
     expect(opts.sampleAriaOnPass).toBe(false);
     expect(opts.uploadManifest).toBe(false);
+    expect(opts.captureCodeReach).toBe(false);
     expect(opts.coverage).toBe(undefined);
+    expect(opts.ai?.mode).toBe('replay');
     expect(requestedRunTarget()).toBe(INSTANCE);
   });
 

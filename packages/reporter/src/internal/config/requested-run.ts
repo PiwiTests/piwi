@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import { REQUEST_RUN_ENV, REQUEST_TOKEN } from '@piwitests/core/run-request';
 import { readPrivateFile } from '../support/private-file.js';
 
@@ -35,7 +36,7 @@ export function readRequestedRun(env: NodeJS.ProcessEnv): RequestedRun | { probl
     read = null;
   }
   if (!read) return { problem: `The request token file in ${REQUEST_RUN_ENV.tokenFile} cannot be read.` };
-  if ('untrusted' in read) {
+  if ('untrusted' in read || readableByOthers(file)) {
     return { problem: `The request token file in ${REQUEST_RUN_ENV.tokenFile} is not this user's alone.` };
   }
   const token = read.text.trim();
@@ -43,4 +44,14 @@ export function readRequestedRun(env: NodeJS.ProcessEnv): RequestedRun | { probl
     return { problem: `The file in ${REQUEST_RUN_ENV.tokenFile} holds no request token.` };
   }
   return { instance: `${url.origin}${url.pathname.replace(/\/+$/, '')}`, token };
+}
+
+/** Whether another user may read `file`: a request token is this user's alone, to read as to write. */
+function readableByOthers(file: string): boolean {
+  if (typeof process.getuid !== 'function') return false;
+  try {
+    return (fs.statSync(file).mode & 0o044) !== 0;
+  } catch {
+    return true;
+  }
 }
