@@ -72,7 +72,8 @@
     "./hash": "./src/hash.ts",
     "./page-interaction": "./src/page-interaction.ts",
     "./run-errors": "./src/run-errors.ts",
-    "./test-output": "./src/test-output.ts"
+    "./test-output": "./src/test-output.ts",
+    "./run-request": "./src/run-request.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

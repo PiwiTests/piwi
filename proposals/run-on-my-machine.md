@@ -12,15 +12,26 @@ option and entry D64 of the 1.0 register.
 
 **Status.** Proposed 2026-11-06. PR 1 is built: **Create issue** on runs and tests with a comment (D17) and the run
 options of **Copy retry command** (D18). Headed is off by default, so a copied command runs headless until a person
-picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. Nothing else is built, and nothing here
-is on [`ROADMAP.md`](../ROADMAP.md) yet. The
-maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE
-windows are left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries
-resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one
-team instance at a time (D9); a requested run shows to its requester alone (D14); the administrator's switch is off by
-default in the first release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy
-retry command** gains the run options and ships first, with **Create issue** (D17, D18). Every other decision is a
-recommendation, and says which written decision it amends. The plan builds on three records that are not on `main`:
+picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in two. PR 2a is built:
+`@piwitests/core/run-request`, the `run:request` and `run:receive` permissions, the `machine-runs` capability (off until
+an administrator turns it on, enforced on the server), the two tables, target keys made by the device flow (they hold
+`run:receive` alone, and only the target routes take them), and the routes below except the stream. A request needs
+sign-in turned on, and a person holds at most 5 waiting ones; a test whose stored path, title or project the parser
+refuses, or that has no line, is left out and counted. Until 2b's heartbeat, a target hears its stops by listing its
+requests: one the instance has not heard from for 5 minutes, or that was disconnected, has its requests ended as an
+error, so does a claim not answered in 10 minutes, and a second stop a minute after the first ends a run; a target hears
+of a request that ended at a stop for 10 minutes. The retention sweep deletes requests that ended or expired more than
+30 days ago (the notification horizon). **Run** moves a request to `starting` without a run token: the run token with
+the `request` origin and its visibility, the stream, Connected apps, the capability's **Turn on** button, the demo's
+simulated target, the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2b, so a run reaches the instance
+only once its rules ship with it. Nothing here is on the roadmap yet. The maintainer settled on 2026-11-06: the desktop
+app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7);
+every run is confirmed in the target (D2); a request carries resolved tests and is the same object as a CI dispatch,
+parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a requested run shows to its
+requester alone (D14); the administrator's switch is off by default in the first release (D15); no request comes from an
+AI agent in the first version (D6); the existing **Copy retry command** gains the run options and ships first, with
+**Create issue** (D17, D18). Every other decision is a recommendation, and says which written decision it amends. The
+plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.
@@ -161,14 +172,19 @@ five-second "Starting in 5 s · Cancel" notice in the target, and turned off fro
   later, each a new kind an older target refuses with a message to update.
 - **Tests, resolved by the instance**: from an execution, a test case, a run (its failed tests, or all its tests), a
   spec file of a run, or a saved selection. Each test is `{ filePath, title, line, projectName }`, 1 to 200 of them,
-  with `filePath` relative to the Playwright config under D36's rule (no leading `-`, `/` or drive, no `..`).
+  with `filePath` relative to the Playwright config under D36's rule (no leading `-`, `/` or drive, no `..`), and
+  file-like: no empty or `.` segment, no space at either end of a segment, none of `* ? | & % ^ " < > $ : !` or a
+  backtick. No path, title or branch holds a control, bidi, zero-width or line-separator character, and a branch
+  follows git's ref rules.
 - **Options**: `headed` (default on), `trace` (`on` or `retain-on-failure`), `repeatEach` (1 to 10), `workers` (1 to 4),
   and the Playwright `project` among those the instance recorded for those tests. `--ui`, `--debug`, `--grep` and
   `--timeout` are not offered.
 - **What the request came from**: the run, the execution, the branch and the commit, for the confirmation's branch check
   and for the issue (D17).
-- **Never** an absolute path, a command line, an environment variable, a URL or code. The target checks each test
-  against its own folder, and builds the command itself (`buildLocalRunPlan`, `validate_args`).
+- **Never** an absolute path, a command line, an environment variable, a URL or code. The target checks that each
+  test's spec is an existing regular file of its own folder, and builds the command itself: each test is one
+  `specFileArgument` of core (the resolved path escaped and anchored as `/^…$/`, then `:line`, since Playwright reads a
+  file argument as a regular expression), passed as argv without a shell.
 
 ```ts
 interface RunRequest {
@@ -561,18 +577,19 @@ D5 and D6): `waiting` (stored, not claimed), `claimed` (shown in the target, not
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/run-requests` | a signed-in session with `run:request` | Creates a request for one of the person's targets; answers its id. |
+| `POST /api/run-requests` | a signed-in session with `run:request` | Creates a request for one of the person's targets from an execution, a run's failed or all tests, or a spec file of a run; the instance resolves the tests. |
 | `GET /api/run-requests/:id` | its requester | The request's state. |
 | `POST /api/run-requests/:id/stop` | its requester | Sends a stop to the target that runs it. |
 | `GET /api/run-targets/stream` | a target key | New requests and stops, with a heartbeat. |
 | `GET /api/run-targets/requests` | a target key | The requests still `waiting`, for a reconnect or polling. |
 | `POST /api/run-targets/requests/:id/claim` | a target key | `waiting` to `claimed`; 409 on a second claim. |
 | `POST /api/run-targets/requests/:id/answer` | a target key | **Run** (answers the run token), **Not now**, or a failed check. |
-| `POST /api/run-targets/requests/:id/state` | a target key | `starting`, `stopping`, `ended`, and a stop obeyed. |
+| `POST /api/run-targets/requests/:id/state` | a target key | `running`, `stopping`, `ended`, and a stop obeyed. |
+| `PUT /api/run-targets/self` | a target key | Its platform, version and the projects it has a folder for. |
 
 Two tables, in both schemas with a migration each: `run_requests` (the request, its requester, its target, its state,
 its claim and expiry, the run once it begins) and `run_targets` (the key, the kind, the device name, the platform, the
-version, the projects it has a folder for, `last_seen_at`, `revoked_at`).
+version, the projects it has a folder for, `last_seen_at`; revoking the key deletes the row).
 
 ## Security
 

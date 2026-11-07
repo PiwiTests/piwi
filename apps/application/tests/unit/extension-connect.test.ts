@@ -115,6 +115,57 @@ describe('the flow', () => {
     expect((await describeConnectRequest(anyDb(), start.userCode, at(16)))!.status).toBe('consumed');
   });
 
+  test('a run target needs leave to connect, then gets a key that holds run:receive alone', async () => {
+    const start = await startDeviceConnect(anyDb(), { target: 'desktop', device: 'LAPTOP-42', os: 'macOS' }, T0);
+    expect(await decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true }, at(1))).toBe(
+      'target-not-allowed',
+    );
+    expect(
+      await decideDeviceConnect(
+        anyDb(),
+        { userCode: start.userCode, userId, allow: true, mayConnectTarget: true },
+        at(2),
+      ),
+    ).toBe('approved');
+    const approved = await pollDeviceConnect(anyDb(), start.deviceCode, at(6));
+    expect(approved).toMatchObject({ status: 'approved' });
+
+    const [key] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.userId, userId));
+    expect(key).toMatchObject({
+      name: 'Piwi Desktop on LAPTOP-42 (macOS)',
+      clientKind: 'desktop',
+      permissions: ['run:receive'],
+    });
+    const targets = await db.select().from(schema.runTargets);
+    expect(targets).toEqual([
+      expect.objectContaining({
+        userId,
+        apiKeyId: key!.id,
+        kind: 'desktop',
+        deviceName: 'Piwi Desktop on LAPTOP-42 (macOS)',
+      }),
+    ]);
+  });
+
+  test('a run target is never connected with authentication off', async () => {
+    const start = await startDeviceConnect(anyDb(), { target: 'runner', device: 'build-01', os: 'Linux' }, T0);
+    await decideDeviceConnect(
+      anyDb(),
+      { userCode: start.userCode, userId: null, allow: true, mayConnectTarget: true },
+      at(1),
+    );
+    expect(await pollDeviceConnect(anyDb(), start.deviceCode, at(6))).not.toMatchObject({ status: 'approved' });
+    expect(await db.select().from(schema.runTargets)).toEqual([]);
+  });
+
+  test('a browser or editor key keeps its owner’s access', async () => {
+    const start = await started();
+    await decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true }, at(1));
+    await pollDeviceConnect(anyDb(), start.deviceCode, at(6));
+    const [key] = await db.select().from(schema.apiKeys);
+    expect(key).toMatchObject({ clientKind: 'picker', permissions: null });
+  });
+
   test('two concurrent polls of an approved request yield one key', async () => {
     const start = await started();
     await decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true }, at(1));

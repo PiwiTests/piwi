@@ -100,6 +100,17 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/extension/connect/token',
   'GET /api/extension/connect/request',
   'POST /api/extension/connect/decision',
+  // Run on my machine: a request belongs to the person who made it, so it needs
+  // sign-in, which the demo has none of; a run target reaches a real server
+  // with the key the device flow gave it, never the demo.
+  'POST /api/run-requests',
+  'GET /api/run-requests/:id',
+  'POST /api/run-requests/:id/stop',
+  'GET /api/run-targets/requests',
+  'POST /api/run-targets/requests/:id/claim',
+  'POST /api/run-targets/requests/:id/answer',
+  'POST /api/run-targets/requests/:id/state',
+  'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The
   // demo has no server for an MCP client to reach.

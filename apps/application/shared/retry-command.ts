@@ -1,4 +1,5 @@
 import { specPattern } from '@piwitests/core/spec-filter';
+import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 
 export { specPattern };
 
@@ -31,8 +32,8 @@ export interface RetryRunOptions {
 
 /** The values the dashboard offers for a run's options: the bounds of a run request. */
 export const RETRY_OPTION_LIMITS = {
-  repeatEach: { min: 1, max: 10 },
-  workers: { min: 1, max: 4 },
+  repeatEach: RUN_REQUEST_LIMITS.repeatEach,
+  workers: RUN_REQUEST_LIMITS.workers,
 } as const;
 
 /** The largest count a copied command carries, whatever offered it. */

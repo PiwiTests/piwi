@@ -37,7 +37,10 @@ record is `proposals/roles-and-groups.md`.
   (`tests/unit/allowed-host.test.ts`).
 - **With authentication on, a request signs in with a session cookie (the browser) or an API key** (`pd_` prefix, as a
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
-  more and nothing less.
+  more and nothing less, unless its `permissions` column names the only ones it holds.
+- **A key that holds some permissions only (a run target's) serves its own routes alone**: `requireAuth` refuses it,
+  `getUserByApiKey` answers null for it, and only `requireRunTarget` (`server/utils/run-requests.ts`) takes it
+  (`tests/unit/run-requests.test.ts`).
 - **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
   calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
   or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
