@@ -2,6 +2,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import type { SeriesPoint } from '#shared/types';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
 import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT, TIMELINE_PAUSE_COLORS } from '~/utils/timeline';
@@ -21,6 +22,14 @@ import {
   type WorkerStrip,
   type WorkerStripSet,
 } from '~/utils/resource-tracks';
+import {
+  buildSpanTails,
+  leftOpenAcross,
+  leftOpenPages,
+  minSteps,
+  type RowTails,
+  type SpanTail,
+} from '~/utils/resource-spans';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -118,6 +127,48 @@ const resourceBands = computed<ResourceBand[]>(() =>
     : buildResourceBands(resourceParts.value, workerRows.value, origin.value, sharded.value),
 );
 
+// What each worker kept open for nothing, as tails under its row: shown until
+// the viewer turns them off, a per-browser preference.
+const showLeaks = useLocalStorage('piwi-timeline-leaks', true, { initOnMounted: true, writeDefaults: false });
+const spanRows = computed<RowTails[]>(() =>
+  origin.value === null || resourceParts.value.length === 0
+    ? []
+    : buildSpanTails(resourceParts.value, workerRows.value, origin.value, sharded.value),
+);
+const spanCounts = computed(() => {
+  const counts = { leaked: 0, lingering: 0 };
+  for (const row of spanRows.value) for (const tail of row.tails) counts[tail.verdict]++;
+  return counts;
+});
+const shownSpanRows = computed(() => (showLeaks.value ? spanRows.value : []));
+/** The pages left open in each row, by its first lane, never above the pages open in it. */
+const leftOpenByLane = computed(() => {
+  const openByLane = new Map<number, SeriesPoint[]>();
+  for (const band of resourceBands.value) {
+    for (const worker of band.workers) if (worker.lane !== null) openByLane.set(worker.lane, worker.points);
+  }
+  return new Map(
+    shownSpanRows.value.map(
+      (row) => [row.lane, minSteps(leftOpenPages(row.tails), openByLane.get(row.lane) ?? [])] as const,
+    ),
+  );
+});
+/** The pages left open in each band's workers, by the band's key. */
+const leftOpenByBand = computed(() => {
+  const out = new Map<string, SeriesPoint[]>();
+  for (const band of resourceBands.value) {
+    const shard = workerRows.value.find((row) => row.baseLane === band.firstLane)?.shardIndex;
+    const lanes = new Set(workerRows.value.filter((row) => row.shardIndex === shard).map((row) => row.baseLane));
+    const left = leftOpenAcross(shownSpanRows.value.filter((row) => lanes.has(row.lane)));
+    const series = minSteps(left, band.tracks.pages?.points ?? []);
+    if (series.length > 0) out.set(band.key, series);
+  }
+  return out;
+});
+function leftOpenFor(band: ResourceBand): SeriesPoint[] | null {
+  return leftOpenByBand.value.get(band.key) ?? null;
+}
+
 /**
  * Where the plot ends: the last test's end, and while the run is live, the
  * last resource point read, so what the running tests use shows too.
@@ -168,6 +219,7 @@ const workerStrips = computed<WorkerStripSet | null>(() => {
     tests: testItems.value,
     costs: executionCosts.value,
     sharded: sharded.value,
+    leftOpen: leftOpenByLane.value,
   });
 });
 
@@ -186,6 +238,9 @@ const bandLayout = computed(() =>
 const rowsLayout = computed(() =>
   layOutTimelineRows(workerRows.value, {
     bandHeights: new Map(bandLayout.value.map((entry) => [entry.band.firstLane, entry.height])),
+    tailHeights: new Map(
+      shownSpanRows.value.map((row) => [row.lane, row.levels * (TIMELINE_LAYOUT.tailHeight + TIMELINE_LAYOUT.tailGap)]),
+    ),
     strips: workerStrips.value !== null,
     stripHeight: TIMELINE_LAYOUT.stripHeight,
     rowHeight: TIMELINE_LAYOUT.rowHeight,
@@ -205,6 +260,12 @@ const extraHeight = computed(
 
 function bandTop(entry: { band: ResourceBand }): number {
   return rowsLayout.value.bandTop.get(entry.band.firstLane) ?? TIMELINE_LAYOUT.axisHeight;
+}
+
+/** Y of the tails under the row whose first lane is `lane`. */
+function tailTop(lane: number): number | null {
+  const index = workerRows.value.findIndex((row) => row.baseLane === lane);
+  return index < 0 ? null : (rowsLayout.value.rows[index]?.tailTop ?? null);
 }
 
 /** Y of the strip under the row whose first lane is `lane`. */
@@ -477,6 +538,46 @@ function onResourceLeave(): void {
   resourceHover.band = null;
   resourceHover.strip = null;
 }
+
+// The tail under the pointer, read only by its tooltip, like the bars' hover state.
+const spanHover = reactive<{ tail: SpanTail | null; pos: { x: number; y: number } }>({
+  tail: null,
+  pos: { x: 0, y: 0 },
+});
+watch(shownSpanRows, () => {
+  spanHover.tail = null;
+});
+
+function onSpanHover(tail: SpanTail, event: MouseEvent): void {
+  spanHover.tail = tail;
+  spanHover.pos = { x: event.clientX, y: event.clientY };
+}
+
+function onSpanLeave(): void {
+  spanHover.tail = null;
+}
+
+/**
+ * Open the test an object outlived or lingered in: on its worker's row, the
+ * test the span names, nearest to where the tail starts; without a name, the
+ * test running when a lingering object was last used, or for a leak the test
+ * that ended last before the leak's start.
+ */
+function selectSpanTest(tail: SpanTail): void {
+  const onRow = testItems.value.filter((item) => item.rowIndex === tail.lane && item.testCaseId != null);
+  const distance = (item: TimelineItem) => {
+    const end = item.start + item.duration;
+    return tail.start < item.start ? item.start - tail.start : tail.start > end ? tail.start - end : 0;
+  };
+  const named = tail.test ? onRow.filter((item) => item.title === tail.test!.title) : [];
+  const before = onRow.filter((item) => item.start <= tail.start);
+  const host =
+    named.sort((a, b) => distance(a) - distance(b))[0] ??
+    (tail.verdict === 'lingering'
+      ? onRow.find((item) => distance(item) === 0)
+      : before.sort((a, b) => b.start + b.duration - (a.start + a.duration))[0]);
+  if (host?.testCaseId != null) emit('selectTestCase', host.testCaseId);
+}
 </script>
 
 <template>
@@ -500,9 +601,13 @@ function onResourceLeave(): void {
       :live="live"
       :resource-tracks="resourceTrackOptions"
       :worker-metrics="workerMetricOptions"
+      :left-open-count="spanCounts.leaked"
+      :lingering-count="spanCounts.lingering"
+      :show-leaks="showLeaks"
       @toggle-hooks="showHooks = $event"
       @toggle-waits="showWaits = $event"
       @toggle-locks="showLocks = $event"
+      @toggle-leaks="showLeaks = $event"
       @toggle-resource="toggleTrack"
       @select-worker-metric="workerMetric = $event ?? 'none'"
       @collapse-all="collapseAll"
@@ -601,8 +706,20 @@ function onResourceLeave(): void {
           :y="bandTop(entry)"
           :px-per-ms="pxPerMs"
           :plot-width="plotEnd * pxPerMs"
+          :left-open="leftOpenFor(entry.band)"
           @hover="onResourceHover"
           @leave="onResourceLeave"
+        />
+
+        <TimelineSpanTails
+          v-if="shownSpanRows.length > 0"
+          :rows="shownSpanRows"
+          :tail-top="tailTop"
+          :px-per-ms="pxPerMs"
+          :plot-width="plotEnd * pxPerMs"
+          @hover="onSpanHover"
+          @leave="onSpanLeave"
+          @select="selectSpanTest"
         />
 
         <TimelineWorkerStrips
@@ -653,7 +770,8 @@ function onResourceLeave(): void {
     </div>
 
     <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" :attempts="attemptsFor" />
-    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" />
+    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" :left-open-for="leftOpenFor" />
+    <TimelineSpanTooltip :state="spanHover" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />
 </template>

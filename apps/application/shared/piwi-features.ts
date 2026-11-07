@@ -222,6 +222,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/resource-leaks',
       },
       {
+        title: 'Leak history in CI',
+        summary:
+          'Each resource leak followed across runs: new to a branch or fixed after five clean runs, gated by `piwi gate` and listed in the pull-request comment.',
+        needs: ['fixtures'],
+        where: 'Run → Resources; `piwi gate`; pull-request comment; MCP',
+        doc: 'features/leak-history',
+      },
+      {
         title: 'CPU, memory & disk',
         summary:
           'What a run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, after every run.',

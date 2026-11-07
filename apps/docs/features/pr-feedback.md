@@ -39,7 +39,7 @@ What the comment says, in this order:
 5. **New failure clusters**: root causes never seen before in this project.
 6. **Fixed by this change**: clusters this pull request closed, with how long they were open. See
    [Did the fix work?](./failure-clusters#did-the-fix-work)
-7. **Left open by this change**: [resource leaks](./resource-leaks#in-ci) the base branch never showed, each with the
+7. **Left open by this change**: [resource leaks](./leak-history) the base branch never showed, each with the
    line that opened it.
 
 Each failure carries its error, its owner and tags when the test declares them (see

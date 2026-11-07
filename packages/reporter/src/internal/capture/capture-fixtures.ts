@@ -220,6 +220,7 @@ import {
 import { resolveCssCoverage } from './css-coverage.js';
 import {
   activeResourceLedger,
+  noteResourceClosing,
   noteResourceUse,
   recordResourceCensus,
   startResourceLedger,
@@ -2957,6 +2958,7 @@ function instrumentPage(page: Page): void {
   if (typeof page.close === 'function') {
     const originalClose = page.close.bind(page);
     page.close = async (...args: Parameters<Page['close']>): Promise<void> => {
+      noteResourceClosing(page);
       let closed = (): void => {};
       CLOSING_PAGES.set(page, new Promise<void>((resolve) => (closed = resolve)));
       try {
@@ -3320,7 +3322,7 @@ function instrumentContext(context: BrowserContext): void {
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
   // back to shipping the source for any document this does not reach.
   if (process.env.PIWI_CAPTURE_LOCATORS !== 'false' && typeof context.addInitScript === 'function') {
-    void Promise.resolve(context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
+    void internalCall(context, () => context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
       /* the fallback covers it */
     });
   }
@@ -3342,6 +3344,7 @@ function instrumentContext(context: BrowserContext): void {
   if (typeof context.close === 'function') {
     const originalClose = context.close.bind(context);
     context.close = async (...args: Parameters<BrowserContext['close']>): Promise<void> => {
+      noteResourceClosing(context);
       await settleContextClose(context);
       return originalClose(...args);
     };
@@ -3386,6 +3389,7 @@ function patchBrowser(browser: Browser): void {
   if (typeof browser.close === 'function') {
     const originalClose = browser.close.bind(browser);
     browser.close = async (...args: Parameters<Browser['close']>): Promise<void> => {
+      noteResourceClosing(browser);
       await drainPendingProbes(1000);
       for (const context of typeof browser.contexts === 'function' ? browser.contexts() : []) {
         await settleContextClose(context);

@@ -9,7 +9,8 @@ run costs its machine.
 processes at their line, piling up with a dip, attached DOM elements, the worker's descriptors and heap after a full
 garbage collection, the resource rows of the failure timeline) is recorded in [resource-leaks.md](resource-leaks.md);
 this record starts where it stops. PRs 5 (clues, flake suspect, editor) and 6 (waste findings) of that plan are not
-started and come first here.
+started and come first here. [resource-leaks-audit.md](resource-leaks-audit.md) audits the leak detection itself and
+sharpens ideas 15 and 17 with each object's last use.
 
 ## Summary
 

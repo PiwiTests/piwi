@@ -694,6 +694,7 @@ export const MCP_TOOL_DEFS = [
       'Use it before touching a suite’s fixtures or teardown, or to check that a leak fix held. Each finding has a verdict:',
       [
         '`leaked`: a browser, context, page or API context left open past the test or describe block that opened it',
+        '`lingering`: one the test closed long after it last used it, which could have closed at its last use',
         '`idle`: a page opened and never used',
         '`piling`: pages, listeners, route handlers or DOM elements growing on a long-lived page, or a worker process whose heap after garbage collection or open file descriptors keep growing',
         '`handle`: a Node server, child process or file watcher a test left running in its worker',
@@ -708,7 +709,7 @@ export const MCP_TOOL_DEFS = [
         status: { type: 'string', enum: ['open', 'fixed', 'all'], description: 'Which findings (default open)' },
         verdict: {
           type: 'string',
-          enum: ['leaked', 'idle', 'piling', 'handle', 'probable'],
+          enum: ['leaked', 'lingering', 'idle', 'piling', 'handle', 'probable'],
           description: 'Only findings with this verdict',
         },
         limit: { type: 'number', description: 'Max findings (default 50, max 200)' },
@@ -724,7 +725,7 @@ export const MCP_TOOL_DEFS = [
       'Get what one run cost and left open, from its reporters’ resource reports (one per shard).',
       'Use it to explain a slow or timing-out run, or to find which tests a leak slows down. It returns:',
       [
-        'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before',
+        'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before, and for a leaked or lingering one `lastUse`: the line of the last call a test made on it, where its close belongs',
         'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
         'the busiest open pages per worker',
         'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',

@@ -95,7 +95,7 @@ describe('the resource summary', () => {
     const lines = await run({}, fakeResult({ attachments }), shutdown);
     expect(lines).toContain('Resources: 1 leak');
     expect(lines).toContain(
-      '  leaked   context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
+      '  leaked    context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
     );
   });
 
@@ -130,7 +130,7 @@ describe('the resource summary', () => {
     ];
     const lines = await run({}, fakeResult({ steps }));
     expect(lines).toContain('Resources: 1 probable leak');
-    expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · left open by its test');
+    expect(lines).toContain('  probable  context     tests/cart.spec.ts:7 · left open by its test');
   });
 
   it('pairs only the attempts of one worker, and judges nothing a failed attempt opened', async () => {
@@ -140,7 +140,7 @@ describe('the resource summary', () => {
       fakeResult({ workerIndex: 1, steps: [step('Close context', 8)] }),
       fakeResult({ workerIndex: 2, status: 'failed', steps: [step('Create context', 9)] }),
     ]);
-    expect(lines.filter((line) => line.startsWith('  probable'))).toEqual(['  probable context     tests/cart.spec.ts:7 · left open by its test']);
+    expect(lines.filter((line) => line.startsWith('  probable'))).toEqual(['  probable  context     tests/cart.spec.ts:7 · left open by its test']);
   });
 
   it('reads the spec file to count a page `browser.newPage()` left open, and never counts an API context', async () => {
@@ -169,7 +169,7 @@ describe('the resource summary', () => {
       const site = `${path.relative(process.cwd(), spec).split(path.sep).join('/')}:2`;
       expect(lines.filter((line) => line.startsWith('Resources:') || line.startsWith('  probable') || line.startsWith('Probable'))).toEqual([
         'Resources: 1 probable leak',
-        `  probable page        ${site} · left open by its test`,
+        `  probable  page        ${site} · left open by its test`,
         'Probable leaks are read from the steps and the lines they point at, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
       ]);
       expect(bodies.find((body) => body.testCases).resourceReport.findings).toEqual([

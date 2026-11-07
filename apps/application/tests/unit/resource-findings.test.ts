@@ -125,9 +125,9 @@ describe('finding history', () => {
     await record(first);
     await record(first);
     const findings = await listResourceFindings(db as any, 1);
-    expect(findings.map((f) => f.verdict).sort()).toEqual(['handle', 'idle', 'leaked', 'piling']);
+    expect(findings.map((f) => f.verdict).sort()).toEqual(['handle', 'idle', 'leaked', 'lingering', 'piling']);
     expect(findings.every((f) => f.runs === 1 && f.firstSeenRunId === first)).toBe(true);
-    expect(await db.select().from(schema.resourceOccurrences)).toHaveLength(4);
+    expect(await db.select().from(schema.resourceOccurrences)).toHaveLength(5);
 
     const second = await run({ leaky: true });
     await record(second);
@@ -147,14 +147,14 @@ describe('finding history', () => {
       const recorded = await record(id);
       // A retried finish does not count the same run twice.
       await record(id);
-      expect(recorded.fixed).toHaveLength(i === FIXED_AFTER_CLEAN_RUNS - 1 ? 4 : 0);
+      expect(recorded.fixed).toHaveLength(i === FIXED_AFTER_CLEAN_RUNS - 1 ? 5 : 0);
     }
     const leaked = (await listResourceFindings(db as any, 1, { status: 'all', verdict: 'leaked' }))[0]!;
     expect(leaked).toMatchObject({ status: 'fixed', fixedRunId: clean[0], cleanRuns: FIXED_AFTER_CLEAN_RUNS });
     expect(await listResourceFindings(db as any, 1)).toEqual([]);
 
     const back = await run({ leaky: true });
-    expect((await record(back)).reopened).toHaveLength(4);
+    expect((await record(back)).reopened).toHaveLength(5);
     expect((await listResourceFindings(db as any, 1, { verdict: 'leaked' }))[0]).toMatchObject({
       status: 'open',
       reopenedRunId: back,
@@ -199,7 +199,7 @@ describe('finding history', () => {
 
     const resources = (await getRunResources(db as any, later))!;
     expect(resources.baseBranch).toBe('main');
-    expect(Object.values(resources.history)).toHaveLength(4);
+    expect(Object.values(resources.history)).toHaveLength(5);
     expect(Object.values(resources.history).every((h) => !h.isNew && h.firstSeenRunId === onBranch)).toBe(true);
   });
 

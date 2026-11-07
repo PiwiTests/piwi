@@ -161,10 +161,84 @@ describe('sanitizeResourceReport', () => {
     });
     // The first 100 entries are read; the two invalid ones among them are dropped.
     expect(clean.findings).toHaveLength(98);
-    expect(clean.counts).toEqual({ leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 });
+    expect(clean.counts).toEqual({ leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 });
     expect(clean.profile).toBeNull();
     expect(clean.workers).toEqual([{ worker: 0, openPages: [1, 0, 0, 4] }]);
     expect(clean.artifactBytes).toEqual({ trace: 10 });
+  });
+});
+
+describe('sanitizeResourceReport, the objects open for nothing', () => {
+  test('keeps a finding’s last use and the timeline’s spans, bounded, dropping what is not one', () => {
+    const clean = sanitizeResourceReport({
+      v: 1,
+      findings: [
+        {
+          verdict: 'lingering',
+          kind: 'page',
+          where: 'popup after locator.click at tests/a.spec.ts:3',
+          tests: 1,
+          count: 1,
+          heldMs: 2500,
+          lastUse: 'tests/a.spec.ts:5',
+        },
+      ],
+      counts: { lingering: 1 },
+      workers: [],
+      artifactBytes: {},
+      timeline: {
+        startedAt: 1000,
+        cpuPct: [],
+        memoryBytes: [],
+        pages: [],
+        spans: [
+          {
+            worker: 0,
+            verdict: 'leaked',
+            kind: 'context',
+            where: 'tests/a.spec.ts:2',
+            site: 'tests/a.spec.ts:2',
+            lastUse: 'tests/a.spec.ts:4',
+            from: 10,
+            to: 900,
+            untilWorkerEnd: true,
+            scope: 'test',
+            pages: 2,
+            test: { title: 'logs in', file: 'tests/a.spec.ts' },
+            extra: 1,
+          },
+          { worker: 0, verdict: 'piling', kind: 'context', where: 'x', from: 1, to: 2 },
+          { worker: 0, verdict: 'leaked', kind: 'handle', where: 'x', from: 1, to: 2 },
+          { worker: 0, verdict: 'leaked', kind: 'page', where: 'x', from: 5, to: 2 },
+          ...Array.from({ length: 500 }, () => ({
+            worker: 1,
+            verdict: 'lingering',
+            kind: 'page',
+            where: 'p',
+            from: 1,
+            to: 2,
+          })),
+        ],
+      },
+    })!;
+    expect(clean.findings[0]).toMatchObject({ verdict: 'lingering', lastUse: 'tests/a.spec.ts:5', heldMs: 2500 });
+    expect(clean.counts.lingering).toBe(1);
+    expect(clean.timeline!.spans![0]).toEqual({
+      worker: 0,
+      verdict: 'leaked',
+      kind: 'context',
+      where: 'tests/a.spec.ts:2',
+      site: 'tests/a.spec.ts:2',
+      lastUse: 'tests/a.spec.ts:4',
+      from: 10,
+      to: 900,
+      untilWorkerEnd: true,
+      scope: 'test',
+      pages: 2,
+      test: { title: 'logs in', file: 'tests/a.spec.ts' },
+    });
+    // The first 400 are read; the three that are not spans among them are dropped.
+    expect(clean.timeline!.spans).toHaveLength(397);
   });
 });
 
@@ -317,7 +391,7 @@ describe('getRunResourceTimeline', () => {
 
 describe('findingView', () => {
   test('reads each verdict in the words of the end-of-run summary', () => {
-    const [leaked, idle, piling, handle] = report(null).findings.map(findingView);
+    const [leaked, idle, piling, lingering, handle] = report(null).findings.map(findingView);
     expect(leaked).toEqual({
       label: 'Leaked context',
       where: 'fixture "loggedInContext" at tests/fixtures.ts:14',
@@ -329,14 +403,23 @@ describe('findingView', () => {
         'open until the worker shut down (49.2 s past its test)',
         '12.6 s of page CPU after its test',
       ],
+      lastUse: 'tests/fixtures.ts:18',
     });
     expect(idle).toMatchObject({ label: 'Never used page', facts: ['3 pages', '3 tests', 'set up with loggedInPage'] });
     expect(piling).toMatchObject({ label: 'Piling up listeners', facts: ['2 → 8 over 3 tests'] });
+    expect(lingering).toEqual({
+      label: 'Lingering page',
+      where: 'popup after locator.click at tests/reports.spec.ts:41',
+      site: 'tests/reports.spec.ts:41',
+      facts: ['1 test', 'open 2.6 s after its last use'],
+      lastUse: 'tests/reports.spec.ts:43',
+    });
     expect(handle).toEqual({
       label: 'Left running server',
       where: null,
       site: null,
       facts: ['left running in the worker by "exports" (tests/reports.spec.ts)'],
+      lastUse: null,
     });
   });
 });
@@ -349,7 +432,7 @@ describe('machineFacts and resourceTotals', () => {
     expect(facts[1]!.facts).toContain('largest process: renderer 620 MB');
 
     const totals = resourceTotals({ v: 1, parts: [report(1), report(2, false)] });
-    expect(totals.counts).toEqual({ leaked: 1, idle: 3, piling: 1, handle: 1, probable: 0 });
+    expect(totals.counts).toEqual({ leaked: 1, lingering: 1, idle: 3, piling: 1, handle: 1, probable: 0 });
     expect(totals.peakMemoryBytes).toBe(9.6 * 1024 ** 3);
     expect(totals.artifactBytes).toBe(10_000_000);
   });

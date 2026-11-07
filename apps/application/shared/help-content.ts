@@ -718,18 +718,19 @@ export const HELP_TOPICS = {
       '- **Click a test** to expand its steps into a nested waterfall on the same axis, like a span viewer.',
       '- **Show waits** marks the wasted waits; **Show locks** shows when each named lock was held and how much of the run it serialized.',
       '- **Paused** — a pale striped band over a test is a stop at an editor breakpoint: the test stood still while someone looked at the page. Its time stays on the clock and out of the test’s duration (for a test that ended under the bar, Piwi corrects the runner’s count where Playwright lets it), and the slowest-step and wasted-time figures leave it out too; the bar of a test that stood paused ends where the test ended.',
+      '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
       '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
     doc: 'features/ui-overview#test-run-detail',
   },
   'run.resource-findings': {
     title: 'Resource findings',
-    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter reads each test’s steps for the browsers, contexts and `browser.newPage()` pages no close matched: those are probable leaks, at the line that opened them.',
+    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open and the line that last used them, where the close belongs), objects a test closed long after it last used them (lingering), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter reads each test’s steps for the browsers, contexts and `browser.newPage()` pages no close matched: those are probable leaks, at the line that opened them.',
     doc: 'features/resource-leaks#what-it-reports',
   },
   'run.resource-pages': {
     title: 'Open pages over time',
-    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows. A line that keeps rising is a page left open test after test.',
+    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows, the share earlier tests left open in red. A line that keeps rising is a page left open test after test. Under each worker row, **Show leaks** draws each object left open past its test, from that test to its close, and each object open long after its last use.',
     doc: 'features/resource-leaks#in-the-dashboard',
   },
   'run.resource-machine': {
