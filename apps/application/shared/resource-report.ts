@@ -45,7 +45,8 @@ const SPAN_KINDS: ReadonlySet<string> = new Set(['browser', 'context', 'page', '
 const ARTIFACT_KINDS = ['trace', 'video', 'screenshot', 'other'] as const;
 const GROWTH: ReadonlySet<string> = new Set(['pages', 'listeners', 'routes', 'elements', 'heapMb', 'descriptors']);
 
-const FINDINGS_CAP = 100;
+/** The findings of a report part the dashboard keeps, most severe first, as the reporter sends them. */
+export const REPORT_FINDINGS_CAP = 100;
 const SERIES_CAP = 240;
 const WORKERS_CAP = 64;
 const WORKER_POINTS_CAP = 200;
@@ -337,7 +338,7 @@ export function sanitizeResourceReport(value: unknown): WireResourceReport | nul
   return {
     v: 1,
     shardIndex: int(raw.shardIndex),
-    findings: (Array.isArray(raw.findings) ? raw.findings.slice(0, FINDINGS_CAP) : [])
+    findings: (Array.isArray(raw.findings) ? raw.findings.slice(0, REPORT_FINDINGS_CAP) : [])
       .map(finding)
       .filter((f): f is WireResourceFinding => f !== null),
     counts: {

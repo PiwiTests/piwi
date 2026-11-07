@@ -2620,11 +2620,14 @@ export const flakeArms = pgTable(
 );
 
 // A resource finding across runs: one per project and identity (its verdict,
-// kind, scope and where it was opened, line included;
-// shared/resource-fingerprint.mjs), with the runs it first and last showed in.
-// An edit above the line moves it to a new identity, which it takes on with its
-// history. It is fixed once five full runs of the default branch, with the
-// capture fixtures on, came without it, and reopened when it shows again.
+// kind, scope and the line or fixture that opened it;
+// shared/resource-fingerprint.mjs), with the run it first showed in and the
+// last full run of the default branch that showed it (until one did, that
+// first run). An edit above the line
+// moves it to a new identity, which it takes on with its history once a full
+// run of the default branch shows it there. It is fixed once five full runs of
+// the default branch that could have shown it came without it, and reopened
+// when such a run shows it again. Any other run only adds its showing.
 export const resourceFindings = pgTable(
   'resource_findings',
   {
@@ -2635,7 +2638,7 @@ export const resourceFindings = pgTable(
     fingerprint: text('fingerprint').notNull(),
     verdict: text('verdict').notNull(), // 'leaked' | 'lingering' | 'idle' | 'piling' | 'handle' | 'probable'
     kind: text('kind').notNull(), // 'browser' | 'context' | 'page' | 'request' | 'handle'
-    place: text('place').notNull(), // where it was opened, as the latest run named it, with its line
+    place: text('place').notNull(), // where it was opened, as the latest showing that placed it named it, with its line
     site: text('site'), // the `file:line` that opened it, when known
     // Run ids are not foreign keys: findings outlive the runs retention deletes.
     firstSeenRunId: integer('first_seen_run_id').notNull(),

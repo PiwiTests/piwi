@@ -1107,6 +1107,12 @@ export async function apiLiveResourcesTestRun(
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */
 /**
+ * The resource findings of the run recorded last: the demo's database has one connection, which holds one
+ * transaction at a time, so runs that finish together record their findings in turn.
+ */
+let recordingFindings: Promise<unknown> = Promise.resolve();
+
+/**
  * What a finished run records beside its own row: its incident flag, its markers, its resource findings and its
  * rollup. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
  * demo has no reports poll to read it again.
@@ -1114,7 +1120,8 @@ export async function apiLiveResourcesTestRun(
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
-  await recordRunResourceFindings(db, id).catch(() => {});
+  recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
+  await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
 }
 

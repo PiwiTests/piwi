@@ -15,9 +15,10 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
  * `internalCall` just after it, and compared with a read made just before the page showed it: a frame whose two reads
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
  * them painted over, two a second at most (`MASKED_SPACING_MS`); any other is replaced by a screenshot taken between two
- * reads, which goes, painted over, when those agree, and no image goes when they do not (the page moved). A child
- * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform),
- * or whose frame does not answer within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. Each image
+ * reads, which goes, painted over, when those agree and it shows the viewport they measured, at the visual viewport's
+ * scale, and no image goes when they do not (the page moved or was resized). A child frame's boxes are placed from its
+ * iframe's content box; an iframe drawn at another size than its own (a transform), or whose frame does not answer
+ * within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. Each image
  * keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
  * bundles it: an image is decoded, its boxes filled, scaled down to that size and encoded again. No image goes, and the
  * viewers hear why, while an image shows a masked element and there is no `jpeg-js` to paint with, while the page is
@@ -43,6 +44,11 @@ interface Read {
   ended: number;
   boxes: Box[];
   viewport: { width: number; height: number };
+  /**
+   * The visual viewport's scale: below 1 where a mobile page is shown zoomed out to fit its layout viewport, which an
+   * image of the page shows at this scale.
+   */
+  scale: number;
 }
 
 /** What a frame of the page shows: the boxes of its masked elements, and its own viewport's size. */
@@ -52,6 +58,8 @@ interface FrameRead {
   height: number;
   /** The frame's visual viewport is not its layout viewport: the page is zoomed in, an image shows it larger. */
   zoomed?: boolean;
+  /** The frame's visual viewport's scale. */
+  scale?: number;
 }
 
 /** The least time between two images that show a masked element. */
@@ -159,6 +167,7 @@ function readFrameRects(page: Page, frame: Frame, masks: readonly string[]): Pro
         width: view.innerWidth,
         height: view.innerHeight,
         zoomed,
+        scale: visual?.scale ?? 1,
       };
     }),
   );
@@ -295,6 +304,7 @@ async function readBoxes(
       frame.rects.map(([x, y, width, height]) => ({ x, y, width, height })),
     ),
     viewport: { width: top.width, height: top.height },
+    scale: top.scale ?? 1,
   };
 }
 
@@ -323,6 +333,18 @@ export function jpegSize(data: Buffer): { width: number; height: number } | null
     i += 2 + data.readUInt16BE(i + 2);
   }
   return null;
+}
+
+/**
+ * Whether a screenshot taken at `scale: 'css'` shows the viewport a read measured: its pixels are that viewport's CSS
+ * pixels at the visual viewport's scale. The boxes are painted where the reads put them, so an image of another viewport
+ * (the page resized while it was taken) does not go.
+ */
+function showsViewport(shot: Buffer, read: Pick<Read, 'viewport' | 'scale'>): boolean {
+  const size = jpegSize(shot);
+  return (
+    !!size && near(size.width, read.viewport.width * read.scale) && near(size.height, read.viewport.height * read.scale)
+  );
 }
 
 /** `image` scaled down to `width` by `height`, each pixel the mean of those it covers. */
@@ -495,6 +517,7 @@ export async function maskedImage(
   if (!after || !sameBoxes(before.boxes, after.boxes)) return null;
   const { width, height } = after.viewport;
   if (!near(width, before.viewport.width) || !near(height, before.viewport.height)) return null;
+  if (!showsViewport(shot, after)) return null;
   if (!after.boxes.length) return shot;
   const jpeg = jpegCodec();
   const size = jpegSize(shot);
@@ -622,6 +645,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       if (!sameBoxes(after.boxes, again.boxes)) return null;
       const { width, height } = again.viewport;
       if (!near(width, after.viewport.width) || !near(height, after.viewport.height)) return null;
+      if (!showsViewport(shot, again)) return null;
       // The screenshot shows the viewport the reads measured, whatever size the frame it stands for named.
       const taken = { data: shot, width, height, at };
       return shown(

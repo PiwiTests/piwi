@@ -27,6 +27,7 @@ import {
   shareLiveView,
 } from '../src/internal/capture/live-view.js';
 import { lanePage, laneTestBegan, laneTestEnded } from '../src/internal/capture/lane-feed.js';
+import { jpegCodec } from '../src/internal/capture/live-mask.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
@@ -119,6 +120,9 @@ function sayViewers(count: number): void {
   streams[0]!.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
 }
 
+/** The fake page's screenshot: a JPEG of its viewport, at its size in CSS pixels. */
+const SHOT = jpegCodec()!.encode({ width: 1280, height: 720, data: new Uint8Array(1280 * 720 * 4).fill(255) }, 50).data;
+
 /** A page as the view reads it: its viewport, and a screencast that paints when told. */
 function fakePage(): { page: Page; paint: (data: string) => void } {
   let onFrame: ((frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => unknown) | null = null;
@@ -132,7 +136,7 @@ function fakePage(): { page: Page; paint: (data: string) => void } {
     isClosed: () => false,
     once: () => page,
     off: () => page,
-    screenshot: async () => Buffer.from('shot'),
+    screenshot: async () => SHOT,
     screencast: {
       start: async (options: { onFrame: typeof onFrame }) => {
         onFrame = options.onFrame;
@@ -225,7 +229,7 @@ describe("the worker's live view connection", () => {
       type: 'frame',
       shard: null,
       worker: 0,
-      data: Buffer.from('shot').toString('base64'),
+      data: SHOT.toString('base64'),
       call: HIDDEN_CALL,
       test: 'pays',
       at: expect.any(Number),

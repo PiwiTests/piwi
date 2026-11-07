@@ -113,23 +113,8 @@ The execution page's Performance tab shows what that one test cost and what it l
 
 ## In CI
 
-Each finding keeps a history: the run it was first seen in and the runs that showed it. A leak is fixed once
-five full runs of the default branch, with the fixtures on, came without it, and reopens if it shows again. A leak that
-an edit above its line moved keeps its history. On the Resources tab each finding says whether it is new to the base
-branch (the pull request's target, else the default branch), or since which run it has been there.
-
-Three places read it:
-
-- [`piwi gate`](/guide/ci#blocking-a-merge): `--max-leaks <n>` fails when the run left more than `n`
-  objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
-  A run that sent no resource report fails either rule rather than passing on silence. Neither counts a lingering
-  object.
-- The [pull-request comment](./pr-feedback) lists each leak the branch introduces under **Left open by this change**.
-- Agents read `list_resource_findings` and `get_resource_profile` over [MCP](/reference/mcp-tools).
-
-```bash
-npx @piwitests/reporter gate --max-new-leaks 0
-```
+Each finding keeps a history across runs: whether it is new to a pull request's base branch, and once fixed, the run
+that fixed it. `piwi gate`, the pull-request comment and MCP read it: [Leak history in CI](./leak-history).
 
 ## Cost
 
@@ -161,5 +146,6 @@ The [live demo](https://piwitests.dev/demo/) holds a leaky run, and its run simu
 
 - [Capture fixtures](/guide/capture-fixtures): what else the fixtures record
 - [Reporter options](/reference/reporter-options#what-gets-captured): `captureResources` and `leakCheck`
+- [Leak history in CI](./leak-history): new leaks, fixed ones, and the gate
 - [CPU, memory & disk](./cpu-memory-disk): what the whole run cost the machine
 - [Slow tests & wasted time](./slow-tests): where the suite's time goes
