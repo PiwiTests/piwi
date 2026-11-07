@@ -597,6 +597,10 @@ export interface TestRunDetails {
   serverCoverageGaps?: unknown;
   /** Display name of the person who kept the run, when one did and still exists. */
   keptByName?: string | null;
+  /** What launched the run (`runOrigin`): `request` for a requested run, seen by its requester alone. */
+  origin?: string;
+  /** The person who asked for a requested run; null for every other run. */
+  requesterId?: number | null;
   createdAt: Date;
   project?: {
     id: number;

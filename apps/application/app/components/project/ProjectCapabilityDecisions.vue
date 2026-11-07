@@ -15,7 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: [] }>();
 
 const { canDecide, decide } = await useProjectCapabilities(props.projectId);
-const { state: instanceState } = await useInstanceCapabilities();
+const { capabilities: instanceCaps } = await useInstanceCapabilities();
 const toast = useToast();
 
 /** Plain labels for the capabilities a project can override. */
@@ -42,9 +42,11 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
  * only while the instance has it on, and a project can only decline it.
  */
 const PROJECT_CAPABILITIES = computed<{ id: CapabilityId; label: string; optIn: boolean }[]>(() =>
-  CAPABILITIES.filter((c) => c.levels.includes('project') && (!c.optIn || instanceState(c.id) !== 'declined')).map(
-    (c) => ({ id: c.id, label: CAPABILITY_LABELS[c.id] ?? c.id, optIn: c.optIn === true }),
-  ),
+  CAPABILITIES.filter(
+    (c) =>
+      c.levels.includes('project') &&
+      (!c.optIn || instanceCaps.value.some((i) => i.id === c.id && i.state !== 'declined')),
+  ).map((c) => ({ id: c.id, label: CAPABILITY_LABELS[c.id] ?? c.id, optIn: c.optIn === true })),
 );
 
 type Choice = 'default' | 'enabled' | 'declined';

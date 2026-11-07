@@ -26,14 +26,17 @@ const COPY: Partial<Record<CapabilityId, OptInCopy>> = {
 
 const isDesktop = useIsDesktop();
 const authEnabled = useRuntimeConfig().public.authEnabled === true;
-const { state, canDecide, decide } = await useInstanceCapabilities();
+const { capabilities, canDecide, decide } = await useInstanceCapabilities();
 const toast = useToast();
+
+/** On only once the instance says so: a list that failed to load reads every one as off. */
+const isOn = (id: CapabilityId) => capabilities.value.some((c) => c.id === id && c.state !== 'declined');
 
 const rows = computed(() =>
   CAPABILITIES.filter((c) => c.optIn && !(isDesktop && c.hiddenOnDesktop))
     .map((c) => ({ id: c.id, copy: COPY[c.id] }))
     .filter((r): r is { id: CapabilityId; copy: OptInCopy } => r.copy !== undefined)
-    .map((r) => ({ ...r, on: state(r.id) !== 'declined', blocked: r.copy.needsSignIn && !authEnabled })),
+    .map((r) => ({ ...r, on: isOn(r.id), blocked: r.copy.needsSignIn && !authEnabled })),
 );
 
 const busy = ref(false);
