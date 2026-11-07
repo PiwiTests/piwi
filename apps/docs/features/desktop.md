@@ -120,14 +120,6 @@ whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-e
 the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
 gets the verdict and can share it on the team instance with its own key, which the app never holds.
 
-### Runs a team instance asks for
-
-With [Run on my machine](/features/run-on-my-machine) on, a team instance can ask this app to run tests from its pages.
-Connect it in **Settings → Desktop app → Run on my machine** with the instance's address: the instance's page asks you
-to allow it, and the app keeps the key in the operating system's keychain. Each request opens the window with the tests,
-the checks of the project's linked folder and the command, and runs nothing before you click **Run**; the run reports
-to the instance that asked, where only you see it.
-
 ## Importing local files
 
 Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Dashboard**, and

@@ -86,6 +86,11 @@ The run's results, as any run reports them: the tests, their steps, errors, atta
 the instance that asked and seen by you alone. The reporter sends no coverage, no test manifest and no code reach for a
 requested run, keeps it out of the desktop app's own dashboard, and is not kept forever.
 
+The app starts the run with `PIWI_REQUEST_INSTANCE`, the instance that asked, and `PIWI_REQUEST_TOKEN_FILE`, a file
+only you can read that holds the key of that one run. The reporter sends the run there with that key, whatever
+`serverUrl` and credentials the config names. A file that is missing, readable by others or holding no key turns the
+reporter off for the run, and it says why.
+
 ## Connected apps
 
 **Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
