@@ -521,6 +521,13 @@ shared.
 `integration_actions`; `entity_links` + `connection_id`, `external_id`, `origin`; optional `teams` / `team_members`
 (Tier 3). Every FK to a project cascades; connection deletion sets links' `connection_id` to null and leaves the URLs.
 
+**Bindings: one table per integration kind.** `project_integrations` is the tracker binding, one row per project. A
+wiki (Confluence) binding goes in its own `project_wiki` table and a test management binding in
+`project_test_management`, each with its own typed columns, so writing one kind's binding never touches another's.
+`runAction` maps an action's kind to its integration kind, checks the binding of that kind
+(`boundConnectionId(db, projectId, kind)`) and builds that kind's client, which dispatches on the connection's
+provider. Decided with the test management sync, [zephyr-sync.md](zephyr-sync.md).
+
 **Endpoints** (all under `/api/integrations/`, every one with `defineRouteMeta` and `x-required-roles`):
 
 | Route | Role | Purpose |

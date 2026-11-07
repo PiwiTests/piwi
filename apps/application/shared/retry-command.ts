@@ -51,8 +51,9 @@ export function escapeGrep(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Characters bash, zsh, PowerShell or cmd expand inside double quotes, plus control characters.
-const SHELL_EXPANDED = /[$`"\\%!\p{Cc}]/u;
+// Characters bash, zsh, PowerShell or cmd expand inside double quotes, the curly double quotes PowerShell reads as `"`
+// (`“`, `”`, `„`), and control characters: the set `packages/editor/src/commands.ts` refuses too.
+const SHELL_EXPANDED = /[$`"\\%!\u201C\u201D\u201E\p{Cc}]/u;
 
 /**
  * `arg` double-quoted for a copy-pasteable command, or null when it holds a
