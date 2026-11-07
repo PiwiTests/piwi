@@ -148,15 +148,26 @@ export async function listConnectedApps(
       platform: runTargets.platform,
       version: runTargets.version,
       lastSeenAt: runTargets.lastSeenAt,
+      projectIds: runTargets.projectIds,
     })
     .from(apiKeys)
     .leftJoin(runTargets, eq(runTargets.apiKeyId, apiKeys.id))
     .where(and(eq(apiKeys.userId, userId), isNotNull(apiKeys.clientKind)))
     .orderBy(desc(apiKeys.createdAt));
-  return rows.map(({ targetId, platform, version, lastSeenAt, ...app }) => ({
+  return rows.map(({ targetId, platform, version, lastSeenAt, projectIds, ...app }) => ({
     ...app,
     kind: app.kind as ConnectedApp['kind'],
-    target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId, lastSeenAt) },
+    target:
+      targetId === null
+        ? null
+        : {
+            id: targetId,
+            platform,
+            version,
+            projectIds: Array.isArray(projectIds) ? (projectIds as number[]) : [],
+            lastSeenAt,
+            online: isOnline(targetId, lastSeenAt),
+          },
   }));
 }
 
