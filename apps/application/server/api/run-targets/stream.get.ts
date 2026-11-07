@@ -1,5 +1,11 @@
 import { requestsForTarget, requireRunTarget } from '../../utils/run-requests';
-import { RUN_TARGET_RECHECK_MS, subscribeRunTarget, type RunTargetEvent } from '../../utils/run-target-events';
+import {
+  MAX_STREAMS_PER_TARGET,
+  RUN_TARGET_RECHECK_MS,
+  runTargetStreamCount,
+  subscribeRunTarget,
+  type RunTargetEvent,
+} from '../../utils/run-target-events';
 import { createSSEEndpoint } from '../../utils/sse';
 
 defineRouteMeta({
@@ -7,13 +13,14 @@ defineRouteMeta({
     tags: ['Run requests'],
     summary: 'Stream the run requests and stops of a connected app',
     description:
-      'For a run target (the desktop app, Piwi Runner), authenticated with the key the device flow gave it, which holds `run:receive` alone; any other credential is refused. Server-sent events, each a JSON object with a `type`: first `snapshot`, the `requests` and `stops` that `GET /api/run-targets/requests` answers; then `request` for each new request the target may take, `stop` with the `id` of a request it holds whose requester asked to stop it, and `revoked` as the stream closes because the app was disconnected or its owner lost access. A request can come twice, in the snapshot and as it is made: the target keys requests by id. A comment line is sent every 15 seconds; the stream records that the target was seen, and checks its key again, every minute. While the stream is open the target shows as online in **Connected apps**. Where a proxy cuts long responses, the target polls `GET /api/run-targets/requests` instead.',
+      'For a run target (the desktop app, Piwi Runner), authenticated with the key the device flow gave it, which holds `run:receive` alone; any other credential is refused. Server-sent events, each a JSON object with a `type`: first `snapshot`, the `requests` and `stops` that `GET /api/run-targets/requests` answers; then `request` for each new request the target may take, `stop` with the `id` of a request it holds whose requester asked to stop it, `withdrawn` with the `id` of a request it was offered that no longer waits for it (stopped, or claimed by another of its owner’s apps), and `revoked` as the stream closes because the app’s key was revoked or deleted, with the app or with its owner. Each offered request carries `expiresAt`, when it stops waiting for a claim. A request can come twice, in the snapshot and as it is made: the target keys requests by id. A comment line is sent every 15 seconds, and the stream checks its key again every minute. While its stream is open the app calls `GET /api/run-targets/requests` every minute, which records it as seen: it shows as online in **Connected apps** while its stream is open and it was seen within two minutes. A target holds 3 streams at most (429). Where a proxy cuts long responses, the target polls `GET /api/run-targets/requests` instead.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'An event stream (`text/event-stream`)' },
       401: { description: 'No key, or an unknown one' },
       403: { description: 'The key is not a connected run target’s, or the app was disconnected' },
+      429: { description: 'The target already holds 3 streams open' },
     },
   },
 });
@@ -26,6 +33,9 @@ function isRefusal(err: unknown): boolean {
 
 export default eventHandler(async (event) => {
   const caller = await requireRunTarget(event);
+  if (runTargetStreamCount(caller.target.id) >= MAX_STREAMS_PER_TARGET) {
+    throw apiError({ statusCode: 429, message: `This app already holds ${MAX_STREAMS_PER_TARGET} streams open` });
+  }
   return createSSEEndpoint(event, (controller, encoder) => {
     let closed = false;
     let ready = false;
@@ -55,8 +65,9 @@ export default eventHandler(async (event) => {
       if (ready) send(message);
       else held.push(message);
     });
+    const refused = (err: unknown) => (isRefusal(err) ? revoke() : close());
     const recheck = setInterval(() => {
-      requireRunTarget(event).catch((err) => (isRefusal(err) ? revoke() : close()));
+      requireRunTarget(event, { seen: false }).catch(refused);
     }, RUN_TARGET_RECHECK_MS);
     recheck.unref?.();
     function stop() {
@@ -64,13 +75,16 @@ export default eventHandler(async (event) => {
       clearInterval(recheck);
       unsubscribe();
     }
-    requestsForTarget(caller)
-      .then(({ requests, stops }) => {
-        send({ type: 'snapshot', requests, stops });
-        ready = true;
-        for (const message of held.splice(0)) send(message);
-      })
-      .catch(close);
+    // Checked again once subscribed: a revoke between the first check and the subscription is heard by nobody.
+    requireRunTarget(event, { seen: false }).then(
+      (current) =>
+        requestsForTarget(current).then(({ requests, stops }) => {
+          send({ type: 'snapshot', requests, stops });
+          ready = true;
+          for (const message of held.splice(0)) send(message);
+        }, close),
+      refused,
+    );
     return stop;
   });
 });

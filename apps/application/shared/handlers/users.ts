@@ -129,10 +129,14 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
 
 /**
  * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner): each is
- * a key it holds. One that runs tests adds its device and when it was last seen, and `isOnline` says whether it holds
- * its stream open now. Revoking the key disconnects the app.
+ * a key it holds. One that runs tests adds its device and when it was last seen, and `isOnline` says whether it is
+ * online now. Revoking the key disconnects the app.
  */
-export async function listConnectedApps(db: DrizzleDB, userId: number, isOnline: (targetId: number) => boolean) {
+export async function listConnectedApps(
+  db: DrizzleDB,
+  userId: number,
+  isOnline: (targetId: number, lastSeenAt: Date | null) => boolean,
+) {
   const rows = await db
     .select({
       id: apiKeys.id,
@@ -152,7 +156,7 @@ export async function listConnectedApps(db: DrizzleDB, userId: number, isOnline:
   return rows.map(({ targetId, platform, version, lastSeenAt, ...app }) => ({
     ...app,
     kind: app.kind as ConnectedApp['kind'],
-    target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId) },
+    target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId, lastSeenAt) },
   }));
 }
 

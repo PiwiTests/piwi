@@ -4,12 +4,11 @@
  * (`optIn`). Each reads On or Off with **Turn on** or **Turn off**; a project declines one in its own settings. One
  * that needs sign-in cannot be turned on while sign-in is off.
  */
-import { CAPABILITIES, type CapabilityId } from '#shared/capabilities';
+import { CAPABILITIES, CAPABILITY_BY_ID, type CapabilityId } from '#shared/capabilities';
 
 interface OptInCopy {
   title: string;
   summary: string;
-  needsSignIn: boolean;
   doc: string;
 }
 
@@ -18,8 +17,7 @@ const COPY: Partial<Record<CapabilityId, OptInCopy>> = {
   'machine-runs': {
     title: 'Run on my machine',
     summary:
-      'A signed-in person asks the desktop app on their own machine to run tests from the dashboard; the app asks them before every run. The run is theirs alone and counts in nothing the team reads.',
-    needsSignIn: true,
+      'A signed-in person asks the desktop app on their own machine to run tests from the dashboard; the app asks them before every run. The run is theirs alone and stays out of everything the team sees.',
     doc: 'features/run-on-my-machine',
   },
 };
@@ -36,7 +34,7 @@ const rows = computed(() =>
   CAPABILITIES.filter((c) => c.optIn && !(isDesktop && c.hiddenOnDesktop))
     .map((c) => ({ id: c.id, copy: COPY[c.id] }))
     .filter((r): r is { id: CapabilityId; copy: OptInCopy } => r.copy !== undefined)
-    .map((r) => ({ ...r, on: isOn(r.id), blocked: r.copy.needsSignIn && !authEnabled })),
+    .map((r) => ({ ...r, on: isOn(r.id), blocked: CAPABILITY_BY_ID[r.id].needsSignIn === true && !authEnabled })),
 );
 
 const busy = ref(false);

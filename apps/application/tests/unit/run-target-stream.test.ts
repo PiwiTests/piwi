@@ -28,8 +28,16 @@ vi.stubGlobal('apiError', apiError);
 
 const { generateApiKey } = await import('../../server/utils/auth');
 const { claimRequest, requireRunTarget } = await import('../../server/utils/run-requests');
-const { RUN_TARGET_RECHECK_MS, isRunTargetOnline, publishRunRequest, publishToRunTarget, resetRunTargetEvents } =
-  await import('../../server/utils/run-target-events');
+const {
+  MAX_STREAMS_PER_TARGET,
+  RUN_TARGET_ONLINE_MS,
+  RUN_TARGET_RECHECK_MS,
+  isRunTargetOnline,
+  publishRunRequest,
+  publishToRunTarget,
+  resetRunTargetEvents,
+  runTargetStreamCount,
+} = await import('../../server/utils/run-target-events');
 const { listConnectedApps, listUserApiKeys } = await import('#shared/handlers/users');
 const stream = (await import('../../server/api/run-targets/stream.get')).default as (
   event: H3Event,
@@ -167,16 +175,21 @@ describe('a connected app’s stream', () => {
     const { key, targetId } = await target();
     const s = await open(key);
     expect(s.events[0]).toMatchObject({ type: 'snapshot', stops: [] });
-    expect((s.events[0]!.requests as { id: string }[]).map((r) => r.id)).toEqual([waiting.id]);
-    expect(isRunTargetOnline(targetId)).toBe(true);
+    expect(s.events[0]!.requests).toEqual([
+      expect.objectContaining({ id: waiting.id, expiresAt: waiting.expiresAt.toISOString() }),
+    ]);
+    expect(runTargetStreamCount(targetId)).toBe(1);
 
     const made = await request();
     await publishRunRequest(db as never, made);
     await s.settle();
-    expect(s.events[1]).toMatchObject({ type: 'request', request: { id: made.id } });
+    expect(s.events[1]).toMatchObject({
+      type: 'request',
+      request: { id: made.id, expiresAt: made.expiresAt.toISOString() },
+    });
 
     await s.leave();
-    expect(isRunTargetOnline(targetId)).toBe(false);
+    expect(runTargetStreamCount(targetId)).toBe(0);
   });
 
   test('brings a request only to the requester’s own apps, the one it names, on a project open to them', async () => {
@@ -235,10 +248,10 @@ describe('a connected app’s stream', () => {
     await s.pump;
     expect(s.events.at(-1)).toEqual({ type: 'revoked' });
     expect(s.isDone()).toBe(true);
-    expect(isRunTargetOnline(targetId)).toBe(false);
+    expect(runTargetStreamCount(targetId)).toBe(0);
   });
 
-  test('records the app as seen, and closes once its key is gone, at each check', async () => {
+  test('checks its key at each minute without counting as the app being seen, and closes once the key is gone', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     const { key, keyId, targetId } = await target();
     const s = await open(key);
@@ -247,13 +260,33 @@ describe('a connected app’s stream', () => {
     const before = (await seen())!;
     await vi.advanceTimersByTimeAsync(RUN_TARGET_RECHECK_MS);
     await s.settle();
-    expect((await seen())!).toBeGreaterThan(before);
+    expect(await seen()).toBe(before);
+    expect(s.isDone()).toBe(false);
 
     await db.delete(schema.apiKeys).where(eq(schema.apiKeys.id, keyId));
     await vi.advanceTimersByTimeAsync(RUN_TARGET_RECHECK_MS);
     await s.pump;
     expect(s.events.at(-1)).toEqual({ type: 'revoked' });
-    expect(isRunTargetOnline(targetId)).toBe(false);
+    expect(runTargetStreamCount(targetId)).toBe(0);
+  });
+
+  test('reads as online only while the app has called the instance within two minutes', async () => {
+    const { key, targetId } = await target();
+    const s = await open(key);
+    const now = Date.now();
+    expect(isRunTargetOnline(targetId, new Date(now - 30_000), now)).toBe(true);
+    expect(isRunTargetOnline(targetId, new Date(now - RUN_TARGET_ONLINE_MS), now)).toBe(false);
+    expect(isRunTargetOnline(targetId, null, now)).toBe(false);
+    await s.leave();
+    expect(isRunTargetOnline(targetId, new Date(now), now)).toBe(false);
+  });
+
+  test('refuses a stream past the cap of one app', async () => {
+    const { key } = await target();
+    const streams = [];
+    for (let i = 0; i < MAX_STREAMS_PER_TARGET; i++) streams.push(await open(key));
+    await expect(stream(eventWithKey(key))).rejects.toMatchObject({ statusCode: 429 });
+    for (const s of streams) await s.leave();
   });
 
   test('refuses a credential that is not a connected app’s', async () => {
@@ -279,7 +312,7 @@ describe('Connected apps', () => {
     await target(otherUserId);
     const s = await open(key);
 
-    const apps = await listConnectedApps(db as never, userId, isRunTargetOnline);
+    const apps = await listConnectedApps(db as never, userId, (id, seen) => isRunTargetOnline(id, seen));
     expect(apps.map((a) => [a.kind, a.target?.online ?? null])).toEqual([
       ['desktop', true],
       ['picker', null],
@@ -290,7 +323,9 @@ describe('Connected apps', () => {
     expect(keys.map((k) => k.clientKind ?? null).sort()).toEqual([null, 'desktop', 'picker'].sort());
 
     await s.leave();
-    expect((await listConnectedApps(db as never, userId, isRunTargetOnline))[0]!.target?.online).toBe(false);
-    expect(isRunTargetOnline(targetId)).toBe(false);
+    expect(
+      (await listConnectedApps(db as never, userId, (id, seen) => isRunTargetOnline(id, seen)))[0]!.target?.online,
+    ).toBe(false);
+    expect(runTargetStreamCount(targetId)).toBe(0);
   });
 });

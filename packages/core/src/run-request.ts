@@ -106,6 +106,14 @@ export interface RunRequest {
   source: RunRequestSource;
 }
 
+/**
+ * A request as an instance offers it to a target, on its stream and in its list: with the time it stops waiting for
+ * a claim (ISO 8601), after which the target stops asking about it. Set by the instance, never parsed from a dispatch.
+ */
+export interface RunRequestOffer extends RunRequest {
+  expiresAt: string;
+}
+
 export type RunRequestParse<T> = { ok: true; value: T } | { ok: false; problems: string[] };
 
 const MAX_PATH_CHARS = 500;

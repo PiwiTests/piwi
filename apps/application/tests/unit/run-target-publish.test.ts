@@ -66,6 +66,8 @@ const stopRequest = await route('../../server/api/run-requests/[id]/stop.post');
 const deleteKey = await route('../../server/api/users/[id]/api-keys/[keyId].delete');
 const deleteUser = await route('../../server/api/users/[id].delete');
 const connectedApps = await route('../../server/api/users/[id]/connected-apps.get');
+const claimRequest = await route('../../server/api/run-targets/requests/[id]/claim.post');
+const patchCapabilities = await route('../../server/api/capabilities.patch');
 
 let db: Db;
 let admin: User;
@@ -74,9 +76,15 @@ let sam: User;
 let projectId: number;
 let runId: number;
 
-function call(handler: Route, caller: User, params: Record<string, string> = {}, body?: unknown) {
+function call(
+  handler: Route,
+  caller: User,
+  params: Record<string, string> = {},
+  body?: unknown,
+  headers: Record<string, string> = {},
+) {
   state.caller = caller;
-  const req = { headers: {}, destroyed: false };
+  const req = { headers, destroyed: false };
   return handler({ context: {}, params, body, node: { req, res: {} } } as unknown as H3Event);
 }
 
@@ -100,7 +108,7 @@ async function target(owner: User) {
     .returning();
   const heard: { type: string; [key: string]: unknown }[] = [];
   subscribeRunTarget(row!.id, (event) => heard.push(event));
-  return { keyId: key!.id, targetId: row!.id, heard };
+  return { key: made.plaintext, keyId: key!.id, targetId: row!.id, heard };
 }
 
 beforeEach(async () => {
@@ -143,9 +151,29 @@ describe('what a connected app hears from the routes', () => {
   test('the stop of a request it holds', async () => {
     const mine = await target(robin);
     const made = (await call(createRequest, robin, {}, { source: { runId, tests: 'failed' } })) as { id: string };
-    await db.update(schema.runRequests).set({ state: 'claimed', targetId: mine.targetId });
+    await db.update(schema.runRequests).set({ state: 'claimed', targetId: mine.targetId, claimedAt: new Date() });
     await call(stopRequest, robin, { id: made.id });
     expect(mine.heard.at(-1)).toEqual({ type: 'stop', id: made.id });
+  });
+
+  test('the withdrawal of a waiting request its requester stopped, on each of their apps', async () => {
+    const mine = await target(robin);
+    const other = await target(robin);
+    const theirs = await target(sam);
+    const made = (await call(createRequest, robin, {}, { source: { runId, tests: 'failed' } })) as { id: string };
+    await call(stopRequest, robin, { id: made.id });
+    expect(mine.heard.at(-1)).toEqual({ type: 'withdrawn', id: made.id });
+    expect(other.heard.at(-1)).toEqual({ type: 'withdrawn', id: made.id });
+    expect(theirs.heard).toEqual([]);
+  });
+
+  test('the withdrawal of a request another of its owner’s apps claimed', async () => {
+    const mine = await target(robin);
+    const other = await target(robin);
+    const made = (await call(createRequest, robin, {}, { source: { runId, tests: 'failed' } })) as { id: string };
+    await call(claimRequest, robin, { id: made.id }, undefined, { authorization: `Bearer ${mine.key}` });
+    expect(other.heard.at(-1)).toEqual({ type: 'withdrawn', id: made.id });
+    expect(mine.heard.map((e) => e.type)).toEqual(['request']);
   });
 
   test('the revoke of its key', async () => {
@@ -164,6 +192,20 @@ describe('what a connected app hears from the routes', () => {
     expect(first.heard).toEqual([{ type: 'revoked' }]);
     expect(second.heard).toEqual([{ type: 'revoked' }]);
     expect(theirs.heard).toEqual([]);
+  });
+});
+
+describe('turning Run on my machine on', () => {
+  test('is refused while sign-in is off', async () => {
+    process.env.PIWI_AUTH_ENABLED = 'false';
+    vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
+    try {
+      await expect(
+        call(patchCapabilities, admin, {}, { decisions: { 'machine-runs': 'enabled' } }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+    } finally {
+      process.env.PIWI_AUTH_ENABLED = 'true';
+    }
   });
 });
 

@@ -1,24 +1,36 @@
 import { eq } from 'drizzle-orm';
-import type { RunRequest } from '@piwitests/core/run-request';
+import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { runTargets, users, type RunRequestRow } from '../database/schema';
 import type { DbClient } from '../database';
 import { getUserAccessCached } from './auth';
-import { mayReceiveOn, runRequestOf } from './run-requests';
+import { mayReceiveOn, runRequestOfferOf } from './run-requests';
 
 /**
  * What a connected target hears on its stream (`GET /api/run-targets/stream`): the requests and stops it would read
  * from `GET /api/run-targets/requests` on connecting, then each new request sent to it, each stop of a request it
- * holds, and its own disconnection. A request can arrive twice (in the snapshot and as it is made): the target keys
- * them by id. Held in memory, as the run event bus is: an instance runs one replica.
+ * holds, each request it was offered that no longer waits for it (`withdrawn`: stopped, or claimed by another of its
+ * owner's apps), and its own disconnection. A request can arrive twice (in the snapshot and as it is made): the target
+ * keys them by id. Held in memory, as the run event bus is: an instance runs one replica.
  */
 export type RunTargetEvent =
-  | { type: 'snapshot'; requests: RunRequest[]; stops: string[] }
-  | { type: 'request'; request: RunRequest }
+  | { type: 'snapshot'; requests: RunRequestOffer[]; stops: string[] }
+  | { type: 'request'; request: RunRequestOffer }
   | { type: 'stop'; id: string }
+  | { type: 'withdrawn'; id: string }
   | { type: 'revoked' };
 
-/** How often an open stream records that its target was seen, and checks its key again. */
+/** How often an open stream checks its target's key again. */
 export const RUN_TARGET_RECHECK_MS = 60_000;
+
+/**
+ * How recently a target with an open stream must have called the instance to show as online: its app calls a target
+ * route (`GET /api/run-targets/requests`) every minute while its stream is open, since a connection a sleeping laptop
+ * dropped can look open for minutes.
+ */
+export const RUN_TARGET_ONLINE_MS = 2 * 60_000;
+
+/** The streams one target may hold open at once. */
+export const MAX_STREAMS_PER_TARGET = 3;
 
 type Listener = (event: RunTargetEvent) => void;
 
@@ -37,9 +49,17 @@ export function subscribeRunTarget(targetId: number, listener: Listener): () => 
   };
 }
 
-/** Whether a target holds its stream open now: what **Connected apps** shows as online. */
-export function isRunTargetOnline(targetId: number): boolean {
-  return (listeners.get(targetId)?.size ?? 0) > 0;
+/** How many streams a target holds open now. */
+export function runTargetStreamCount(targetId: number): number {
+  return listeners.get(targetId)?.size ?? 0;
+}
+
+/**
+ * Whether a target is online, as **Connected apps** shows it: it holds its stream open and called the instance within
+ * `RUN_TARGET_ONLINE_MS`.
+ */
+export function isRunTargetOnline(targetId: number, lastSeenAt: Date | null, now = Date.now()): boolean {
+  return runTargetStreamCount(targetId) > 0 && lastSeenAt !== null && now - lastSeenAt.getTime() < RUN_TARGET_ONLINE_MS;
 }
 
 /** Send an event to every stream a target holds open. */
@@ -60,13 +80,24 @@ export function publishToRunTarget(targetId: number, event: RunTargetEvent): voi
 export async function publishRunRequest(db: DbClient, row: RunRequestRow): Promise<void> {
   if (row.state !== 'waiting') return;
   const owned = await db.select({ id: runTargets.id }).from(runTargets).where(eq(runTargets.userId, row.requesterId));
-  const online = owned.filter((t) => isRunTargetOnline(t.id) && (row.targetId === null || row.targetId === t.id));
+  const online = owned.filter(
+    (t) => runTargetStreamCount(t.id) > 0 && (row.targetId === null || row.targetId === t.id),
+  );
   if (!online.length) return;
-  const request = runRequestOf(row);
+  const request = runRequestOfferOf(row);
   const [owner] = await db.select().from(users).where(eq(users.id, row.requesterId));
   if (!request || !owner) return;
   if (!(await mayReceiveOn(db, await getUserAccessCached(db, owner), row.projectId))) return;
   for (const target of online) publishToRunTarget(target.id, { type: 'request', request });
+}
+
+/**
+ * Tell a requester's targets that a request they were offered no longer waits for them: it was stopped, or `except`
+ * claimed it. Each target drops it by id, and one that was never offered it ignores it.
+ */
+export async function publishWithdrawn(db: DbClient, requesterId: number, id: string, except?: number): Promise<void> {
+  const owned = await db.select({ id: runTargets.id }).from(runTargets).where(eq(runTargets.userId, requesterId));
+  for (const target of owned) if (target.id !== except) publishToRunTarget(target.id, { type: 'withdrawn', id });
 }
 
 /** Forget every listener; for tests. */
