@@ -597,6 +597,10 @@ export interface TestRunDetails {
   serverCoverageGaps?: unknown;
   /** Display name of the person who kept the run, when one did and still exists. */
   keptByName?: string | null;
+  /** What launched the run (`runOrigin`): `request` for a requested run, seen by its requester alone. */
+  origin?: string;
+  /** The person who asked for a requested run; null for every other run. */
+  requesterId?: number | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -1379,6 +1383,24 @@ export interface ApiKeySummary {
   expiresAt?: Date | null;
   /** The connection of an MCP client that signed in through OAuth: there is no key value to use. */
   oauth: boolean;
+  /** Set for a key the device flow made, which **Connected apps** lists. */
+  clientKind?: string | null;
+}
+
+/** An app connected through the device flow, from GET /api/users/[id]/connected-apps. */
+export interface ConnectedApp {
+  /** Its key's id: revoking the key disconnects the app. */
+  id: number;
+  name: string;
+  kind: 'picker' | 'editor' | 'desktop' | 'runner';
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  /** For an app that runs tests: its device, when it was last seen, and whether its stream is open now. */
+  target: { platform: string | null; version: string | null; lastSeenAt: Date | null; online: boolean } | null;
+}
+
+export interface ConnectedAppsResponse {
+  items: ConnectedApp[];
 }
 
 /**

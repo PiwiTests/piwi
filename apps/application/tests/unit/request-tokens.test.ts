@@ -38,6 +38,7 @@ const { resolveRunProjectId, resolveTestRunCaseProjectId } = await import('../..
 const { carryRequestOrigin, isLabRun, isVisibleRun, runOrigin, withRequestOrigin } =
   await import('#shared/run-eligibility');
 const { getProjectLatestRun } = await import('#shared/handlers/test-runs');
+const { getTestCase } = await import('#shared/handlers/test-cases');
 const { deleteUserRecord } = await import('#shared/handlers/users');
 const { getProject, listKeptRuns, listProjects } = await import('#shared/handlers/projects');
 const { getActiveTestRuns, getRecentTestRuns, getTestRun } = await import('#shared/handlers/test-runs');
@@ -505,6 +506,25 @@ describe('a private run', () => {
     expect(await storedFileVisible(db as never, projectId, `project-${projectId}/run-${run.id}/1/a.png`, userId)).toBe(
       true,
     );
+  });
+
+  test('shows in the test’s recent executions to its requester alone, and counts in none of its stats', async () => {
+    const run = await privateRun(userId);
+    const [testCase] = await db
+      .insert(schema.testCases)
+      .values({ projectId, filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card' })
+      .returning();
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: sourceRunId, testCaseId: testCase!.id, status: 'failed', retries: 0 },
+      { testRunId: run.id, testCaseId: testCase!.id, status: 'passed', retries: 0 },
+    ]);
+    const mine = (await getTestCase(db as never, testCase!.id, userId))!;
+    expect(mine.recentExecutions.map((e) => e.runOrigin).sort()).toEqual(['ci', 'request']);
+    expect(mine.totalRuns).toBe(1);
+    expect(mine.passRate).toBe(0);
+    const theirs = (await getTestCase(db as never, testCase!.id, otherUserId))!;
+    expect(theirs.recentExecutions.map((e) => e.runOrigin)).toEqual(['ci']);
+    expect((await getTestCase(db as never, testCase!.id))!.recentExecutions).toHaveLength(1);
   });
 
   test('is seen by nobody once its requester is deleted', async () => {

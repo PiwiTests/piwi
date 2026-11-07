@@ -10,6 +10,7 @@ import {
   parseRunRequest,
   parseRunRequestTest,
   type RunRequest,
+  type RunRequestOffer,
   type RunRequestOptions,
   type RunRequestOutcome,
   type RunRequestSource,
@@ -82,9 +83,10 @@ export interface RunTargetCaller {
 /**
  * Authenticate a target route: a target key (an API key that holds `run:receive` alone, made by the device flow for
  * the desktop app or Piwi Runner) whose target is still connected. Any other credential, a session or a key with its
- * owner's access, is refused: these routes serve connected apps only. Records that the target was seen.
+ * owner's access, is refused: these routes serve connected apps only. Records that the target was seen, unless
+ * `seen` is false: a check the instance makes on its own, such as an open stream's, is no sign the app is there.
  */
-export async function requireRunTarget(event: H3Event): Promise<RunTargetCaller> {
+export async function requireRunTarget(event: H3Event, { seen = true } = {}): Promise<RunTargetCaller> {
   requireSignInForRunRequests(event);
   const value = extractApiKey(event);
   if (!value) throw apiError({ statusCode: 401, message: 'A connected app’s key is required' });
@@ -105,6 +107,7 @@ export async function requireRunTarget(event: H3Event): Promise<RunTargetCaller>
   event.context.apiKeyId = resolved.keyId;
   const access = await getUserAccessCached(db, resolved.user);
   event.context.access = access;
+  if (!seen) return { db, user: resolved.user, target, access };
   const now = new Date();
   await db.update(runTargets).set({ lastSeenAt: now }).where(eq(runTargets.id, target.id));
   return { db, user: resolved.user, target: { ...target, lastSeenAt: now }, access };
@@ -263,6 +266,12 @@ export function runRequestOf(row: RunRequestRow): RunRequest | null {
     source: row.source,
   });
   return parsed.ok ? parsed.value : null;
+}
+
+/** The request as a target is offered it, with the time it stops waiting. Null when a stored value no longer passes. */
+export function runRequestOfferOf(row: RunRequestRow): RunRequestOffer | null {
+  const request = runRequestOf(row);
+  return request && { ...request, expiresAt: row.expiresAt.toISOString() };
 }
 
 /** A request's state as of `now`: an unclaimed request past its expiry reads expired, whatever its stored state. */
@@ -474,7 +483,7 @@ export async function pruneRunRequests(db: DbClient, olderThanDays: number, now 
 const NOT_ALLOWED = 'Run on my machine is off for this project, or you cannot run its tests';
 
 /** Whether a target may take a request of a project: its owner holds `run:receive` there and the capability is on. */
-async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
+export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
   return can(access, 'run:receive', projectId) && (await isOptInCapabilityOn(db, projectId, 'machine-runs'));
 }
 
@@ -486,7 +495,7 @@ async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: numb
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
   now = new Date(),
-): Promise<{ requests: RunRequest[]; stops: string[] }> {
+): Promise<{ requests: RunRequestOffer[]; stops: string[] }> {
   const waiting = await db
     .select()
     .from(runRequests)
@@ -499,11 +508,11 @@ export async function requestsForTarget(
       ),
     );
   const on = new Map<number, boolean>();
-  const requests: RunRequest[] = [];
+  const requests: RunRequestOffer[] = [];
   for (const row of waiting) {
     if (!on.has(row.projectId)) on.set(row.projectId, await mayReceiveOn(db, access, row.projectId));
     if (!on.get(row.projectId)) continue;
-    const request = runRequestOf(row);
+    const request = runRequestOfferOf(row);
     if (request) requests.push(request);
     else await endUnreadableRequest(db, row.id, now);
   }

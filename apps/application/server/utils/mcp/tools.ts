@@ -898,7 +898,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
 
-    const tc = (await getTestCase(db, id)) as any;
+    const tc = (await getTestCase(db, id, ctx.user?.id ?? null)) as any;
     if (!tc) return null;
     if (tc.project?.id != null) assertProject(ctx, tc.project.id);
 

@@ -80,6 +80,8 @@ export interface CapabilityDef {
    * decline it. Neither data nor a project's `enabled` turns it on, and the server refuses its routes while it is off.
    */
   optIn?: boolean;
+  /** An opt-in capability that can be turned on only while sign-in is on (`PIWI_AUTH_ENABLED`). */
+  needsSignIn?: boolean;
   /** The desktop build never offers it: every surface hides it there (`capabilityHidden`). */
   hiddenOnDesktop?: boolean;
   /** Release that introduced it; the capability ladder marks entries newer than the instance's first run. */
@@ -323,9 +325,10 @@ export const CAPABILITIES: CapabilityDef[] = [
     needs: [],
     detection: null,
     optIn: true,
+    needsSignIn: true,
     hiddenOnDesktop: true,
     since: '0.68.0',
-    doc: 'features/desktop',
+    doc: 'features/run-on-my-machine',
   },
 ];
 

@@ -229,5 +229,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
         </section>
       </div>
     </UCard>
+
+    <OptInCapabilities />
   </div>
 </template>

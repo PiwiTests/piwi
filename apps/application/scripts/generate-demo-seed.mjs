@@ -3475,6 +3475,36 @@ const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
   g.memberIds.map((userId) => ({ group_id: g.id, user_id: userId, added_by: null, created_at: accessCreatedAt })),
 );
 
+// The default demo identity connected the desktop app, which Connected apps lists as online: the demo's router
+// answers every target as online. The key's hash matches no key anyone holds.
+const CONNECTED_APP_KEYS = [
+  {
+    id: 1,
+    user_id: DEFAULT_DEMO_USER.id,
+    name: 'Piwi Desktop on DEMO-LAPTOP (macOS)',
+    key_hash: 'demo-connected-app-'.padEnd(64, '0'),
+    key_prefix: 'demo0000',
+    client_kind: 'desktop',
+    permissions: ['run:receive'],
+    created_at: ts('2025-04-20T09:00:00'),
+    last_used_at: ts('2025-04-25T08:00:00'),
+  },
+];
+const RUN_TARGETS = [
+  {
+    id: 1,
+    user_id: DEFAULT_DEMO_USER.id,
+    api_key_id: 1,
+    kind: 'desktop',
+    device_name: 'Piwi Desktop on DEMO-LAPTOP (macOS)',
+    platform: 'macos',
+    version: '0.68.0',
+    project_ids: [1],
+    last_seen_at: ts('2025-04-25T08:00:00') * 1000,
+    created_at: ts('2025-04-20T09:00:00') * 1000,
+  },
+];
+
 // The default demo identity starred two projects, so they lead its sidebar and Home's Project health.
 const PROJECT_STARS = [5, 2].map((projectId, i) => ({
   id: i + 1,
@@ -5429,6 +5459,7 @@ const REBASE_SQL = [
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
   `UPDATE cluster_merge_suggestions SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE api_keys SET created_at = created_at + ${D}, last_used_at = last_used_at + ${D};`,
   '',
   '-- Millisecond timestamp columns',
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
@@ -5437,6 +5468,7 @@ const REBASE_SQL = [
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
+  `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
@@ -6612,6 +6644,10 @@ const lines = [
   insert('groups', GROUPS),
   insert('group_members', GROUP_MEMBERS),
   insert('role_bindings', ROLE_BINDINGS),
+  '',
+  '-- The desktop app the identity the demo opens as connected (Connected apps)',
+  insert('api_keys', CONNECTED_APP_KEYS),
+  insert('run_targets', RUN_TARGETS),
   '',
   '-- Starred projects (of the identity the demo opens as)',
   insert('project_stars', PROJECT_STARS),

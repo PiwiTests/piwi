@@ -78,6 +78,17 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/account' },
   },
   {
+    id: 'account-connected-apps',
+    kind: 'field',
+    pages: ['/settings/account'],
+    describes:
+      'The apps you connected from their own window, each with when it connected and, for one that runs tests, whether it is online, and Revoke.',
+    shownWhen: 'When authentication is on.',
+    help: 'settings.connected-apps',
+    doc: 'features/run-on-my-machine#connected-apps',
+    sample: { route: '/settings/account' },
+  },
+  {
     id: 'account-api-keys',
     kind: 'field',
     pages: ['/settings/account'],

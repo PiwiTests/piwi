@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: [] }>();
 
 const { canDecide, decide } = await useProjectCapabilities(props.projectId);
+const { capabilities: instanceCaps } = await useInstanceCapabilities();
 const toast = useToast();
 
 /** Plain labels for the capabilities a project can override. */
@@ -33,12 +34,21 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   'bug-reports': 'Bug reports',
   resources: 'Resources',
   'agent-diagnoses': 'Agent diagnoses',
+  'machine-runs': 'Run on my machine',
 };
 
-/** Every capability a project can override, with a plain label; one that is off until turned on has its own control. */
-const PROJECT_CAPABILITIES: { id: CapabilityId; label: string }[] = CAPABILITIES.filter(
-  (c) => c.levels.includes('project') && !c.optIn,
-).map((c) => ({ id: c.id, label: CAPABILITY_LABELS[c.id] ?? c.id }));
+/**
+ * Every capability a project can override, with a plain label. One that is off until turned on (`optIn`) is listed
+ * only while the instance has it on, and a project can only decline it: an `enabled` stored through the API, which
+ * changes nothing, still reads as such.
+ */
+const PROJECT_CAPABILITIES = computed<{ id: CapabilityId; label: string; optIn: boolean }[]>(() =>
+  CAPABILITIES.filter(
+    (c) =>
+      c.levels.includes('project') &&
+      (!c.optIn || instanceCaps.value.some((i) => i.id === c.id && i.state !== 'declined')),
+  ).map((c) => ({ id: c.id, label: CAPABILITY_LABELS[c.id] ?? c.id, optIn: c.optIn === true })),
+);
 
 type Choice = 'default' | 'enabled' | 'declined';
 const OPTIONS: { label: string; value: Choice }[] = [
@@ -46,9 +56,10 @@ const OPTIONS: { label: string; value: Choice }[] = [
   { label: 'Enabled for this project', value: 'enabled' },
   { label: 'Declined for this project', value: 'declined' },
 ];
+const OPT_IN_OPTIONS = OPTIONS.filter((o) => o.value !== 'enabled');
 
 const choice = reactive<Record<string, Choice>>({});
-for (const cap of PROJECT_CAPABILITIES) choice[cap.id] = (props.initial?.[cap.id] as Choice | undefined) ?? 'default';
+for (const cap of CAPABILITIES) choice[cap.id] = (props.initial?.[cap.id] as Choice | undefined) ?? 'default';
 
 const busy = ref(false);
 async function onChange(id: CapabilityId, value: Choice) {
@@ -86,7 +97,7 @@ async function onChange(id: CapabilityId, value: Choice) {
         <span class="text-sm text-highlighted">{{ cap.label }}</span>
         <USelect
           :model-value="choice[cap.id]"
-          :items="OPTIONS"
+          :items="cap.optIn && choice[cap.id] !== 'enabled' ? OPT_IN_OPTIONS : OPTIONS"
           value-key="value"
           size="sm"
           class="w-full sm:w-56"

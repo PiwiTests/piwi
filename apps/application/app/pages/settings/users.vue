@@ -601,7 +601,16 @@ async function confirmRemovePicture() {
         </span>
       </template>
       <template #body>
-        <ApiKeysManager v-if="selectedUserForKeys" :user-id="selectedUserForKeys.id" />
+        <div v-if="selectedUserForKeys" class="space-y-6">
+          <section class="space-y-2">
+            <h3 class="text-sm font-semibold text-highlighted">Connected apps</h3>
+            <ConnectedAppsManager :user-id="selectedUserForKeys.id" />
+          </section>
+          <section class="space-y-2">
+            <h3 class="text-sm font-semibold text-highlighted">API keys</h3>
+            <ApiKeysManager :user-id="selectedUserForKeys.id" />
+          </section>
+        </div>
       </template>
 
       <template #footer>

@@ -6,6 +6,7 @@ import { runRequests, runTargets } from '../../database/schema';
 import { refuseApiKey, requireAuth } from '../../utils/auth';
 import { requireProjectPermission, resolveRunProjectId, resolveTestRunCaseProjectId } from '../../utils/project-access';
 import { checkRateLimit, rateLimitedError } from '../../utils/rate-limit';
+import { publishRunRequest } from '../../utils/run-target-events';
 import {
   countWaitingRequests,
   MAX_WAITING_REQUESTS,
@@ -138,5 +139,7 @@ export default eventHandler(async (event) => {
     }
     stored = (await db.select().from(runRequests).where(eq(runRequests.id, stored.id)))[0] ?? stored;
   }
+  // Its targets that are online hear it at once; the rest read it as they connect.
+  await publishRunRequest(db, stored).catch(() => {});
   return { ...(await runRequestView(db, stored, now)), skipped: resolved.skipped };
 });

@@ -49,7 +49,7 @@ const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/$/, '');
 const isDesktop = useIsDesktop();
-const { can } = useAuth();
+const { can, authState } = useAuth();
 const toast = useToast();
 
 const { data: testRun, error: testRunError } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
@@ -1299,7 +1299,13 @@ const moreMenuItems = computed(() => {
       },
     });
   }
-  if (can('run:delete', testRun.value?.projectId)) {
+  // Its requester deletes their own requested run, as anyone with run:delete deletes any run.
+  const ownRequestedRun =
+    testRun.value?.origin === 'request' &&
+    testRun.value.requesterId != null &&
+    testRun.value.requesterId === authState.value.user?.id &&
+    can('run:request', testRun.value.projectId);
+  if (can('run:delete', testRun.value?.projectId) || ownRequestedRun) {
     // A kept run cannot be deleted until it is released.
     items.push({
       label: kept ? 'Delete run (release it first)' : 'Delete run',

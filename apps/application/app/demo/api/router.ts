@@ -392,7 +392,7 @@ import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/han
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
-import { listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
+import { listConnectedApps, listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
 import {
@@ -1455,9 +1455,13 @@ const routes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
-    permission: 'run:delete',
+    permission: ['run:delete', 'run:request'],
     handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      // The demo holds no requested run: every run it deletes takes `run:delete`.
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      if (projectId !== null && !demoCan(ctx, 'run:delete', projectId)) {
+        throw demoHttpError(403, 'Insufficient permissions');
+      }
       return apiDeleteTestRun(+m[1]!);
     },
   },
@@ -2064,7 +2068,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return getTestCase(await getDemoDb(), +m[1]!);
+      return getTestCase(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -3345,6 +3349,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       assertDemoSelfOrAdmin(ctx, +m[1]!);
       return { items: (await listUserApiKeys(await getDemoDb(), +m[1]!)).apiKeys };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/connected-apps$/,
+    handler: async (m, _b, _q, ctx) => {
+      assertDemoSelfOrAdmin(ctx, +m[1]!);
+      // The demo's simulated desktop app holds its stream open for as long as the demo runs.
+      return { items: await listConnectedApps(await getDemoDb(), +m[1]!, () => true) };
     },
   },
   {

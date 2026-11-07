@@ -7,8 +7,10 @@ import {
   roleBindings,
   groupMembers,
   shareLinks,
+  runTargets,
 } from '../../server/database/schema';
-import { eq, and, isNull, ne, sql } from 'drizzle-orm';
+import type { ConnectedApp } from '../../types/api';
+import { eq, and, desc, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import { deleteAssistantConversationsOf } from './assistant';
 import { deleteAssistantNudgeDismissalsOf } from './assistant-nudges';
@@ -115,6 +117,7 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
       createdAt: apiKeys.createdAt,
       lastUsedAt: apiKeys.lastUsedAt,
       expiresAt: apiKeys.expiresAt,
+      clientKind: apiKeys.clientKind,
       oauthGrantId: oauthGrants.id,
     })
     .from(apiKeys)
@@ -122,6 +125,39 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
     .where(eq(apiKeys.userId, userId));
   // A key that belongs to an OAuth grant is an MCP client's connection: its own value was never shown.
   return { apiKeys: keys.map(({ oauthGrantId, ...key }) => ({ ...key, oauth: oauthGrantId != null })) };
+}
+
+/**
+ * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner): each is
+ * a key it holds. One that runs tests adds its device and when it was last seen, and `isOnline` says whether it is
+ * online now. Revoking the key disconnects the app.
+ */
+export async function listConnectedApps(
+  db: DrizzleDB,
+  userId: number,
+  isOnline: (targetId: number, lastSeenAt: Date | null) => boolean,
+) {
+  const rows = await db
+    .select({
+      id: apiKeys.id,
+      name: apiKeys.name,
+      kind: apiKeys.clientKind,
+      createdAt: apiKeys.createdAt,
+      lastUsedAt: apiKeys.lastUsedAt,
+      targetId: runTargets.id,
+      platform: runTargets.platform,
+      version: runTargets.version,
+      lastSeenAt: runTargets.lastSeenAt,
+    })
+    .from(apiKeys)
+    .leftJoin(runTargets, eq(runTargets.apiKeyId, apiKeys.id))
+    .where(and(eq(apiKeys.userId, userId), isNotNull(apiKeys.clientKind)))
+    .orderBy(desc(apiKeys.createdAt));
+  return rows.map(({ targetId, platform, version, lastSeenAt, ...app }) => ({
+    ...app,
+    kind: app.kind as ConnectedApp['kind'],
+    target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId, lastSeenAt) },
+  }));
 }
 
 export async function createUserApiKeyRecord(

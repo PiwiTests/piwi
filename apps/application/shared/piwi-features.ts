@@ -656,6 +656,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop-runs',
       },
       {
+        title: 'Run on my machine',
+        summary:
+          'Ask the desktop app on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
+        needs: ['desktop', 'admin'],
+        where: 'Settings → Capabilities; Settings → Account → Connected apps',
+        doc: 'features/run-on-my-machine',
+      },
+      {
         title: 'Browser extension',
         summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],
