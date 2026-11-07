@@ -13,22 +13,27 @@ const requests = ref<RunRequestView[]>([]);
 const loaded = ref(false);
 const stopping = ref<string | null>(null);
 let timer: ReturnType<typeof setTimeout> | null = null;
+let unmounted = false;
 
 async function load() {
   if (timer) clearTimeout(timer);
   timer = null;
+  let read: RunRequestView[] | null = null;
   try {
-    requests.value = (await $fetch<{ items: RunRequestView[] }>('/api/run-requests')).items;
+    read = (await $fetch<{ items: RunRequestView[] }>('/api/run-requests')).items;
   } catch {
-    requests.value = [];
-  } finally {
-    loaded.value = true;
+    read = null;
   }
-  if (requests.value.some((r) => !runRequestIsFinal(r))) timer = setTimeout(load, 5000);
+  if (unmounted) return;
+  loaded.value = true;
+  if (read === null) return;
+  requests.value = read;
+  if (read.some((r) => !runRequestIsFinal(r))) timer = setTimeout(load, 5000);
 }
 
 onMounted(load);
 onBeforeUnmount(() => {
+  unmounted = true;
   if (timer) clearTimeout(timer);
 });
 

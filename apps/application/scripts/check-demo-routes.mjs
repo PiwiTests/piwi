@@ -59,7 +59,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/desktop/runs/picks', // desktop build only; the locators those runs' tests pick, for the window to copy
   'GET /api/desktop/run-target', // desktop build only; the app's connection to a team instance it takes run requests from
   'POST /api/desktop/run-target/connect', // desktop build only; starts the device flow on a team instance
-  'GET /api/desktop/run-target/key', // desktop build only; the shell keeps the key the device flow gave in the keychain
+  'POST /api/desktop/run-target/key', // desktop build only; the shell keeps the key the device flow gave in the keychain
   'PUT /api/desktop/run-target/key', // desktop build only; the shell hands the kept key back after each start
   'DELETE /api/desktop/run-target/key', // desktop build only; the shell disconnects from the team instance
   'PUT /api/desktop/run-target/links', // desktop build only; the folders the shell links for the instance's projects

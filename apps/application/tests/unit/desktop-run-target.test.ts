@@ -166,6 +166,7 @@ describe('the values the routes take', () => {
     expect(outcomeOf(2, false)).toBe('error');
     expect(outcomeOf(null, false)).toBe('error');
     expect(outcomeOf(0, true)).toBe('stopped');
+    expect(outcomeOf(null, true)).toBe('stopped');
   });
 });
 
@@ -189,7 +190,13 @@ describe('a request from the team instance', () => {
     const self = instance.calls.find((c) => c.path === '/api/run-targets/self')!;
     expect(self.body).toMatchObject({ projectIds: [3] });
 
-    expect(await answerRunRequest(REQUEST_ID, 'run')).toEqual({ ok: true, launch: true });
+    // Run with a command the window did not show is asked about again.
+    expect(await answerRunRequest(REQUEST_ID, 'run', 'npx playwright test')).toMatchObject({
+      ok: false,
+      statusCode: 409,
+    });
+    const shown = asked.type === 'run-request' ? asked.request.command : null;
+    expect(await answerRunRequest(REQUEST_ID, 'run', shown)).toEqual({ ok: true, launch: true });
     expect(JSON.stringify(heard)).not.toContain(TOKEN);
     const launch = launchOf(REQUEST_ID)!;
     expect(launch).toMatchObject({ instance: instance.url, token: TOKEN, projectId: 3 });
@@ -200,7 +207,7 @@ describe('a request from the team instance', () => {
     instance.stop(REQUEST_ID);
     await until(() => shell.length > 0);
     expect(shell).toEqual([{ type: 'requested-run-stop', requestId: REQUEST_ID }]);
-    await requestedRunEnded(REQUEST_ID, 130);
+    await requestedRunEnded(REQUEST_ID, null, true);
     const states = instance.calls.filter((c) => c.path.endsWith('/state')).map((c) => c.body);
     expect(states).toEqual([
       { state: 'running' },
@@ -244,7 +251,7 @@ describe('the shell’s routes', () => {
     ({ context: {}, params, node: { req: { headers }, res: {} } }) as unknown as H3Event;
 
   test('refuse a request a browser sends, and answer the shell', async () => {
-    const getKey = (await import('../../server/api/desktop/run-target/key.get')).default as Route;
+    const getKey = (await import('../../server/api/desktop/run-target/key.post')).default as Route;
     const launch = (await import('../../server/api/desktop/run-target/requests/[id]/launch.post')).default as Route;
     const browser = { origin: 'http://127.0.0.1:3000' };
     await expect(getKey(asked(browser))).rejects.toMatchObject({ statusCode: 403 });

@@ -14,6 +14,7 @@ import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
 import { RequestHost, RequestHostError, type RequestHostStatus } from '@piwitests/editor/request-host';
 import { planRequestedRun, type RequestPlan } from '@piwitests/editor/request-run';
 import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from '#shared/desktop-run-target';
+import { REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 
 /** How long a claimed request waits for the person's answer, as the instance counts it. */
 const ANSWER_WITHIN_MS = 10 * 60 * 1000;
@@ -28,6 +29,10 @@ interface HeldRequest {
   launched: boolean;
   /** Whether the requester asked to stop it. */
   stopRequested: boolean;
+  /** Whether **Run** is being answered to the instance now. */
+  answering: boolean;
+  /** Drops the request once nobody answered it, or once its token was never taken. */
+  expiry: ReturnType<typeof setTimeout> | null;
 }
 
 /** What the shell hears on its notification stream: stop the run a request started. */
@@ -55,6 +60,9 @@ const state: {
   host: RequestHost | null;
   links: Map<number, string>;
   held: Map<string, HeldRequest>;
+  /** The requests being claimed and checked, and the stops heard for them meanwhile. */
+  claiming: Set<string>;
+  stoppedWhileClaiming: Set<string>;
 } = {
   instance: null,
   key: null,
@@ -66,6 +74,8 @@ const state: {
   host: null,
   links: new Map(),
   held: new Map(),
+  claiming: new Set(),
+  stoppedWhileClaiming: new Set(),
 };
 
 const windowListeners = new Set<(message: RunTargetMessage) => void>();
@@ -172,8 +182,31 @@ function platformName(): string {
 function stopHost(): void {
   state.host?.close();
   state.host = null;
-  for (const id of state.held.keys()) tellWindow({ type: 'run-request-gone', id, reason: 'stopped' });
+  for (const [id, held] of state.held) {
+    if (held.expiry) clearTimeout(held.expiry);
+    tellWindow({ type: 'run-request-gone', id, reason: 'stopped' });
+  }
   state.held.clear();
+  state.claiming.clear();
+  state.stoppedWhileClaiming.clear();
+}
+
+/** Forget a held request: its timer goes, and the window stops asking about it. */
+function drop(id: string, reason: 'answered' | 'expired' | 'stopped'): void {
+  const held = state.held.get(id);
+  if (!held) return;
+  if (held.expiry) clearTimeout(held.expiry);
+  state.held.delete(id);
+  tellWindow({ type: 'run-request-gone', id, reason });
+}
+
+/** Drop a held request `afterMs` from now unless its run started by then. */
+function expireLater(id: string, held: HeldRequest, afterMs: number): void {
+  if (held.expiry) clearTimeout(held.expiry);
+  held.expiry = setTimeout(() => {
+    if (state.held.get(id) === held && !held.launched && !held.answering) drop(id, 'expired');
+  }, afterMs);
+  held.expiry.unref?.();
 }
 
 function startHost(instance: string, key: string): void {
@@ -205,40 +238,74 @@ function startHost(instance: string, key: string): void {
 }
 
 async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<void> {
-  if (state.host !== host || state.held.has(offer.id)) return;
-  let request: RunRequest;
+  if (state.host !== host || state.held.has(offer.id) || state.claiming.has(offer.id)) return;
+  state.claiming.add(offer.id);
   try {
-    request = await host.claim(offer.id);
-  } catch {
-    // Another of the person's apps claimed it, or it no longer waits.
-    return;
+    let request: RunRequest;
+    try {
+      request = await host.claim(offer.id);
+    } catch {
+      // Another of the person's apps claimed it, or it no longer waits.
+      return;
+    }
+    if (state.host !== host) return;
+    let plan: RequestPlan;
+    try {
+      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null);
+    } catch (error) {
+      await host
+        .answer(request.id, {
+          decision: 'refused',
+          detail: `This app could not check the request: ${errorText(error)}`,
+        })
+        .catch(() => {});
+      return;
+    }
+    // Stopped from the dashboard while it was claimed and checked: the instance ended it already.
+    if (state.host !== host || state.stoppedWhileClaiming.has(request.id)) return;
+    const held: HeldRequest = {
+      request,
+      plan,
+      answerBy: Date.now() + ANSWER_WITHIN_MS,
+      token: null,
+      launched: false,
+      stopRequested: false,
+      answering: false,
+      expiry: null,
+    };
+    state.held.set(request.id, held);
+    expireLater(request.id, held, ANSWER_WITHIN_MS);
+    tellWindow({ type: 'run-request', request: promptOf(held) });
+  } finally {
+    state.claiming.delete(offer.id);
+    state.stoppedWhileClaiming.delete(offer.id);
   }
-  if (state.host !== host) return;
-  const plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null);
-  const held: HeldRequest = {
-    request,
-    plan,
-    answerBy: Date.now() + ANSWER_WITHIN_MS,
-    token: null,
-    launched: false,
-    stopRequested: false,
-  };
-  state.held.set(request.id, held);
-  tellWindow({ type: 'run-request', request: promptOf(held) });
+}
+
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
 }
 
 async function takeStop(host: RequestHost, id: string): Promise<void> {
+  if (state.host !== host) return;
+  if (state.claiming.has(id)) {
+    state.stoppedWhileClaiming.add(id);
+    return;
+  }
   const held = state.held.get(id);
-  if (!held || state.host !== host) return;
+  if (!held) return;
   held.stopRequested = true;
   if (held.launched) {
     tellShell({ type: 'requested-run-stop', requestId: id });
     await host.report(id, { state: 'stopping', detail: 'Stopped from the dashboard' }).catch(() => {});
     return;
   }
-  // Not started yet: the instance ended it as stopped, so the window stops asking.
-  state.held.delete(id);
-  tellWindow({ type: 'run-request-gone', id, reason: 'stopped' });
+  // **Run** is being answered: the answer ends it once it returns.
+  if (held.answering) return;
+  // Answered but not started: nothing runs, so it ends here as stopped.
+  if (held.token) await host.report(id, { state: 'ended', outcome: 'stopped' }).catch(() => {});
+  // Not answered: the instance ended it as stopped, so the window stops asking.
+  drop(id, 'stopped');
 }
 
 /** Use the key the shell kept, with the folders it links: after each start, and when they change. */
@@ -391,19 +458,38 @@ export function isRequestId(value: unknown): value is string {
 export async function answerRunRequest(
   id: string,
   decision: 'run' | 'not-now',
+  shownCommand: string | null = null,
 ): Promise<{ ok: true; launch: boolean } | { ok: false; statusCode: number; message: string }> {
   const held = state.held.get(id);
   const host = state.host;
-  if (!held || !host || held.token || held.launched) {
+  if (!held || !host || held.token || held.launched || held.answering) {
     return { ok: false, statusCode: 404, message: 'This request is no longer asked about' };
   }
+  held.answering = true;
   try {
     if (decision === 'run') {
       held.plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
-      if (!held.plan.runnable) return { ok: false, statusCode: 409, message: 'A check failed: the run cannot start' };
+      // The folder changed since the window showed it: it shows the checks and the command again.
+      if (!held.plan.runnable || held.plan.display !== shownCommand) {
+        tellWindow({ type: 'run-request', request: promptOf(held) });
+        return {
+          ok: false,
+          statusCode: 409,
+          message: held.plan.runnable
+            ? 'The folder changed since: check the command again'
+            : 'A check failed: the run cannot start',
+        };
+      }
       const { requestToken } = await host.answer(id, { decision: 'run' });
       if (!requestToken) throw new RequestHostError(502, 'The instance gave no request token');
+      if (state.held.get(id) !== held || held.stopRequested) {
+        await host.report(id, { state: 'ended', outcome: 'stopped' }).catch(() => {});
+        drop(id, 'stopped');
+        return { ok: true, launch: false };
+      }
       held.token = requestToken;
+      // A token the window never hands the shell (the window closed) is dropped once it can start nothing.
+      expireLater(id, held, REQUEST_TOKEN_LIFETIME_MS);
       tellWindow({ type: 'run-request-gone', id, reason: 'answered' });
       return { ok: true, launch: true };
     }
@@ -413,13 +499,13 @@ export async function answerRunRequest(
       failed.length > 0 ? { decision: 'refused', detail: failed.join(' ').slice(0, 500) } : { decision: 'not-now' },
     );
   } catch (error) {
-    state.held.delete(id);
-    tellWindow({ type: 'run-request-gone', id, reason: 'expired' });
+    drop(id, 'expired');
     const status = error instanceof RequestHostError ? error.status : 502;
     return { ok: false, statusCode: status === 409 ? 409 : 502, message: (error as Error).message };
+  } finally {
+    held.answering = false;
   }
-  state.held.delete(id);
-  tellWindow({ type: 'run-request-gone', id, reason: 'answered' });
+  drop(id, 'answered');
   return { ok: true, launch: false };
 }
 
@@ -433,6 +519,8 @@ export function launchOf(id: string): { instance: string; token: string; project
   const token = held.token;
   held.token = null;
   held.launched = true;
+  if (held.expiry) clearTimeout(held.expiry);
+  held.expiry = null;
   return { instance: state.instance, token, projectId: held.request.projectId, args: held.plan.args };
 }
 
@@ -446,7 +534,7 @@ export async function requestedRunStarted(id: string): Promise<void> {
 /** Playwright's exit code after an interrupt: the window's Stop, or Ctrl+C. */
 const INTERRUPTED = 130;
 
-/** The outcome of a requested run from how its Playwright process exited. */
+/** The outcome of a requested run from how its Playwright process exited, and whether a stop was asked for it. */
 export function outcomeOf(code: number | null, stopRequested: boolean): RunRequestOutcome {
   if (stopRequested || code === INTERRUPTED) return 'stopped';
   if (code === 0) return 'passed';
@@ -454,12 +542,15 @@ export function outcomeOf(code: number | null, stopRequested: boolean): RunReque
   return 'error';
 }
 
-/** The shell's run of a request ended with `code` (null when it was killed). */
-export async function requestedRunEnded(id: string, code: number | null): Promise<void> {
+/**
+ * The shell's run of a request ended with `code` (null when it was killed); `stopped` when a stop was asked for it,
+ * from the dashboard or the window.
+ */
+export async function requestedRunEnded(id: string, code: number | null, stopped = false): Promise<void> {
   const held = state.held.get(id);
   if (!held?.launched) return;
   state.held.delete(id);
-  const outcome = outcomeOf(code, held.stopRequested);
+  const outcome = outcomeOf(code, held.stopRequested || stopped);
   const detail = outcome === 'error' ? `Playwright exited with ${code ?? 'no code'}` : undefined;
   await state.host?.report(id, { state: 'ended', outcome, ...(detail ? { detail } : {}) }).catch(() => {});
 }
@@ -468,6 +559,7 @@ export async function requestedRunEnded(id: string, code: number | null): Promis
 export async function requestedRunFailed(id: string, detail: string): Promise<void> {
   const held = state.held.get(id);
   if (!held) return;
+  if (held.expiry) clearTimeout(held.expiry);
   state.held.delete(id);
   await state.host?.report(id, { state: 'ended', outcome: 'error', detail: detail.slice(0, 500) }).catch(() => {});
 }

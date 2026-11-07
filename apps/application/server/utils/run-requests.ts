@@ -29,9 +29,7 @@ export {
   resolveRequestTests,
   runRequestView,
   stopOwnRequest,
-  type ResolvedRequestTests,
   type RunRequestSourceInput,
-  type RunRequestView,
 } from '#shared/handlers/run-requests';
 
 /**

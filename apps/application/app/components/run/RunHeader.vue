@@ -11,6 +11,7 @@ import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
 import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 
 /**
@@ -124,6 +125,7 @@ const {
   failedCases,
   flakyCases,
   allCases,
+  everyCase,
   projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
@@ -205,11 +207,22 @@ const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
   const choices: RunOnMyMachineChoice[] = [];
   const failed = failedCases.value.length;
   if (failed && failed <= max) {
-    choices.push({ label: 'The failed tests', count: failed, source: { runId, tests: 'failed' } });
+    choices.push({
+      label: 'The failed tests',
+      count: failed,
+      source: { runId, tests: 'failed' },
+      projects: retryProjects.value,
+    });
   }
-  const all = allCases.value.length;
-  if (all && all <= max)
-    choices.push({ label: 'All the tests of the run', count: all, source: { runId, tests: 'all' } });
+  const all = everyCase.value.length;
+  if (all && all <= max) {
+    choices.push({
+      label: 'All the tests of the run',
+      count: all,
+      source: { runId, tests: 'all' },
+      projects: retryProjectsOf(everyCase.value),
+    });
+  }
   return choices;
 });
 
@@ -365,7 +378,6 @@ function onLabelKeydown(e: KeyboardEvent) {
         v-if="testRun?.projectId && machineChoices.length"
         :project-id="testRun.projectId"
         :choices="machineChoices"
-        :projects="retryProjects"
       />
 
       <UButton

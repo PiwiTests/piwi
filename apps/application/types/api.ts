@@ -1395,8 +1395,10 @@ export interface ConnectedApp {
   kind: 'picker' | 'editor' | 'desktop' | 'runner';
   createdAt: Date;
   lastUsedAt: Date | null;
-  /** For an app that runs tests: its device, when it was last seen, and whether its stream is open now. */
-  /** An app that runs tests: `id` is what a run request names it by, `projectIds` the projects it has a folder for. */
+  /**
+   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for,
+   * when it was last seen, and whether its stream is open now.
+   */
   target: {
     id: number;
     platform: string | null;

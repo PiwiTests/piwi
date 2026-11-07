@@ -33,6 +33,7 @@ const lastSent = ref<{ source: RunRequestSourceChoice; options: RunRequestOption
 );
 
 const choice = computed(() => props.choices[choiceIndex.value] ?? props.choices[0]);
+const choiceProjects = computed(() => choice.value?.projects ?? props.projects ?? []);
 const choiceItems = computed(() =>
   props.choices.map((c, i) => ({ value: i, label: c.label, description: testCount(c.count) })),
 );
@@ -72,7 +73,7 @@ function requestOptions(): RunRequestOptions {
   if (p.trace) options.trace = p.trace;
   if (p.repeatEach > 1) options.repeatEach = p.repeatEach;
   if (p.workers) options.workers = p.workers;
-  const projects = props.projects ?? [];
+  const projects = choiceProjects.value;
   if (project.value && projects.length > 1 && projects.includes(project.value)) options.project = project.value;
   return options;
 }
@@ -158,6 +159,7 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
             >
           </p>
           <p v-if="progressError" class="text-xs text-error">{{ progressError }}</p>
+          <p v-if="sendError" class="text-xs text-error">{{ sendError }}</p>
         </div>
 
         <div v-else class="space-y-4" data-shot="run-on-my-machine-menu">
@@ -182,7 +184,7 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
             </p>
           </div>
 
-          <RetryCommandOptions :projects="projects" :naming="false" class="-mx-2" />
+          <RetryCommandOptions :projects="choiceProjects" :naming="false" class="-mx-2" />
 
           <p v-if="sendError" class="text-xs text-error">{{ sendError }}</p>
         </div>

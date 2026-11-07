@@ -22,7 +22,13 @@ export default defineNuxtPlugin(() => {
         core
           .invoke('desktop_keep_run_target_key')
           .catch((error: unknown) => {
-            useToast().add({ title: 'Could not keep the key', description: errorMessage(error), color: 'error' });
+            // A key the keychain cannot keep would be lost at the next start: disconnect rather than take requests.
+            useToast().add({
+              title: 'Could not keep the key: disconnected',
+              description: errorMessage(error),
+              color: 'error',
+            });
+            return core.invoke('desktop_forget_run_target').catch(() => {});
           })
           .finally(() => (keeping = false));
       }

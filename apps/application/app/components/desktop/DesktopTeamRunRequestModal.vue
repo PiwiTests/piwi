@@ -77,7 +77,7 @@ async function answer(decision: 'run' | 'not-now') {
   try {
     const answered = await $fetch<{ launch: boolean }>(`/api/desktop/run-target/requests/${request.id}/answer`, {
       method: 'POST',
-      body: { decision },
+      body: { decision, command: request.command },
     });
     if (decision === 'run' && answered.launch) {
       store.startTeamRequest({

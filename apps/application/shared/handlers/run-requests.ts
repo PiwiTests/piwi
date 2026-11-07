@@ -20,7 +20,7 @@ import {
   testRunsCases,
   type RunRequestRow,
 } from '../../server/database/schema';
-import { can, type AccessSummary } from '#shared/permissions';
+import { can, projectScopeFor, type AccessSummary } from '#shared/permissions';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import type { DrizzleDB } from './db';
 
@@ -236,14 +236,21 @@ export async function listOwnRequests(
   now = new Date(),
 ): Promise<RunRequestView[]> {
   if (projectId !== undefined && !can(access, 'project:read', projectId)) return [];
-  const mine = eq(runRequests.requesterId, requesterId);
-  const rows = await db
+  const conditions = [eq(runRequests.requesterId, requesterId)];
+  if (projectId !== undefined) conditions.push(eq(runRequests.projectId, projectId));
+  else {
+    const scope = projectScopeFor(access, 'project:read');
+    if (scope !== 'all') {
+      if (scope.size === 0) return [];
+      conditions.push(inArray(runRequests.projectId, [...scope]));
+    }
+  }
+  const readable = await db
     .select()
     .from(runRequests)
-    .where(projectId === undefined ? mine : and(mine, eq(runRequests.projectId, projectId)))
+    .where(and(...conditions))
     .orderBy(desc(runRequests.createdAt), desc(runRequests.id))
-    .limit(OWN_REQUESTS_LIMIT * 3);
-  const readable = rows.filter((row) => can(access, 'project:read', row.projectId)).slice(0, OWN_REQUESTS_LIMIT);
+    .limit(OWN_REQUESTS_LIMIT);
   const targetIds = [...new Set(readable.flatMap((row) => (row.targetId == null ? [] : [row.targetId])))];
   const targets = await targetsOf(db, targetIds);
   return readable.map((row) => viewOf(row, targets, now));

@@ -14,6 +14,8 @@ export interface RunOnMyMachineChoice {
   /** How many tests it names, as the page counts them. */
   count: number;
   source: RunRequestSourceChoice;
+  /** The Playwright projects its tests ran in, which the menu offers to pick one of. */
+  projects?: readonly string[];
 }
 
 /** A connected app that takes run requests. */
@@ -35,7 +37,11 @@ export async function useRunOnMyMachine(projectId: number) {
   const appsLoaded = ref(false);
   async function loadApps() {
     const userId = authState.value.user?.id;
-    if (!userId) return;
+    if (!userId) {
+      apps.value = [];
+      appsLoaded.value = true;
+      return;
+    }
     try {
       const { items } = await $fetch<ConnectedAppsResponse>(`/api/users/${userId}/connected-apps`);
       apps.value = items.filter((app): app is RunTargetApp => app.target !== null);
@@ -65,6 +71,7 @@ export function useRunRequestProgress() {
   const request = ref<RunRequestView | null>(null);
   const error = ref<string | null>(null);
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
 
   function clear() {
     if (timer) clearTimeout(timer);
@@ -74,20 +81,27 @@ export function useRunRequestProgress() {
   async function poll() {
     clear();
     const current = request.value;
-    if (!current || runRequestIsFinal(current)) return;
+    if (disposed || !current || runRequestIsFinal(current)) return;
     try {
-      request.value = await $fetch<RunRequestView>(`/api/run-requests/${current.id}`);
+      const read = await $fetch<RunRequestView>(`/api/run-requests/${current.id}`);
+      // Another request was followed meanwhile, or the page went away.
+      if (disposed || request.value?.id !== current.id) return;
+      request.value = read;
       error.value = null;
     } catch (e) {
+      if (disposed || request.value?.id !== current.id) return;
       error.value = errorMessage(e);
+      // The request is gone for this person (deleted, or its project no longer readable): nothing more to read.
+      if (statusOf(e) === 404 || statusOf(e) === 403) return;
     }
     if (request.value && !runRequestIsFinal(request.value)) timer = setTimeout(poll, 2000);
   }
 
   function follow(view: RunRequestView) {
+    clear();
     request.value = view;
     error.value = null;
-    timer = setTimeout(poll, 2000);
+    if (!disposed) timer = setTimeout(poll, 2000);
   }
 
   async function stop() {
@@ -107,6 +121,15 @@ export function useRunRequestProgress() {
     error.value = null;
   }
 
-  onScopeDispose(clear);
+  onScopeDispose(() => {
+    disposed = true;
+    clear();
+  });
   return { request, error, follow, stop, reset };
+}
+
+function statusOf(error: unknown): number | undefined {
+  return (
+    (error as { statusCode?: number; status?: number } | null)?.statusCode ?? (error as { status?: number })?.status
+  );
 }
