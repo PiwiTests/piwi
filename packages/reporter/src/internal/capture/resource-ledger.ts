@@ -44,6 +44,21 @@ export interface ResourceTestRef {
   failed?: boolean;
 }
 
+/** The last call a test made on an object, or on anything under it (a page's frames and elements, a context's pages). */
+export interface ResourceUse {
+  at: number;
+  /** The line that made it, `file:line`. */
+  site: string | null;
+  /** The test that made it. */
+  test?: string;
+}
+
+/** The fixture being set up or torn down: its title, and its location for a fixture of the suite's own. */
+export interface ResourceFixture {
+  title: string;
+  location: string | null;
+}
+
 export interface ResourceBirth {
   id: number;
   kind: ResourceKind;
@@ -51,8 +66,13 @@ export interface ResourceBirth {
   parent: number | null;
   at: number;
   phase: ResourcePhase;
-  /** The fixture being set up when the object was opened; `worker` when that fixture is worker-scoped. */
-  fixture: { title: string; location: string | null; worker: boolean } | null;
+  /**
+   * The fixture being set up when the object was opened. `worker` when it ran
+   * with a timeout slot, which Playwright gives a worker-scoped fixture and any
+   * fixture with a `timeout` of its own; `timed` for the second case, whose
+   * scope the slot does not tell.
+   */
+  fixture: (ResourceFixture & { worker: boolean; timed?: boolean }) | null;
   /** The test it was opened during; for a `beforeAll`, the test that ran the hook. */
   test: ResourceTestRef | null;
   /** The line that opened it, `file:line`. */
@@ -61,7 +81,7 @@ export interface ResourceBirth {
   opener?: number;
   /** A popup: the call that was running or last ran when it appeared. */
   trigger?: string;
-  /** A context `browser.newPage()` opened for its page. */
+  /** A context `browser.newPage()` opened for its page, or the browser `launchPersistentContext` opened for its context. */
   implicit?: boolean;
   /** A context Playwright reuses across tests on purpose (UI mode, `--reuse-context`). */
   reused?: boolean;
@@ -72,8 +92,12 @@ export interface ResourceClose {
   at: number;
   phase: ResourcePhase;
   test: ResourceTestRef | null;
+  /** The fixture tearing down when it closed. */
+  fixture?: ResourceFixture;
   /** Pages: whether anything ever ran on it. */
   used?: boolean;
+  /** The last call a test made on it before it closed. */
+  lastUse?: ResourceUse;
   /** Closed by `PIWI_LEAK_CHECK=close`. */
   byPiwi?: boolean;
 }
@@ -84,7 +108,9 @@ export interface ResourceOpen {
   used?: boolean;
   /** Pages: the current URL, without query or hash. */
   url?: string;
-  /** Pages: listeners on Playwright's page events. */
+  /** The last call a test made on it so far. */
+  lastUse?: ResourceUse;
+  /** Listeners on Playwright's events of the page, the context or the browser. */
   listeners?: number;
   /** Pages and contexts: `route()` handlers. */
   routes?: number;
@@ -103,6 +129,8 @@ export interface ResourceCensus {
   at: number;
   /** The test this census closes; null for the census a worker takes as it shuts down. */
   test: ResourceTestRef | null;
+  /** When the test this census closes started, before its test-scoped fixtures were set up. */
+  startedAt?: number;
   born: ResourceBirth[];
   closed: ResourceClose[];
   open: ResourceOpen[];
@@ -145,6 +173,8 @@ export interface LeakedResource {
   implicit: boolean;
   /** A popup: the call that opened it. */
   trigger?: string;
+  /** The line of the last call the test made on it, where its close belongs. */
+  lastUse?: string | null;
 }
 
 /**
@@ -162,8 +192,22 @@ const PLAYWRIGHT_ROLES = new Set(['worker', 'runner', 'browser', 'renderer', 'gp
 /** Frames a call through a library can take before it reaches the test's line. */
 const HANDLE_STACK_LIMIT = 40;
 
-/** Page methods that count as using the page even when it never navigated. */
+/**
+ * Page methods that count as using the page even when it never navigated, for
+ * a Playwright whose connection the ledger cannot follow.
+ */
 const USE_METHODS = ['evaluate', 'evaluateHandle', '$eval', '$$eval', 'waitForFunction', 'addScriptTag', 'addStyleTag'];
+
+/** Protocol methods that end an object rather than use it. */
+const CLOSE_METHODS: ReadonlySet<string> = new Set(['close', 'dispose']);
+
+/** Objects whose calls answer the page's own traffic (a `route()` handler's), not the test's use of it. */
+const TRAFFIC_TYPES: ReadonlySet<string> = new Set(['Route', 'WebSocketRoute']);
+
+/** A call that opens a page (`newPage`, and the capture fixtures' wrapper of it, `originalNewPage`). */
+const NEW_PAGE_CALL = /newpage$/i;
+/** A call that opens a context with a browser of its own. */
+const PERSISTENT_CALL = /launchPersistentContext$/;
 
 /** How long `PIWI_LEAK_CHECK=close` waits for one close before moving on. */
 const CLOSE_TIMEOUT_MS = 5000;
@@ -183,10 +227,28 @@ interface Instrumentation {
   removeListener?: (listener: object) => void;
 }
 
+/** The parts of a Playwright client object the ledger reads (internal): its protocol type and its parent object. */
+interface ChannelOwnerLike {
+  _type?: string;
+  _parent?: ChannelOwnerLike | null;
+}
+
+/** What Playwright passes with each protocol call (internal): a test's call carries its frames, Piwi's reads `internal`. */
+interface CallOptions extends ApiZone {
+  internal?: boolean;
+  title?: string;
+}
+
+/** The worker's connection to Playwright (internal): every call of the worker's objects goes through it. */
+interface ConnectionLike {
+  sendMessageToServer?: (object: unknown, method: unknown, params: unknown, options: unknown) => unknown;
+}
+
 type BrowserTypeLike = Record<string, unknown>;
 
 interface PlaywrightLike {
   _instrumentation?: Instrumentation;
+  _connection?: ConnectionLike;
   chromium?: BrowserTypeLike;
   firefox?: BrowserTypeLike;
   webkit?: BrowserTypeLike;
@@ -200,11 +262,16 @@ export interface TestInfoLike {
   titlePath?: string[];
   status?: string;
   expectedStatus?: string;
+  project?: { timeout?: number };
   _timeoutManager?: {
     _running?: {
       runnable?: {
         type?: string;
-        fixture?: { title?: string; location?: { file?: string; line?: number }; slot?: unknown };
+        fixture?: {
+          title?: string;
+          location?: { file?: string; line?: number };
+          slot?: { timeout?: number } | null;
+        };
       };
     } | null;
   };
@@ -215,6 +282,7 @@ interface Entry {
   object: object | null;
   closed: ResourceClose | null;
   used: boolean;
+  lastUse: ResourceUse | null;
 }
 
 /** A server or child process the worker started, where and while what it was started, and whether it still runs. */
@@ -291,7 +359,14 @@ function testRef(info: TestInfoLike | null): ResourceTestRef | null {
   };
 }
 
-/** What Playwright is running, from the test info it holds while it runs it. */
+/**
+ * What Playwright is running, from the test info it holds while it runs it. A
+ * fixture runs with a timeout slot when it is worker-scoped or has a timeout
+ * of its own; a worker fixture without one gets the project's timeout, so a
+ * fixture of the suite's own (one with a location) whose slot has any other
+ * timeout is `timed`, and its scope is left to the verdicts. Playwright's own
+ * worker fixtures run with no timeout.
+ */
 function runnableOf(info: TestInfoLike | null): { phase: ResourcePhase; fixture: ResourceBirth['fixture'] } {
   if (!info) return { phase: 'worker', fixture: null };
   const runnable = info._timeoutManager?._running?.runnable;
@@ -302,15 +377,22 @@ function runnableOf(info: TestInfoLike | null): { phase: ResourcePhase; fixture:
       ? 'worker'
       : 'test';
   const raw = runnable?.fixture;
-  const fixture =
-    raw && typeof raw.title === 'string'
-      ? {
-          title: raw.title,
-          location: raw.location?.file ? `${relativePath(raw.location.file)}:${raw.location.line ?? 0}` : null,
-          worker: raw.slot !== undefined && raw.slot !== null,
-        }
-      : null;
-  return { phase, fixture };
+  if (!raw || typeof raw.title !== 'string') return { phase, fixture: null };
+  const slot = raw.slot ?? null;
+  const projectTimeout = info.project?.timeout;
+  const timed =
+    slot !== null && !!raw.location?.file && typeof slot.timeout === 'number' && typeof projectTimeout === 'number'
+      ? slot.timeout !== projectTimeout
+      : false;
+  return {
+    phase,
+    fixture: {
+      title: raw.title,
+      location: raw.location?.file ? `${relativePath(raw.location.file)}:${raw.location.line ?? 0}` : null,
+      worker: slot !== null,
+      ...(timed ? { timed: true } : {}),
+    },
+  };
 }
 
 /** Without Playwright's test info: inside a census window it is the test, outside it the worker. */
@@ -442,6 +524,9 @@ export class ResourceLedger {
   private lastCall: ApiZone | null = null;
   /** The page a wrapped page method is calling into: its first reported API call marks it used. */
   private usingPage: Entry | null = null;
+  /** The worker's connection is followed: every call a test makes marks what it lands on used. */
+  private followingCalls = false;
+  private windowStartedAt: number | null = null;
   private born: ResourceBirth[] = [];
   private closed: ResourceClose[] = [];
   private handlesAtStart: Record<string, number> = {};
@@ -501,8 +586,65 @@ export class ResourceLedger {
     for (const type of [this.playwright.chromium, this.playwright.firefox, this.playwright.webkit]) {
       if (type) this.wrapBrowserType(type);
     }
+    this.guard(() => this.followCalls());
     if (this.nodeHandles) this.guard(() => this.wrapNodeHandles());
     return true;
+  }
+
+  /**
+   * Follow every call the worker's objects make through its connection to
+   * Playwright (`sendMessageToServer`, internal): a call a test made (with its
+   * frames, not `internal` like Piwi's own reads and Playwright's artifacts)
+   * marks the object it lands on used, and the page, context and browser it
+   * belongs to (its `_parent` chain), with when and from which line. A long
+   * call (a wait, an assertion) keeps it in use until it returns. Calls that
+   * close an object, and a `route()` handler's answers to the page's own
+   * traffic, are no use. Without the connection, the page methods and
+   * locators keep marking pages used.
+   */
+  private followCalls(): void {
+    const connection = this.playwright._connection;
+    const send = connection?.sendMessageToServer;
+    if (!connection || typeof send !== 'function') return;
+    const onCall = (object: unknown, method: unknown, options: unknown, result: unknown) =>
+      this.guard(() => this.onCall(object as ChannelOwnerLike, method, options as CallOptions | undefined, result));
+    const wrapped = function (this: unknown, object: unknown, method: unknown, params: unknown, options: unknown) {
+      const result = send.call(this, object, method, params, options);
+      onCall(object, method, options, result);
+      return result;
+    };
+    connection.sendMessageToServer = wrapped;
+    this.restores.push(() => {
+      if (connection.sendMessageToServer === wrapped) connection.sendMessageToServer = send;
+    });
+    this.followingCalls = true;
+  }
+
+  private onCall(
+    object: ChannelOwnerLike | null,
+    method: unknown,
+    options: CallOptions | undefined,
+    result: unknown,
+  ): void {
+    if (!object || options?.internal || !options?.frames?.length) return;
+    if (CLOSE_METHODS.has(String(method)) || TRAFFIC_TYPES.has(String(object._type))) return;
+    const site = zoneSite(options);
+    const touch = () =>
+      this.guard(() => {
+        const info = this.testInfoSource();
+        const test = testRef(info)?.id ?? this.window?.id;
+        const use: ResourceUse = { at: this.now(), site, ...(test ? { test } : {}) };
+        for (let owner: ChannelOwnerLike | null | undefined = object; owner; owner = owner._parent) {
+          const entry = this.byObject.get(owner);
+          if (!entry || entry.closed) continue;
+          entry.used = true;
+          entry.lastUse = use;
+        }
+      });
+    touch();
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      (result as Promise<unknown>).then(touch, touch);
+    }
   }
 
   /** Stop listening, and put Node's `listen` and `spawn` back; the objects already tracked stay in the ledger. */
@@ -627,6 +769,7 @@ export class ResourceLedger {
   /** Open the census window of a test. */
   testStarted(info: TestInfoLike): void {
     this.window = testRef(info);
+    this.windowStartedAt = this.now();
     this.handlesAtStart = countHandles(this.countedHandleTypes());
     this.openAtStart = { contexts: 0, pages: 0 };
     for (const entry of this.openEntries()) {
@@ -663,9 +806,11 @@ export class ResourceLedger {
     if (running) census.running = running;
     if (test) {
       census.openAtStart = this.openAtStart;
+      if (this.windowStartedAt !== null) census.startedAt = this.windowStartedAt;
       if (!failed) census.leftOpen = leaks.length;
     }
     this.window = null;
+    this.windowStartedAt = null;
     return { census, leaks };
   }
 
@@ -746,7 +891,7 @@ export class ResourceLedger {
       test: testRef(info) ?? this.window,
       site,
     };
-    const entry: Entry = { birth, object, closed: null, used: false };
+    const entry: Entry = { birth, object, closed: null, used: false, lastUse: null };
     if (kind === 'browser' || kind === 'context') this.sawBrowser = true;
     this.entries.set(birth.id, entry);
     this.byObject.set(object, entry);
@@ -764,11 +909,19 @@ export class ResourceLedger {
 
   private onContext(context: BrowserContext, site: string | null): void {
     if (this.byObject.has(context)) return;
-    const browser = context.browser();
-    if (browser) this.onBrowser(browser, site);
-    const entry = this.track(context, 'context', browser, site);
     const zone = this.latestPendingCall();
-    if (zone?.apiName?.endsWith('.newPage')) entry.birth.implicit = true;
+    const browser = context.browser();
+    if (browser) {
+      const browserEntry = this.onBrowser(browser, site);
+      // `launchPersistentContext` opens a browser for its context alone: closing the context closes it. Its call
+      // has ended by the time Playwright reports the context.
+      const call = zone ?? this.lastCall;
+      if (PERSISTENT_CALL.test(call?.apiName ?? '') && browserEntry.birth.parent === null && !browserEntry.closed) {
+        browserEntry.birth.implicit = true;
+      }
+    }
+    const entry = this.track(context, 'context', browser, site);
+    if (NEW_PAGE_CALL.test(zone?.apiName ?? '')) entry.birth.implicit = true;
     if ((context as unknown as { _forReuse?: boolean })._forReuse) entry.birth.reused = true;
     context.on('close', () => this.guard(() => this.onClosed(context)));
     context.on('page', (page: Page) => this.guard(() => this.onPage(page, context)));
@@ -781,7 +934,7 @@ export class ResourceLedger {
     // A page `newPage` opened arrives while that call is still running; anything
     // else is a popup, opened by its page through the call that last ran.
     const zone = this.latestPendingCall();
-    const viaNewPage = !!zone?.apiName?.endsWith('.newPage');
+    const viaNewPage = NEW_PAGE_CALL.test(zone?.apiName ?? '');
     const popup = !viaNewPage && !initial;
     const site = viaNewPage ? zoneSite(zone) : initial ? initial.site : zoneSite(this.lastCall);
     const entry = this.track(page, 'page', context, site);
@@ -804,6 +957,7 @@ export class ResourceLedger {
       }
     });
     page.on('close', () => this.guard(() => this.onClosed(page)));
+    if (this.followingCalls) return;
     const methods = page as unknown as Record<string, unknown>;
     for (const method of USE_METHODS) {
       const original = methods[method];
@@ -825,14 +979,16 @@ export class ResourceLedger {
     const entry = this.byObject.get(object);
     if (!entry || entry.closed) return;
     const info = this.testInfoSource();
-    const { phase } = info ? runnableOf(info) : fallbackRunnable(this.window);
+    const { phase, fixture } = info ? runnableOf(info) : fallbackRunnable(this.window);
     const close: ResourceClose = {
       id: entry.birth.id,
       at: this.now(),
       phase,
       test: testRef(info) ?? this.window,
     };
+    if (fixture) close.fixture = { title: fixture.title, location: fixture.location };
     if (entry.birth.kind === 'page') close.used = entry.used;
+    if (entry.lastUse) close.lastUse = entry.lastUse;
     if (byPiwi) close.byPiwi = true;
     entry.closed = close;
     entry.object = null;
@@ -872,7 +1028,7 @@ export class ResourceLedger {
       return false;
     };
     return open
-      .filter((entry) => !(entry.birth.kind === 'context' && this.isImplicit(entry.birth.id)))
+      .filter((entry) => !this.isImplicit(entry.birth.id))
       .filter((entry) => !foldsIntoLeak(entry))
       .map((entry) => ({
         id: entry.birth.id,
@@ -881,6 +1037,7 @@ export class ResourceLedger {
         pages: entry.birth.kind === 'page' ? 0 : this.pagesUnder(entry.birth.id),
         implicit: false,
         ...(entry.birth.opener !== undefined ? { trigger: entry.birth.trigger ?? 'a click' } : {}),
+        ...(entry.lastUse?.site ? { lastUse: entry.lastUse.site } : {}),
       }))
       .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   }
@@ -896,8 +1053,10 @@ export class ResourceLedger {
     return count;
   }
 
+  /** A context `browser.newPage()` opened for its page, or a browser `launchPersistentContext` opened for its context. */
   private isImplicit(id: number): boolean {
     const entry = this.entries.get(id);
+    if (entry?.birth.kind === 'browser') return !!entry.birth.implicit;
     if (!entry || entry.birth.kind !== 'context') return false;
     if (entry.birth.implicit) return true;
     const owner = entry.object ? (entry.object as { _ownerPage?: unknown })._ownerPage : undefined;
@@ -945,13 +1104,24 @@ export class ResourceLedger {
           url: this.pageUrl(object),
           listeners: this.listenerCount(object),
           routes: this.routeCount(object),
+          ...(entry.lastUse ? { lastUse: entry.lastUse } : {}),
           ...(main ? { main } : {}),
         });
       } else if (entry.birth.kind === 'context') {
         this.isImplicit(entry.birth.id);
-        open.push({ id: entry.birth.id, pages: this.openPagesOf(entry.birth.id), routes: this.routeCount(object) });
+        open.push({
+          id: entry.birth.id,
+          pages: this.openPagesOf(entry.birth.id),
+          listeners: this.listenerCount(object),
+          routes: this.routeCount(object),
+          ...(entry.lastUse ? { lastUse: entry.lastUse } : {}),
+        });
       } else {
-        open.push({ id: entry.birth.id });
+        open.push({
+          id: entry.birth.id,
+          ...(entry.birth.kind === 'browser' ? { listeners: this.listenerCount(object) } : {}),
+          ...(entry.lastUse ? { lastUse: entry.lastUse } : {}),
+        });
       }
     }
     const census: ResourceCensus = {
@@ -1057,12 +1227,13 @@ export function leakFailureMessage(leaks: LeakedResource[]): string {
     const what = leak.trigger ? `a popup opened by ${leak.trigger}` : ARTICLE[leak.kind];
     const where = leak.site ? `${leak.trigger ? '' : ' opened'} at ${leak.site}` : '';
     const pages = leak.pages > 0 ? `, with ${leak.pages} page${leak.pages === 1 ? '' : 's'}` : '';
-    return `  - ${what}${where}${pages}`;
+    const lastUse = leak.lastUse ? `, last used at ${leak.lastUse}` : '';
+    return `  - ${what}${where}${pages}${lastUse}`;
   });
   return [
     `Piwi: this test left ${leaks.length === 1 ? 'one object' : `${leaks.length} objects`} open:`,
     ...lines,
-    'Close each before the test ends (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.',
+    'Close each after its last use (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.',
   ].join('\n');
 }
 

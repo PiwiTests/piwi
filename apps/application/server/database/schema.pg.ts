@@ -2633,7 +2633,7 @@ export const resourceFindings = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
-    verdict: text('verdict').notNull(), // 'leaked' | 'idle' | 'piling' | 'handle' | 'probable'
+    verdict: text('verdict').notNull(), // 'leaked' | 'lingering' | 'idle' | 'piling' | 'handle' | 'probable'
     kind: text('kind').notNull(), // 'browser' | 'context' | 'page' | 'request' | 'handle'
     place: text('place').notNull(), // where it was opened, as the latest run named it, with its line
     site: text('site'), // the `file:line` that opened it, when known

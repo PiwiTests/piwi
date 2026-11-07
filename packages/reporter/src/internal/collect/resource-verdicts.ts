@@ -6,14 +6,17 @@ import type {
   ResourceBirth,
   ResourceCensus,
   ResourceClose,
+  ResourceKind,
   ResourceTestRef,
+  ResourceUse,
 } from '../capture/resource-ledger.js';
 
 /**
  * Turns the resource censuses the capture fixtures attach (`piwi-resources`)
  * into findings: the objects left open after the scope that opened them, the
- * pages opened and never used, the owners whose pages, listeners or route
- * handlers pile up, and the Node handles a test left in its worker. Workers
+ * ones a test closed long after it last used them, the pages opened and never
+ * used, the owners whose pages, listeners or route handlers pile up, and the
+ * Node handles a test left in its worker. Workers
  * report facts; the verdicts are reached here, once every census is in, because
  * only a later census can tell an object a test handed on (and a later test
  * closed) from one nobody closed.
@@ -26,7 +29,27 @@ export type ResourceFinding = WireResourceFinding;
 
 export interface ResourceReport {
   findings: ResourceFinding[];
-  counts: { leaked: number; idle: number; piling: number; handle: number; probable: number };
+  counts: Record<ResourceFinding['verdict'], number>;
+  /** The objects behind the leaked and lingering findings, each with the stretch it was open for nothing. */
+  spans: ResourceSpan[];
+}
+
+/** An object open for nothing from `from` to `to` (epoch ms), as the timeline draws it. */
+export interface ResourceSpan {
+  worker: number;
+  verdict: 'leaked' | 'lingering';
+  kind: ResourceKind;
+  where: string;
+  site: string | null;
+  lastUse: string | null;
+  from: number;
+  to: number;
+  untilWorkerEnd: boolean;
+  /** A leak: the scope it outlived. */
+  scope: 'test' | 'describe' | null;
+  /** The open pages that went with it: 1 for a page. */
+  pages: number;
+  test: { title: string; file: string } | null;
 }
 
 /** Lifecycle calls a test made outside any fixture, from its steps, for a run without the fixtures. */
@@ -51,6 +74,8 @@ interface Tracked {
   close: ResourceClose | null;
   lastOpenAt: number | null;
   used: boolean | undefined;
+  /** The last call a test made on it, as the latest census saw it. */
+  lastUse: ResourceUse | null;
   series: Array<{ pages?: number; listeners?: number; routes?: number; elements?: number; test: ResourceTestRef }>;
   /** Pages: main-thread CPU read at each census, over CDP. */
   mainCpu: Array<{ at: number; cpuMs: number }>;
@@ -146,7 +171,8 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
     byWorker.set(census.worker, list);
   }
 
-  const leaked: Array<{ tracked: Tracked; scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean }> = [];
+  const leaked: Leak[] = [];
+  const lingering: Lingering[] = [];
   const idle: Tracked[] = [];
   const all: Tracked[] = [];
 
@@ -162,6 +188,7 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
           close: null,
           lastOpenAt: null,
           used: undefined,
+          lastUse: null,
           series: [],
           mainCpu: [],
         });
@@ -171,12 +198,14 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
         if (!entry) continue;
         entry.close = close;
         if (close.used !== undefined) entry.used = close.used;
+        if (close.lastUse) entry.lastUse = close.lastUse;
       }
       for (const open of census.open) {
         const entry = tracked.get(open.id);
         if (!entry) continue;
         entry.lastOpenAt = census.at;
         if (open.used !== undefined) entry.used = open.used;
+        if (open.lastUse) entry.lastUse = open.lastUse;
         if (census.test) {
           entry.series.push({
             pages: open.pages,
@@ -191,25 +220,30 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
     }
     const testCensuses = censuses.filter((census) => census.test !== null);
     const workerEnded = censuses.some((census) => census.test === null);
+    const timedTests = timedFixtureTests(tracked.values());
 
     for (const entry of tracked.values()) {
       all.push(entry);
       if (entry.birth.kind === 'page' && entry.used === false && !entry.bornCensus.test?.failed) idle.push(entry);
-      const verdict = leakVerdict(entry, testCensuses, workerEnded);
+      const verdict = leakVerdict(entry, testCensuses, workerEnded, timedTests);
       if (verdict) leaked.push({ tracked: entry, ...verdict });
+      const tailMs = verdict ? null : lingerTail(entry);
+      if (tailMs !== null) lingering.push({ tracked: entry, tailMs });
     }
   }
 
-  findings.push(...groupLeaks(leaked, all));
+  const spans: ResourceSpan[] = [];
+  findings.push(...groupLeaks(leaked, all, spans));
   findings.push(...pilingFindings(all));
   findings.push(...workerPilingFindings(byWorker));
   findings.push(...handleFindings(byWorker));
   findings.push(...groupIdle(idle, input.fixturesByTest ?? new Map()));
+  findings.push(...groupLingering(lingering, spans));
   findings.push(...probableFindings(input.tallies ?? []));
 
-  const counts = { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
+  const counts = { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
   for (const finding of findings) counts[finding.verdict] += finding.verdict === 'idle' ? finding.count : 1;
-  return { findings, counts };
+  return { findings, counts, spans: spans.sort((a, b) => a.from - b.from) };
 }
 
 /** Whether a ref belongs to the same spec file as the object's birth: the scope hand-overs stay within. */
@@ -227,6 +261,61 @@ function insideBlock(birth: ResourceBirth, ref: ResourceTestRef | null): boolean
   return birth.test!.suite.every((title, index) => ref.suite[index] === title);
 }
 
+/** What a leak verdict says: the scope the object outlived, and from when to when it stayed open past it. */
+interface LeakSpan {
+  scope: 'test' | 'describe';
+  /** When its scope ended. */
+  from: number;
+  /** When it closed, or its worker's last census. */
+  to: number;
+  heldMs: number;
+  untilWorkerEnd: boolean;
+}
+
+type Leak = LeakSpan & { tracked: Tracked };
+type Lingering = { tracked: Tracked; tailMs: number };
+
+/** A fixture's identity within a worker: its title and location. */
+const fixtureKey = (fixture: { title: string; location: string | null }) =>
+  `${fixture.title}|${fixture.location ?? ''}`;
+
+/**
+ * The tests in which each fixture with a timeout of its own opened something,
+ * per worker: a worker fixture is set up once per worker, so one that opened
+ * objects in two tests of a worker is test-scoped.
+ */
+function timedFixtureTests(tracked: Iterable<Tracked>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const entry of tracked) {
+    const fixture = entry.birth.fixture;
+    if (!fixture?.timed || !entry.birth.test) continue;
+    const key = fixtureKey(fixture);
+    const tests = out.get(key) ?? new Set<string>();
+    tests.add(entry.birth.test.id);
+    out.set(key, tests);
+  }
+  return out;
+}
+
+/**
+ * Whether an object a fixture with a timeout of its own opened is judged as a
+ * test fixture's, which its timeout slot does not tell from a worker
+ * fixture's: only when that fixture opened objects in two tests of the
+ * worker, its own teardown did not close it, and no later test used it.
+ */
+function judgedAsTestScoped(entry: Tracked, timedTests: Map<string, Set<string>>): boolean {
+  const fixture = entry.birth.fixture;
+  if (!fixture?.timed || (timedTests.get(fixtureKey(fixture))?.size ?? 0) < 2) return false;
+  const close = entry.close?.fixture;
+  if (close && fixtureKey(close) === fixtureKey(fixture)) return false;
+  return !(entry.lastUse?.test && entry.lastUse.test !== entry.birth.test?.id);
+}
+
+/** A context `browser.newPage()` opened for its page, or a browser `launchPersistentContext` opened for its context. */
+function isImplicit(birth: ResourceBirth): boolean {
+  return (birth.kind === 'context' || birth.kind === 'browser') && !!birth.implicit;
+}
+
 /**
  * The verdict on one object: leaked past its test, leaked past its describe
  * block, or nothing. An object a test opened and a later test or hook of the
@@ -237,12 +326,13 @@ function leakVerdict(
   entry: Tracked,
   testCensuses: ResourceCensus[],
   workerEnded: boolean,
-): { scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean } | null {
+  timedTests: Map<string, Set<string>>,
+): LeakSpan | null {
   const { birth, close, bornCensus } = entry;
-  if (birth.reused || birth.phase === 'worker' || birth.fixture?.worker || !birth.test) return null;
-  if (birth.kind === 'context' && birth.implicit) return null;
+  if (birth.reused || birth.phase === 'worker' || !birth.test || isImplicit(birth)) return null;
+  if (birth.fixture?.worker && !judgedAsTestScoped(entry, timedTests)) return null;
   // `PIWI_LEAK_CHECK=close` closed it at the end of its test: gone from that census, still a leak.
-  if (close?.byPiwi) return { scope: 'test', heldMs: 0, untilWorkerEnd: false };
+  if (close?.byPiwi) return { scope: 'test', from: bornCensus.at, to: bornCensus.at, heldMs: 0, untilWorkerEnd: false };
   const closedByShutdown = !!close && (close.phase === 'worker' || close.test === null);
 
   if (birth.phase === 'beforeAll' || birth.phase === 'afterAll') {
@@ -253,8 +343,14 @@ function leakVerdict(
     if (!ended) return null;
     const lastInside = [...testCensuses].reverse().find((census) => insideBlock(birth, census.test));
     const blockEnd = lastInside?.at ?? bornCensus.at;
-    const end = close?.at ?? entry.lastOpenAt ?? blockEnd;
-    return { scope: 'describe', heldMs: Math.max(0, end - blockEnd), untilWorkerEnd: !close || closedByShutdown };
+    const end = Math.max(blockEnd, close?.at ?? entry.lastOpenAt ?? blockEnd);
+    return {
+      scope: 'describe',
+      from: blockEnd,
+      to: end,
+      heldMs: end - blockEnd,
+      untilWorkerEnd: !close || closedByShutdown,
+    };
   }
 
   // Born in a test's span: it outlived the test when it was open at the census closing that test.
@@ -266,8 +362,38 @@ function leakVerdict(
   // Closed later in its own test (a fixture tearing down after the census), or
   // handed on to a later test or hook of the same file that closed it.
   if (close && !closedByShutdown && (close.test?.id === birth.test.id || sameFile(birth, close.test))) return null;
-  const end = close?.at ?? entry.lastOpenAt ?? bornCensus.at;
-  return { scope: 'test', heldMs: Math.max(0, end - bornCensus.at), untilWorkerEnd: !close || closedByShutdown };
+  const end = Math.max(bornCensus.at, close?.at ?? entry.lastOpenAt ?? bornCensus.at);
+  return {
+    scope: 'test',
+    from: bornCensus.at,
+    to: end,
+    heldMs: end - bornCensus.at,
+    untilWorkerEnd: !close || closedByShutdown,
+  };
+}
+
+/** How long an object must stay open after its last use, at least, and as a share of its test, to be lingering. */
+export const LINGER_MIN_MS = 2000;
+export const LINGER_SHARE = 1 / 3;
+
+/**
+ * How long an object the test opened itself stayed open after the test last
+ * used it, when it closed within that test (by the test, or a fixture tearing
+ * down) and that tail is both `LINGER_MIN_MS` and `LINGER_SHARE` of the test;
+ * null otherwise. What a fixture opens is the fixture's to close, and an object
+ * that outlived its test is a leak instead.
+ */
+function lingerTail(entry: Tracked): number | null {
+  const { birth, close, lastUse, bornCensus } = entry;
+  if (!birth.test || birth.fixture || birth.reused || isImplicit(birth)) return null;
+  if (birth.phase !== 'test' && birth.phase !== 'beforeEach' && birth.phase !== 'afterEach') return null;
+  if (!close || close.byPiwi || close.phase === 'worker' || close.test?.id !== birth.test.id) return null;
+  if (!lastUse || lastUse.at < birth.at) return null;
+  const census = bornCensus;
+  if (census.test?.id !== birth.test.id || census.test.failed) return null;
+  const duration = Math.max(1, census.at - (census.startedAt ?? birth.at));
+  const tail = close.at - lastUse.at;
+  return tail >= LINGER_MIN_MS && tail >= duration * LINGER_SHARE ? tail : null;
 }
 
 /** Where an object was opened, as the summary names it. */
@@ -298,21 +424,54 @@ function siteOf(birth: ResourceBirth): string | null {
 /** The key of an object across workers: ids restart in every worker process. */
 const keyOf = (worker: number, id: number) => `${worker}:${id}`;
 
-type Leak = { tracked: Tracked; scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean };
+/** The test a span names: the one a census closed. */
+function spanTest(census: ResourceCensus): ResourceSpan['test'] {
+  return census.test ? { title: census.test.title ?? '', file: census.test.file } : null;
+}
+
+/** The last-use line most of a group's objects share, the latest one on a tie; null when none was used. */
+function commonLastUse(uses: Array<ResourceUse | null>): string | null {
+  const tally = new Map<string, { n: number; at: number }>();
+  for (const use of uses) {
+    if (!use?.site) continue;
+    const seen = tally.get(use.site) ?? { n: 0, at: 0 };
+    tally.set(use.site, { n: seen.n + 1, at: Math.max(seen.at, use.at) });
+  }
+  let best: [string, { n: number; at: number }] | null = null;
+  for (const item of tally)
+    if (!best || item[1].n > best[1].n || (item[1].n === best[1].n && item[1].at > best[1].at)) best = item;
+  return best?.[0] ?? null;
+}
 
 /**
  * Group leaked objects by where they were opened. A page in a leaked context,
  * and a context in a leaked browser, are folded into it; the context
- * `browser.newPage()` opened for its page is folded into the page.
+ * `browser.newPage()` opened for its page is folded into the page, and the
+ * browser `launchPersistentContext` opened into its context. Each group's
+ * objects become spans for the timeline.
  */
-function groupLeaks(leaked: Leak[], all: Tracked[]): ResourceFinding[] {
+function groupLeaks(leaked: Leak[], all: Tracked[], spans: ResourceSpan[]): ResourceFinding[] {
   const leaks = new Map(leaked.map((leak) => [keyOf(leak.tracked.worker, leak.tracked.birth.id), leak]));
   const tracked = new Map(all.map((entry) => [keyOf(entry.worker, entry.birth.id), entry]));
-  const groups = new Map<string, ResourceFinding & { testIds: Set<string> }>();
+  const groups = new Map<string, ResourceFinding & { testIds: Set<string>; uses: Array<ResourceUse | null> }>();
   const groupKey = (leak: Leak) => `${leak.scope}|${leak.tracked.birth.kind}|${whereOf(leak.tracked.birth)}`;
+  // The outermost leaked ancestor a page folds into, through any number of folds.
+  const rootOf = (leak: Leak): Leak => {
+    let root = leak;
+    for (let next = foldTarget(root.tracked, leaks, tracked); next; next = foldTarget(next.tracked, leaks, tracked)) {
+      root = next;
+    }
+    return root;
+  };
+  const pagesByRoot = new Map<Leak, number>();
+  for (const leak of leaked) {
+    if (leak.tracked.birth.kind !== 'page') continue;
+    const root = rootOf(leak);
+    pagesByRoot.set(root, (pagesByRoot.get(root) ?? 0) + 1);
+  }
   for (const leak of leaked) {
     const { birth } = leak.tracked;
-    if (birth.kind === 'context' && birth.implicit) continue;
+    if (isImplicit(birth)) continue;
     if (foldTarget(leak.tracked, leaks, tracked)) continue;
     const key = groupKey(leak);
     const group = groups.get(key) ?? {
@@ -327,30 +486,115 @@ function groupLeaks(leaked: Leak[], all: Tracked[]): ResourceFinding[] {
       untilWorkerEnd: false,
       pages: 0,
       testIds: new Set<string>(),
+      uses: [],
       ...(leak.scope === 'describe' && birth.test?.suite.length
         ? { detail: `beforeAll of "${birth.test.suite.join(' › ')}"` }
         : {}),
     };
     group.count++;
     if (birth.test) group.testIds.add(birth.test.id);
+    group.uses.push(leak.tracked.lastUse);
     group.heldMs = Math.max(group.heldMs ?? 0, leak.heldMs);
     group.untilWorkerEnd = group.untilWorkerEnd || leak.untilWorkerEnd;
     if (leak.tracked.close?.byPiwi) group.closedByPiwi = true;
     if (birth.kind === 'page' && leak.scope === 'test') addCpu(group, afterTestCpu(leak.tracked));
     groups.set(key, group);
+    if (leak.to > leak.from) {
+      spans.push({
+        worker: leak.tracked.worker,
+        verdict: 'leaked',
+        kind: birth.kind,
+        where: whereOf(birth),
+        site: siteOf(birth),
+        lastUse: leak.tracked.lastUse?.site ?? null,
+        from: leak.from,
+        to: leak.to,
+        untilWorkerEnd: leak.untilWorkerEnd,
+        scope: leak.scope,
+        pages: birth.kind === 'page' ? 1 : (pagesByRoot.get(leak) ?? 0),
+        test: spanTest(leak.tracked.bornCensus),
+      });
+    }
   }
   // Count the pages folded into each group, and what they used after their test.
   for (const leak of leaked) {
     if (leak.tracked.birth.kind !== 'page') continue;
-    const root = foldTarget(leak.tracked, leaks, tracked);
-    const group = root ? groups.get(groupKey(root)) : undefined;
+    const root = rootOf(leak);
+    const group = root !== leak ? groups.get(groupKey(root)) : undefined;
     if (!group) continue;
     group.pages = (group.pages ?? 0) + 1;
-    if (root!.scope === 'test') addCpu(group, afterTestCpu(leak.tracked));
+    if (root.scope === 'test') addCpu(group, afterTestCpu(leak.tracked));
   }
   return [...groups.values()]
-    .map(({ testIds, ...finding }) => ({ ...finding, tests: testIds.size }))
+    .map(({ testIds, uses, ...finding }) => {
+      const lastUse = commonLastUse(uses);
+      return { ...finding, tests: testIds.size, ...(lastUse ? { lastUse } : {}) };
+    })
     .sort((a, b) => (a.scope === b.scope ? b.count - a.count : a.scope === 'test' ? -1 : 1));
+}
+
+/**
+ * Group lingering objects by where they were opened. A page that lingered in a
+ * context that lingered too folds into it, as a leaked one does.
+ */
+function groupLingering(lingering: Lingering[], spans: ResourceSpan[]): ResourceFinding[] {
+  const byKey = new Map(lingering.map((item) => [keyOf(item.tracked.worker, item.tracked.birth.id), item]));
+  const parentOf = (item: Lingering): Lingering | undefined => {
+    const parent = item.tracked.birth.parent;
+    return parent === null ? undefined : byKey.get(keyOf(item.tracked.worker, parent));
+  };
+  const pages = new Map<Lingering, number>();
+  for (const item of lingering) {
+    const parent = item.tracked.birth.kind === 'page' ? parentOf(item) : undefined;
+    if (parent) pages.set(parent, (pages.get(parent) ?? 0) + 1);
+  }
+  const groups = new Map<string, ResourceFinding & { testIds: Set<string>; longest: Lingering }>();
+  for (const item of lingering) {
+    const { birth } = item.tracked;
+    if (birth.kind === 'page' && parentOf(item)) continue;
+    const where = whereOf(birth);
+    const key = `${birth.kind}|${where}`;
+    const group = groups.get(key) ?? {
+      verdict: 'lingering' as const,
+      kind: birth.kind,
+      where,
+      site: siteOf(birth),
+      tests: 0,
+      count: 0,
+      heldMs: 0,
+      testIds: new Set<string>(),
+      longest: item,
+    };
+    group.count++;
+    if (birth.test) group.testIds.add(birth.test.id);
+    if (item.tailMs >= (group.heldMs ?? 0)) {
+      group.heldMs = item.tailMs;
+      group.longest = item;
+    }
+    const folded = pages.get(item) ?? 0;
+    if (folded) group.pages = (group.pages ?? 0) + folded;
+    groups.set(key, group);
+    spans.push({
+      worker: item.tracked.worker,
+      verdict: 'lingering',
+      kind: birth.kind,
+      where,
+      site: siteOf(birth),
+      lastUse: item.tracked.lastUse?.site ?? null,
+      from: item.tracked.close!.at - item.tailMs,
+      to: item.tracked.close!.at,
+      untilWorkerEnd: false,
+      scope: null,
+      pages: birth.kind === 'page' ? 1 : folded,
+      test: spanTest(item.tracked.bornCensus),
+    });
+  }
+  return [...groups.values()]
+    .map(({ testIds, longest, ...finding }) => {
+      const lastUse = longest.tracked.lastUse?.site ?? null;
+      return { ...finding, tests: testIds.size, ...(lastUse ? { lastUse } : {}) };
+    })
+    .sort((a, b) => (b.heldMs ?? 0) - (a.heldMs ?? 0));
 }
 
 function addCpu(group: ResourceFinding, cpuMs: number): void {
@@ -368,7 +612,7 @@ function foldTarget(entry: Tracked, leaks: Map<string, Leak>, tracked: Map<strin
     const key = keyOf(entry.worker, parentId);
     const parent = tracked.get(key);
     if (!parent) return null;
-    if (!(parent.birth.kind === 'context' && parent.birth.implicit)) return leaks.get(key) ?? null;
+    if (!isImplicit(parent.birth)) return leaks.get(key) ?? null;
     parentId = parent.birth.parent;
   }
   return null;
@@ -659,7 +903,7 @@ const HANDLE_LABEL: Record<string, string> = {
 
 /** One line per finding, most severe first. */
 function findingLine(finding: ResourceFinding): string {
-  const verdict = finding.verdict.padEnd(8);
+  const verdict = finding.verdict.padEnd(9);
   const label =
     finding.verdict === 'handle'
       ? (HANDLE_LABEL[finding.where] ?? finding.where)
@@ -681,8 +925,16 @@ function findingLine(finding: ResourceFinding): string {
       else parts.push(`open ${formatHeld(finding.heldMs ?? 0)} past ${past}`);
       if ((finding.afterTestCpuMs ?? 0) >= 500)
         parts.push(`${formatHeld(finding.afterTestCpuMs!)} of page CPU after its test`);
+      if (finding.lastUse) parts.push(`last used at ${finding.lastUse}`);
       break;
     }
+    case 'lingering':
+      if (finding.count > 1) parts.push(`${finding.count} ${KIND_LABEL[finding.kind]}s`);
+      if (finding.pages) parts.push(`with ${plural(finding.pages, 'page')}`);
+      if (finding.tests) parts.push(plural(finding.tests, 'test'));
+      parts.push(`open ${formatHeld(finding.heldMs ?? 0)} after its last use`);
+      if (finding.lastUse) parts.push(`last used at ${finding.lastUse}`);
+      break;
     case 'idle':
       parts.push(plural(finding.count, 'page'));
       if (finding.tests) parts.push(plural(finding.tests, 'test'));
@@ -717,6 +969,7 @@ export function formatResourceSummary(report: ResourceReport, leakCheck: LeakChe
     counts.idle ? `${plural(counts.idle, 'idle page')}` : '',
     counts.piling ? `${counts.piling} piling up` : '',
     counts.handle ? plural(counts.handle, 'handle') + ' left in workers' : '',
+    counts.lingering ? `${counts.lingering} lingering` : '',
     counts.probable ? plural(counts.probable, 'probable leak') : '',
   ].filter(Boolean);
   const lines = [`Resources: ${head.join(' · ')}`];

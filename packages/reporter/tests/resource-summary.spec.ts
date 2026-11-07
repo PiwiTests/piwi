@@ -93,7 +93,7 @@ describe('the resource summary', () => {
     const lines = await run({}, fakeResult({ attachments }), shutdown);
     expect(lines).toContain('Resources: 1 leak');
     expect(lines).toContain(
-      '  leaked   context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
+      '  leaked    context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
     );
   });
 
@@ -128,7 +128,7 @@ describe('the resource summary', () => {
     ];
     const lines = await run({}, fakeResult({ steps }));
     expect(lines).toContain('Resources: 1 probable leak');
-    expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · 1 opened, 0 closed in tests/cart.spec.ts');
+    expect(lines).toContain('  probable  context     tests/cart.spec.ts:7 · 1 opened, 0 closed in tests/cart.spec.ts');
   });
 
   it('prints what the run cost the machine, with the artifacts the tests attached', async () => {

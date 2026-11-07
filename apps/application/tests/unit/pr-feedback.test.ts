@@ -702,6 +702,7 @@ describe('new leaks', () => {
               count: 4,
               heldMs: 41_200,
               untilWorkerEnd: true,
+              lastUse: 'tests/cart.spec.ts:20',
             },
           ],
         },
@@ -709,7 +710,7 @@ describe('new leaks', () => {
     );
     expect(body).toContain('#### 🟠 Left open by this change (1)\n\nNever seen on `main`.');
     expect(body).toContain(
-      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test)',
+      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test) · last used at `tests/cart.spec.ts:20`',
     );
   });
 

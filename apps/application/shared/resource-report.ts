@@ -16,6 +16,7 @@ import type {
   WireExecutionResources,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
   WireRunProfile,
   WorkerHealth,
@@ -38,8 +39,9 @@ const ROLES: ReadonlySet<string> = new Set<ProcessRole>([
   'webServer',
   'other',
 ]);
-const VERDICTS: ReadonlySet<string> = new Set(['leaked', 'idle', 'piling', 'handle', 'probable']);
+const VERDICTS: ReadonlySet<string> = new Set(['leaked', 'lingering', 'idle', 'piling', 'handle', 'probable']);
 const KINDS: ReadonlySet<string> = new Set(['browser', 'context', 'page', 'request', 'handle', 'worker']);
+const SPAN_KINDS: ReadonlySet<string> = new Set(['browser', 'context', 'page', 'request']);
 const ARTIFACT_KINDS = ['trace', 'video', 'screenshot', 'other'] as const;
 const GROWTH: ReadonlySet<string> = new Set(['pages', 'listeners', 'routes', 'elements', 'heapMb', 'descriptors']);
 
@@ -49,6 +51,7 @@ const WORKERS_CAP = 64;
 const WORKER_POINTS_CAP = 200;
 const TIMELINE_SERIES_CAP = 600;
 const TIMELINE_WORKER_POINTS_CAP = 300;
+const TIMELINE_SPANS_CAP = 400;
 /** The most cores a worker's processes are read as using. */
 const CORES_CAP = 1024;
 const TEXT_CAP = 300;
@@ -143,6 +146,8 @@ function finding(value: unknown): WireResourceFinding | null {
   if (raw.scope === 'test' || raw.scope === 'describe') out.scope = raw.scope;
   const heldMs = int(raw.heldMs);
   if (heldMs !== null) out.heldMs = heldMs;
+  const lastUse = text(raw.lastUse);
+  if (lastUse) out.lastUse = lastUse;
   if (raw.untilWorkerEnd === true) out.untilWorkerEnd = true;
   const pages = int(raw.pages);
   if (pages) out.pages = pages;
@@ -244,6 +249,38 @@ function points(value: unknown, cap: number, max = Infinity): SeriesPoint[] {
   return out;
 }
 
+/** A span of an object open for nothing, rebuilt; null when it is not one. */
+function span(value: unknown): WireResourceSpan | null {
+  const raw = obj(value);
+  const worker = raw ? int(raw.worker) : null;
+  const where = raw ? text(raw.where) : null;
+  const from = raw ? int(raw.from) : null;
+  const to = raw ? int(raw.to) : null;
+  if (!raw || worker === null || !where || from === null || to === null || to < from) return null;
+  if ((raw.verdict !== 'leaked' && raw.verdict !== 'lingering') || !SPAN_KINDS.has(String(raw.kind))) return null;
+  const out: WireResourceSpan = {
+    worker,
+    verdict: raw.verdict,
+    kind: raw.kind as WireResourceSpan['kind'],
+    where,
+    from,
+    to,
+  };
+  const site = text(raw.site);
+  if (site) out.site = site;
+  const lastUse = text(raw.lastUse);
+  if (lastUse) out.lastUse = lastUse;
+  if (raw.untilWorkerEnd === true) out.untilWorkerEnd = true;
+  if (raw.scope === 'test' || raw.scope === 'describe') out.scope = raw.scope;
+  const pages = int(raw.pages);
+  if (pages) out.pages = pages;
+  const test = obj(raw.test);
+  const title = test ? text(test.title) : null;
+  const file = test ? text(test.file) : null;
+  if (title !== null || file !== null) out.test = { title: title ?? '', file: file ?? '' };
+  return out;
+}
+
 /** A timeline as a reporter sent it, rebuilt within the report's bounds; null when it holds nothing. */
 export function sanitizeResourceTimeline(value: unknown): WireResourceTimeline | null {
   const raw = obj(value);
@@ -268,8 +305,20 @@ export function sanitizeResourceTimeline(value: unknown): WireResourceTimeline |
   }
   const cpuPct = points(raw.cpuPct, TIMELINE_SERIES_CAP, 100);
   const memoryBytes = points(raw.memoryBytes, TIMELINE_SERIES_CAP);
-  if (cpuPct.length === 0 && memoryBytes.length === 0 && pages.length === 0 && workers.length === 0) return null;
-  return { startedAt: Math.round(startedAt), cpuPct, memoryBytes, pages, workers };
+  const spans = (Array.isArray(raw.spans) ? raw.spans.slice(0, TIMELINE_SPANS_CAP) : [])
+    .map(span)
+    .filter((s): s is WireResourceSpan => s !== null);
+  if (cpuPct.length === 0 && memoryBytes.length === 0 && pages.length === 0 && workers.length === 0 && !spans.length) {
+    return null;
+  }
+  return {
+    startedAt: Math.round(startedAt),
+    cpuPct,
+    memoryBytes,
+    pages,
+    workers,
+    ...(spans.length > 0 ? { spans } : {}),
+  };
 }
 
 /** A run report as a reporter sent it, rebuilt; null when it is not one. */
@@ -293,6 +342,7 @@ export function sanitizeResourceReport(value: unknown): WireResourceReport | nul
       .filter((f): f is WireResourceFinding => f !== null),
     counts: {
       leaked: int(counts.leaked) ?? 0,
+      lingering: int(counts.lingering) ?? 0,
       idle: int(counts.idle) ?? 0,
       piling: int(counts.piling) ?? 0,
       handle: int(counts.handle) ?? 0,

@@ -56,6 +56,7 @@ const findings = computed(() =>
         label: view.label,
         where: view.where ? splitWhere(view.where, view.site) : null,
         facts: facts.join(' · '),
+        lastUse: view.lastUse,
         history: data.value?.history[resourceFingerprint(finding)] ?? null,
       };
     }),
@@ -145,6 +146,12 @@ const costliest = computed(() => data.value?.costliest ?? []);
         <StatTile label="Piling up" :value="totals.counts.piling" hint="pages, listeners or routes" />
         <StatTile v-if="totals.counts.handle" label="Left running" :value="totals.counts.handle" hint="Node handles" />
         <StatTile
+          v-if="totals.counts.lingering"
+          label="Lingering"
+          :value="totals.counts.lingering"
+          hint="open long after their last use"
+        />
+        <StatTile
           v-if="totals.counts.probable"
           label="Probable leaks"
           :value="totals.counts.probable"
@@ -189,6 +196,15 @@ const costliest = computed(() => data.value?.costliest ?? []);
               </template>
             </p>
             <p v-if="item.facts" class="text-xs text-muted mt-0.5 break-words">{{ item.facts }}</p>
+            <p v-if="item.lastUse" class="text-xs text-muted mt-0.5 break-words" data-testid="finding-last-use">
+              Last used at
+              <OpenInIdeLink
+                :location="item.lastUse"
+                :project-key="projectKey"
+                :project-name="projectName"
+                class="text-xs"
+              />, where its close belongs
+            </p>
             <p v-if="item.history" class="text-xs text-muted mt-0.5" data-testid="finding-history">
               <template v-if="item.history.reopened">Back after its fix</template>
               <template v-else-if="item.history.isNew">
@@ -225,7 +241,9 @@ const costliest = computed(() => data.value?.costliest ?? []);
       >
         <div class="flex flex-wrap items-center gap-3">
           <p class="text-sm text-highlighted leading-relaxed flex-1 min-w-40">
-            A line that climbs test after test is a page left open; a clean worker stays flat.
+            A line that climbs test after test is a page left open; a clean worker stays flat. Under each worker, a red
+            tail runs from the test that left an object open to its close, an amber one from an object's last use to its
+            close.
           </p>
           <UButton size="sm" color="neutral" variant="outline" @click="togglePagesOnTimeline">
             {{ pagesShown ? 'Hide on the timeline' : 'Show on the timeline' }}

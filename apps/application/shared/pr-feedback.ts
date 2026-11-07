@@ -172,7 +172,8 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
   const lines = nl.leaks.slice(0, MAX_LEAKS_LISTED).map((finding) => {
     const view = findingView(finding);
     const facts = view.facts.slice(0, 3).join(' · ');
-    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}`;
+    const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
+    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse}`;
   });
   const blocks = [
     `#### 🟠 Left open by this change (${n})`,

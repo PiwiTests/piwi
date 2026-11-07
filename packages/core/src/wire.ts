@@ -261,7 +261,14 @@ export interface WireExecutionResources {
   artifactBytes?: Partial<Record<ArtifactKind, number>> | null;
 }
 
-export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
+/**
+ * `leaked`: open past the scope that opened it. `lingering`: closed within its
+ * test, but long after the test last used it. `idle`: opened and never used.
+ * `piling`: a long-lived owner that grows test after test. `handle`: a server
+ * or process left running. `probable`: counted from the steps of a run without
+ * the capture fixtures.
+ */
+export type ResourceVerdict = 'leaked' | 'lingering' | 'idle' | 'piling' | 'handle' | 'probable';
 
 /** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
 export interface WireResourceFinding {
@@ -277,8 +284,10 @@ export interface WireResourceFinding {
   tests: number;
   /** The objects (or the leaks, for handles) grouped in this finding. */
   count: number;
-  /** Leaked: how long the longest one stayed open past its scope, in ms. */
+  /** Leaked: how long the longest one stayed open past its scope, in ms; lingering: past its last use. */
   heldMs?: number;
+  /** Leaked and lingering: the line of the last call a test made on it, where its close belongs. */
+  lastUse?: string | null;
   /** Leaked: at least one was still open when its worker shut down. */
   untilWorkerEnd?: boolean;
   /** Leaked contexts and browsers: the open pages that went with them. */
@@ -385,6 +394,13 @@ export interface WireResourceTimeline {
   /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
   pages: Array<{ worker: number; points: SeriesPoint[] }>;
   /**
+   * The objects behind the run's leaked and lingering findings, each with the
+   * stretch it stayed open for nothing: a leak from the end of the scope that
+   * opened it to its close or its worker's end, a lingering object from its
+   * last use to its close. Absent from reporters before it.
+   */
+  spans?: WireResourceSpan[];
+  /**
    * Each worker process with the browsers it started: the cores they used
    * over the interval ending at each point, and the bytes they held, measured
    * as `profile.memory.kind` says. Needs the run sampler, and the capture
@@ -392,6 +408,31 @@ export interface WireResourceTimeline {
    * before it.
    */
   workers?: Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
+}
+
+/** An object open for nothing over a stretch of the run, as the timeline draws it. */
+export interface WireResourceSpan {
+  /** The worker process (Playwright's `workerIndex`). */
+  worker: number;
+  verdict: 'leaked' | 'lingering';
+  kind: 'browser' | 'context' | 'page' | 'request';
+  /** Where it was opened, as its finding names it. */
+  where: string;
+  site?: string | null;
+  /** The line of the last call a test made on it. */
+  lastUse?: string | null;
+  /** Ms after the timeline's `startedAt` the stretch starts: its scope's end for a leak, its last use when lingering. */
+  from: number;
+  /** Ms after `startedAt` it ends: its close, or its worker's end. */
+  to: number;
+  /** A leak still open when its worker shut down. */
+  untilWorkerEnd?: boolean;
+  /** A leak: the scope it outlived. */
+  scope?: 'test' | 'describe';
+  /** The open pages that went with it: 1 for a page. */
+  pages?: number;
+  /** The test it outlived, or lingered in; for a `beforeAll` leak, the test that ran the hook. */
+  test?: { title: string; file: string } | null;
 }
 
 /**

@@ -156,7 +156,10 @@ function fakePlaywright() {
 /** A test info Playwright would hold, with what it is running. */
 function info(
   id: string,
-  runnable: { type?: string; fixture?: { title: string; location?: { file: string; line: number }; slot?: unknown } } = {},
+  runnable: {
+    type?: string;
+    fixture?: { title: string; location?: { file: string; line: number }; slot?: { timeout?: number } | null };
+  } = {},
   suite: string[] = [],
 ): TestInfoLike {
   return {
@@ -533,19 +536,136 @@ describe('userSite', () => {
   });
 });
 
+describe('following the calls a test makes', () => {
+  /** A connection Playwright's client objects send every call through, with the frames of the test's line. */
+  function withConnection(fake: ReturnType<typeof fakePlaywright>) {
+    const connection = { sendMessageToServer: vi.fn(async (..._args: unknown[]) => undefined) };
+    (fake.playwright as Record<string, unknown>)._connection = connection;
+    const call = (object: object, method: string, line: number, internal = false) =>
+      connection.sendMessageToServer(
+        object,
+        method,
+        {},
+        internal ? { internal: true } : { apiName: 'x', frames: [{ file: path.resolve('tests/cart.spec.ts'), line }] },
+      );
+    return { connection, call };
+  }
+
+  it('records the last use of a page, its context and its browser, never a close, an internal read or the page’s traffic', async () => {
+    const fake = fakePlaywright();
+    const { call } = withConnection(fake);
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    // The client objects' parents, as Playwright links them: a frame to its page, a page to its context.
+    Object.assign(browser, { _type: 'Browser', _parent: null });
+    Object.assign(context, { _type: 'BrowserContext', _parent: browser });
+    Object.assign(page, { _type: 'Page', _parent: context });
+    await call({ _type: 'Frame', _parent: page }, 'click', 12);
+    await call({ _type: 'Frame', _parent: page }, 'evaluateExpression', 30, true);
+    await call({ _type: 'Route', _parent: context }, 'fulfill', 40);
+    await call(page, 'close', 50);
+
+    const { census } = await ledger.testEnded(info('t1'));
+    const lastUse = (id: number) => census.open.find((open) => open.id === id)?.lastUse;
+    for (const id of [1, 2, 3]) expect(lastUse(id)).toMatchObject({ site: 'tests/cart.spec.ts:12', test: 't1' });
+    expect(census.open.find((open) => open.id === 3)?.used).toBe(true);
+    // Pages are marked used by their calls: no page method is replaced.
+    expect(Object.prototype.hasOwnProperty.call(page, 'evaluate')).toBe(false);
+  });
+
+  it('names the last use of what a test leaves open, and carries it to the close', async () => {
+    const fake = fakePlaywright();
+    const { call } = withConnection(fake);
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    Object.assign(browser, { _type: 'Browser', _parent: null });
+    Object.assign(context, { _type: 'BrowserContext', _parent: browser });
+    await call(context, 'cookies', 18);
+    const { leaks } = await ledger.testEnded(info('t1'));
+    // The context goes with the browser the test launched and left open.
+    expect(leaks).toEqual([expect.objectContaining({ kind: 'browser', lastUse: 'tests/cart.spec.ts:18' })]);
+    running(info('t2'));
+    await context.close();
+    const { census } = await ledger.testEnded(info('t2'));
+    expect(census.closed.find((c) => c.id === 2)?.lastUse).toMatchObject({ site: 'tests/cart.spec.ts:18' });
+  });
+
+  it('flags a fixture with a timeout of its own, and names the fixture tearing down at a close', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    const browser = await fake.playwright.chromium.launch();
+    const fixture = { title: 'slowCtx', location: { file: path.resolve('tests/fixtures.ts'), line: 4 } };
+    running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 20_000 } } }), project: { timeout: 30_000 } });
+    const timed = await browser.newContext();
+    running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 30_000 } } }), project: { timeout: 30_000 } });
+    await browser.newContext();
+    // Playwright's own worker fixtures run with no timeout and no location.
+    running({ ...info('t1', { type: 'test', fixture: { title: 'browser', slot: { timeout: 0 } } }), project: { timeout: 30_000 } });
+    await browser.newContext();
+    running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: null } }), project: { timeout: 30_000 } });
+    await timed.close();
+
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.born.find((b) => b.id === 2)!.fixture).toEqual({
+      title: 'slowCtx',
+      location: 'tests/fixtures.ts:4',
+      worker: true,
+      timed: true,
+    });
+    expect(census.born.find((b) => b.id === 3)!.fixture).toEqual({ title: 'slowCtx', location: 'tests/fixtures.ts:4', worker: true });
+    expect(census.born.find((b) => b.id === 4)!.fixture).toEqual({ title: 'browser', location: null, worker: true });
+    expect(census.closed.find((c) => c.id === 2)!.fixture).toEqual({ title: 'slowCtx', location: 'tests/fixtures.ts:4' });
+  });
+
+  it('marks the browser launchPersistentContext opened as its context’s, and counts listeners on contexts and browsers', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = new fake.FakeBrowser();
+    await fake.apiCall('browserType.launchPersistentContext', () => undefined);
+    const context = await browser.newContext();
+    context.on('page', () => undefined);
+    browser.on('disconnected', () => undefined);
+
+    const { census, leaks } = await ledger.testEnded(info('t1'));
+    expect(census.born.find((b) => b.kind === 'browser')).toMatchObject({ implicit: true });
+    expect(leaks.map((leak) => leak.kind)).toEqual(['context']);
+    const contextOpen = census.open.find((open) => open.id === 2)!;
+    const browserOpen = census.open.find((open) => open.id === 1)!;
+    expect(contextOpen.listeners).toBeGreaterThanOrEqual(2);
+    expect(browserOpen.listeners).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('leakFailureMessage', () => {
-  it('names each object and the line that opened it', () => {
+  it('names each object, the line that opened it and the line that last used it', () => {
     expect(
       leakFailureMessage([
-        { id: 1, kind: 'context', site: 'tests/cart.spec.ts:4', pages: 1, implicit: false },
+        {
+          id: 1,
+          kind: 'context',
+          site: 'tests/cart.spec.ts:4',
+          pages: 1,
+          implicit: false,
+          lastUse: 'tests/cart.spec.ts:9',
+        },
         { id: 2, kind: 'page', site: 'tests/cart.spec.ts:24', pages: 0, implicit: false, trigger: 'locator.click' },
       ]),
     ).toBe(
       [
         'Piwi: this test left 2 objects open:',
-        '  - a context opened at tests/cart.spec.ts:4, with 1 page',
+        '  - a context opened at tests/cart.spec.ts:4, with 1 page, last used at tests/cart.spec.ts:9',
         '  - a popup opened by locator.click at tests/cart.spec.ts:24',
-        'Close each before the test ends (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.',
+        'Close each after its last use (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.',
       ].join('\n'),
     );
   });

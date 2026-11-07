@@ -2175,6 +2175,14 @@ const RESOURCE_OCCURRENCES = [];
             worker,
             tests: lane.length,
             spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+            cases: lane.map((row) => {
+              const testCase = TEST_CASES.find((c) => c.id === row.test_case_id);
+              return {
+                title: testCase?.title ?? '',
+                file: testCase?.file_path ?? '',
+                failed: row.status === 'failed' || row.status === 'timedOut',
+              };
+            }),
           })),
         fixtureFile: 'tests/admin/fixtures.ts',
         handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },

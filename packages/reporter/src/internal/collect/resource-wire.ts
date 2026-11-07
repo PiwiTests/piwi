@@ -3,11 +3,12 @@ import type {
   SeriesPoint,
   WireExecutionResources,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
 } from '@piwitests/core/wire';
 import type { ResourceCensus } from '../capture/resource-ledger.js';
 import type { RunProfile, RunSamples } from './process-sampler.js';
-import type { ResourceReport } from './resource-verdicts.js';
+import type { ResourceReport, ResourceSpan } from './resource-verdicts.js';
 import { workerHealthOf, type ArtifactBytes } from './machine-panel.js';
 
 /**
@@ -26,6 +27,8 @@ export const REPORT_WORKER_POINTS_CAP = 200;
 /** The most points of the timeline's CPU and memory series, and of each worker's open pages over time. */
 export const TIMELINE_SERIES_CAP = 600;
 export const TIMELINE_WORKER_POINTS_CAP = 300;
+/** The most objects the timeline draws open for nothing: the longest stretches are kept. */
+export const TIMELINE_SPANS_CAP = 400;
 /**
  * The most points of the workers' CPU and memory series together; each
  * worker's share is between 60 and `TIMELINE_WORKER_POINTS_CAP` per series, so
@@ -192,17 +195,51 @@ export function workerTreesByIndex(
   return [...out.values()].sort((a, b) => a.worker - b.worker);
 }
 
+/** The spans the timeline keeps, the longest first when there are too many, in the order they start. */
+function keptSpans(spans: readonly ResourceSpan[]): ResourceSpan[] {
+  const kept =
+    spans.length <= TIMELINE_SPANS_CAP
+      ? [...spans]
+      : [...spans].sort((a, b) => b.to - b.from - (a.to - a.from)).slice(0, TIMELINE_SPANS_CAP);
+  return kept.sort((a, b) => a.from - b.from);
+}
+
+/** A span on the timeline's clock. */
+function wireSpan(span: ResourceSpan, startedAt: number): WireResourceSpan {
+  return {
+    worker: span.worker,
+    verdict: span.verdict,
+    kind: span.kind,
+    where: span.where,
+    ...(span.site ? { site: span.site } : {}),
+    ...(span.lastUse ? { lastUse: span.lastUse } : {}),
+    from: Math.round(span.from - startedAt),
+    to: Math.round(span.to - startedAt),
+    ...(span.untilWorkerEnd ? { untilWorkerEnd: true } : {}),
+    ...(span.scope ? { scope: span.scope } : {}),
+    ...(span.pages ? { pages: span.pages } : {}),
+    ...(span.test ? { test: span.test } : {}),
+  };
+}
+
 /**
  * The run's resources over time, on one clock: from the sampler's start, or
- * the first page a worker opened when the sampler did not run. Null when
- * neither measured anything.
+ * the first page a worker opened when the sampler did not run, with the spans
+ * of the objects left open or open after their last use. Null when nothing
+ * was measured.
  */
-export function resourceTimeline(samples: RunSamples | null, censuses: ResourceCensus[]): WireResourceTimeline | null {
+export function resourceTimeline(
+  samples: RunSamples | null,
+  censuses: ResourceCensus[],
+  spans: readonly ResourceSpan[] = [],
+): WireResourceTimeline | null {
   const workers = pagesOverTime(censuses);
   const hasSamples = samples !== null && (samples.cpuPct.length > 0 || samples.memoryBytes.length > 0);
-  if (!hasSamples && workers.length === 0) return null;
+  const kept = keptSpans(spans);
+  if (!hasSamples && workers.length === 0 && kept.length === 0) return null;
   let startedAt = hasSamples ? samples.startedAt : Infinity;
   for (const { events } of workers) startedAt = Math.min(startedAt, events[0]![0]);
+  for (const span of kept) startedAt = Math.min(startedAt, span.from);
   const shift = hasSamples ? samples.startedAt - startedAt : 0;
   const relative = (points: SeriesPoint[], by: number): SeriesPoint[] =>
     points.map(([at, value]) => [Math.round(at + by), value]);
@@ -226,6 +263,7 @@ export function resourceTimeline(samples: RunSamples | null, censuses: ResourceC
       cpuCores: downsamplePoints(relative(tree.cpuCores, shift), perWorker, 'mean'),
       memoryBytes: downsamplePoints(relative(tree.memoryBytes, shift), perWorker, 'max'),
     })),
+    ...(kept.length > 0 ? { spans: kept.map((span) => wireSpan(span, startedAt)) } : {}),
   };
 }
 
@@ -243,13 +281,13 @@ export function resourceReportWire(input: {
     v: 1,
     shardIndex: input.shardIndex,
     findings: (report?.findings ?? []).slice(0, REPORT_FINDINGS_CAP),
-    counts: report?.counts ?? { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
+    counts: report?.counts ?? { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
     profile: profile
       ? { ...profile, cpu: { ...profile.cpu, series: downsample(profile.cpu.series, REPORT_SERIES_CAP) } }
       : null,
     workers: openPagesByWorker(input.censuses),
     artifactBytes: nonZero(input.artifacts) ?? {},
     workerHealth: workerHealthOf(input.censuses),
-    timeline: resourceTimeline(input.samples ?? null, input.censuses),
+    timeline: resourceTimeline(input.samples ?? null, input.censuses, report?.spans ?? []),
   };
 }

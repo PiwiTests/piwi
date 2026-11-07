@@ -70,9 +70,12 @@ What the package does to a user's run, process by process.
   (`readyProbeWorld`), which lets a read beside such a press often end first.
 - The boxed stack prefix `internal/capture/quiet-capture.ts` adds for this package's
   `dist/`, so a wrapped action is located at the test's line.
-- The resource ledger's listener on the worker's Playwright instrumentation, and its
-  wrappers on the browser types' `launch`/`connect` (and `connectOverCDP`)
-  (`internal/capture/resource-ledger.ts`).
+- The resource ledger's listener on the worker's Playwright instrumentation, its
+  wrappers on the browser types' `launch`/`connect` (and `connectOverCDP`), and its
+  wrapper on the worker connection's `sendMessageToServer` (internal, feature-checked),
+  which reads each call a test makes to know when and from which line it last used each
+  page, context, browser and API request context; without it, the page methods that count
+  as using a page are wrapped on each page instead (`internal/capture/resource-ledger.ts`).
 - On Linux, `5` written to `/proc/<pid>/clear_refs` of the processes the worker started,
   at each test's start, which resets their peak RSS for the test
   (`internal/capture/worker-metrics.ts`). In Chromium, a DevTools session on each page

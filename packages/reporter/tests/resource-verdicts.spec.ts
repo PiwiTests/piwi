@@ -581,25 +581,25 @@ describe('formatResourceSummary', () => {
   };
 
   it('says nothing when nothing was found', () => {
-    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'report')).toEqual([]);
+    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'report')).toEqual([]);
   });
 
   it('heads with the counts, lists each finding, and hints at the strict modes', () => {
     const lines = formatResourceSummary(
-      { findings: [leak], counts: { leaked: 1, idle: 0, piling: 0, handle: 0, probable: 0 } },
+      { findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] },
       'report',
     );
     expect(lines[0]).toBe('Resources: 1 leak');
     expect(lines[1]).toBe(
-      `  leaked   context     ${SPEC}:4 · 2 contexts · with 1 page · 2 tests · open until the worker shut down (4.8 s past its test)`,
+      `  leaked    context     ${SPEC}:4 · 2 contexts · with 1 page · 2 tests · open until the worker shut down (4.8 s past its test)`,
     );
     expect(lines[2]).toMatch(/PIWI_LEAK_CHECK=fail/);
-    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'fail')).toHaveLength(2);
+    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'fail')).toHaveLength(2);
   });
 
   it('lists at most the given number of findings and counts the rest', () => {
     const findings = Array.from({ length: 13 }, () => leak);
-    const lines = formatResourceSummary({ findings, counts: { leaked: 13, idle: 0, piling: 0, handle: 0, probable: 0 } }, 'fail', 10);
+    const lines = formatResourceSummary({ findings, counts: { leaked: 13, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'fail', 10);
     expect(lines).toHaveLength(12);
     expect(lines[11]).toBe('  … and 3 more findings');
   });
@@ -609,5 +609,193 @@ describe('formatResourceSummary', () => {
     expect(formatHeld(5600)).toBe('5.6 s');
     expect(formatHeld(123_000)).toBe('2 min 3 s');
     expect(formatHeld(120_000)).toBe('2 min');
+  });
+});
+
+describe('fixture scope, implicit browsers and folded pages', () => {
+  const timed = { title: 'slowCtx', location: `${SPEC}:2`, worker: true, timed: true };
+
+  /** Two tests, each with its own context from the timed fixture, closed as the worker shuts down unless `closed` says. */
+  function twoTests(closed: Partial<ResourceClose> = {}) {
+    return buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), {
+          born: [birth(1, 'context', { fixture: timed, site: `${SPEC}:3` })],
+          open: [{ id: 1, pages: 0, lastUse: { at: 800, site: `${SPEC}:9`, test: 't1' } }],
+        }),
+        census(2000, test('t2'), {
+          born: [birth(2, 'context', { fixture: timed, site: `${SPEC}:3`, test: test('t2') })],
+          open: [
+            { id: 1, pages: 0, lastUse: { at: 800, site: `${SPEC}:9`, test: 't1' } },
+            { id: 2, pages: 0, lastUse: { at: 1800, site: `${SPEC}:9`, test: 't2' } },
+          ],
+        }),
+        census(3000, null, {
+          closed: [1, 2].map((id) =>
+            close(id, { at: 3000, phase: 'worker', test: null, fixture: { title: 'browser', location: null }, ...closed }),
+          ),
+        }),
+      ],
+    });
+  }
+
+  it('reports what a test fixture with a timeout of its own, used by two tests, never closes', () => {
+    expect(leaks(twoTests().findings)).toEqual([
+      expect.objectContaining({
+        kind: 'context',
+        where: `fixture "slowCtx" at ${SPEC}:3`,
+        count: 2,
+        tests: 2,
+        lastUse: `${SPEC}:9`,
+      }),
+    ]);
+  });
+
+  it("leaves a timed fixture's object alone when it opened in one test only, or its own teardown closed it", () => {
+    const once = buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), { born: [birth(1, 'context', { fixture: timed })], open: [{ id: 1, pages: 0 }] }),
+        census(3000, null, { closed: [close(1, { at: 3000, phase: 'worker', test: null })] }),
+      ],
+    });
+    expect(leaks(once.findings)).toEqual([]);
+    expect(leaks(twoTests({ fixture: { title: 'slowCtx', location: `${SPEC}:2` } }).findings)).toEqual([]);
+  });
+
+  it('folds the browser launchPersistentContext opened into its context, with the page', () => {
+    const report = buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), {
+          born: [
+            birth(1, 'browser', { implicit: true }),
+            birth(2, 'context', { parent: 1 }),
+            birth(3, 'page', { parent: 2 }),
+          ],
+          open: [{ id: 1 }, { id: 2, pages: 1 }, { id: 3, used: true }],
+        }),
+        census(2000, null),
+      ],
+    });
+    expect(leaks(report.findings)).toEqual([expect.objectContaining({ kind: 'context', count: 1, pages: 1 })]);
+  });
+
+  it('counts the pages of a context in a leaked browser', () => {
+    const report = buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), {
+          born: [birth(1, 'browser'), birth(2, 'context', { parent: 1 }), birth(3, 'page', { parent: 2 })],
+          open: [{ id: 1 }, { id: 2, pages: 1 }, { id: 3, used: true }],
+        }),
+        census(2000, null),
+      ],
+    });
+    expect(leaks(report.findings)).toEqual([expect.objectContaining({ kind: 'browser', count: 1, pages: 1 })]);
+  });
+
+  it('names the line most of a group last used, and spans each leak to its worker’s end', () => {
+    const report = buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), {
+          born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
+          open: [
+            { id: 1, pages: 1, lastUse: { at: 900, site: `${SPEC}:6`, test: 't1' } },
+            { id: 2, used: true, lastUse: { at: 900, site: `${SPEC}:6`, test: 't1' } },
+          ],
+        }),
+        census(5000, null, {
+          closed: [close(2, { at: 5000, phase: 'worker', test: null }), close(1, { at: 5000, phase: 'worker', test: null })],
+        }),
+      ],
+    });
+    expect(leaks(report.findings)[0]!.lastUse).toBe(`${SPEC}:6`);
+    expect(report.spans).toEqual([
+      {
+        worker: 0,
+        verdict: 'leaked',
+        kind: 'context',
+        where: `${SPEC}:4`,
+        site: `${SPEC}:4`,
+        lastUse: `${SPEC}:6`,
+        from: 1000,
+        to: 5000,
+        untilWorkerEnd: true,
+        scope: 'test',
+        pages: 1,
+        test: { title: 'title of t1', file: SPEC },
+      },
+    ]);
+  });
+});
+
+describe('lingering', () => {
+  const popup = (extra: Partial<ResourceBirth> = {}) =>
+    birth(2, 'page', { parent: 1, at: 500, opener: 9, trigger: 'locator.click', site: `${SPEC}:6`, ...extra });
+  const lingeringOf = (findings: ResourceFinding[]) => findings.filter((f) => f.verdict === 'lingering');
+
+  it('reports a page the test closed long after its last use, with that line and its span', () => {
+    const report = buildResourceReport({
+      censuses: [
+        {
+          ...census(6000, test('t1'), {
+            born: [popup()],
+            closed: [close(2, { at: 5800, used: true, lastUse: { at: 1000, site: `${SPEC}:7`, test: 't1' } })],
+          }),
+          startedAt: 0,
+        },
+      ],
+    });
+    expect(lingeringOf(report.findings)).toEqual([
+      expect.objectContaining({
+        verdict: 'lingering',
+        kind: 'page',
+        where: `popup after locator.click at ${SPEC}:6`,
+        heldMs: 4800,
+        lastUse: `${SPEC}:7`,
+        tests: 1,
+      }),
+    ]);
+    expect(report.counts.lingering).toBe(1);
+    expect(report.spans).toEqual([expect.objectContaining({ verdict: 'lingering', from: 1000, to: 5800, pages: 1 })]);
+    expect(formatResourceSummary(report, 'report')[1]).toBe(
+      `  lingering page        popup after locator.click at ${SPEC}:6 · 1 test · open 4.8 s after its last use · last used at ${SPEC}:7`,
+    );
+  });
+
+  it('leaves a short tail, a tail short for its test, and what a fixture opened alone', () => {
+    const tail = (lastUseAt: number, closeAt: number, extra: Partial<ResourceBirth> = {}) =>
+      buildResourceReport({
+        censuses: [
+          {
+            ...census(30_000, test('t1'), {
+              born: [popup(extra)],
+              closed: [close(2, { at: closeAt, used: true, lastUse: { at: lastUseAt, site: `${SPEC}:7`, test: 't1' } })],
+            }),
+            startedAt: 0,
+          },
+        ],
+      });
+    expect(lingeringOf(tail(1000, 2500).findings)).toEqual([]);
+    expect(lingeringOf(tail(1000, 6000).findings)).toEqual([]);
+    expect(lingeringOf(tail(1000, 20_000).findings)).toHaveLength(1);
+    expect(lingeringOf(tail(1000, 20_000, { fixture: { title: 'page', location: null, worker: false } }).findings)).toEqual([]);
+  });
+
+  it('folds a page that lingered into the context that lingered with it', () => {
+    const use = { at: 1000, site: `${SPEC}:7`, test: 't1' };
+    const report = buildResourceReport({
+      censuses: [
+        {
+          ...census(6000, test('t1'), {
+            born: [birth(1, 'context', { at: 200 }), birth(2, 'page', { parent: 1, at: 300 })],
+            closed: [
+              close(2, { at: 5900, used: true, lastUse: use }),
+              close(1, { at: 5900, lastUse: use }),
+            ],
+          }),
+          startedAt: 0,
+        },
+      ],
+    });
+    expect(lingeringOf(report.findings)).toEqual([expect.objectContaining({ kind: 'context', count: 1, pages: 1 })]);
   });
 });
