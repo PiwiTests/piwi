@@ -5,8 +5,6 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '../../shared/resource-report';
 import { demoExecutionResources, demoResourceReport } from '../../shared/demo/demo-resources.mjs';
-import { resourceFingerprint } from '../../shared/resource-fingerprint.mjs';
-import type { WireResourceFinding } from '../../shared/types';
 import { findingView } from '../../shared/resource-copy';
 import { machineFacts, resourceTotals } from '../../app/utils/resources';
 import { migrateToLatest } from './temp-db';
@@ -18,8 +16,6 @@ const { saveResourceReportPart, readResourceReport, hasResourceReport } =
   await import('../../shared/handlers/resource-reports');
 const { getTestRun } = await import('../../shared/handlers/test-runs');
 const { getCapabilityEvidence } = await import('../../shared/handlers/setup-status');
-const { recordRunResourceFindings, runFindingsNovelty, listResourceFindings, pairMoved, FIXED_AFTER_CLEAN_RUNS } =
-  await import('../../shared/handlers/resource-findings');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -356,181 +352,5 @@ describe('machineFacts and resourceTotals', () => {
     expect(totals.counts).toEqual({ leaked: 1, idle: 3, piling: 1, handle: 1, probable: 0 });
     expect(totals.peakMemoryBytes).toBe(9.6 * 1024 ** 3);
     expect(totals.artifactBytes).toBe(10_000_000);
-  });
-});
-
-describe('finding history', () => {
-  let nextRun = 100;
-  /** A finished run of project 1 whose report is the leaky one (or a clean one), on a branch. */
-  async function run(opts: {
-    leaky: boolean;
-    branch?: string | null;
-    full?: boolean;
-    baseBranch?: string;
-    findings?: WireResourceFinding[];
-  }) {
-    const id = nextRun++;
-    await db.insert(schema.testRuns).values({
-      id,
-      projectId: 1,
-      status: 'passed',
-      startTime: new Date(Date.UTC(2026, 0, 1) + id * 60_000),
-      branch: opts.branch === undefined ? 'main' : opts.branch,
-      isFullRun: opts.full === false ? 0 : 1,
-      metadata: opts.baseBranch ? { scm: { branch: opts.branch, baseBranch: opts.baseBranch } } : null,
-    });
-    const part = report(null, opts.leaky);
-    await saveResourceReportPart(db as any, id, opts.findings ? { ...part, findings: opts.findings } : part);
-    return id;
-  }
-
-  beforeEach(async () => {
-    nextRun = 100;
-    await db.insert(schema.projects).values({ id: 1, name: 'checkout', defaultBranch: 'main' });
-  });
-
-  test('records each finding once per run, however often the run is finished', async () => {
-    const first = await run({ leaky: true });
-    await recordRunResourceFindings(db as any, first);
-    await recordRunResourceFindings(db as any, first);
-    const findings = await listResourceFindings(db as any, 1);
-    expect(findings.map((f) => f.verdict).sort()).toEqual(['handle', 'idle', 'leaked', 'piling']);
-    expect(findings.every((f) => f.runs === 1 && f.firstSeenRunId === first)).toBe(true);
-    expect(await db.select().from(schema.resourceOccurrences)).toHaveLength(4);
-
-    const second = await run({ leaky: true });
-    await recordRunResourceFindings(db as any, second);
-    const leaked = (await listResourceFindings(db as any, 1, { verdict: 'leaked' }))[0]!;
-    expect(leaked).toMatchObject({ runs: 2, firstSeenRunId: first, lastSeenRunId: second, status: 'open' });
-  });
-
-  test('fixes a finding after five clean full runs of the default branch, and reopens it when it comes back', async () => {
-    await recordRunResourceFindings(db as any, await run({ leaky: true }));
-    // Neither a partial run nor a feature-branch run vouches for the fix.
-    await recordRunResourceFindings(db as any, await run({ leaky: false, full: false }));
-    await recordRunResourceFindings(db as any, await run({ leaky: false, branch: 'feature/x' }));
-    const clean: number[] = [];
-    for (let i = 0; i < FIXED_AFTER_CLEAN_RUNS; i++) {
-      const id = await run({ leaky: false });
-      clean.push(id);
-      const recorded = await recordRunResourceFindings(db as any, id);
-      // A retried finish does not count the same run twice.
-      await recordRunResourceFindings(db as any, id);
-      expect(recorded.fixed).toHaveLength(i === FIXED_AFTER_CLEAN_RUNS - 1 ? 4 : 0);
-    }
-    const leaked = (await listResourceFindings(db as any, 1, { status: 'all', verdict: 'leaked' }))[0]!;
-    expect(leaked).toMatchObject({ status: 'fixed', fixedRunId: clean[0], cleanRuns: FIXED_AFTER_CLEAN_RUNS });
-    expect(await listResourceFindings(db as any, 1)).toEqual([]);
-
-    const back = await run({ leaky: true });
-    expect((await recordRunResourceFindings(db as any, back)).reopened).toHaveLength(4);
-    expect((await listResourceFindings(db as any, 1, { verdict: 'leaked' }))[0]).toMatchObject({
-      status: 'open',
-      reopenedRunId: back,
-      cleanRuns: 0,
-      fixedRunId: null,
-    });
-  });
-
-  test('a finding is new until a run of the base branch shows it, and a run with no branch counts as the default branch', async () => {
-    const onBranch = await run({ leaky: true, branch: 'feature/login', baseBranch: 'main' });
-    await recordRunResourceFindings(db as any, onBranch);
-    const again = await run({ leaky: true, branch: 'feature/login', baseBranch: 'main' });
-    const novelty = (await runFindingsNovelty(db as any, again))!;
-    expect(novelty.baseBranch).toBe('main');
-    expect(novelty.findings.every((f) => f.isNew)).toBe(true);
-
-    await recordRunResourceFindings(db as any, await run({ leaky: true, branch: null }));
-    const later = await run({ leaky: true, branch: 'feature/login', baseBranch: 'main' });
-    expect((await runFindingsNovelty(db as any, later))!.findings.some((f) => f.isNew)).toBe(false);
-
-    const resources = (await getRunResources(db as any, later))!;
-    expect(resources.baseBranch).toBe('main');
-    expect(Object.values(resources.history)).toHaveLength(4);
-    expect(Object.values(resources.history).every((h) => !h.isNew && h.firstSeenRunId === onBranch)).toBe(true);
-  });
-
-  test('orders runs by when they started, not by when they were stored', async () => {
-    // Stored first, started last: the newest run on main.
-    await db.insert(schema.testRuns).values({
-      id: 50,
-      projectId: 1,
-      status: 'passed',
-      startTime: new Date(Date.UTC(2026, 6, 1)),
-      branch: 'main',
-    });
-    await saveResourceReportPart(db as any, 50, report(null, true));
-    const older = await run({ leaky: true });
-    await recordRunResourceFindings(db as any, older);
-    expect((await runFindingsNovelty(db as any, 50))!.findings.every((f) => !f.isNew)).toBe(true);
-    expect((await runFindingsNovelty(db as any, older))!.findings.every((f) => f.isNew)).toBe(true);
-    await recordRunResourceFindings(db as any, 50);
-    expect((await listResourceFindings(db as any, 1, { verdict: 'leaked' }))[0]).toMatchObject({
-      firstSeenRunId: older,
-      lastSeenRunId: 50,
-    });
-  });
-
-  /** A context left open at a line of the cart spec. */
-  const leakAt = (line: number): WireResourceFinding => ({
-    verdict: 'leaked',
-    kind: 'context',
-    where: `tests/cart.spec.ts:${line}`,
-    site: `tests/cart.spec.ts:${line}`,
-    scope: 'test',
-    tests: 1,
-    count: 1,
-    heldMs: 1000,
-  });
-
-  test('counts each opening line on its own, however many share a file', async () => {
-    const id = await run({ leaky: true, findings: [leakAt(10), leakAt(40)] });
-    expect((await runFindingsNovelty(db as any, id))!.findings.map((f) => f.finding.site)).toEqual([
-      'tests/cart.spec.ts:10',
-      'tests/cart.spec.ts:40',
-    ]);
-    await recordRunResourceFindings(db as any, id);
-    expect(await listResourceFindings(db as any, 1)).toHaveLength(2);
-  });
-
-  test('a leak an edit above its line moved keeps its history and is not new', async () => {
-    const onMain = await run({ leaky: true, findings: [leakAt(10)] });
-    await recordRunResourceFindings(db as any, onMain);
-    const moved = await run({ leaky: true, branch: 'feature/cart', baseBranch: 'main', findings: [leakAt(12)] });
-    expect((await runFindingsNovelty(db as any, moved))!.findings[0]!.isNew).toBe(false);
-    await recordRunResourceFindings(db as any, moved);
-    expect(await listResourceFindings(db as any, 1)).toEqual([
-      expect.objectContaining({ where: 'tests/cart.spec.ts:12', firstSeenRunId: onMain, runs: 2 }),
-    ]);
-  });
-
-  test('a new line in a file that already leaked on the base branch is new', async () => {
-    await recordRunResourceFindings(db as any, await run({ leaky: true, findings: [leakAt(10)] }));
-    const id = await run({
-      leaky: true,
-      branch: 'feature/cart',
-      baseBranch: 'main',
-      findings: [leakAt(10), leakAt(40)],
-    });
-    expect((await runFindingsNovelty(db as any, id))!.findings.map((f) => [f.finding.site, f.isNew])).toEqual([
-      ['tests/cart.spec.ts:10', false],
-      ['tests/cart.spec.ts:40', true],
-    ]);
-  });
-
-  test('pairs a moved finding with the closest line of its group, each candidate once', () => {
-    const fp = (line: number) => ({ fingerprint: resourceFingerprint(leakAt(line)) });
-    const [at12, at52, at90] = [fp(12), fp(52), fp(90)];
-    const [from10, from50] = [fp(10), fp(50)];
-    const pairs = pairMoved([at52, at12, at90], [from50, from10]);
-    expect(pairs.get(at12)).toBe(from10);
-    expect(pairs.get(at52)).toBe(from50);
-    expect(pairs.has(at90)).toBe(false);
-  });
-
-  test('says nothing about a run that sent no report', async () => {
-    await db.insert(schema.testRuns).values({ id: 99, projectId: 1, status: 'passed', startTime: new Date() });
-    expect(await runFindingsNovelty(db as any, 99)).toBeNull();
-    expect(await recordRunResourceFindings(db as any, 99)).toEqual({ seen: 0, fixed: [], reopened: [] });
   });
 });

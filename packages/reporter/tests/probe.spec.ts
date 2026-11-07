@@ -369,7 +369,10 @@ describe('requestMatchesRoute', () => {
     expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(29)}`, route)).toBe(false);
     expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(2000)}`, route)).toBe(false);
     expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(200)}-z`, route)).toBe(true);
-    expect(performance.now() - started).toBeLessThan(50);
+    // A path of 20,000 characters: about 10 ms in linear steps, a few hundred under coverage on a slow runner; seconds
+    // for a matcher that backtracks, or whose steps grow with the square of the path's length times the pattern's.
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(20_000)}`, route)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
 
