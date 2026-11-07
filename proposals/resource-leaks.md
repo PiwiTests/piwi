@@ -140,6 +140,18 @@ started.
   those is a finding already. Wire: `growth.what` gains `elements`, `heapMb` and `descriptors`, `kind` gains `worker`.
 - The ledger drops a closed object once a census reported it (about 0.7 KB of worker heap per test).
 
+**The fixture-free tier rebuilt per scope 2026-11-07** ([1.6](#16-without-the-fixtures)), as PiwiTests/piwi#1174
+asked. What changed while building it:
+
+- A close is paired by the names its source line gives (`ctx` in `ctx.close()`, `const ctx = await …` at the open),
+  and a page counts only for `browser.newPage()`, read the same way: a step title names no object, and
+  `browser.newPage()` and `context.newPage()` both record `Create page`.
+- `Create request context` is not counted: `APIRequestContext.dispose()` is an internal call on every supported
+  Playwright, so no step shows it.
+- A fixture's opens absorb the test's closes of the fixture's objects, by the fixture's name, and are never findings.
+- `tests/probable-leaks-run.spec.ts` tallies a real run, so a Playwright release that changes a title or a column
+  shows on the floor version too.
+
 ## What the reader gets
 
 At the end of a local or CI run, from the reporter alone:
@@ -467,9 +479,10 @@ creation site for these, so the test is the attribution.
 
 ### 1.6 Without the fixtures
 
-From the `pw:api` steps it already receives, the reporter counts `Create context`, `Create page`,
-`Create request context` and `Launch browser` against their close and dispose steps per scope (the test with its
-hooks, a describe's `beforeAll`/`afterAll`). An excess is a **probable** leak at the step's location.
+From the `pw:api` steps it already receives, the reporter counts `Launch browser`, `Connect over CDP`,
+`Create context`, `Launch persistent context` and the `Create page` of `browser.newPage()` against `Close browser` and
+`Close context`, per scope (the test with its each-hooks, a describe's `beforeAll`/`afterAll`), in each worker and
+file. Each open left unpaired is a **probable** leak at the step's location.
 
 ## Part 2 — Metrics
 

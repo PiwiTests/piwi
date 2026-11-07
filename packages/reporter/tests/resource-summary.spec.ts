@@ -46,7 +46,7 @@ describe('the resource summary', () => {
 
   async function run(
     options: Record<string, unknown>,
-    result: ReturnType<typeof fakeResult>,
+    result: ReturnType<typeof fakeResult> | Array<ReturnType<typeof fakeResult>>,
     shutdown?: ResourceCensus,
     onBody?: (body: any) => void,
   ): Promise<string[]> {
@@ -71,8 +71,10 @@ describe('the resource summary', () => {
     reporter.onBegin(fakeConfig(), suite);
     const resultsFile = process.env[PIWI_RESOURCES_RESULTS_ENV];
     if (shutdown && resultsFile) fs.appendFileSync(resultsFile, `${JSON.stringify(shutdown)}\n`, { mode: 0o600 });
-    reporter.onTestBegin(testCase, result);
-    reporter.onTestEnd(testCase, result);
+    for (const attempt of Array.isArray(result) ? result : [result]) {
+      reporter.onTestBegin(testCase, attempt);
+      reporter.onTestEnd(testCase, attempt);
+    }
     await reporter.onEnd({ status: 'passed' } as any);
     if (resultsFile) expect(fs.existsSync(resultsFile)).toBe(false);
     return logged.filter((line) => line.startsWith('[Piwi Dashboard] ')).map((line) => line.slice(17));
@@ -129,6 +131,16 @@ describe('the resource summary', () => {
     const lines = await run({}, fakeResult({ steps }));
     expect(lines).toContain('Resources: 1 probable leak');
     expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · left open by its test');
+  });
+
+  it('pairs only the attempts of one worker, and judges nothing a failed attempt opened', async () => {
+    const step = (title: string, line: number) => ({ title, category: 'pw:api', location: { file: SPEC, line, column: 3 }, steps: [] });
+    const lines = await run({}, [
+      fakeResult({ workerIndex: 0, steps: [step('Create context', 7)] }),
+      fakeResult({ workerIndex: 1, steps: [step('Close context', 8)] }),
+      fakeResult({ workerIndex: 2, status: 'failed', steps: [step('Create context', 9)] }),
+    ]);
+    expect(lines.filter((line) => line.startsWith('  probable'))).toEqual(['  probable context     tests/cart.spec.ts:7 · left open by its test']);
   });
 
   it('reads the spec file to count a page `browser.newPage()` left open, and never counts an API context', async () => {

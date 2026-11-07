@@ -19,8 +19,8 @@ import {
   userFixturesOf,
   type LifecycleTally,
   type ResourceFinding,
-  type SourceLines,
 } from '../src/internal/collect/resource-verdicts.js';
+import type { SourceLines } from '../src/internal/support/source-snippet.js';
 
 const SPEC = 'tests/cart.spec.ts';
 const OTHER_SPEC = 'tests/admin.spec.ts';
@@ -519,7 +519,7 @@ const fixtureStep = (title: string, steps: TestStep[]): TestStep =>
   ({ title, category: 'fixture', steps }) as unknown as TestStep;
 
 describe('tallyLifecycleSteps', () => {
-  it('lists the calls in order, each in its hook’s scope, never what a fixture did', () => {
+  it('lists the calls in order, in their scopes, with the names their lines give; never a fixture’s close or a failed call', () => {
     const { call, hook, hooks, attempt } = specFile([
       'test.beforeAll(async () => {',
       '  shared = await chromium.launch();',
@@ -531,70 +531,82 @@ describe('tallyLifecycleSteps', () => {
       '  await shared.close();',
       '});',
       'test("checks out", async ({ browser }) => {',
-      '  const ctx = await browser.newContext();',
+      '  const ctx: BrowserContext = await browser.newContext();',
       '  await ctx.close();',
+      "  await expect(chromium.launch({ executablePath: '/none' })).rejects.toThrow();",
       '});',
     ]);
+    const failed = { ...call('Launch browser', 13), error: { message: 'Executable does not exist' } } as unknown as TestStep;
     const tally = attempt('t1', [
       hooks('Before Hooks', [
-        fixtureStep('Fixture "context"', [call('Create context', 5)]),
+        fixtureStep('Fixture "context"', [{ title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep]),
         hook('beforeAll hook', 1, [call('Launch browser', 2)]),
         hook('beforeEach hook', 4, [call('Create context', 5)]),
       ]),
       call('Create context', 11),
       call('Close context', 12),
+      failed,
       hooks('After Hooks', [fixtureStep('Fixture "context"', [call('Close context', 12)]), hook('afterAll hook', 7, [call('Close browser', 8)])]),
     ]);
+    const at = (line: number) => `${SPEC}:${line}`;
     expect(tally).toEqual({
       file: SPEC,
       test: 't1',
       worker: 0,
       failed: false,
       calls: [
-        { op: 'open', kind: 'browser', site: `${SPEC}:2`, block: true },
-        { op: 'open', kind: 'context', site: `${SPEC}:5`, block: false },
-        { op: 'open', kind: 'context', site: `${SPEC}:11`, block: false },
-        { op: 'close', kind: 'context', site: `${SPEC}:12`, block: false },
-        { op: 'close', kind: 'browser', site: `${SPEC}:8`, block: true },
+        { op: 'open', kind: 'context', site: null, block: false, fixture: true, on: null, name: 'context' },
+        { op: 'open', kind: 'browser', site: at(2), block: true, fixture: false, on: 'chromium', name: 'shared' },
+        { op: 'open', kind: 'context', site: at(5), block: false, fixture: false, on: 'browser', name: 'each' },
+        { op: 'open', kind: 'context', site: at(11), block: false, fixture: false, on: 'browser', name: 'ctx' },
+        { op: 'close', kind: 'context', site: at(12), block: false, fixture: false, on: 'ctx', name: null },
+        { op: 'close', kind: 'browser', site: at(8), block: true, fixture: false, on: 'shared', name: null },
       ],
     });
   });
 
-  it('reads a named hook’s kind, and which `Create page` is `browser.newPage()`, from the line the step points at', () => {
+  it('reads a named hook’s kind, and what each call was made on and assigned to, from the line the step points at', () => {
     const { call, hook, attempt } = specFile([
       'test.beforeAll("open the shop", async ({ browser }) => {',
       '  shop = await browser.newContext();',
       '});',
       'test.beforeEach("sign in", async ({ browser }) => {',
-      '  const one = await browser.newPage();',
-      '  const two = await this.browser?.newPage();',
-      '  const three = await browser',
+      '  const one = await this.browser?.newPage();',
+      '  const two = await browser',
       '    .newPage();',
-      '  const four = await context.newPage();',
-      '  const five = await (await browser.newContext()).newPage();',
-      '  const six = await browserContext.newPage();',
+      '  const three = await browser!.newPage();',
+      '  const four = await (await browser.newContext()).newPage();',
+      '  holder.ctx = await browser.newContext();',
+      '  await holder.ctx!.close();',
       '});',
     ]);
     const tally = attempt('t1', [
       hook('open the shop', 1, [call('Create context', 2)]),
-      hook('sign in', 4, [5, 6, 8, 9, 10, 11].map((line) => call('Create page', line))),
+      hook('sign in', 4, [call('Create page', 5), call('Create page', 7), call('Create page', 8), call('Create page', 9), call('Create context', 10), call('Close context', 11)]),
     ]);
-    expect(tally.calls).toEqual([
-      { op: 'open', kind: 'context', site: `${SPEC}:2`, block: true },
-      { op: 'open', kind: 'page', site: `${SPEC}:5`, block: false },
-      { op: 'open', kind: 'page', site: `${SPEC}:6`, block: false },
-      { op: 'open', kind: 'page', site: `${SPEC}:8`, block: false },
+    expect(tally.calls.map(({ op, kind, block, on, name }) => ({ op, kind, block, on, name }))).toEqual([
+      { op: 'open', kind: 'context', block: true, on: 'browser', name: 'shop' },
+      { op: 'open', kind: 'page', block: false, on: 'browser', name: 'one' },
+      { op: 'open', kind: 'page', block: false, on: 'browser', name: 'two' },
+      { op: 'open', kind: 'page', block: false, on: 'browser', name: 'three' },
+      { op: 'open', kind: 'page', block: false, on: null, name: null },
+      { op: 'open', kind: 'context', block: false, on: 'browser', name: 'ctx' },
+      { op: 'close', kind: 'context', block: false, on: 'ctx', name: null },
     ]);
   });
 
-  it('leaves a page out when its line cannot be read, or the step does not point at `newPage`', () => {
-    const page = (file: string, line: number, column: number) =>
-      ({ title: 'Create page', category: 'pw:api', steps: [], location: { file, line, column } }) as unknown as TestStep;
-    const source: SourceLines = (file) => (file === path.resolve(SPEC) ? ['await browser.newPage();'] : null);
+  it('knows no names when the line cannot be read, or holds no call of the method at the step’s column', () => {
+    const page = (file: string, column: number) =>
+      ({ title: 'Create page', category: 'pw:api', steps: [], location: { file, line: 1, column } }) as unknown as TestStep;
+    // A page-object library outside the suite: the step points at the suite's call into it.
+    const source: SourceLines = (file) => (file === path.resolve(SPEC) ? ['const page = await browserSession.open();'] : null);
     const attempt = { file: SPEC, test: 't1', worker: 0, failed: false };
-    expect(tallyLifecycleSteps(attempt, [page(path.resolve(OTHER_SPEC), 1, 15)], source).calls).toEqual([]);
-    expect(tallyLifecycleSteps(attempt, [page(path.resolve(SPEC), 1, 1)], source).calls).toEqual([]);
-    expect(tallyLifecycleSteps(attempt, [page(path.resolve(SPEC), 1, 15)], source).calls).toHaveLength(1);
+    for (const step of [page(path.resolve(OTHER_SPEC), 1), page(path.resolve(SPEC), 34)]) {
+      expect(tallyLifecycleSteps(attempt, [step], source).calls).toEqual([
+        { op: 'open', kind: 'page', site: expect.any(String), block: false, fixture: false, on: null, name: null },
+      ]);
+      expect(buildResourceReport({ censuses: [], tallies: [tallyLifecycleSteps(attempt, [step], source)] }).findings).toEqual([]);
+    }
   });
 });
 
@@ -624,7 +636,7 @@ describe('probable leaks', () => {
     expect(findings).toEqual([
       { verdict: 'probable', kind: 'browser', where: `${SPEC}:2`, site: `${SPEC}:2`, tests: 1, count: 1, detail: 'left open by its test' },
     ]);
-    expect(probable([forgets, closesBrowser])).toEqual(findings);
+    expect(probable([forgets])).toEqual(findings);
     const report = buildResourceReport({ censuses: [], tallies: [forgets, closesBrowser, closesContext] });
     expect(formatResourceSummary(report, 'report')).toEqual([
       'Resources: 1 probable leak',
@@ -680,7 +692,7 @@ describe('probable leaks', () => {
     const first = attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]), call('Create page', 9)]);
     const last = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5), call('Close context', 6)])])]);
     expect(probable([first, last])).toEqual([]);
-    // One close: the hook's own scope comes first, so the page the test handed on is the one left.
+    // One close, of `shared`: the page the test handed on is the one left.
     const oneClose = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5)])])]);
     expect(probable([first, oneClose])).toEqual([
       expect.objectContaining({ kind: 'page', where: `${SPEC}:9`, detail: 'left open by its test' }),
@@ -689,6 +701,117 @@ describe('probable leaks', () => {
       expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, detail: 'left open by a beforeAll or afterAll hook' }),
       expect.objectContaining({ kind: 'page', where: `${SPEC}:9` }),
     ]);
+  });
+
+  it('closes, with a browser, what was opened on it, never what was opened on another', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test.beforeAll(async () => {',
+      '  dedicated = await chromium.launch();',
+      '});',
+      'test.afterAll(async () => {',
+      '  await dedicated.close();',
+      '});',
+      'test("on the dedicated browser", async () => {',
+      '  await dedicated.newContext();',
+      '});',
+      'test("on the fixture’s", async ({ browser }) => {',
+      '  await browser.newContext();',
+      '  const other = await chromium.launch();',
+      '  await browser.newPage();',
+      '  await other.newContext();',
+      '  await other.close();',
+      '});',
+    ]);
+    const first = attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Launch browser', 2)])]), call('Create context', 8)]);
+    const second = attempt('t2', [
+      call('Create context', 11),
+      call('Launch browser', 12),
+      call('Create page', 13),
+      call('Create context', 14),
+      call('Close browser', 15),
+      hooks('After Hooks', [hook('afterAll hook', 4, [call('Close browser', 5)])]),
+    ]);
+    expect(probable([first, second]).map(({ kind, where }) => [kind, where])).toEqual([
+      ['context', `${SPEC}:11`],
+      ['page', `${SPEC}:13`],
+    ]);
+  });
+
+  it('pairs a close with the open of its name, so the line named is the one left open', () => {
+    const { call, attempt } = specFile([
+      'test("closes the first context", async ({ browser }) => {',
+      '  const a = await browser.newContext();',
+      '  const b = await browser.newContext();',
+      '  await a.close();',
+      '});',
+      'test("closes its page, not its context", async ({ browser }) => {',
+      '  const page = await browser.newPage();',
+      '  const ctx = await browser.newContext();',
+      '  await page.close();',
+      '});',
+    ]);
+    expect(
+      probable([
+        attempt('t1', [call('Create context', 2), call('Create context', 3), call('Close context', 4)]),
+        attempt('t2', [call('Create page', 7), call('Create context', 8), call('Close context', 9)]),
+      ]).map(({ kind, where }) => [kind, where]),
+    ).toEqual([
+      ['context', `${SPEC}:3`],
+      ['context', `${SPEC}:8`],
+    ]);
+  });
+
+  it('never lets a close of something it did not see opened take an earlier test’s leak', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test("leaks a browser", async () => {',
+      '  await chromium.launch();',
+      '});',
+      'test("closes its browser twice", async () => {',
+      '  const b = await chromium.launch();',
+      '  await b.close();',
+      '  await b.close();',
+      '});',
+      'test.afterEach(async ({ context }) => {',
+      '  await context.close();',
+      '});',
+      'test("leaks a context", async ({ browser }) => {',
+      '  await browser.newContext();',
+      '});',
+      'const openTab = (b) => b.newPage();',
+      'test("closes a tab", async ({ browser }) => {',
+      '  (await openTab(browser)).close();',
+      '});',
+    ]);
+    const fixtureContext = fixtureStep('Fixture "context"', [{ title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep]);
+    expect(
+      probable([
+        attempt('t1', [call('Launch browser', 2)]),
+        attempt('t2', [call('Launch browser', 5), call('Close browser', 6), call('Close browser', 7)]),
+        attempt('t3', [
+          hooks('Before Hooks', [fixtureContext]),
+          call('Create context', 13),
+          hooks('After Hooks', [hook('afterEach hook', 9, [call('Close context', 10)])]),
+        ]),
+        attempt('t4', [call('Create page', 15), call('Close context', 17)]),
+      ]).map(({ kind, where }) => [kind, where]),
+    ).toEqual([
+      ['browser', `${SPEC}:2`],
+      ['context', `${SPEC}:13`],
+    ]);
+  });
+
+  it('reads a page of a persistent context named `browser` as the context’s', () => {
+    const { call, attempt } = specFile([
+      'test("a profile", async ({}, testInfo) => {',
+      "  const browser = await chromium.launchPersistentContext(testInfo.outputPath('profile'));",
+      '  const page = await browser.newPage();',
+      '  await page.close();',
+      '  await browser.close();',
+      '});',
+    ]);
+    const steps = [call('Launch persistent context', 2), call('Create page', 3), call('Close page', 4), call('Close context', 5)];
+    expect(probable([attempt('t1', steps)])).toEqual([]);
+    expect(probable([attempt('t1', steps.slice(0, 3))])).toEqual([expect.objectContaining({ kind: 'context', where: `${SPEC}:2` })]);
   });
 
   it('keeps each worker’s attempts apart, groups a line left open by several tests, and judges no failed attempt', () => {

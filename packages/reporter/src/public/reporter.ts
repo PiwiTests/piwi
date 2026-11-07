@@ -44,7 +44,12 @@ import { isCaptureStep } from '@piwitests/core/step-tree';
 import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
-import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
+import {
+  collectSourceFrames,
+  extractFailingLine,
+  readSourceSnippet,
+  sourceLineReader,
+} from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { parallelIndexOf, workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
@@ -94,7 +99,6 @@ import {
   formatResourceSummary,
   parseResourceCensus,
   parseResourceResults,
-  sourceLineReader,
   tallyLifecycleSteps,
   userFixturesOf,
   type LifecycleTally,

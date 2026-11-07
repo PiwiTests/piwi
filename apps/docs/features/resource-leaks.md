@@ -132,11 +132,17 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
   all, and each is checked before use: without the hooks the ledger stays off.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
-- **Probable leaks** come from step titles, which name no object. Each close is paired with the latest open of its
-  kind, in its test first, so with two left open in one test the line named may be the other's. A `Create page` counts
-  as `browser.newPage()` when the name before `newPage` on its line names a browser (`browser`, `adminBrowser`); a page
-  whose spec file cannot be read is not counted. An API request context is never counted: its `dispose()` leaves no
-  step. A context left to a browser from `browserType.connect()` reads as open: that browser's `close()` leaves no step.
+- **Probable leaks** come from the step titles, which name no object, and from the source lines the steps point at:
+  - A close is paired with the open assigned the name it is called on (`ctx` in `ctx.close()`), else with the latest
+    open of its kind, in its test first. A close its line does not name, such as `page.context().close()`, can be
+    counted for another object.
+  - A page counts as `browser.newPage()`, which opens a context for it, when the name right before `.newPage` is a
+    browser's: one a launch was assigned to, or, when no open in the test or its hooks was assigned that name, a name
+    such as `browser` or `adminBrowser`. A page whose source file cannot be read is not counted.
+  - A browser's `close()` closes the contexts and pages opened on its name, or, with no names to read, those opened
+    after it in the same test, or in the same `beforeAll` and `afterAll` hooks.
+  - An API request context is never counted: its `dispose()` leaves no step. A context left to a browser from
+    `browserType.connect()` reads as open: that browser's `close()` leaves no step either.
 - Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
   in Chromium only, and a small heap leak shows only over a long run.
 

@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TestStep } from '@playwright/test/reporter';
 import type { WireResourceFinding } from '@piwitests/core/wire';
+import type { SourceLines } from '../support/source-snippet.js';
 import type {
   LeakCheck,
   ResourceBirth,
@@ -30,18 +30,27 @@ export interface ResourceReport {
   counts: { leaked: number; idle: number; piling: number; handle: number; probable: number };
 }
 
-/** A browser, context or page a test opened or closed outside any fixture, from its `pw:api` steps. */
+/** A browser, context or page a test opened or closed, from its `pw:api` steps. */
 export interface LifecycleCall {
   op: 'open' | 'close';
   /**
-   * `page` is a page `browser.newPage()` opened, with the context made for it.
-   * A close of `context` closes either: closing such a page closes its context.
+   * A close of `context` closes a context, or a page `browser.newPage()`
+   * opened, whose context goes with it.
    */
   kind: 'browser' | 'context' | 'page';
   /** The line of the call, `file:line`, relative, POSIX separators. */
   site: string | null;
   /** Made in a `beforeAll` or `afterAll` hook: the describe block holds what it opens. */
   block: boolean;
+  /**
+   * Made by a fixture, which closes what it opens: such an open is never a
+   * finding, but a close the test makes may be for it.
+   */
+  fixture: boolean;
+  /** The name the call was made on, from its line: `browser` in `browser.newPage()`, `ctx` in `ctx.close()`. */
+  on: string | null;
+  /** An open's name: what it was assigned to (`ctx` in `const ctx = await …`), or its fixture's. */
+  name: string | null;
 }
 
 /** One attempt's lifecycle calls, in the order it made them, for a run without the fixtures. */
@@ -55,9 +64,6 @@ export interface LifecycleTally {
   failed: boolean;
   calls: LifecycleCall[];
 }
-
-/** The lines of a source file, or null when it cannot be read. */
-export type SourceLines = (file: string) => readonly string[] | null;
 
 export interface ResourceReportInput {
   censuses: ResourceCensus[];
@@ -79,17 +85,18 @@ interface Tracked {
 }
 
 /**
- * The `pw:api` steps that open or close a browser or a context. `Create page`
- * opens a page of its own only for `browser.newPage()` (`opensOwnContext`), and
- * closing that page is a `Close context`; `Close page` closes a page of a
- * context, which goes with it. An API request context's `dispose()` is no step,
- * so `Create request context` is not counted.
+ * The `pw:api` steps that open or close a browser, a context or a page, with
+ * the method each is called by. A page has a context of its own only from
+ * `browser.newPage()`, and closing it is a `Close context`; `Close page` closes
+ * a page of a context, which goes with it. An API request context's
+ * `dispose()` is no step, so `Create request context` is not counted.
  */
-const OPEN_STEPS: Record<string, LifecycleCall['kind']> = {
-  'Create context': 'context',
-  'Launch persistent context': 'context',
-  'Launch browser': 'browser',
-  'Connect over CDP': 'browser',
+const OPEN_STEPS: Record<string, { kind: LifecycleCall['kind']; method: string }> = {
+  'Create context': { kind: 'context', method: 'newContext' },
+  'Launch persistent context': { kind: 'context', method: 'launchPersistentContext' },
+  'Launch browser': { kind: 'browser', method: 'launch' },
+  'Connect over CDP': { kind: 'browser', method: 'connectOverCDP' },
+  'Create page': { kind: 'page', method: 'newPage' },
 };
 const CLOSE_STEPS: Record<string, LifecycleCall['kind']> = {
   'Close context': 'context',
@@ -126,7 +133,7 @@ export function userFixturesOf(steps: TestStep[]): string[] {
     for (const step of list) {
       const file = step.location?.file;
       if (step.category === 'fixture' && file && !file.includes(`${path.sep}node_modules${path.sep}`)) {
-        const name = step.title.replace(/^(?:Fixture\s+|fixture:\s*)/, '').replace(/^"(.*)"$/, '$1');
+        const name = fixtureName(step);
         if (!name.startsWith('piwi')) out.push(`${name} (${relativeFile(file)}:${step.location!.line})`);
       }
       walk(step.steps ?? []);
@@ -136,11 +143,16 @@ export function userFixturesOf(steps: TestStep[]): string[] {
   return [...new Set(out)];
 }
 
+/** A fixture step's fixture: `page` for `Fixture "page"`. */
+function fixtureName(step: TestStep): string {
+  return step.title.replace(/^(?:Fixture\s+|fixture:\s*)/, '').replace(/^"(.*)"$/, '$1');
+}
+
 /**
- * The browsers, contexts and `browser.newPage()` pages an attempt opened and
- * closed outside any fixture, in order, from its `pw:api` steps. `source` reads
- * the lines a step points at: which hooks are `beforeAll` or `afterAll` when
- * they are named, and which `Create page` steps are `browser.newPage()`.
+ * The browsers, contexts and pages an attempt opened and closed, in order,
+ * from its `pw:api` steps: a fixture's opens marked as such, its closes left
+ * out, a failed call left out. `source` reads the lines the steps point at, for
+ * the names each call gives (`namesAt`) and the kind of a hook given a title.
  */
 export function tallyLifecycleSteps(
   attempt: Omit<LifecycleTally, 'calls'>,
@@ -148,50 +160,28 @@ export function tallyLifecycleSteps(
   source: SourceLines,
 ): LifecycleTally {
   const calls: LifecycleCall[] = [];
-  const walk = (list: TestStep[], block: boolean) => {
+  const walk = (list: TestStep[], block: boolean, fixture: string | null) => {
     for (const step of list) {
-      // A fixture opens and closes its own objects, Playwright's among them.
-      if (step.category === 'fixture') continue;
       // A hook has a location; `Before Hooks` and `After Hooks`, which hold them, have none.
       if (step.category === 'hook' && step.location) {
-        walk(step.steps ?? [], blockHook(step, source));
+        walk(step.steps ?? [], blockHook(step, source), fixture);
         continue;
       }
-      if (step.category === 'pw:api') {
+      const opened = OPEN_STEPS[step.title];
+      const closed = CLOSE_STEPS[step.title];
+      // A fixture's teardown closes what it opened.
+      if (step.category === 'pw:api' && !step.error && (opened || (closed && fixture === null))) {
         const site = step.location ? `${relativeFile(step.location.file)}:${step.location.line}` : null;
-        const opened =
-          OPEN_STEPS[step.title] ?? (step.title === 'Create page' && opensOwnContext(step, source) ? 'page' : null);
-        const closed = CLOSE_STEPS[step.title];
-        if (opened) calls.push({ op: 'open', kind: opened, site, block });
-        if (closed) calls.push({ op: 'close', kind: closed, site, block });
+        const names = namesAt(step, source, opened?.method ?? 'close');
+        const call = { site, block, fixture: fixture !== null, on: names.on };
+        if (opened) calls.push({ op: 'open', kind: opened.kind, ...call, name: fixture ?? names.name });
+        else calls.push({ op: 'close', kind: closed!, ...call, name: null });
       }
-      walk(step.steps ?? [], block);
+      walk(step.steps ?? [], block, step.category === 'fixture' ? fixtureName(step) : fixture);
     }
   };
-  walk(steps, false);
+  walk(steps, false, null);
   return { ...attempt, calls };
-}
-
-/** A reader of source files, each read once. */
-export function sourceLineReader(): SourceLines {
-  const files = new Map<string, string[] | null>();
-  return (file) => {
-    if (!files.has(file)) {
-      try {
-        files.set(file, fs.readFileSync(file, 'utf8').split(/\r?\n/));
-      } catch {
-        files.set(file, null);
-      }
-    }
-    return files.get(file)!;
-  };
-}
-
-/** The text of a step's line from its column on, or null. */
-function textAt(step: TestStep, source: SourceLines): string | null {
-  const location = step.location;
-  if (!location) return null;
-  return source(location.file)?.[location.line - 1]?.slice(location.column - 1) ?? null;
 }
 
 /**
@@ -199,25 +189,36 @@ function textAt(step: TestStep, source: SourceLines): string | null {
  * or for a hook given a title of its own, by the method its column points at.
  */
 function blockHook(step: TestStep, source: SourceLines): boolean {
+  const location = step.location!;
   const method =
-    /^((?:before|after)(?:All|Each)) hook$/.exec(step.title)?.[1] ?? /^\w+/.exec(textAt(step, source) ?? '')?.[0];
+    /^((?:before|after)(?:All|Each)) hook$/.exec(step.title)?.[1] ??
+    /^\w+/.exec(source(location.file)?.[location.line - 1]?.slice(location.column - 1) ?? '')?.[0];
   return method === 'beforeAll' || method === 'afterAll';
 }
 
 /**
- * Whether a `Create page` step is `browser.newPage()`, which opens a context
- * for its page, rather than `context.newPage()`: the step's column points at
- * `newPage`, and the name before it, over a chain broken across lines, names a
- * browser. A page whose line cannot be read is not counted.
+ * The names a call's line gives it: the name right before `.method(` (or `?.`,
+ * `!.`), the first call of that method at or after the step's column, which
+ * Playwright puts at the method or at the `await` before it; and the name that
+ * call is assigned to. A chain broken across lines is read with the two lines
+ * above.
  */
-function opensOwnContext(step: TestStep, source: SourceLines): boolean {
+function namesAt(step: TestStep, source: SourceLines, method: string): { on: string | null; name: string | null } {
   const location = step.location;
   const lines = location ? source(location.file) : null;
-  if (!location || !lines || !textAt(step, source)?.startsWith('newPage')) return false;
-  const at = location.line - 1;
-  const before = [...lines.slice(Math.max(0, at - 2), at), lines[at]!.slice(0, location.column - 1)].join('\n');
-  const receiver = /([\w$]+)\s*\??\.\s*$/.exec(before)?.[1];
-  return !!receiver && /browser/i.test(receiver) && !/context|ctx/i.test(receiver);
+  const line = location ? lines?.[location.line - 1] : undefined;
+  if (!location || !lines || line === undefined) return { on: null, name: null };
+  const text = [...lines.slice(Math.max(0, location.line - 3), location.line - 1), line].join('\n');
+  const column = text.length - line.length + location.column - 1;
+  const calls = new RegExp(`([\\w$]+)\\s*[!?]?\\.\\s*${method}\\s*\\(`, 'g');
+  for (const match of text.matchAll(calls)) {
+    if (match.index + match[0].lastIndexOf(method) < column) continue;
+    const assigned = /([\w$]+)\s*(?::[\w$.<>[\]|& \t]*)?=\s*(?:await\s+)?(?:[\w$]+\s*[!?]?\.\s*)*$/.exec(
+      text.slice(0, match.index),
+    );
+    return { on: match[1]!, name: assigned?.[1] ?? null };
+  }
+  return { on: null, name: null };
 }
 
 function relativeFile(file: string): string {
@@ -673,44 +674,72 @@ interface StepOpen {
   call: LifecycleCall;
   tally: LifecycleTally;
   scope: string;
+  /** A finding when left open: not a fixture's, nor a page of a context. */
+  counted: boolean;
   closed: boolean;
+}
+
+/**
+ * Whether a page opened on `on` has a context of its own: `on` is a browser,
+ * by the open that gave it its name in this scope or the describe block's, else
+ * by the name itself (`browser`, `adminBrowser`, not `browserContext`).
+ */
+function ownsContext(on: string | null, boundTo: (name: string) => LifecycleCall['kind'] | undefined): boolean {
+  if (!on) return false;
+  const kind = boundTo(on);
+  return kind ? kind === 'browser' : /browser/i.test(on) && !/context|ctx/i.test(on);
 }
 
 /**
  * The opens no close was paired with, in one worker's attempts of one spec
  * file, in the order they ran. A scope is an attempt with its `beforeEach` and
- * `afterEach` hooks, or the file's `beforeAll` and `afterAll` hooks. Each close
- * is paired with the latest open of its kind still unpaired in its scope, else
- * with one an earlier scope handed on; a `Close browser` also closes the
- * contexts and pages opened since its browser was.
+ * `afterEach` hooks, or the file's `beforeAll` and `afterAll` hooks. A close
+ * reaches its scope, then the describe block's, then any earlier scope, which
+ * handed the object on; a test's `Close browser` stops at the describe block,
+ * since a repeated `browser.close()` is a step again. In what it reaches, it
+ * is paired with the latest open of the name it was called on, else the latest
+ * of its kind in the nearest scope, a counted one first. A `Close browser`
+ * also closes the contexts and pages opened on its browser's name since, or
+ * with no names to tell, those its browser's scope opened since.
  */
 function unpairedOpens(attempts: LifecycleTally[]): StepOpen[] {
   const opens: StepOpen[] = [];
-  const latest = (kinds: string[], scope?: string): StepOpen | undefined => {
-    for (let i = opens.length - 1; i >= 0; i--) {
-      const open = opens[i]!;
-      if (!open.closed && kinds.includes(open.call.kind) && (!scope || open.scope === scope)) return open;
-    }
+  const latest = (test: (open: StepOpen) => boolean): StepOpen | undefined => {
+    for (let i = opens.length - 1; i >= 0; i--) if (test(opens[i]!)) return opens[i];
     return undefined;
   };
   attempts.forEach((tally, index) => {
+    const own = `attempt ${index}`;
+    const boundTo = (name: string) =>
+      latest((open) => (open.scope === own || open.scope === 'block') && open.call.name === name)?.call.kind;
     for (const call of tally.calls) {
-      const scope = call.block ? 'block' : `attempt ${index}`;
+      const scope = call.block ? 'block' : own;
       if (call.op === 'open') {
-        opens.push({ call, tally, scope, closed: false });
+        const counted = !call.fixture && (call.kind !== 'page' || ownsContext(call.on, boundTo));
+        opens.push({ call, tally, scope, counted, closed: false });
         continue;
       }
-      const kinds = call.kind === 'browser' ? ['browser'] : ['context', 'page'];
-      const open = latest(kinds, scope) ?? latest(kinds);
+      const kinds: string[] = call.kind === 'browser' ? ['browser'] : ['context', 'page'];
+      const nearest = call.kind === 'browser' && !call.block ? 2 : 3;
+      const levels = [(o: StepOpen) => o.scope === scope, (o: StepOpen) => o.scope === 'block', () => true];
+      const free = (o: StepOpen) =>
+        !o.closed && kinds.includes(o.call.kind) && levels.slice(0, nearest).some((l) => l(o));
+      let open = call.on ? latest((o) => free(o) && o.call.name === call.on) : undefined;
+      for (const level of levels.slice(0, nearest)) {
+        open ??= latest((o) => free(o) && level(o) && o.counted) ?? latest((o) => free(o) && level(o));
+      }
       if (!open) continue;
       open.closed = true;
       if (call.kind !== 'browser') continue;
-      for (const later of opens.slice(opens.indexOf(open) + 1)) {
-        if (later.call.kind !== 'browser') later.closed = true;
+      const browser = open;
+      for (const later of opens.slice(opens.indexOf(browser) + 1)) {
+        if (later.call.kind === 'browser') continue;
+        const named = browser.call.name !== null && later.call.on !== null;
+        if (named ? later.call.on === browser.call.name : later.scope === browser.scope) later.closed = true;
       }
     }
   });
-  return opens.filter((open) => !open.closed);
+  return opens.filter((open) => !open.closed && open.counted);
 }
 
 /**
