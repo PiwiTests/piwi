@@ -61,7 +61,8 @@ the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** to
    `https://piwi.example.com`.
 2. When the instance has a login, choose **Sign in with the browser**. The instance's page opens with a code: check
    that the editor shows the same code, then click **Allow**. The editor receives an [API key](/operate/api-keys)
-   created for you and named after it, such as "Piwi in WebStorm on macOS", which you can revoke with your other keys.
+   created for you and named after it, such as "Piwi in WebStorm on macOS", which you revoke under **Settings →
+   Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
    Or paste a key you created yourself. An instance without a login needs no key.
 3. Pick the project.
 

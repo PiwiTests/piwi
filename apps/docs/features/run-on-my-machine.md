@@ -10,8 +10,8 @@ lang: en-US
 
 Run on my machine lets a signed-in person ask the desktop app on their own machine to run tests they found on the
 dashboard. The instance carries the request; the app asks them before every run, in its own window, and runs the tests
-in their own folder. The run it starts reports back to the instance as a **requested run**: theirs alone, and counted
-in nothing the team reads.
+in their own folder. The run it starts reports back to the instance as a **requested run**: theirs alone, and kept
+out of everything the team sees.
 
 ## Experimental
 
@@ -40,13 +40,16 @@ Turned off or declined, the instance refuses every request for that project, and
 ## Connected apps
 
 **Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
-the desktop app. Each shows when it connected and, for an app that runs tests, **Online** while it holds its
-connection to the instance open, or when it was last seen. **Revoke** disconnects one: the instance closes the
-connection of an app that runs tests at once, and refuses its next call. An administrator sees the
-same list for any user in **Settings → Users → API keys**. The keys these apps hold are not listed under API keys.
+the desktop app, Piwi Runner. Each shows when it connected and, for an app that runs tests, **Online now** while it
+holds its connection to the instance open and has called the instance within the last two minutes, or else when it
+was last seen. **Revoke** disconnects one: the instance closes the connection of an app that runs tests at once, and
+refuses its next call. An administrator sees the same list for any user in **Settings → Users → API keys**. The keys
+these apps hold are not listed under API keys.
 
-The instance sends a connected app each request as it is made, on that connection, and the requests still waiting
-each time the app connects again. An app can also ask for them instead, where a proxy cuts long connections.
+The instance sends a connected app each request as it is made, on that connection, with the time it stops waiting,
+and the requests still waiting each time the app connects again. When a waiting request is stopped, or another of
+your apps takes it, the instance tells the others to drop it. An app can also ask for its requests instead, where a
+proxy cuts long connections.
 
 ## A requested run is yours alone
 
@@ -59,7 +62,7 @@ A requested run shows to the person who asked for it, and to nobody else:
 - **No list a project's members read** shows it: the project's runs, search, analytics, the MCP tools.
 - **With sign-in turned off, or once its requester is deleted**, nobody sees it.
 
-It was run to look, on a branch and a machine the team did not choose, so it counts in nothing the team reads: no
+It was run to look, on a branch and a machine the team did not choose, so it stays out of everything the team sees: no
 failure clusters, flakiness, analytics or baselines; no notifications, pull-request comments or tracker writes; no
 coverage, and it never sets the project's default branch. It is never kept forever: retention removes it, and you can
 delete it yourself from its page.

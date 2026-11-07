@@ -21,33 +21,35 @@ refuses, or that has no line, is left out and counted. Until 2c's heartbeat, a t
 requests: one the instance has not heard from for 5 minutes, or that was disconnected, has its requests ended as an
 error, so does a claim not answered in 10 minutes, and a second stop a minute after the first ends a run; a target hears
 of a request that ended at a stop for 10 minutes. The retention sweep deletes requests that ended or expired more than
-30 days ago (the notification horizon). PR 2b is built: **Run** answers a request token (D5), kept as its digest for
-30 minutes, which `/setup` or `/start` spends once, as the run is stored, to start one unsharded run of the request's
+30 days ago (the notification horizon). PR 2b is built: **Run** answers a request token (D5), kept as its digest for 30
+minutes, which `/setup` or `/start` spends once, as the run is stored, to start one unsharded run of the request's
 project; a token that expires unspent ends its request as an error, and a requested run is never kept. The server stamps
 its `request` origin (a reporter's is dropped) and its requester; the run is its requester's alone, and nobody's once
 the requester is deleted, and it feeds no team use (D14): it matches only the tests the project knows, its executions of
-any other left out, and adds or changes no test or suite. It shows on its run page and, for its requester, in the
-test's recent executions (PR 2c); a list of the requester's own runs is left for PR 3, with the page's button. A request whose tests resolve to more than 200 is refused, and the cap of 5 is
-counted once the request is stored. Every check runs before the spend, so a refused start leaves the token to a retry,
-and a request its requester stopped, or whose target was disconnected, starts nothing. Its requester, or someone who
-holds `run:delete`, deletes it; its stored files read as missing to anyone else; it records no coverage and never sets
-the project's default branch. The request token is not taken by the batch upload yet, and is spent by the first start: a
-requested run that falls back to the batch upload, or from `/setup` to `/start`, is refused. PR 2c is built: the
-stream (D11), whose snapshot and events a target keys by request id, with a comment line every 15 seconds; an open
-stream records its target as seen, and checks its key again, every minute, and closes at once when the key is revoked.
-Presence is the open streams, in memory. Connected apps (D16) lists every key the device flow made, on Settings →
-Account and in an administrator's view of a user, with **Revoke**; the API keys list leaves them out. Settings →
-Capabilities turns the capability on and off (D15), its **Turn on** disabled while sign-in is off (the instance refuses
-every request then anyway), and a project declines it while the instance has it on. The demo seeds one connected
-desktop app, online; its simulated answers to requests come with PR 3, when the page can make one. The feature page
-and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The
-maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to
-runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is the
-same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a
-requested run shows to its requester alone (D14); the administrator's switch is off by default in the first release
-(D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains the run
-options and ships first, with **Create issue** (D17, D18). Every other decision is a recommendation, and says which
-written decision it amends. The plan builds on three records that are not on `main`:
+any other left out, and adds or changes no test or suite. It shows on its run page and, for its requester, in the test's
+recent executions (PR 2c); a list of the requester's own runs is left for PR 3, with the page's button. A request whose
+tests resolve to more than 200 is refused, and the cap of 5 is counted once the request is stored. Every check runs
+before the spend, so a refused start leaves the token to a retry, and a request its requester stopped, or whose target
+was disconnected, starts nothing. Its requester, or someone who holds `run:delete`, deletes it; its stored files read as
+missing to anyone else; it records no coverage and never sets the project's default branch. The request token is not
+taken by the batch upload yet, and is spent by the first start: a requested run that falls back to the batch upload, or
+from `/setup` to `/start`, is refused. PR 2c is built: the stream (D11), whose snapshot and events a target keys by
+request id, with a comment line every 15 seconds; each offered request carries its `expiresAt`, and a waiting request
+that is stopped, or claimed by another of the owner's apps, is `withdrawn` from the others. An open stream checks its
+key again every minute and closes at once when the key is revoked; a target holds 3 streams at most. Presence is an open
+stream, in memory, of an app that called a target route within two minutes: the app calls one every minute while its
+stream is open. Connected apps (D16) lists every key the device flow made, on Settings → Account and in an
+administrator's view of a user, with **Revoke**; the API keys list leaves them out. Settings → Capabilities turns the
+capability on and off (D15), refused (409) while sign-in is off, and a project declines it while the instance has it on.
+The demo seeds one connected desktop app, online; its simulated answers to requests come with PR 3, when the page can
+make one. The feature page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of
+PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app
+first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request
+carries resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to
+one team instance at a time (D9); a requested run shows to its requester alone (D14); the administrator's switch is off
+by default in the first release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy
+retry command** gains the run options and ships first, with **Create issue** (D17, D18). Every other decision is a
+recommendation, and says which written decision it amends. The plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.
