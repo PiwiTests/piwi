@@ -18,17 +18,19 @@ and at the end of the run the reporter lists what stayed open past the scope tha
 The reporter prints it after the last test, before the upload, and adds it to the job summary on GitHub Actions:
 
 ```text
-[Piwi Dashboard] Resources: 3 leaks · 6 idle pages · 1 piling up · 1 handle left in workers
-[Piwi Dashboard]   leaked   context     tests/cart.spec.ts:12 · 4 contexts · with 4 pages · 4 tests · open until the worker shut down (41.2 s past its test) · 18.3 s of page CPU after its test
-[Piwi Dashboard]   leaked   page        popup after locator.click at tests/checkout.spec.ts:30 · 2 pages · 2 tests · open 3.1 s past its test
-[Piwi Dashboard]   leaked   context     tests/admin.spec.ts:8 · beforeAll of "admin" · 1 test · open until the worker shut down (12.0 s past its describe block)
-[Piwi Dashboard]   piling   listeners   fixture "adminPage" at tests/fixtures.ts:21 · 11 → 31 listeners over 20 tests
-[Piwi Dashboard]   handle   server      tests/pay.spec.ts:14 · left running in the worker by "mocks the payment API" (tests/pay.spec.ts)
-[Piwi Dashboard]   idle     page        fixture "page" · 6 pages · 6 tests · set up with consoleCollector (tests/fixtures.ts:40)
+[Piwi Dashboard] Resources: 3 leaks · 6 idle pages · 1 piling up · 1 handle left in workers · 1 lingering
+[Piwi Dashboard]   leaked    context     tests/cart.spec.ts:12 · 4 contexts · with 4 pages · 4 tests · open until the worker shut down (41.2 s past its test) · 18.3 s of page CPU after its test · last used at tests/cart.spec.ts:15
+[Piwi Dashboard]   leaked    page        popup after locator.click at tests/checkout.spec.ts:30 · 2 pages · 2 tests · open 3.1 s past its test · last used at tests/checkout.spec.ts:31
+[Piwi Dashboard]   leaked    context     tests/admin.spec.ts:8 · beforeAll of "admin" · 1 test · open until the worker shut down (12.0 s past its describe block) · last used at tests/admin.spec.ts:19
+[Piwi Dashboard]   piling    listeners   fixture "adminPage" at tests/fixtures.ts:21 · 11 → 31 listeners over 20 tests
+[Piwi Dashboard]   handle    server      tests/pay.spec.ts:14 · left running in the worker by "mocks the payment API" (tests/pay.spec.ts)
+[Piwi Dashboard]   idle      page        fixture "page" · 6 pages · 6 tests · set up with consoleCollector (tests/fixtures.ts:40)
+[Piwi Dashboard]   lingering page        popup after locator.click at tests/export.spec.ts:22 · 1 test · open 6.4 s after its last use · last used at tests/export.spec.ts:23
 [Piwi Dashboard] Set leakCheck: 'fail' (PIWI_LEAK_CHECK=fail) to fail the tests that leave what they open, or 'close' to close it.
 ```
 
-Findings of one line are grouped: the first above is one line leaking in four tests. A leaked context
+Findings of one line are grouped: the first above is one line leaking in four tests. Each leak names the line that
+last used it, where its `close()` belongs. A leaked context
 or browser carries the pages open in it, and a page `browser.newPage()` opened carries the context made for it. At most
 ten findings are listed; the rest are counted. In Chromium, the fixtures read each page that outlives its test over the
 DevTools protocol, so a leak also says how much CPU its pages' main threads used after their test, from half a second.
@@ -42,7 +44,8 @@ The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole r
 | **leaked**, past its describe block | Opened in a `beforeAll` (or an `afterAll`) and still open once the tests of its describe block ran. | Close it in `afterAll` |
 | **piling up** | A page or context living across tests whose open pages, listeners, route handlers or DOM elements kept growing; or a worker whose open file descriptors, or heap after V8's own full garbage collections, did | Remove what each test adds or opens; in a worker, what a module variable, cache or pool keeps |
 | **handle** | A server, child process or file watcher a test started and left running in the worker; a server or process at its line | Close or kill it in the test or an `afterEach` |
-| **idle** | A page opened and never used: no navigation, content, script or locator. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
+| **idle** | A page opened and never used: no navigation, and no call of the test's on it. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
+| **lingering** | Opened by the test and closed within it, but long after the test last used it: at least 2 s, and a third of the test or more. A popup checked once, then left to the `page` fixture. | Close it right after its last use |
 | **probable** | From a test that ran without the fixtures, counted from its steps: more browsers or contexts opened than closed in a spec file | Use the fixtures for exact findings |
 
 What is never reported:
@@ -66,8 +69,8 @@ wrapConfig(config, { projectName: 'my-project', leakCheck: 'fail' })
 
 ```text
 Error: Piwi: this test left one object open:
-  - a context opened at tests/cart.spec.ts:12, with 1 page
-Close each before the test ends (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.
+  - a context opened at tests/cart.spec.ts:12, with 1 page, last used at tests/cart.spec.ts:15
+Close each after its last use (await using, close() or dispose()), or set PIWI_LEAK_CHECK=report to only list them.
 ```
 
 A `beforeAll` object, and what a fixture opens, are only ever reported. Each test is judged when it ends, so a test that
@@ -84,11 +87,21 @@ reporter entry's options.
 A run whose reporter sent findings shows a **Resources** tab:
 
 - the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
-- the findings, each with the line or fixture that opened it, one click from your editor;
+- the findings, each with the line or fixture that opened it and the line that last used it, one click from your
+  editor;
 - a switch drawing each worker's open pages on the run's [Timeline tab](./cpu-memory-disk#in-the-dashboard):
   a leak climbs test after test, a clean worker stays flat;
 - the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
+
+On the run's **Timeline** tab, a red tail under a worker's row runs from the test that left an object open to its
+close or the worker's end, and an amber one from an object's last use to its close. Hover one for its lines; click it
+to open its test. The open pages graphs draw the pages left open in red, and **Show leaks** turns all of it off.
+
+<figure>
+  <img src="/screenshots/run-timeline-leaks.png" alt="A run's Timeline tab: under each worker's row, red tails from each test's end to the worker's end, one amber tail inside a test, and the tooltip of the amber one naming where the popup was opened, its test, how long it stayed open after its last use and the line that last used it">
+  <figcaption>Leaks under each worker on the Timeline tab.</figcaption>
+</figure>
 
 The execution page's Performance tab shows what that one test cost and what it left open. A project that declines the
 **Resources** capability in **Settings → Capabilities** hides both, and the reporter's summary stays as it is.
@@ -109,7 +122,8 @@ Three places read it:
 
 - [`piwi gate`](/guide/ci#blocking-a-merge): `--max-leaks <n>` fails when the run left more than `n`
   objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
-  A run that sent no resource report fails either rule rather than passing on silence.
+  A run that sent no resource report fails either rule rather than passing on silence. Neither counts a lingering
+  object.
 - The [pull-request comment](./pr-feedback) lists each leak the branch introduces under **Left open by this change**.
 - Agents read `list_resource_findings` and `get_resource_profile` over [MCP](/reference/mcp-tools).
 
@@ -127,11 +141,13 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
 ## Limits
 
 - The dashboard keeps the first 100 findings of each run, most severe first.
-- **Playwright internals.** The ledger reads Playwright's instrumentation hooks, the runner's current test and fixture,
-  and a few private fields (`_routes`, `_ownerPage`, `_opener`). The Playwright versions the reporter supports have them
-  all, and each is checked before use: without the hooks the ledger stays off.
+- **Playwright internals.** The ledger reads Playwright's instrumentation hooks, the calls on the worker's connection to
+  its browsers, the runner's current test and fixture, and a few private fields (`_routes`, `_ownerPage`, `_opener`).
+  Each is checked before use: without the hooks the ledger stays off, and without the connection a page counts as used
+  only when it navigates, loads, runs a script or builds a locator, and no finding names a last use.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
-- A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
+- A fixture with a `timeout` of its own runs with the slot a worker fixture has: what it leaves open is reported only
+  once it opened something in two tests of the same worker.
 - Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
   in Chromium only, and a small heap leak shows only over a long run.
 

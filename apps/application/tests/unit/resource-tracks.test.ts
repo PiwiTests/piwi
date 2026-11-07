@@ -393,4 +393,18 @@ describe('layOutTimelineRows', () => {
     ]);
     expect(layout.height).toBe(192);
   });
+
+  test('puts the tails of what a worker kept open right under its bars, and the strip under them', () => {
+    const layout = layOutTimelineRows(rows, {
+      ...sizes,
+      bandHeights: new Map(),
+      tailHeights: new Map([[0, 12]]),
+      strips: true,
+    });
+    expect(layout.rows.map((r) => [r.top, r.tailTop, r.stripTop, r.bottom])).toEqual([
+      [28, 54, 66, 84],
+      [84, null, 142, 160],
+      [160, null, 186, 204],
+    ]);
+  });
 });

@@ -82,10 +82,30 @@ function rowName(row: WorkerRow, sharded: boolean): string {
 }
 
 /**
+ * Each reporter's part with the worker rows of its shard. A part whose shard
+ * has no rows is left out; a run with a single reporter and a single shard of
+ * rows pairs them whatever their shard numbers say.
+ */
+export function rowsForParts(
+  parts: RunResourceTimelinePart[],
+  rows: WorkerRow[],
+): Array<{ part: RunResourceTimelinePart; first: WorkerRow; rows: WorkerRow[] }> {
+  const firstRowByShard = new Map<number | null, WorkerRow>();
+  for (const row of rows) if (!firstRowByShard.has(row.shardIndex)) firstRowByShard.set(row.shardIndex, row);
+  const out: Array<{ part: RunResourceTimelinePart; first: WorkerRow; rows: WorkerRow[] }> = [];
+  for (const part of parts) {
+    let first = firstRowByShard.get(part.shardIndex);
+    if (!first && parts.length === 1 && firstRowByShard.size === 1) first = [...firstRowByShard.values()][0];
+    if (!first) continue;
+    out.push({ part, first, rows: rows.filter((row) => row.shardIndex === first.shardIndex) });
+  }
+  return out;
+}
+
+/**
  * The bands of the run's resource tracks. `origin` is the epoch ms of the
- * timeline's zero (its first test's start); a part whose shard has no rows is
- * left out. A run with a single reporter and a single shard of rows pairs
- * them whatever their shard numbers say.
+ * timeline's zero (its first test's start); parts pair with rows as
+ * `rowsForParts` says.
  */
 export function buildResourceBands(
   parts: RunResourceTimelinePart[],
@@ -93,15 +113,8 @@ export function buildResourceBands(
   origin: number,
   sharded: boolean,
 ): ResourceBand[] {
-  const firstRowByShard = new Map<number | null, WorkerRow>();
-  for (const row of rows) if (!firstRowByShard.has(row.shardIndex)) firstRowByShard.set(row.shardIndex, row);
-
   const bands: ResourceBand[] = [];
-  for (const part of parts) {
-    let first = firstRowByShard.get(part.shardIndex);
-    if (!first && parts.length === 1 && firstRowByShard.size === 1) first = [...firstRowByShard.values()][0];
-    if (!first) continue;
-    const shardRows = rows.filter((row) => row.shardIndex === first.shardIndex);
+  for (const { part, first, rows: shardRows } of rowsForParts(parts, rows)) {
     const shift = part.timeline.startedAt - origin;
     const onClock = (points: SeriesPoint[]): SeriesPoint[] => points.map(([at, value]) => [at + shift, value]);
 
@@ -281,6 +294,8 @@ export interface WorkerStrip {
   mode: 'step' | 'line' | 'spans';
   points: SeriesPoint[];
   spans: StripSpan[];
+  /** Open pages: how many of them earlier tests left open, a step series under `points`. */
+  leftOpen: SeriesPoint[];
   /** Sampled memory: PSS, or RSS where PSS could not be read. */
   memoryKind: 'pss' | 'rss' | null;
 }
@@ -353,6 +368,8 @@ export function buildWorkerStrips(
     tests: TimelineItem[];
     costs: RunExecutionCost[];
     sharded: boolean;
+    /** Open pages: the pages left open in each row, by its first lane. */
+    leftOpen?: Map<number, SeriesPoint[]>;
   },
 ): WorkerStripSet | null {
   const strips = new Map<number, WorkerStrip>(
@@ -364,6 +381,7 @@ export function buildWorkerStrips(
         mode: kind === 'pages' ? 'step' : 'spans',
         points: [],
         spans: [],
+        leftOpen: kind === 'pages' ? (input.leftOpen?.get(row.baseLane) ?? []) : [],
         memoryKind: null,
       },
     ]),
@@ -420,7 +438,9 @@ export function spansPath(spans: StripSpan[], yMax: number, height: number): str
 export function stripReading(set: WorkerStripSet, strip: WorkerStrip, t: number): string | null {
   if (strip.mode === 'step') {
     if (strip.points.length === 0) return null;
-    return `${valueAt(strip.points, t, true) ?? 0} open`;
+    const open = valueAt(strip.points, t, true) ?? 0;
+    const left = strip.leftOpen.length > 0 ? Math.min(open, valueAt(strip.leftOpen, t, true) ?? 0) : 0;
+    return left > 0 ? `${open} open, ${left} left open by earlier tests` : `${open} open`;
   }
   if (strip.mode === 'line') {
     const value = valueAt(strip.points, t, false);
@@ -443,8 +463,11 @@ export function stripReading(set: WorkerStripSet, strip: WorkerStrip, t: number)
 export interface TimelineRowsLayout {
   /** Y of each lane's top. */
   laneTop: number[];
-  /** Per worker row, in order: its top and bottom (strip included), and the top of the band above it, if any. */
-  rows: Array<{ top: number; bottom: number; sectionTop: number; stripTop: number | null }>;
+  /**
+   * Per worker row, in order: its top and bottom (tails and strip included), the top of the band above it, if any,
+   * and the tops of its tails and strip.
+   */
+  rows: Array<{ top: number; bottom: number; sectionTop: number; tailTop: number | null; stripTop: number | null }>;
   /** Y of each band's top, by the first lane it sits above. */
   bandTop: Map<number, number>;
   /** Height of the whole content, axis included. */
@@ -453,13 +476,16 @@ export interface TimelineRowsLayout {
 
 /**
  * Stack the timeline vertically: under the axis, each band of tracks right
- * above the first row of its shard, each worker row's lanes, and with
- * `strips`, a strip under each row's lanes before the gap to the next row.
+ * above the first row of its shard, each worker row's lanes, the tails of the
+ * objects its worker kept open for nothing (`tailHeights`, by the row's first
+ * lane) right under its last bar, and with `strips`, a strip under each row
+ * before the gap to the next row.
  */
 export function layOutTimelineRows(
   rows: WorkerRow[],
   options: {
     bandHeights: Map<number, number>;
+    tailHeights?: Map<number, number>;
     strips: boolean;
     stripHeight: number;
     rowHeight: number;
@@ -467,7 +493,7 @@ export function layOutTimelineRows(
     axisHeight: number;
   },
 ): TimelineRowsLayout {
-  const { bandHeights, strips, stripHeight, rowHeight, rowGap, axisHeight } = options;
+  const { bandHeights, tailHeights, strips, stripHeight, rowHeight, rowGap, axisHeight } = options;
   const laneTop: number[] = [];
   const out: TimelineRowsLayout['rows'] = [];
   const bandTop = new Map<number, number>();
@@ -482,12 +508,18 @@ export function layOutTimelineRows(
     const top = y;
     for (let i = 0; i < row.laneSpan; i++) laneTop[row.baseLane + i] = top + i * rowHeight;
     y += row.laneSpan * rowHeight;
+    let tailTop: number | null = null;
+    const tails = tailHeights?.get(row.baseLane) ?? 0;
+    if (tails > 0) {
+      tailTop = y - rowGap + 2;
+      y += tails;
+    }
     let stripTop: number | null = null;
     if (strips) {
       stripTop = y - rowGap + 2;
       y += stripHeight;
     }
-    out.push({ top, bottom: y, sectionTop, stripTop });
+    out.push({ top, bottom: y, sectionTop, tailTop, stripTop });
   }
   return { laneTop, rows: out, bandTop, height: y };
 }

@@ -1877,6 +1877,48 @@ const RESOURCES_TIMELINE_EXECUTION = 705;
  * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
  * the readout gives their values, at `width` px in `colorScheme`.
  */
+/**
+ * The leaky run's workers timeline: under each worker's row, what it kept open
+ * for nothing (each test's login context until the worker ended, a preview
+ * popup open long after its last use), the left-open share on the open pages,
+ * and the pointer over the lingering popup's tail.
+ */
+function runTimelineLeaksScene(colorScheme, suffix) {
+  // The light one illustrates the Resource leaks page.
+  const docs = colorScheme === 'light' ? { tags: ['docs'], out: 'docs' } : {};
+  return {
+    name: `run-timeline-leaks${suffix}`,
+    description: `Run timeline of the leaky run: leak tails under each worker, the lingering popup hovered (${colorScheme})`,
+    // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
+    route: '/test-runs/62?tab=workers',
+    viewport: { width: 1400, height: 1000 },
+    colorScheme,
+    ...docs,
+    async run({ page, settle, shoot }) {
+      const tail = page.locator('[data-shot="run-timeline"] [data-span-tails-verdict="lingering"]').first();
+      await tail.waitFor({ state: 'attached', timeout: 30_000 });
+      // Scrolled into view before the pointer moves, so the capture does not move the page under it.
+      await page.locator('[data-shot="run-timeline"]').scrollIntoViewIfNeeded();
+      await settle();
+      const box = await tail.boundingBox();
+      if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const tooltip = page.getByTestId('timeline-span-tooltip');
+      await tooltip.waitFor({ timeout: 10_000 });
+      // The timeline and its tooltip, which can reach below it, clipped as they are: a capture region would
+      // move the page under the pointer.
+      const timeline = (await page.locator('[data-shot="run-timeline"]').boundingBox()) ?? undefined;
+      const tip = (await tooltip.boundingBox()) ?? undefined;
+      if (!timeline || !tip) return shoot();
+      const pad = 12;
+      const x = Math.max(0, timeline.x - pad);
+      const y = Math.max(0, timeline.y - pad);
+      const right = Math.max(timeline.x + timeline.width, tip.x + tip.width) + pad;
+      const bottom = Math.max(timeline.y + timeline.height, tip.y + tip.height) + pad;
+      await shoot(undefined, { clip: { x, y, width: right - x, height: bottom - y } });
+    },
+  };
+}
+
 function timelineResourcesScene(width, colorScheme, suffix) {
   return {
     name: `failure-timeline-resources${suffix}`,
@@ -4155,6 +4197,8 @@ const SCENES = [
       await shoot();
     },
   },
+  runTimelineLeaksScene('light', ''),
+  runTimelineLeaksScene('dark', '-dark'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),

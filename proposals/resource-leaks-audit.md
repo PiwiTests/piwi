@@ -6,10 +6,27 @@ built find what it claims, at the right line, without false alarms? And what sho
 second is one more fact per object, its **last use**: today Piwi says what was never closed, and with the last use it
 can say what stayed open longer than it was needed, and where the `close()` belongs.
 
-**Status.** Proposed 2026-11-07, against `main` at v0.67.0 (`25681ad0`) on Playwright 1.64.1. Nothing built. It builds
-on [resource-leaks.md](resource-leaks.md) (PRs 1 to 4 and part of 7 built, 5 and 6 not started) and
+**Status.** Proposed 2026-11-07, against `main` at v0.67.0 (`25681ad0`) on Playwright 1.64.1. It builds on
+[resource-leaks.md](resource-leaks.md) (PRs 1 to 4 and part of 7 built, 5 and 6 not started) and
 [resource-consumption-next.md](resource-consumption-next.md) (nothing built); where an item here sharpens one of
-theirs, it says which.
+theirs, it says which. **Built 2026-11-07**, quick wins 1, 4 and 5 and medium items 6 and 7 in part:
+
+- R1, narrowed: a fixture with a `timeout` of its own is judged as a test fixture once it opened objects in two tests
+  of one worker, its own teardown did not close them and no later test used them. Playwright's own worker fixtures (no
+  location) are never judged. The first version judged any timed fixture whose object no later test used, and flagged
+  Playwright's `browser` (`timeout: 0`) in a worker that ran one test.
+- R2 (a page from `newPage` is never a popup), R3 (pages counted through every fold, a persistent context folded into
+  itself with its browser), R5 (§5.1's connection wrapper marks pages used; the page-method wrappers remain for a
+  Playwright without it), and R6 in part (listeners on contexts and the browser).
+- §5.1's last use in every census, and its line on each leak and lingering finding: in the summary, `leakCheck: 'fail'`'s
+  error, the Resources tab (an open-in-editor link), the pull-request comment and `get_resource_profile`.
+- §5.3's **lingering** verdict, report-only, never counted by the gate.
+- §6.2's tails on the run's workers timeline: each leaked object under its worker's row from its scope's end to its
+  close or the worker's end, each lingering one from its last use to its close, the share of open pages left open on the
+  open pages track and strip, a tooltip with the object's lines, a click that opens its test, and **Show leaks**.
+
+Not built: R4, R6's per-method counts (init scripts, bindings, DevTools sessions), R7, over-scoped and churn, S1 to S9
+(filed as PiwiTests/piwi#1174 with the reporter's R1 to R4), the failure timeline's object lanes, and §6's larger items.
 
 ## 0. The findings that matter most
 

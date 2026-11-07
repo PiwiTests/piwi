@@ -116,9 +116,11 @@ running test on the Tests tab shows its worker's last cores, memory and open pag
 failure timeline's resource rows built 2026-10-26**: a failed execution's Timeline tab draws, behind a **Resources**
 switch kept per browser and off by default, the CPU and memory of the worker that ran it with its browsers and the
 pages open in that worker, sliced from the run's stored report (`shared/timeline-resources.ts`), with the pages
-earlier tests left open and its browsers' wait for a CPU. Not built: the leak tails, the pressure strip, the
-machine's CPU on the failure timeline, and the lane of the births and closes inside the test. PRs 5 and 6 are not
-started.
+earlier tests left open and its browsers' wait for a CPU. **The leak tails built 2026-11-07**, with
+[resource-leaks-audit.md](resource-leaks-audit.md): under each worker's row, each leaked object from the end of its
+scope to its close or the worker's end, and each lingering one from its last use to its close; the open pages track and
+strip draw the share left open. Not built: the pressure strip, the machine's CPU on the failure timeline, and the lane
+of the births and closes inside the test. PRs 5 and 6 are not started.
 
 **Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
 
