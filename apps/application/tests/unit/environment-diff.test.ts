@@ -190,20 +190,27 @@ describe('environment snapshots in the diff', () => {
     expect(undeclared.values['browser.timeZone']).toBe('Asia/Tokyo');
   });
 
-  test('an inferred value that differs is labeled inferred', () => {
+  test('an inferred value that differs from an observed one is labeled inferred', () => {
+    const failing = snapshot({ browser: { ...browser, timezoneId: null }, runner });
+    const baseline = snapshot({
+      browser: { ...browser, timezoneId: null },
+      runner,
+      observedBrowser: { kind: 'browser', v: 1, project: 'chromium', timeZone: 'Europe/Paris' },
+    });
+    const entry = computeEnvironmentDiff(failing, baseline).find((e) => e.key === 'browser.timeZone');
+    expect(entry).toMatchObject({ failing: 'UTC', baseline: 'Europe/Paris', failingInferred: true });
+    expect(entry?.label).toContain('inferred');
+  });
+
+  test('a runner change is not repeated as an inferred browser change', () => {
     const failing = snapshot({
       browser: { ...browser, timezoneId: null },
       runner: { ...runner, timeZone: 'Europe/Paris' },
     });
     const baseline = snapshot({ browser: { ...browser, timezoneId: null }, runner });
-    const entry = computeEnvironmentDiff(failing, baseline).find((e) => e.key === 'browser.timeZone');
-    expect(entry).toMatchObject({
-      failing: 'Europe/Paris',
-      baseline: 'UTC',
-      failingInferred: true,
-      baselineInferred: true,
-    });
-    expect(entry?.label).toContain('inferred');
+    const keys = computeEnvironmentDiff(failing, baseline).map((e) => e.key);
+    expect(keys).toContain('runner.timeZone');
+    expect(keys).not.toContain('browser.timeZone');
   });
 
   test('an observed browser value replaces the inferred one', () => {

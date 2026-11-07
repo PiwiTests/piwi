@@ -31,6 +31,7 @@ import type { DrizzleDB } from './db';
 import { topFlakeSuspect, type FlakeSuspectResult } from '../flake-lab';
 import { median } from '../utils/stats';
 import { loadRunsSnapshots } from './environment-snapshots';
+import { comparableSnapshots, runnerOfShard } from '../environment-snapshots';
 import type { WireBrowserEnvironment } from '../types';
 
 /** How far back the profile reads, in days. */
@@ -535,6 +536,7 @@ export function buildFlakeProfile(input: FlakeProfileInput): FlakeProfile {
     const values = [...new Set(recorded.failed.map(valueOf))] as string[];
     if (new Set([...values, ...recorded.passed.map(valueOf)]).size < 2) continue;
     for (const value of values.sort()) {
+      if (!factor.valid(value)) continue;
       const has = (a: FlakeProfileAttempt) => valueOf(a) === value;
       const counts = countWith(recorded, has);
       add(
@@ -631,11 +633,32 @@ function buildContext(split: Split): FlakeContextItem[] {
 const LAB_ENVIRONMENT_FACTORS: Array<{
   key: keyof FlakeAttemptEnvironment;
   noun: string;
+  /** Whether a browser can take the value: a lab condition with one it refuses would break the lab's run. */
+  valid: (value: string) => boolean;
   condition: (value: string) => FlakeCondition;
 }> = [
-  { key: 'runnerTimeZone', noun: 'time zone', condition: (timeZone) => ({ kind: 'timezone', timeZone }) },
-  { key: 'runnerLocale', noun: 'locale', condition: (locale) => ({ kind: 'locale', locale }) },
+  {
+    key: 'runnerTimeZone',
+    noun: 'time zone',
+    valid: (timeZone) => intlAccepts(() => new Intl.DateTimeFormat('en-US', { timeZone })),
+    condition: (timeZone) => ({ kind: 'timezone', timeZone }),
+  },
+  {
+    key: 'runnerLocale',
+    noun: 'locale',
+    valid: (locale) => intlAccepts(() => Intl.getCanonicalLocales(locale)),
+    condition: (locale) => ({ kind: 'locale', locale }),
+  },
 ];
+
+function intlAccepts(read: () => unknown): boolean {
+  try {
+    read();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** The environment factors no lab condition applies: context. */
 const ENVIRONMENT_FACTORS: Array<{ key: keyof FlakeAttemptEnvironment; label: (value: string) => string }> = [
@@ -685,17 +708,15 @@ async function readAttemptEnvironments(
     const attempt = attempts.get(r.id);
     if (!list || !attempt) continue;
     const shard = r.shardIndex ?? null;
-    const runners = list.filter((s) => s.kind === 'runner');
-    const runner =
-      runners.find((s) => (s.shardIndex ?? null) === shard) ?? (runners.length === 1 ? runners[0] : undefined);
+    const runner = runnerOfShard(comparableSnapshots(list), shard);
     const project = (r.browser as { projectName?: string } | null)?.projectName ?? null;
     const browser = list.find(
       (s) => s.kind === 'browser' && s.project === project && (s.shardIndex ?? null) === shard,
     ) as WireBrowserEnvironment | undefined;
     attempt.environment = {
-      runnerTimeZone: runner?.kind === 'runner' ? (runner.timeZone ?? null) : null,
-      runnerLocale: runner?.kind === 'runner' ? (runner.locale ?? null) : null,
-      runnerImage: runner?.kind === 'runner' ? (runner.ciImage ?? null) : null,
+      runnerTimeZone: runner?.timeZone ?? null,
+      runnerLocale: runner?.locale ?? null,
+      runnerImage: runner?.ciImage ?? null,
       browserVersion: browser?.browserVersion ?? null,
     };
   }

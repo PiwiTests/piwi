@@ -215,3 +215,56 @@ describe('unset variables', () => {
     expect(imported.some((d) => d.key === 'runner.tzVariable')).toBe(false);
   });
 });
+
+describe('shards and servers', async () => {
+  const { mergeServerSnapshots, runnerOfShard } = await import('#shared/environment-snapshots');
+  const { loadRunEnvironments: load, saveEnvironmentSnapshots: save } =
+    await import('#shared/handlers/environment-snapshots');
+
+  test("a shard never borrows another shard's runner", () => {
+    const one = sanitizeEnvironmentSnapshot({ ...runner, shardIndex: 1 })!;
+    expect(runnerOfShard([one], 2)).toBeNull();
+    expect(runnerOfShard([one], 1)).toBe(one);
+    const unsharded = sanitizeEnvironmentSnapshot(runner)!;
+    expect(runnerOfShard([unsharded], null)).toBe(unsharded);
+  });
+
+  test("one shard's server report never hides another's restart or clock offset", async () => {
+    const server = { kind: 'server', v: 1, origin: 'http://app' };
+    expect(
+      mergeServerSnapshots(
+        sanitizeEnvironmentSnapshot({ ...server, restarted: true, clockOffsetMs: 5000 }) as never,
+        sanitizeEnvironmentSnapshot({ ...server, restarted: false, clockOffsetMs: 10 }) as never,
+      ),
+    ).toMatchObject({ restarted: true, clockOffsetMs: 5000 });
+
+    const db = drizzle(createClient({ url: ':memory:' }), { schema });
+    await migrateToLatest(db);
+    await db.insert(schema.projects).values({ id: 1, name: 'environments' });
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date(1000) });
+    await save(db as never, 1, [{ ...server, restarted: true, clockOffsetMs: 5000 }]);
+    await save(db as never, 1, [{ ...server, restarted: false, clockOffsetMs: 10 }]);
+    expect((await load(db as never, 1)).server[0]).toMatchObject({ restarted: true, clockOffsetMs: 5000 });
+  });
+
+  test('an imported runner is no change against a recorded one', () => {
+    const imported = sanitizeEnvironmentSnapshot({
+      kind: 'runner',
+      v: 1,
+      os: 'ubuntu 24.04',
+      nodeVersion: 'v24.3',
+      imported: true,
+    })!;
+    const recorded = sanitizeEnvironmentSnapshot({
+      ...runner,
+      os: 'linux 6.8 · Ubuntu 24.04.1 LTS',
+      nodeVersion: 'v24.3.0',
+    })!;
+    expect(
+      computeMetadataDiff(null, null, null, null, {
+        before: { snapshots: [imported] },
+        after: { snapshots: [recorded] },
+      }),
+    ).toEqual([]);
+  });
+});

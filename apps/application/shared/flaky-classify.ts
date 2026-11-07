@@ -24,8 +24,8 @@ interface ClassifyInput {
   /** Per browser (Playwright project), how many of the recent attempts passed and failed. */
   browserDistribution: Record<string, BrowserOutcomes>;
   /**
-   * Per runner field the run recorded (time zone, locale, CI image), the recent attempts' outcomes by its value:
-   * one value that fails repeatedly while another passes cleanly is an environment cause too.
+   * Per runner field the run recorded (time zone, locale), the recent attempts' outcomes by its value: one value
+   * that fails repeatedly while another passes cleanly is an environment cause, when no timing or network sign is.
    */
   runnerDistributions?: Array<Record<string, BrowserOutcomes>>;
   /**
@@ -117,9 +117,9 @@ export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
 
   if (allTexts.length === 0) return 'other';
 
-  // Environment: one browser, or one runner time zone, locale or image, fails
-  // repeatedly, while another ran and passed repeatedly without failing once.
-  if ([input.browserDistribution, ...(input.runnerDistributions ?? [])].some(separatesOutcomes)) return 'environment';
+  // Environment: one browser fails repeatedly, while another browser ran and
+  // passed repeatedly without failing once.
+  if (separatesOutcomes(input.browserDistribution)) return 'environment';
 
   const timingCount = countKeywordMatches(allTexts, TIMING_KEYWORDS);
   const networkCount =
@@ -139,6 +139,12 @@ export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
   ];
 
   scores.sort((a, b) => b.score - a.score);
+
+  // One runner time zone or locale fails repeatedly while another passes cleanly: an environment cause, unless the
+  // failures read as timing or network, which a runner's settings do not explain.
+  if (timingCount === 0 && networkCount === 0 && (input.runnerDistributions ?? []).some(separatesOutcomes)) {
+    return 'environment';
+  }
 
   if (scores[0]!.score > 0) return scores[0]!.category;
   return 'other';

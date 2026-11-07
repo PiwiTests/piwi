@@ -314,11 +314,11 @@ export function computeEnvironmentDiff(
       ...(pInferred ? { baselineInferred: true } : {}),
     });
   }
-  // An inferred browser value whose declared value changed too says the same thing twice.
+  // An inferred browser value whose declared or runner value changed too says the same thing twice.
   const changed = new Set(entries.map((e) => e.key));
   return entries.filter((e) => {
     if (!e.failingInferred && !e.baselineInferred) return true;
     const rule = INFERABLE_BROWSER_KEYS.find((r) => r.key === e.key);
-    return !rule || !changed.has(rule.declared);
+    return !rule || (!changed.has(rule.declared) && !changed.has(rule.runner));
   });
 }

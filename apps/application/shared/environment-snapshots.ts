@@ -15,6 +15,9 @@ import {
 
 export { ENVIRONMENT_SNAPSHOTS_MAX };
 
+/** The most snapshot rows a run keeps, its shards together: a new scope past it is dropped. */
+export const RUN_ENVIRONMENT_ROWS_MAX = 512;
+
 /** The server's clock offset from the runner's above which the run page warns. */
 export const CLOCK_OFFSET_WARN_MS = 2000;
 
@@ -181,6 +184,28 @@ export function environmentValue(snapshot: WireEnvironmentSnapshot | null | unde
   return String(value);
 }
 
+/**
+ * The runner of one shard among a run's snapshots: the shard's own, else, for an execution with no shard, the run's
+ * single runner. Never another shard's.
+ */
+export function runnerOfShard(
+  snapshots: readonly WireEnvironmentSnapshot[],
+  shardIndex: number | null | undefined,
+): WireRunnerEnvironment | null {
+  const runners = snapshots.filter((s): s is WireRunnerEnvironment => s.kind === 'runner');
+  const own = runners.find((s) => (s.shardIndex ?? null) === (shardIndex ?? null));
+  if (own) return own;
+  return shardIndex == null && runners.length === 1 ? runners[0]! : null;
+}
+
+/**
+ * The snapshots a comparison reads: an imported runner is left out, its fields read from another source (a blob
+ * report's user agent) in another format.
+ */
+export function comparableSnapshots(snapshots: readonly WireEnvironmentSnapshot[]): WireEnvironmentSnapshot[] {
+  return snapshots.filter((s) => !(s.kind === 'runner' && s.imported));
+}
+
 /** A run's snapshots grouped by kind, each kind in scope order. */
 export interface RunEnvironments {
   runner: WireRunnerEnvironment[];
@@ -219,6 +244,24 @@ export function withoutPrivateFields(environments: RunEnvironments): RunEnvironm
     runner: environments.runner.map(strip),
     browser: environments.browser.map(strip),
     server: environments.server.map(strip),
+  };
+}
+
+/**
+ * A server snapshot delivered for an origin another shard already reported: the newer one, keeping a restart either
+ * saw and the clock offset furthest from zero, so one shard's report never hides another's warning.
+ */
+export function mergeServerSnapshots(
+  stored: WireServerEnvironment,
+  delivered: WireServerEnvironment,
+): WireServerEnvironment {
+  const offset = (s: WireServerEnvironment) => (s.clockOffsetMs == null ? -1 : Math.abs(s.clockOffsetMs));
+  const clock = offset(stored) > offset(delivered) ? stored : delivered;
+  return {
+    ...delivered,
+    restarted: stored.restarted || delivered.restarted ? true : (delivered.restarted ?? stored.restarted ?? null),
+    clockOffsetMs: clock.clockOffsetMs ?? null,
+    clockOffsetErrorMs: clock.clockOffsetErrorMs ?? null,
   };
 }
 

@@ -23,6 +23,13 @@ describe('Flaky root cause classification', () => {
         runnerDistributions: [{ UTC: { passed: 10, failed: 12 }, 'Europe/Paris': { passed: 20, failed: 1 } }],
       }),
     ).toBe('assertion');
+    expect(
+      classifyFlakyRootCause({
+        ...base,
+        errorMessages: ['TimeoutError: locator.click: Timeout 30000ms exceeded'],
+        runnerDistributions: [{ UTC: { passed: 0, failed: 12 }, 'Europe/Paris': { passed: 30, failed: 0 } }],
+      }),
+    ).toBe('timing');
   });
 
   test('classifies timing errors', async () => {

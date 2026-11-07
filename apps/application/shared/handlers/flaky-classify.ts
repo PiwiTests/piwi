@@ -12,6 +12,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
 import { loadRunsSnapshots } from './environment-snapshots';
+import { runnerOfShard } from '../environment-snapshots';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
 import { notLabRun } from './probes';
@@ -174,7 +175,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
 }
 
 /** The runner fields an environment cause is read from. */
-const RUNNER_CAUSE_FIELDS = ['timeZone', 'locale', 'ciImage'] as const;
+const RUNNER_CAUSE_FIELDS = ['timeZone', 'locale'] as const;
 
 /** Per runner field, the attempts' outcomes by the value their shard's runner recorded; attempts without one are left out. */
 async function runnerOutcomes(
@@ -185,10 +186,8 @@ async function runnerOutcomes(
   const distributions = RUNNER_CAUSE_FIELDS.map(() => ({}) as Record<string, BrowserOutcomes>);
   for (const row of rows) {
     const runners = (snapshots.get(row.runId) ?? []).filter((s) => s.kind === 'runner');
-    const runner =
-      runners.find((s) => (s.shardIndex ?? null) === (row.shardIndex ?? null)) ??
-      (runners.length === 1 ? runners[0] : undefined);
-    if (!runner || runner.kind !== 'runner') continue;
+    const runner = runnerOfShard(runners, row.shardIndex);
+    if (!runner || runner.imported) continue;
     RUNNER_CAUSE_FIELDS.forEach((field, i) => {
       const value = runner[field];
       if (!value) return;

@@ -697,7 +697,7 @@ export function parsePausedMs(value: unknown): number | null {
 /** The longest string a snapshot field keeps; a longer one is cut. */
 export const ENVIRONMENT_STRING_MAX = 200;
 
-/** The most environment snapshots a run stores. */
+/** The most environment snapshots one delivery carries: one shard's runner, its browsers and the servers it read. */
 export const ENVIRONMENT_SNAPSHOTS_MAX = 64;
 
 /** The path an instrumented server answers its environment on, beside `/__piwi/manifest`. */

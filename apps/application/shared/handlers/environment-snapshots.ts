@@ -2,8 +2,9 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { testRunEnvironmentSnapshots } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import {
-  ENVIRONMENT_SNAPSHOTS_MAX,
+  RUN_ENVIRONMENT_ROWS_MAX,
   environmentDigest,
+  mergeServerSnapshots,
   environmentScope,
   groupEnvironments,
   sanitizeEnvironmentSnapshot,
@@ -20,23 +21,36 @@ import type { EnvironmentKind, WireEnvironmentSnapshot } from '#shared/types';
 
 /**
  * Store the delivered snapshots of a run: each read field by field (`sanitizeEnvironmentSnapshots`), its digest
- * computed, the row of its kind and scope replaced. A run keeps at most `ENVIRONMENT_SNAPSHOTS_MAX` rows: a new scope
+ * computed, the row of its kind and scope replaced. A run keeps at most `RUN_ENVIRONMENT_ROWS_MAX` rows: a new scope
  * past that is dropped. Never throws for a malformed body.
  */
 export async function saveEnvironmentSnapshots(db: DrizzleDB, runId: number, delivered: unknown): Promise<void> {
   const snapshots = sanitizeEnvironmentSnapshots(delivered);
   if (snapshots.length === 0) return;
   const existing = await db
-    .select({ kind: testRunEnvironmentSnapshots.kind, scope: testRunEnvironmentSnapshots.scope })
+    .select({
+      kind: testRunEnvironmentSnapshots.kind,
+      scope: testRunEnvironmentSnapshots.scope,
+      snapshot: testRunEnvironmentSnapshots.snapshot,
+    })
     .from(testRunEnvironmentSnapshots)
     .where(eq(testRunEnvironmentSnapshots.runId, runId));
   const known = new Set(existing.map((row) => `${row.kind}\u0000${row.scope}`));
+  const storedServers = new Map(
+    existing
+      .filter((row) => row.kind === 'server')
+      .map((row) => [row.scope, sanitizeEnvironmentSnapshot(row.snapshot)]),
+  );
   const now = new Date();
-  for (const snapshot of snapshots) {
-    const scope = environmentScope(snapshot);
+  for (const delivered of snapshots) {
+    const scope = environmentScope(delivered);
+    // Every shard reads the same servers: a restart or a clock offset one of them saw stays.
+    const stored = delivered.kind === 'server' ? storedServers.get(scope) : null;
+    const snapshot =
+      stored?.kind === 'server' && delivered.kind === 'server' ? mergeServerSnapshots(stored, delivered) : delivered;
     const key = `${snapshot.kind}\u0000${scope}`;
     if (!known.has(key)) {
-      if (known.size >= ENVIRONMENT_SNAPSHOTS_MAX) continue;
+      if (known.size >= RUN_ENVIRONMENT_ROWS_MAX) continue;
       known.add(key);
     }
     const digest = environmentDigest(snapshot);
@@ -61,7 +75,7 @@ export async function loadRunSnapshots(db: DrizzleDB, runId: number): Promise<Wi
     .from(testRunEnvironmentSnapshots)
     .where(eq(testRunEnvironmentSnapshots.runId, runId))
     .orderBy(asc(testRunEnvironmentSnapshots.kind), asc(testRunEnvironmentSnapshots.scope))
-    .limit(ENVIRONMENT_SNAPSHOTS_MAX);
+    .limit(RUN_ENVIRONMENT_ROWS_MAX);
   return rows.map((row) => sanitizeEnvironmentSnapshot(row.snapshot)).filter((s): s is WireEnvironmentSnapshot => !!s);
 }
 

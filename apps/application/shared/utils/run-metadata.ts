@@ -10,6 +10,7 @@ import {
   BROWSER_FIELDS,
   RUNNER_FIELDS,
   SERVER_FIELDS,
+  comparableSnapshots,
   environmentValue,
   type EnvironmentField,
 } from '#shared/environment-snapshots';
@@ -44,12 +45,15 @@ function combinedValue(snapshots: readonly WireEnvironmentSnapshot[], key: strin
 
 /**
  * The compared fields of the runner, each browser (by project) and each server (by origin) that changed between two
- * runs. A field one run did not record is not a change; informational fields are left out.
+ * runs. A field one run did not record is not a change, nor is an imported runner's; informational fields are left
+ * out.
  */
 export function computeSnapshotDiff(
   before: readonly WireEnvironmentSnapshot[],
   after: readonly WireEnvironmentSnapshot[],
 ): MetaDiffEntry[] {
+  before = comparableSnapshots(before);
+  after = comparableSnapshots(after);
   const diff: MetaDiffEntry[] = [];
   const push = (
     group: EnvironmentGroup,

@@ -10,7 +10,7 @@ import { and, eq, desc } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
 import { buildEnvironmentSnapshot, computeEnvironmentDiff, type EnvironmentDiffEntry } from '#shared/environment-diff';
 import { loadRunsSnapshots } from '#shared/handlers/environment-snapshots';
-import { CLOCK_OFFSET_WARN_MS } from '#shared/environment-snapshots';
+import { CLOCK_OFFSET_WARN_MS, comparableSnapshots, runnerOfShard } from '#shared/environment-snapshots';
 import type { WireEnvironmentSnapshot, WireServerEnvironment } from '#shared/types';
 import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
 import { resolveRunBranch } from './run-branch';
@@ -89,8 +89,7 @@ function scopeOf(row: ExecutionEnvironmentRow) {
 function executionSnapshots(row: ExecutionEnvironmentRow, snapshots: readonly WireEnvironmentSnapshot[]) {
   const shard = row.shardIndex ?? null;
   const project = (row.browser as BrowserConfig | null)?.projectName ?? null;
-  const runners = snapshots.filter((s) => s.kind === 'runner');
-  const runner = runners.find((s) => (s.shardIndex ?? null) === shard) ?? (runners.length === 1 ? runners[0] : null);
+  const runner = runnerOfShard(comparableSnapshots(snapshots), shard);
   const browsers = snapshots.filter((s) => s.kind === 'browser');
   const browser =
     browsers.find((s) => s.project === project && (s.shardIndex ?? null) === shard) ??
