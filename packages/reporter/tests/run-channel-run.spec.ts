@@ -432,7 +432,9 @@ const where = (stop: Stopped) => [stop.reason, stop.place.line, stop.bar];
 
 describe('a run steered over the run channel', () => {
   it('passes every test, a stop longer than the test timeout and a connection closed under a stop included', () => {
-    expect(exitCode, output).toBe(0);
+    // The run's output, and each test's status and errors, which its output leaves out.
+    const outcomes = JSON.stringify(tests.map((t) => [t.title, t.status, t.errors]));
+    expect(exitCode, `${output}\n${outcomes}`).toBe(0);
     expect(tests.map((t) => [t.title, t.project, t.status])).toEqual([
       ['steered', 'headed', 'passed'],
       ['bar first', 'headed', 'passed'],

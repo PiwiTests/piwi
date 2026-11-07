@@ -43,6 +43,11 @@ const HOLD_MS = 2500;
 const TEST_TIMEOUT_MS = 1500;
 /** How long the editor watches an animated page, to count its frames. */
 const WATCH_MS = 1500;
+/**
+ * The longest the editor watches a stop for the frames it waits for: a view whose every frame is a screenshot between
+ * two reads (before Playwright 1.61) sends them slowly on a busy runner.
+ */
+const FRAMES_WAIT_MS = 15_000;
 const requireHere = createRequire(import.meta.url);
 /** Playwright's own JPEG decoder, for the pixels of an image the view sent. */
 const jpeg = (
@@ -407,10 +412,14 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
   const answers = (said[test] ??= []);
   const view = (on: boolean) => ask(connection, { what: 'view', stop: stop.stop, on });
   const play = (events: ViewInput[]) => ask(connection, { what: 'input', stop: stop.stop, events });
-  const watch = async (ms: number) => {
+  /** Watch the stop `ms` at least, and until `least` frames came, `FRAMES_WAIT_MS` at most. */
+  const watch = async (ms: number, least: number) => {
     const before = frames(connection, stop.stop).length;
     const start = Date.now();
     await sleep(ms);
+    while (frames(connection, stop.stop).length - before < least && Date.now() - start < FRAMES_WAIT_MS) {
+      await sleep(20);
+    }
     const seen = frames(connection, stop.stop).slice(before);
     const first = frames(connection, stop.stop)[0]?.message.data;
     const last = seen[seen.length - 1]?.message.data;
@@ -438,7 +447,7 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         const again = await waitFor(() => frames(connection, stop.stop)[seen.length], 3000);
         resent.push(again.message.data === seen[seen.length - 1]!.message.data);
       }
-      if (test === 'watched in Firefox') await watch(WATCH_MS);
+      if (test === 'watched in Firefox') await watch(WATCH_MS, 2);
       if (test === 'watched at a headed stop') {
         headed.bar = await waitFor(() => where?.bar ?? undefined);
         // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, the
@@ -525,12 +534,12 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       await waitFor(() => where && !where.recorder);
     } else if (test === 'held past its timeout while watched') {
       answers.push(await view(true));
-      await watch(HOLD_MS);
+      await watch(HOLD_MS, 2);
       answers.push(await view(false));
     } else if (test === 'watched with a secret field') {
       images[test] = (await ask(connection, { what: 'image' })) as unknown as { data: string } | null;
       answers.push(await view(true));
-      await watch(800);
+      await watch(800, 1);
       answers.push(await view(false));
     } else if (test === 'picked on a sharper image') {
       // The point goes in CSS pixels of the page, as the image's viewport names them, whatever the image's size.
@@ -551,20 +560,20 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       };
       answers.push(await ask(connection, { what: 'pick-at', stop: stop.stop, ...sharp.sent }));
       answers.push(await view(true));
-      await watch(300);
+      await watch(300, 1);
     } else if (test === 'recorded on video while watched') {
       answers.push(await view(true));
-      await watch(WATCH_MS);
+      await watch(WATCH_MS, 2);
     } else if (test === 'watched on a page too heavy for its frames') {
       answers.push(await view(true));
       await waitFor(() => frames(connection, stop.stop).length > 0, 5000);
-      await watch(500);
+      await watch(500, 0);
     } else if (test === 'watched on a page too heavy for a lighter image') {
       answers.push(await view(true));
       await waitFor(() => refusals(connection, stop.stop).length > 0, 5000);
       // The page paints again: it is said once.
       answers.push(await play([{ type: 'mouse', action: 'move', x: 600, y: 300 }]));
-      await watch(1000);
+      await watch(1000, 0);
       heavy.refusals = refusals(connection, stop.stop).map((m) => m.refused);
     }
   } catch (error) {
@@ -787,7 +796,9 @@ function pickSent(title: string) {
 
 describe('the live view of a stopped page', () => {
   it('lets every test pass, and says it takes the view, its input and a pick on the image as it attaches', () => {
-    expect(exitCode, output).toBe(0);
+    // The run's output, and each test's status and errors, which its output leaves out.
+    const outcomes = JSON.stringify(tests.map((t) => [t.title, t.status, t.errors]));
+    expect(exitCode, `${output}\n${outcomes}`).toBe(0);
     expect(tests.map((t) => [t.title, t.status, t.errors])).toEqual([
       ['clicked through the view', 'passed', []],
       ['picked through the view', 'passed', []],
