@@ -723,21 +723,21 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
-    spawn_tests(&app, &folder, &cli, args, origin, |_| {}).await
+    spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await
 }
 
 /// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
 /// `folder` with the bundled Node sidecar, `envs` beside the run's own (the
 /// hub's, the colors, the folder's `PATH`), and stream its output as
 /// `piwi:local-run` events. `on_exit` hears its exit code once it ends, before
-/// the window does. Returns the run id.
+/// the window does, and whether a stop was asked for it. Returns the run id.
 pub(crate) async fn spawn_tests(
     app: &AppHandle,
     folder: &Path,
     cli: &Path,
     args: Vec<String>,
     envs: Vec<(&'static str, String)>,
-    on_exit: impl FnOnce(Option<i32>) + Send + 'static,
+    on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
 ) -> Result<u32, String> {
     let attended = crate::hub_env::attended_args(&args);
     let mut cmd_args: Vec<String> = vec![node_path(cli), "test".into()];
@@ -779,11 +779,13 @@ pub(crate) async fn spawn_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
+                    let mut stopped = false;
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                        stopped = runs.stopping.lock().unwrap().contains(&id);
                         runs.drop_child(id);
                     }
                     if let Some(on_exit) = on_exit.take() {
-                        on_exit(status.code);
+                        on_exit(status.code, stopped);
                     }
                     RunEventPayload::exit(id, status.code)
                 }

@@ -37,7 +37,15 @@ pub struct KeptKey(Mutex<Option<(String, String)>>);
 
 /// The run each requested run started, by request id, for a stop from the dashboard.
 #[derive(Default)]
-pub struct RequestedRuns(Mutex<HashMap<String, u32>>);
+pub struct RequestedRuns(Mutex<HashMap<String, RequestedRun>>);
+
+/// A requested run the shell is starting or running: its run id once spawned,
+/// and whether the dashboard stopped it before then.
+#[derive(Default)]
+pub struct RequestedRun {
+    run: Option<u32>,
+    stop: bool,
+}
 
 /// A request id: 32 lowercase hex digits, as `@piwitests/core/run-request` writes it.
 pub(crate) fn valid_request_id(id: &str) -> bool {
@@ -224,7 +232,7 @@ fn hand_links(app: &AppHandle, instance: &str) -> Result<(), String> {
 pub async fn desktop_keep_run_target_key(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let server = server_info(&app).ok_or("the local server is not running")?;
-        let answer = local_call(&server, "GET", "/api/desktop/run-target/key", None)?;
+        let answer = local_call(&server, "POST", "/api/desktop/run-target/key", None)?;
         let instance = answer.get("instance").and_then(|v| v.as_str()).unwrap_or_default();
         let key = answer.get("key").and_then(|v| v.as_str()).unwrap_or_default();
         if !valid_instance(instance) || !key.starts_with("pd_") {
@@ -379,11 +387,21 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let launch = tauri::async_runtime::spawn_blocking(move || launch_of(&launch_server, &asked))
         .await
         .map_err(|e| e.to_string())??;
+    // Held from now on, so a stop that arrives while the run starts is kept for it.
+    if let Some(runs) = app.try_state::<RequestedRuns>() {
+        runs.0.lock().unwrap().insert(request_id.clone(), RequestedRun::default());
+    }
+    let forget = |app: &AppHandle, request_id: &str| {
+        if let Some(runs) = app.try_state::<RequestedRuns>() {
+            runs.0.lock().unwrap().remove(request_id);
+        }
+    };
 
     let prepared = prepare(&app, &launch);
     let (folder, cli, dir, token_file) = match prepared {
         Ok(prepared) => prepared,
         Err(e) => {
+            forget(&app, &request_id);
             tell_started(&server, &request_id, Some(&e));
             return Err(e);
         }
@@ -397,7 +415,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
-    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code| {
+    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         if let Some(runs) = ended_app.try_state::<RequestedRuns>() {
             runs.0.lock().unwrap().remove(&ended_request);
@@ -409,7 +427,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                     &server,
                     "POST",
                     &format!("/api/desktop/run-target/requests/{ended_request}/ended"),
-                    Some(&json!({ "code": code })),
+                    Some(&json!({ "code": code, "stopped": stopped })),
                 );
             }
         });
@@ -417,13 +435,28 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     .await;
     match spawned {
         Ok(id) => {
-            if let Some(runs) = app.try_state::<RequestedRuns>() {
-                runs.0.lock().unwrap().insert(request_id.clone(), id);
+            let stop_now = app.try_state::<RequestedRuns>().is_some_and(|runs| {
+                let mut runs = runs.0.lock().unwrap();
+                match runs.get_mut(&request_id) {
+                    Some(held) => {
+                        held.run = Some(id);
+                        held.stop
+                    }
+                    // It already ended.
+                    None => false,
+                }
+            });
+            if stop_now {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::runner::desktop_stop_local_tests(app, id).await;
+                });
             }
             std::thread::spawn(move || tell_started(&server, &request_id, None));
             Ok(id)
         }
         Err(e) => {
+            forget(&app, &request_id);
             let _ = std::fs::remove_dir_all(&dir);
             tell_started(&server, &request_id, Some(&e));
             Err(e)
@@ -460,9 +493,13 @@ pub(crate) fn stop_requested_run(app: &AppHandle, request_id: &str) {
     if !valid_request_id(request_id) {
         return;
     }
-    let run = app
-        .try_state::<RequestedRuns>()
-        .and_then(|runs| runs.0.lock().unwrap().get(request_id).copied());
+    let run = app.try_state::<RequestedRuns>().and_then(|runs| {
+        let mut runs = runs.0.lock().unwrap();
+        let held = runs.get_mut(request_id)?;
+        // Still starting: the run is stopped as soon as it has an id.
+        held.stop = true;
+        held.run
+    });
     if let Some(run_id) = run {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
