@@ -40,16 +40,16 @@ export interface LifecycleCall {
   kind: 'browser' | 'context' | 'page';
   /** The line of the call, `file:line`, relative, POSIX separators. */
   site: string | null;
-  /** Made in a `beforeAll` or `afterAll` hook: the describe block holds what it opens. */
+  /** Made in a `beforeAll` or `afterAll` hook, which holds what it opens past the test. */
   block: boolean;
   /**
-   * Made by a fixture, which closes what it opens: such an open is never a
-   * finding, but a close the test makes may be for it.
+   * Made by a fixture: what it opens is never a finding, and is closed by the
+   * end of its attempt, by its teardown or by the test.
    */
   fixture: boolean;
   /** The name the call was made on, from its line: `browser` in `browser.newPage()`, `ctx` in `ctx.close()`. */
   on: string | null;
-  /** An open's name: what it was assigned to (`ctx` in `const ctx = await …`), or its fixture's. */
+  /** The fixture that made the call; else an open's name, what it was assigned to: `ctx` in `const ctx = await …`. */
   name: string | null;
 }
 
@@ -150,9 +150,9 @@ function fixtureName(step: TestStep): string {
 
 /**
  * The browsers, contexts and pages an attempt opened and closed, in order,
- * from its `pw:api` steps: a fixture's opens marked as such, its closes left
- * out, a failed call left out. `source` reads the lines the steps point at, for
- * the names each call gives (`namesAt`) and the kind of a hook given a title.
+ * from its `pw:api` steps, a failed call left out. `source` reads the lines the
+ * steps point at, for the names each call gives (`namesAt`) and the kind of a
+ * hook given a title.
  */
 export function tallyLifecycleSteps(
   attempt: Omit<LifecycleTally, 'calls'>,
@@ -160,6 +160,8 @@ export function tallyLifecycleSteps(
   source: SourceLines,
 ): LifecycleTally {
   const calls: LifecycleCall[] = [];
+  // Calls under one `await` share a location: the nth step there is the nth call on it.
+  const seen = new Map<string, number>();
   const walk = (list: TestStep[], block: boolean, fixture: string | null) => {
     for (const step of list) {
       // A hook has a location; `Before Hooks` and `After Hooks`, which hold them, have none.
@@ -169,13 +171,17 @@ export function tallyLifecycleSteps(
       }
       const opened = OPEN_STEPS[step.title];
       const closed = CLOSE_STEPS[step.title];
-      // A fixture's teardown closes what it opened.
-      if (step.category === 'pw:api' && !step.error && (opened || (closed && fixture === null))) {
-        const site = step.location ? `${relativeFile(step.location.file)}:${step.location.line}` : null;
-        const names = namesAt(step, source, opened?.method ?? 'close');
+      if (step.category === 'pw:api' && !step.error && (opened || closed)) {
+        const { location } = step;
+        const site = location ? `${relativeFile(location.file)}:${location.line}` : null;
+        const method = opened?.method ?? 'close';
+        const key = location ? `${location.file}:${location.line}:${location.column}:${method}` : '';
+        const nth = seen.get(key) ?? 0;
+        seen.set(key, nth + 1);
+        const names = namesAt(step, source, method, nth);
         const call = { site, block, fixture: fixture !== null, on: names.on };
         if (opened) calls.push({ op: 'open', kind: opened.kind, ...call, name: fixture ?? names.name });
-        else calls.push({ op: 'close', kind: closed!, ...call, name: null });
+        else calls.push({ op: 'close', kind: closed!, ...call, name: fixture });
       }
       walk(step.steps ?? [], block, step.category === 'fixture' ? fixtureName(step) : fixture);
     }
@@ -198,12 +204,17 @@ function blockHook(step: TestStep, source: SourceLines): boolean {
 
 /**
  * The names a call's line gives it: the name right before `.method(` (or `?.`,
- * `!.`), the first call of that method at or after the step's column, which
- * Playwright puts at the method or at the `await` before it; and the name that
- * call is assigned to. A chain broken across lines is read with the two lines
- * above.
+ * `!.`), in the `nth` call of that method at or after the step's column, which
+ * Playwright puts at the method or at the `await` before it, counted around
+ * again for a call a loop repeats; and the name that call is assigned to. A
+ * chain broken across lines is read with the two lines above.
  */
-function namesAt(step: TestStep, source: SourceLines, method: string): { on: string | null; name: string | null } {
+function namesAt(
+  step: TestStep,
+  source: SourceLines,
+  method: string,
+  nth: number,
+): { on: string | null; name: string | null } {
   const location = step.location;
   const lines = location ? source(location.file) : null;
   const line = location ? lines?.[location.line - 1] : undefined;
@@ -211,8 +222,10 @@ function namesAt(step: TestStep, source: SourceLines, method: string): { on: str
   const text = [...lines.slice(Math.max(0, location.line - 3), location.line - 1), line].join('\n');
   const column = text.length - line.length + location.column - 1;
   const calls = new RegExp(`([\\w$]+)\\s*[!?]?\\.\\s*${method}\\s*\\(`, 'g');
-  for (const match of text.matchAll(calls)) {
-    if (match.index + match[0].lastIndexOf(method) < column) continue;
+  const after = [...text.matchAll(calls)].filter((match) => match.index + match[0].lastIndexOf(method) >= column);
+  // A loop comes back to the same calls.
+  const match = after[nth % Math.max(1, after.length)];
+  if (match) {
     const assigned = /([\w$]+)\s*(?::[\w$.<>[\]|& \t]*)?=\s*(?:await\s+)?(?:[\w$]+\s*[!?]?\.\s*)*$/.exec(
       text.slice(0, match.index),
     );
@@ -681,8 +694,9 @@ interface StepOpen {
 
 /**
  * Whether a page opened on `on` has a context of its own: `on` is a browser,
- * by the open that gave it its name in this scope or the describe block's, else
- * by the name itself (`browser`, `adminBrowser`, not `browserContext`).
+ * by the open that gave it its name in this test or the file's `beforeAll` and
+ * `afterAll` hooks, else by the name itself (`browser`, `adminBrowser`, not
+ * `browserContext`).
  */
 function ownsContext(on: string | null, boundTo: (name: string) => LifecycleCall['kind'] | undefined): boolean {
   if (!on) return false;
@@ -693,20 +707,53 @@ function ownsContext(on: string | null, boundTo: (name: string) => LifecycleCall
 /**
  * The opens no close was paired with, in one worker's attempts of one spec
  * file, in the order they ran. A scope is an attempt with its `beforeEach` and
- * `afterEach` hooks, or the file's `beforeAll` and `afterAll` hooks. A close
- * reaches its scope, then the describe block's, then any earlier scope, which
- * handed the object on; a test's `Close browser` stops at the describe block,
- * since a repeated `browser.close()` is a step again. In what it reaches, it
- * is paired with the latest open of the name it was called on, else the latest
- * of its kind in the nearest scope, a counted one first. A `Close browser`
- * also closes the contexts and pages opened on its browser's name since, or
- * with no names to tell, those its browser's scope opened since.
+ * `afterEach` hooks, or the file's `beforeAll` and `afterAll` hooks.
+ *
+ * A test's close looks in its scope, then the `beforeAll` and `afterAll`
+ * hooks', then the earlier attempts', which can only have handed it a counted
+ * object. In each, it takes the latest open of the name it was called on, else
+ * one with no name, a counted open first; failing those, any open of its scope.
+ * A fixture's close takes what the fixture opened, else what its attempt opened
+ * through it. A `Close browser` also closes the contexts and pages opened on its
+ * browser's name since, and a `Close context` the pages of its context; with no
+ * names to tell, those its scope opened since. What a fixture opened is closed
+ * by the end of its attempt.
  */
 function unpairedOpens(attempts: LifecycleTally[]): StepOpen[] {
   const opens: StepOpen[] = [];
   const latest = (test: (open: StepOpen) => boolean): StepOpen | undefined => {
     for (let i = opens.length - 1; i >= 0; i--) if (test(opens[i]!)) return opens[i];
     return undefined;
+  };
+  const pair = (call: LifecycleCall, scope: string): StepOpen | undefined => {
+    const kinds: string[] = call.kind === 'browser' ? ['browser'] : ['context', 'page'];
+    const free = (open: StepOpen) => !open.closed && kinds.includes(open.call.kind);
+    if (call.fixture) {
+      return (
+        latest((o) => free(o) && o.call.fixture && o.call.name === call.name) ??
+        latest((o) => free(o) && o.scope === scope && o.counted)
+      );
+    }
+    const ranks: Array<(open: StepOpen) => boolean> = call.on
+      ? [
+          (o) => o.call.name === call.on && o.counted,
+          (o) => o.call.name === call.on,
+          (o) => o.call.name === null && o.counted,
+          (o) => o.call.name === null,
+        ]
+      : [(o) => o.counted, () => true];
+    const levels = [
+      (o: StepOpen) => o.scope === scope,
+      (o: StepOpen) => o.scope === 'block',
+      (o: StepOpen) => o.counted,
+    ];
+    for (const level of levels) {
+      for (const rank of ranks) {
+        const open = latest((o) => free(o) && level(o) && rank(o));
+        if (open) return open;
+      }
+    }
+    return latest((o) => free(o) && o.scope === scope && o.counted) ?? latest((o) => free(o) && o.scope === scope);
   };
   attempts.forEach((tally, index) => {
     const own = `attempt ${index}`;
@@ -719,25 +766,18 @@ function unpairedOpens(attempts: LifecycleTally[]): StepOpen[] {
         opens.push({ call, tally, scope, counted, closed: false });
         continue;
       }
-      const kinds: string[] = call.kind === 'browser' ? ['browser'] : ['context', 'page'];
-      const nearest = call.kind === 'browser' && !call.block ? 2 : 3;
-      const levels = [(o: StepOpen) => o.scope === scope, (o: StepOpen) => o.scope === 'block', () => true];
-      const free = (o: StepOpen) =>
-        !o.closed && kinds.includes(o.call.kind) && levels.slice(0, nearest).some((l) => l(o));
-      let open = call.on ? latest((o) => free(o) && o.call.name === call.on) : undefined;
-      for (const level of levels.slice(0, nearest)) {
-        open ??= latest((o) => free(o) && level(o) && o.counted) ?? latest((o) => free(o) && level(o));
-      }
+      const open = pair(call, scope);
       if (!open) continue;
       open.closed = true;
-      if (call.kind !== 'browser') continue;
-      const browser = open;
-      for (const later of opens.slice(opens.indexOf(browser) + 1)) {
-        if (later.call.kind === 'browser') continue;
-        const named = browser.call.name !== null && later.call.on !== null;
-        if (named ? later.call.on === browser.call.name : later.scope === browser.scope) later.closed = true;
+      // What was opened in it: a browser's contexts and pages, a context's pages.
+      const inside = open.call.kind === 'browser' ? ['context', 'page'] : open.call.kind === 'context' ? ['page'] : [];
+      for (const later of opens.slice(opens.indexOf(open) + 1)) {
+        if (!inside.includes(later.call.kind) || (open.call.kind === 'context' && later.counted)) continue;
+        const named = open.call.name !== null && later.call.on !== null;
+        if (named ? later.call.on === open.call.name : later.scope === open.scope) later.closed = true;
       }
     }
+    for (const open of opens) if (open.tally === tally && open.call.fixture) open.closed = true;
   });
   return opens.filter((open) => !open.closed && open.counted);
 }
@@ -905,7 +945,7 @@ export function formatResourceSummary(report: ResourceReport, leakCheck: LeakChe
   }
   if (counts.probable) {
     lines.push(
-      'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+      'Probable leaks are read from the steps and the lines they point at, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
     );
   }
   return lines;

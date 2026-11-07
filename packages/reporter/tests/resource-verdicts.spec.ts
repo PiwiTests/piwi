@@ -519,7 +519,7 @@ const fixtureStep = (title: string, steps: TestStep[]): TestStep =>
   ({ title, category: 'fixture', steps }) as unknown as TestStep;
 
 describe('tallyLifecycleSteps', () => {
-  it('lists the calls in order, in their scopes, with the names their lines give; never a fixture’s close or a failed call', () => {
+  it('lists the calls in order, in their scopes, with the names their lines give and the fixture that made them; never a failed call', () => {
     const { call, hook, hooks, attempt } = specFile([
       'test.beforeAll(async () => {',
       '  shared = await chromium.launch();',
@@ -560,6 +560,7 @@ describe('tallyLifecycleSteps', () => {
         { op: 'open', kind: 'context', site: at(5), block: false, fixture: false, on: 'browser', name: 'each' },
         { op: 'open', kind: 'context', site: at(11), block: false, fixture: false, on: 'browser', name: 'ctx' },
         { op: 'close', kind: 'context', site: at(12), block: false, fixture: false, on: 'ctx', name: null },
+        { op: 'close', kind: 'context', site: at(12), block: false, fixture: true, on: 'ctx', name: 'context' },
         { op: 'close', kind: 'browser', site: at(8), block: true, fixture: false, on: 'shared', name: null },
       ],
     });
@@ -641,7 +642,7 @@ describe('probable leaks', () => {
     expect(formatResourceSummary(report, 'report')).toEqual([
       'Resources: 1 probable leak',
       `  probable browser     ${SPEC}:2 · left open by its test`,
-      'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+      'Probable leaks are read from the steps and the lines they point at, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
     ]);
   });
 
@@ -786,7 +787,8 @@ describe('probable leaks', () => {
     expect(
       probable([
         attempt('t1', [call('Launch browser', 2)]),
-        attempt('t2', [call('Launch browser', 5), call('Close browser', 6), call('Close browser', 7)]),
+        // Playwright records a repeated close as a failed step.
+        attempt('t2', [call('Launch browser', 5), call('Close browser', 6), { ...call('Close browser', 7), error: { message: 'Target page, context or browser has been closed' } } as unknown as TestStep]),
         attempt('t3', [
           hooks('Before Hooks', [fixtureContext]),
           call('Create context', 13),
@@ -812,6 +814,116 @@ describe('probable leaks', () => {
     const steps = [call('Launch persistent context', 2), call('Create page', 3), call('Close page', 4), call('Close context', 5)];
     expect(probable([attempt('t1', steps)])).toEqual([]);
     expect(probable([attempt('t1', steps.slice(0, 3))])).toEqual([expect.objectContaining({ kind: 'context', where: `${SPEC}:2` })]);
+  });
+
+  it('lets no fixture’s object take a close of the name it shares, and closes it by the end of its attempt', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test.beforeAll(async ({ browser }) => {',
+      '  context = await browser.newContext();',
+      '});',
+      'test.afterAll(async () => {',
+      '  await context.close();',
+      '});',
+      'test.beforeEach(async ({ browser }) => {',
+      '  each = await browser.newContext();',
+      '});',
+      'test.afterEach(async () => {',
+      '  await each.close();',
+      '});',
+      'test("admin sees the user", async ({ page }) => {',
+      '  const admin = await context.newPage();',
+      '});',
+    ]);
+    const unlocated = (title: string) => ({ title, category: 'pw:api', steps: [] }) as unknown as TestStep;
+    const pageFixtures = [fixtureStep('Fixture "context"', [unlocated('Create context')]), fixtureStep('Fixture "page"', [unlocated('Create page')])];
+    const test = (id: string, first: boolean, last: boolean) =>
+      attempt(id, [
+        hooks('Before Hooks', [
+          ...(first ? [hook('beforeAll hook', 1, [call('Create context', 2)])] : []),
+          hook('beforeEach hook', 7, [call('Create context', 8)]),
+          ...pageFixtures,
+        ]),
+        call('Create page', 14),
+        hooks('After Hooks', [
+          hook('afterEach hook', 10, [call('Close context', 11)]),
+          fixtureStep('Fixture "context"', [unlocated('Close context')]),
+          ...(last ? [hook('afterAll hook', 4, [call('Close context', 5)])] : []),
+        ]),
+      ]);
+    expect(probable([test('t1', true, false), test('t2', false, true)])).toEqual([]);
+  });
+
+  it('pairs a close with what its own test opened through a helper, and a fixture’s close with what the test opened through it', () => {
+    const { call, hooks, attempt } = specFile([
+      'test("leaks a context", async ({ browser }) => {',
+      '  const context = await browser.newContext();',
+      '});',
+      'const french = (browser) => browser.newContext({ locale: "fr-FR" });',
+      'test("closes its French context", async ({ browser }) => {',
+      '  const context = await french(browser);',
+      '  await context.close();',
+      '});',
+      'test("opens two through a factory fixture", async ({ newContext }) => {',
+      '  await newContext("de-DE");',
+      '});',
+      'export const factory = { newContext: async ({ browser }, use) => { await use((locale) => browser.newContext({ locale })); } };',
+    ]);
+    expect(
+      probable([
+        attempt('t1', [call('Create context', 2)]),
+        attempt('t2', [call('Create context', 4), call('Close context', 7)]),
+        attempt('t3', [call('Create context', 12), call('Create context', 12), hooks('After Hooks', [fixtureStep('Fixture "newContext"', [call('Close context', 12), call('Close context', 12)])])]),
+      ]).map(({ kind, where }) => [kind, where]),
+    ).toEqual([['context', `${SPEC}:2`]]);
+  });
+
+  it('closes a context’s pages with it, so a later close of that name reaches the page its own test opened', () => {
+    const { call, attempt } = specFile([
+      'test("french locale", async ({ browser }) => {',
+      '  const context = await frenchContext(browser);',
+      '  const page = await context.newPage();',
+      '  await context.close();',
+      '});',
+      'export async function openPage(browser) {',
+      '  const p = await browser.newPage();',
+      '  return p;',
+      '}',
+      'test("small viewport", async ({ browser }) => {',
+      '  const page = await openPage(browser);',
+      '  await page.close();',
+      '});',
+    ]);
+    expect(
+      probable([
+        attempt('t1', [call('Create context', 2), call('Create page', 3), call('Close context', 4)]),
+        attempt('t2', [call('Create page', 7), call('Close context', 12)]),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('reads each of the calls under one `await`, and a browser handed on to a later test', () => {
+    const { call, attempt } = specFile([
+      'test("closes two of three", async ({ browser }) => {',
+      '  const admin = await browser.newContext();',
+      '  const user = await browser.newContext();',
+      '  const guest = await browser.newContext();',
+      '  await Promise.all([admin.close(), user.close()]);',
+      '});',
+      'test("launches", async () => {',
+      '  browser = await chromium.launch();',
+      '});',
+      'test("uses it and closes it", async () => {',
+      '  await browser.newPage();',
+      '  await browser.close();',
+      '});',
+    ]);
+    expect(
+      probable([
+        attempt('t1', [call('Create context', 2), call('Create context', 3), call('Create context', 4), call('Close context', 5), call('Close context', 5)]),
+        attempt('t2', [call('Launch browser', 8)]),
+        attempt('t3', [call('Create page', 11), call('Close browser', 12)]),
+      ]).map(({ kind, where }) => [kind, where]),
+    ).toEqual([['context', `${SPEC}:4`]]);
   });
 
   it('keeps each worker’s attempts apart, groups a line left open by several tests, and judges no failed attempt', () => {

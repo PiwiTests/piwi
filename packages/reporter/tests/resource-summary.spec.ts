@@ -170,7 +170,7 @@ describe('the resource summary', () => {
       expect(lines.filter((line) => line.startsWith('Resources:') || line.startsWith('  probable') || line.startsWith('Probable'))).toEqual([
         'Resources: 1 probable leak',
         `  probable page        ${site} · left open by its test`,
-        'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+        'Probable leaks are read from the steps and the lines they point at, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
       ]);
       expect(bodies.find((body) => body.testCases).resourceReport.findings).toEqual([
         { verdict: 'probable', kind: 'page', where: site, site, tests: 1, count: 1, detail: 'left open by its test' },

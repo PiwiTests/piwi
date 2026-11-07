@@ -73,6 +73,14 @@ test('uses it', async () => {
 });
 `;
 
+const BLOCK_SPEC = `import { test } from '@playwright/test';
+
+test.beforeAll('opens a context for the block', async ({ browser }) => {
+  await browser.newContext(); // block
+});
+test('runs in the block', async () => {});
+`;
+
 /** Each attempt and its steps, as the run's own reporter writes them. */
 const STEPS_REPORTER = `const fs = require('node:fs');
 const strip = (steps) => steps.map((s) => ({
@@ -134,6 +142,7 @@ export default defineConfig({
 `,
   );
   write('steps-reporter.cjs', STEPS_REPORTER);
+  write('tests/block.spec.ts', BLOCK_SPEC);
   write('tests/hooks.spec.ts', HOOKS_SPEC);
   write('tests/leaks.spec.ts', LEAKS_SPEC);
 
@@ -160,7 +169,7 @@ afterAll(() => {
 describe('probable leaks from a real run without the fixtures', () => {
   it('finds each object left open at its line, and nothing that was closed', () => {
     expect(exitCode, output).toBe(0);
-    expect(attempts, output).toHaveLength(10);
+    expect(attempts, output).toHaveLength(11);
     const source = sourceLineReader();
     const tallies = attempts.map((attempt) =>
       tallyLifecycleSteps(
@@ -170,10 +179,11 @@ describe('probable leaks from a real run without the fixtures', () => {
       ),
     );
     const findings = buildResourceReport({ censuses: [], tallies }).findings;
-    expect(findings.map(({ kind, where }) => [kind, where]).sort()).toEqual([
-      ['browser', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'browser')],
-      ['context', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'context')],
-      ['page', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'page')],
+    expect(findings.map(({ kind, where, detail }) => [kind, where, detail]).sort()).toEqual([
+      ['browser', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'browser'), 'left open by its test'],
+      ['context', marked('tests/block.spec.ts', BLOCK_SPEC, 'block'), 'left open by a beforeAll or afterAll hook'],
+      ['context', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'context'), 'left open by its test'],
+      ['page', marked('tests/leaks.spec.ts', LEAKS_SPEC, 'page'), 'left open by its test'],
     ]);
   });
 });

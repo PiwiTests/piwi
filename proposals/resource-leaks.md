@@ -148,7 +148,8 @@ asked. What changed while building it:
   `browser.newPage()` and `context.newPage()` both record `Create page`.
 - `Create request context` is not counted: `APIRequestContext.dispose()` is an internal call on every supported
   Playwright, so no step shows it.
-- A fixture's opens absorb the test's closes of the fixture's objects, by the fixture's name, and are never findings.
+- A fixture's opens carry the fixture's name, are never findings and are closed by the end of their attempt; its
+  teardown's closes count for what the test opened through it.
 - `tests/probable-leaks-run.spec.ts` tallies a real run, so a Playwright release that changes a title or a column
   shows on the floor version too.
 
