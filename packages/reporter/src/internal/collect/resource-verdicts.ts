@@ -238,7 +238,7 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
   findings.push(...workerPilingFindings(byWorker));
   findings.push(...handleFindings(byWorker));
   findings.push(...groupIdle(idle, input.fixturesByTest ?? new Map()));
-  findings.push(...groupLingering(lingering, spans));
+  findings.push(...groupLingering(lingering, all, spans));
   findings.push(...probableFindings(input.tallies ?? []));
 
   const counts = { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
@@ -377,15 +377,16 @@ export const LINGER_MIN_MS = 2000;
 export const LINGER_SHARE = 1 / 3;
 
 /**
- * How long an object the test opened itself stayed open after the test last
- * used it, when it closed within that test (by the test, or a fixture tearing
- * down) and that tail is both `LINGER_MIN_MS` and `LINGER_SHARE` of the test;
- * null otherwise. What a fixture opens is the fixture's to close, and an object
- * that outlived its test is a leak instead.
+ * How long a browser, context or page the test opened itself stayed open after
+ * the test last used it, when it closed within that test (by the test, or a
+ * fixture tearing down) and that tail is both `LINGER_MIN_MS` and
+ * `LINGER_SHARE` of the test; null otherwise. What a fixture opens is the
+ * fixture's to close, an object that outlived its test is a leak instead, and
+ * an API request context holds no browser while it waits.
  */
 function lingerTail(entry: Tracked): number | null {
   const { birth, close, lastUse, bornCensus } = entry;
-  if (!birth.test || birth.fixture || birth.reused || isImplicit(birth)) return null;
+  if (!birth.test || birth.fixture || birth.reused || isImplicit(birth) || birth.kind === 'request') return null;
   if (birth.phase !== 'test' && birth.phase !== 'beforeEach' && birth.phase !== 'afterEach') return null;
   if (!close || close.byPiwi || close.phase === 'worker' || close.test?.id !== birth.test.id) return null;
   if (!lastUse || lastUse.at < birth.at) return null;
@@ -534,24 +535,34 @@ function groupLeaks(leaked: Leak[], all: Tracked[], spans: ResourceSpan[]): Reso
 }
 
 /**
- * Group lingering objects by where they were opened. A page that lingered in a
- * context that lingered too folds into it, as a leaked one does.
+ * Group lingering objects by where they were opened. A page or a context that
+ * lingered in a context or a browser that lingered too folds into the
+ * outermost one, as a leaked one does.
  */
-function groupLingering(lingering: Lingering[], spans: ResourceSpan[]): ResourceFinding[] {
+function groupLingering(lingering: Lingering[], all: Tracked[], spans: ResourceSpan[]): ResourceFinding[] {
   const byKey = new Map(lingering.map((item) => [keyOf(item.tracked.worker, item.tracked.birth.id), item]));
-  const parentOf = (item: Lingering): Lingering | undefined => {
-    const parent = item.tracked.birth.parent;
-    return parent === null ? undefined : byKey.get(keyOf(item.tracked.worker, parent));
+  const tracked = new Map(all.map((entry) => [keyOf(entry.worker, entry.birth.id), entry]));
+  // The outermost lingering ancestor, walking through the objects opened for another.
+  const rootOf = (item: Lingering): Lingering => {
+    let root = item;
+    for (let parentId = item.tracked.birth.parent; parentId !== null;) {
+      const key = keyOf(item.tracked.worker, parentId);
+      const parent = byKey.get(key);
+      if (parent) root = parent;
+      else if (!tracked.get(key) || !isImplicit(tracked.get(key)!.birth)) break;
+      parentId = tracked.get(key)?.birth.parent ?? null;
+    }
+    return root;
   };
   const pages = new Map<Lingering, number>();
   for (const item of lingering) {
-    const parent = item.tracked.birth.kind === 'page' ? parentOf(item) : undefined;
-    if (parent) pages.set(parent, (pages.get(parent) ?? 0) + 1);
+    const root = rootOf(item);
+    if (item.tracked.birth.kind === 'page' && root !== item) pages.set(root, (pages.get(root) ?? 0) + 1);
   }
   const groups = new Map<string, ResourceFinding & { testIds: Set<string>; longest: Lingering }>();
   for (const item of lingering) {
     const { birth } = item.tracked;
-    if (birth.kind === 'page' && parentOf(item)) continue;
+    if (rootOf(item) !== item) continue;
     const where = whereOf(birth);
     const key = `${birth.kind}|${where}`;
     const group = groups.get(key) ?? {

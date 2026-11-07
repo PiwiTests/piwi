@@ -798,4 +798,30 @@ describe('lingering', () => {
     });
     expect(lingeringOf(report.findings)).toEqual([expect.objectContaining({ kind: 'context', count: 1, pages: 1 })]);
   });
+
+  it('folds a context and its page into the browser the test launched, and leaves an API context alone', () => {
+    const use = { at: 1000, site: `${SPEC}:7`, test: 't1' };
+    const report = buildResourceReport({
+      censuses: [
+        {
+          ...census(6000, test('t1'), {
+            born: [
+              birth(1, 'browser', { at: 100 }),
+              birth(2, 'context', { parent: 1, at: 200 }),
+              birth(3, 'page', { parent: 2, at: 300 }),
+              birth(4, 'request', { at: 300 }),
+            ],
+            closed: [
+              close(3, { at: 5900, used: true, lastUse: use }),
+              close(2, { at: 5900, lastUse: use }),
+              close(1, { at: 5900, lastUse: use }),
+              close(4, { at: 5900, lastUse: use }),
+            ],
+          }),
+          startedAt: 0,
+        },
+      ],
+    });
+    expect(lingeringOf(report.findings)).toEqual([expect.objectContaining({ kind: 'browser', count: 1, pages: 1 })]);
+  });
 });
