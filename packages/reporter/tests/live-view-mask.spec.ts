@@ -323,8 +323,23 @@ describe('the live view’s masking', () => {
   it('paints over the secret fields and the project’s own element in every image, in every frame', () => {
     const sent = images();
     expect(sent.length, JSON.stringify(posts.map((p) => p.message.type))).toBeGreaterThanOrEqual(4);
-    // Images of both viewports went.
-    expect(new Set(sent.map(({ image }) => image.width / image.height > 1.5))).toEqual(new Set([true, false]));
+    // Images of both viewports went. Each image's size, when it was posted and when its page looked so, and what the
+    // viewers heard in place of an image.
+    const timeline = JSON.stringify([
+      ...sent.map(({ at, pageAt, image }) => ({
+        at: at - sent[0]!.at,
+        pageAt: pageAt === undefined ? null : pageAt - sent[0]!.at,
+        size: `${image.width}x${image.height}`,
+      })),
+      ...posts.flatMap((p) =>
+        p.message.type === 'frame' && 'refused' in p.message
+          ? [{ at: p.at - sent[0]!.at, refused: p.message.refused }]
+          : [],
+      ),
+    ]);
+    expect(new Set(sent.map(({ image }) => image.width / image.height > 1.5)), timeline).toEqual(
+      new Set([true, false]),
+    );
     const unpainted: Unpainted[] = [];
     sent.forEach(({ image }, index) => {
       for (const name of ['code', 'iban', 'frame'] as const) {
