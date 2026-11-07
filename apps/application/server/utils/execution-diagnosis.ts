@@ -4,6 +4,7 @@
  * evidence. Shared by `POST /api/test-run-cases/:id/diagnose` and the MCP tool
  * `run_execution_diagnosis`.
  */
+import { isVisibleRun } from '#shared/run-eligibility';
 import { and, eq } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, testRuns, testRunsCases } from '../database/schema';
 import type { FailureCluster, FailureDiagnosis } from '../database/schema';
@@ -34,10 +35,11 @@ export type ExecutionDiagnosisOutcome =
   | { ok: true; diagnosis: FailureDiagnosis }
   | { ok: false; error: 'not-failed' | 'not-configured' | 'running' };
 
-/** Load an execution for its diagnosis; null when it does not exist. */
+/** Load an execution for its diagnosis; null when it does not exist, or is of a run `viewerId` does not see. */
 export async function loadExecutionForDiagnosis(
   db: DbClient,
   executionId: number,
+  viewerId: number | null,
 ): Promise<ExecutionForDiagnosis | null> {
   const [execution] = await db
     .select({
@@ -46,12 +48,15 @@ export async function loadExecutionForDiagnosis(
       clusterId: testRunsCases.failureClusterId,
       status: testRunsCases.status,
       error: testRunsCases.error,
+      run: { origin: testRuns.origin, requesterId: testRuns.requesterId },
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .where(eq(testRunsCases.id, executionId))
     .limit(1);
-  return execution ?? null;
+  if (!execution || !isVisibleRun(execution.run, viewerId)) return null;
+  const { run: _run, ...found } = execution;
+  return found;
 }
 
 /**

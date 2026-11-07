@@ -24,19 +24,21 @@ of a request that ended at a stop for 10 minutes. The retention sweep deletes re
 30 days ago (the notification horizon). PR 2b is built: **Run** answers a run token (D5), kept as its digest for 30
 minutes, which `/setup` or `/start` spends once to start one unsharded run of the request's project. The server stamps
 its `request` origin (a reporter's is dropped) and its requester; the run is its requester's alone, and nobody's once
-the requester is deleted, and it feeds no team use (D14). It shows on its run page; the test's history and the
-requester's own runs show it in PR 2c. A request whose tests resolve to more than 200 is refused, and
-the cap of 5 is counted once the request is stored. Every check runs before the spend, so a refused start leaves the token to a retry, and
-a request its requester stopped starts nothing. The run token is not taken by the batch upload yet, and is spent by the
-first start: a requested run that falls back to the batch upload, or from `/setup` to `/start`, is refused. The stream, the heartbeat, Connected apps, the capability's **Turn on** button,
-the demo's simulated target, the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2c. Nothing here is on the roadmap yet. The maintainer settled on 2026-11-06: the desktop
-app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7);
-every run is confirmed in the target (D2); a request carries resolved tests and is the same object as a CI dispatch,
-parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a requested run shows to its
-requester alone (D14); the administrator's switch is off by default in the first release (D15); no request comes from an
-AI agent in the first version (D6); the existing **Copy retry command** gains the run options and ships first, with
-**Create issue** (D17, D18). Every other decision is a recommendation, and says which written decision it amends. The
-plan builds on three records that are not on `main`:
+the requester is deleted, and it feeds no team use (D14): it matches only the tests the project knows, its executions of
+any other left out, and adds or changes no test or suite. It shows on its run page; the test's history and the
+requester's own runs show it in PR 2c. A request whose tests resolve to more than 200 is refused, and the cap of 5 is
+counted once the request is stored. Every check runs before the spend, so a refused start leaves the token to a retry,
+and a request its requester stopped starts nothing. The run token is not taken by the batch upload yet, and is spent by
+the first start: a requested run that falls back to the batch upload, or from `/setup` to `/start`, is refused. The
+stream, the heartbeat, Connected apps, the capability's **Turn on** button, the demo's simulated target, the feature
+page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2c. Nothing here is on the roadmap yet. The maintainer settled
+on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to
+runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is the
+same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a
+requested run shows to its requester alone (D14); the administrator's switch is off by default in the first release
+(D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains the run
+options and ships first, with **Create issue** (D17, D18). Every other decision is a recommendation, and says which
+written decision it amends. The plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.

@@ -4,6 +4,7 @@ import {
   requireProjectAccess,
   requireResolvedProjectAccess,
   resolveBugReportProjectId,
+  resolveRunProjectId,
 } from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { resolveStoredTrace } from '../../utils/trace-reconstruct';
@@ -80,7 +81,15 @@ export default eventHandler(async (event) => {
   const projectMatch = path.match(/^project-(\d+)\//);
   const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
   if (projectMatch) {
-    await requireProjectAccess(event, Number(projectMatch[1]));
+    const user = await requireProjectAccess(event, Number(projectMatch[1]));
+    // A run's files are served to those who see the run: another person's private run reads as missing. Read on the
+    // path as storage resolves it, its empty and `.` segments dropped and either slash a separator.
+    const segments = path.split(/[\\/]/).filter((segment) => segment !== '' && segment !== '.');
+    const runMatch = segments[1]?.match(/^run-(\d+)$/);
+    if (runMatch) {
+      const runProject = await resolveRunProjectId(await getDatabase(), Number(runMatch[1]), user.id);
+      if (runProject !== Number(projectMatch[1])) throw apiError({ statusCode: 404, message: 'File not found' });
+    }
   } else if (bugReportMatch) {
     await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');
   } else {

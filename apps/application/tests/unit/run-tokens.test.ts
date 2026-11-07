@@ -17,6 +17,11 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('#shared/handlers/capabilities', () => ({
   isOptInCapabilityOn: async (_db: unknown, projectId: number) => state.machineRuns.has(projectId),
 }));
+// The feature-graph write runs after persistRunCases returns, off the request path: it has nothing to do here.
+vi.mock('../../server/utils/graph-ingest', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../server/utils/graph-ingest')>();
+  return { ...mod, ingestRunGraph: async () => {}, ingestRequestGraph: async () => {} };
+});
 vi.stubGlobal(
   'getRequestHeader',
   (event: { node: { req: { headers: Record<string, string> } } }, name: string) => event.node.req.headers[name],
@@ -39,6 +44,10 @@ const { getActiveTestRuns, getRecentTestRuns, getTestRun } = await import('#shar
 const { searchProjectsTestRunsCases } = await import('#shared/handlers/search');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 const { ADMIN_ACCESS } = await import('#shared/permissions');
+const { getBranchFailures } = await import('../../server/utils/branch-failures');
+const { persistRunCases } = await import('../../server/utils/persist-run-cases');
+const { testCaseCache } = await import('../../server/utils/test-case-cache');
+const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
 let db: Db;
 let userId: number;
@@ -145,6 +154,8 @@ beforeEach(async () => {
     .returning();
   projectId = projects[0]!.id;
   otherProjectId = projects[1]!.id;
+  testCaseCache.invalidate(projectId);
+  testSuiteCache.invalidate(projectId);
   await db.insert(schema.roleBindings).values([
     { userId, projectId, role: 'contributor' },
     { userId: otherUserId, projectId, role: 'contributor' },
@@ -340,6 +351,77 @@ describe('a private run', () => {
     expect(listed.items.map((r) => r.id)).toEqual([sourceRunId]);
     const recent = (await tool('list_recent_activity')(db as never, {}, ctx)) as { items: Array<{ id: number }> };
     expect(recent.items.map((r) => r.id)).toEqual([sourceRunId]);
+  });
+
+  test('reads as missing to the routes that take its id as an argument', async () => {
+    const run = await privateRun(userId);
+    await expect(getBranchFailures(db as never, projectId, null, { run: run.id })).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(getBranchFailures(db as never, projectId, null, { run: sourceRunId })).resolves.toBeTruthy();
+  });
+
+  test('is diagnosed by nobody else through the MCP tools', async () => {
+    const run = await privateRun(userId);
+    const [testCase] = await db
+      .insert(schema.testCases)
+      .values({ projectId, filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card' })
+      .returning();
+    const [execution] = await db
+      .insert(schema.testRunsCases)
+      .values(withStoredVerdicts([{ testRunId: run.id, testCaseId: testCase!.id, status: 'failed', error: 'boom' }]))
+      .returning();
+    const tool = (name: string) => MCP_TOOLS.find((t) => t.name === name)!.handler;
+    const [other] = await db.select().from(schema.users).where(eq(schema.users.id, otherUserId));
+    const ctx = { user: other, access: ADMIN_ACCESS, scope: 'all' } as never;
+    expect(await tool('run_execution_diagnosis')(db as never, { executionId: execution!.id }, ctx)).toBeNull();
+    expect(
+      await tool('record_diagnosis')(
+        db as never,
+        {
+          executionId: execution!.id,
+          model: 'model-a',
+          diagnosis: {
+            summary: 'The cart total subtracts instead of adding',
+            confidenceScore: 80,
+            severity: 'high',
+            affectedArea: 'cart',
+            hypotheses: [{ category: 'app-bug', rootCause: 'total() subtracts', likelihood: 80, evidence: [] }],
+            suggestedFix: { description: 'Add the operands', file: 'src/cart.ts', code: null, patch: null },
+            investigationSteps: [],
+            preventionTips: [],
+          },
+        },
+        ctx,
+      ),
+    ).toBeNull();
+  });
+
+  test('matches only the tests the project knows, and adds no test or suite', async () => {
+    const run = await privateRun(userId);
+    const [known] = await db
+      .insert(schema.testCases)
+      .values({ projectId, filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card' })
+      .returning();
+    const testOf = (title: string, suitePath: string[] = []) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      suitePath,
+      status: 'passed',
+      retries: 0,
+      line: 3,
+      column: 1,
+      browser: { projectName: 'chromium' },
+    });
+    await persistRunCases(db as never, projectId, run.id, [
+      testOf('pays with a saved card'),
+      testOf('a test only this branch has', ['new suite']),
+    ] as never);
+    const tests = await db.select().from(schema.testCases).where(eq(schema.testCases.projectId, projectId));
+    expect(tests.map((t) => t.id)).toEqual([known!.id]);
+    expect(await db.select().from(schema.testSuites)).toEqual([]);
+    const executions = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, run.id));
+    expect(executions.map((e) => e.testCaseId)).toEqual([known!.id]);
   });
 
   test('is seen by nobody once its requester is deleted', async () => {

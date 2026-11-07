@@ -7,7 +7,8 @@
  * call, so the demo's service worker can import it.
  */
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { testRuns } from '../database/schema';
 import { ingestManifestGraph } from './graph-ingest';
 import type { AppManifest, ManifestSource } from '#shared/types';
@@ -22,7 +23,7 @@ export async function latestRunId(db: DB, projectId: number): Promise<number> {
   const rows = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.id))
     .limit(1);
   return rows[0]?.id ?? 0;

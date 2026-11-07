@@ -33,7 +33,7 @@ import { getExecutionsCoverage, getFileCoverage, getFileVersions } from '../../s
 import { asRuntime } from '../../server/utils/code-reach';
 import { storedIdentityForms } from '../../server/utils/storable-values';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { notLabRun } from '../run-eligibility';
+import { notLabRun, notPrivateRun } from '../run-eligibility';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import {
   EXPLANATION_MIN_SIDE,
@@ -172,7 +172,7 @@ async function loadExecution(db: DrizzleDB, executionId: number): Promise<Execut
     .select(EXECUTION_COLUMNS)
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.id, executionId));
+    .where(and(eq(testRunsCases.id, executionId), notPrivateRun(testRuns.origin)));
   return row ? factsOf(row as ExecutionRow) : null;
 }
 

@@ -159,6 +159,8 @@ export interface ResolveTestCasesOptions {
    * change the tests' stored state (an import of an older run, a lab run). New test cases are still created.
    */
   readOnly?: boolean;
+  /** Match only the test cases the project knows: a claim that would create one is left unmatched (a private run). */
+  knownOnly?: boolean;
 }
 
 /**
@@ -187,6 +189,8 @@ export async function resolveTestCases(
   claims: TestCaseClaim[],
   options: ResolveTestCasesOptions = {},
 ): Promise<ResolvedTestCases> {
+  // A batch that may create no test case changes none either.
+  const readOnly = options.readOnly || options.knownOnly;
   const caseIds: Array<number | undefined> = Array.from({ length: claims.length });
   const displayTitles: Array<string | null> = Array.from({ length: claims.length }, () => null);
   const duplicates: ExternalIdDuplicate[] = [];
@@ -215,7 +219,7 @@ export async function resolveTestCases(
         duplicates.push({ externalId, tests: [splitNaturalKey(entry.key), claimTest(claim)] });
         externalId = undefined;
         displayTitle = null;
-      } else if (options.readOnly) {
+      } else if (readOnly) {
         settle(entry.id);
         continue;
       } else {
@@ -243,7 +247,7 @@ export async function resolveTestCases(
     const knownId = known === undefined ? undefined : index.externalIdOf.get(known);
     if (known !== undefined && (!externalId || knownId === undefined)) {
       if (externalId) {
-        if (!options.readOnly && (await takeExternalId(db, index, known, key, externalId, displayTitle)))
+        if (!readOnly && (await takeExternalId(db, index, known, key, externalId, displayTitle)))
           index.byExternalId.get(externalId)!.runId = runId;
         else displayTitle = null;
       } else if (knownId !== undefined) {
@@ -255,6 +259,10 @@ export async function resolveTestCases(
       continue;
     }
 
+    if (options.knownOnly) {
+      settle(undefined);
+      continue;
+    }
     const id = await insertTestCase(db, projectId, index, claim, key, externalId, displayTitle);
     if (id !== undefined && externalId) {
       const inserted = index.byExternalId.get(externalId);

@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3';
+import { isVisibleRun } from '#shared/run-eligibility';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { testCases, testRuns, testRunsCases } from '../../../database/schema';
@@ -45,9 +46,12 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
   const user = isAuthEnabled(event) ? await getCurrentUser(event) : null;
-  if (!run || !(await canAccessProject(db, user, run.projectId))) {
+  if (!run || !isVisibleRun(run, user?.id ?? null) || !(await canAccessProject(db, user, run.projectId))) {
     return notFoundPage(event, `Run #${runId} does not exist, or it was deleted.`, null);
   }
 

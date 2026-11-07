@@ -13,6 +13,7 @@
  * loader for the source files the patch touches so the patch is validated
  * against the code that failed; without one the patch is checked for shape only.
  */
+import { isVisibleRun } from '../run-eligibility';
 import { and, eq } from 'drizzle-orm';
 import {
   failureClusters,
@@ -94,10 +95,11 @@ export async function validateAgentPatch(
   return validatePatch(patch, sources ?? new Map());
 }
 
-/** Resolve what a diagnosis is about; null when it does not exist. */
+/** Resolve what a diagnosis is about; null when it does not exist, or is of a run `viewerId` does not see. */
 export async function resolveAgentDiagnosisTarget(
   db: DrizzleDB,
   target: AgentDiagnosisTarget,
+  viewerId: number | null,
 ): Promise<ResolvedDiagnosisTarget | null> {
   if (target.scope === 'cluster') {
     const [cluster] = await db
@@ -113,12 +115,13 @@ export async function resolveAgentDiagnosisTarget(
       runId: testRuns.id,
       status: testRunsCases.status,
       error: testRunsCases.error,
+      run: { origin: testRuns.origin, requesterId: testRuns.requesterId },
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .where(eq(testRunsCases.id, target.executionId));
-  if (!execution) return null;
-  const { status, error, ...rest } = execution;
+  if (!execution || !isVisibleRun(execution.run, viewerId)) return null;
+  const { status, error, run: _run, ...rest } = execution;
   return { ...rest, failed: hasFailureToDiagnose({ status, error }) };
 }
 
@@ -140,7 +143,8 @@ export async function recordAgentDiagnosis(
   input: AgentDiagnosisInput,
   opts: { actor: HandbackActor; loadSources?: PatchSourceLoader; now?: Date; resolved?: ResolvedDiagnosisTarget },
 ): Promise<RecordAgentDiagnosisResult> {
-  const resolved = opts.resolved ?? (await resolveAgentDiagnosisTarget(db, target));
+  // The caller is the viewer: another person's private run reads as missing.
+  const resolved = opts.resolved ?? (await resolveAgentDiagnosisTarget(db, target, opts.actor.userId ?? null));
   if (!resolved) return { ok: false, error: 'not-found' };
   if (!resolved.failed) return { ok: false, error: 'not-failed' };
   const { projectId, clusterId, runId } = resolved;

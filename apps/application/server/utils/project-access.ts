@@ -266,11 +266,20 @@ export async function resolveLinkProjectId(
   return null;
 }
 
-export async function resolveDiagnosisProjectId(db: DrizzleDB, diagnosisId: number): Promise<number | null> {
+export async function resolveDiagnosisProjectId(
+  db: DrizzleDB,
+  diagnosisId: number,
+  viewerId: number | null = null,
+): Promise<number | null> {
   // Cluster-scoped diagnoses resolve via their cluster; execution-scoped rows carry no
-  // cluster (null) and resolve via the execution's run instead.
+  // cluster (null) and resolve via the execution's run instead, a run `viewerId` sees.
   const rows = await db
-    .select({ clusterProjectId: failureClusters.projectId, execProjectId: testRuns.projectId })
+    .select({
+      clusterProjectId: failureClusters.projectId,
+      execProjectId: testRuns.projectId,
+      origin: testRuns.origin,
+      requesterId: testRuns.requesterId,
+    })
     .from(failureDiagnoses)
     .leftJoin(failureClusters, eq(failureDiagnoses.clusterId, failureClusters.id))
     .leftJoin(testRunsCases, eq(failureDiagnoses.testRunsCaseId, testRunsCases.id))
@@ -279,7 +288,8 @@ export async function resolveDiagnosisProjectId(db: DrizzleDB, diagnosisId: numb
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return row.clusterProjectId ?? row.execProjectId ?? null;
+  if (row.clusterProjectId != null) return row.clusterProjectId;
+  return row.execProjectId != null && isVisibleRun(row, viewerId) ? row.execProjectId : null;
 }
 
 export async function resolveBugReportProjectId(db: DrizzleDB, bugReportId: number): Promise<number | null> {

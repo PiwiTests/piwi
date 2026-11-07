@@ -14,6 +14,7 @@
  * counts with `@piwitests/core/flake-verdict`, never taken from the client.
  */
 import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 import {
   describeFlakeArm,
   flakeErrorSignature,
@@ -1301,7 +1302,9 @@ export async function listFlakeLabInbox(
     .select({ projectId: testRuns.projectId, name: projects.name, label: projects.label })
     .from(testRuns)
     .innerJoin(projects, eq(projects.id, testRuns.projectId))
-    .where(projectIds === 'all' ? undefined : inArray(testRuns.projectId, projectIds))
+    .where(
+      and(projectIds === 'all' ? undefined : inArray(testRuns.projectId, projectIds), notPrivateRun(testRuns.origin)),
+    )
     .groupBy(testRuns.projectId, projects.name, projects.label)
     .orderBy(desc(sql`MAX(${testRuns.id})`))
     .limit(FLAKE_LAB_INBOX_PROJECTS);

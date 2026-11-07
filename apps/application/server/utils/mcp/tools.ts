@@ -2911,7 +2911,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
     if (!parsed.ok) throw new Error(parsed.message);
     const id = target.scope === 'cluster' ? target.clusterId : target.executionId;
-    const resolved = await checkEntityScope(db, ctx, id, (db) => resolveAgentDiagnosisTarget(db, target), 'ai:run');
+    const resolved = await checkEntityScope(
+      db,
+      ctx,
+      id,
+      (db, _id, viewerId) => resolveAgentDiagnosisTarget(db, target, viewerId),
+      'ai:run',
+    );
     if (resolved === 'not-found') return null;
     const result = await recordAgentDiagnosisOn(db, target, parsed.value, mcpActor(ctx), resolved);
     if (!result.ok) {
