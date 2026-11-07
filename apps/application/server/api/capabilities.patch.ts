@@ -8,13 +8,13 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Set instance capability decisions',
     description:
-      'Declines or clears optional capabilities at instance level. The body is `{ decisions }`, a map from capability id to `"declined"` or `null` to clear a stored decision. Returns the resolved states after the change. Requires `settings:manage` (administrators only).',
+      'Declines, turns on or clears optional capabilities at instance level. The body is `{ decisions }`, a map from capability id to `"declined"`, `"enabled"` (accepted only for a capability that is off until turned on, such as `machine-runs`) or `null` to clear a stored decision. Returns the resolved states after the change. Requires `settings:manage` (administrators only).',
     'x-required-permission': 'settings:manage',
   },
 });
 
 const bodySchema = z.object({
-  decisions: z.record(z.string(), z.union([z.literal('declined'), z.null()])),
+  decisions: z.record(z.string(), z.union([z.literal('declined'), z.literal('enabled'), z.null()])),
 });
 
 export default eventHandler(async (event) => {

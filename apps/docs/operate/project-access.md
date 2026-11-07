@@ -38,6 +38,8 @@ each endpoint's requirement (`x-required-permission`), so a script author can te
 | Edit a bug report | `bug-report:write` | | ✓ | ✓ | ✓ | |
 | Save and schedule reports | `report:write` | | ✓ | ✓ | ✓ | |
 | Add and edit timeline markers | `marker:write` | | ✓ | ✓ | ✓ | |
+| Run tests on my machine from the dashboard | `run:request` | | ✓ | ✓ | ✓ | |
+| Connect an app that runs my requests | `run:receive` | | ✓ | ✓ | ✓ | |
 | Create share links, share a dashboard | `share:create` | | | ✓ | ✓ | |
 | Triage clusters and gaps | `triage:write` | | | ✓ | ✓ | |
 | Quarantine and release tests | `quarantine:write` | | | ✓ | ✓ | |
@@ -65,8 +67,8 @@ Results sent under a new project name create the project only for an account tha
 ## Groups
 
 A group is a named set of users, such as *QA*, *Product owners* or *CI*. It receives project roles the way a user
-does, so a new hire gets their access by joining groups. Administrators create, rename and delete groups and edit
-their members in **Settings → Groups**.
+does, so a new hire gets their access by joining groups. Administrators manage groups and their members in
+**Settings → Groups**.
 
 - **Rights add up.** A user in *Product owners* (Contributor on All projects) and *QA* (Maintainer on All projects)
   can do what a Maintainer does everywhere.
@@ -130,20 +132,18 @@ on the projects it reports to.
 
 ## Upgrading from the three roles
 
-Earlier versions had three instance-wide roles (Administrator, Reporter, User) and assigned projects to each account.
-The upgrade converts them:
+Earlier versions had three instance-wide roles (Administrator, Reporter, User). The upgrade converts them:
 
 - **Administrator** stays Administrator.
 - **Reporter** becomes a Member with the Maintainer role on the same projects.
 - **User** becomes a Member with the Viewer role on the same projects.
 
-Access to all projects becomes a role on All projects. A Maintainer can do exactly what a Reporter could, and a Viewer
-what a User could, so nobody gains or loses a right. To narrow a CI account that ran as a Reporter, give it Uploader in
-place of Maintainer.
+Access to all projects becomes a role on All projects, and nobody gains or loses a right. To narrow a CI account that
+ran as a Reporter, give it Uploader.
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with seeded identities, from an
-> administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner and watch the
-> projects and actions change. See [UI overview → Live demo](/features/ui-overview#live-demo).
+> administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner. See
+> [UI overview → Live demo](/features/ui-overview#live-demo).
 
 ## Related
 

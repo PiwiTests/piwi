@@ -78,6 +78,8 @@ export const PROJECT_PERMISSIONS = [
   'bug-report:write',
   'report:write',
   'marker:write',
+  'run:request',
+  'run:receive',
   'share:create',
   'triage:write',
   'quarantine:write',
@@ -127,6 +129,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'bug-report:write': 'Edit a bug report',
   'report:write': 'Save and schedule reports',
   'marker:write': 'Add and edit timeline markers',
+  'run:request': 'Run tests on my machine from the dashboard',
+  'run:receive': 'Connect an app that runs my requests',
   'share:create': 'Create share links, share a dashboard',
   'triage:write': 'Triage clusters and gaps',
   'quarantine:write': 'Quarantine and release tests',
@@ -167,6 +171,8 @@ const CONTRIBUTOR_PERMISSIONS: readonly ProjectPermission[] = [
   'bug-report:write',
   'report:write',
   'marker:write',
+  'run:request',
+  'run:receive',
 ];
 const MAINTAINER_PERMISSIONS: readonly ProjectPermission[] = [
   ...CONTRIBUTOR_PERMISSIONS,
