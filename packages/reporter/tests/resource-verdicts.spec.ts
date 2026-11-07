@@ -780,6 +780,30 @@ describe('lingering', () => {
     expect(lingeringOf(tail(1000, 20_000, { fixture: { title: 'page', location: null, worker: false } }).findings)).toEqual([]);
   });
 
+  it('ends the tail where the close began, and leaves what a hook opened alone', () => {
+    const report = (closeExtra: Partial<ResourceClose>, birthExtra: Partial<ResourceBirth> = {}) =>
+      buildResourceReport({
+        censuses: [
+          {
+            ...census(6000, test('t1'), {
+              born: [popup(birthExtra)],
+              closed: [
+                close(2, { at: 5800, used: true, lastUse: { at: 1000, site: `${SPEC}:7`, test: 't1' }, ...closeExtra }),
+              ],
+            }),
+            startedAt: 0,
+          },
+        ],
+      });
+    // Piwi's reads and the trace's export ran from 1.5 s to the close at 5.8 s: the test closed it right after its use.
+    expect(lingeringOf(report({ closingAt: 1500 }).findings)).toEqual([]);
+    expect(lingeringOf(report({ closingAt: 4000 }).findings)).toEqual([
+      expect.objectContaining({ heldMs: 3000 }),
+    ]);
+    expect(report({ closingAt: 4000 }).spans).toEqual([expect.objectContaining({ from: 1000, to: 4000 })]);
+    expect(lingeringOf(report({}, { phase: 'beforeEach' }).findings)).toEqual([]);
+  });
+
   it('folds a page that lingered into the context that lingered with it', () => {
     const use = { at: 1000, site: `${SPEC}:7`, test: 't1' };
     const report = buildResourceReport({

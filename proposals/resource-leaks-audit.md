@@ -20,7 +20,9 @@ theirs, it says which. **Built 2026-11-07**, quick wins 1, 4 and 5 and medium it
   Playwright without it), and R6 in part (listeners on contexts and the browser).
 - §5.1's last use in every census, and its line on each leak and lingering finding: in the summary, `leakCheck: 'fail'`'s
   error, the Resources tab (an open-in-editor link), the pull-request comment and `get_resource_profile`.
-- §5.3's **lingering** verdict, report-only, never counted by the gate.
+- §5.3's **lingering** verdict, report-only, never counted by the gate: for a browser, context or page the test body
+  opened, measured from its last use (a wait on the client counts until it ends) to when its close began, before Piwi's
+  reads and Playwright's trace export. The connection of a browser the worker connects to is followed too.
 - §6.2's tails on the run's workers timeline: each leaked object under its worker's row from its scope's end to its
   close or the worker's end, each lingering one from its last use to its close, the share of open pages left open on the
   open pages track and strip, a tooltip with the object's lines, a click that opens its test, and **Show leaks**.

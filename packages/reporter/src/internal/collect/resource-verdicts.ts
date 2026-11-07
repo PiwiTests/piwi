@@ -376,24 +376,30 @@ function leakVerdict(
 export const LINGER_MIN_MS = 2000;
 export const LINGER_SHARE = 1 / 3;
 
+/** When an object's close began: before the work a close does first, else when it closed. */
+function closeBegan(close: ResourceClose): number {
+  return Math.min(close.at, close.closingAt ?? close.at);
+}
+
 /**
- * How long a browser, context or page the test opened itself stayed open after
- * the test last used it, when it closed within that test (by the test, or a
- * fixture tearing down) and that tail is both `LINGER_MIN_MS` and
- * `LINGER_SHARE` of the test; null otherwise. What a fixture opens is the
- * fixture's to close, an object that outlived its test is a leak instead, and
- * an API request context holds no browser while it waits.
+ * How long a browser, context or page the test body opened stayed open after
+ * the test last used it, up to when its close began, when it closed within
+ * that test (by the test, or a fixture tearing down) and that tail is both
+ * `LINGER_MIN_MS` and `LINGER_SHARE` of the test; null otherwise. What a
+ * fixture or a hook opens is theirs to close, an object that outlived its test
+ * is a leak instead, and an API request context holds no browser while it
+ * waits.
  */
 function lingerTail(entry: Tracked): number | null {
   const { birth, close, lastUse, bornCensus } = entry;
   if (!birth.test || birth.fixture || birth.reused || isImplicit(birth) || birth.kind === 'request') return null;
-  if (birth.phase !== 'test' && birth.phase !== 'beforeEach' && birth.phase !== 'afterEach') return null;
+  if (birth.phase !== 'test') return null;
   if (!close || close.byPiwi || close.phase === 'worker' || close.test?.id !== birth.test.id) return null;
   if (!lastUse || lastUse.at < birth.at) return null;
   const census = bornCensus;
   if (census.test?.id !== birth.test.id || census.test.failed) return null;
   const duration = Math.max(1, census.at - (census.startedAt ?? birth.at));
-  const tail = close.at - lastUse.at;
+  const tail = closeBegan(close) - lastUse.at;
   return tail >= LINGER_MIN_MS && tail >= duration * LINGER_SHARE ? tail : null;
 }
 
@@ -592,8 +598,8 @@ function groupLingering(lingering: Lingering[], all: Tracked[], spans: ResourceS
       where,
       site: siteOf(birth),
       lastUse: item.tracked.lastUse?.site ?? null,
-      from: item.tracked.close!.at - item.tailMs,
-      to: item.tracked.close!.at,
+      from: closeBegan(item.tracked.close!) - item.tailMs,
+      to: closeBegan(item.tracked.close!),
       untilWorkerEnd: false,
       scope: null,
       pages: birth.kind === 'page' ? 1 : folded,

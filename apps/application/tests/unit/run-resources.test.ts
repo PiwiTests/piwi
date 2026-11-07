@@ -415,7 +415,7 @@ describe('findingView', () => {
       label: 'Lingering page',
       where: 'popup after locator.click at tests/reports.spec.ts:41',
       site: 'tests/reports.spec.ts:41',
-      facts: ['1 test', 'open 1.8 s after its last use'],
+      facts: ['1 test', 'open 2.6 s after its last use'],
       lastUse: 'tests/reports.spec.ts:43',
     });
     expect(handle).toEqual({

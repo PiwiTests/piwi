@@ -4,6 +4,7 @@ import {
   buildSpanTails,
   leftOpenAcross,
   leftOpenPages,
+  minSteps,
   tailAt,
   tailsPath,
 } from '../../app/utils/resource-spans';
@@ -122,5 +123,31 @@ describe('the pages left open, and the tail under the pointer', () => {
   test('draws each verdict’s tails at their sub-lines', () => {
     expect(tailsPath(tails!.tails, 'lingering', 4, 6)).toBe('M2500,12H2600V16H2500Z');
     expect(tailsPath(tails!.tails, 'leaked', 4, 6)).toBe('M1000,0H5000V4H1000ZM2000,6H3000V10H2000Z');
+  });
+});
+
+describe('minSteps', () => {
+  test('holds the pages left open to the pages open, at every change of either', () => {
+    expect(
+      minSteps(
+        [
+          [1000, 3],
+          [5000, 0],
+        ],
+        [
+          [0, 1],
+          [2000, 4],
+          [4000, 2],
+          [6000, 0],
+        ],
+      ),
+    ).toEqual([
+      [0, 0],
+      [1000, 1],
+      [2000, 3],
+      [4000, 2],
+      [5000, 0],
+    ]);
+    expect(minSteps([], [[0, 1]])).toEqual([]);
   });
 });

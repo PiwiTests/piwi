@@ -159,8 +159,8 @@ function leakSites(fixtureFile, previewFile) {
   };
 }
 
-/** How long the preview popup stays open after its last check, before its test ends. */
-const PREVIEW_TAIL_MS = 1800;
+/** How long the preview popup stays open after its last check, before its test ends: past the reporter's 2 s. */
+const PREVIEW_TAIL_MS = 2600;
 
 /**
  * The test that keeps the preview popup open: the first test that passed past

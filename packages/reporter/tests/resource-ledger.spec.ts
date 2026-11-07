@@ -57,6 +57,10 @@ function fakePlaywright() {
     constructor(readonly context: FakeContext) {
       super();
     }
+    /** The worker's connection, as every page of the worker's own browsers carries it. */
+    get _connection(): unknown {
+      return (playwright as Record<string, unknown>)._connection;
+    }
     url() {
       return this.current;
     }
@@ -575,6 +579,55 @@ describe('following the calls a test makes', () => {
     expect(census.open.find((open) => open.id === 3)?.used).toBe(true);
     // Pages are marked used by their calls: no page method is replaced.
     expect(Object.prototype.hasOwnProperty.call(page, 'evaluate')).toBe(false);
+  });
+
+  it('keeps an object in use until a wait on the client ends, and marks when a close began', async () => {
+    let now = 1000;
+    const fake = fakePlaywright();
+    const { connection, call } = withConnection(fake);
+    let current: TestInfoLike | null = info('t1');
+    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => current, () => now);
+    ledger.install();
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    Object.assign(browser, { _type: 'Browser', _parent: null });
+    Object.assign(context, { _type: 'BrowserContext', _parent: browser });
+    Object.assign(page, { _type: 'Page', _parent: context });
+    const frames = [{ file: path.resolve('tests/cart.spec.ts'), line: 12 }];
+    // `waitForEvent` begins with the test's call and ends with an internal one, three seconds later.
+    await connection.sendMessageToServer(page, '__waitInfo__', { waitId: 'w1', phase: 'before' }, { apiName: 'page.waitForEvent', frames });
+    now = 4000;
+    await connection.sendMessageToServer(page, '__waitInfo__', { waitId: 'w1', phase: 'after' }, { internal: true });
+    now = 5000;
+    ledger.noteClosing(context);
+    now = 7000;
+    await call(context, 'close', 20);
+    await context.close();
+
+    const { census } = await ledger.testEnded(info('t1'));
+    const pageClose = census.closed.find((c) => c.id === 3)!;
+    expect(pageClose.lastUse).toMatchObject({ at: 4000, site: 'tests/cart.spec.ts:12' });
+    expect(pageClose.closingAt).toBe(5000);
+    expect(census.closed.find((c) => c.id === 2)!.closingAt).toBe(5000);
+    current = null;
+  });
+
+  it('follows the calls of a browser it connected to, over that browser’s own connection', async () => {
+    const fake = fakePlaywright();
+    withConnection(fake);
+    const remote = { sendMessageToServer: vi.fn(async (..._args: unknown[]) => undefined) };
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = new fake.FakeBrowser();
+    Object.assign(browser, { _type: 'Browser', _parent: null, _connection: remote });
+    const original = remote.sendMessageToServer;
+    await browser.newContext();
+    // The context's browser is tracked when the context is: its connection is followed from then on.
+    expect(remote.sendMessageToServer).not.toBe(original);
+    ledger.uninstall();
+    expect(remote.sendMessageToServer).toBe(original);
   });
 
   it('names the last use of what a test leaves open, and carries it to the close', async () => {

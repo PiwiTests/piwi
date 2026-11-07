@@ -98,6 +98,12 @@ export interface ResourceClose {
   used?: boolean;
   /** The last call a test made on it before it closed. */
   lastUse?: ResourceUse;
+  /**
+   * When its close began, or its context's or browser's: before the work a
+   * close does first (Piwi's reads of its pages, Playwright saving its trace).
+   * Set when it began before `at`.
+   */
+  closingAt?: number;
   /** Closed by `PIWI_LEAK_CHECK=close`. */
   byPiwi?: boolean;
 }
@@ -204,6 +210,11 @@ const CLOSE_METHODS: ReadonlySet<string> = new Set(['close', 'dispose']);
 /** Objects whose calls answer the page's own traffic (a `route()` handler's), not the test's use of it. */
 const TRAFFIC_TYPES: ReadonlySet<string> = new Set(['Route', 'WebSocketRoute']);
 
+/** The protocol message that begins and ends a wait on the client (`waitForEvent` and its kin), internal. */
+const WAIT_INFO = '__waitInfo__';
+/** The most client-side waits the ledger follows at once. */
+const WAITS_CAP = 1000;
+
 /** A call that opens a page (`newPage`, and the capture fixtures' wrapper of it, `originalNewPage`). */
 const NEW_PAGE_CALL = /newpage$/i;
 /** A call that opens a context with a browser of its own. */
@@ -239,9 +250,15 @@ interface CallOptions extends ApiZone {
   title?: string;
 }
 
-/** The worker's connection to Playwright (internal): every call of the worker's objects goes through it. */
+/** A connection to Playwright (internal): every call of the objects it carries goes through it. */
 interface ConnectionLike {
   sendMessageToServer?: (object: unknown, method: unknown, params: unknown, options: unknown) => unknown;
+}
+
+/** What a client-side wait sends as it begins and ends (internal). */
+interface WaitInfo {
+  waitId?: unknown;
+  phase?: unknown;
 }
 
 type BrowserTypeLike = Record<string, unknown>;
@@ -283,6 +300,8 @@ interface Entry {
   closed: ResourceClose | null;
   used: boolean;
   lastUse: ResourceUse | null;
+  /** When its close began. */
+  closingAt: number | null;
 }
 
 /** A server or child process the worker started, where and while what it was started, and whether it still runs. */
@@ -524,8 +543,10 @@ export class ResourceLedger {
   private lastCall: ApiZone | null = null;
   /** The page a wrapped page method is calling into: its first reported API call marks it used. */
   private usingPage: Entry | null = null;
-  /** The worker's connection is followed: every call a test makes marks what it lands on used. */
-  private followingCalls = false;
+  /** The connections the ledger follows: every call a test makes through one marks what it lands on used. */
+  private readonly followed = new WeakSet<object>();
+  /** The client-side waits a test began, by their id, with the object each waits on. */
+  private readonly waits = new Map<unknown, ChannelOwnerLike>();
   private windowStartedAt: number | null = null;
   private born: ResourceBirth[] = [];
   private closed: ResourceClose[] = [];
@@ -581,70 +602,117 @@ export class ResourceLedger {
       runBeforeCloseRequestContext: async (request: APIRequestContext) => {
         this.guard(() => this.onClosed(request));
       },
+      runBeforeCloseBrowserContext: async (context: BrowserContext) => {
+        this.guard(() => this.noteClosing(context));
+      },
     };
     instrumentation.addListener(this.listener);
     for (const type of [this.playwright.chromium, this.playwright.firefox, this.playwright.webkit]) {
       if (type) this.wrapBrowserType(type);
     }
-    this.guard(() => this.followCalls());
+    this.guard(() => this.followCalls(this.playwright._connection));
     if (this.nodeHandles) this.guard(() => this.wrapNodeHandles());
     return true;
   }
 
   /**
-   * Follow every call the worker's objects make through its connection to
-   * Playwright (`sendMessageToServer`, internal): a call a test made (with its
-   * frames, not `internal` like Piwi's own reads and Playwright's artifacts)
-   * marks the object it lands on used, and the page, context and browser it
-   * belongs to (its `_parent` chain), with when and from which line. A long
-   * call (a wait, an assertion) keeps it in use until it returns. Calls that
-   * close an object, and a `route()` handler's answers to the page's own
-   * traffic, are no use. Without the connection, the page methods and
-   * locators keep marking pages used.
+   * Follow every call made through a connection to Playwright
+   * (`sendMessageToServer`, internal): the worker's own, and that of each
+   * browser it connects to. A call a test made (with its frames, not
+   * `internal` like Piwi's own reads and Playwright's artifacts) marks the
+   * object it lands on used, and the page, context and browser it belongs to
+   * (its `_parent` chain), with when and from which line. A long call (an
+   * assertion, a wait on the browser) keeps it in use until it returns, and a
+   * wait on the client (`waitForEvent` and its kin) until its internal end. A
+   * close marks when the object's close began; a `route()` handler's answers to
+   * the page's own traffic are no use. The pages of a connection it does not
+   * follow keep being marked used by their page methods and locators.
    */
-  private followCalls(): void {
-    const connection = this.playwright._connection;
+  private followCalls(connection: ConnectionLike | null | undefined): void {
     const send = connection?.sendMessageToServer;
-    if (!connection || typeof send !== 'function') return;
-    const onCall = (object: unknown, method: unknown, options: unknown, result: unknown) =>
-      this.guard(() => this.onCall(object as ChannelOwnerLike, method, options as CallOptions | undefined, result));
+    if (!connection || typeof send !== 'function' || this.followed.has(connection)) return;
+    const onCall = (object: unknown, method: unknown, params: unknown, options: unknown, result: unknown) =>
+      this.guard(() =>
+        this.onCall(object as ChannelOwnerLike, method, params as WaitInfo | undefined, options as CallOptions, result),
+      );
     const wrapped = function (this: unknown, object: unknown, method: unknown, params: unknown, options: unknown) {
       const result = send.call(this, object, method, params, options);
-      onCall(object, method, options, result);
+      onCall(object, method, params, options, result);
       return result;
     };
     connection.sendMessageToServer = wrapped;
+    this.followed.add(connection);
     this.restores.push(() => {
       if (connection.sendMessageToServer === wrapped) connection.sendMessageToServer = send;
+      this.followed.delete(connection);
     });
-    this.followingCalls = true;
+  }
+
+  /** Whether the ledger follows the calls of an object's connection. */
+  private follows(object: object): boolean {
+    const connection = (object as { _connection?: object })._connection;
+    return !!connection && this.followed.has(connection);
   }
 
   private onCall(
     object: ChannelOwnerLike | null,
     method: unknown,
+    params: WaitInfo | undefined,
     options: CallOptions | undefined,
     result: unknown,
   ): void {
-    if (!object || options?.internal || !options?.frames?.length) return;
-    if (CLOSE_METHODS.has(String(method)) || TRAFFIC_TYPES.has(String(object._type))) return;
+    if (!object) return;
+    if (method === WAIT_INFO) return this.onWait(object, params, options);
+    if (options?.internal || !options?.frames?.length || TRAFFIC_TYPES.has(String(object._type))) return;
+    if (CLOSE_METHODS.has(String(method))) return this.noteClosing(object);
     const site = zoneSite(options);
-    const touch = () =>
-      this.guard(() => {
-        const info = this.testInfoSource();
-        const test = testRef(info)?.id ?? this.window?.id;
-        const use: ResourceUse = { at: this.now(), site, ...(test ? { test } : {}) };
-        for (let owner: ChannelOwnerLike | null | undefined = object; owner; owner = owner._parent) {
-          const entry = this.byObject.get(owner);
-          if (!entry || entry.closed) continue;
-          entry.used = true;
-          entry.lastUse = use;
-        }
-      });
-    touch();
+    this.touch(object, site);
     if (result && typeof (result as Promise<unknown>).then === 'function') {
-      (result as Promise<unknown>).then(touch, touch);
+      const returned = () => this.touch(object, site);
+      (result as Promise<unknown>).then(returned, returned);
     }
+  }
+
+  /**
+   * A wait on the client begins with a call of the test's (with its frames)
+   * and ends with an internal one of the same id: the object it waited on was
+   * in use until then.
+   */
+  private onWait(object: ChannelOwnerLike, info: WaitInfo | undefined, options: CallOptions | undefined): void {
+    const id = info?.waitId;
+    if (id === undefined) return;
+    if (info?.phase === 'before' && !options?.internal && options?.frames?.length) {
+      if (this.waits.size >= WAITS_CAP) this.waits.clear();
+      this.waits.set(id, object);
+      this.touch(object, zoneSite(options));
+    } else if (info?.phase === 'after') {
+      const waited = this.waits.get(id);
+      this.waits.delete(id);
+      if (waited) this.touch(waited, null);
+    }
+  }
+
+  /**
+   * Mark an object, and the page, context and browser it belongs to, used now;
+   * `site` null keeps the line of the call that began it.
+   */
+  private touch(object: ChannelOwnerLike, site: string | null): void {
+    this.guard(() => {
+      const test = testRef(this.testInfoSource())?.id ?? this.window?.id;
+      const at = this.now();
+      for (let owner: ChannelOwnerLike | null | undefined = object; owner; owner = owner._parent) {
+        const entry = this.byObject.get(owner);
+        if (!entry || entry.closed) continue;
+        entry.used = true;
+        entry.lastUse = { at, site: site ?? entry.lastUse?.site ?? null, ...(test ? { test } : {}) };
+      }
+    });
+  }
+
+  /** Mark when an object's close began, the first time it begins. */
+  noteClosing(object: object): void {
+    const entry = this.byObject.get(object);
+    if (entry && !entry.closed && entry.closingAt === null) entry.closingAt = this.now();
   }
 
   /** Stop listening, and put Node's `listen` and `spawn` back; the objects already tracked stay in the ledger. */
@@ -891,7 +959,7 @@ export class ResourceLedger {
       test: testRef(info) ?? this.window,
       site,
     };
-    const entry: Entry = { birth, object, closed: null, used: false, lastUse: null };
+    const entry: Entry = { birth, object, closed: null, used: false, lastUse: null, closingAt: null };
     if (kind === 'browser' || kind === 'context') this.sawBrowser = true;
     this.entries.set(birth.id, entry);
     this.byObject.set(object, entry);
@@ -904,6 +972,8 @@ export class ResourceLedger {
     if (known) return known;
     const entry = this.track(browser, 'browser', null, site);
     browser.on('disconnected', () => this.guard(() => this.onClosed(browser)));
+    // A browser it connected to talks over a connection of its own.
+    this.guard(() => this.followCalls((browser as unknown as { _connection?: ConnectionLike })._connection));
     return entry;
   }
 
@@ -915,8 +985,8 @@ export class ResourceLedger {
       const browserEntry = this.onBrowser(browser, site);
       // `launchPersistentContext` opens a browser for its context alone: closing the context closes it. Its call
       // has ended by the time Playwright reports the context.
-      const call = zone ?? this.lastCall;
-      if (PERSISTENT_CALL.test(call?.apiName ?? '') && browserEntry.birth.parent === null && !browserEntry.closed) {
+      const persistent = [zone, this.lastCall].some((call) => PERSISTENT_CALL.test(call?.apiName ?? ''));
+      if (persistent && browserEntry.birth.parent === null && !browserEntry.closed) {
         browserEntry.birth.implicit = true;
       }
     }
@@ -957,7 +1027,7 @@ export class ResourceLedger {
       }
     });
     page.on('close', () => this.guard(() => this.onClosed(page)));
-    if (this.followingCalls) return;
+    if (this.follows(page)) return;
     const methods = page as unknown as Record<string, unknown>;
     for (const method of USE_METHODS) {
       const original = methods[method];
@@ -989,10 +1059,23 @@ export class ResourceLedger {
     if (fixture) close.fixture = { title: fixture.title, location: fixture.location };
     if (entry.birth.kind === 'page') close.used = entry.used;
     if (entry.lastUse) close.lastUse = entry.lastUse;
+    const closingAt = this.closingOf(entry);
+    if (closingAt !== null && closingAt < close.at) close.closingAt = closingAt;
     if (byPiwi) close.byPiwi = true;
     entry.closed = close;
     entry.object = null;
     this.closed.push(close);
+  }
+
+  /** When the close of an object, or of the context or browser it belongs to, began first; null when none did. */
+  private closingOf(entry: Entry): number | null {
+    let earliest: number | null = null;
+    for (let current: Entry | undefined = entry; current;) {
+      if (current.closingAt !== null) earliest = Math.min(earliest ?? Infinity, current.closingAt);
+      const parent: number | null = current.birth.parent;
+      current = parent === null ? undefined : this.entries.get(parent);
+    }
+    return earliest;
   }
 
   private latestPendingCall(): ApiZone | null {
@@ -1212,6 +1295,11 @@ export function stopResourceLedger(): ResourceCensus | null {
 /** Mark a page used, for the locator wrappers. */
 export function noteResourceUse(page: object): void {
   activeLedger?.notePageUse(page);
+}
+
+/** Mark when a page's, context's or browser's close began, for the capture fixtures' close wrappers. */
+export function noteResourceClosing(object: object): void {
+  activeLedger?.noteClosing(object);
 }
 
 const ARTICLE: Record<ResourceKind, string> = {

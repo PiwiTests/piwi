@@ -11,7 +11,7 @@
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { SeriesPoint, WireResourceSpan } from '#shared/types';
 import type { WorkerRow } from '~/composables/useTimelineModel';
-import { rowsForParts, sumSteps } from '~/utils/resource-tracks';
+import { rowsForParts, sumSteps, valueAt } from '~/utils/resource-tracks';
 
 /** One object's tail under its worker's row. */
 export interface SpanTail {
@@ -133,6 +133,21 @@ export function leftOpenPages(tails: SpanTail[]): SeriesPoint[] {
 /** The pages left open over time across several workers' rows. */
 export function leftOpenAcross(rows: RowTails[]): SeriesPoint[] {
   return sumSteps(rows.map((row) => leftOpenPages(row.tails)));
+}
+
+/**
+ * The lower of two step series at every change of either: the pages left open
+ * held to the pages open then, since a leak's pages may close before it does.
+ */
+export function minSteps(a: SeriesPoint[], b: SeriesPoint[]): SeriesPoint[] {
+  if (a.length === 0 || b.length === 0) return [];
+  const times = [...new Set([...a, ...b].map(([at]) => at))].sort((x, y) => x - y);
+  const out: SeriesPoint[] = [];
+  for (const at of times) {
+    const value = Math.min(valueAt(a, at, true) ?? 0, valueAt(b, at, true) ?? 0);
+    if (out.length === 0 || out[out.length - 1]![1] !== value) out.push([at, value]);
+  }
+  return out;
 }
 
 /** The tail at `t` (ms on the timeline's clock) on sub-line `level` of a row, the shortest when several cover it. */
