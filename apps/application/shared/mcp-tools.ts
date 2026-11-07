@@ -699,7 +699,7 @@ export const MCP_TOOL_DEFS = [
         '`handle`: a Node server, child process or file watcher a test left running in its worker',
         '`probable`: a leak counted from steps, without the capture fixtures',
       ],
-      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the runs it was first and last seen in, how many runs showed it, and `last`: what it held the last time (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back).',
+      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the run it was first seen in and the last full run of the default branch that showed it (that first run until one did), how many runs of any branch showed it, and `last`: what it held the last time any run showed it (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch that could have shown it came without it (`cleanRuns` counts them; `reopenedRunId` is set when such a run showed a fixed one the default branch had shown before).',
     ),
     inputSchema: {
       type: 'object',

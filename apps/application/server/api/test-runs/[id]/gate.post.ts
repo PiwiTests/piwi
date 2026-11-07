@@ -11,8 +11,7 @@ import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { readChangeCoverage } from '../../../utils/scm/change-coverage';
 import { patchCoverageWarning, uncoveredChangesWarning } from '#shared/patch-coverage';
-import { runFindingsNovelty } from '#shared/handlers/resource-findings';
-import { isLeak } from '#shared/resource-fingerprint.mjs';
+import { runLeakFacts } from '#shared/handlers/resource-findings';
 import { readRunIncident } from '#shared/run-incident';
 import {
   GATE_CLIENT_HEADER,
@@ -27,7 +26,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report, or of a project that declined the `resources` capability, is a violation: its leaks are not measured. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -228,22 +227,8 @@ export default eventHandler(async (event) => {
     .from(failureClusters)
     .where(and(eq(failureClusters.firstSeenRunId, id), eq(failureClusters.projectId, run.projectId)));
 
-  let resourceFacts: GateFacts['resources'];
-  if (policy.maxLeaks != null || policy.maxNewLeaks != null) {
-    const novelty = await runFindingsNovelty(db, id);
-    const leaks = (novelty?.findings ?? []).filter((f) => isLeak(f.finding));
-    const toLeak = (f: (typeof leaks)[number]) => ({
-      where: f.finding.where,
-      site: f.finding.site ?? null,
-      tests: f.finding.tests,
-    });
-    resourceFacts = {
-      reported: novelty !== null,
-      leaks: leaks.map(toLeak),
-      newLeaks: leaks.filter((f) => f.isNew).map(toLeak),
-      baseBranch: novelty?.baseBranch ?? null,
-    };
-  }
+  const resourceFacts: GateFacts['resources'] =
+    policy.maxLeaks != null || policy.maxNewLeaks != null ? await runLeakFacts(db, id) : undefined;
 
   const facts: GateFacts = {
     runId: id,
