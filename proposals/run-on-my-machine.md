@@ -12,8 +12,14 @@ option and entry D64 of the 1.0 register.
 
 **Status.** Proposed 2026-11-06. PR 1 is built: **Create issue** on runs and tests with a comment (D17) and the run
 options of **Copy retry command** (D18). Headed is off by default, so a copied command runs headless until a person
-picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. Nothing else is built, and nothing here
-is on [`ROADMAP.md`](../ROADMAP.md) yet. The
+picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in two. PR 2a is built:
+`@piwitests/core/run-request`, the `run:request` and `run:receive` permissions, the `machine-runs` capability (off
+until an administrator turns it on, enforced on the server), the two tables, target keys made by the device flow (they
+hold `run:receive` alone, and only the target routes take them), and the routes below except the stream. A request
+needs sign-in turned on. **Run** moves a request to `starting` without a run token: the run token with the `request`
+origin and its visibility, the stream, Connected apps, the capability's **Turn on** button, the demo's simulated target,
+the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2b, so a run reaches the instance only once its
+rules ship with it. Nothing here is on the roadmap yet. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE
 windows are left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries
 resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one
@@ -561,18 +567,19 @@ D5 and D6): `waiting` (stored, not claimed), `claimed` (shown in the target, not
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/run-requests` | a signed-in session with `run:request` | Creates a request for one of the person's targets; answers its id. |
+| `POST /api/run-requests` | a signed-in session with `run:request` | Creates a request for one of the person's targets from an execution, a run's failed or all tests, or a spec file of a run; the instance resolves the tests. |
 | `GET /api/run-requests/:id` | its requester | The request's state. |
 | `POST /api/run-requests/:id/stop` | its requester | Sends a stop to the target that runs it. |
 | `GET /api/run-targets/stream` | a target key | New requests and stops, with a heartbeat. |
 | `GET /api/run-targets/requests` | a target key | The requests still `waiting`, for a reconnect or polling. |
 | `POST /api/run-targets/requests/:id/claim` | a target key | `waiting` to `claimed`; 409 on a second claim. |
 | `POST /api/run-targets/requests/:id/answer` | a target key | **Run** (answers the run token), **Not now**, or a failed check. |
-| `POST /api/run-targets/requests/:id/state` | a target key | `starting`, `stopping`, `ended`, and a stop obeyed. |
+| `POST /api/run-targets/requests/:id/state` | a target key | `running`, `stopping`, `ended`, and a stop obeyed. |
+| `PUT /api/run-targets/self` | a target key | Its platform, version and the projects it has a folder for. |
 
 Two tables, in both schemas with a migration each: `run_requests` (the request, its requester, its target, its state,
 its claim and expiry, the run once it begins) and `run_targets` (the key, the kind, the device name, the platform, the
-version, the projects it has a folder for, `last_seen_at`, `revoked_at`).
+version, the projects it has a folder for, `last_seen_at`; revoking the key deletes the row).
 
 ## Security
 

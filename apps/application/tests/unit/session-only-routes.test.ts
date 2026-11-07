@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
-import { buildAccessSummary, InstanceRole } from '#shared/permissions';
+import { buildAccessSummary, InstanceRole, ProjectRole } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 
 /**
@@ -21,6 +21,14 @@ vi.mock('../../server/database', () => ({
       set: () => ({
         where: async () => {
           state.acted.push('password');
+        },
+      }),
+    }),
+    insert: () => ({
+      values: () => ({
+        returning: async () => {
+          state.acted.push('run-request');
+          return [{}];
         },
       }),
     }),
@@ -49,6 +57,8 @@ vi.mock('../../server/utils/oauth', () => ({
 vi.mock('../../server/utils/rate-limit', () => ({
   limitLookupMisses: async (_event: unknown, _key: string, _limit: unknown, lookup: () => Promise<unknown>) => lookup(),
   rateLimitClientIp: () => 'test',
+  checkRateLimit: () => true,
+  rateLimitedError: () => new Error('rate limited'),
   takeRateLimitSlots: () => [],
   releaseRateLimit: () => {},
 }));
@@ -68,6 +78,24 @@ vi.mock('../../server/utils/mcp-oauth', () => ({
     state.acted.push('mcp-oauth');
     return { status: 'approved', redirectTo: 'http://localhost/callback?code=x' };
   },
+}));
+vi.mock('../../server/utils/project-access', async (original) => ({
+  ...(await original<typeof import('../../server/utils/project-access')>()),
+  requireProjectPermission: async () => {},
+  resolveRunProjectId: async () => 1,
+}));
+vi.mock('../../server/utils/run-requests', () => ({
+  newRunRequestId: () => '0123456789abcdef0123456789abcdef',
+  requireMachineRunsOn: async () => {},
+  requireSignInForRunRequests: () => {},
+  resolveRequestTests: async () => ({
+    ok: true,
+    projectId: 1,
+    tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: null }],
+    source: { runId: 1 },
+    projects: [],
+  }),
+  runRequestView: async () => ({}),
 }));
 vi.mock('../../server/utils/public-base-url', () => ({ publicBaseUrl: () => 'http://localhost' }));
 vi.mock('../../server/utils/profile-picture', () => ({
@@ -102,7 +130,7 @@ async function loadRoute(path: string): Promise<Handler> {
   return underRoutePermission(state, (await import(path)).default as Handler);
 }
 
-const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: string }> = [
+const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: string; contributor?: true }> = [
   {
     name: 'POST /api/users/:id/api-keys',
     handler: await loadRoute('../../server/api/users/[id]/api-keys/index.post'),
@@ -145,24 +173,36 @@ const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: st
     event: { params: { id: 'request' }, body: { allow: true } },
     acts: 'mcp-oauth',
   },
+  {
+    name: 'POST /api/run-requests',
+    handler: await loadRoute('../../server/api/run-requests/index.post'),
+    event: { body: { source: { runId: 1, tests: 'failed' } } },
+    acts: 'run-request',
+    contributor: true,
+  },
 ];
 
 const user = { id: 7, role: InstanceRole.MEMBER, username: 'robin', name: null } as unknown as User;
 const signedIn: RouteCaller = { user, access: buildAccessSummary(InstanceRole.MEMBER, []) };
+const contributor: RouteCaller = {
+  user,
+  access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.CONTRIBUTOR }]),
+};
 
 beforeEach(() => {
   state.acted = [];
 });
 
-describe.each(ROUTES)('$name', ({ handler, event, acts }) => {
+describe.each(ROUTES)('$name', ({ handler, event, acts, contributor: needsRole }) => {
+  const caller = needsRole ? contributor : signedIn;
   test('refuses an API key before it acts', async () => {
-    state.caller = { ...signedIn, apiKey: true };
+    state.caller = { ...caller, apiKey: true };
     await expect(handler(event)).rejects.toMatchObject({ statusCode: 403 });
     expect(state.acted).toEqual([]);
   });
 
   test('acts for a signed-in session', async () => {
-    state.caller = signedIn;
+    state.caller = caller;
     await handler(event);
     expect(state.acted).toContain(acts);
   });
