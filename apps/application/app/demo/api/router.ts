@@ -2068,7 +2068,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return getTestCase(await getDemoDb(), +m[1]!);
+      return getTestCase(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
