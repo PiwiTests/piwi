@@ -492,6 +492,9 @@ What the package does to a user's run, process by process.
   seconds (`internal/streaming/live-resources.ts`).
 - `onBegin` writes `PIWI_RESOURCES_RESULTS` (see below) and, with coverage on,
   `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
+- For a test that ran without the capture fixtures, `collectResources` reads the source
+  files its browser, context and page steps point at, each once per run
+  (`sourceLineReader`), for the names each call was made on and assigned to.
 - **The run's log** (`internal/support/run-log.ts`). Playwright hands what a worker writes
   while a test runs to that test, as its own output, raw writes to the worker's file
   descriptors included: only the runner's process reaches the run's log alone. The global
@@ -680,7 +683,8 @@ src/
                 posted as it runs)
     collect/    metadata-collector, error-text, test-meta, external-ids,
                 resource-verdicts (the censuses stitched into leaked, idle,
-                piling-up and handle findings), process-sampler (the run's
+                piling-up and handle findings; probable ones from the steps
+                of tests without the fixtures), process-sampler (the run's
                 processes and the machine, sampled from the reporter),
                 machine-panel (the end-of-run CPU, memory and disk lines),
                 resource-wire (what the server receives), coverage-settings,
