@@ -371,6 +371,7 @@ import {
 } from './integrations';
 import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
+import { isSubmissionId, MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -659,7 +660,7 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
 }
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
-const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
+const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
 
 /** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
@@ -680,6 +681,19 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/** The name a demo issue gives the person filing it: the acting persona's. */
+async function demoFiledByName(
+  db: Awaited<ReturnType<typeof getDemoDb>>,
+  ctx: DemoCtx | undefined,
+): Promise<string | null> {
+  if (!ctx?.actingUserId) return null;
+  const [row] = await db
+    .select({ name: users.name, username: users.username })
+    .from(users)
+    .where(eq(users.id, ctx.actingUserId));
+  return row ? row.name?.trim() || row.username : null;
 }
 
 /**
@@ -3590,11 +3604,13 @@ const routes: RouteEntry[] = [
         throw demoHttpError(400, 'entityType and entityId are required');
       }
       await assertDemoIssueEntity(ctx, entityType, entityId);
+      const db = await getDemoDb();
       const draft = await demoIssueDraft(
-        await getDemoDb(),
+        db,
         entityType,
         entityId,
         toIssueLocale(q?.get('locale')) ?? undefined,
+        await demoFiledByName(db, ctx),
       );
       if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
       return draft;
@@ -3612,7 +3628,13 @@ const routes: RouteEntry[] = [
         title?: string;
         issueType?: string;
         fields?: unknown;
+        comment?: string;
+        submissionId?: string;
       };
+      const commentOk =
+        b.comment === undefined || (typeof b.comment === 'string' && b.comment.length <= MAX_ISSUE_COMMENT_LENGTH);
+      const submissionOk = b.submissionId === undefined || isSubmissionId(b.submissionId);
+      if (!commentOk || !submissionOk) throw demoHttpError(400, 'Invalid request body');
       if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
         throw demoHttpError(400, 'Invalid request body');
       }
@@ -3621,9 +3643,13 @@ const routes: RouteEntry[] = [
       if (b.connectionId !== getDemoProjectIntegration().connectionId) {
         throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
       }
-      const created = await demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+      const db = await getDemoDb();
+      const created = await demoCreateIssue(db, b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,
+        comment: b.comment ?? null,
+        filedBy: await demoFiledByName(db, ctx),
+        submissionId: b.submissionId ?? null,
       });
       if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
       return created;

@@ -88,7 +88,7 @@ A run, an execution, a cluster or a test runs again here, with the folder's own 
 **Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
 
 - **The arrow next to the button** shows the command, runs it once headed, in the inspector or UI mode, and sets its
-  options: tests by `file:line`, title or file, a trace, `--repeat-each` (up to 1,000 in **Run with
+  options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
   options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
   **Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.

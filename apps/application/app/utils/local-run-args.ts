@@ -7,10 +7,17 @@
  * the copyable command: a `--project` filter and a `file:line` filter must pair
  * up, so mixed-project retries become sequential steps.
  */
-import { escapeGrep, specPattern, type RetryCase, type RetryMode } from './retry-command';
+import {
+  escapeGrep,
+  specPattern,
+  type RetryCase,
+  type RetryMode,
+  type RetryRunMode,
+  type RetryRunOptions,
+} from './retry-command';
 
 /** How the browser runs. `debug` opens the inspector, `ui` opens UI mode. */
-export type LocalRunMode = 'normal' | 'headed' | 'debug' | 'ui';
+export type LocalRunMode = RetryRunMode;
 
 export interface LocalRunOptions {
   mode?: RetryMode;
@@ -97,6 +104,15 @@ export function buildBisectArgs(cases: RetryCase[]): string[] {
   return args;
 }
 
+/** The options of a local run as a copied command carries them, so the copy runs what Run locally runs. */
+export function localRunCopyOptions(options: LocalRunOptions): RetryRunOptions {
+  return {
+    runMode: options.runMode ?? 'normal',
+    trace: options.trace ? 'on' : null,
+    repeatEach: Math.min(1000, Math.max(1, Math.floor(options.repeatEach ?? 1))),
+  };
+}
+
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
   if (cases.length === 0) return [];
   const mode = options.mode ?? 'file-line';
@@ -109,7 +125,8 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
     if (project) args.push(`--project=${project}`);
     args.push(...RUN_MODE_FLAGS[runMode]);
     if (options.trace) args.push('--trace=on');
-    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`);
+    // Each repetition reports its own result, as the editors' repeat does.
+    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
     steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
   }
   return steps;

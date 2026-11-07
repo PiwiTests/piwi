@@ -14,6 +14,35 @@ export function createIssueKey(entityType: string, entityId: number, connectionI
   return `create-issue:${entityType}:${entityId}:conn${connectionId}`;
 }
 
+/**
+ * One create-issue per submission of the create dialog, for an entity that may
+ * get several issues (a run, an execution with no failure cluster): the same
+ * submission sent twice files once, a new one files again.
+ */
+export function createIssueSubmissionKey(
+  entityType: string,
+  entityId: number,
+  connectionId: number,
+  submissionId: string,
+): string {
+  return `${createIssueKey(entityType, entityId, connectionId)}:s${submissionId}`;
+}
+
+/** Whether an action's error is an Outcome unknown: the create may have reached the tracker. */
+export function isOutcomeUnknownError(error: string | null | undefined): boolean {
+  return !!error?.startsWith('Outcome unknown:');
+}
+
+/** Whether a dedupe key names one submission of the create dialog (`createIssueSubmissionKey`). */
+export function isSubmissionKey(key: string): boolean {
+  return /:s[0-9a-f-]{36}$/i.test(key);
+}
+
+/** One comment per submission on an issue already filed, where a person's words go instead of a second issue. */
+export function commentOnFiledIssueKey(issueKey: string, submissionId: string): string {
+  return `comment:issue:${issueKey}:s${submissionId}`;
+}
+
 /** One fix comment per cluster per run. */
 export function fixCommentKey(clusterId: number, runId: number): string {
   return `comment:failure_cluster:${clusterId}:fixed:r${runId}`;

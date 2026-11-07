@@ -458,7 +458,11 @@ const retryCases = computed(() => [
     projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
   },
 ]);
-const retryCommand = computed(() => buildRetryCommand(retryCases.value));
+// This one test by its file and line, with the run options the browser remembers from the run page.
+const { optionsFor: retryOptionsFor } = useRetryOptions();
+const retryCommand = computed(() =>
+  buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() }),
+);
 const { copy: copyRetry } = useCopy();
 
 onMounted(() => {
@@ -594,6 +598,15 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     });
   } else if (canFileIssue.value && failureCluster.value) {
     issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+  } else if (canFileIssue.value && testCase.value?.id) {
+    // An execution with no failure cluster files an issue of its own: a test that
+    // passed but misses a case, a skipped one, a failure not grouped.
+    issue.push({
+      label: 'Create issue',
+      icon: 'i-lucide-file-plus',
+      'data-tour': 'execution-create-issue',
+      onSelect: () => (issueModalOpen.value = true),
+    });
   }
   if (canEditLinks.value && failureCluster.value) {
     issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
