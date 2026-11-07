@@ -16,9 +16,9 @@ export function storedPathSegments(path: string): string[] {
     .filter((segment) => segment !== '');
 }
 
-/** Whether `viewerId` sees one of `runs`; a file no run names is no run's. */
-function seesAny(runs: RunVisibilityFields[], viewerId: number | null): boolean {
-  return runs.length === 0 || runs.some((run) => isVisibleRun(run, viewerId));
+/** Whether `viewerId` sees one of `runs`; a file no run names is read only when `unnamed` is. */
+function seesAny(runs: RunVisibilityFields[], viewerId: number | null, unnamed = true): boolean {
+  return runs.length === 0 ? unnamed : runs.some((run) => isVisibleRun(run, viewerId));
 }
 
 const RUN_FIELDS = { origin: testRuns.origin, requesterId: testRuns.requesterId };
@@ -26,7 +26,8 @@ const RUN_FIELDS = { origin: testRuns.origin, requesterId: testRuns.requesterId 
 /**
  * Whether `viewerId` may read a file stored under project `projectId`'s folder, as far as private runs go: a run's
  * own folder (`run-<id>/`) and the files a run's records name (a report's folder, a trace blob, a pooled trace
- * resource) are read only by those who see one of the runs that hold them.
+ * resource) are read only by those who see one of the runs that hold them. A trace blob or resource no run's file
+ * names yet is read by nobody.
  */
 export async function storedFileVisible(
   db: DbClient,
@@ -49,7 +50,7 @@ export async function storedFileVisible(
       .innerJoin(files, eq(files.blobId, traceBlobs.id))
       .innerJoin(testRuns, eq(testRuns.id, files.testRunId))
       .where(and(eq(traceBlobs.projectId, projectId), eq(sql`lower(${traceBlobs.hash})`, hash)));
-    return seesAny(runs, viewerId);
+    return seesAny(runs, viewerId, false);
   }
   if (folder === 'trace-resources') {
     if (!name) return true;
@@ -60,7 +61,7 @@ export async function storedFileVisible(
       .innerJoin(files, eq(files.blobId, traceBlobResources.blobId))
       .innerJoin(testRuns, eq(testRuns.id, files.testRunId))
       .where(and(eq(traceResources.projectId, projectId), eq(sql`lower(${traceResources.name})`, name)));
-    return seesAny(runs, viewerId);
+    return seesAny(runs, viewerId, false);
   }
   // A report file, or a file of an extracted report, whose `files` row names its entry file inside the folder.
   const reportPath = `project-${projectId}/${folder}`;

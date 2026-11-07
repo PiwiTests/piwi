@@ -53,6 +53,7 @@ const VIDEO = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
 const SECRET = Buffer.from('project 2 only');
 const BLOB = 'a'.repeat(64);
 const PRIVATE_BLOB = 'b'.repeat(64);
+const UNLINKED_BLOB = 'c'.repeat(64);
 /**
  * Stored names that hold `..` but are no `..` segment, each with the type it is served as: a step's file, and
  * screenshots named after step titles that end in `.` or hold `...`.
@@ -118,7 +119,12 @@ beforeAll(async () => {
     .insert(schema.traceBlobs)
     .values({ projectId: 1, hash: PRIVATE_BLOB, path: `project-1/blobs/${PRIVATE_BLOB}.zip`, size: 7 })
     .returning();
+  const [teamBlob] = await db
+    .insert(schema.traceBlobs)
+    .values({ projectId: 1, hash: BLOB, path: `project-1/blobs/${BLOB}.zip`, size: 4 })
+    .returning();
   await db.insert(schema.files).values([
+    { testRunId: 7, type: 'trace', path: `project-1/blobs/${BLOB}.zip`, blobId: teamBlob!.id },
     { testRunId: 8, type: 'trace', path: `project-1/blobs/${PRIVATE_BLOB}.zip`, blobId: blob!.id },
     { testRunId: 8, type: 'report', subtype: 'html', path: 'project-1/run-1-abcd1234-html-report/index.html' },
   ]);
@@ -139,6 +145,7 @@ beforeAll(async () => {
   mkdirSync(join(storageDir, 'project-1/blobs'), { recursive: true });
   writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.zip`), 'slim');
   writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.manifest.json`), '{ not json');
+  writeFileSync(join(storageDir, `project-1/blobs/${UNLINKED_BLOB}.zip`), SECRET);
   writeFileSync(join(storageDir, 'project-2/secret.txt'), SECRET);
 
   const router = h3.createRouter().get('/api/files/**:path', handler as h3.EventHandler);
@@ -211,6 +218,10 @@ describe('a stored trace', () => {
     expect(answer.body.toString()).toBe('slim');
     expect(answer.headers['cache-control']).toBe('no-store');
     expect(answer.headers.etag).toBeUndefined();
+  });
+
+  test('that no run names yet is read by nobody', async () => {
+    expect((await get(`/api/files/project-1/blobs/${UNLINKED_BLOB}.zip`)).status).toBe(404);
   });
 });
 
