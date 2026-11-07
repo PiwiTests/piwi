@@ -132,20 +132,17 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
   all, and each is checked before use: without the hooks the ledger stays off.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
-- **Probable leaks** come from the step titles, which name no object, and from the source lines the steps point at:
-  - A close looks in its own test first, then in the file's `beforeAll` and `afterAll` hooks, then in earlier tests.
-    In each, a close called on a name (`ctx` in `ctx.close()`) takes the open assigned that name, else the latest
-    open assigned none; failing both everywhere, the latest open of its test. A close called on no name, such as `page.context().close()`, takes the latest open, so it can
-    be counted for another object of its test; so can a close of an object a helper assigned another name.
-  - A page counts as `browser.newPage()`, which opens a context for it, when the name right before `.newPage` is a
-    browser's: one a launch was assigned to, or, when no open in the test or its hooks was assigned that name, a name
-    such as `browser` or `adminBrowser`. A page whose source file cannot be read is not counted.
-  - A browser's `close()` closes the contexts and pages opened on its name, or, with no names to read, those opened
-    after it in the same test, or in the same `beforeAll` and `afterAll` hooks. A context a helper opens on a parameter
-    of another name is not closed with it.
-  - A fixture's objects are never counted, and its teardown's closes count for what the test opened through it.
-  - An API request context is never counted: its `dispose()` leaves no step. A context left to a browser from
-    `browserType.connect()` reads as open: that browser's `close()` leaves no step either.
+- **Probable leaks** are read from the step titles, which name no object, and from the lines the steps point at:
+  - A close is paired with the open assigned the name it is called on (`ctx` in `ctx.close()`). One called on no
+    name, such as `page.context().close()`, or on a name a helper's open was not assigned, can be counted for another
+    object of its test.
+  - A page counts as `browser.newPage()` when the name before `.newPage` is a browser's (`browser`, `adminBrowser`,
+    or one a launch was assigned to) and was assigned no context. A page whose source file cannot be read is not
+    counted.
+  - A browser's `close()` closes what was opened on its name, not a context a helper opened on a parameter of another
+    name. A fixture's objects are never counted.
+  - API request contexts are not counted: `dispose()` leaves no step. Closing a browser from `browserType.connect()`
+    leaves none either, so its contexts read as open.
 - Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
   in Chromium only, and a small heap leak shows only over a long run.
 
