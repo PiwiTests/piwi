@@ -30,6 +30,7 @@ const { generateApiKey } = await import('../../server/utils/auth');
 const { claimRequest, requireRunTarget } = await import('../../server/utils/run-requests');
 const { RUN_TARGET_RECHECK_MS, isRunTargetOnline, publishRunRequest, publishToRunTarget, resetRunTargetEvents } =
   await import('../../server/utils/run-target-events');
+const { listConnectedApps, listUserApiKeys } = await import('#shared/handlers/users');
 const stream = (await import('../../server/api/run-targets/stream.get')).default as (
   event: H3Event,
 ) => Promise<Response>;
@@ -240,5 +241,39 @@ describe('a connected app’s stream', () => {
 
   test('refuses a credential that is not a connected app’s', async () => {
     await expect(stream(eventWithKey(generateApiKey().plaintext))).rejects.toMatchObject({ statusCode: 401 });
+  });
+});
+
+describe('Connected apps', () => {
+  test('lists the apps a user connected, newest first, with whether one that runs tests is online', async () => {
+    const picker = generateApiKey();
+    await db.insert(schema.apiKeys).values([
+      { userId, name: 'CI', keyHash: generateApiKey().hash, keyPrefix: 'ci000000' },
+      {
+        userId,
+        name: 'Piwi Picker in Chrome on LAPTOP-42',
+        keyHash: picker.hash,
+        keyPrefix: picker.prefix,
+        clientKind: 'picker',
+        createdAt: new Date('2026-09-01T10:00:00Z'),
+      },
+    ]);
+    const { key, keyId, targetId } = await target();
+    await target(otherUserId);
+    const s = await open(key);
+
+    const apps = await listConnectedApps(db as never, userId, isRunTargetOnline);
+    expect(apps.map((a) => [a.kind, a.target?.online ?? null])).toEqual([
+      ['desktop', true],
+      ['picker', null],
+    ]);
+    expect(apps[0]).toMatchObject({ id: keyId, name: 'Piwi Desktop on LAPTOP-42 (macOS)' });
+    // The API keys list still has every key, each saying whether the device flow made it.
+    const keys = (await listUserApiKeys(db as never, userId)).apiKeys;
+    expect(keys.map((k) => k.clientKind ?? null).sort()).toEqual([null, 'desktop', 'picker'].sort());
+
+    await s.leave();
+    expect((await listConnectedApps(db as never, userId, isRunTargetOnline))[0]!.target?.online).toBe(false);
+    expect(isRunTargetOnline(targetId)).toBe(false);
   });
 });

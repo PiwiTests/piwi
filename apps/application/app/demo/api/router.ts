@@ -392,7 +392,7 @@ import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/han
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
-import { listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
+import { listConnectedApps, listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
 import {
@@ -3349,6 +3349,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       assertDemoSelfOrAdmin(ctx, +m[1]!);
       return { items: (await listUserApiKeys(await getDemoDb(), +m[1]!)).apiKeys };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/connected-apps$/,
+    handler: async (m, _b, _q, ctx) => {
+      assertDemoSelfOrAdmin(ctx, +m[1]!);
+      // The demo's simulated desktop app holds its stream open for as long as the demo runs.
+      return { items: await listConnectedApps(await getDemoDb(), +m[1]!, () => true) };
     },
   },
   {
