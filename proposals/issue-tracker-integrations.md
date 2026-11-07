@@ -500,8 +500,10 @@ sync resolves a cluster when any of its links moves to Done, neither looking at 
   ticket reopens skip it. When the pull finds that its issue moved out of the bound project, it deletes the link.
 - It counts as tracked. The known issue (`getClusterKnownIssue` and `clusterKnownIssues`, which back the chip, the PR
   comment's *tracked in SHOP-123*, the `cluster.*` notifications, the automatic-creation guard and the `needs-ticket`
-  queue) is the cluster's tracker link when it has one, so the issue named is the issue written to, and the oldest
-  link from the tests otherwise.
+  queue) is the cluster's tracker link when it has one, so the issue named is the issue written to. Otherwise it is the
+  oldest link from the tests whose status category is not Done, and the oldest link from the tests when all are Done:
+  `knownIssueTracks` (`shared/handlers/known-issues.ts`) treats a Done issue as not tracking, so a cluster that names
+  SHOP-100 (Done) and SHOP-412 (open) is tracked in SHOP-412 and gets no duplicate.
 - A person who wants the write-backs pins the issue by hand: `createEnrichedLink`, which the REST route and the MCP
   tool share, turns a link from the tests with the same key into a `pinned` one instead of adding a row.
 
@@ -553,9 +555,9 @@ entity_link_dismissals
 ```
 
 - Both delete paths write it when the removed link is on a cluster and has a key: `deleteLink` (REST
-  `DELETE /api/links/:id`) and `deleteLinksTo` (MCP). It keeps the link's `external_id`, which is the Jira issue id
-  for a link from the tests or a created one, and the key itself for a pinned one. The step skips an issue whose key
-  or Jira issue id is dismissed, so a dismissal of a link from the tests survives a move.
+  `DELETE /api/links/:id`) and `deleteLinksTo` (MCP). It keeps the link's Jira issue id in `external_id` for a link
+  from the tests or a created one, and null for a pinned one, whose `key` column already holds the key. The step skips
+  an issue whose key or Jira issue id is dismissed, so a dismissal of a link from the tests survives a move.
 - Pinning the same issue on that cluster by hand deletes the dismissal.
 - `mergeFailureClusters`, before it moves the victim's links, deletes the victim's links from the tests whose key the
   survivor links (by any origin) or has dismissed, and the survivor's links from the tests whose key the victim pinned
@@ -727,8 +729,9 @@ Jira the same way; the settings page hides nothing there.
   does, dedupe candidate ranking, the policy guards, the backoff helper, `detectProviderWithConnection`. For the
   links the tests declare: `piwi:issue` in `test-meta.test.ts` (URL, key, other schemes, the cap), the link step
   against a stubbed search (off-project keys, an unknown key in the batch, the per-cluster cap, a dismissed pair, two
-  steps at once, a moved issue, the deadline), the dismissal and a shared key across a merge and a split, and that
-  no policy, status move or issue body acts on a link from the tests.
+  steps at once, a moved issue, the deadline), the dismissal and a shared key across a merge and a split, the known
+  issue of a cluster that names a Done issue and an open one, and that no policy, status move or issue body acts on a
+  link from the tests.
 - **E2E** (Playwright): a mock Jira HTTP server in `tests/utils/` (the `ai-diagnosis.spec.ts` mock-provider pattern)
   driving create → chip → sync → comment → close → cluster prompt; a mock Confluence for publish; role checks; the
   env-managed connection; the MCP tool. Project names registered in `shared/test-project-names.ts`.
