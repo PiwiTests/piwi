@@ -68,9 +68,9 @@ async function revoke() {
         class="flex items-center justify-between gap-3 rounded-lg border border-default px-4 py-3"
       >
         <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <UIcon :name="KIND_ICONS[app.kind] ?? 'i-lucide-plug'" class="text-muted shrink-0" />
-            <span class="font-medium truncate">{{ app.name }}</span>
+          <div class="flex items-start gap-2">
+            <UIcon :name="KIND_ICONS[app.kind] ?? 'i-lucide-plug'" class="text-muted shrink-0 mt-1" />
+            <span class="font-medium min-w-0 break-words">{{ app.name }}</span>
             <UBadge v-if="app.target?.online" color="success" variant="subtle" size="sm" label="Online" />
           </div>
           <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
