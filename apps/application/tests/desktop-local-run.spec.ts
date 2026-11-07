@@ -625,7 +625,13 @@ test.describe('Desktop local run', () => {
 
     const invocations = await runInvocations(page);
     expect(invocations).toHaveLength(1);
-    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--trace=on', '--repeat-each=20']);
+    expect(invocations[0]!.args!.args).toEqual([
+      '--grep',
+      'checkout completes',
+      '--trace=on',
+      '--repeat-each=20',
+      '--retries=0',
+    ]);
 
     // The preset stays out of the project's saved defaults.
     const saved = await page.evaluate(
@@ -670,7 +676,7 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
     const invocations = await runInvocations(page);
-    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20']);
+    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
   });
 
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {
