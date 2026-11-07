@@ -111,12 +111,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/extension/connect/token',
   'GET /api/extension/connect/request',
   'POST /api/extension/connect/decision',
-  // Run on my machine: a request belongs to the person who made it, so it needs
-  // sign-in, which the demo has none of; a run target reaches a real server
-  // with the key the device flow gave it, never the demo.
-  'POST /api/run-requests',
-  'GET /api/run-requests/:id',
-  'POST /api/run-requests/:id/stop',
+  // Run on my machine: a run target reaches a real server with the key the
+  // device flow gave it, never the demo, whose seeded app answers in the
+  // requester's routes.
   'GET /api/run-targets/requests',
   'GET /api/run-targets/stream',
   'POST /api/run-targets/requests/:id/claim',

@@ -2365,6 +2365,66 @@ const SCENES = [
     outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
   },
   {
+    name: 'run-on-my-machine',
+    mode: 'demo',
+    description:
+      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, and Settings → Account → Your runs on my machine',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the request.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const button = page.getByRole('button', { name: 'Run on my machine' });
+      await button.waitFor({ timeout: 90_000 });
+      await button.click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('radio').first().waitFor({ timeout: 15_000 });
+      await settle();
+      await shoot('menu', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1000 });
+      await settle();
+      await shoot('menu-phone', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await dialog.getByRole('button', { name: 'Send' }).click();
+      const state = dialog.getByTestId('run-request-state');
+      await state.filter({ hasText: 'Running in' }).waitFor({ timeout: 20_000 });
+      await settle();
+      await shoot('running', { of: '[role="dialog"]', pad: 0 });
+      await state.filter({ hasText: 'Ended' }).waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('ended', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await page.goto(page.url().replace(/\/test-run-cases\/.*$/, '/settings/account'));
+      await page
+        .locator('[data-shot="account-run-requests"] [data-testid="run-requests-list"]')
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('list', { of: '[data-shot="account-run-requests"]', pad: 12 });
+      await page.goBack({ waitUntil: 'domcontentloaded' });
+      await page
+        .getByRole('link', { name: /^Run #\d+$/ })
+        .first()
+        .click();
+      await page
+        .locator('[data-shot="run-header"]')
+        .getByRole('button', { name: 'Run on my machine' })
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('run-header', { of: '[data-shot="run-header"]', pad: 0 });
+    },
+    outputs: [
+      'run-on-my-machine-run-header.png',
+      'run-on-my-machine-menu.png',
+      'run-on-my-machine-menu-phone.png',
+      'run-on-my-machine-running.png',
+      'run-on-my-machine-ended.png',
+      'run-on-my-machine-list.png',
+    ],
+  },
+  {
     name: 'demo-simulator',
     mode: 'demo',
     description:

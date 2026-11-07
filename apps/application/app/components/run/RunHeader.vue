@@ -10,6 +10,8 @@ import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -195,6 +197,22 @@ const rerunSets = computed<LocalRunSet[]>(() => {
 });
 const rerunMain = computed(() => rerunSets.value[0] ?? null);
 
+/** What Run on my machine sends from a run: its failed tests when it has some, and all its tests. */
+const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
+  const runId = props.testRun?.id;
+  if (!runId) return [];
+  const max = RUN_REQUEST_LIMITS.tests.max;
+  const choices: RunOnMyMachineChoice[] = [];
+  const failed = failedCases.value.length;
+  if (failed && failed <= max) {
+    choices.push({ label: 'The failed tests', count: failed, source: { runId, tests: 'failed' } });
+  }
+  const all = allCases.value.length;
+  if (all && all <= max)
+    choices.push({ label: 'All the tests of the run', count: all, source: { runId, tests: 'all' } });
+  return choices;
+});
+
 const desktopBridge = ref(false);
 onMounted(() => {
   desktopBridge.value = !!tauriCore();
@@ -341,6 +359,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
         :other-sets="rerunSets.slice(1)"
+      />
+
+      <RunOnMyMachineButton
+        v-if="testRun?.projectId && machineChoices.length"
+        :project-id="testRun.projectId"
+        :choices="machineChoices"
+        :projects="retryProjects"
       />
 
       <UButton

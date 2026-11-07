@@ -6,10 +6,15 @@ import { RETRY_OPTION_LIMITS, type RetryMode, type RetryTraceMode } from '~/util
  * options. Every Copy retry command of the page reads them, and the browser
  * remembers all but the Playwright project.
  */
-const props = defineProps<{
-  /** The Playwright projects the tests ran in; with more than one, a project can be picked for all of them. */
-  projects?: readonly string[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** The Playwright projects the tests ran in; with more than one, a project can be picked for all of them. */
+    projects?: readonly string[];
+    /** Whether the menu offers how the tests are named: a run request names them itself. */
+    naming?: boolean;
+  }>(),
+  { projects: () => [], naming: true },
+);
 
 const { prefs, project, mode, update } = useRetryOptions();
 
@@ -66,7 +71,7 @@ const projectChoice = computed({
 
 <template>
   <div class="p-2 space-y-3 w-64" data-shot="retry-command-options" data-tour="retry-command-options">
-    <div class="space-y-1">
+    <div v-if="naming" class="space-y-1">
       <p class="text-xs text-muted px-2">Name the tests by</p>
       <button
         v-for="m in MODE_ITEMS"
@@ -80,7 +85,7 @@ const projectChoice = computed({
         {{ m.label }}
       </button>
     </div>
-    <div class="space-y-2 px-2 border-t border-default pt-3">
+    <div class="space-y-2 px-2" :class="naming ? 'border-t border-default pt-3' : ''">
       <p class="text-xs text-muted inline-flex items-center gap-1">Options <HelpHint topic="run.retryOptions" /></p>
       <USwitch v-model="headed" label="Headed" size="sm" />
       <label class="flex items-center justify-between gap-2 text-sm">

@@ -471,6 +471,13 @@ const APP_SETTINGS = [
     },
     updated_at: ts('2025-04-20T09:00:00'),
   },
+  // Run on my machine is off until an administrator turns it on; the demo turns it on, so its simulated desktop app
+  // takes the requests of the run and test pages.
+  {
+    key: 'capabilities',
+    value: { decisions: { 'machine-runs': 'enabled' } },
+    updated_at: ts('2025-04-20T09:00:00'),
+  },
 ];
 // Runs kept forever: the v2.4.0 release run (by the release marker linked to
 // it below), one older run kept by hand, and one the reporter kept at ingest.
