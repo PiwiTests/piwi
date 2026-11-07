@@ -94,6 +94,7 @@ import {
   formatResourceSummary,
   parseResourceCensus,
   parseResourceResults,
+  sourceLineReader,
   tallyLifecycleSteps,
   userFixturesOf,
   type LifecycleTally,
@@ -280,6 +281,8 @@ export class PiwiDashboardReporter {
   private resourceCensuses: ResourceCensus[] = [];
   /** Lifecycle steps of the tests that ran without the fixtures. */
   private lifecycleTallies: LifecycleTally[] = [];
+  /** The spec and helper files those steps point at, read once each. */
+  private readonly sourceLines = sourceLineReader();
   /** The user fixtures set up by the tests that left a page unused, by test id. */
   private fixturesByTest = new Map<string, string[]>();
   /** The file workers append their shutdown census to, set in `onBegin`. */
@@ -1119,8 +1122,8 @@ export class PiwiDashboardReporter {
 
   /**
    * Add up the files a test attached, and keep its resource census; for a test
-   * that ran without the capture fixtures, tally the browsers and contexts its
-   * steps opened and closed.
+   * that ran without the capture fixtures, tally the browsers, contexts and
+   * pages its steps opened and closed.
    */
   private collectResources(test: TestCase, result: TestResult, testCase: CollectedTestCase): void {
     const artifacts = emptyArtifacts();
@@ -1146,9 +1149,14 @@ export class PiwiDashboardReporter {
       return;
     }
     if (!result.steps?.length) return;
-    const tally = tallyLifecycleSteps(testFile(test, this.testPathBase), result.steps);
-    if (tally.opened.length > 0 || tally.closed.context > 0 || tally.closed.browser > 0)
-      this.lifecycleTallies.push(tally);
+    const attempt = {
+      file: testFile(test, this.testPathBase),
+      test: test.id,
+      worker: result.workerIndex,
+      failed: result.status !== test.expectedStatus,
+    };
+    const tally = tallyLifecycleSteps(attempt, result.steps, this.sourceLines);
+    if (tally.calls.length > 0) this.lifecycleTallies.push(tally);
   }
 
   /**

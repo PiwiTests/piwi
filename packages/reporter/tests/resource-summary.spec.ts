@@ -128,7 +128,44 @@ describe('the resource summary', () => {
     ];
     const lines = await run({}, fakeResult({ steps }));
     expect(lines).toContain('Resources: 1 probable leak');
-    expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · 1 opened, 0 closed in tests/cart.spec.ts');
+    expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · left open by its test');
+  });
+
+  it('reads the spec file to count a page `browser.newPage()` left open, and never counts an API context', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-probable-'));
+    const spec = path.join(dir, 'cart.spec.ts');
+    fs.writeFileSync(
+      spec,
+      [
+        "test('adds to cart', async ({ browser, context }) => {",
+        '  const page = await browser.newPage();',
+        '  const api = await request.newContext();',
+        '  const other = await context.newPage();',
+        '});',
+      ].join('\n'),
+    );
+    const step = (title: string, line: number, column: number) => ({
+      title,
+      category: 'pw:api',
+      location: { file: spec, line, column },
+      steps: [],
+    });
+    const steps = [step('Create page', 2, 30), step('Create request context', 3, 29), step('Create page', 4, 31)];
+    const bodies: any[] = [];
+    try {
+      const lines = await run({}, fakeResult({ steps }), undefined, (body) => bodies.push(body));
+      const site = `${path.relative(process.cwd(), spec).split(path.sep).join('/')}:2`;
+      expect(lines.filter((line) => line.startsWith('Resources:') || line.startsWith('  probable') || line.startsWith('Probable'))).toEqual([
+        'Resources: 1 probable leak',
+        `  probable page        ${site} · left open by its test`,
+        'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+      ]);
+      expect(bodies.find((body) => body.testCases).resourceReport.findings).toEqual([
+        { verdict: 'probable', kind: 'page', where: site, site, tests: 1, count: 1, detail: 'left open by its test' },
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('prints what the run cost the machine, with the artifacts the tests attached', async () => {

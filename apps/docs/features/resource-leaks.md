@@ -43,7 +43,7 @@ The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole r
 | **piling up** | A page or context living across tests whose open pages, listeners, route handlers or DOM elements kept growing; or a worker whose open file descriptors, or heap after V8's own full garbage collections, did | Remove what each test adds or opens; in a worker, what a module variable, cache or pool keeps |
 | **handle** | A server, child process or file watcher a test started and left running in the worker; a server or process at its line | Close or kill it in the test or an `afterEach` |
 | **idle** | A page opened and never used: no navigation, content, script or locator. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
-| **probable** | From a test that ran without the fixtures, counted from its steps: more browsers or contexts opened than closed in a spec file | Use the fixtures for exact findings |
+| **probable** | From a test that ran without the fixtures, counted from its steps: a browser, context or `browser.newPage()` page no close step matched, in its test, its `beforeAll`/`afterAll` hooks or a later test of its file | Use the fixtures for exact findings |
 
 What is never reported:
 
@@ -132,6 +132,11 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
   all, and each is checked before use: without the hooks the ledger stays off.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
+- **Probable leaks** come from step titles, which name no object. Each close is paired with the latest open of its
+  kind, in its test first, so with two left open in one test the line named may be the other's. A `Create page` counts
+  as `browser.newPage()` when the name before `newPage` on its line names a browser (`browser`, `adminBrowser`); a page
+  whose spec file cannot be read is not counted. An API request context is never counted: its `dispose()` leaves no
+  step. A context left to a browser from `browserType.connect()` reads as open: that browser's `close()` leaves no step.
 - Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
   in Chromium only, and a small heap leak shows only over a long run.
 

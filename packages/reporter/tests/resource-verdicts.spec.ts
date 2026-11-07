@@ -17,7 +17,9 @@ import {
   pileUp,
   tallyLifecycleSteps,
   userFixturesOf,
+  type LifecycleTally,
   type ResourceFinding,
+  type SourceLines,
 } from '../src/internal/collect/resource-verdicts.js';
 
 const SPEC = 'tests/cart.spec.ts';
@@ -410,25 +412,6 @@ describe('buildResourceReport', () => {
     expect(formatResourceSummary(report, 'report')[2]).toContain(`process     ${SPEC}:20 · 2 processes · left running`);
   });
 
-  it('turns the steps of a run without the fixtures into probable leaks, per file', () => {
-    const report = buildResourceReport({
-      censuses: [],
-      tallies: [
-        { file: SPEC, opened: [{ kind: 'context', site: `${SPEC}:4` }], closed: { context: 0, browser: 0 } },
-        { file: SPEC, opened: [{ kind: 'context', site: `${SPEC}:4` }], closed: { context: 0, browser: 0 } },
-        { file: OTHER_SPEC, opened: [{ kind: 'context', site: `${OTHER_SPEC}:3` }], closed: { context: 1, browser: 0 } },
-      ],
-    });
-    expect(report.findings).toEqual([
-      expect.objectContaining({
-        verdict: 'probable',
-        kind: 'context',
-        where: `${SPEC}:4`,
-        count: 2,
-        detail: `2 opened, 0 closed in ${SPEC}`,
-      }),
-    ]);
-  });
 });
 
 describe('pileUp', () => {
@@ -513,27 +496,225 @@ describe('the worker process piling up', () => {
   });
 });
 
-describe('tallyLifecycleSteps', () => {
-  const step = (title: string, category: string, steps: TestStep[] = [], line = 4): TestStep =>
-    ({ title, category, steps, location: { file: path.resolve(SPEC), line, column: 1 } }) as unknown as TestStep;
+/**
+ * A spec file's lines, and the steps Playwright records for the calls and hooks
+ * on them: a call's column at its method (`newPage`), a hook's at `beforeAll`.
+ */
+function specFile(lines: string[]) {
+  const file = path.resolve(SPEC);
+  const source: SourceLines = (f) => (f === file ? lines : null);
+  const at = (line: number, method: RegExp) => ({ file, line, column: lines[line - 1]!.search(method) + 1 });
+  const call = (title: string, line: number): TestStep =>
+    ({ title, category: 'pw:api', steps: [], location: at(line, title === 'Create page' ? /newPage/ : /\S/) }) as unknown as TestStep;
+  const hook = (title: string, line: number, steps: TestStep[]): TestStep =>
+    ({ title, category: 'hook', steps, location: at(line, /(?:before|after)(?:All|Each)/) }) as unknown as TestStep;
+  const hooks = (title: 'Before Hooks' | 'After Hooks', steps: TestStep[]): TestStep =>
+    ({ title, category: 'hook', steps }) as unknown as TestStep;
+  const attempt = (test: string, steps: TestStep[], extra: { worker?: number; failed?: boolean } = {}) =>
+    tallyLifecycleSteps({ file: SPEC, test, worker: extra.worker ?? 0, failed: extra.failed ?? false }, steps, source);
+  return { source, call, hook, hooks, attempt };
+}
 
-  it('counts what the test and its hooks opened and closed, never what a fixture did', () => {
-    const tally = tallyLifecycleSteps(SPEC, [
-      step('Before Hooks', 'hook', [
-        step('Fixture "context"', 'fixture', [step('Create context', 'pw:api')]),
-        step('beforeAll hook', 'hook', [step('Launch browser', 'pw:api', [], 7)]),
+const fixtureStep = (title: string, steps: TestStep[]): TestStep =>
+  ({ title, category: 'fixture', steps }) as unknown as TestStep;
+
+describe('tallyLifecycleSteps', () => {
+  it('lists the calls in order, each in its hook’s scope, never what a fixture did', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test.beforeAll(async () => {',
+      '  shared = await chromium.launch();',
+      '});',
+      'test.beforeEach(async ({ browser }) => {',
+      '  each = await browser.newContext();',
+      '});',
+      'test.afterAll(async () => {',
+      '  await shared.close();',
+      '});',
+      'test("checks out", async ({ browser }) => {',
+      '  const ctx = await browser.newContext();',
+      '  await ctx.close();',
+      '});',
+    ]);
+    const tally = attempt('t1', [
+      hooks('Before Hooks', [
+        fixtureStep('Fixture "context"', [call('Create context', 5)]),
+        hook('beforeAll hook', 1, [call('Launch browser', 2)]),
+        hook('beforeEach hook', 4, [call('Create context', 5)]),
       ]),
-      step('Create context', 'pw:api', [], 12),
-      step('After Hooks', 'hook', [step('Fixture "context"', 'fixture', [step('Close context', 'pw:api')]), step('Close browser', 'pw:api')]),
+      call('Create context', 11),
+      call('Close context', 12),
+      hooks('After Hooks', [fixtureStep('Fixture "context"', [call('Close context', 12)]), hook('afterAll hook', 7, [call('Close browser', 8)])]),
     ]);
     expect(tally).toEqual({
       file: SPEC,
-      opened: [
-        { kind: 'browser', site: `${SPEC}:7` },
-        { kind: 'context', site: `${SPEC}:12` },
+      test: 't1',
+      worker: 0,
+      failed: false,
+      calls: [
+        { op: 'open', kind: 'browser', site: `${SPEC}:2`, block: true },
+        { op: 'open', kind: 'context', site: `${SPEC}:5`, block: false },
+        { op: 'open', kind: 'context', site: `${SPEC}:11`, block: false },
+        { op: 'close', kind: 'context', site: `${SPEC}:12`, block: false },
+        { op: 'close', kind: 'browser', site: `${SPEC}:8`, block: true },
       ],
-      closed: { context: 0, browser: 1 },
     });
+  });
+
+  it('reads a named hook’s kind, and which `Create page` is `browser.newPage()`, from the line the step points at', () => {
+    const { call, hook, attempt } = specFile([
+      'test.beforeAll("open the shop", async ({ browser }) => {',
+      '  shop = await browser.newContext();',
+      '});',
+      'test.beforeEach("sign in", async ({ browser }) => {',
+      '  const one = await browser.newPage();',
+      '  const two = await this.browser?.newPage();',
+      '  const three = await browser',
+      '    .newPage();',
+      '  const four = await context.newPage();',
+      '  const five = await (await browser.newContext()).newPage();',
+      '  const six = await browserContext.newPage();',
+      '});',
+    ]);
+    const tally = attempt('t1', [
+      hook('open the shop', 1, [call('Create context', 2)]),
+      hook('sign in', 4, [5, 6, 8, 9, 10, 11].map((line) => call('Create page', line))),
+    ]);
+    expect(tally.calls).toEqual([
+      { op: 'open', kind: 'context', site: `${SPEC}:2`, block: true },
+      { op: 'open', kind: 'page', site: `${SPEC}:5`, block: false },
+      { op: 'open', kind: 'page', site: `${SPEC}:6`, block: false },
+      { op: 'open', kind: 'page', site: `${SPEC}:8`, block: false },
+    ]);
+  });
+
+  it('leaves a page out when its line cannot be read, or the step does not point at `newPage`', () => {
+    const page = (file: string, line: number, column: number) =>
+      ({ title: 'Create page', category: 'pw:api', steps: [], location: { file, line, column } }) as unknown as TestStep;
+    const source: SourceLines = (file) => (file === path.resolve(SPEC) ? ['await browser.newPage();'] : null);
+    const attempt = { file: SPEC, test: 't1', worker: 0, failed: false };
+    expect(tallyLifecycleSteps(attempt, [page(path.resolve(OTHER_SPEC), 1, 15)], source).calls).toEqual([]);
+    expect(tallyLifecycleSteps(attempt, [page(path.resolve(SPEC), 1, 1)], source).calls).toEqual([]);
+    expect(tallyLifecycleSteps(attempt, [page(path.resolve(SPEC), 1, 15)], source).calls).toHaveLength(1);
+  });
+});
+
+describe('probable leaks', () => {
+  const probable = (tallies: LifecycleTally[]) => buildResourceReport({ censuses: [], tallies }).findings;
+
+  it('names only the line left open, so a closed one of its kind changes nothing', () => {
+    const { call, attempt } = specFile([
+      'test("forgets its browser", async () => {',
+      '  await chromium.launch();',
+      '});',
+      'test("closes its browser, and what it opened in it", async () => {',
+      '  const browser = await chromium.launch();',
+      '  await browser.newContext();',
+      '  await browser.newPage();',
+      '  await browser.close();',
+      '});',
+      'test("closes its context", async ({ browser }) => {',
+      '  const ctx = await browser.newContext();',
+      '  await ctx.close();',
+      '});',
+    ]);
+    const forgets = attempt('t1', [call('Launch browser', 2)]);
+    const closesBrowser = attempt('t2', [5, 6, 7, 8].map((line, i) => call(['Launch browser', 'Create context', 'Create page', 'Close browser'][i]!, line)));
+    const closesContext = attempt('t3', [call('Create context', 11), call('Close context', 12)]);
+    const findings = probable([forgets, closesBrowser, closesContext]);
+    expect(findings).toEqual([
+      { verdict: 'probable', kind: 'browser', where: `${SPEC}:2`, site: `${SPEC}:2`, tests: 1, count: 1, detail: 'left open by its test' },
+    ]);
+    expect(probable([forgets, closesBrowser])).toEqual(findings);
+    const report = buildResourceReport({ censuses: [], tallies: [forgets, closesBrowser, closesContext] });
+    expect(formatResourceSummary(report, 'report')).toEqual([
+      'Resources: 1 probable leak',
+      `  probable browser     ${SPEC}:2 · left open by its test`,
+      'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+    ]);
+  });
+
+  it('counts a page `browser.newPage()` opened, and its close against it, never against a leaked context', () => {
+    const { call, attempt } = specFile([
+      'test("leaks a context", async ({ browser }) => {',
+      '  await browser.newContext();',
+      '});',
+      'test("closes its page", async ({ browser }) => {',
+      '  const page = await browser.newPage();',
+      '  await page.close();',
+      '});',
+      'test("leaks a page", async ({ browser }) => {',
+      '  await browser.newPage();',
+      '});',
+      'test("opens a page in its context", async ({ context }) => {',
+      '  const page = await context.newPage();',
+      '  await page.close();',
+      '});',
+    ]);
+    expect(
+      probable([
+        attempt('t1', [call('Create context', 2)]),
+        attempt('t2', [call('Create page', 5), call('Close context', 6)]),
+        attempt('t3', [call('Create page', 9)]),
+        attempt('t4', [call('Create page', 12), call('Close page', 13)]),
+      ]),
+    ).toEqual([
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, count: 1 }),
+      expect.objectContaining({ kind: 'page', where: `${SPEC}:9`, count: 1, detail: 'left open by its test' }),
+    ]);
+  });
+
+  it('pairs a describe block’s beforeAll with its afterAll, and an object a test handed on with a later close', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test.beforeAll(async ({ browser }) => {',
+      '  shared = await browser.newContext();',
+      '});',
+      'test.afterAll("tidy up", async () => {',
+      '  await shared.close();',
+      '  await page.close();',
+      '});',
+      'test("opens a page for the next test", async ({ browser }) => {',
+      '  page = await browser.newPage();',
+      '});',
+      'test("uses it", async () => {});',
+    ]);
+    const first = attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]), call('Create page', 9)]);
+    const last = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5), call('Close context', 6)])])]);
+    expect(probable([first, last])).toEqual([]);
+    // One close: the hook's own scope comes first, so the page the test handed on is the one left.
+    const oneClose = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5)])])]);
+    expect(probable([first, oneClose])).toEqual([
+      expect.objectContaining({ kind: 'page', where: `${SPEC}:9`, detail: 'left open by its test' }),
+    ]);
+    expect(probable([first])).toEqual([
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, detail: 'left open by a beforeAll or afterAll hook' }),
+      expect.objectContaining({ kind: 'page', where: `${SPEC}:9` }),
+    ]);
+  });
+
+  it('keeps each worker’s attempts apart, groups a line left open by several tests, and judges no failed attempt', () => {
+    const { call, hook, hooks, attempt } = specFile([
+      'test.beforeAll(async ({ browser }) => {',
+      '  shared = await browser.newContext();',
+      '});',
+      'test.afterAll(async () => {',
+      '  await shared.close();',
+      '});',
+      'export const open = (browser) => browser.newContext();',
+    ]);
+    const leaks = (test: string, worker: number, failed = false) => attempt(test, [call('Create context', 7)], { worker, failed });
+    expect(
+      probable([
+        attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]), call('Create context', 7)]),
+        // An afterAll in another worker closes nothing worker 0 opened.
+        attempt('t2', [hooks('After Hooks', [hook('afterAll hook', 4, [call('Close context', 5)])])], { worker: 1 }),
+        leaks('t3', 1),
+        leaks('t4', 1, true),
+        leaks('t5', 0),
+      ]),
+    ).toEqual([
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:7`, count: 3, tests: 3, detail: '3 contexts left open by 3 tests' }),
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, count: 1, tests: 1, detail: 'left open by a beforeAll or afterAll hook' }),
+    ]);
   });
 });
 

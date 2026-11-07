@@ -724,7 +724,7 @@ export const HELP_TOPICS = {
   },
   'run.resource-findings': {
     title: 'Resource findings',
-    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter only counts browsers and contexts opened and closed in each file’s steps: those are probable leaks.',
+    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter reads each test’s steps for the browsers, contexts and `browser.newPage()` pages no close matched: those are probable leaks, at the line that opened them.',
     doc: 'features/resource-leaks#what-it-reports',
   },
   'run.resource-pages': {

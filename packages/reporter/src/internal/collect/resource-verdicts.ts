@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TestStep } from '@playwright/test/reporter';
 import type { WireResourceFinding } from '@piwitests/core/wire';
@@ -29,13 +30,34 @@ export interface ResourceReport {
   counts: { leaked: number; idle: number; piling: number; handle: number; probable: number };
 }
 
-/** Lifecycle calls a test made outside any fixture, from its steps, for a run without the fixtures. */
+/** A browser, context or page a test opened or closed outside any fixture, from its `pw:api` steps. */
+export interface LifecycleCall {
+  op: 'open' | 'close';
+  /**
+   * `page` is a page `browser.newPage()` opened, with the context made for it.
+   * A close of `context` closes either: closing such a page closes its context.
+   */
+  kind: 'browser' | 'context' | 'page';
+  /** The line of the call, `file:line`, relative, POSIX separators. */
+  site: string | null;
+  /** Made in a `beforeAll` or `afterAll` hook: the describe block holds what it opens. */
+  block: boolean;
+}
+
+/** One attempt's lifecycle calls, in the order it made them, for a run without the fixtures. */
 export interface LifecycleTally {
   /** Spec file, relative, POSIX separators. */
   file: string;
-  opened: Array<{ kind: 'context' | 'browser'; site: string | null }>;
-  closed: { context: number; browser: number };
+  test: string;
+  /** The worker process that ran it: a `beforeAll`'s objects stay in it. */
+  worker: number;
+  /** It ended otherwise than expected: Playwright shut its worker down right after it. */
+  failed: boolean;
+  calls: LifecycleCall[];
 }
+
+/** The lines of a source file, or null when it cannot be read. */
+export type SourceLines = (file: string) => readonly string[] | null;
 
 export interface ResourceReportInput {
   censuses: ResourceCensus[];
@@ -56,13 +78,20 @@ interface Tracked {
   mainCpu: Array<{ at: number; cpuMs: number }>;
 }
 
-const OPEN_STEP_TITLES: Record<string, 'context' | 'browser'> = {
+/**
+ * The `pw:api` steps that open or close a browser or a context. `Create page`
+ * opens a page of its own only for `browser.newPage()` (`opensOwnContext`), and
+ * closing that page is a `Close context`; `Close page` closes a page of a
+ * context, which goes with it. An API request context's `dispose()` is no step,
+ * so `Create request context` is not counted.
+ */
+const OPEN_STEPS: Record<string, LifecycleCall['kind']> = {
   'Create context': 'context',
   'Launch persistent context': 'context',
   'Launch browser': 'browser',
   'Connect over CDP': 'browser',
 };
-const CLOSE_STEP_TITLES: Record<string, 'context' | 'browser'> = {
+const CLOSE_STEPS: Record<string, LifecycleCall['kind']> = {
   'Close context': 'context',
   'Close browser': 'browser',
 };
@@ -107,29 +136,88 @@ export function userFixturesOf(steps: TestStep[]): string[] {
   return [...new Set(out)];
 }
 
-/** The browsers and contexts a test opened and closed outside any fixture, from its `pw:api` steps. */
-export function tallyLifecycleSteps(file: string, steps: TestStep[]): LifecycleTally {
-  const tally: LifecycleTally = { file, opened: [], closed: { context: 0, browser: 0 } };
-  const walk = (list: TestStep[]) => {
+/**
+ * The browsers, contexts and `browser.newPage()` pages an attempt opened and
+ * closed outside any fixture, in order, from its `pw:api` steps. `source` reads
+ * the lines a step points at: which hooks are `beforeAll` or `afterAll` when
+ * they are named, and which `Create page` steps are `browser.newPage()`.
+ */
+export function tallyLifecycleSteps(
+  attempt: Omit<LifecycleTally, 'calls'>,
+  steps: TestStep[],
+  source: SourceLines,
+): LifecycleTally {
+  const calls: LifecycleCall[] = [];
+  const walk = (list: TestStep[], block: boolean) => {
     for (const step of list) {
       // A fixture opens and closes its own objects, Playwright's among them.
       if (step.category === 'fixture') continue;
-      if (step.category === 'pw:api') {
-        const opened = OPEN_STEP_TITLES[step.title];
-        const closed = CLOSE_STEP_TITLES[step.title];
-        if (opened) {
-          tally.opened.push({
-            kind: opened,
-            site: step.location ? `${relativeFile(step.location.file)}:${step.location.line}` : null,
-          });
-        }
-        if (closed) tally.closed[closed]++;
+      // A hook has a location; `Before Hooks` and `After Hooks`, which hold them, have none.
+      if (step.category === 'hook' && step.location) {
+        walk(step.steps ?? [], blockHook(step, source));
+        continue;
       }
-      walk(step.steps ?? []);
+      if (step.category === 'pw:api') {
+        const site = step.location ? `${relativeFile(step.location.file)}:${step.location.line}` : null;
+        const opened =
+          OPEN_STEPS[step.title] ?? (step.title === 'Create page' && opensOwnContext(step, source) ? 'page' : null);
+        const closed = CLOSE_STEPS[step.title];
+        if (opened) calls.push({ op: 'open', kind: opened, site, block });
+        if (closed) calls.push({ op: 'close', kind: closed, site, block });
+      }
+      walk(step.steps ?? [], block);
     }
   };
-  walk(steps);
-  return tally;
+  walk(steps, false);
+  return { ...attempt, calls };
+}
+
+/** A reader of source files, each read once. */
+export function sourceLineReader(): SourceLines {
+  const files = new Map<string, string[] | null>();
+  return (file) => {
+    if (!files.has(file)) {
+      try {
+        files.set(file, fs.readFileSync(file, 'utf8').split(/\r?\n/));
+      } catch {
+        files.set(file, null);
+      }
+    }
+    return files.get(file)!;
+  };
+}
+
+/** The text of a step's line from its column on, or null. */
+function textAt(step: TestStep, source: SourceLines): string | null {
+  const location = step.location;
+  if (!location) return null;
+  return source(location.file)?.[location.line - 1]?.slice(location.column - 1) ?? null;
+}
+
+/**
+ * Whether a hook is a `beforeAll` or an `afterAll`: by its title, `beforeAll hook`,
+ * or for a hook given a title of its own, by the method its column points at.
+ */
+function blockHook(step: TestStep, source: SourceLines): boolean {
+  const method =
+    /^((?:before|after)(?:All|Each)) hook$/.exec(step.title)?.[1] ?? /^\w+/.exec(textAt(step, source) ?? '')?.[0];
+  return method === 'beforeAll' || method === 'afterAll';
+}
+
+/**
+ * Whether a `Create page` step is `browser.newPage()`, which opens a context
+ * for its page, rather than `context.newPage()`: the step's column points at
+ * `newPage`, and the name before it, over a chain broken across lines, names a
+ * browser. A page whose line cannot be read is not counted.
+ */
+function opensOwnContext(step: TestStep, source: SourceLines): boolean {
+  const location = step.location;
+  const lines = location ? source(location.file) : null;
+  if (!location || !lines || !textAt(step, source)?.startsWith('newPage')) return false;
+  const at = location.line - 1;
+  const before = [...lines.slice(Math.max(0, at - 2), at), lines[at]!.slice(0, location.column - 1)].join('\n');
+  const receiver = /([\w$]+)\s*\??\.\s*$/.exec(before)?.[1];
+  return !!receiver && /browser/i.test(receiver) && !/context|ctx/i.test(receiver);
 }
 
 function relativeFile(file: string): string {
@@ -580,33 +668,90 @@ function handleFindings(byWorker: Map<number, ResourceCensus[]>): ResourceFindin
   return [...groups.values()];
 }
 
-/** Without the fixtures: per spec file, more browsers or contexts opened than closed. */
+/** An open the steps showed, and whether a close was paired with it. */
+interface StepOpen {
+  call: LifecycleCall;
+  tally: LifecycleTally;
+  scope: string;
+  closed: boolean;
+}
+
+/**
+ * The opens no close was paired with, in one worker's attempts of one spec
+ * file, in the order they ran. A scope is an attempt with its `beforeEach` and
+ * `afterEach` hooks, or the file's `beforeAll` and `afterAll` hooks. Each close
+ * is paired with the latest open of its kind still unpaired in its scope, else
+ * with one an earlier scope handed on; a `Close browser` also closes the
+ * contexts and pages opened since its browser was.
+ */
+function unpairedOpens(attempts: LifecycleTally[]): StepOpen[] {
+  const opens: StepOpen[] = [];
+  const latest = (kinds: string[], scope?: string): StepOpen | undefined => {
+    for (let i = opens.length - 1; i >= 0; i--) {
+      const open = opens[i]!;
+      if (!open.closed && kinds.includes(open.call.kind) && (!scope || open.scope === scope)) return open;
+    }
+    return undefined;
+  };
+  attempts.forEach((tally, index) => {
+    for (const call of tally.calls) {
+      const scope = call.block ? 'block' : `attempt ${index}`;
+      if (call.op === 'open') {
+        opens.push({ call, tally, scope, closed: false });
+        continue;
+      }
+      const kinds = call.kind === 'browser' ? ['browser'] : ['context', 'page'];
+      const open = latest(kinds, scope) ?? latest(kinds);
+      if (!open) continue;
+      open.closed = true;
+      if (call.kind !== 'browser') continue;
+      for (const later of opens.slice(opens.indexOf(open) + 1)) {
+        if (later.call.kind !== 'browser') later.closed = true;
+      }
+    }
+  });
+  return opens.filter((open) => !open.closed);
+}
+
+/**
+ * Without the fixtures: the browsers, contexts and `browser.newPage()` pages
+ * the steps show opened and never closed, one finding per line that opened
+ * them. What a failed attempt opened is not judged: Playwright shut its worker
+ * down right after it.
+ */
 function probableFindings(tallies: LifecycleTally[]): ResourceFinding[] {
-  const byFile = new Map<string, LifecycleTally>();
+  const streams = new Map<string, LifecycleTally[]>();
   for (const tally of tallies) {
-    const merged = byFile.get(tally.file) ?? { file: tally.file, opened: [], closed: { context: 0, browser: 0 } };
-    merged.opened.push(...tally.opened);
-    merged.closed.context += tally.closed.context;
-    merged.closed.browser += tally.closed.browser;
-    byFile.set(tally.file, merged);
+    const key = `${tally.worker}|${tally.file}`;
+    const attempts = streams.get(key) ?? [];
+    attempts.push(tally);
+    streams.set(key, attempts);
   }
-  const out: ResourceFinding[] = [];
-  for (const tally of byFile.values()) {
-    for (const kind of ['browser', 'context'] as const) {
-      const opened = tally.opened.filter((o) => o.kind === kind);
-      if (opened.length <= tally.closed[kind]) continue;
-      const sites = [...new Set(opened.map((o) => o.site ?? tally.file))];
-      out.push({
-        verdict: 'probable',
-        kind,
-        where: sites.join(', '),
-        tests: 0,
-        count: opened.length - tally.closed[kind],
-        detail: `${opened.length} opened, ${tally.closed[kind]} closed in ${tally.file}`,
-      });
+  const groups = new Map<string, { finding: ResourceFinding; testIds: Set<string>; inTests: boolean }>();
+  for (const attempts of streams.values()) {
+    for (const { call, tally } of unpairedOpens(attempts)) {
+      if (tally.failed) continue;
+      const where = call.site ?? tally.file;
+      const key = `${call.kind}|${where}`;
+      const group = groups.get(key) ?? {
+        finding: { verdict: 'probable', kind: call.kind, where, site: call.site, tests: 0, count: 0 },
+        testIds: new Set<string>(),
+        inTests: false,
+      };
+      group.finding.count++;
+      group.testIds.add(tally.test);
+      group.inTests ||= !call.block;
+      groups.set(key, group);
     }
   }
-  return out;
+  return [...groups.values()]
+    .map(({ finding, testIds, inTests }) => {
+      const tests = testIds.size;
+      const what = finding.count > 1 ? `${finding.count} ${KIND_LABEL[finding.kind]}s ` : '';
+      const by = !inTests ? 'a beforeAll or afterAll hook' : tests === 1 ? 'its test' : `${tests} tests`;
+      return { ...finding, tests, detail: `${what}left open by ${by}` };
+    })
+    .sort((a, b) => b.count - a.count);
 }
 
 /** `5.6 s`, `2 min 3 s`, `850 ms`. */
@@ -731,7 +876,7 @@ export function formatResourceSummary(report: ResourceReport, leakCheck: LeakChe
   }
   if (counts.probable) {
     lines.push(
-      'Probable leaks are counted from the steps alone; the capture fixtures (extendPiwiFixtures) make them exact.',
+      'Probable leaks are counted from the steps alone, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
     );
   }
   return lines;

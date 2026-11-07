@@ -208,8 +208,8 @@ const costliest = computed(() => data.value?.costliest ?? []);
           Nothing left open: every browser, context and page closed with the test or block that opened it.
         </p>
         <p v-else class="text-sm text-highlighted leading-relaxed">
-          No findings. Without the capture fixtures the reporter only counts browsers and contexts opened and closed in
-          each file's steps; the fixtures name the line that left each object open.
+          No findings. Without the capture fixtures the reporter only reads each test's steps for the browsers, contexts
+          and browser.newPage() pages no close matched; the fixtures follow every object, API contexts included.
           <DocLink to="guide/capture-fixtures" />
         </p>
       </SectionCard>
