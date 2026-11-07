@@ -145,13 +145,17 @@ Each table's comment in `schema.sqlite.ts` says what a row is.
   `attempts` and `scheduledFor` drive progressive retry: five retries, after 1, 5, 15, 60 and 240 minutes
   (`server/utils/outbox.ts`). `heal_actions` and `integration_actions` are outboxes of the same kind.
 - **`resource_findings`**: one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict, kind,
-  scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start time.
-  `resource_occurrences` holds each run's showing with the run's branch. `shared/handlers/resource-findings.ts` writes
-  them when a run finishes. It also:
-  - marks a finding fixed after five clean full runs of the default branch;
+  scope and the line or fixture location that opened it), with the run it was first seen in and the last full
+  default-branch run that showed it, ordered by start time. `resource_occurrences` holds each run's showing with the
+  run's branch. `shared/handlers/resource-findings.ts` writes them in one transaction when a run finishes; only a full
+  run of the default branch changes a finding, any other run adds its showing. It also:
+  - marks a finding fixed after five full runs of the default branch that could have shown it came without it (the
+    tests of its file passed, the report was not cut);
   - moves a finding to its new line when an edit above it shifted it (the same identity without line numbers, closest
-    line first);
-  - tells the gate and the pull-request comment which findings are new to the base branch.
+    line first, among the open findings the default branch showed);
+  - tells the gate and the pull-request comment which findings are new to the base branch;
+  - gives the stored findings a new identity at startup when `RESOURCE_IDENTITY_VERSION` changes
+    (`rekeyResourceFindingsOnce`).
 - **`test_run_resource_reports`**: one row per run and shard with that reporter's resource report. Each shard's finish
   upserts its row whole, so concurrent shards never overwrite each other. Reads fold the rows in shard order
   (`shared/handlers/resource-reports.ts`).

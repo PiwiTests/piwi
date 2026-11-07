@@ -308,6 +308,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/issue-tracking',
       },
       {
+        title: 'Issues about a run or a test',
+        summary:
+          'A Jira issue about a whole run, or about one test with no failure cluster, with your comment first and each submission filed once.',
+        needs: ['admin'],
+        where: 'Run header, or an execution’s More actions → Create issue',
+        doc: 'features/run-issues',
+      },
+      {
         title: 'Issue automation',
         summary:
           'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',

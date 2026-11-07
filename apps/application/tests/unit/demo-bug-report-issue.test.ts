@@ -63,7 +63,7 @@ describe('the demo issue draft and create for a bug report', () => {
 
   test('answers 404 for a bug report that does not exist, and 400 for an unknown entity type', async () => {
     await expect(draft('entityType=bug_report&entityId=99')).rejects.toMatchObject({ statusCode: 404 });
-    await expect(draft('entityType=test_run&entityId=1')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(draft('entityType=test_case&entityId=1')).rejects.toMatchObject({ statusCode: 400 });
     await expect(create({ entityType: 'bug_report', entityId: 99 })).rejects.toMatchObject({ statusCode: 404 });
     // Before the required fields and the connection, as the server checks them.
     await expect(
@@ -74,7 +74,7 @@ describe('the demo issue draft and create for a bug report', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
     await expect(
-      handleDemoRequest('/api/integrations/issues', 'POST', { entityType: 'test_run', entityId: 1 }),
+      handleDemoRequest('/api/integrations/issues', 'POST', { entityType: 'test_case', entityId: 1 }),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 

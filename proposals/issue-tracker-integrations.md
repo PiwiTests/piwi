@@ -9,10 +9,11 @@ outbox) so the next tracker or wiki is one provider file, not one more feature.
 project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization), and
 the automatic creation of step 4 (ordered rules over branches, environments, test tags, occurrences, runs and days;
 the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope for the write-backs, a
-diagnosis comment and description updates that never overwrite an edit made in the tracker); flaky-test and run
-tickets, the `relatedIssue` run link and the links the tests declare (the rest of step 4, the last designed in
-[Links the tests declare](#links-the-tests-declare)) and Confluence (step 5) remain.
-· **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+diagnosis comment and description updates that never overwrite an edit made in the tracker), and run tickets: a
+run's issue, and one for an execution with no failure cluster, filed by hand with a comment, once per submission
+([run-on-my-machine.md](run-on-my-machine.md), D17). Flaky-test tickets, the `relatedIssue` run link and the links the
+tests declare (the rest of step 4, the last designed in [Links the tests declare](#links-the-tests-declare)) and
+Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -806,7 +807,7 @@ Each step is a separately mergeable pull request that leaves the app green and u
    resolve on close), merge handling, the optional webhook, `needs-ticket` queue, and the response-language setting.
    *Outcome: the loop closes both ways.*
 4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see
-   `shared/integrations/automation.ts`); flaky-test and run tickets; the `relatedIssue` run link; the links the
+   `shared/integrations/automation.ts`); flaky-test tickets; the `relatedIssue` run link; the links the
    tests declare, in two pull requests: `piwi:issue` in core with the link step, the dismissals and the read-only
    handling by origin (`feat(app)`, `feat(db)` for the migrations), then the tag source, with or after Zephyr's
    shared tag-key helper ([zephyr-sync.md](zephyr-sync.md#rollout), step 3).

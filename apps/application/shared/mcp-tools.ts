@@ -699,7 +699,7 @@ export const MCP_TOOL_DEFS = [
         '`handle`: a Node server, child process or file watcher a test left running in its worker',
         '`probable`: a leak counted from steps, without the capture fixtures',
       ],
-      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the runs it was first and last seen in, how many runs showed it, and `last`: what it held the last time (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back).',
+      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the run it was first seen in and the last full run of the default branch that showed it (that first run until one did), how many runs of any branch showed it, and `last`: what it held the last time any run showed it (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch that could have shown it came without it (`cleanRuns` counts them; `reopenedRunId` is set when such a run showed a fixed one the default branch had shown before).',
     ),
     inputSchema: {
       type: 'object',
@@ -842,7 +842,7 @@ export const MCP_TOOL_DEFS = [
     capability: 'integrations',
     permission: 'issue:create',
     description: md(
-      'File a Jira issue for a failure cluster, a failing execution or a bug report, with the fix plan as its body.',
+      'File a Jira issue for a failure cluster, a failing execution in a cluster or a bug report, with the fix plan as its body.',
       'It is the ticket the dashboard’s **Create issue** button files. Issues are deduplicated by cluster: a second call for the same cluster returns the existing one rather than filing another. Returns the issue (`key`, `url`) and the `existing` issues that already track the cluster (a pinned link, a matching label or a fixed-before match), so you can link one instead of filing again.',
       'Needs a Jira connection and a project binding (project key and issue type). The binding’s field defaults fill the fields the Jira project requires, and `fields` sets the others.',
       'Requires `issue:create` (Contributor and above on the project).',

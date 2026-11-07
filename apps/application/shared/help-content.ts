@@ -675,6 +675,19 @@ export const HELP_TOPICS = {
     text: 'Playwright ran this run’s tests in a random order (`--shuffle`). Click the seed to copy `--shuffle <seed>`: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
     doc: 'features/run-changes#shuffled-runs',
   },
+  'run.retryOptions': {
+    title: 'Retry command options',
+    text: [
+      'Playwright options the copied command carries, on the run page, its selection and the execution page. This browser remembers them, except the project.',
+      '',
+      '- **Headed** — `--headed`: the browser window shows.',
+      '- **Trace** — `--trace=on` records every test; `retain-on-failure` keeps the trace of a failed one only.',
+      '- **Repeat each** — `--repeat-each`: each test runs that many times.',
+      "- **Workers** — `--workers`, or your Playwright config's number when left to the config.",
+      "- **Project** — runs every test under one Playwright project instead of each test's own.",
+    ].join('\n'),
+    doc: 'features/ci-rerun',
+  },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',

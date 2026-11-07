@@ -360,6 +360,7 @@ export async function enqueueDescriptionUpdate(
     siteUrl: siteBase(),
     shareUrl: meta.shareUrl ?? null,
     automatic: meta.automatic ?? null,
+    comment: meta.comment ?? null,
   });
   if (!built) return;
   await enqueueAndKick(db, {

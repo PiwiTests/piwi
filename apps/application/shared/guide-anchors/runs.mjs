@@ -35,6 +35,39 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-retry-command',
+    kind: 'action',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The header’s Copy retry command: the Playwright command that runs the run’s failed tests again, with the options its menu sets.',
+    shownWhen: 'On a run with failed tests, outside the desktop app, which re-runs them itself.',
+    doc: 'features/ci-rerun',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'run-create-issue',
+    kind: 'action',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The header’s Create issue: files a Jira issue about the run, with the person’s comment, its tests and results, and its failure clusters.',
+    shownWhen: 'When an issue tracker is connected and the viewer can file issues in the project.',
+    requires: { capability: 'integrations', permission: 'issue:create' },
+    doc: 'features/run-issues',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'retry-command-options',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-retry-command' }],
+    describes:
+      'The options of Copy retry command: how the tests are named, headed, trace, repeat each, workers and the Playwright project.',
+    shownWhen: 'On a run with failed tests, outside the desktop app.',
+    help: 'run.retryOptions',
+    doc: 'features/ci-rerun',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
     id: 'run-retention',
     kind: 'block',
     pages: ['/test-runs/[id]'],

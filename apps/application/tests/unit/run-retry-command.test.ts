@@ -5,7 +5,7 @@ import { isFailedStatus } from '#shared/utils/test-counts';
 import { statusPaletteKey } from '../../app/utils/status-palette';
 
 /** The composable with its Nuxt auto-imports in place; a fresh import per case. */
-async function retryCommandOf(rows: Partial<TestCaseResult>[]) {
+async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown) {
   vi.stubGlobal('computed', computed);
   vi.stubGlobal('toValue', toValue);
   vi.stubGlobal('useState', (_key: string, init: () => unknown) => ref(init()));
@@ -13,6 +13,10 @@ async function retryCommandOf(rows: Partial<TestCaseResult>[]) {
   vi.stubGlobal('copyPreview', (text: string) => text);
   vi.stubGlobal('isFailedStatus', isFailedStatus);
   vi.stubGlobal('statusPaletteKey', statusPaletteKey);
+  vi.stubGlobal('useCookie', () => ref(cookie));
+  vi.stubGlobal('useRoute', () => ({ path: '/test-runs/1' }));
+  const { useRetryOptions } = await import('../../app/composables/useRetryOptions');
+  vi.stubGlobal('useRetryOptions', useRetryOptions);
   const { useRunRetryCommand } = await import('../../app/composables/useRunRetryCommand');
   return useRunRetryCommand(rows as TestCaseResult[]);
 }
@@ -74,5 +78,27 @@ describe('the run page retry command under --repeat-each', () => {
 
     expect(failedCases.value).toEqual([]);
     expect(flakyCases.value).toHaveLength(1);
+  });
+});
+
+describe('the run options it carries', () => {
+  test('the remembered options follow the command', async () => {
+    const { command } = await retryCommandOf([pays(0, 0, 'failed')], { headed: true, repeatEach: 3, mode: 'grep' });
+    expect(command.value).toBe(
+      'npx playwright test --grep "pays" --project="chromium" --headed --repeat-each=3 --retries=0',
+    );
+  });
+
+  test('the projects offered are those the failing tests ran in, as the Tests list selection offers', async () => {
+    const { projects } = await retryCommandOf([
+      pays(0, 0, 'failed'),
+      { ...pays(0, 0, 'passed'), browser: { projectName: 'firefox' } },
+    ]);
+    expect(projects.value).toEqual(['chromium']);
+  });
+
+  test('a remembered value out of bounds reads as its default', async () => {
+    const { command } = await retryCommandOf([pays(0, 0, 'failed')], { repeatEach: 50, workers: 9 });
+    expect(command.value).toBe('npx playwright test "checkout.spec.ts:12" --project="chromium"');
   });
 });

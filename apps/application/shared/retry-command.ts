@@ -11,6 +11,40 @@ export interface RetryCase {
   projectName?: string | null;
 }
 
+/** How the browser runs: `headed` shows it, `debug` opens the inspector, `ui` opens UI mode. */
+export type RetryRunMode = 'normal' | 'headed' | 'debug' | 'ui';
+
+/** What `--trace` records: every test, or only the tests that fail. */
+export type RetryTraceMode = 'on' | 'retain-on-failure';
+
+/** The Playwright options a retry command can carry, beyond what it runs. */
+export interface RetryRunOptions {
+  runMode?: RetryRunMode;
+  trace?: RetryTraceMode | null;
+  /** Run every matched test N times; 1 adds nothing. */
+  repeatEach?: number | null;
+  /** The number of workers; unset keeps the config's. */
+  workers?: number | null;
+  /** One Playwright project for every test, instead of each test's own. */
+  project?: string | null;
+}
+
+/** The values the dashboard offers for a run's options: the bounds of a run request. */
+export const RETRY_OPTION_LIMITS = {
+  repeatEach: { min: 1, max: 10 },
+  workers: { min: 1, max: 4 },
+} as const;
+
+/** The largest count a copied command carries, whatever offered it. */
+const MAX_OPTION_COUNT = 1000;
+
+const RUN_MODE_FLAGS: Record<RetryRunMode, string> = {
+  normal: '',
+  headed: ' --headed',
+  debug: ' --debug',
+  ui: ' --ui',
+};
+
 const MAX_CMD_LENGTH = 4096;
 
 export function escapeGrep(text: string): string {
@@ -81,6 +115,37 @@ export function toPosixPath(filePath: string): string {
   return filePath.replace(/\\/g, '/');
 }
 
+/** A whole count from 1 to {@link MAX_OPTION_COUNT}, or null for anything else. */
+function optionCount(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_OPTION_COUNT ? value : null;
+}
+
+/**
+ * The flags of `options`, in a fixed order: the run mode, `--trace`,
+ * `--repeat-each` and `--workers`. A value that is not a whole count in bounds
+ * is left out, as is a repeat count of 1. A repeat adds `--retries=0`, as the
+ * editor's repeat does, so each repetition reports its own result.
+ */
+export function retryOptionFlags(options?: RetryRunOptions | null): string {
+  if (!options) return '';
+  let flags = RUN_MODE_FLAGS[options.runMode ?? 'normal'] ?? '';
+  if (options.trace === 'on' || options.trace === 'retain-on-failure') flags += ` --trace=${options.trace}`;
+  const repeatEach = optionCount(options.repeatEach);
+  if (repeatEach && repeatEach > 1) flags += ` --repeat-each=${repeatEach} --retries=0`;
+  const workers = optionCount(options.workers);
+  if (workers) flags += ` --workers=${workers}`;
+  return flags;
+}
+
+/**
+ * The cases under the one project the options name, when it can be quoted
+ * safely; otherwise each case keeps its own project.
+ */
+function withProject(cases: RetryCase[], project: string | null | undefined): RetryCase[] {
+  if (!project || !quoteShellArg(project)) return cases;
+  return cases.map((c) => ({ ...c, projectName: project }));
+}
+
 function groupByProject(cases: RetryCase[]): Map<string, RetryCase[]> {
   const groups = new Map<string, RetryCase[]>();
   for (const c of cases) {
@@ -103,13 +168,18 @@ function dedupeFiles(cases: RetryCase[]): string[] {
     .map((c) => c.filePath);
 }
 
-export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode; pkgRunner?: string }): string {
+export function buildRetryCommand(
+  allCases: RetryCase[],
+  opts?: { mode?: RetryMode; pkgRunner?: string; options?: RetryRunOptions | null },
+): string {
   const mode = opts?.mode ?? 'file-line';
   const pkgRunner = opts?.pkgRunner ?? 'npx';
   const baseCmd = `${pkgRunner} playwright test`;
+  const flags = retryOptionFlags(opts?.options);
 
-  if (cases.length === 0) return '';
+  if (allCases.length === 0) return '';
 
+  const cases = withProject(allCases, opts?.options?.project);
   const groups = groupByProject(cases);
   const commands: string[] = [];
 
@@ -144,7 +214,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
       cmd += projectFlag(project);
     }
 
-    commands.push(cmd);
+    commands.push(cmd + flags);
   }
 
   let result = commands.join(' && ');
@@ -158,11 +228,15 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     }
     const args = quoteSpecs(dedupeFilePaths(cases).map(specPattern));
     if (args.length === 0) return '';
-    let cmd = `${baseCmd} ${args.join(' ')}`;
-    if (cmd.length > MAX_CMD_LENGTH) {
-      cmd = cmd.slice(0, MAX_CMD_LENGTH - 3) + '...';
+    const project = opts?.options?.project;
+    const tail = (project && quoteShellArg(project) ? projectFlag(project) : '') + flags;
+    // Whole quoted specs only, as many as fit before the tail.
+    let cmd = baseCmd;
+    for (const arg of args) {
+      if (cmd.length + 1 + arg.length + tail.length > MAX_CMD_LENGTH) break;
+      cmd += ` ${arg}`;
     }
-    return cmd;
+    return cmd === baseCmd ? '' : cmd + tail;
   }
 
   return result;
@@ -203,6 +277,14 @@ export function buildRerunCommand(cases: RetryCase[]): string {
   const head = [base, ...files].join(' ');
   const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
   return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+}
+
+/**
+ * The Playwright projects a retry command can run these cases in, in their order: the projects they ran in whose
+ * names every shell leaves as they are.
+ */
+export function retryProjects(cases: RetryCase[]): string[] {
+  return caseProjects(cases).filter((project) => quoteShellArg(project) !== null);
 }
 
 /** The distinct Playwright projects of these cases, in their order. */

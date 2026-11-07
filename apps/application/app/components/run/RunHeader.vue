@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo, TestCaseResult } from '~~/types/api';
-import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
@@ -51,6 +50,14 @@ const emit = defineEmits<{
 const toast = useToast();
 const config = useRuntimeConfig();
 const { onOpenReport } = useDesktopReportLink();
+
+// Create issue about the run: a person's comment, with its tests and clusters attached.
+const { hasTracker } = useTrackerStatus();
+const { can } = useAuth();
+const canFileRunIssue = computed(
+  () => hasTracker.value && !!props.testRun?.id && can('issue:create', props.testRun?.projectId),
+);
+const runIssueOpen = ref(false);
 
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
@@ -112,10 +119,10 @@ const interrupted = computed(() => props.displayProgress?.interruptedTests ?? 0)
 const primaryReport = computed(() => props.allReports[0] ?? null);
 
 const {
-  mode: retryMode,
   failedCases,
   flakyCases,
   allCases,
+  projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
@@ -304,7 +311,8 @@ function onLabelKeydown(e: KeyboardEvent) {
       <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
            tests in the desktop app; the report leads on a green one, where the desktop
            app offers to re-run the flaky tests, else all of them. -->
-      <UPopover v-if="retryShown && !desktopBridge">
+      <!-- The copy's fallback selects a hidden textarea: focus leaving the menu keeps it open. -->
+      <UPopover v-if="retryShown && !desktopBridge" :content="KEEP_OPEN_ON_FOCUS_OUT">
         <UButton
           size="xs"
           :color="retryIsPrimary ? 'primary' : 'neutral'"
@@ -312,23 +320,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
           :title="retryTitle"
           aria-label="Copy retry command"
+          data-tour="run-retry-command"
           @click="copyRetryCommand()"
         >
           <span class="hidden sm:inline">Copy retry command</span>
         </UButton>
         <template #content>
-          <div class="p-2 space-y-1 min-w-32">
-            <p class="text-xs font-medium text-zinc-500 px-2 py-1">Mode</p>
-            <button
-              v-for="m in ['file-line', 'grep', 'file'] as RetryMode[]"
-              :key="m"
-              class="w-full text-left px-2 py-1 text-sm rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="retryMode === m ? 'bg-primary/10 text-primary' : ''"
-              @click="retryMode = m"
-            >
-              {{ m === 'file-line' ? 'File:line' : m === 'grep' ? 'Title (grep)' : 'File only' }}
-            </button>
-          </div>
+          <RetryCommandOptions :projects="retryProjects" />
         </template>
       </UPopover>
 
@@ -361,6 +359,27 @@ function onLabelKeydown(e: KeyboardEvent) {
       >
         <span class="hidden sm:inline">{{ primaryReport.label }}</span>
       </UButton>
+
+      <UButton
+        v-if="canFileRunIssue"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-simple-icons-jira"
+        aria-label="Create issue"
+        data-tour="run-create-issue"
+        @click="runIssueOpen = true"
+      >
+        <span class="hidden sm:inline">Create issue</span>
+      </UButton>
+      <CreateIssueModal
+        v-if="canFileRunIssue && testRun"
+        v-model:open="runIssueOpen"
+        entity-type="test_run"
+        :entity-id="testRun.id"
+        @created="emit('label-updated')"
+        @queued="emit('label-updated')"
+      />
     </template>
 
     <template #facts>

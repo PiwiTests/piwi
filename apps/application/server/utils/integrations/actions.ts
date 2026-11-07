@@ -23,15 +23,16 @@
  * runs: one whose project is bound to another connection, or to none, is
  * skipped.
  */
-import { and, eq, inArray, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, lte } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
-import { attachKey } from '#shared/integrations/action-keys';
+import { attachKey, isOutcomeUnknownError, isSubmissionKey } from '#shared/integrations/action-keys';
 import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
 import type { IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
+import type { IssueComment } from '#shared/integrations/run-issue';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
@@ -48,6 +49,7 @@ import {
 import {
   claimOutboxRows,
   failAbandonedOutboxRows,
+  OUTBOX_ABANDONED_ERROR,
   nextAttempt,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_PROCESSING,
@@ -95,6 +97,10 @@ export interface CreateIssueActionPayload {
    * when the issue is sent, and its id kept on the issue's link with this URL.
    */
   shareUrl?: string | null;
+  /** What the person filing it wrote, kept on the link so a description update puts it back first. */
+  comment?: IssueComment | null;
+  /** The opening of the create dialog that sent it, so sending that submission again adds no comment. */
+  submissionId?: string | null;
 }
 
 /** An update action's snapshot: the rebuilt title and description of an issue Piwi filed. */
@@ -121,6 +127,8 @@ export interface FiledIssueMeta {
   shareUrl?: string | null;
   /** The id of that share link, whose token a description update reads back from the issue. */
   shareLinkId?: number | null;
+  /** What the person filing it wrote, with their name. */
+  comment?: IssueComment | null;
 }
 
 /** A comment action's snapshot — the rendered body, keyed to an issue. */
@@ -243,7 +251,10 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
   const action = await enqueueAction(db, input);
   const failedBefore =
     action.status === 'failed' || action.status === 'skipped' || (action.status === 'pending' && action.attempts > 0);
-  if (!failedBefore) return action;
+  // A create that may have reached the tracker keeps its marker: its next attempt fails as Outcome unknown. A
+  // submission that ended so stays failed, so the dialog sending it again shows it; a new submission files.
+  const unknownSubmission = isSubmissionKey(action.dedupeKey) && isOutcomeUnknownError(action.error);
+  if (!failedBefore || createOutcomeUnknown(action.result) || unknownSubmission) return action;
   const [replaced] = await db
     .update(integrationActions)
     .set({
@@ -251,6 +262,7 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
       status: 'pending',
       attempts: 0,
       error: null,
+      result: null,
       scheduledFor: new Date(),
       finishedAt: null,
       requestedBy: input.requestedBy ?? action.requestedBy,
@@ -392,6 +404,39 @@ async function issueShareLink(
   return { id: minted.id, document: withShareToken(payload.document, minted.token) };
 }
 
+/** Connection errors raised before a request is sent: the tracker never saw it. */
+const UNSENT_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'EADDRNOTAVAIL',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+/**
+ * Whether a create's error says the issue was not created: the tracker answered with a refusal, a rate limit or a
+ * 503, or the request never left (a refused connection, an unknown host, a certificate refused). A timeout, a
+ * connection lost after sending or another 5xx may come after the tracker created it.
+ */
+function trackerDeclined(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') return status < 500 || status === 503;
+  for (let cause: unknown = err, depth = 0; cause && depth < 4; depth++) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === 'string' && UNSENT_ERROR_CODES.has(code)) return true;
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** Perform one create-issue against the tracker and record the link + result. */
 async function applyCreateIssue(
   db: DbClient,
@@ -400,6 +445,12 @@ async function applyCreateIssue(
 ): Promise<CreateIssueResult> {
   const payload = action.payload as CreateIssueActionPayload;
   const share = await issueShareLink(db, action, payload);
+  // Committed before the tracker is called: a row that still holds it when an
+  // attempt begins belongs to a worker that stopped during the call.
+  await db
+    .update(integrationActions)
+    .set({ result: { createStartedAt: Date.now() } satisfies CreateStartedMarker as never })
+    .where(eq(integrationActions.id, action.id));
   let created: Awaited<ReturnType<IssueTracker['createIssue']>>;
   try {
     created = await tracker.createIssue({
@@ -415,6 +466,10 @@ async function applyCreateIssue(
     });
   } catch (err) {
     if (share) await discardShareLink(db, share.id);
+    // Only an answer that says nothing was created lets the next attempt file; a timeout keeps the marker.
+    if (trackerDeclined(err)) {
+      await db.update(integrationActions).set({ result: null }).where(eq(integrationActions.id, action.id));
+    }
     throw err;
   }
   // The create response carries no status; read it back once so the chip shows a
@@ -430,6 +485,7 @@ async function applyCreateIssue(
     ...(payload.include ? { include: payload.include } : {}),
     ...(payload.shareUrl ? { shareUrl: payload.shareUrl } : {}),
     ...(share ? { shareLinkId: share.id } : {}),
+    ...(payload.comment ? { comment: payload.comment } : {}),
   };
 
   await db.transaction(async (tx) => {
@@ -597,6 +653,35 @@ async function applyTransition(tracker: IssueTracker, action: IntegrationAction)
   await tracker.transition(payload.issueKey, target.id, fieldPayload(values, screen, TRANSITION_SKIPPED_FIELDS));
 }
 
+/** What a create-issue row holds while its call to the tracker is under way. */
+export interface CreateStartedMarker {
+  createStartedAt: number;
+}
+
+/**
+ * Whether a create-issue row still holds the marker of a call that never
+ * ended: the worker stopped during it (a restart, or a call past the lease), so
+ * the issue may exist. Filing again could file it twice.
+ */
+export function createOutcomeUnknown(result: unknown): boolean {
+  const value = result as Partial<CreateStartedMarker & CreateIssueResult> | null;
+  return typeof value?.createStartedAt === 'number' && !value.key;
+}
+
+/** Whether a create action's row still holds the marker of an attempt that called the tracker. */
+async function holdsMarker(db: DbClient, id: number): Promise<boolean> {
+  const [row] = await db
+    .select({ result: integrationActions.result })
+    .from(integrationActions)
+    .where(eq(integrationActions.id, id));
+  return createOutcomeUnknown(row?.result);
+}
+
+/** The failure an unknown outcome records: what to look for, and what to do then. */
+export function outcomeUnknownMessage(title: string): string {
+  return `Outcome unknown: check the tracker for an issue titled "${title}", then create it again if it is not there`;
+}
+
 /** Why an action whose project is bound to another connection, or to none, was not run. */
 const NOT_BOUND = 'the project is not bound to this connection';
 
@@ -629,6 +714,16 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .set({ status: 'skipped', error: NOT_BOUND, attempts, finishedAt: now })
       .where(eq(integrationActions.id, action.id));
     return { status: 'skipped', reason: NOT_BOUND };
+  }
+
+  if (action.kind === 'create-issue' && createOutcomeUnknown(action.result)) {
+    const payload = action.payload as CreateIssueActionPayload;
+    const error = outcomeUnknownMessage(payload.title);
+    await db
+      .update(integrationActions)
+      .set({ status: 'failed', error, result: null, attempts, finishedAt: now })
+      .where(eq(integrationActions.id, action.id));
+    return { status: 'failed', error, final: true };
   }
 
   const tracker = await createTracker(db, action.connectionId);
@@ -690,11 +785,14 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .where(eq(integrationActions.id, action.id));
     return { status: 'skipped', reason: `unsupported action kind '${action.kind}'` };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    let message = err instanceof Error ? err.message : String(err);
     const final = isFinalRefusal(err);
     const next = final
       ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
       : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
+    // A last attempt that may have created the issue says so, rather than its error.
+    const unknown = next.status === 'failed' && action.kind === 'create-issue' && (await holdsMarker(db, action.id));
+    if (unknown) message = outcomeUnknownMessage((action.payload as CreateIssueActionPayload).title);
     await db
       .update(integrationActions)
       .set({
@@ -703,6 +801,7 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
         error: message,
         scheduledFor: next.scheduledFor,
         finishedAt: next.status === 'failed' ? now : null,
+        ...(unknown ? { result: null } : {}),
       })
       .where(eq(integrationActions.id, action.id));
     console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
@@ -732,7 +831,39 @@ export async function runActionNow(db: DbClient, id: number): Promise<ActionOutc
   }
   const claimed = await claimOutboxRows(db, integrationActions, [action.id], { anySchedule: true });
   if (!claimed.has(action.id)) return null;
-  return runAction(db, action);
+  const current = await readClaimedAction(db, action.id);
+  return current ? runAction(db, current) : null;
+}
+
+/**
+ * The row as it stands once claimed, since another attempt may have run it, set its marker or replaced its payload
+ * after the caller read it. `attempts` is the count before the claim, which {@link runAction} expects.
+ */
+async function readClaimedAction(db: DbClient, id: number): Promise<IntegrationAction | null> {
+  const [row] = await db.select().from(integrationActions).where(eq(integrationActions.id, id));
+  return row ? { ...row, attempts: row.attempts - 1 } : null;
+}
+
+/** A create given up while it held its marker fails as Outcome unknown, so the person checks the tracker first. */
+async function nameAbandonedCreates(db: DbClient): Promise<void> {
+  const rows = await db
+    .select()
+    .from(integrationActions)
+    .where(
+      and(
+        eq(integrationActions.kind, 'create-issue'),
+        eq(integrationActions.status, 'failed'),
+        eq(integrationActions.error, OUTBOX_ABANDONED_ERROR),
+        isNotNull(integrationActions.result),
+      ),
+    );
+  for (const row of rows) {
+    if (!createOutcomeUnknown(row.result)) continue;
+    await db
+      .update(integrationActions)
+      .set({ error: outcomeUnknownMessage((row.payload as CreateIssueActionPayload).title), result: null })
+      .where(eq(integrationActions.id, row.id));
+  }
 }
 
 /**
@@ -747,6 +878,7 @@ export async function sweepIntegrationActions(
   const now = new Date();
   let done = 0;
   let failed = await failAbandonedOutboxRows(db, integrationActions, { finishedAt: now });
+  await nameAbandonedCreates(db);
   let skipped = 0;
 
   const due = await db
@@ -763,7 +895,9 @@ export async function sweepIntegrationActions(
   for (const action of due) {
     const claimed = await claimOutboxRows(db, integrationActions, [action.id]);
     if (!claimed.has(action.id)) continue;
-    const outcome = await runAction(db, action);
+    const current = await readClaimedAction(db, action.id);
+    if (!current) continue;
+    const outcome = await runAction(db, current);
     if (outcome.status === 'done') done++;
     else if (outcome.status === 'skipped') skipped++;
     else failed++;
