@@ -187,7 +187,7 @@ pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_js
 /// A new directory for one run's verdict file: a random name under the temp
 /// dir, created fresh (never one that already exists) and, on Unix, open to the
 /// user only, so another local user can neither predict the file nor plant one.
-fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
+pub(crate) fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
     let dir = std::env::temp_dir().join(format!("{prefix}{}", crate::random_hex_32()));
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
