@@ -67,8 +67,8 @@ Results sent under a new project name create the project only for an account tha
 ## Groups
 
 A group is a named set of users, such as *QA*, *Product owners* or *CI*. It receives project roles the way a user
-does, so a new hire gets their access by joining groups. Administrators manage groups and their members in
-**Settings → Groups**.
+does, so a new hire gets their access by joining groups. Administrators create, rename and delete groups and edit
+their members in **Settings → Groups**.
 
 - **Rights add up.** A user in *Product owners* (Contributor on All projects) and *QA* (Maintainer on All projects)
   can do what a Maintainer does everywhere.
@@ -128,22 +128,12 @@ same 403, that says an administrator or a Project admin of that project can gran
 
 Run the reporter in CI as a Member with the **Uploader** role, through an [API key](./api-keys): it reads the project
 and uploads runs, nothing else. Grant it on All projects when CI should create projects from a new project name, else
-on the projects it reports to.
-
-## Upgrading from the three roles
-
-Earlier versions had three instance-wide roles (Administrator, Reporter, User). The upgrade converts them:
-
-- **Administrator** stays Administrator.
-- **Reporter** becomes a Member with the Maintainer role on the same projects.
-- **User** becomes a Member with the Viewer role on the same projects.
-
-Access to all projects becomes a role on All projects, and nobody gains or loses a right. To narrow a CI account that
-ran as a Reporter, give it Uploader.
+on the projects it reports to. A CI account that the upgrade from the three roles made a Maintainer narrows the same
+way.
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with seeded identities, from an
-> administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner. See
-> [UI overview → Live demo](/features/ui-overview#live-demo).
+> administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner and watch the
+> projects and actions change. See [UI overview → Live demo](/features/ui-overview#live-demo).
 
 ## Related
 
