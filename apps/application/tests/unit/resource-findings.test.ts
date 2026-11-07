@@ -8,7 +8,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { configureSqliteConnections, sqliteClientConfig } from '../../server/database/sqlite-connections';
 import { demoResourceReport } from '../../shared/demo/demo-resources.mjs';
-import { resourceFingerprint } from '../../shared/resource-fingerprint.mjs';
+import { identityFile, resourceFingerprint } from '../../shared/resource-fingerprint.mjs';
 import type { WireResourceFinding, WireResourceReport } from '../../shared/types';
 import { migrateToLatest } from './temp-db';
 
@@ -244,6 +244,10 @@ describe('finding history', () => {
     expect(await listResourceFindings(db as any, 1)).toEqual([
       expect.objectContaining({ where: 'tests/cart.spec.ts:10', firstSeenRunId: onMain, runs: 2 }),
     ]);
+    // The pull request's run page reads the finding's history.
+    expect(Object.values((await getRunResources(db as any, pullRequest))!.history)).toEqual([
+      { isNew: false, firstSeenRunId: onMain, runs: 2, reopened: false },
+    ]);
     // Merged: the default branch shows it at the new line.
     await record(await run({ findings: [leakAt(12)] }));
     expect(await listResourceFindings(db as any, 1)).toEqual([
@@ -264,6 +268,32 @@ describe('finding history', () => {
     });
   });
 
+  test('a new leak of another fixture in the same file is new, not a move', async () => {
+    const fixtureLeak = (name: string, line: number): WireResourceFinding => ({
+      ...leakAt(line, 'tests/fixtures.ts'),
+      where: `fixture "${name}" at tests/fixtures.ts:${line}`,
+    });
+    await record(await run({ findings: [fixtureLeak('adminContext', 14)] }));
+    const pullRequest = await run({
+      branch: 'feature/users',
+      baseBranch: 'main',
+      findings: [fixtureLeak('userContext', 44)],
+    });
+    expect((await runLeakFacts(db as any, pullRequest)).newLeaks).toEqual([
+      { where: 'fixture "userContext" at tests/fixtures.ts:44', site: 'tests/fixtures.ts:44', tests: 1 },
+    ]);
+  });
+
+  test('a finding first shown on a branch reaches the default branch new, not back after its fix', async () => {
+    await record(await run({ branch: 'feature/cart', baseBranch: 'main', findings: [leakAt(10)] }));
+    for (let i = 0; i < FIXED_AFTER_CLEAN_RUNS; i++) await record(await run({ findings: [] }));
+    expect(await theFinding()).toMatchObject({ status: 'fixed' });
+
+    const merged = await run({ findings: [leakAt(10)] });
+    expect((await record(merged)).reopened).toEqual([]);
+    expect(await theFinding()).toMatchObject({ status: 'open', reopenedRunId: null, fixedRunId: null, cleanRuns: 0 });
+  });
+
   test('two default-branch runs that finish out of order keep one finding', async () => {
     const first = await run({ findings: [leakAt(10)] });
     await record(first);
@@ -278,6 +308,9 @@ describe('finding history', () => {
       lastSeenRunId: later,
       runs: 3,
     });
+    expect(Object.values((await getRunResources(db as any, earlier))!.history)).toEqual([
+      { isNew: false, firstSeenRunId: first, runs: 3, reopened: false },
+    ]);
   });
 
   test('two runs that show the same new leak at the same time both keep their showing', async () => {
@@ -340,12 +373,45 @@ describe('finding history', () => {
     ]);
     await record(retried);
     expect(await cleanRuns()).toEqual({ 'tests/cart.spec.ts:10': 2, 'tests/fixtures.ts:14': 1 });
+
+    // Tests that did not run, after too many failures, or in a run interrupted, left nothing to judge.
+    await record(
+      await run({
+        findings: [],
+        cases: [
+          { file: 'tests/cart.spec.ts', status: 'didnotrun' },
+          { file: 'tests/other.spec.ts', status: 'failed' },
+        ],
+      }),
+    );
+    await record(
+      await run({
+        findings: [],
+        cases: [
+          { file: 'tests/cart.spec.ts', status: 'passed' },
+          { file: 'tests/other.spec.ts', status: 'interrupted' },
+        ],
+      }),
+    );
+    expect(await cleanRuns()).toEqual({ 'tests/cart.spec.ts:10': 3, 'tests/fixtures.ts:14': 1 });
+    // Nor did a file whose tests were all skipped.
+    await record(
+      await run({
+        findings: [],
+        cases: [
+          { file: 'tests/cart.spec.ts', status: 'skipped' },
+          { file: 'tests/other.spec.ts', status: 'failed' },
+        ],
+      }),
+    );
+    expect(await cleanRuns()).toEqual({ 'tests/cart.spec.ts:10': 3, 'tests/fixtures.ts:14': 1 });
   });
 
   test('pairs a moved finding with the closest line of its group, each candidate once', () => {
-    const fp = (line: number) => ({ fingerprint: resourceFingerprint(leakAt(line)) });
-    const [at12, at52, at90] = [fp(12), fp(52), fp(90)];
-    const [from10, from50] = [fp(10), fp(50)];
+    const shown = (line: number) => ({ fingerprint: resourceFingerprint(leakAt(line)), finding: leakAt(line) });
+    const stored = (line: number) => ({ fingerprint: resourceFingerprint(leakAt(line)), place: leakAt(line).where });
+    const [at12, at52, at90] = [shown(12), shown(52), shown(90)];
+    const [from10, from50] = [stored(10), stored(50)];
     const pairs = pairMoved([at52, at12, at90], [from50, from10]);
     expect(pairs.get(at12)).toBe(from10);
     expect(pairs.get(at52)).toBe(from50);
@@ -407,6 +473,14 @@ describe('a finding’s identity', () => {
         detail: '2 opened, 1 closed in tests/a.spec.ts',
       }),
     );
+    // A test of the file opens and closes one through a helper.
+    expect(
+      fingerprint({
+        ...probable,
+        where: 'tests/a.spec.ts:3, tests/helpers.ts:7',
+        detail: '2 opened, 1 closed in tests/a.spec.ts',
+      }),
+    ).toBe(fingerprint({ ...probable, where: 'tests/a.spec.ts:3', detail: '1 opened, 0 closed in tests/a.spec.ts' }));
     expect(fingerprint({ ...probable, where: 'tests/a.spec.ts:3' })).not.toBe(
       fingerprint({ ...probable, where: 'tests/b.spec.ts:3' }),
     );
@@ -431,6 +505,22 @@ describe('a finding’s identity', () => {
     const unplaced = fingerprint({ ...server, detail: '"exports" (tests/a.spec.ts)' });
     expect(fingerprint({ ...server, detail: '"exports (CSV)" (tests/a.spec.ts)' })).toBe(unplaced);
     expect(fingerprint({ ...server, detail: '"exports" (tests/b.spec.ts)' })).not.toBe(unplaced);
+    expect(fingerprint({ ...server, detail: '"exports" (tests/(admin)/a.spec.ts)' })).not.toBe(
+      fingerprint({ ...server, detail: '"exports" (tests/(shop)/a.spec.ts)' }),
+    );
+  });
+
+  test('names the source file of its place, whatever the path holds', () => {
+    expect(identityFile(fingerprint(leakAt(10, 'tests/(admin)/my cart.spec.ts')))).toBe(
+      'tests/(admin)/my cart.spec.ts',
+    );
+    const server = { verdict: 'handle', kind: 'handle', where: 'TCPServerWrap' } as const;
+    expect(identityFile(fingerprint({ ...server, site: 'tests/a.spec.ts:5' }))).toBe('tests/a.spec.ts');
+    expect(identityFile(fingerprint({ ...server, detail: '"exports" (tests/(admin)/a.spec.ts)' }))).toBe(
+      'tests/(admin)/a.spec.ts',
+    );
+    expect(identityFile(fingerprint({ verdict: 'idle', kind: 'page', where: 'fixture "page"' }))).toBeNull();
+    expect(identityFile(fingerprint({ verdict: 'piling', kind: 'worker', where: 'worker process' }))).toBeNull();
   });
 
   test('a fixture’s leak is known by its line, not by the fixture’s name', () => {

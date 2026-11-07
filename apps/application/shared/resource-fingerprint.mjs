@@ -21,19 +21,25 @@ export const RESOURCE_IDENTITY_VERSION = 2;
 
 const LINE = /(\.[cm]?[jt]sx?):\d+(?::\d+)?/g;
 const FIRST_LINE = /\.[cm]?[jt]sx?:(\d+)/;
-/** A source file named in a text, `file` or `file:line`: a truncated name has no extension and is not one. */
-const SOURCE_FILE = /[^\s|,()"]+\.[cm]?[jt]sx?(?=$|[\s|,):])/g;
-/** The file of a handle's test, as the reporter names the test: `"title" (file)`. */
-const TEST_FILE = /\(([^()]+)\)$/;
+/** A whole text that names a source file, with its line or not; a name cut short has no extension and is not one. */
+const FILE_REF = /^(.+\.[cm]?[jt]sx?)(?::\d+){0,2}$/;
+/** The spec file a probable finding was counted in, as the reporter names it: `2 opened, 1 closed in <file>`. */
+const COUNTED_IN = / closed in (.+)$/;
 
 /** `tests/cart.spec.ts:12:5` as `tests/cart.spec.ts`, wherever it appears in the text. */
 function withoutLines(text) {
   return String(text ?? '').replace(LINE, '$1');
 }
 
-/** The source files a text names, each once, in the order it names them. */
-export function sourceFiles(text) {
-  return [...new Set(String(text ?? '').match(SOURCE_FILE) ?? [])];
+/** The file a `file` or `file:line` names, or null for any other text. */
+function fileOf(text) {
+  return FILE_REF.exec(String(text ?? ''))?.[1] ?? null;
+}
+
+/** The file of a handle's test, as the reporter names the test, `"title" (file)`, or null when the text is cut short. */
+function testFileOf(detail) {
+  const at = detail.lastIndexOf('" (');
+  return at >= 0 && detail.endsWith(')') ? detail.slice(at + 3, -1) : null;
 }
 
 /**
@@ -41,17 +47,19 @@ export function sourceFiles(text) {
  * it (`site`, which is a fixture's location when the line is unknown), else
  * what names it (a Playwright fixture, the worker process). A handle is its
  * type at that line, or without one in its test's file. A probable leak,
- * counted per spec file, is the files its opening lines are in.
+ * counted per spec file, is that file (else the first file its opening lines
+ * are in).
  */
 function findingPlace(finding) {
   const where = String(finding.where ?? '');
   const site = finding.site ? String(finding.site) : '';
+  const detail = String(finding.detail ?? '');
   if (finding.verdict === 'handle') {
     if (site) return `${where} at ${site}`;
-    const file = TEST_FILE.exec(String(finding.detail ?? ''))?.[1];
-    return file ? `${where} in ${file}` : where;
+    const test = testFileOf(detail) ?? detail;
+    return test ? `${where} in ${test}` : where;
   }
-  if (finding.verdict === 'probable') return sourceFiles(where).sort().join(', ') || where;
+  if (finding.verdict === 'probable') return COUNTED_IN.exec(detail)?.[1] ?? fileOf(where.split(', ')[0]) ?? where;
   return site || where;
 }
 
@@ -62,9 +70,20 @@ export function resourceFingerprint(finding) {
     .slice(0, 500);
 }
 
-/** The group of an identity: the identities an edit above their line would turn into one another. */
-export function resourceGroup(fingerprint) {
-  return withoutLines(fingerprint);
+/**
+ * The group of a finding: the findings an edit above their line would turn
+ * into one another. Its identity and what it names (`where`, or a stored
+ * finding's `place`), both without line numbers.
+ */
+export function resourceGroup(fingerprint, where) {
+  return `${withoutLines(fingerprint)}\n${withoutLines(where)}`;
+}
+
+/** The source file an identity names: its line's, a handle's test's, a probable leak's spec file; null for none. */
+export function identityFile(fingerprint) {
+  const fields = String(fingerprint ?? '').split('|');
+  const place = fields.slice(3, -1).join('|');
+  return fileOf(fields[0] === 'handle' ? place.replace(/^\S+ (?:at|in) /, '') : place);
 }
 
 /** The first line an identity (or a `file:line`) names, or null when it names none. */

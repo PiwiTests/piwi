@@ -2655,7 +2655,8 @@ export const flakeArms = sqliteTable(
 // A resource finding across runs: one per project and identity (its verdict,
 // kind, scope and the line or fixture that opened it;
 // shared/resource-fingerprint.mjs), with the run it first showed in and the
-// last full run of the default branch that showed it. An edit above the line
+// last full run of the default branch that showed it (until one did, that
+// first run). An edit above the line
 // moves it to a new identity, which it takes on with its history once a full
 // run of the default branch shows it there. It is fixed once five full runs of
 // the default branch that could have shown it came without it, and reopened

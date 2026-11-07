@@ -179,7 +179,7 @@ async function reclusterFailureClusters(target: DB): Promise<void> {
  * (`rekeyResourceFindingsOnce`), once per identity version. Startup waits for
  * it, so no run is recorded under the current identity beside a finding still
  * stored under the one before. A failure is logged, and the next start tries
- * again.
+ * again; a finding a run recorded meanwhile keeps the current identity.
  */
 async function rekeyResourceFindings(target: DB): Promise<void> {
   try {

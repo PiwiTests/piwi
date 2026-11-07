@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
+  projects,
   resourceFindings,
   resourceOccurrences,
   testCases,
@@ -13,15 +14,15 @@ import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scop
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { readResourceReport } from './resource-reports';
-import { ranTest, testOutcomes } from '#shared/utils/test-counts';
+import { testOutcomes } from '#shared/utils/test-counts';
 import { REPORT_FINDINGS_CAP } from '#shared/resource-report';
 import {
+  identityFile,
   isLeak,
   openingLine,
   RESOURCE_IDENTITY_VERSION,
   resourceFingerprint,
   resourceGroup,
-  sourceFiles,
 } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding, WireResourceReport } from '#shared/types';
 
@@ -205,7 +206,15 @@ export async function recordRunResourceFindings(db: DrizzleDB, runId: number): P
   // A run with no branch counts as a run of the default branch.
   const vouches = run.isFullRun && (!run.branch || run.branch === defaultBranch);
   const found = runFindings(run.parts);
-  return db.transaction((tx) => recordFindings(tx, run, found, defaultBranch, vouches));
+  return db.transaction(async (tx) => {
+    // Hold the project's row until the transaction ends: the runs of a project record one after the other, each
+    // reading what the one before wrote.
+    await tx
+      .update(projects)
+      .set({ name: sql`${projects.name}` })
+      .where(eq(projects.id, run.projectId));
+    return recordFindings(tx, run, found, defaultBranch, vouches);
+  });
 }
 
 async function recordFindings(
@@ -263,9 +272,12 @@ async function recordFindings(
       continue;
     }
     if (inserted) continue;
-    // The latest showing of a run that vouches places the finding and starts its clean runs again.
+    // The latest showing of a run that vouches places the finding and starts its clean runs again. A fixed
+    // finding it shows is back after its fix when the default branch showed it before; else it reaches the
+    // default branch now, from a branch that showed it first.
     const latest = vouches && run.startTime >= row.lastSeenAt;
-    const comesBack = latest && row.status === 'fixed';
+    const shownAgain = latest && row.status === 'fixed';
+    const comesBack = shownAgain && (await shownOnDefaultBefore(db, row.id, run.id, defaultBranch));
     if (comesBack) reopened.push(row.id);
     await db
       .update(resourceFindings)
@@ -281,7 +293,8 @@ async function recordFindings(
           cleanRuns: 0,
           fixedRunId: null,
         }),
-        ...(comesBack && { status: 'open', reopenedRunId: run.id, fixedAt: null }),
+        ...(shownAgain && { status: 'open', fixedAt: null }),
+        ...(comesBack && { reopenedRunId: run.id }),
         updatedAt: now,
       })
       .where(eq(resourceFindings.id, row.id));
@@ -289,6 +302,27 @@ async function recordFindings(
 
   const fixed = vouches ? await countCleanRun(db, run, seenIds, now) : [];
   return { seen: seenIds.size, fixed, reopened };
+}
+
+/** Whether a run of the default branch other than `runId` showed the finding. */
+async function shownOnDefaultBefore(
+  db: DrizzleDB,
+  findingId: number,
+  runId: number,
+  defaultBranch: string,
+): Promise<boolean> {
+  const [shown] = await db
+    .select({ id: resourceOccurrences.id })
+    .from(resourceOccurrences)
+    .where(
+      and(
+        eq(resourceOccurrences.findingId, findingId),
+        ne(resourceOccurrences.runId, runId),
+        shownOnBranch(defaultBranch, true),
+      ),
+    )
+    .limit(1);
+  return shown !== undefined;
 }
 
 /**
@@ -331,12 +365,13 @@ async function insertFinding(
 /**
  * Which findings a run's report could have shown, so that it not showing one
  * says the finding is gone: the capture fixtures ran (a probable finding needs
- * only the steps), the report kept every finding of its verdict, and no test
- * that could have left it open failed, since what a failed test left open is
- * never judged. With a failed test in the run, that holds only for a finding
- * whose identity names spec files of the run, none of whose tests failed: a
- * fixture's or a helper's finding, or one that names no file, may be the
- * failed test's.
+ * only the steps), the report kept every finding of its verdict, and every
+ * test that could have left it open passed or was skipped, since what a test
+ * that failed, was interrupted or did not run left open is never judged. With
+ * such a test in the run, that holds only for a finding whose identity names a
+ * spec file of the run with a test that passed and none of those others: a
+ * fixture's or a helper's finding, or one that names no file, may be that
+ * test's.
  */
 async function reportReach(
   db: DrizzleDB,
@@ -358,22 +393,18 @@ async function reportReach(
       .innerJoin(testCases, eq(testCases.id, testRunsCases.testCaseId))
       .where(eq(testRunsCases.testRunId, run.id)),
   );
-  const specFiles = [...new Set(outcomes.map((o) => o.filePath))];
-  const failedFiles = new Set(
-    outcomes.filter((o) => ranTest(o.status) && o.status !== 'passed').map((o) => o.filePath),
+  const unjudged = new Set(
+    outcomes.filter((o) => o.status !== 'passed' && o.status !== 'skipped').map((o) => o.filePath),
   );
+  const passed = new Set(outcomes.filter((o) => o.status === 'passed').map((o) => o.filePath));
   return (row) => {
     if (row.verdict !== 'probable' && !withLedger) return false;
     if (cut.has(row.verdict)) return false;
-    if (failedFiles.size === 0) return true;
-    const named = sourceFiles(row.fingerprint);
-    return (
-      named.length > 0 &&
-      named.every((file) => {
-        const specs = specFiles.filter((spec) => sameFile(spec, file));
-        return specs.length > 0 && specs.every((spec) => !failedFiles.has(spec));
-      })
-    );
+    if (unjudged.size === 0) return true;
+    const file = identityFile(row.fingerprint);
+    if (!file) return false;
+    const specs = [...new Set([...passed, ...unjudged])].filter((spec) => sameFile(spec, file));
+    return specs.some((spec) => passed.has(spec)) && specs.every((spec) => !unjudged.has(spec));
   };
 }
 
@@ -420,6 +451,8 @@ async function countCleanRun(db: DrizzleDB, run: RunFacts, seenIds: Set<number>,
 /** A run's finding, and whether the branch it compares with had shown it before. */
 export interface RunFindingNovelty extends RunFinding {
   isNew: boolean;
+  /** The identity the project's history keeps it under: its own, or that of the open finding it moved from. */
+  historyFingerprint: string;
 }
 
 export interface RunFindingsNovelty {
@@ -470,10 +503,14 @@ export async function runFindingsNovelty(db: DrizzleDB, runId: number): Promise<
   const unseen = found.filter((f) => !seenBefore.has(f.fingerprint));
   const moved = unseen.length
     ? pairMoved(unseen, await moveCandidates(db, run, onBase, new Set(found.map((f) => f.fingerprint))))
-    : new Map();
+    : new Map<RunFinding, FindingRow>();
   return {
     baseBranch,
-    findings: found.map((f) => ({ ...f, isNew: !seenBefore.has(f.fingerprint) && !moved.has(f) })),
+    findings: found.map((f) => ({
+      ...f,
+      isNew: !seenBefore.has(f.fingerprint) && !moved.has(f),
+      historyFingerprint: moved.get(f)?.fingerprint ?? f.fingerprint,
+    })),
   };
 }
 
@@ -508,20 +545,22 @@ export async function runLeakFacts(db: DrizzleDB, runId: number): Promise<RunLea
 }
 
 /**
- * Pair each finding with an open finding of the same group (the same identity
- * without line numbers) it may have moved from, the closest lines first; each
- * candidate pairs once. A finding left unpaired is a new one.
+ * Pair each finding with an open finding of the same group (`resourceGroup`:
+ * the same identity and text without line numbers) it may have moved from,
+ * the closest lines first; each candidate pairs once. A finding left unpaired
+ * is a new one.
  */
-export function pairMoved<T extends { fingerprint: string }, U extends { fingerprint: string }>(
+export function pairMoved<T extends RunFinding, U extends Pick<FindingRow, 'fingerprint' | 'place'>>(
   findings: T[],
   candidates: U[],
 ): Map<T, U> {
   const options: Array<{ finding: T; candidate: U; distance: number }> = [];
   for (const finding of findings) {
-    const group = resourceGroup(finding.fingerprint);
+    const group = resourceGroup(finding.fingerprint, finding.finding.where);
     const line = openingLine(finding.fingerprint);
     for (const candidate of candidates) {
-      if (candidate.fingerprint === finding.fingerprint || resourceGroup(candidate.fingerprint) !== group) continue;
+      const sameGroup = resourceGroup(candidate.fingerprint, candidate.place) === group;
+      if (candidate.fingerprint === finding.fingerprint || !sameGroup) continue;
       const from = openingLine(candidate.fingerprint);
       options.push({ finding, candidate, distance: line !== null && from !== null ? Math.abs(line - from) : 0 });
     }

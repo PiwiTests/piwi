@@ -105,10 +105,10 @@ or fixture that opened it, so renaming its test or fixture, or opening and closi
 its history. A leak that an edit above its line moved keeps it too.
 
 Only a full run of the default branch changes a finding. A leak is fixed once five such runs came without it, each able
-to have shown it: with the fixtures on, its report not cut at the 100 findings the dashboard keeps, and no test of the
-leak's file failed (with a failed test anywhere in the run, a leak a fixture or a helper opened is not counted either:
-what a failed test left open is never judged). Such a run that shows it again reopens it. Any other run, a partial run
-or a branch forked before the fix, only adds its showing. On the Resources tab each finding says whether it is new to
+to have shown it: with the fixtures on, its report not cut at the 100 findings the dashboard keeps, and a test of the
+leak's file passed while none failed, was interrupted or did not run. What such a test left open is never judged, so
+with one anywhere in the run, a leak a fixture or a helper opened is not counted either. Such a run that shows the leak
+again reopens it. Any other run, a partial run or a branch forked before the fix, only adds its showing. On the Resources tab each finding says whether it is new to
 the base branch (the pull request's target, else the default branch), or since which run it has been there.
 
 Three places read it:
