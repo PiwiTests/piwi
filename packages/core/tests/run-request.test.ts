@@ -233,7 +233,7 @@ describe('parseRunRequest', () => {
     expect(problemsOf({ ...request, options: { ...request.options, ...option } })).toEqual([problem]);
   });
 
-  test.each([
+  test.each<[Record<string, unknown>, string]>([
     [{ id: 'ABCDEF0123456789abcdef0123456789' }, 'id must be 32 lowercase hex digits.'],
     [{ id: 'short' }, 'id must be 32 lowercase hex digits.'],
     [{ projectId: 0 }, 'projectId must be a project id.'],
@@ -243,7 +243,7 @@ describe('parseRunRequest', () => {
     [{ source: { branch: '--upload-pack=touch x' } }, 'source.branch must be a branch name.'],
     [{ source: { branch: 'main\nfeature' } }, 'source.branch must be a branch name.'],
     ...['pays\u001b[2J', 'pays\nwith a card', 'pays\u0085', 'pays\u2028', 'pays \u202ewith', 'pays\u2066'].map(
-      (title) => [
+      (title): [Record<string, unknown>, string] => [
         { tests: [{ ...request.tests[0], title }] },
         'tests[0].title must be at most 500 characters, with no control or invisible character.',
       ],
