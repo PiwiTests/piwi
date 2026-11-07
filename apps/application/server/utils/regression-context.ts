@@ -21,6 +21,7 @@ export interface RunForRegression {
   environment: string | null;
   branch?: string | null;
   metadata: unknown;
+  playwrightVersion?: string | null;
 }
 
 export type RegressionContextResult =

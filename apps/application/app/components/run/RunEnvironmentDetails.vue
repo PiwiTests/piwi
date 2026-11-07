@@ -88,6 +88,13 @@ const blocks = computed<Block[]>(() => {
   return out;
 });
 
+/** A field as the table shows it: a server's start time in the viewer's locale and time zone. */
+function shownValue(snapshot: WireEnvironmentSnapshot, key: string): string | null {
+  const value = environmentValue(snapshot, key);
+  if (key === 'startedAt' && value) return prettyDateFormat(value);
+  return value;
+}
+
 function rowsOf(block: Block, informational: boolean) {
   return block.fields
     .filter((f) => !!f.informational === informational)
@@ -112,7 +119,10 @@ function rowsOf(block: Block, informational: boolean) {
           {{ warning }}
         </p>
       </template>
-      <TableScroller :min-width="block.columns.length > 2 ? '36rem' : undefined" :bleed="false">
+      <TableScroller
+        :min-width="block.columns.length > 1 ? `${12 + block.columns.length * 12}rem` : undefined"
+        :bleed="false"
+      >
         <table class="w-full text-sm">
           <thead v-if="block.columns.length > 1">
             <tr class="border-b border-default">
@@ -139,7 +149,7 @@ function rowsOf(block: Block, informational: boolean) {
                 {{ field.label }}<span v-if="block.differing.has(field.key)" class="text-highlighted"> · differs</span>
               </td>
               <td v-for="column in block.columns" :key="column.key" class="px-2 py-1.5 font-mono text-xs break-all">
-                {{ environmentValue(column.snapshot, field.key) ?? '—' }}
+                {{ shownValue(column.snapshot, field.key) ?? '—' }}
               </td>
             </tr>
           </tbody>
@@ -147,7 +157,7 @@ function rowsOf(block: Block, informational: boolean) {
       </TableScroller>
       <p v-if="rowsOf(block, true).length" class="text-xs text-muted break-all">
         <template v-for="(field, i) in rowsOf(block, true)" :key="field.key">
-          {{ field.label }}: {{ block.columns.map((c) => environmentValue(c.snapshot, field.key) ?? '—').join(' / ')
+          {{ field.label }}: {{ block.columns.map((c) => shownValue(c.snapshot, field.key) ?? '—').join(' / ')
           }}<template v-if="i < rowsOf(block, true).length - 1"> · </template>
         </template>
       </p>

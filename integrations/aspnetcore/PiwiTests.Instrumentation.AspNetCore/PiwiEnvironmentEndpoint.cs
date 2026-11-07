@@ -31,8 +31,8 @@ internal sealed record PiwiServerEnvironment(
 
 /// <summary>
 /// The runtime facts of the server process the middleware serves at <c>/__piwi/environment</c>: the runtime, the
-/// operating system, the time zone, the cultures and when the process started. The Piwi reporter reads it at run
-/// start, so a failure that depends on the server's clock, zone or culture can be told from one in the code. It
+/// operating system, the time zone, the cultures and when the process started. The Piwi reporter reads it as
+/// a test first reaches the server and again as the run's last test ends, so a failure that depends on the server's clock, zone or culture can be told from one in the code. It
 /// carries only these fields: never other environment variables, file paths or connection strings.
 /// </summary>
 internal static class PiwiEnvironmentEndpoint

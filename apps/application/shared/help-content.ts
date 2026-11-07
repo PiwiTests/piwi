@@ -1469,7 +1469,7 @@ export const HELP_TOPICS = {
     title: 'Run environment',
     text: [
       'Where this run executed, as the reporter recorded it. A value that changed against the baseline, or that the shards of the run disagree on, is a possible cause of a failure that happens only there.',
-      '- **Runner** — one row per shard: time zone, locale, OS, Node.js, CI runner image.',
+      '- **Runner** — one column per shard: time zone, locale, OS, Node.js, CI runner image.',
       '- **Browser** — one per project, as its page reported itself (needs the capture fixtures).',
       '- **Server** — each instrumented server under test (`/__piwi/environment`), with its clock offset from the runner and whether it restarted during the run.',
       'A run from an older reporter shows nothing here: it was never recorded.',

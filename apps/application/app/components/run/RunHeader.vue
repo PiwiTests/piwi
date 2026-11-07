@@ -87,7 +87,7 @@ const environmentWarning = computed(() => {
   const env = props.testRun?.environments;
   if (!env) return null;
   const differing = disagreeingFields(env.runner);
-  if (differing.length) return `shards differ on ${differing.map((f) => f.label.toLowerCase()).join(', ')}`;
+  if (differing.length) return `shards differ on ${differing.map((f) => f.label).join(', ')}`;
   const warned = env.server.filter((s) => serverWarnings(s).length > 0);
   if (warned.length) return `${warned.length} server${warned.length === 1 ? '' : 's'} to check`;
   return null;

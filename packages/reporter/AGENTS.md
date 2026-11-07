@@ -25,7 +25,7 @@ responsibilities.
      its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
    - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
      `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
-     `GET /__piwi/environment` requests to each instrumented origin, as the run reaches it and as it ends
+     `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
      (`internal/collect/run-environments.ts`), unless `collectEnvironmentInfo` is off (`tests/environment-collect.spec.ts`);
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
      in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;

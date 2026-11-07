@@ -261,6 +261,16 @@ const TIME_ZONE_RE = /^[A-Za-z][A-Za-z0-9/_+-]{0,63}$/;
 /** A BCP 47 language tag: `en`, `fr-FR`, `zh-Hant-TW`. */
 const LOCALE_RE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
 
+/** Whether `Intl` knows the time zone, as a browser context must for it to open. */
+function knownTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function patterned(obj: Json, key: string, at: string, re: RegExp, max: number, example: string): string {
   const value = str(obj, key, at);
   if (value.length > max || !re.test(value)) {
@@ -304,8 +314,13 @@ function parseCondition(value: unknown, at: string): FlakeCondition {
         downKbps: num(value, 'downKbps', at, 1),
         upKbps: num(value, 'upKbps', at, 1),
       };
-    case 'timezone':
-      return { kind, timeZone: patterned(value, 'timeZone', at, TIME_ZONE_RE, 64, '"Europe/Paris" or "UTC"') };
+    case 'timezone': {
+      const timeZone = patterned(value, 'timeZone', at, TIME_ZONE_RE, 64, '"Europe/Paris" or "UTC"');
+      if (!knownTimeZone(timeZone)) {
+        throw new FlakePlanError(`${at}.timeZone ${JSON.stringify(timeZone)} is not a time zone this runtime knows`);
+      }
+      return { kind, timeZone };
+    }
     case 'locale':
       return { kind, locale: patterned(value, 'locale', at, LOCALE_RE, 35, '"fr-FR" or "en"') };
     case 'alongside':

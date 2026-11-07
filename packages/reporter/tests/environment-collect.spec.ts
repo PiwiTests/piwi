@@ -209,9 +209,10 @@ describe('RunEnvironments', () => {
     contentType: 'application/json',
     body: Buffer.from(JSON.stringify(body)),
   });
+  const reached = (url: string) => [{ url, method: 'GET', status: 200, serverLogs: [] }] as never;
 
   it('keeps the first browser snapshot of each project, stamped with the shard', async () => {
-    const run = new RunEnvironments(runner, [], async () => ({
+    const run = new RunEnvironments(runner, async () => ({
       ok: false,
       status: 404,
       headers: {},
@@ -224,22 +225,34 @@ describe('RunEnvironments', () => {
     expect(all[0]).toBe(runner);
   });
 
-  it('reads each base URL once and marks a server that restarted', async () => {
+  it('reads an instrumented origin once, again as the last test ends, and marks a restart', async () => {
     let instance = 'first';
     const calls: string[] = [];
-    const run = new RunEnvironments(runner, ['http://app.test/shop/'], async (url) => {
+    const run = new RunEnvironments(runner, async (url) => {
       calls.push(url);
       const body = JSON.stringify({ v: 1, instance, now: Date.now() });
       return { ok: true, status: 200, headers: {}, text: async () => body };
     });
-    run.noteTestEnd([]);
-    run.noteTestEnd([]);
+    run.noteTestEnd([], reached('http://app.test/shop/cart'));
+    run.noteTestEnd([], reached('http://app.test/api'));
+    run.noteTestEnd([], [{ url: 'http://plain.test/', method: 'GET', status: 200 }] as never);
     await new Promise((resolve) => setTimeout(resolve, 0));
     instance = 'second';
+    run.lastTestEnded();
     const servers = (await run.atEnd()).filter((s) => s.kind === 'server');
     expect(calls).toEqual(['http://app.test/__piwi/environment', 'http://app.test/__piwi/environment']);
     expect(servers).toHaveLength(1);
     expect(servers[0]).toMatchObject({ origin: 'http://app.test', instance: 'first', restarted: true });
+  });
+
+  it('reads no server again for a run that ended before its last test', async () => {
+    const run = new RunEnvironments(runner, async () => {
+      const body = JSON.stringify({ v: 1, instance: 'a', now: Date.now() });
+      return { ok: true, status: 200, headers: {}, text: async () => body };
+    });
+    run.noteTestEnd([], reached('http://app.test/'));
+    const servers = (await run.atEnd()).filter((s) => s.kind === 'server');
+    expect(servers[0]).toMatchObject({ instance: 'a', restarted: null });
   });
 
   it('ignores an attachment that is not a browser snapshot', () => {
@@ -333,6 +346,16 @@ describe('the page read', () => {
       });
       expect(snapshot.browserVersion).toBe(browser.version());
       expect(snapshot.formatSample).toContain('1 234,5');
+
+      // A test that sets its own time zone reads nothing for its project.
+      const other = {
+        testId: 't2',
+        project: { name: `env-override-${process.pid}`, use: {} },
+        attach: async (name: string, { body }: { body: Buffer }) => void attached.push({ name, body }),
+      } as never;
+      await readBrowserEnvironment(page, other, { timezoneId: 'Asia/Tokyo' });
+      await attachBrowserEnvironment(other);
+      expect(attached).toHaveLength(1);
     } finally {
       await browser.close();
     }

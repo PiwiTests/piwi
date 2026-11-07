@@ -58,6 +58,13 @@ function cut(value: string | null | undefined): string | null {
   return trimmed.length > ENVIRONMENT_STRING_MAX ? trimmed.slice(0, ENVIRONMENT_STRING_MAX) : trimmed;
 }
 
+/** The values Playwright's option fixtures take when neither the project nor its `contextOptions` set them. */
+const PLAYWRIGHT_DEFAULTS: Record<'timezoneId' | 'locale' | 'colorScheme', string | undefined> = {
+  timezoneId: undefined,
+  locale: 'en-US',
+  colorScheme: 'light',
+};
+
 /** The projects of this worker whose browser was read already. */
 const READ_PROJECTS = new Set<string>();
 
@@ -69,10 +76,21 @@ let pending: { testId: string; snapshot: WireBrowserEnvironment } | null = null;
  * `attachBrowserEnvironment` attaches it to that test as `piwi-environment` for the reporter. Off with
  * `PIWI_COLLECT_ENVIRONMENT_INFO=false`. A read that fails records nothing and is not tried again.
  */
-export async function readBrowserEnvironment(page: Page, testInfo: TestInfo): Promise<void> {
+export async function readBrowserEnvironment(
+  page: Page,
+  testInfo: TestInfo,
+  options: { timezoneId?: string; locale?: string; colorScheme?: string | null } = {},
+): Promise<void> {
   if (process.env.PIWI_COLLECT_ENVIRONMENT_INFO === 'false' || !testInfo?.project) return;
   const project = testInfo.project.name;
   if (READ_PROJECTS.has(project)) return;
+  // A test that sets its own time zone, locale or color scheme (`test.use`) reads its own browser, not the project's.
+  const declared = (testInfo.project.use ?? {}) as Record<string, unknown>;
+  const contextOptions = (declared.contextOptions ?? {}) as Record<string, unknown>;
+  for (const key of ['timezoneId', 'locale', 'colorScheme'] as const) {
+    const projectValue = declared[key] ?? contextOptions[key] ?? PLAYWRIGHT_DEFAULTS[key];
+    if (options[key] !== undefined && options[key] !== projectValue) return;
+  }
   READ_PROJECTS.add(project);
   try {
     const observed = await internalCall(page, () => page.evaluate(readPageEnvironment));

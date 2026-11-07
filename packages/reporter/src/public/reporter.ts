@@ -541,10 +541,12 @@ export class PiwiDashboardReporter {
       resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
     );
 
-    if (this.options.collectEnvironmentInfo !== false) {
+    if (
+      this.options.collectEnvironmentInfo !== false &&
+      process.env[PIWI_ENV_KEYS.collectEnvironmentInfo] !== 'false'
+    ) {
       this.environments = new RunEnvironments(
         collectRunnerEnvironment(process.env, this.shardInfo?.current ?? null),
-        baseUrlsFromConfig(config),
         backendManifestFetch(ignoresHttpsErrors(config)),
       );
     }
@@ -560,7 +562,10 @@ export class PiwiDashboardReporter {
         backendManifestFetch(ignoresHttpsErrors(config)),
       );
     }
-    if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
+    // The run's last test ending is when the servers under test are read again: Playwright stops a `webServer`
+    // before `onEnd`.
+    if (coverage.server !== 'off' || this.environments)
+      this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
@@ -1136,6 +1141,7 @@ export class PiwiDashboardReporter {
       result.retry < (test.retries ?? 0);
     if (this.lastTestWatch?.end(test.id, willRetry)) {
       this.coverage?.lastTestEnded();
+      this.environments?.lastTestEnded();
     }
   }
 

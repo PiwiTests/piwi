@@ -90,6 +90,7 @@ describe('parseFlakePlan', () => {
     ['a CPU rate below 1', withConditions({ kind: 'cpu', rate: 0.5 }), /rate must be a number from 1/],
     ['a network without throughput', withConditions({ kind: 'network', latencyMs: 10 }), /downKbps/],
     ['a time zone with a space', withConditions({ kind: 'timezone', timeZone: 'Europe/Paris x' }), /look like/],
+    ['an unknown time zone', withConditions({ kind: 'timezone', timeZone: 'Mars/Base' }), /not a time zone/],
     ['a time zone too long', withConditions({ kind: 'timezone', timeZone: `A${'b'.repeat(64)}` }), /look like/],
     ['a time zone missing', withConditions({ kind: 'timezone' }), /timeZone must be a non-empty string/],
     ['a locale with an underscore', withConditions({ kind: 'locale', locale: 'fr_FR' }), /locale must look like/],

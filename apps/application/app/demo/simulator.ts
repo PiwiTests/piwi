@@ -2029,8 +2029,14 @@ async function runSingleSimulation(
       // Every snapshot rides on `/finish`: the runner again, then each project's browser.
       environments: [
         demoCiRunner({ shardIndex: shardOverride?.shardIndex ?? null }),
-        ...[...new Set(runTests.map((t) => t.browser?.projectName).filter((p) => typeof p === 'string'))].map(
-          (project) => demoBrowser({ project: project as string, shardIndex: shardOverride?.shardIndex ?? null }),
+        ...[
+          ...new Map(
+            runTests
+              .filter((t) => typeof t.browser?.projectName === 'string')
+              .map((t) => [t.browser!.projectName as string, (t.browser!.browserName as string | undefined) ?? null]),
+          ),
+        ].map(([project, browserName]) =>
+          demoBrowser({ project, browserName, shardIndex: shardOverride?.shardIndex ?? null }),
         ),
       ],
     },

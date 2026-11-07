@@ -272,3 +272,122 @@ export function serverWarnings(server: WireServerEnvironment): Array<'restarted'
   if (server.clockOffsetMs != null && Math.abs(server.clockOffsetMs) > CLOCK_OFFSET_WARN_MS) warnings.push('clock');
   return warnings;
 }
+
+/** One field that changed between two runs' snapshots. */
+export interface SnapshotDiffEntry {
+  key: string;
+  label: string;
+  before: string | null;
+  after: string | null;
+  group: 'runner' | 'browser' | 'server';
+}
+
+/** Said after the values of a field the shards of one run disagree on. */
+export const SHARDS_DIFFER = '(differs between shards)';
+
+/** One run's value of a field across its snapshots: one value, every value when they differ, null when none. */
+function combinedValue(snapshots: readonly WireEnvironmentSnapshot[], key: string): string | null {
+  const values = [...new Set(snapshots.map((s) => environmentValue(s, key)).filter((v): v is string => v !== null))];
+  if (values.length === 0) return null;
+  if (values.length === 1) return values[0]!;
+  return `${values.join(', ')} ${SHARDS_DIFFER}`;
+}
+
+/**
+ * The compared fields of the runner, each browser (by project) and each server (by origin) that changed between two
+ * runs. A field one run did not record is not a change, nor is an imported runner's; informational fields are left
+ * out.
+ */
+export function computeSnapshotDiff(
+  before: readonly WireEnvironmentSnapshot[],
+  after: readonly WireEnvironmentSnapshot[],
+): SnapshotDiffEntry[] {
+  before = comparableSnapshots(before);
+  after = comparableSnapshots(after);
+  const diff: SnapshotDiffEntry[] = [];
+  const push = (
+    group: SnapshotDiffEntry['group'],
+    fields: readonly EnvironmentField[],
+    a: readonly WireEnvironmentSnapshot[],
+    b: readonly WireEnvironmentSnapshot[],
+    scope: string | null,
+  ) => {
+    if (a.length === 0 || b.length === 0) return;
+    for (const field of fields) {
+      if (field.informational) continue;
+      const prev = combinedValue(a, field.key);
+      const curr = combinedValue(b, field.key);
+      if (prev === null || curr === null || prev === curr) continue;
+      diff.push({
+        key: `${group}.${field.key}${scope ? `@${scope}` : ''}`,
+        label: scope ? `${field.label} · ${scope}` : field.label,
+        before: prev,
+        after: curr,
+        group,
+      });
+    }
+  };
+  push(
+    'runner',
+    RUNNER_FIELDS,
+    before.filter((s) => s.kind === 'runner'),
+    after.filter((s) => s.kind === 'runner'),
+    null,
+  );
+  const projects = new Set(after.flatMap((s) => (s.kind === 'browser' ? [s.project] : [])));
+  for (const project of projects) {
+    const of = (list: readonly WireEnvironmentSnapshot[]) =>
+      list.filter((s) => s.kind === 'browser' && s.project === project);
+    push('browser', BROWSER_FIELDS, of(before), of(after), project);
+  }
+  const origins = new Set(after.flatMap((s) => (s.kind === 'server' ? [s.origin] : [])));
+  for (const origin of origins) {
+    const of = (list: readonly WireEnvironmentSnapshot[]) =>
+      list.filter((s) => s.kind === 'server' && s.origin === origin);
+    push('server', SERVER_FIELDS, of(before), of(after), origin);
+  }
+  return diff;
+}
+
+/** What an environment change marker's description starts with, which tells it from the other auto markers. */
+export const ENVIRONMENT_MARKER_PREFIX = 'Environment change';
+
+const MARKER_CATEGORY: Record<EnvironmentKind, string> = { runner: 'infra', browser: 'infra', server: 'config' };
+const KIND_TITLE: Record<EnvironmentKind, string> = { runner: 'Runner', browser: 'Browser', server: 'Server' };
+
+/** The digests of a run's snapshots of one kind, as a set. */
+function digestsOf(snapshots: readonly WireEnvironmentSnapshot[], kind: EnvironmentKind): string {
+  return [...new Set(snapshots.filter((s) => s.kind === kind).map(environmentDigest))].sort().join(',');
+}
+
+/**
+ * The automatic markers a run's snapshots call for against the previous run's: one per kind whose compared fields
+ * changed (runner and browser `infra`, server `config`), labeled with the fields. A kind either run did not record,
+ * and an imported runner, are no change. Shared by the server and the demo seed.
+ */
+export function environmentChangeMarkers(
+  before: readonly WireEnvironmentSnapshot[],
+  after: readonly WireEnvironmentSnapshot[],
+): Array<{ kind: EnvironmentKind; label: string; description: string; category: string }> {
+  const a = comparableSnapshots(before);
+  const b = comparableSnapshots(after);
+  const out: Array<{ kind: EnvironmentKind; label: string; description: string; category: string }> = [];
+  for (const kind of ['runner', 'browser', 'server'] as const) {
+    const da = digestsOf(a, kind);
+    const db = digestsOf(b, kind);
+    if (!da || !db || da === db) continue;
+    const changes = computeSnapshotDiff(
+      a.filter((s) => s.kind === kind),
+      b.filter((s) => s.kind === kind),
+    );
+    if (changes.length === 0) continue;
+    const label = `${KIND_TITLE[kind]}: ${changes.map((c) => `${c.label} ${c.before} → ${c.after}`).join(', ')}`;
+    out.push({
+      kind,
+      label: label.length > 300 ? `${label.slice(0, 299)}…` : label,
+      description: `${ENVIRONMENT_MARKER_PREFIX}: ${KIND_TITLE[kind].toLowerCase()}`,
+      category: MARKER_CATEGORY[kind],
+    });
+  }
+  return out;
+}

@@ -6,14 +6,7 @@
 
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import type { EnvironmentGroup } from '#shared/environment-diff';
-import {
-  BROWSER_FIELDS,
-  RUNNER_FIELDS,
-  SERVER_FIELDS,
-  comparableSnapshots,
-  environmentValue,
-  type EnvironmentField,
-} from '#shared/environment-snapshots';
+import { computeSnapshotDiff } from '#shared/environment-snapshots';
 import type { WireEnvironmentSnapshot } from '#shared/types';
 
 /** One field that changed between two runs, for the "what changed" summary. */
@@ -30,73 +23,6 @@ export interface MetaDiffEntry {
 export interface RunEnvironmentSide {
   playwrightVersion?: string | null;
   snapshots?: readonly WireEnvironmentSnapshot[];
-}
-
-/** Said after the values of a field the shards of one run disagree on. */
-export const SHARDS_DIFFER = '(differs between shards)';
-
-/** One run's value of a field across its snapshots: one value, every value when they differ, null when none. */
-function combinedValue(snapshots: readonly WireEnvironmentSnapshot[], key: string): string | null {
-  const values = [...new Set(snapshots.map((s) => environmentValue(s, key)).filter((v): v is string => v !== null))];
-  if (values.length === 0) return null;
-  if (values.length === 1) return values[0]!;
-  return `${values.join(', ')} ${SHARDS_DIFFER}`;
-}
-
-/**
- * The compared fields of the runner, each browser (by project) and each server (by origin) that changed between two
- * runs. A field one run did not record is not a change, nor is an imported runner's; informational fields are left
- * out.
- */
-export function computeSnapshotDiff(
-  before: readonly WireEnvironmentSnapshot[],
-  after: readonly WireEnvironmentSnapshot[],
-): MetaDiffEntry[] {
-  before = comparableSnapshots(before);
-  after = comparableSnapshots(after);
-  const diff: MetaDiffEntry[] = [];
-  const push = (
-    group: EnvironmentGroup,
-    fields: readonly EnvironmentField[],
-    a: readonly WireEnvironmentSnapshot[],
-    b: readonly WireEnvironmentSnapshot[],
-    scope: string | null,
-  ) => {
-    if (a.length === 0 || b.length === 0) return;
-    for (const field of fields) {
-      if (field.informational) continue;
-      const prev = combinedValue(a, field.key);
-      const curr = combinedValue(b, field.key);
-      if (prev === null || curr === null || prev === curr) continue;
-      diff.push({
-        key: `${group}.${field.key}${scope ? `@${scope}` : ''}`,
-        label: scope ? `${field.label} · ${scope}` : field.label,
-        before: prev,
-        after: curr,
-        group,
-      });
-    }
-  };
-  push(
-    'runner',
-    RUNNER_FIELDS,
-    before.filter((s) => s.kind === 'runner'),
-    after.filter((s) => s.kind === 'runner'),
-    null,
-  );
-  const projects = new Set(after.flatMap((s) => (s.kind === 'browser' ? [s.project] : [])));
-  for (const project of projects) {
-    const of = (list: readonly WireEnvironmentSnapshot[]) =>
-      list.filter((s) => s.kind === 'browser' && s.project === project);
-    push('browser', BROWSER_FIELDS, of(before), of(after), project);
-  }
-  const origins = new Set(after.flatMap((s) => (s.kind === 'server' ? [s.origin] : [])));
-  for (const origin of origins) {
-    const of = (list: readonly WireEnvironmentSnapshot[]) =>
-      list.filter((s) => s.kind === 'server' && s.origin === origin);
-    push('server', SERVER_FIELDS, of(before), of(after), origin);
-  }
-  return diff;
 }
 
 /** The commit span between a baseline run and a later run, with a copyable git command. */

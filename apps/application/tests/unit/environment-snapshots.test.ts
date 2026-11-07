@@ -20,7 +20,8 @@ const {
   groupEnvironments,
 } = await import('#shared/environment-snapshots');
 const { loadRunEnvironments, saveEnvironmentSnapshots } = await import('#shared/handlers/environment-snapshots');
-const { computeMetadataDiff, SHARDS_DIFFER } = await import('#shared/utils/run-metadata');
+const { computeMetadataDiff } = await import('#shared/utils/run-metadata');
+const { SHARDS_DIFFER } = await import('#shared/environment-snapshots');
 
 const runner = {
   kind: 'runner',
@@ -266,5 +267,46 @@ describe('shards and servers', async () => {
         after: { snapshots: [recorded] },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('environment change markers', async () => {
+  const { syncEnvironmentMarkersForRun } = await import('#shared/handlers/markers');
+  const { saveEnvironmentSnapshots: save } = await import('#shared/handlers/environment-snapshots');
+
+  async function twoRuns() {
+    const db = drizzle(createClient({ url: ':memory:' }), { schema });
+    await migrateToLatest(db);
+    await db.insert(schema.projects).values({ id: 1, name: 'environments' });
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(1000), branch: 'main' },
+      { id: 2, projectId: 1, status: 'passed', startTime: new Date(2000), branch: 'main' },
+    ]);
+    return db;
+  }
+
+  test('marks a runner change once, on the run where it appeared', async () => {
+    const db = await twoRuns();
+    await save(db as never, 1, [runner]);
+    await save(db as never, 2, [{ ...runner, ciImage: 'ubuntu24 20261109.1', hostname: 'other' }]);
+    await syncEnvironmentMarkersForRun(db as never, 2);
+    await syncEnvironmentMarkersForRun(db as never, 2);
+    const rows = await db.select().from(schema.markers);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      runId: 2,
+      category: 'infra',
+      source: 'auto',
+      label: 'Runner: CI runner image ubuntu24 20261102.1 → ubuntu24 20261109.1',
+    });
+  });
+
+  test('marks nothing when only informational fields changed or the earlier run recorded nothing', async () => {
+    const db = await twoRuns();
+    await save(db as never, 2, [runner]);
+    await syncEnvironmentMarkersForRun(db as never, 2);
+    await save(db as never, 1, [{ ...runner, hostname: 'other' }]);
+    await syncEnvironmentMarkersForRun(db as never, 2);
+    expect(await db.select().from(schema.markers)).toEqual([]);
   });
 });

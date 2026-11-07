@@ -1,7 +1,7 @@
 /**
  * The runtime facts of the server process the plugin serves at `/__piwi/environment` outside production: the
- * runtime, the operating system, the time zone, the locale and when the process started. The Piwi reporter reads it at
- * run start, so a failure that depends on the server's clock, zone or locale can be told from one in the code. It
+ * runtime, the operating system, the time zone, the locale and when the process started. The Piwi reporter reads it as
+ * a test first reaches the server and again as the run's last test ends, so a failure that depends on the server's clock, zone or locale can be told from one in the code. It
  * carries only the fields below: never other environment variables, file paths or connection strings.
  */
 import { arch, hostname, platform, release } from 'node:os';

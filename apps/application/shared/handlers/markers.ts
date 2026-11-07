@@ -1,10 +1,9 @@
 import { markers, testRuns } from '../../server/database/schema';
 import { eq, and, asc, desc, isNull, like, lt, ne, notLike, or } from 'drizzle-orm';
 import { eligibleRunSql, isEligibleRun, notPrivateRun } from '../run-eligibility';
-import { computeSnapshotDiff } from '../utils/run-metadata';
 import { loadRunsSnapshots } from './environment-snapshots';
-import { environmentDigest } from '../environment-snapshots';
-import type { EnvironmentKind, WireEnvironmentSnapshot } from '../types';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { ENVIRONMENT_MARKER_PREFIX, environmentChangeMarkers } from '../environment-snapshots';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
@@ -142,34 +141,18 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   });
 }
 
-/** What an environment change marker's description starts with, which tells it from the other auto markers. */
-const ENVIRONMENT_MARKER_PREFIX = 'Environment change';
-
-/** The marker category of a change of each snapshot kind. */
-const ENVIRONMENT_MARKER_CATEGORY: Record<EnvironmentKind, string> = {
-  runner: 'infra',
-  browser: 'infra',
-  server: 'config',
-};
-
-const KIND_TITLE: Record<EnvironmentKind, string> = { runner: 'Runner', browser: 'Browser', server: 'Server' };
-
-/** The digests of a run's snapshots of one kind, as a set. */
-function digestsOf(snapshots: readonly WireEnvironmentSnapshot[], kind: EnvironmentKind): string {
-  return [...new Set(snapshots.filter((s) => s.kind === kind).map(environmentDigest))].sort().join(',');
-}
-
 /**
  * Auto-create one timeline marker per kind of environment that changed between a finished run and the previous
  * eligible run on the same branch and environment label: its runner or browser (category `infra`), or a server under
  * test (`config`), labeled with the fields that changed. A kind either run did not record is no change, so a change
  * is marked once, on the run where it appeared. Idempotent per run and kind; gated by `PIWI_AUTO_MARKERS` like
- * `syncAutoMarkersForRun`.
+ * `syncAutoMarkersForRun`, and by the project's `markers` capability.
  */
 export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number): Promise<void> {
   if (typeof process !== 'undefined' && process.env?.PIWI_AUTO_MARKERS === 'false') return;
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
   if (!run || !isEligibleRun(run, 'baseline')) return;
+  if (await isPassiveCapabilityDeclined(db, run.projectId, 'markers')) return;
 
   const conds = [
     eq(testRuns.projectId, run.projectId),
@@ -200,24 +183,14 @@ export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number)
       ),
     );
 
-  for (const kind of ['runner', 'browser', 'server'] as const) {
-    const a = digestsOf(before, kind);
-    const b = digestsOf(after, kind);
-    if (!a || !b || a === b) continue;
-    const description = `${ENVIRONMENT_MARKER_PREFIX}: ${KIND_TITLE[kind].toLowerCase()}`;
-    if (marked.some((m) => m.description === description)) continue;
-    const changes = computeSnapshotDiff(
-      before.filter((s) => s.kind === kind),
-      after.filter((s) => s.kind === kind),
-    );
-    if (changes.length === 0) continue;
-    const label = `${KIND_TITLE[kind]}: ${changes.map((c) => `${c.label} ${c.before} → ${c.after}`).join(', ')}`;
+  for (const change of environmentChangeMarkers(before, after)) {
+    if (marked.some((m) => m.description === change.description)) continue;
     await db.insert(markers).values({
       projectId: run.projectId,
-      label: label.length > 300 ? `${label.slice(0, 299)}…` : label,
-      description,
+      label: change.label,
+      description: change.description,
       occurredAt: run.startTime,
-      category: ENVIRONMENT_MARKER_CATEGORY[kind],
+      category: change.category,
       environment: run.environment ?? null,
       source: 'auto',
       runId: run.id,

@@ -5,8 +5,18 @@
  * whose clock is 3 s ahead of the runner's.
  */
 
+/** Minutes east of UTC, in winter, of the time zones the demo uses. */
+const UTC_OFFSETS = { UTC: 0, 'Europe/Paris': 60, 'America/New_York': -300 };
+
+/** A number and 2026-01-02T03:04:05Z as a page formats them by default, by locale and time zone. */
+const FORMAT_SAMPLES = {
+  'en-US|UTC': '1,234.5 · 1/2/2026, 3:04:05 AM',
+  'en-US|America/New_York': '1,234.5 · 1/1/2026, 10:04:05 PM',
+  'fr-FR|Europe/Paris': '1 234,5 · 02/01/2026 04:04:05',
+};
+
 /** The CI image the newest runs ran on, and the one before it. */
-export const DEMO_CI_IMAGES = { newer: 'ubuntu24 20261102.1', older: 'ubuntu24 20261020.1' };
+const DEMO_CI_IMAGES = { newer: 'ubuntu24 20261102.1', older: 'ubuntu24 20261020.1' };
 
 /**
  * A CI runner, as a GitHub-hosted Ubuntu machine reports itself.
@@ -18,7 +28,7 @@ export function demoCiRunner({ shardIndex = null, newerImage = true, timeZone = 
     v: 1,
     shardIndex,
     timeZone,
-    utcOffsetMinutes: timeZone === 'UTC' ? 0 : 60,
+    utcOffsetMinutes: UTC_OFFSETS[timeZone] ?? 0,
     tzVariable: timeZone === 'UTC' ? null : timeZone,
     locale: 'en-US',
     langVariables: 'LANG=C.UTF-8',
@@ -59,34 +69,49 @@ export function demoParisRunner() {
   };
 }
 
+/** The versions the newer and the older Playwright drive, by engine. */
+const BROWSER_VERSIONS = {
+  chromium: { newer: '141.0.7390.37', older: '140.0.7339.16' },
+  firefox: { newer: '142.0.1', older: '141.0' },
+  webkit: { newer: '26.0', older: '18.5' },
+};
+
 /**
- * A Chromium page, as the capture fixtures read it.
- * @param {{ project?: string, shardIndex?: number | null, newer?: boolean, timeZone?: string, locale?: string }} [options]
+ * A project's page, as the capture fixtures read it.
+ * @param {{ project?: string, browserName?: string | null, shardIndex?: number | null, newer?: boolean, timeZone?: string, locale?: string }} [options]
  */
 export function demoBrowser({
   project = 'chromium',
+  browserName = 'chromium',
   shardIndex = null,
   newer = true,
   timeZone = 'UTC',
   locale = 'en-US',
 } = {}) {
   const french = locale.startsWith('fr');
+  const engine = browserName && browserName in BROWSER_VERSIONS ? browserName : 'chromium';
+  const version = BROWSER_VERSIONS[engine][newer ? 'newer' : 'older'];
+  const userAgents = {
+    chromium: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/${version} Safari/537.36`,
+    firefox: `Mozilla/5.0 (X11; Linux x86_64; rv:${version}) Gecko/20100101 Firefox/${version}`,
+    webkit: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${version} Safari/605.1.15`,
+  };
   return {
     kind: 'browser',
     v: 1,
     shardIndex,
     project,
-    browserName: 'chromium',
-    browserVersion: newer ? '141.0.7390.37' : '140.0.7339.16',
+    browserName: engine,
+    browserVersion: version,
     timeZone,
     locale,
     languages: french ? 'fr-FR, fr' : 'en-US',
-    formatSample: french ? '1 234,5 · 02/01/2026 04:04:05' : '1,234.5 · 1/2/2026, 3:04:05 AM',
+    formatSample: FORMAT_SAMPLES[`${locale}|${timeZone}`] ?? null,
     prefersColorScheme: 'light',
     prefersReducedMotion: 'no-preference',
     screen: '1280×720',
     devicePixelRatio: 1,
-    userAgent: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/${newer ? '141.0.7390.37' : '140.0.7339.16'} Safari/537.36`,
+    userAgent: userAgents[engine],
     headless: true,
   };
 }

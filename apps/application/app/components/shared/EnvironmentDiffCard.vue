@@ -75,6 +75,7 @@ const baselineNote = computed(() => {
 const foldedText = computed(() => {
   if (diff.value?.status !== 'ok') return 'No passing baseline to compare against';
   const n = meaningful.value.length;
+  if (n === 0 && serverNotes.value.length > 0) return serverNotes.value[0]!;
   if (n === 0) return 'Identical to last pass — no environment drift';
   return `${n} change${n === 1 ? '' : 's'}: ${meaningful.value.map((e) => e.label).join(', ')}`;
 });
@@ -103,7 +104,7 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
 
     <!-- Identical environment — positive evidence, worth stating explicitly -->
     <UAlert
-      v-if="entries.length === 0"
+      v-if="entries.length === 0 && serverNotes.length === 0"
       color="success"
       icon="i-lucide-check-circle"
       variant="subtle"

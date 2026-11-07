@@ -4013,10 +4013,17 @@ export const piwiFixtures: Fixtures<
   // Safety net for the standard `page` fixture, in case its page is created
   // through an internal path the browser patch doesn't see. Idempotent, so it
   // never double-wraps a page the browser patch already instrumented.
-  page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>, testInfo: TestInfo) => {
+  page: async (
+    { page, timezoneId, locale, colorScheme }: PlaywrightTestArgs & PlaywrightTestOptions,
+    use: UseFn<Page>,
+    testInfo: TestInfo,
+  ) => {
     instrumentPage(page);
-    // The page is still blank: what the browser reports of itself, once per worker and project.
-    await readBrowserEnvironment(page, testInfo);
+    // The page is still blank: what the browser reports of itself, once per worker and project, from a test that
+    // runs with the project's own options.
+    if (currentSink?.flake?.role !== 'target') {
+      await readBrowserEnvironment(page, testInfo, { timezoneId, locale, colorScheme });
+    }
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
