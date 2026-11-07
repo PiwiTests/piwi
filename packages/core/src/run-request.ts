@@ -152,7 +152,8 @@ export function isRelativeSpecPath(path: string): boolean {
 /**
  * Whether a value is a branch name a request may carry: git's rules for a ref name (no `..`, `~ ^ : ? * [ \`, space,
  * `@{` or hidden character; no segment that starts with `.` or ends with `.lock`; no leading `-` or `/`, no
- * trailing `/` or `.`, no `//`), and at most 255 characters.
+ * trailing `/` or `.`, no `//`), and at most 255 characters. Like git, it keeps `$ ( ) ; & ' "` and a backtick: a
+ * branch is shown and compared, and never reaches a command line or a shell, as {@link specFileArgument}'s argv.
  */
 export function isRunRequestBranch(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_BRANCH_CHARS || value === '@') return false;

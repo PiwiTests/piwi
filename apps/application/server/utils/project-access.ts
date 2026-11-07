@@ -14,6 +14,7 @@ import {
   entityLinks,
 } from '../database/schema';
 import { eq } from 'drizzle-orm';
+import { isVisibleRun } from '#shared/run-eligibility';
 import { requireAuth, isAuthEnabled, getRequestAccess, getUserAccessCached, requiredPermissionsFor } from './auth';
 import {
   can,
@@ -132,22 +133,63 @@ export function requireRouteIndex(event: H3Event, paramName: string, label: stri
 export async function requireResolvedProjectAccess(
   event: H3Event,
   id: number,
-  resolve: (db: DrizzleDB, id: number) => Promise<number | null>,
+  resolve: (db: DrizzleDB, id: number, viewerId: number) => Promise<number | null>,
   notFoundLabel: string,
   permission?: RoutePermission | RoutePermission[],
 ): Promise<{ db: DrizzleDB; projectId: number; user: User }> {
   const user = await requireAuth(event, permission);
   const db = await getDatabase();
-  const projectId = await resolve(db, id);
+  const projectId = await resolve(db, id, user.id);
   if (!projectId) throw apiError({ statusCode: 404, message: `${notFoundLabel} not found` });
   await requireProjectPermission(event, projectId, permission);
   return { db, projectId, user };
 }
 
 // Helpers to resolve projectId from entity IDs
-export async function resolveRunProjectId(db: DrizzleDB, runId: number): Promise<number | null> {
-  const rows = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
-  return rows[0]?.projectId ?? null;
+
+/**
+ * The project of a run `viewerId` sees, or null: a missing run, and another person's private run (`isVisibleRun`),
+ * are both answered as missing.
+ */
+export async function resolveRunProjectId(
+  db: DrizzleDB,
+  runId: number,
+  viewerId: number | null,
+): Promise<number | null> {
+  const rows = await db
+    .select({ projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  const run = rows[0];
+  return run && isVisibleRun(run, viewerId) ? run.projectId : null;
+}
+
+/** The most runs a stream's `runVisibilityReader` remembers; past it, it starts again. */
+const MAX_REMEMBERED_RUNS = 1000;
+
+/**
+ * Whether `viewerId` sees each run an event names (`isVisibleRun`), for a stream that fans run events out: read once
+ * per run, a run that is gone reading as seen. A failed read answers not seen and is read again on the next event.
+ */
+export function runVisibilityReader(db: DrizzleDB, viewerId: number | null): (runId: number) => Promise<boolean> {
+  const seen = new Map<number, Promise<boolean>>();
+  return (runId) => {
+    let known = seen.get(runId);
+    if (!known) {
+      if (seen.size >= MAX_REMEMBERED_RUNS) seen.clear();
+      known = db
+        .select({ origin: testRuns.origin, requesterId: testRuns.requesterId })
+        .from(testRuns)
+        .where(eq(testRuns.id, runId))
+        .then(([run]) => !run || isVisibleRun(run, viewerId))
+        .catch(() => {
+          seen.delete(runId);
+          return false;
+        });
+      seen.set(runId, known);
+    }
+    return known;
+  };
 }
 
 export async function resolveCaseProjectId(db: DrizzleDB, caseId: number): Promise<number | null> {
@@ -163,14 +205,20 @@ export async function resolveClusterProjectId(db: DrizzleDB, clusterId: number):
   return rows[0]?.projectId ?? null;
 }
 
-export async function resolveTestRunCaseProjectId(db: DrizzleDB, runCaseId: number): Promise<number | null> {
+/** The project of an execution of a run `viewerId` sees, or null, as `resolveRunProjectId` answers. */
+export async function resolveTestRunCaseProjectId(
+  db: DrizzleDB,
+  runCaseId: number,
+  viewerId: number | null,
+): Promise<number | null> {
   const rows = await db
-    .select({ projectId: testRuns.projectId })
+    .select({ projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.id, runCaseId))
     .limit(1);
-  return rows[0]?.projectId ?? null;
+  const run = rows[0];
+  return run && isVisibleRun(run, viewerId) ? run.projectId : null;
 }
 
 export async function resolveMarkerProjectId(db: DrizzleDB, markerId: number): Promise<number | null> {
@@ -191,9 +239,10 @@ export async function resolveLinkEntityProjectId(
   db: DrizzleDB,
   entityType: string,
   entityId: number,
+  viewerId: number | null,
 ): Promise<number | null> {
-  if (entityType === 'test_run') return resolveRunProjectId(db, entityId);
-  if (entityType === 'test_runs_case') return resolveTestRunCaseProjectId(db, entityId);
+  if (entityType === 'test_run') return resolveRunProjectId(db, entityId, viewerId);
+  if (entityType === 'test_runs_case') return resolveTestRunCaseProjectId(db, entityId, viewerId);
   if (entityType === 'test_case') return resolveCaseProjectId(db, entityId);
   if (entityType === 'failure_cluster') return resolveClusterProjectId(db, entityId);
   if (entityType === 'bug_report') return resolveBugReportProjectId(db, entityId);
@@ -201,12 +250,16 @@ export async function resolveLinkEntityProjectId(
 }
 
 /** Resolve the project owning an existing entity link, via its target entity. */
-export async function resolveLinkProjectId(db: DrizzleDB, linkId: number): Promise<number | null> {
+export async function resolveLinkProjectId(
+  db: DrizzleDB,
+  linkId: number,
+  viewerId: number | null,
+): Promise<number | null> {
   const rows = await db.select().from(entityLinks).where(eq(entityLinks.id, linkId)).limit(1);
   const link = rows[0];
   if (!link) return null;
-  if (link.testRunId != null) return resolveRunProjectId(db, link.testRunId);
-  if (link.testRunsCaseId != null) return resolveTestRunCaseProjectId(db, link.testRunsCaseId);
+  if (link.testRunId != null) return resolveRunProjectId(db, link.testRunId, viewerId);
+  if (link.testRunsCaseId != null) return resolveTestRunCaseProjectId(db, link.testRunsCaseId, viewerId);
   if (link.testCaseId != null) return resolveCaseProjectId(db, link.testCaseId);
   if (link.failureClusterId != null) return resolveClusterProjectId(db, link.failureClusterId);
   if (link.bugReportId != null) return resolveBugReportProjectId(db, link.bugReportId);

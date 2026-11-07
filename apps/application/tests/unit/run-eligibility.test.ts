@@ -28,33 +28,34 @@ type RunUse = keyof typeof RUN_USES;
  * test until it is placed here.
  */
 const EXCLUDED: Record<RunUse, string[]> = {
-  baseline: ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'run-baseline': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'fix-verification': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  flakiness: ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'selection-catalog': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'branch-failures': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'editor-overlay': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'change-coverage': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'test-map': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
-  notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
+  baseline: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'run-baseline': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'fix-verification': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  flakiness: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'selection-catalog': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'branch-failures': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'editor-overlay': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'change-coverage': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'test-map': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
   'stuck-notifications': [
     'flake-lab',
     'probe',
     'bisect',
     'reproduce',
+    'request',
     'local',
     'desktop',
     'editor',
     'preflight',
     'bug',
   ],
-  tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
-  'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
-  'run-health': ['flake-lab', 'probe'],
+  tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'run-health': ['flake-lab', 'probe', 'request'],
 };
 
 /** The uses that leave out an environment incident. */
@@ -99,6 +100,7 @@ describe('the run eligibility table', () => {
       'bisect',
       'reproduce',
       'import',
+      'request',
     ]);
   });
 

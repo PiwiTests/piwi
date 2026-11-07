@@ -84,6 +84,8 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // A kept run outlives the user who kept it. The SQLite `kept_by` column has no
   // ON DELETE action, so the reference is cleared before the user row goes.
   await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
+  // A requested run is seen by its requester alone: with the requester gone, nobody sees it (`requester_id` null).
+  await db.update(testRuns).set({ requesterId: null }).where(eq(testRuns.requesterId, id));
   // `scenario_gaps.triaged_by` was added by ALTER TABLE, which cannot carry the
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.

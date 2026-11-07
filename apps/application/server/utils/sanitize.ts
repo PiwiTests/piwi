@@ -94,8 +94,9 @@ export function sanitizeGitRemoteUrl(url: string): string | null {
 /**
  * Sanitize run-level metadata by stripping credentials from SCM remote URLs,
  * so the read endpoints never return a token embedded in the remote URL. The
- * run's origin is kept only when it names a known kind, rebuilt as
- * `{ kind, ref? }`, the launcher's name for the run only when it reads as a ref,
+ * run's origin is kept only when it names a known kind other than `request`,
+ * which the server stamps from a run token alone, rebuilt as `{ kind, ref? }`,
+ * the launcher's name for the run only when it reads as a ref,
  * and the hub that steers the run only when it names the run's ref there,
  * rebuilt as `{ client, ref }`.
  */
@@ -116,7 +117,7 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
 
   if (RUN_ORIGIN_METADATA_KEY in meta) {
     const origin = parseRunOrigin(meta[RUN_ORIGIN_METADATA_KEY]);
-    if (origin) meta[RUN_ORIGIN_METADATA_KEY] = origin;
+    if (origin && origin.kind !== 'request') meta[RUN_ORIGIN_METADATA_KEY] = origin;
     else delete meta[RUN_ORIGIN_METADATA_KEY];
   }
 

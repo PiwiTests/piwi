@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { testRuns } from '../../database/schema';
+import { testRuns, type User } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
@@ -11,7 +11,8 @@ import { findActiveShardedRun } from '../../utils/sharded-runs';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
+import { bindRunToRequest, grantedProject, presentsRunToken, spendRunToken } from '../../utils/run-tokens';
 import { liveViewRelay, storeLiveViewKey } from '../../utils/live-view';
 import { publicRunUrl } from '#shared/run-url';
 
@@ -53,8 +54,9 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
-  const user = await requireAuth(event);
+  // A run token starts its request's run, spent once the body is read so a refused start leaves it to a retry;
+  // otherwise `run:submit` on at least one project, from the route meta, and the project itself is checked below.
+  const signedIn = presentsRunToken(event) ? null : await requireAuth(event);
 
   const body = await readBody(event);
 
@@ -65,19 +67,27 @@ export default eventHandler(async (event) => {
       message: 'Missing required field: projectName',
     });
   }
+  const grant = await spendRunToken(event, body);
+  const user = (grant ? grant.requester : signedIn) as User;
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any, 'run:submit');
+  const project = grant
+    ? await grantedProject(db, grant)
+    : await resolveIngestProject(
+        db,
+        await getProjectScope(db, user as any, 'run:submit'),
+        body.projectName,
+        body.projectDescription,
+      );
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
-
-  const instanceId = body.instanceId || null;
+  // A requested run belongs to no instance: it cancels no other run, and no other run cancels it.
+  const instanceId = grant ? null : body.instanceId || null;
   /**
    * The run's live view key for its workers, when the reporter asks and the project turned the live view on, its
    * digest kept with the run. The desktop app gives none, saying why: no teammate reaches it.
    */
   const liveViewOf = async (runId: number) => {
-    if (body.liveView !== true) return {};
+    if (body.liveView !== true || grant) return {};
     if (process.env.PIWI_DESKTOP_TOKEN) return { liveView: { refused: 'local' } };
     const key = project.liveView ? liveViewRelay.mintKey(runId, project.id) : null;
     if (!key) return {};
@@ -179,6 +189,7 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId);
 
     const setupToken = randomBytes(32).toString('hex');
+    const requestMetadata = grant ? withRequestOrigin(null, grant.requestId) : null;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -195,9 +206,10 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: null,
-        origin: runOrigin(null),
-        commit: runCommit(null),
+        metadata: requestMetadata,
+        origin: runOrigin(requestMetadata),
+        commit: runCommit(requestMetadata),
+        requesterId: grant?.requester.id ?? null,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -216,6 +228,7 @@ export default eventHandler(async (event) => {
       });
     }
 
+    if (grant) await bindRunToRequest(db, grant, testRun.id);
     await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 

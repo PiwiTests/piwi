@@ -59,7 +59,7 @@ import {
   scopedExecutionInProjectJoin,
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
@@ -213,7 +213,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
       lastRunAt: max(testRuns.startTime),
     })
     .from(testRuns)
-    .where(inArray(testRuns.projectId, projectIds))
+    .where(and(inArray(testRuns.projectId, projectIds), notPrivateRun()))
     .groupBy(testRuns.projectId);
 
   const runCountByProjectId = new Map<number, number>();
@@ -459,7 +459,13 @@ export async function getProject(
   const runs: any[] = await db
     .select(RUN_SUMMARY_COLUMNS)
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, id), ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : [])))
+    .where(
+      and(
+        eq(testRuns.projectId, id),
+        notPrivateRun(),
+        ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : []),
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(runLimit);
   const unscopedRuns: any[] | null = scope
@@ -472,7 +478,7 @@ export async function getProject(
           isFullRun: testRuns.isFullRun,
         })
         .from(testRuns)
-        .where(eq(testRuns.projectId, id))
+        .where(and(eq(testRuns.projectId, id), notPrivateRun()))
         .orderBy(desc(testRuns.startTime))
         .limit(runLimit)
     : null;
@@ -515,7 +521,7 @@ export async function getProject(
  * mostly old ones, past the window `getProject` loads, so they list on their own.
  */
 export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
-  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt));
+  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt), notPrivateRun());
   const runs: any[] = await db
     .select(RUN_SUMMARY_COLUMNS)
     .from(testRuns)
@@ -1399,7 +1405,7 @@ export async function getProjectAiStepCoverage(db: DrizzleDB, projectId: number,
   const recentRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notPrivateRun()))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return empty;

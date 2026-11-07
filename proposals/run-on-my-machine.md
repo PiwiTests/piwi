@@ -12,19 +12,24 @@ option and entry D64 of the 1.0 register.
 
 **Status.** Proposed 2026-11-06. PR 1 is built: **Create issue** on runs and tests with a comment (D17) and the run
 options of **Copy retry command** (D18). Headed is off by default, so a copied command runs headless until a person
-picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in two. PR 2a is built:
+picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. PR 2 is split in three. PR 2a is built:
 `@piwitests/core/run-request`, the `run:request` and `run:receive` permissions, the `machine-runs` capability (off until
 an administrator turns it on, enforced on the server), the two tables, target keys made by the device flow (they hold
 `run:receive` alone, and only the target routes take them), and the routes below except the stream. A request needs
 sign-in turned on, and a person holds at most 5 waiting ones; a test whose stored path, title or project the parser
-refuses, or that has no line, is left out and counted. Until 2b's heartbeat, a target hears its stops by listing its
+refuses, or that has no line, is left out and counted. Until 2c's heartbeat, a target hears its stops by listing its
 requests: one the instance has not heard from for 5 minutes, or that was disconnected, has its requests ended as an
 error, so does a claim not answered in 10 minutes, and a second stop a minute after the first ends a run; a target hears
 of a request that ended at a stop for 10 minutes. The retention sweep deletes requests that ended or expired more than
-30 days ago (the notification horizon). **Run** moves a request to `starting` without a run token: the run token with
-the `request` origin and its visibility, the stream, Connected apps, the capability's **Turn on** button, the demo's
-simulated target, the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2b, so a run reaches the instance
-only once its rules ship with it. Nothing here is on the roadmap yet. The maintainer settled on 2026-11-06: the desktop
+30 days ago (the notification horizon). PR 2b is built: **Run** answers a run token (D5), kept as its digest for 30
+minutes, which `/setup` or `/start` spends once to start one unsharded run of the request's project. The server stamps
+its `request` origin (a reporter's is dropped) and its requester; the run is its requester's alone, and nobody's once
+the requester is deleted, and it feeds no team use (D14). It shows on its run page; the test's history and the
+requester's own runs show it in PR 2c. A request whose tests resolve to more than 200 is refused, and
+the cap of 5 is counted once the request is stored. Every check runs before the spend, so a refused start leaves the token to a retry, and
+a request its requester stopped starts nothing. The run token is not taken by the batch upload yet, and is spent by the
+first start: a requested run that falls back to the batch upload, or from `/setup` to `/start`, is refused. The stream, the heartbeat, Connected apps, the capability's **Turn on** button,
+the demo's simulated target, the feature page and the [`ROADMAP.md`](../ROADMAP.md) entry are PR 2c. Nothing here is on the roadmap yet. The maintainer settled on 2026-11-06: the desktop
 app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7);
 every run is confirmed in the target (D2); a request carries resolved tests and is the same object as a CI dispatch,
 parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a requested run shows to its

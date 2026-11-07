@@ -127,6 +127,7 @@ export const testRuns = pgTable(
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
     keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    requesterId: integer('requester_id').references(() => users.id, { onDelete: 'set null' }), // The person who asked for a requested run (origin `request`), from its run token, never from the reporter; such a run is seen by them alone, and by nobody once null
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     serverCoverageGaps: jsonb('server_coverage_gaps'), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
@@ -147,6 +148,7 @@ export const testRuns = pgTable(
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
+    requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
@@ -2921,6 +2923,9 @@ export const runRequests = pgTable(
     state: text('state').notNull().default('waiting'), // RunRequestState
     outcome: text('outcome'), // RunRequestOutcome, once ended
     detail: text('detail'), // the words of a failed check, or of an error
+    runId: integer('run_id'), // the run its run token started; no foreign key, so a run's delete never waits on its request
+    runTokenDigest: text('run_token_digest'), // the digest of the run token **Run** returned, null before
+    runTokenExpiresAt: timestamp('run_token_expires_at', { mode: 'date' }), // when the run token stops starting a run
     stopRequestedAt: timestamp('stop_requested_at', { mode: 'date' }),
     expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
     claimedAt: timestamp('claimed_at', { mode: 'date' }),
@@ -2937,5 +2942,7 @@ export const runRequests = pgTable(
     targetIdx: index('idx_run_requests_target').on(t.targetId),
     projectIdx: index('idx_run_requests_project').on(t.projectId),
     stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
+    runIdx: index('idx_run_requests_run').on(t.runId),
+    runTokenIdx: index('idx_run_requests_run_token').on(t.runTokenDigest),
   }),
 );

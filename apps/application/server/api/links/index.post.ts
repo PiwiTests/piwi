@@ -29,7 +29,7 @@ export default eventHandler(async (event) => {
 
   const { entityType, entityId, url, title } = validation.data;
   const db = await getDatabase();
-  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, user.id);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
   await requireProjectPermission(event, projectId);
   const readable = await getProjectScope(db, user, 'project:read');

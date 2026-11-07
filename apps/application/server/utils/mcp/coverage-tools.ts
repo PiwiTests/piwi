@@ -84,9 +84,9 @@ async function scopedProject(
   db: DbClient,
   ctx: McpContext,
   id: number,
-  resolve: (db: DbClient, id: number) => Promise<number | null>,
+  resolve: (db: DbClient, id: number, viewerId: number | null) => Promise<number | null>,
 ): Promise<number | null> {
-  const projectId = await resolve(db, id);
+  const projectId = await resolve(db, id, ctx.user?.id ?? null);
   if (projectId == null) return null;
   assertInScope(ctx, projectId);
   return projectId;

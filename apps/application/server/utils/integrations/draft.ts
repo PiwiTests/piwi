@@ -295,7 +295,7 @@ async function buildRunDraft(
   connections: TrackerSummary[],
   opts: DraftOptions,
 ): Promise<IssueDraft | null> {
-  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, null);
   if (projectId == null) return null;
   const bindingRow = await getProjectBinding(db, projectId);
   const resolved = bindingRowToResolved(bindingRow);
