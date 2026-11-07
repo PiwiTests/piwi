@@ -152,7 +152,6 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     introHelp: 'settings.users',
     fields: [
       { id: 'users.list', label: 'Users & roles', help: 'settings.users' },
-      { id: 'users.connected-apps', label: 'Connected apps', help: 'settings.connected-apps' },
       { id: 'users.api-keys', label: 'API keys', help: 'settings.api-keys' },
     ],
   },
