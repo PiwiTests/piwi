@@ -5,6 +5,15 @@
  */
 
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
+import type { EnvironmentGroup } from '#shared/environment-diff';
+import {
+  BROWSER_FIELDS,
+  RUNNER_FIELDS,
+  SERVER_FIELDS,
+  environmentValue,
+  type EnvironmentField,
+} from '#shared/environment-snapshots';
+import type { WireEnvironmentSnapshot } from '#shared/types';
 
 /** One field that changed between two runs, for the "what changed" summary. */
 export interface MetaDiffEntry {
@@ -12,6 +21,78 @@ export interface MetaDiffEntry {
   label: string;
   before: string | null;
   after: string | null;
+  /** Where the field belongs: the run, its runner, a browser or a server under test. Absent reads as `run`. */
+  group?: EnvironmentGroup;
+}
+
+/** What the run-level diff reads of a run beyond its metadata. */
+export interface RunEnvironmentSide {
+  playwrightVersion?: string | null;
+  snapshots?: readonly WireEnvironmentSnapshot[];
+}
+
+/** Said after the values of a field the shards of one run disagree on. */
+export const SHARDS_DIFFER = '(differs between shards)';
+
+/** One run's value of a field across its snapshots: one value, every value when they differ, null when none. */
+function combinedValue(snapshots: readonly WireEnvironmentSnapshot[], key: string): string | null {
+  const values = [...new Set(snapshots.map((s) => environmentValue(s, key)).filter((v): v is string => v !== null))];
+  if (values.length === 0) return null;
+  if (values.length === 1) return values[0]!;
+  return `${values.join(', ')} ${SHARDS_DIFFER}`;
+}
+
+/**
+ * The compared fields of the runner, each browser (by project) and each server (by origin) that changed between two
+ * runs. A field one run did not record is not a change; informational fields are left out.
+ */
+export function computeSnapshotDiff(
+  before: readonly WireEnvironmentSnapshot[],
+  after: readonly WireEnvironmentSnapshot[],
+): MetaDiffEntry[] {
+  const diff: MetaDiffEntry[] = [];
+  const push = (
+    group: EnvironmentGroup,
+    fields: readonly EnvironmentField[],
+    a: readonly WireEnvironmentSnapshot[],
+    b: readonly WireEnvironmentSnapshot[],
+    scope: string | null,
+  ) => {
+    if (a.length === 0 || b.length === 0) return;
+    for (const field of fields) {
+      if (field.informational) continue;
+      const prev = combinedValue(a, field.key);
+      const curr = combinedValue(b, field.key);
+      if (prev === null || curr === null || prev === curr) continue;
+      diff.push({
+        key: `${group}.${field.key}${scope ? `@${scope}` : ''}`,
+        label: scope ? `${field.label} · ${scope}` : field.label,
+        before: prev,
+        after: curr,
+        group,
+      });
+    }
+  };
+  push(
+    'runner',
+    RUNNER_FIELDS,
+    before.filter((s) => s.kind === 'runner'),
+    after.filter((s) => s.kind === 'runner'),
+    null,
+  );
+  const projects = new Set(after.flatMap((s) => (s.kind === 'browser' ? [s.project] : [])));
+  for (const project of projects) {
+    const of = (list: readonly WireEnvironmentSnapshot[]) =>
+      list.filter((s) => s.kind === 'browser' && s.project === project);
+    push('browser', BROWSER_FIELDS, of(before), of(after), project);
+  }
+  const origins = new Set(after.flatMap((s) => (s.kind === 'server' ? [s.origin] : [])));
+  for (const origin of origins) {
+    const of = (list: readonly WireEnvironmentSnapshot[]) =>
+      list.filter((s) => s.kind === 'server' && s.origin === origin);
+    push('server', SERVER_FIELDS, of(before), of(after), origin);
+  }
+  return diff;
 }
 
 /** The commit span between a baseline run and a later run, with a copyable git command. */
@@ -90,15 +171,17 @@ export function getBrowserList(meta: RunMetadataLike | null | undefined): string
 }
 
 /**
- * Diff two runs' environment, branch, CI provider, browser set and test order.
- * The test order counts as changed when one run was shuffled and the other was
- * not; two shuffled runs with different seeds do not differ here.
+ * Diff two runs' environment label, branch, CI provider, Playwright version, browser set and test order, then the
+ * compared fields of their environment snapshots (`computeSnapshotDiff`), when the sides carry them. The test order
+ * counts as changed when one run was shuffled and the other was not; two shuffled runs with different seeds do not
+ * differ here.
  */
 export function computeMetadataDiff(
   prevMeta: RunMetadataLike | null | undefined,
   currMeta: RunMetadataLike | null | undefined,
   prevEnv: string | null,
   currEnv: string | null,
+  sides?: { before: RunEnvironmentSide; after: RunEnvironmentSide },
 ): MetaDiffEntry[] {
   const diff: MetaDiffEntry[] = [];
 
@@ -115,6 +198,16 @@ export function computeMetadataDiff(
   if (prevCi !== currCi) {
     diff.push({ key: 'ci_provider', label: 'CI provider', before: prevCi, after: currCi });
   }
+  const prevPlaywright = sides?.before.playwrightVersion ?? null;
+  const currPlaywright = sides?.after.playwrightVersion ?? null;
+  if (prevPlaywright && currPlaywright && prevPlaywright !== currPlaywright) {
+    diff.push({
+      key: 'playwright_version',
+      label: 'Playwright version',
+      before: prevPlaywright,
+      after: currPlaywright,
+    });
+  }
   const prevBrowsers = getBrowserList(prevMeta);
   const currBrowsers = getBrowserList(currMeta);
   if (prevBrowsers !== currBrowsers) {
@@ -128,6 +221,7 @@ export function computeMetadataDiff(
       after: describeTestOrder(currMeta),
     });
   }
+  if (sides) diff.push(...computeSnapshotDiff(sides.before.snapshots ?? [], sides.after.snapshots ?? []));
 
   return diff;
 }

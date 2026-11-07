@@ -6,7 +6,7 @@
  * on the test-case detail page and the cluster evidence tabs.
  */
 
-import type { EnvironmentDiffEntry } from '#shared/environment-diff';
+import type { EnvironmentDiffEntry, EnvironmentGroup } from '#shared/environment-diff';
 import SectionCard from './SectionCard.vue';
 import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
 
@@ -25,6 +25,8 @@ interface EnvironmentDiffResponse {
   /** Set when the baseline came from another environment than the failing run. */
   baselineNote?: string | null;
   entries?: EnvironmentDiffEntry[];
+  /** A restart or a clock offset of the failing run's servers under test. */
+  serverNotes?: string[];
 }
 
 const cardComponent = computed(() =>
@@ -46,6 +48,20 @@ const available = computed(() => !pending.value && !error.value && diff.value?.s
 
 const entries = computed<EnvironmentDiffEntry[]>(() => diff.value?.entries ?? []);
 const meaningful = computed(() => entries.value.filter((e) => !e.informational));
+const serverNotes = computed(() => diff.value?.serverNotes ?? []);
+
+const GROUP_TITLES: Record<EnvironmentGroup, string> = {
+  run: 'Run',
+  runner: 'Runner',
+  browser: 'Browser',
+  server: 'Server under test',
+};
+/** The changed keys grouped by where they belong, titled only when more than one group changed. */
+const groups = computed(() =>
+  (['run', 'runner', 'browser', 'server'] as const)
+    .map((group) => ({ group, title: GROUP_TITLES[group], entries: meaningful.value.filter((e) => e.group === group) }))
+    .filter((g) => g.entries.length > 0),
+);
 const informational = computed(() => entries.value.filter((e) => e.informational));
 
 const baselineNote = computed(() => {
@@ -94,7 +110,11 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       description="The environment is identical to the last passing run — environment drift is unlikely to explain this failure."
     />
 
-    <div v-else class="space-y-2">
+    <p v-for="note in serverNotes" :key="note" class="text-sm text-highlighted" data-environment-warning>
+      {{ note }}
+    </p>
+
+    <div v-if="entries.length > 0" class="space-y-2">
       <!-- Which side is which: the failing run on the left, its last pass on the right -->
       <div class="flex items-center gap-1.5 text-xs font-medium px-3">
         <span class="hidden sm:block sm:w-40 shrink-0" aria-hidden="true" />
@@ -102,24 +122,30 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
         <UIcon name="i-lucide-arrow-left" class="size-3 shrink-0 text-gray-400" />
         <span class="text-green-700 dark:text-green-400">Last pass, run #{{ diff?.baseline?.runId }}</span>
       </div>
-      <div
-        v-for="entry in meaningful"
-        :key="entry.key"
-        class="rounded-lg border border-default p-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
-      >
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 sm:w-40 shrink-0">{{ entry.label }}</span>
-        <div class="flex flex-wrap items-center gap-1.5 min-w-0 text-xs font-mono">
-          <code class="rounded bg-red-50 px-1.5 py-0.5 text-red-700 dark:bg-red-950/30 dark:text-red-400 break-all">
-            {{ entry.failing ?? '(unset)' }}
-          </code>
-          <UIcon name="i-lucide-arrow-left" class="size-3 shrink-0 text-gray-400" />
-          <code
-            class="rounded bg-green-50 px-1.5 py-0.5 text-green-700 dark:bg-green-950/30 dark:text-green-400 break-all"
-          >
-            {{ entry.baseline ?? '(unset)' }}
-          </code>
+      <template v-for="g in groups" :key="g.group">
+        <h4 v-if="groups.length > 1" class="text-sm font-semibold text-highlighted px-3 pt-1">{{ g.title }}</h4>
+        <div
+          v-for="entry in g.entries"
+          :key="entry.key"
+          class="rounded-lg border border-default p-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+          :data-inferred="entry.failingInferred || entry.baselineInferred || undefined"
+        >
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 sm:w-40 shrink-0 break-all">{{
+            entry.label
+          }}</span>
+          <div class="flex flex-wrap items-center gap-1.5 min-w-0 text-xs font-mono">
+            <code class="rounded bg-red-50 px-1.5 py-0.5 text-red-700 dark:bg-red-950/30 dark:text-red-400 break-all">
+              {{ entry.failing ?? '(unset)' }}
+            </code>
+            <UIcon name="i-lucide-arrow-left" class="size-3 shrink-0 text-gray-400" />
+            <code
+              class="rounded bg-green-50 px-1.5 py-0.5 text-green-700 dark:bg-green-950/30 dark:text-green-400 break-all"
+            >
+              {{ entry.baseline ?? '(unset)' }}
+            </code>
+          </div>
         </div>
-      </div>
+      </template>
 
       <!-- Worker/shard placement varies naturally between runs — de-emphasized -->
       <p v-if="informational.length > 0" class="text-xs text-gray-400 dark:text-gray-500">

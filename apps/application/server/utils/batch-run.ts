@@ -19,6 +19,7 @@ import { durationStats } from '#shared/utils/stats';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import type { TestRunSubmitPayload } from '#shared/types';
 
 /**
@@ -91,6 +92,7 @@ export async function createBatchRun(
   }
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
+  await saveEnvironmentSnapshots(db, testRun.id, body.environments);
   await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests

@@ -15,6 +15,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   liveFileUploads: true,
   collectScmInfo: true,
   collectCiInfo: true,
+  collectEnvironmentInfo: true,
   collectPerformanceMetrics: true,
   captureLocators: true,
   capturePageState: true,
@@ -69,6 +70,7 @@ export const PIWI_ENV_KEYS = {
   failOnFlakyTests: 'PIWI_FAIL_ON_FLAKY_TESTS',
   uploadTraces: 'PIWI_UPLOAD_TRACES',
   uploadReport: 'PIWI_UPLOAD_REPORT',
+  collectEnvironmentInfo: 'PIWI_COLLECT_ENVIRONMENT_INFO',
   captureLocators: 'PIWI_CAPTURE_LOCATORS',
   capturePageState: 'PIWI_CAPTURE_PAGE_STATE',
   capturePageInventory: 'PIWI_CAPTURE_PAGE_INVENTORY',
@@ -313,6 +315,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'failOnFlakyTests', env: PIWI_ENV_KEYS.failOnFlakyTests, kind: 'bool' },
   { option: 'uploadTraces', env: PIWI_ENV_KEYS.uploadTraces, kind: 'bool' },
   { option: 'uploadReport', env: PIWI_ENV_KEYS.uploadReport, kind: 'bool' },
+  { option: 'collectEnvironmentInfo', env: PIWI_ENV_KEYS.collectEnvironmentInfo, kind: 'bool' },
   { option: 'captureLocators', env: PIWI_ENV_KEYS.captureLocators, kind: 'bool' },
   { option: 'capturePageState', env: PIWI_ENV_KEYS.capturePageState, kind: 'bool' },
   { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
@@ -538,6 +541,8 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
   if (options.keep) env[PIWI_ENV_KEYS.keep] = 'true';
   if (options.checkBaseUrl !== undefined) env[PIWI_ENV_KEYS.checkBaseUrl] = String(options.checkBaseUrl);
+  // The capture fixtures read the browser's environment unless this is off.
+  if (options.collectEnvironmentInfo === false) env[PIWI_ENV_KEYS.collectEnvironmentInfo] = 'false';
   // Locator capture is part of performance-metric collection; switch it off in
   // the worker when either flag is disabled so the fixture skips the per-action
   // cost. Only an explicit `true` overrides the unset (default-on) state.

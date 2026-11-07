@@ -10,6 +10,7 @@ import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -61,6 +62,36 @@ const runIssueOpen = ref(false);
 
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
+
+const environmentOpen = ref(false);
+/** The runner's time zone, locale and OS in one line; null when the run recorded no environment. */
+const environmentSummary = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const runner = env.runner[0];
+  if (runner) {
+    const parts = [
+      runner.timeZone,
+      runner.locale,
+      runner.os,
+      runner.nodeVersion ? `Node.js ${runner.nodeVersion}` : null,
+    ];
+    const text = parts.filter(Boolean).join(' · ');
+    if (text) return text;
+  }
+  if (env.browser.length || env.server.length) return `${env.browser.length + env.server.length} recorded`;
+  return null;
+});
+/** What warns about the run's environment: shards that disagree, a server that restarted or whose clock is off. */
+const environmentWarning = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const differing = disagreeingFields(env.runner);
+  if (differing.length) return `shards differ on ${differing.map((f) => f.label.toLowerCase()).join(', ')}`;
+  const warned = env.server.filter((s) => serverWarnings(s).length > 0);
+  if (warned.length) return `${warned.length} server${warned.length === 1 ? '' : 's'} to check`;
+  return null;
+});
 const scm = computed(() => props.testRun?.metadata?.scm);
 /** Where the run started and the editor that steers it (`runStartedFrom`). */
 const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
@@ -464,6 +495,30 @@ function onLabelKeydown(e: KeyboardEvent) {
           <template v-if="testRun?.reporterVersion">Piwi v{{ testRun.reporterVersion }}</template>
         </span>
       </div>
+      <div v-if="environmentSummary" class="flex items-start gap-1.5 min-w-0" data-tour="run-environment">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Environment <HelpHint topic="run-environment"
+        /></span>
+        <span class="min-w-0">
+          <button
+            type="button"
+            class="text-left break-words hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+            title="Where this run executed"
+            data-environment-open
+            @click="environmentOpen = true"
+          >
+            {{ environmentSummary }}
+          </button>
+          <span v-if="environmentWarning" class="text-highlighted" data-environment-warning>
+            · {{ environmentWarning }}</span
+          >
+        </span>
+      </div>
+      <UModal v-model:open="environmentOpen" title="Run environment" :ui="{ content: 'max-w-3xl' }">
+        <template #body>
+          <RunEnvironmentDetails v-if="testRun?.environments" :environments="testRun.environments" />
+        </template>
+      </UModal>
       <div v-if="shuffleSeed" class="flex items-center gap-1.5">
         <span class="text-muted inline-flex items-center gap-1">Order <HelpHint topic="run.shuffle" /></span>
         <span>Shuffled, seed</span>

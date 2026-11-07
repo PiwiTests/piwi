@@ -1455,7 +1455,26 @@ export const HELP_TOPICS = {
   // ── Environment diff ────────────────────────────────────────────────────
   'environment-diff': {
     title: 'Environment diff',
-    text: 'Compares this execution’s environment (Playwright version, browser config, locale, viewport, CI provider, …) against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+    text: [
+      'Compares this execution’s environment against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+      '- **Run** — Playwright and reporter versions, environment label, CI provider, branch.',
+      '- **Runner** — the machine that ran Playwright: time zone, `TZ`, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — the declared settings, then what the page reported (time zone, locale, version). A value marked inferred was not observed: the declared value, else the runner’s.',
+      '- **Server** — each instrumented server under test: time zone, culture, runtime, app version.',
+    ].join('\n'),
+    doc: 'features/run-environment',
+  },
+
+  'run-environment': {
+    title: 'Run environment',
+    text: [
+      'Where this run executed, as the reporter recorded it. A value that changed against the baseline, or that the shards of the run disagree on, is a possible cause of a failure that happens only there.',
+      '- **Runner** — one row per shard: time zone, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — one per project, as its page reported itself (needs the capture fixtures).',
+      '- **Server** — each instrumented server under test (`/__piwi/environment`), with its clock offset from the runner and whether it restarted during the run.',
+      'A run from an older reporter shows nothing here: it was never recorded.',
+    ].join('\n'),
+    doc: 'features/run-environment',
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────

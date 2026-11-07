@@ -1,6 +1,30 @@
 import { describe, test, expect } from 'vitest';
 
 describe('Flaky root cause classification', () => {
+  test('classifies environment when one runner time zone fails and another passes cleanly', async () => {
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
+    const base = {
+      errorMessages: ['expect(received).toBe(expected) Expected: "Monday" Received: "Sunday"'],
+      stepErrors: [],
+      stepNames: ['expect toHaveText'],
+      networkErrorCount: 0,
+      status5xxCount: 0,
+      browserDistribution: { chromium: { passed: 30, failed: 12 } },
+    };
+    expect(
+      classifyFlakyRootCause({
+        ...base,
+        runnerDistributions: [{ UTC: { passed: 0, failed: 12 }, 'Europe/Paris': { passed: 30, failed: 0 } }],
+      }),
+    ).toBe('environment');
+    expect(
+      classifyFlakyRootCause({
+        ...base,
+        runnerDistributions: [{ UTC: { passed: 10, failed: 12 }, 'Europe/Paris': { passed: 20, failed: 1 } }],
+      }),
+    ).toBe('assertion');
+  });
+
   test('classifies timing errors', async () => {
     const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({

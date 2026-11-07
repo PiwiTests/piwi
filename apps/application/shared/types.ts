@@ -24,11 +24,21 @@ import type {
   WireRunError,
   WireRunProfile,
   WorkerHealth,
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
 // re-export them so `#shared/types` consumers keep importing them from here.
 export type {
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
   BrowserConfig,
   FilterDetails,
   SuiteConfigEntry,
@@ -195,6 +205,8 @@ export interface TestRunSubmitPayload {
   setupSteps?: TestRunFinishPayload['setupSteps'];
   /** The errors Playwright reported outside any test, as `/finish` takes them. */
   runErrors?: WireRunError[];
+  /** Where the run executed: the runner, each project's browser, each server under test (`environment-snapshots`). */
+  environments?: WireEnvironmentSnapshot[];
   /**
    * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
    * repeating a key the project already took answers with the run it went to and stores nothing.
@@ -343,6 +355,8 @@ export interface TestRunFinishPayload {
    * teardown), read through `sanitizeRunErrors`; a sharded run adds each shard's to the others'.
    */
   runErrors?: WireRunError[];
+  /** Where the shard executed: its runner, each project's browser, each server under test. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -363,6 +377,8 @@ export interface TestRunStartPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** The runner's environment snapshot, sent by `/start` and `/begin`. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Declared surface manifest (Test Map) ──────────────────────────────────────

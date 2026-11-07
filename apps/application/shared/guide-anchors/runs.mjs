@@ -35,6 +35,18 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-environment',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Environment line of the run’s Details: the runner’s time zone, locale and OS, opening every shard’s runner, browser and server.',
+    shownWhen: 'When the reporter recorded where the run executed.',
+    help: 'run-environment',
+    doc: 'features/run-environment',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
     id: 'run-retry-command',
     kind: 'action',
     pages: ['/test-runs/[id]'],

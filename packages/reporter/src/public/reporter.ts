@@ -122,6 +122,8 @@ import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/serv
 import { backendManifestFetch } from '../internal/manifest/collect.js';
 import { configDirFromConfig, relativeTestPath } from '../internal/support/test-paths.js';
 import { RunManifests } from '../internal/manifest/run-manifests.js';
+import { collectRunnerEnvironment } from '../internal/collect/environment.js';
+import { RunEnvironments } from '../internal/collect/run-environments.js';
 import type {
   CollectedTestCase,
   StreamEvent,
@@ -131,6 +133,7 @@ import type {
   WireResourceReport,
   WireRunError,
 } from '../types.js';
+import type { WireEnvironmentSnapshot } from '../types/wire.js';
 import { readStopNotes, type StopNote, type StopNotesReader } from '../internal/support/stop-notes.js';
 
 /**
@@ -307,6 +310,8 @@ export class PiwiDashboardReporter {
   private lastTestWatch: LastTestWatch | null = null;
   /** The manifests of the instrumented origins the run reaches beyond its base URLs. */
   private manifests: RunManifests | null = null;
+  /** Where the run executes: the runner, each project's browser and each server under test; null when off. */
+  private environments: RunEnvironments | null = null;
   /** Result events that stream once their test's server coverage is in. */
   private coverageSends: Array<Promise<void>> = [];
   /** The errors Playwright reported outside any test (`onError`), the first `MAX_RUN_ERRORS` of them. */
@@ -536,6 +541,14 @@ export class PiwiDashboardReporter {
       resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
     );
 
+    if (this.options.collectEnvironmentInfo !== false) {
+      this.environments = new RunEnvironments(
+        collectRunnerEnvironment(process.env, this.shardInfo?.current ?? null),
+        baseUrlsFromConfig(config),
+        backendManifestFetch(ignoresHttpsErrors(config)),
+      );
+    }
+
     // Workers start after this hook and inherit the environment, so the
     // capture fixtures record the coverage the options switch on.
     const coverage = this.coverageSettings;
@@ -576,6 +589,7 @@ export class PiwiDashboardReporter {
       // The planned suite size for this shard, known before any test runs, so
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
+      this.environments?.atBegin(),
     );
     if (this.streamManager) {
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
@@ -1072,6 +1086,7 @@ export class PiwiDashboardReporter {
         break;
     }
 
+    this.environments?.noteTestEnd(result.attachments ?? [], testCase.networkRequests);
     this.testCases.push(testCase);
     if (status === 'failed' || status === 'timedOut') this.failedCases.push(testCase);
 
@@ -1323,6 +1338,16 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Every environment snapshot of the run; none when collection is off or reading them failed. */
+  private async readEnvironments(): Promise<WireEnvironmentSnapshot[] | undefined> {
+    try {
+      return await this.environments?.atEnd();
+    } catch (error) {
+      this.logger.debug(`Environment snapshots skipped: ${errorMessage(error)}`);
+      return undefined;
+    }
+  }
+
   private async finishRun(result: FullResult): Promise<void> {
     if (this.listMode || !this.enabled) return;
     // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
@@ -1387,6 +1412,7 @@ export class PiwiDashboardReporter {
           resourceReport: this.resourceReport,
           htmlReport: this.htmlReport,
           runErrors: this.runErrors,
+          environments: await this.readEnvironments(),
         },
         result,
       );

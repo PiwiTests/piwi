@@ -12,7 +12,9 @@
  * suspect when at least 3 failures show it and its smoothed lift is at least 2;
  * at most 5 are kept, ranked by lift × supporting failures. Factors a lab
  * cannot apply (first attempt or retry, hour of day, another run on the same
- * environment) are returned as context.
+ * environment, the runner's image and the browser's version from the run's
+ * environment snapshots) are returned as context. The runner's time zone and
+ * locale are suspects: the lab runs the browser in the one asked.
  *
  * `buildFlakeProfile` is pure; `getFlakeProfile` loads its input. Nothing is
  * stored: the profile is computed on each read. Shared by the REST endpoint,
@@ -28,6 +30,8 @@ import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
 import { topFlakeSuspect, type FlakeSuspectResult } from '../flake-lab';
 import { median } from '../utils/stats';
+import { loadRunsSnapshots } from './environment-snapshots';
+import type { WireBrowserEnvironment } from '../types';
 
 /** How far back the profile reads, in days. */
 export const FLAKE_PROFILE_WINDOW_DAYS = 30;
@@ -84,6 +88,16 @@ export interface FlakeProfileAttempt {
   before: { executionId: number; testCaseId: number } | null;
   /** Other runs on the same environment in progress while it ran; null when unknown. */
   concurrentRuns?: number | null;
+  /** Where it ran, from its run's environment snapshots; a field the run did not record is null. */
+  environment?: FlakeAttemptEnvironment | null;
+}
+
+/** The environment fields the profile splits attempts by. */
+export interface FlakeAttemptEnvironment {
+  runnerTimeZone?: string | null;
+  runnerLocale?: string | null;
+  runnerImage?: string | null;
+  browserVersion?: string | null;
 }
 
 export interface FlakeProfileInput {
@@ -99,7 +113,14 @@ export interface FlakeProfileInput {
 
 // ─── Output ───────────────────────────────────────────────────────────────────
 
-export type FlakeSuspectKind = 'slow-route' | 'failed-route' | 'alongside' | 'before' | 'load' | 'project';
+export type FlakeSuspectKind =
+  | 'slow-route'
+  | 'failed-route'
+  | 'alongside'
+  | 'before'
+  | 'load'
+  | 'project'
+  | 'environment';
 
 /** What the lab would apply to test a suspect. */
 export type FlakeCondition =
@@ -107,6 +128,8 @@ export type FlakeCondition =
   | { kind: 'fail'; route: string; status: number }
   | { kind: 'fail'; route: string; abort: true }
   | { kind: 'cpu'; rate: number }
+  | { kind: 'timezone'; timeZone: string }
+  | { kind: 'locale'; locale: string }
   | { kind: 'alongside'; testCaseId: number; title: string }
   | { kind: 'after'; testCaseId: number; title: string }
   | { kind: 'project'; name: string };
@@ -155,7 +178,7 @@ export interface FlakeSuspect {
   executionIds: number[];
 }
 
-export type FlakeContextKind = 'attempt' | 'hour' | 'concurrent-run';
+export type FlakeContextKind = 'attempt' | 'hour' | 'concurrent-run' | 'environment';
 
 /** A factor with no condition the lab can apply, shown for a human to weigh. */
 export interface FlakeContextItem {
@@ -301,6 +324,7 @@ const KIND_ORDER: Record<FlakeSuspectKind, number> = {
   before: 3,
   load: 4,
   project: 5,
+  environment: 6,
 };
 
 function countsText(c: FlakeCounts): string {
@@ -501,6 +525,33 @@ export function buildFlakeProfile(input: FlakeProfileInput): FlakeProfile {
     }
   }
 
+  // ── Runner time zone or locale: only among the attempts that recorded it, and when it took two values ──
+  for (const factor of LAB_ENVIRONMENT_FACTORS) {
+    const valueOf = (a: FlakeProfileAttempt) => a.environment?.[factor.key] ?? null;
+    const recorded: Split = {
+      failed: split.failed.filter((a) => valueOf(a) !== null),
+      passed: split.passed.filter((a) => valueOf(a) !== null),
+    };
+    const values = [...new Set(recorded.failed.map(valueOf))] as string[];
+    if (new Set([...values, ...recorded.passed.map(valueOf)]).size < 2) continue;
+    for (const value of values.sort()) {
+      const has = (a: FlakeProfileAttempt) => valueOf(a) === value;
+      const counts = countWith(recorded, has);
+      add(
+        {
+          id: `environment:${factor.key}:${value}`,
+          kind: 'environment',
+          label: `on runner ${factor.noun} ${value}`,
+          sentence: `The runner's ${factor.noun} was ${value} in ${countsText(counts)}.`,
+          counts,
+          condition: factor.condition(value),
+          conditionLabel: `run in ${factor.noun} ${value}`,
+        },
+        has,
+      );
+    }
+  }
+
   profile.suspects = candidates
     .sort(
       (x, y) =>
@@ -572,10 +623,83 @@ function buildContext(split: Split): FlakeContextItem[] {
     (a) => (a.concurrentRuns ?? 0) > 0,
   );
   if (passesBar(concurrent.counts)) out.push(concurrent);
+  out.push(...environmentContext(split));
+  return out;
+}
+
+/** The environment factors a lab can apply, so suspects: the browser runs in the time zone or locale asked. */
+const LAB_ENVIRONMENT_FACTORS: Array<{
+  key: keyof FlakeAttemptEnvironment;
+  noun: string;
+  condition: (value: string) => FlakeCondition;
+}> = [
+  { key: 'runnerTimeZone', noun: 'time zone', condition: (timeZone) => ({ kind: 'timezone', timeZone }) },
+  { key: 'runnerLocale', noun: 'locale', condition: (locale) => ({ kind: 'locale', locale }) },
+];
+
+/** The environment factors no lab condition applies: context. */
+const ENVIRONMENT_FACTORS: Array<{ key: keyof FlakeAttemptEnvironment; label: (value: string) => string }> = [
+  { key: 'runnerImage', label: (v) => `on runner image ${v}` },
+  { key: 'browserVersion', label: (v) => `on browser version ${v}` },
+];
+
+/**
+ * The environment values the failures share and the passes do not: per field, the value failures take most often
+ * that passes the suspect bar, read only among the attempts that recorded the field, and only when the passes took
+ * another value too (a field that never changed separates nothing).
+ */
+function environmentContext(split: Split): FlakeContextItem[] {
+  const out: FlakeContextItem[] = [];
+  for (const factor of ENVIRONMENT_FACTORS) {
+    const valueOf = (a: FlakeProfileAttempt) => a.environment?.[factor.key] ?? null;
+    const recorded: Split = {
+      failed: split.failed.filter((a) => valueOf(a) !== null),
+      passed: split.passed.filter((a) => valueOf(a) !== null),
+    };
+    const passValues = new Set(recorded.passed.map(valueOf));
+    const failValues = [...new Set(recorded.failed.map(valueOf))] as string[];
+    if (new Set([...passValues, ...failValues]).size < 2) continue;
+    const best = failValues
+      .map((value) => {
+        const counts = countWith(recorded, (a) => valueOf(a) === value);
+        return { kind: 'environment' as const, label: factor.label(value), counts, lift: liftOf(counts) };
+      })
+      .filter((c) => passesBar(c.counts))
+      .sort((x, y) => y.lift * y.counts.failuresWith - x.lift * x.counts.failuresWith)[0];
+    if (best) out.push(best);
+  }
   return out;
 }
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
+
+/** Each attempt's runner (of its shard) and browser (of its shard and project), from its run's snapshots. */
+async function readAttemptEnvironments(
+  db: DrizzleDB,
+  rows: ReadonlyArray<{ id: number; runId: number; shardIndex: number | null; browser: unknown }>,
+  attempts: Map<number, FlakeProfileAttempt>,
+): Promise<void> {
+  const snapshots = await loadRunsSnapshots(db, [...new Set(rows.map((r) => r.runId))], ['runner', 'browser']);
+  for (const r of rows) {
+    const list = snapshots.get(r.runId);
+    const attempt = attempts.get(r.id);
+    if (!list || !attempt) continue;
+    const shard = r.shardIndex ?? null;
+    const runners = list.filter((s) => s.kind === 'runner');
+    const runner =
+      runners.find((s) => (s.shardIndex ?? null) === shard) ?? (runners.length === 1 ? runners[0] : undefined);
+    const project = (r.browser as { projectName?: string } | null)?.projectName ?? null;
+    const browser = list.find(
+      (s) => s.kind === 'browser' && s.project === project && (s.shardIndex ?? null) === shard,
+    ) as WireBrowserEnvironment | undefined;
+    attempt.environment = {
+      runnerTimeZone: runner?.kind === 'runner' ? (runner.timeZone ?? null) : null,
+      runnerLocale: runner?.kind === 'runner' ? (runner.locale ?? null) : null,
+      runnerImage: runner?.kind === 'runner' ? (runner.ciImage ?? null) : null,
+      browserVersion: browser?.browserVersion ?? null,
+    };
+  }
+}
 
 /** Statuses of an execution that ran. */
 const RAN_STATUSES = ['passed', ...FAILED_STATUS_KEYS, 'interrupted'];
@@ -715,8 +839,11 @@ export async function getFlakeProfile(
       overlaps: [],
       before: null,
       concurrentRuns: null,
+      environment: null,
     });
   }
+
+  if (ids.length > 0) await readAttemptEnvironments(db, rows, attempts);
 
   if (ids.length > 0) {
     const other = aliasedTable(testRunsCases, 'other');

@@ -26,6 +26,7 @@ import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { publicRunUrl } from '#shared/run-url';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 
 defineRouteMeta({
   openAPI: {
@@ -225,6 +226,8 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       streamToken: body.setupToken,
     };
   }
+
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   return {
     success: true,

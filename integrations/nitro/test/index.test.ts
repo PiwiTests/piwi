@@ -370,3 +370,51 @@ describe('the route manifest', () => {
     }
   });
 });
+
+describe('the server environment', () => {
+  async function environmentResponse(env: Record<string, string>) {
+    const mod = await loadWithEnv(env);
+    const app = createApp();
+    app.use(
+      '/api/cart',
+      eventHandler(() => ({ items: 1 })),
+    );
+    mod.default({ h3App: app, hooks: { hook: () => {} } } as never);
+    let result: { status: number; body: Record<string, unknown> | null } = { status: 0, body: null };
+    await withServer(app, async (base) => {
+      const res = await fetch(`${base}/__piwi/environment`);
+      const text = await res.text();
+      result = { status: res.status, body: res.status === 200 ? (JSON.parse(text) as Record<string, unknown>) : null };
+    });
+    return result;
+  }
+
+  it('answers the runtime facts, and only those, when capture is on', async () => {
+    const { status, body } = await environmentResponse({ NODE_ENV: 'test' });
+    expect(status).toBe(200);
+    expect(Object.keys(body!).sort()).toEqual(
+      [
+        'v',
+        'runtime',
+        'os',
+        'arch',
+        'timeZone',
+        'utcOffsetMinutes',
+        'locale',
+        'globalization',
+        'environmentName',
+        'appVersion',
+        'hostname',
+        'instance',
+        'startedAt',
+        'now',
+      ].sort(),
+    );
+    expect(body).toMatchObject({ v: 1, runtime: `Node.js ${process.version}`, environmentName: 'test' });
+  });
+
+  it('is not served when capture is off', async () => {
+    expect((await environmentResponse({ NODE_ENV: 'production' })).status).toBe(404);
+    expect((await environmentResponse({ NODE_ENV: 'test', PIWI_TEST_LOGS_DISABLED: 'true' })).status).toBe(404);
+  });
+});

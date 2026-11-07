@@ -53,6 +53,7 @@ Verdict: reproduced by delay GET /api/cart 1.8 s (3/4 against 0/10, p = 0.011)
 | A slow route | delay it to the failures' median duration | the fixtures hold each response until that long after the request started |
 | A failed route | fail it with the same status, or abort it | the fixtures answer with the status, or reset the connection |
 | Load | throttle the CPU ×4 | a DevTools session, so Chromium only |
+| A runner time zone or locale | run the browser in it | `timezoneId` or `locale` of each context the test opens |
 | Another test alongside | run both together | both tests on two workers; only rounds where they overlapped count |
 | The test just before | run that test first | both tests on one worker; only rounds where it ran just before count |
 | A browser | pin the Playwright project | `--project` |

@@ -56,6 +56,14 @@ import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from 
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
+import {
+  DEMO_CI_IMAGES,
+  demoBrowser,
+  demoCiRunner,
+  demoParisRunner,
+  demoServer,
+} from '../shared/demo/demo-environments.mjs';
+import { environmentDigest, environmentScope, sanitizeEnvironmentSnapshot } from '../shared/environment-snapshots.ts';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 import {
   WEB_DASHBOARD_PROJECT_ID,
@@ -2245,6 +2253,76 @@ const RESOURCE_OCCURRENCES = [];
         pages: finding.pages ?? null,
       });
     }
+  }
+}
+
+// ── Environment snapshots (post-processing, rng-free) ───────────────────────
+// Where each run executed, as the reporter and the capture fixtures record it
+// (`shared/demo/demo-environments.mjs`): every run's CI runner and Chromium
+// page, the newest three runs of each project on a newer runner image, one
+// checkout run on the self-hosted Paris runner, the sharded web run's second
+// shard in another time zone, and the checkout API's clock 3 s ahead on the
+// newest checkout run.
+const TEST_RUN_ENVIRONMENT_SNAPSHOTS = [];
+const ENVIRONMENT_MARKERS = [];
+{
+  const byProject = new Map();
+  for (const run of TEST_RUNS) {
+    const list = byProject.get(run.project_id) ?? [];
+    list.push(run);
+    byProject.set(run.project_id, list);
+  }
+  const push = (run, snapshot) => {
+    const clean = sanitizeEnvironmentSnapshot(snapshot);
+    TEST_RUN_ENVIRONMENT_SNAPSHOTS.push({
+      id: TEST_RUN_ENVIRONMENT_SNAPSHOTS.length + 1,
+      run_id: run.id,
+      kind: clean.kind,
+      scope: environmentScope(clean),
+      snapshot: clean,
+      digest: environmentDigest(clean),
+      captured_at: run.start_time,
+    });
+  };
+  for (const runs of byProject.values()) {
+    runs.sort((a, b) => b.start_time - a.start_time);
+    runs.forEach((run, index) => {
+      const newer = index < 3;
+      const paris = run.project_id === 1 && index === 5;
+      if (run.shard_total === 2) {
+        push(run, demoCiRunner({ shardIndex: 1, newerImage: newer }));
+        push(run, demoCiRunner({ shardIndex: 2, newerImage: newer, timeZone: 'America/New_York', host: 'fv-az207-3' }));
+        push(run, demoBrowser({ shardIndex: 1, newer }));
+        push(run, demoBrowser({ shardIndex: 2, newer, timeZone: 'America/New_York' }));
+      } else if (paris) {
+        push(run, demoParisRunner());
+        push(run, demoBrowser({ newer, timeZone: 'Europe/Paris', locale: 'fr-FR' }));
+      } else {
+        push(run, demoCiRunner({ newerImage: newer }));
+        push(run, demoBrowser({ newer }));
+      }
+      // The checkout project's first run on the newer image carries the marker the server writes for it.
+      if (run.project_id === 1 && index === 2) {
+        ENVIRONMENT_MARKERS.push({
+          project_id: 1,
+          occurred_at: run.start_time,
+          label:
+            `Runner: Node.js version v24.10.0 → v24.11.0, ICU version 76.1 → 77.1, ` +
+            `CI runner image ${DEMO_CI_IMAGES.older} → ${DEMO_CI_IMAGES.newer}`,
+          description: 'Environment change: runner',
+          category: 'infra',
+          environment: run.environment ?? null,
+          source: 'auto',
+          run_id: run.id,
+          created_at: run.start_time,
+          updated_at: run.start_time,
+        });
+      }
+      if (run.project_id === 1) {
+        const origin = new URL(DEMO_PROJECTS.find((p) => p.id === 1).baseUrl).origin;
+        push(run, demoServer({ origin, clockOffsetMs: index === 0 ? 3100 : 12 }));
+      }
+    });
   }
 }
 
@@ -5454,6 +5532,7 @@ const REBASE_SQL = [
   // fix_landed_at and announced_at are nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D}, announced_at = announced_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
+  `UPDATE test_run_environment_snapshots SET captured_at = captured_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -6687,6 +6766,13 @@ const lines = [
       ...m,
     })),
   ),
+  insert(
+    'markers',
+    ENVIRONMENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + INCIDENT_MARKERS.length + i + 1,
+      ...m,
+    })),
+  ),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),
@@ -6754,6 +6840,7 @@ const lines = [
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
   insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
+  insert('test_run_environment_snapshots', TEST_RUN_ENVIRONMENT_SNAPSHOTS),
   insert('resource_findings', RESOURCE_FINDINGS),
   insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',

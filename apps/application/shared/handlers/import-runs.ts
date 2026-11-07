@@ -20,6 +20,7 @@ import { resolveBrowserName } from '../browser-name';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
+import { saveEnvironmentSnapshots } from './environment-snapshots';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { storableRunErrors, storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
@@ -326,6 +327,7 @@ export async function importBlobReportRun(
 
   const run = inserted[0];
   if (!run) throw new Error('Failed to create the imported test run');
+  if (parsed.runner) await saveEnvironmentSnapshots(db, run.id, [parsed.runner]);
 
   let traceCount = 0;
   let attachmentCount = 0;

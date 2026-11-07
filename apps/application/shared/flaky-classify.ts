@@ -24,6 +24,11 @@ interface ClassifyInput {
   /** Per browser (Playwright project), how many of the recent attempts passed and failed. */
   browserDistribution: Record<string, BrowserOutcomes>;
   /**
+   * Per runner field the run recorded (time zone, locale, CI image), the recent attempts' outcomes by its value:
+   * one value that fails repeatedly while another passes cleanly is an environment cause too.
+   */
+  runnerDistributions?: Array<Record<string, BrowserOutcomes>>;
+  /**
    * The test's coverage varies with whether another test finished before it in
    * the same run, and its failures follow that variation (a path variation's
    * `orderDependent`): it depends on state an earlier test leaves behind.
@@ -96,6 +101,14 @@ function hasAnyKeyword(texts: string[], keywords: string[]): boolean {
 
 const hasTimingOrNetwork = (texts: string[]) => hasAnyKeyword(texts, TIMING_NETWORK_MARKERS);
 
+/** One value fails repeatedly and every failure has it, while another value passed repeatedly and never failed. */
+function separatesOutcomes(distribution: Record<string, BrowserOutcomes>): boolean {
+  const outcomes = Object.values(distribution);
+  const failing = outcomes.filter((o) => o.failed > 0);
+  const cleanPassing = outcomes.filter((o) => o.failed === 0 && o.passed >= ENVIRONMENT_MIN_ATTEMPTS);
+  return failing.length === 1 && failing[0]!.failed >= ENVIRONMENT_MIN_ATTEMPTS && cleanPassing.length > 0;
+}
+
 export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
   // An order dependency, measured from coverage, outranks every other signal.
   if (input.orderDependent) return 'order';
@@ -104,14 +117,9 @@ export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
 
   if (allTexts.length === 0) return 'other';
 
-  // Environment: one browser fails repeatedly, while another browser ran and
-  // passed repeatedly without failing once.
-  const outcomes = Object.values(input.browserDistribution);
-  const failing = outcomes.filter((o) => o.failed > 0);
-  const cleanPassing = outcomes.filter((o) => o.failed === 0 && o.passed >= ENVIRONMENT_MIN_ATTEMPTS);
-  if (failing.length === 1 && failing[0]!.failed >= ENVIRONMENT_MIN_ATTEMPTS && cleanPassing.length > 0) {
-    return 'environment';
-  }
+  // Environment: one browser, or one runner time zone, locale or image, fails
+  // repeatedly, while another ran and passed repeatedly without failing once.
+  if ([input.browserDistribution, ...(input.runnerDistributions ?? [])].some(separatesOutcomes)) return 'environment';
 
   const timingCount = countKeywordMatches(allTexts, TIMING_KEYWORDS);
   const networkCount =

@@ -11,6 +11,7 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
+import { loadRunsSnapshots } from './environment-snapshots';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
 import { notLabRun } from './probes';
@@ -73,6 +74,8 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
         steps: testRunsCases.steps,
         browser: testRunsCases.browser,
         coveragePayloadId: testRunsCases.coveragePayloadId,
+        runId: testRunsCases.testRunId,
+        shardIndex: testRunsCases.shardIndex,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -115,6 +118,8 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     if (row.status === 'passed') outcomes.passed++;
     else outcomes.failed++;
   }
+
+  const runnerDistributions = await runnerOutcomes(db, [...recentFailures, ...recentPasses]);
 
   // Count the failed requests actually captured across the recent failing
   // attempts.
@@ -163,8 +168,36 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     status5xxCount,
     attemptDiffNetworkVotes,
     browserDistribution,
+    runnerDistributions,
     orderDependent,
   });
+}
+
+/** The runner fields an environment cause is read from. */
+const RUNNER_CAUSE_FIELDS = ['timeZone', 'locale', 'ciImage'] as const;
+
+/** Per runner field, the attempts' outcomes by the value their shard's runner recorded; attempts without one are left out. */
+async function runnerOutcomes(
+  db: DrizzleDB,
+  rows: ReadonlyArray<{ status: string; runId: number; shardIndex: number | null }>,
+): Promise<Array<Record<string, BrowserOutcomes>>> {
+  const snapshots = await loadRunsSnapshots(db, [...new Set(rows.map((r) => r.runId))], ['runner']);
+  const distributions = RUNNER_CAUSE_FIELDS.map(() => ({}) as Record<string, BrowserOutcomes>);
+  for (const row of rows) {
+    const runners = (snapshots.get(row.runId) ?? []).filter((s) => s.kind === 'runner');
+    const runner =
+      runners.find((s) => (s.shardIndex ?? null) === (row.shardIndex ?? null)) ??
+      (runners.length === 1 ? runners[0] : undefined);
+    if (!runner || runner.kind !== 'runner') continue;
+    RUNNER_CAUSE_FIELDS.forEach((field, i) => {
+      const value = runner[field];
+      if (!value) return;
+      const outcomes = (distributions[i]![value] ??= { passed: 0, failed: 0 });
+      if (row.status === 'passed') outcomes.passed++;
+      else outcomes.failed++;
+    });
+  }
+  return distributions;
 }
 
 /** Classify the cases one after another; a case that fails is logged and skipped. */

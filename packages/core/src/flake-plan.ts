@@ -59,6 +59,18 @@ interface FlakeNetworkCondition {
   upKbps: number;
 }
 
+/** Run with the browser context's time zone set to an IANA zone (`Europe/Paris`, `UTC`). */
+interface FlakeTimezoneCondition {
+  kind: 'timezone';
+  timeZone: string;
+}
+
+/** Run with the browser context's locale set to a BCP 47 tag (`fr-FR`). */
+interface FlakeLocaleCondition {
+  kind: 'locale';
+  locale: string;
+}
+
 /** Run another test at the same time (applied by the command line with `--workers=2`). */
 export interface FlakeAlongsideCondition {
   kind: 'alongside';
@@ -82,6 +94,8 @@ export type FlakeCondition =
   | FlakeFailCondition
   | FlakeCpuCondition
   | FlakeNetworkCondition
+  | FlakeTimezoneCondition
+  | FlakeLocaleCondition
   | FlakeAlongsideCondition
   | FlakeAfterCondition
   | FlakeProjectCondition;
@@ -93,6 +107,8 @@ const FLAKE_CONDITION_KINDS: readonly FlakeConditionKind[] = [
   'fail',
   'cpu',
   'network',
+  'timezone',
+  'locale',
   'alongside',
   'after',
   'project',
@@ -122,11 +138,17 @@ export interface FlakePlan {
 
 /** What happened to one condition during one attempt. */
 type FlakeConditionOutcome =
-  /** It took effect at least once (a route condition matched a request; a CDP condition was set). */
+  /**
+   * It took effect at least once (a route condition matched a request; a CDP condition was set; the page's context
+   * was created with the arm's time zone or locale).
+   */
   | 'applied'
   /** A route condition whose route the attempt never called. */
   | 'not-matched'
-  /** A condition this browser cannot apply (`cpu`, `network` outside Chromium), or one that failed to install. */
+  /**
+   * A condition this browser cannot apply (`cpu`, `network` outside Chromium), one that failed to install, or a
+   * `timezone` or `locale` whose page's context the test did not create.
+   */
   | 'skipped'
   /** A condition the command line applies (`alongside`, `after`, `project`); the lab checks it from the results. */
   | 'by-command';
@@ -233,6 +255,20 @@ function routeMatch(obj: Json, at: string): FlakeRouteMatch {
   throw new FlakePlanError(`${at}.match must be "all" or a whole number from 1`);
 }
 
+/** An IANA time zone name: `UTC`, `Europe/Paris`, `America/Argentina/Buenos_Aires`, `Etc/GMT+3`. */
+const TIME_ZONE_RE = /^[A-Za-z][A-Za-z0-9/_+-]{0,63}$/;
+
+/** A BCP 47 language tag: `en`, `fr-FR`, `zh-Hant-TW`. */
+const LOCALE_RE = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
+
+function patterned(obj: Json, key: string, at: string, re: RegExp, max: number, example: string): string {
+  const value = str(obj, key, at);
+  if (value.length > max || !re.test(value)) {
+    throw new FlakePlanError(`${at}.${key} must look like ${example} (got ${JSON.stringify(value)})`);
+  }
+  return value;
+}
+
 function testRef(value: unknown, at: string): FlakeTestRef {
   if (!isObject(value)) throw new FlakePlanError(`${at} must be an object`);
   return {
@@ -268,6 +304,10 @@ function parseCondition(value: unknown, at: string): FlakeCondition {
         downKbps: num(value, 'downKbps', at, 1),
         upKbps: num(value, 'upKbps', at, 1),
       };
+    case 'timezone':
+      return { kind, timeZone: patterned(value, 'timeZone', at, TIME_ZONE_RE, 64, '"Europe/Paris" or "UTC"') };
+    case 'locale':
+      return { kind, locale: patterned(value, 'locale', at, LOCALE_RE, 35, '"fr-FR" or "en"') };
     case 'alongside':
     case 'after':
       return { kind, test: testRef(value.test, `${at}.test`) };
@@ -373,6 +413,10 @@ export function describeFlakeCondition(condition: FlakeCondition): string {
       return `CPU ×${condition.rate}`;
     case 'network':
       return `network +${durationLabel(condition.latencyMs)}, ${condition.downKbps} kbps down`;
+    case 'timezone':
+      return `time zone ${condition.timeZone}`;
+    case 'locale':
+      return `locale ${condition.locale}`;
     case 'alongside':
       return `run with ${flakeTestLabel(condition.test)}`;
     case 'after':

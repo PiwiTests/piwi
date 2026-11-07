@@ -49,6 +49,7 @@ export const {
   resourceFindings,
   resourceOccurrences,
   testRunResourceReports,
+  testRunEnvironmentSnapshots,
   runDeliveries,
   networkRequests,
   accountTokens,

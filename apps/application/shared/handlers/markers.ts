@@ -1,6 +1,10 @@
 import { markers, testRuns } from '../../server/database/schema';
-import { eq, and, asc, desc, lt, ne } from 'drizzle-orm';
-import { notPrivateRun } from '../run-eligibility';
+import { eq, and, asc, desc, isNull, like, lt, ne, notLike, or } from 'drizzle-orm';
+import { eligibleRunSql, isEligibleRun, notPrivateRun } from '../run-eligibility';
+import { computeSnapshotDiff } from '../utils/run-metadata';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { environmentDigest } from '../environment-snapshots';
+import type { EnvironmentKind, WireEnvironmentSnapshot } from '../types';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
@@ -95,7 +99,14 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const alreadyMarked = await db
     .select({ id: markers.id })
     .from(markers)
-    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto'), ne(markers.category, 'incident')));
+    .where(
+      and(
+        eq(markers.runId, runId),
+        eq(markers.source, 'auto'),
+        ne(markers.category, 'incident'),
+        or(isNull(markers.description), notLike(markers.description, `${ENVIRONMENT_MARKER_PREFIX}%`)),
+      ),
+    );
   if (alreadyMarked.length > 0) return;
 
   // Previous runs of this project, most recent first. Filter to the same
@@ -129,4 +140,87 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
     source: 'auto',
     runId: run.id,
   });
+}
+
+/** What an environment change marker's description starts with, which tells it from the other auto markers. */
+const ENVIRONMENT_MARKER_PREFIX = 'Environment change';
+
+/** The marker category of a change of each snapshot kind. */
+const ENVIRONMENT_MARKER_CATEGORY: Record<EnvironmentKind, string> = {
+  runner: 'infra',
+  browser: 'infra',
+  server: 'config',
+};
+
+const KIND_TITLE: Record<EnvironmentKind, string> = { runner: 'Runner', browser: 'Browser', server: 'Server' };
+
+/** The digests of a run's snapshots of one kind, as a set. */
+function digestsOf(snapshots: readonly WireEnvironmentSnapshot[], kind: EnvironmentKind): string {
+  return [...new Set(snapshots.filter((s) => s.kind === kind).map(environmentDigest))].sort().join(',');
+}
+
+/**
+ * Auto-create one timeline marker per kind of environment that changed between a finished run and the previous
+ * eligible run on the same branch and environment label: its runner or browser (category `infra`), or a server under
+ * test (`config`), labeled with the fields that changed. A kind either run did not record is no change, so a change
+ * is marked once, on the run where it appeared. Idempotent per run and kind; gated by `PIWI_AUTO_MARKERS` like
+ * `syncAutoMarkersForRun`.
+ */
+export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number): Promise<void> {
+  if (typeof process !== 'undefined' && process.env?.PIWI_AUTO_MARKERS === 'false') return;
+  const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+  if (!run || !isEligibleRun(run, 'baseline')) return;
+
+  const conds = [
+    eq(testRuns.projectId, run.projectId),
+    lt(testRuns.startTime, run.startTime),
+    eligibleRunSql('baseline'),
+    run.environment == null ? isNull(testRuns.environment) : eq(testRuns.environment, run.environment),
+    run.branch == null ? isNull(testRuns.branch) : eq(testRuns.branch, run.branch),
+  ];
+  const [prev] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(...conds))
+    .orderBy(desc(testRuns.startTime))
+    .limit(1);
+  if (!prev) return;
+
+  const snapshots = await loadRunsSnapshots(db, [prev.id, run.id]);
+  const before = snapshots.get(prev.id) ?? [];
+  const after = snapshots.get(run.id) ?? [];
+  const marked = await db
+    .select({ description: markers.description })
+    .from(markers)
+    .where(
+      and(
+        eq(markers.runId, runId),
+        eq(markers.source, 'auto'),
+        like(markers.description, `${ENVIRONMENT_MARKER_PREFIX}%`),
+      ),
+    );
+
+  for (const kind of ['runner', 'browser', 'server'] as const) {
+    const a = digestsOf(before, kind);
+    const b = digestsOf(after, kind);
+    if (!a || !b || a === b) continue;
+    const description = `${ENVIRONMENT_MARKER_PREFIX}: ${KIND_TITLE[kind].toLowerCase()}`;
+    if (marked.some((m) => m.description === description)) continue;
+    const changes = computeSnapshotDiff(
+      before.filter((s) => s.kind === kind),
+      after.filter((s) => s.kind === kind),
+    );
+    if (changes.length === 0) continue;
+    const label = `${KIND_TITLE[kind]}: ${changes.map((c) => `${c.label} ${c.before} → ${c.after}`).join(', ')}`;
+    await db.insert(markers).values({
+      projectId: run.projectId,
+      label: label.length > 300 ? `${label.slice(0, 299)}…` : label,
+      description,
+      occurredAt: run.startTime,
+      category: ENVIRONMENT_MARKER_CATEGORY[kind],
+      environment: run.environment ?? null,
+      source: 'auto',
+      runId: run.id,
+    });
+  }
 }

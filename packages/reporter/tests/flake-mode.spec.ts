@@ -6,6 +6,7 @@ import type { Page } from '@playwright/test';
 import { flakeErrorSignature, parseFlakePlan, type FlakePlan } from '@piwitests/core/flake-plan';
 import {
   cdpCommandFor,
+  flakeContextOptions,
   flakeResultLine,
   flakeRoleForTest,
   flakeRunMetadata,
@@ -248,6 +249,24 @@ describe('conditions outside Chromium', () => {
       { kind: 'delay', outcome: 'not-matched' },
       { kind: 'cpu', outcome: 'skipped', note: 'the attempt opened no page' },
       { kind: 'alongside', outcome: 'by-command' },
+    ]);
+  });
+
+  it('maps timezone and locale to context options, and reports them unapplied without a page', () => {
+    const arm = plan({
+      arm: {
+        id: 'a',
+        conditions: [
+          { kind: 'timezone', timeZone: 'Europe/Paris' },
+          { kind: 'locale', locale: 'fr-FR' },
+        ],
+      },
+    });
+    expect(flakeContextOptions(arm)).toEqual({ timezoneId: 'Europe/Paris', locale: 'fr-FR' });
+    expect(flakeContextOptions(plan({ arm: { id: 'a', conditions: [{ kind: 'cpu', rate: 4 }] } }))).toBeNull();
+    expect(unappliedReports(arm)).toEqual([
+      { kind: 'timezone', outcome: 'skipped', note: 'the attempt opened no page' },
+      { kind: 'locale', outcome: 'skipped', note: 'the attempt opened no page' },
     ]);
   });
 

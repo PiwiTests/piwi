@@ -38,6 +38,9 @@ describe('parseFlakePlan', () => {
         { kind: 'fail', route: 'POST /api/orders', abort: true, match: 'all' },
         { kind: 'cpu', rate: 4 },
         { kind: 'network', latencyMs: 400, downKbps: 1600, upKbps: 750 },
+        { kind: 'timezone', timeZone: 'America/Argentina/Buenos_Aires' },
+        { kind: 'timezone', timeZone: 'Etc/GMT+3' },
+        { kind: 'locale', locale: 'zh-Hant-TW' },
         { kind: 'alongside', test: { file: 'tests/admin.spec.ts', title: 'resets catalog' } },
         { kind: 'after', test: { file: 'tests/admin.spec.ts', title: 'resets catalog', suite: ['admin'] } },
         { kind: 'project', name: 'webkit' },
@@ -50,6 +53,9 @@ describe('parseFlakePlan', () => {
       { kind: 'fail', route: 'POST /api/orders', abort: true, match: 'all' },
       { kind: 'cpu', rate: 4 },
       { kind: 'network', latencyMs: 400, downKbps: 1600, upKbps: 750 },
+      { kind: 'timezone', timeZone: 'America/Argentina/Buenos_Aires' },
+      { kind: 'timezone', timeZone: 'Etc/GMT+3' },
+      { kind: 'locale', locale: 'zh-Hant-TW' },
       { kind: 'alongside', test: { file: 'tests/admin.spec.ts', title: 'resets catalog', suite: [] } },
       { kind: 'after', test: { file: 'tests/admin.spec.ts', title: 'resets catalog', suite: ['admin'] } },
       { kind: 'project', name: 'webkit' },
@@ -83,6 +89,11 @@ describe('parseFlakePlan', () => {
     ['status and abort', withConditions({ kind: 'fail', route: 'GET /a', status: 500, abort: true }), /choose one/],
     ['a CPU rate below 1', withConditions({ kind: 'cpu', rate: 0.5 }), /rate must be a number from 1/],
     ['a network without throughput', withConditions({ kind: 'network', latencyMs: 10 }), /downKbps/],
+    ['a time zone with a space', withConditions({ kind: 'timezone', timeZone: 'Europe/Paris x' }), /look like/],
+    ['a time zone too long', withConditions({ kind: 'timezone', timeZone: `A${'b'.repeat(64)}` }), /look like/],
+    ['a time zone missing', withConditions({ kind: 'timezone' }), /timeZone must be a non-empty string/],
+    ['a locale with an underscore', withConditions({ kind: 'locale', locale: 'fr_FR' }), /locale must look like/],
+    ['a locale too long', withConditions({ kind: 'locale', locale: `en${'-abcdefgh'.repeat(4)}` }), /look like/],
     ['an alongside without a test', withConditions({ kind: 'alongside' }), /\.test must be an object/],
     ['an unnamed project', withConditions({ kind: 'project', name: ' ' }), /name must be a non-empty string/],
   ])('rejects %s', (_label, value, message) => {
@@ -140,6 +151,8 @@ describe('condition labels', () => {
       'abort POST /api/pay',
     );
     expect(describeFlakeCondition({ kind: 'cpu', rate: 4 })).toBe('CPU ×4');
+    expect(describeFlakeCondition({ kind: 'timezone', timeZone: 'Europe/Paris' })).toBe('time zone Europe/Paris');
+    expect(describeFlakeCondition({ kind: 'locale', locale: 'fr-FR' })).toBe('locale fr-FR');
     expect(
       describeFlakeCondition({
         kind: 'alongside',
