@@ -9,7 +9,7 @@ import {
   shareLinks,
   runTargets,
 } from '../../server/database/schema';
-import type { ConnectClientKind } from '../../server/utils/extension-connect';
+import type { ConnectedApp } from '../../types/api';
 import { eq, and, desc, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import { deleteAssistantConversationsOf } from './assistant';
@@ -151,7 +151,7 @@ export async function listConnectedApps(db: DrizzleDB, userId: number, isOnline:
     .orderBy(desc(apiKeys.createdAt));
   return rows.map(({ targetId, platform, version, lastSeenAt, ...app }) => ({
     ...app,
-    kind: app.kind as ConnectClientKind,
+    kind: app.kind as ConnectedApp['kind'],
     target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId) },
   }));
 }
