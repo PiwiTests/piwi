@@ -1455,9 +1455,13 @@ const routes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
-    permission: 'run:delete',
+    permission: ['run:delete', 'run:request'],
     handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      // The demo holds no requested run: every run it deletes takes `run:delete`.
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      if (projectId !== null && !demoCan(ctx, 'run:delete', projectId)) {
+        throw demoHttpError(403, 'Insufficient permissions');
+      }
       return apiDeleteTestRun(+m[1]!);
     },
   },
