@@ -796,7 +796,9 @@ function pickSent(title: string) {
 
 describe('the live view of a stopped page', () => {
   it('lets every test pass, and says it takes the view, its input and a pick on the image as it attaches', () => {
-    expect(exitCode, output).toBe(0);
+    // The run's output, and each test's status and errors, which its output leaves out.
+    const outcomes = JSON.stringify(tests.map((t) => [t.title, t.status, t.errors]));
+    expect(exitCode, `${output}\n${outcomes}`).toBe(0);
     expect(tests.map((t) => [t.title, t.status, t.errors])).toEqual([
       ['clicked through the view', 'passed', []],
       ['picked through the view', 'passed', []],
