@@ -109,15 +109,19 @@ test.beforeAll(() => selectors.register('tag', () => ({
   query: (root, name) => root.querySelector(name),
   queryAll: (root, name) => Array.from(root.querySelectorAll(name)),
 })));
-// A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
-// once that frame is shown, as the display server takes it: a test that waits for it, and the setup of its window, has
-// \`PAINT_TIMEOUT\`.
+// A window just opened has no image to take until it shows a frame: the page waits until it is visible, then for two
+// animation frames, the first drawn and the second begun once the compositor took it. A test that waits for it, and
+// the setup of its window, has \`PAINT_TIMEOUT\`, for a busy display.
 const PAINT_TIMEOUT = 15_000;
-const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
-  if (!list.getEntriesByName('first-contentful-paint').length) return;
-  observer.disconnect();
-  resolve();
-}).observe({ type: 'paint', buffered: true })));
+const painted = (page) => page.evaluate(() => new Promise((resolve) => {
+  const frames = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  if (document.visibilityState === 'visible') return frames();
+  document.addEventListener('visibilitychange', function shown() {
+    if (document.visibilityState !== 'visible') return;
+    document.removeEventListener('visibilitychange', shown);
+    frames();
+  });
+}));
 // The highlights a page shows: Playwright's layer, where the test's own are, and Piwi's own.
 const LAYERS = 'x-pw-glass, [data-piwi-stop-highlight]';
 const glassIn = (page) => page.evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
