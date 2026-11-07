@@ -323,7 +323,7 @@ describe('the life of a request', () => {
     });
   });
 
-  test('a stop ends a waiting request at once, and reaches the target of a claimed one', async () => {
+  test('a stop ends a waiting or an unanswered request at once, and the target hears of the claimed one', async () => {
     const c = await caller();
     const waiting = await request();
     expect(await stopOwnRequest(db as never, waiting, userId)).toBe(true);
@@ -334,7 +334,66 @@ describe('the life of a request', () => {
     await claimRequest(c, claimed);
     expect(await stopOwnRequest(db as never, claimed, otherUserId)).toBe(false);
     expect(await stopOwnRequest(db as never, claimed, userId)).toBe(true);
+    expect(await stored(claimed)).toMatchObject({ state: 'ended', outcome: 'stopped' });
     expect((await requestsForTarget(c)).stops).toEqual([claimed]);
     expect(await answerRequest(c, claimed, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 409 });
+  });
+
+  test('a stop of a run reaches its target, which ends it', async () => {
+    const c = await caller();
+    const id = await request();
+    await claimRequest(c, id);
+    await answerRequest(c, id, { decision: 'run' });
+    expect(await stopOwnRequest(db as never, id, userId)).toBe(true);
+    expect(await stored(id)).toMatchObject({ state: 'starting' });
+    expect((await requestsForTarget(c)).stops).toEqual([id]);
+    await moveRequestState(c, id, { state: 'ended', outcome: 'stopped' }, null);
+    expect((await requestsForTarget(c)).stops).toEqual([]);
+  });
+
+  test('a request whose target was disconnected ends at its stop', async () => {
+    const t = await target();
+    const c = await requireRunTarget(eventWithKey(t.plaintext));
+    const id = await request();
+    await claimRequest(c, id);
+    await answerRequest(c, id, { decision: 'run' });
+    await db.delete(schema.apiKeys).where(eq(schema.apiKeys.id, t.id));
+    expect((await stored(id)).targetId).toBeNull();
+    expect(await stopOwnRequest(db as never, id, userId)).toBe(true);
+    expect(await stored(id)).toMatchObject({ state: 'ended', outcome: 'stopped' });
+  });
+
+  test('Run checks the project again, as the claim did', async () => {
+    const c = await caller();
+    const id = await request();
+    await claimRequest(c, id);
+    state.machineRuns.delete(allowed);
+    expect(await answerRequest(c, id, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 403 });
+    expect(await answerRequest(c, id, { decision: 'not-now' })).toMatchObject({ ok: true, row: { state: 'declined' } });
+  });
+
+  test('two tests of one title in two describe blocks stay two', async () => {
+    const [suiteCase] = await db
+      .insert(schema.testCases)
+      .values({ projectId: allowed, filePath: 'tests/cart.spec.ts', title: 'adds an item', suitePath: 'guest' })
+      .returning();
+    await db
+      .insert(schema.testRunsCases)
+      .values(
+        withStoredVerdicts([
+          { testRunId: runId, testCaseId: suiteCase!.id, status: 'passed', browserName: 'chromium', line: 4 },
+        ]),
+      );
+    const file = await resolveRequestTests(db as never, { runId, filePath: 'tests/cart.spec.ts' });
+    expect(file.ok && file.tests).toHaveLength(2);
+  });
+});
+
+describe('a key whose permissions column is not a list', () => {
+  test('is refused everywhere', async () => {
+    const made = await key(userId, null);
+    await db.update(schema.apiKeys).set({ permissions: 'run:receive' }).where(eq(schema.apiKeys.id, made.id));
+    expect(await getUserByApiKey(made.plaintext)).toBeNull();
+    await expect(requireAuth(eventWithKey(made.plaintext), 'project:read')).rejects.toMatchObject({ statusCode: 401 });
   });
 });

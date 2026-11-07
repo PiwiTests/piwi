@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getDatabase } from '../database';
 import { requireAuth } from '../utils/auth';
 import { getInstanceCapabilities, setInstanceDecisions } from '#shared/handlers/capabilities';
+import { isOptInCapability } from '#shared/capabilities';
 
 defineRouteMeta({
   openAPI: {
@@ -26,6 +27,15 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: validation.error.issues });
   }
 
+  const notOptIn = Object.entries(validation.data.decisions)
+    .filter(([id, value]) => value === 'enabled' && !isOptInCapability(id))
+    .map(([id]) => id);
+  if (notOptIn.length) {
+    throw apiError({
+      statusCode: 400,
+      message: `Only a capability that is off until turned on can be enabled: ${notOptIn.join(', ')}`,
+    });
+  }
   await setInstanceDecisions(db, validation.data.decisions);
   return getInstanceCapabilities(db);
 });

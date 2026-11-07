@@ -563,7 +563,9 @@ export async function resolveApiKey(plaintext: string): Promise<ResolvedApiKey |
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
   if (!userResults[0]) return null;
-  const permissions = Array.isArray(key.permissions) ? (key.permissions as unknown[]).map(String) : null;
+  // Only a null column carries the owner's access; any other value that is not a list of permissions is refused.
+  if (key.permissions != null && !Array.isArray(key.permissions)) return null;
+  const permissions = key.permissions == null ? null : (key.permissions as unknown[]).map(String);
   return { user: userResults[0], keyId: key.id, permissions };
 }
 

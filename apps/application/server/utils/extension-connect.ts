@@ -312,14 +312,20 @@ export async function pollDeviceConnect(
     })
     .returning({ id: apiKeys.id });
   if (target) {
-    await db.insert(runTargets).values({
-      userId: row.userId,
-      apiKeyId: key!.id,
-      kind,
-      deviceName: row.clientName,
-      lastSeenAt: now,
-      createdAt: now,
-    });
+    // A target key without its target serves nothing, so the key goes if its target cannot be stored.
+    try {
+      await db.insert(runTargets).values({
+        userId: row.userId,
+        apiKeyId: key!.id,
+        kind,
+        deviceName: row.clientName,
+        lastSeenAt: now,
+        createdAt: now,
+      });
+    } catch (error) {
+      await db.delete(apiKeys).where(eq(apiKeys.id, key!.id));
+      throw error;
+    }
   }
   await db.update(extensionDeviceCodes).set({ apiKeyId: key!.id }).where(eq(extensionDeviceCodes.id, row.id));
   return { status: 'approved', apiKey: plaintext, user: { name: owner.name || owner.username } };

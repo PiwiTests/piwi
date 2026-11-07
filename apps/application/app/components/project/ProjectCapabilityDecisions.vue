@@ -35,9 +35,9 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   'agent-diagnoses': 'Agent diagnoses',
 };
 
-/** Every capability a project can override, with a plain label. */
-const PROJECT_CAPABILITIES: { id: CapabilityId; label: string }[] = CAPABILITIES.filter((c) =>
-  c.levels.includes('project'),
+/** Every capability a project can override, with a plain label; one that is off until turned on has its own control. */
+const PROJECT_CAPABILITIES: { id: CapabilityId; label: string }[] = CAPABILITIES.filter(
+  (c) => c.levels.includes('project') && !c.optIn,
 ).map((c) => ({ id: c.id, label: CAPABILITY_LABELS[c.id] ?? c.id }));
 
 type Choice = 'default' | 'enabled' | 'declined';

@@ -65,11 +65,7 @@ export async function requireMachineRunsOn(db: DbClient, projectId: number): Pro
   }
 }
 
-/**
- * Authenticate a target route: a target key (an API key that holds `run:receive` alone, made by the device flow for
- * the desktop app or Piwi Runner) whose target is still connected. Any other credential, a session or a key with its
- * owner's access, is refused: these routes serve connected apps only. Records that the target was seen.
- */
+/** A target route's caller: the target, its owner and the owner's access. */
 export interface RunTargetCaller {
   db: DbClient;
   user: User;
@@ -78,6 +74,11 @@ export interface RunTargetCaller {
   access: AccessSummary;
 }
 
+/**
+ * Authenticate a target route: a target key (an API key that holds `run:receive` alone, made by the device flow for
+ * the desktop app or Piwi Runner) whose target is still connected. Any other credential, a session or a key with its
+ * owner's access, is refused: these routes serve connected apps only. Records that the target was seen.
+ */
 export async function requireRunTarget(event: H3Event): Promise<RunTargetCaller> {
   requireSignInForRunRequests(event);
   const value = extractApiKey(event);
@@ -151,6 +152,7 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
     .select({
       filePath: testCases.filePath,
       title: testCases.title,
+      suitePath: testCases.suitePath,
       line: testRunsCases.line,
       projectName: testRunsCases.browserName,
     })
@@ -163,7 +165,7 @@ export async function resolveRequestTests(db: DbClient, input: RunRequestSourceI
   const projects = new Set<string>();
   for (const row of rows) {
     const projectName = row.projectName || null;
-    const key = JSON.stringify([row.filePath, row.title, row.line, projectName]);
+    const key = JSON.stringify([row.filePath, row.suitePath, row.title, row.line, projectName]);
     if (seen.has(key)) continue;
     seen.add(key);
     tests.push({ filePath: row.filePath, title: row.title, line: row.line ?? null, projectName });
@@ -198,7 +200,7 @@ export function runRequestOf(row: RunRequestRow): RunRequest | null {
   return parsed.ok ? parsed.value : null;
 }
 
-/** A request's state as of `now`: an unclaimed request past its expiry reads expired, before any sweep stores it. */
+/** A request's state as of `now`: an unclaimed request past its expiry reads expired, whatever its stored state. */
 export function effectiveState(row: Pick<RunRequestRow, 'state' | 'expiresAt'>, now = new Date()): RunRequestState {
   const state = row.state as RunRequestState;
   return state === 'waiting' && row.expiresAt.getTime() <= now.getTime() ? 'expired' : state;
@@ -259,6 +261,13 @@ export async function findOwnRequest(db: DbClient, id: string, requesterId: numb
   return row ?? null;
 }
 
+/** The states of a request a target holds: claimed, or its run once the person clicked **Run**. */
+const ACTIVE_STATES: RunRequestState[] = ['claimed', 'starting', 'running', 'stopping'];
+const RUN_STATES: RunRequestState[] = ['starting', 'running', 'stopping'];
+
+/** How long a target keeps hearing of a claimed request the requester stopped before the person answered it. */
+const STOPPED_CLAIM_NOTICE_MS = 10 * 60 * 1000;
+
 /** The states a run moves through once the person clicked **Run**, and where each may go next. */
 const STATE_MOVES: Record<'running' | 'stopping' | 'ended', RunRequestState[]> = {
   running: ['starting'],
@@ -269,8 +278,10 @@ const STATE_MOVES: Record<'running' | 'stopping' | 'ended', RunRequestState[]> =
 export type RunStateUpdate = { state: 'running' | 'stopping' } | { state: 'ended'; outcome: RunRequestOutcome };
 
 /**
- * Stop a request from the requester's page. Unclaimed, it ends at once as stopped. Claimed or running, the stop is
- * recorded for the target, which ends the run and reports it. Answers false once the request has ended.
+ * Stop a request from the requester's page. Waiting, claimed but not answered, or held by a target that was
+ * disconnected since, it ends at once as stopped, and the target that claimed it finds it in its stops. Once the
+ * person clicked **Run**, the stop is recorded for the target, which ends the run and reports it. Answers false once
+ * the request has ended.
  */
 export async function stopOwnRequest(
   db: DbClient,
@@ -282,23 +293,37 @@ export async function stopOwnRequest(
   const ended = await db
     .update(runRequests)
     .set({ state: 'ended', outcome: 'stopped', stopRequestedAt: now, updatedAt: now })
-    .where(and(mine, eq(runRequests.state, 'waiting'), gt(runRequests.expiresAt, now)))
+    .where(
+      and(
+        mine,
+        or(
+          and(eq(runRequests.state, 'waiting'), gt(runRequests.expiresAt, now)),
+          eq(runRequests.state, 'claimed'),
+          and(isNull(runRequests.targetId), inArray(runRequests.state, ACTIVE_STATES)),
+        ),
+      ),
+    )
     .returning({ id: runRequests.id });
   if (ended.length) return true;
   const stopping = await db
     .update(runRequests)
     .set({ stopRequestedAt: now, updatedAt: now })
-    .where(and(mine, inArray(runRequests.state, ['claimed', 'starting', 'running', 'stopping'])))
+    .where(and(mine, inArray(runRequests.state, RUN_STATES)))
     .returning({ id: runRequests.id });
   return stopping.length > 0;
 }
+
+const NOT_ALLOWED = 'Run on my machine is off for this project, or you cannot run its tests';
 
 /** Whether a target may take a request of a project: its owner holds `run:receive` there and the capability is on. */
 async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
   return can(access, 'run:receive', projectId) && (await isOptInCapabilityOn(db, projectId, 'machine-runs'));
 }
 
-/** The requests a target should act on: those still waiting for one of its owner's targets, and its own stops. */
+/**
+ * The requests a target should act on: those still waiting for one of its owner's targets, and its own stops (a run
+ * to end, or a claimed request to stop showing).
+ */
 export async function requestsForTarget(
   { db, target, access }: RunTargetCaller,
   now = new Date(),
@@ -329,7 +354,14 @@ export async function requestsForTarget(
       and(
         eq(runRequests.targetId, target.id),
         isNotNull(runRequests.stopRequestedAt),
-        inArray(runRequests.state, ['claimed', 'starting', 'running', 'stopping']),
+        or(
+          inArray(runRequests.state, RUN_STATES),
+          and(
+            eq(runRequests.state, 'ended'),
+            isNull(runRequests.answeredAt),
+            gt(runRequests.stopRequestedAt, new Date(now.getTime() - STOPPED_CLAIM_NOTICE_MS)),
+          ),
+        ),
       ),
     );
   return { requests, stops: stops.map((s) => s.id) };
@@ -371,11 +403,7 @@ export async function claimRequest(
     .where(and(eq(runRequests.id, id), eq(runRequests.requesterId, target.userId)));
   if (!row) return { ok: false, statusCode: 404, message: 'No run request has this id' };
   if (!(await mayReceiveOn(db, access, row.projectId))) {
-    return {
-      ok: false,
-      statusCode: 403,
-      message: 'Run on my machine is off for this project, or you cannot run its tests',
-    };
+    return { ok: false, statusCode: 403, message: NOT_ALLOWED };
   }
   const moved = await db
     .update(runRequests)
@@ -397,14 +425,24 @@ export type TargetAnswer = { decision: 'run' } | { decision: 'not-now' } | { dec
 
 /**
  * The person's answer in the target, to a request this target claimed: **Run** moves it to `starting`, **Not now**
- * to `declined`, a failed check to `refused` with its words. **Run** is refused once the requester stopped it.
+ * to `declined`, a failed check to `refused` with its words. **Run** is refused once the requester stopped it, and
+ * checks again that the project allows it, as the claim did.
  */
 export async function answerRequest(
-  { db, target }: RunTargetCaller,
+  { db, target, access }: RunTargetCaller,
   id: string,
   answer: TargetAnswer,
   now = new Date(),
 ): Promise<TargetMoveResult> {
+  if (answer.decision === 'run') {
+    const [row] = await db
+      .select({ projectId: runRequests.projectId })
+      .from(runRequests)
+      .where(and(eq(runRequests.id, id), eq(runRequests.targetId, target.id)));
+    if (row && !(await mayReceiveOn(db, access, row.projectId))) {
+      return { ok: false, statusCode: 403, message: NOT_ALLOWED };
+    }
+  }
   const base = [eq(runRequests.id, id), eq(runRequests.targetId, target.id), eq(runRequests.state, 'claimed')];
   const values =
     answer.decision === 'run'

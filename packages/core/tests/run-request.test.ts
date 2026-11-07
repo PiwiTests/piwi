@@ -85,6 +85,12 @@ describe('parseRunRequest', () => {
     ]);
   });
 
+  test('accepts the usual project names and branches', () => {
+    expect(parseRunRequestOptions({ project: 'Mobile Safari' }).ok).toBe(true);
+    expect(parseRunRequestOptions({ project: 'e2e/setup-db' }).ok).toBe(true);
+    expect(parseRunRequest({ ...request, source: { branch: 'feature/pay-v2' } }).ok).toBe(true);
+  });
+
   test('accepts a spec path inside the folder', () => {
     expect(isRelativeSpecPath('tests/checkout/pay.spec.ts')).toBe(true);
     expect(isRelativeSpecPath('a..b.spec.ts')).toBe(true);
@@ -108,6 +114,8 @@ describe('parseRunRequest', () => {
     [{ trace: 'off' }, "options.trace must be 'on' or 'retain-on-failure'."],
     [{ headed: 'yes' }, 'options.headed must be true or false.'],
     [{ project: 'chromium; rm -rf /' }, 'options.project is not a Playwright project name.'],
+    [{ project: '--headed' }, 'options.project is not a Playwright project name.'],
+    [{ project: ' chromium' }, 'options.project is not a Playwright project name.'],
   ])('refuses the option %j', (option, problem) => {
     expect(problemsOf({ ...request, options: { ...request.options, ...option } })).toEqual([problem]);
   });
@@ -119,6 +127,16 @@ describe('parseRunRequest', () => {
     [{ projectId: 2_147_483_648 }, 'projectId must be a project id.'],
     [{ source: { commit: 'not-a-sha' } }, 'source.commit must be a commit SHA.'],
     [{ source: { runId: -1 } }, 'source.runId must be a run id.'],
+    [{ source: { branch: '--upload-pack=touch x' } }, 'source.branch must be a branch name.'],
+    [{ source: { branch: 'main\nfeature' } }, 'source.branch must be a branch name.'],
+    [
+      { tests: [{ ...request.tests[0], title: 'pays\u001b[2J' }] },
+      'tests[0].title must be one line of at most 500 characters, with no control character.',
+    ],
+    [
+      { tests: [{ ...request.tests[0], title: 'pays\nwith a card' }] },
+      'tests[0].title must be one line of at most 500 characters, with no control character.',
+    ],
   ])('refuses %j', (patch, problem) => {
     expect(problemsOf({ ...request, ...patch })).toEqual([problem]);
   });

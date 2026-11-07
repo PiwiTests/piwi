@@ -103,7 +103,10 @@ export type RunRequestParse<T> = { ok: true; value: T } | { ok: false; problems:
 const MAX_PATH_CHARS = 500;
 const MAX_TITLE_CHARS = 500;
 const MAX_BRANCH_CHARS = 255;
-const PLAYWRIGHT_PROJECT = /^[\w .:@/+-]{1,100}$/;
+/** A Playwright project name: no leading `-` or space, so it never reads as an option. */
+const PLAYWRIGHT_PROJECT = /^[\w.:@/+][\w .:@/+-]{0,99}$/;
+// oxlint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const COMMIT = /^[0-9a-f]{7,40}$/i;
 const MAX_ID = 2_147_483_647;
 
@@ -203,8 +206,8 @@ function readTest(value: unknown, at: string, problems: string[]): RunRequestTes
   if (typeof filePath !== 'string' || filePath.length > MAX_PATH_CHARS || !isRelativeSpecPath(filePath)) {
     problems.push(`${at}.filePath must be a spec path relative to the Playwright config.`);
   }
-  if (typeof title !== 'string' || title.length > MAX_TITLE_CHARS || title.includes('\0')) {
-    problems.push(`${at}.title must be a test title of at most ${MAX_TITLE_CHARS} characters.`);
+  if (typeof title !== 'string' || title.length > MAX_TITLE_CHARS || CONTROL_CHARACTER.test(title)) {
+    problems.push(`${at}.title must be one line of at most ${MAX_TITLE_CHARS} characters, with no control character.`);
   }
   if (line !== null && line !== undefined && !isId(line)) problems.push(`${at}.line must be a line number or null.`);
   if (projectName !== null && projectName !== undefined && !isRunRequestProjectName(projectName)) {
@@ -243,7 +246,8 @@ function readSource(value: unknown, at: string, problems: string[]): RunRequestS
       typeof branch === 'string' &&
       branch.length > 0 &&
       branch.length <= MAX_BRANCH_CHARS &&
-      !branch.includes('\0')
+      !branch.startsWith('-') &&
+      !CONTROL_CHARACTER.test(branch)
     ) {
       source.branch = branch;
     } else problems.push(`${at}.branch must be a branch name.`);

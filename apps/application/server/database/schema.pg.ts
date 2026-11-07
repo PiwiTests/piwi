@@ -1761,7 +1761,7 @@ export const extensionDeviceCodes = pgTable(
     deviceCodeHash: text('device_code_hash').notNull(),
     userCodeHash: text('user_code_hash').notNull(),
     clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
-    clientKind: text('client_kind'), // 'picker' | 'editor' | 'desktop' | 'runner'; null on a row from before it was stored
+    clientKind: text('client_kind'), // 'picker' | 'editor' | 'desktop' | 'runner'; null when not known
     status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
