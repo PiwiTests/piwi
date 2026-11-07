@@ -37,11 +37,11 @@ stream (D11), whose snapshot and events a target keys by request id, with a comm
 stream records its target as seen, and checks its key again, every minute, and closes at once when the key is revoked.
 Presence is the open streams, in memory. Connected apps (D16) lists every key the device flow made, on Settings →
 Account and in an administrator's view of a user, with **Revoke**; the API keys list leaves them out. Settings →
-Capabilities turns the capability on and off (D15), refusing to turn it on while sign-in is off, and a project declines
-it while the instance has it on. The demo seeds one connected desktop app, online; its simulated answers to requests
-come with PR 3, when the page can make one. The feature page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring)
-are written. The instance's side of PR 2 is done. The maintainer settled
-on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to
+Capabilities turns the capability on and off (D15), its **Turn on** disabled while sign-in is off (the instance refuses
+every request then anyway), and a project declines it while the instance has it on. The demo seeds one connected
+desktop app, online; its simulated answers to requests come with PR 3, when the page can make one. The feature page
+and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The
+maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are left to
 runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is the
 same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time (D9); a
 requested run shows to its requester alone (D14); the administrator's switch is off by default in the first release

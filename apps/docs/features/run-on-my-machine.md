@@ -41,12 +41,12 @@ Turned off or declined, the instance refuses every request for that project, and
 
 **Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
 the desktop app. Each shows when it connected and, for an app that runs tests, **Online** while it holds its
-connection to the instance open, or when it was last seen. **Revoke** disconnects one: an app that runs tests loses
-its connection at once, and its next request is refused, so it asks you to connect again. An administrator sees the
+connection to the instance open, or when it was last seen. **Revoke** disconnects one: the instance closes the
+connection of an app that runs tests at once, and refuses its next call. An administrator sees the
 same list for any user in **Settings → Users → API keys**. The keys these apps hold are not listed under API keys.
 
-A connected desktop app hears each request as it is made, and the requests still waiting when it reconnects. Where a
-proxy cuts long connections, it asks for them every few seconds instead.
+The instance sends a connected app each request as it is made, on that connection, and the requests still waiting
+each time the app connects again. An app can also ask for them instead, where a proxy cuts long connections.
 
 ## A requested run is yours alone
 
