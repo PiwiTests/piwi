@@ -325,7 +325,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     optIn: true,
     hiddenOnDesktop: true,
     since: '0.68.0',
-    doc: 'features/desktop',
+    doc: 'features/run-on-my-machine',
   },
 ];
 

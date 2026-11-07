@@ -172,6 +172,11 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   how far the map itself can be trusted, with a labeled benchmark; and the extension's Tested elements overlay
   showing the map's gaps on the live page, recording the missing test, and, with consent, adding the surface a
   person sees. Design record in [proposals/test-map-accuracy.md](proposals/test-map-accuracy.md).
+- **Run on my machine** — ask the desktop app on your own machine to run the tests a page shows, the app asking
+  before every run and the run reported as yours alone. The instance's side has shipped behind an experimental
+  capability, off by default ([Run on my machine](https://piwitests.dev/features/run-on-my-machine)); the desktop app
+  taking requests, the page's button and its progress, then Piwi Runner, follow. Design record in
+  [proposals/run-on-my-machine.md](proposals/run-on-my-machine.md).
 - **Issue trackers, the rest** — tickets for flaky tests and whole runs, investigation and run reports published to
   Confluence with in-place page updates, and the next trackers on the same provider layer: GitHub Issues and GitLab
   Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of

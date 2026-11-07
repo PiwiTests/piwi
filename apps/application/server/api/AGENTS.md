@@ -41,6 +41,9 @@ record is `proposals/roles-and-groups.md`.
 - **A key that holds some permissions only (a run target's) serves its own routes alone**: `requireAuth` refuses it,
   `getUserByApiKey` answers null for it, and only `requireRunTarget` (`server/utils/run-requests.ts`) takes it
   (`tests/unit/run-requests.test.ts`).
+- **A connected app hears its requests and stops on its stream** (`server/utils/run-target-events.ts`):
+  `publishRunRequest` once a request is stored and has passed the waiting cap, `publishToRunTarget` on a stop and on
+  its key's revoke. A path that creates, stops or revokes another way publishes too (`tests/unit/run-target-stream.test.ts`).
 - **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
   calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
   or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
