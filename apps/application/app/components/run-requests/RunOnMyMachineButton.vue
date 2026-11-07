@@ -27,7 +27,7 @@ const stopping = ref(false);
 const sendError = ref<string | null>(null);
 const skipped = ref(0);
 const choiceIndex = ref(0);
-const targetId = ref<number | null>(null);
+const targetId = ref<number | undefined>(undefined);
 const lastSent = ref<{ source: RunRequestSourceChoice; options: RunRequestOptions; targetId: number | null } | null>(
   null,
 );
@@ -57,7 +57,7 @@ const appItems = computed(() =>
 
 watch(apps, (list) => {
   if (targetId.value != null && list.some((app) => app.target.id === targetId.value)) return;
-  targetId.value = (list.find((app) => app.target.online) ?? list[0])?.target.id ?? null;
+  targetId.value = (list.find((app) => app.target.online) ?? list[0])?.target.id;
 });
 
 const instanceAddress = computed(() => {
@@ -93,7 +93,7 @@ async function sendRequest(again = false) {
   const source = body?.source ?? choice.value?.source;
   if (!source || sending.value) return;
   const options = body?.options ?? requestOptions();
-  const target = body ? body.targetId : targetId.value;
+  const target = body ? body.targetId : (targetId.value ?? null);
   sending.value = true;
   sendError.value = null;
   try {
