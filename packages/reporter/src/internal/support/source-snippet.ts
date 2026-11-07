@@ -40,6 +40,24 @@ export function readSourceSnippet(
   }
 }
 
+/** The lines of a source file, or null when it cannot be read. */
+export type SourceLines = (file: string) => readonly string[] | null;
+
+/** A reader of source files' lines, each file read once. */
+export function sourceLineReader(): SourceLines {
+  const files = new Map<string, string[] | null>();
+  return (file) => {
+    if (!files.has(file)) {
+      try {
+        files.set(file, fs.readFileSync(file, 'utf-8').split(/\r?\n/));
+      } catch {
+        files.set(file, null);
+      }
+    }
+    return files.get(file)!;
+  };
+}
+
 /** How much of an error text the stack-frame scans read: the frames follow the message. */
 const MAX_SCANNED_ERROR_CHARS = 64 * 1024;
 

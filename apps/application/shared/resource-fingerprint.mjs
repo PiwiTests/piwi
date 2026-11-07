@@ -23,7 +23,7 @@ const LINE = /(\.[cm]?[jt]sx?):\d+(?::\d+)?/g;
 const FIRST_LINE = /\.[cm]?[jt]sx?:(\d+)/;
 /** A whole text that names a source file, with its line or not; a name cut short has no extension and is not one. */
 const FILE_REF = /^(.+\.[cm]?[jt]sx?)(?::\d+){0,2}$/;
-/** The spec file a probable finding was counted in, as the reporter names it: `2 opened, 1 closed in <file>`. */
+/** The spec file a probable finding with no line was counted in, as its reporter names it: `2 opened, 1 closed in <file>`. */
 const COUNTED_IN = / closed in (.+)$/;
 
 /** `tests/cart.spec.ts:12:5` as `tests/cart.spec.ts`, wherever it appears in the text. */
@@ -46,9 +46,9 @@ function testFileOf(detail) {
  * Where a finding was opened, as its identity holds it: the line that opened
  * it (`site`, which is a fixture's location when the line is unknown), else
  * what names it (a Playwright fixture, the worker process). A handle is its
- * type at that line, or without one in its test's file. A probable leak,
- * counted per spec file, is that file (else the first file its opening lines
- * are in).
+ * type at that line, or without one in its test's file. A probable leak is
+ * its line too; one with no line, which its reporter counted per spec file,
+ * is that file (else the first file its opening lines are in).
  */
 function findingPlace(finding) {
   const where = String(finding.where ?? '');
@@ -59,7 +59,9 @@ function findingPlace(finding) {
     const test = testFileOf(detail) ?? detail;
     return test ? `${where} in ${test}` : where;
   }
-  if (finding.verdict === 'probable') return COUNTED_IN.exec(detail)?.[1] ?? fileOf(where.split(', ')[0]) ?? where;
+  if (finding.verdict === 'probable' && !site) {
+    return COUNTED_IN.exec(detail)?.[1] ?? fileOf(where.split(', ')[0]) ?? where;
+  }
   return site || where;
 }
 

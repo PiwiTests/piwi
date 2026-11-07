@@ -46,7 +46,7 @@ The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole r
 | **handle** | A server, child process or file watcher a test started and left running in the worker; a server or process at its line | Close or kill it in the test or an `afterEach` |
 | **idle** | A page opened and never used: no navigation, and no call of the test's on it. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
 | **lingering** | A browser, context or page the test body opened and closed within the test, but long after its last use: at least 2 s, and a third of the test or more. A popup checked once, then left to the `page` fixture. What a hook or a fixture opens, and an API request context, never is. | Close it right after its last use |
-| **probable** | From a test that ran without the fixtures, counted from its steps: more browsers or contexts opened than closed in a spec file | Use the fixtures for exact findings |
+| **probable** | Without the fixtures, from a test's steps: a browser, context or `browser.newPage()` page nothing in its file closed | Use the fixtures for exact findings |
 
 What is never reported:
 
@@ -133,6 +133,11 @@ Servers and child processes are placed by wrapping Node's `listen` and `spawn` i
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A fixture with a `timeout` of its own runs with the slot a worker fixture has: what it leaves open is reported only
   once it opened something in two tests of the same worker.
+- **Probable leaks** come from step titles, which name no object, and the lines they point at. A close goes to the open
+  assigned its name (`ctx` in `ctx.close()`); `page.context().close()`, on no name, may take another object of its
+  test. A page counts as `browser.newPage()` when the name before `.newPage` is a browser's. A browser's `close()`
+  closes what was opened on its name. A fixture's objects and API request contexts, whose `dispose()` leaves no step,
+  are never counted.
 - Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
   in Chromium only, and a small heap leak shows only over a long run.
 

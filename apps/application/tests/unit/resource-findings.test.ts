@@ -486,6 +486,17 @@ describe('a finding’s identity', () => {
     );
   });
 
+  test('a probable leak with its line is known by that line, as a leak is', () => {
+    const probable = { verdict: 'probable', kind: 'context', tests: 1 } as const;
+    const at = (line: number, detail = 'left open by its test') =>
+      fingerprint({ ...probable, where: `tests/a.spec.ts:${line}`, site: `tests/a.spec.ts:${line}`, detail });
+    expect(at(3)).not.toBe(at(9));
+    expect(at(3)).toBe(at(3, '2 contexts left open by 2 tests'));
+    expect(at(3)).not.toBe(
+      fingerprint({ ...probable, where: 'tests/a.spec.ts:3', detail: '1 opened, 0 closed in tests/a.spec.ts' }),
+    );
+  });
+
   test('a page never used keeps it whatever fixtures its tests set up', () => {
     const idle = { verdict: 'idle', kind: 'page', where: 'fixture "page"' } as const;
     expect(fingerprint({ ...idle, detail: 'set up with loggedInPage (tests/fixtures.ts:20)' })).toBe(
