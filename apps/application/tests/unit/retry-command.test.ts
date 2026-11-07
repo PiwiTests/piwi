@@ -9,6 +9,7 @@ import {
   buildTitleGrepFlag,
   quoteShellArg,
   retryOptionFlags,
+  retryProjects,
 } from '#shared/retry-command';
 import { splitRerunArgs } from '@piwitests/core/rerun-args';
 
@@ -245,7 +246,7 @@ describe('run options', () => {
     const cmd = buildRetryCommand(sampleCases, {
       options: { runMode: 'headed', trace: 'retain-on-failure', repeatEach: 3, workers: 2 },
     });
-    const flags = ' --headed --trace=retain-on-failure --repeat-each=3 --workers=2';
+    const flags = ' --headed --trace=retain-on-failure --repeat-each=3 --retries=0 --workers=2';
     expect(cmd).toBe(
       `npx playwright test "tests/login.spec.ts:10" "tests/login.spec.ts:42" --project="chromium"${flags}` +
         ` && npx playwright test "tests/checkout.spec.ts:88" --project="firefox"${flags}`,
@@ -260,7 +261,7 @@ describe('run options', () => {
     for (const bad of [0, -1, 1.5, 1001, Number.NaN]) {
       expect(retryOptionFlags({ repeatEach: bad, workers: bad })).toBe('');
     }
-    expect(retryOptionFlags({ repeatEach: 1000, workers: 1 })).toBe(' --repeat-each=1000 --workers=1');
+    expect(retryOptionFlags({ repeatEach: 1000, workers: 1 })).toBe(' --repeat-each=1000 --retries=0 --workers=1');
   });
 
   test('an unknown trace or run mode is left out', () => {
@@ -293,6 +294,12 @@ describe('run options', () => {
     const cmd = buildRetryCommand(many, { options: { runMode: 'headed', workers: 2, project: 'chromium' } });
     expect(cmd.length).toBeLessThanOrEqual(4096);
     expect(cmd.endsWith(' --project="chromium" --headed --workers=2')).toBe(true);
+    // Only whole specs: the quotes balance, and every argument reads back as a spec or a flag.
+    expect(cmd.split('"').length % 2).toBe(1);
+    const args = splitRerunArgs(cmd).slice(3);
+    expect(args.slice(-3)).toEqual(['--project=chromium', '--headed', '--workers=2']);
+    for (const arg of args.slice(0, -3))
+      expect(arg).toMatch(/^tests\/area-\d+\/a-rather-long-spec-file-name-\d+\.spec\.ts$/);
   });
 
   test('the flags read back as separate arguments', () => {
@@ -308,7 +315,19 @@ describe('run options', () => {
       '--headed',
       '--trace=on',
       '--repeat-each=5',
+      '--retries=0',
       '--workers=4',
     ]);
   });
+});
+
+test('the projects offered are the ones the tests ran in that every shell quotes as they are', () => {
+  const cases = [
+    { filePath: 'a.spec.ts', title: 'a', projectName: 'chromium' },
+    { filePath: 'b.spec.ts', title: 'b', projectName: 'mobile $safari' },
+    { filePath: 'c.spec.ts', title: 'c', projectName: 'chromium' },
+    { filePath: 'd.spec.ts', title: 'd', projectName: null },
+    { filePath: 'e.spec.ts', title: 'e', projectName: 'webkit' },
+  ];
+  expect(retryProjects(cases)).toEqual(['chromium', 'webkit']);
 });

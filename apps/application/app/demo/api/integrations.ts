@@ -343,7 +343,7 @@ export async function demoCreateIssue(
   if (entityType === 'test_run' || (entityType === 'test_runs_case' && clusterId == null)) {
     const submission = request.submissionId ? `${entityType}:${entityId}:${request.submissionId}` : null;
     const sent = submission ? DEMO_SUBMISSIONS.get(submission) : undefined;
-    if (sent) return sent;
+    if (sent) return { ...sent, submissionFiled: true };
     const built = await demoRunIssue(db, entityType, entityId, { comment, filedBy: request.filedBy ?? null });
     if (!built) return null;
     const filed = await insertDemoIssueLink(
@@ -390,7 +390,7 @@ export async function demoCreateIssue(
       key: filed.key,
       url: filed.url,
       alreadyFiled: true,
-      ...(comment ? { commentAdded: true } : {}),
+      ...(comment ? { commentStatus: 'added' as const } : {}),
     };
   }
 

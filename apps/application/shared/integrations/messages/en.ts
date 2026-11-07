@@ -44,6 +44,7 @@ export const en = {
   'table.owner': 'Owner',
   'table.failures': 'Failures',
   'text.moreTests': { one: '…and {count} more test.', other: '…and {count} more tests.' },
+  'text.moreClusters': { one: '…and {count} more failure cluster.', other: '…and {count} more failure clusters.' },
 
   // Inline labels
   'label.rootCause': 'Root cause',

@@ -62,7 +62,7 @@ describe('buildLocalRunPlan', () => {
     expect(plan[0]!.args).toEqual(['tests/checkout.spec.ts', '--project=chromium']);
   });
 
-  test('appends run mode, trace and repeat-each flags', () => {
+  test('appends run mode, trace and repeat-each flags, a repeat without retries', () => {
     const plan = buildLocalRunPlan([CASE], { runMode: 'headed', trace: true, repeatEach: 25 });
     expect(plan[0]!.args).toEqual([
       'tests/checkout.spec.ts:42',
@@ -70,6 +70,7 @@ describe('buildLocalRunPlan', () => {
       '--headed',
       '--trace=on',
       '--repeat-each=25',
+      '--retries=0',
     ]);
   });
 

@@ -36,6 +36,7 @@ import { DEFAULT_LOCALE, formatDate } from '#shared/integrations/messages';
 import {
   buildRunIssue as buildRunIssueFromFacts,
   listedRunTests,
+  RUN_ISSUE_MAX_CLUSTERS,
   withComment,
   type IssueComment,
   type RunIssueFacts,
@@ -419,7 +420,8 @@ async function gatherRunFacts(
       attempts: testRunsCases.attempts,
       line: testRunsCases.line,
       browser: testRunsCases.browser,
-      error: testRunsCases.error,
+      // Only the issue of one execution quotes its error.
+      error: executionId != null ? testRunsCases.error : sql<string | null>`null`,
       clusterId: testRunsCases.failureClusterId,
       title: testCases.title,
       filePath: testCases.filePath,
@@ -446,7 +448,15 @@ async function gatherRunFacts(
   }));
   const listed = executionId != null ? { tests, moreTests: 0 } : listedRunTests(tests);
 
-  const clusterIds = [...new Set(rows.map((r) => r.clusterId).filter((id): id is number => id != null))];
+  // The clusters with the most failed tests in the run first, cut to RUN_ISSUE_MAX_CLUSTERS.
+  const clusterCounts = new Map<number, number>();
+  for (const row of rows)
+    if (row.clusterId != null) clusterCounts.set(row.clusterId, (clusterCounts.get(row.clusterId) ?? 0) + 1);
+  const rankedClusterIds = [...clusterCounts.keys()].sort(
+    (a, b) => clusterCounts.get(b)! - clusterCounts.get(a)! || a - b,
+  );
+  const clusterIds = rankedClusterIds.slice(0, RUN_ISSUE_MAX_CLUSTERS);
+  const moreClusters = rankedClusterIds.length - clusterIds.length;
   const clusterRows = clusterIds.length
     ? await db
         .select({
@@ -472,16 +482,19 @@ async function gatherRunFacts(
     counts: { total: run.total, passed: run.passed, failed: run.failed, flaky: run.flaky, skipped: run.skipped },
     tests: listed.tests,
     moreTests: listed.moreTests,
-    clusters: clusterRows.map((cluster) => {
-      const issue = issues.get(cluster.id);
-      return {
-        id: cluster.id,
-        title: describeCluster(cluster),
-        url: link(base, `/failure-clusters/${cluster.id}`),
-        issueKey: issue?.key ?? null,
-        issueUrl: issue?.url ?? null,
-      };
-    }),
+    clusters: [...clusterRows]
+      .sort((a, b) => clusterIds.indexOf(a.id) - clusterIds.indexOf(b.id))
+      .map((cluster) => {
+        const issue = issues.get(cluster.id);
+        return {
+          id: cluster.id,
+          title: describeCluster(cluster),
+          url: link(base, `/failure-clusters/${cluster.id}`),
+          issueKey: issue?.key ?? null,
+          issueUrl: issue?.url ?? null,
+        };
+      }),
+    moreClusters,
     runUrl: link(base, `/test-runs/${run.id}`),
     executionUrl: executionId != null ? link(base, `/test-run-cases/${executionId}`) : null,
     filedBy: opts.filedBy ?? null,

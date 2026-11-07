@@ -842,7 +842,7 @@ export const MCP_TOOL_DEFS = [
     capability: 'integrations',
     permission: 'issue:create',
     description: md(
-      'File a Jira issue for a failure cluster, a failing execution or a bug report, with the fix plan as its body.',
+      'File a Jira issue for a failure cluster, a failing execution in a cluster or a bug report, with the fix plan as its body.',
       'It is the ticket the dashboard’s **Create issue** button files. Issues are deduplicated by cluster: a second call for the same cluster returns the existing one rather than filing another. Returns the issue (`key`, `url`) and the `existing` issues that already track the cluster (a pinned link, a matching label or a fixed-before match), so you can link one instead of filing again.',
       'Needs a Jira connection and a project binding (project key and issue type). The binding’s field defaults fill the fields the Jira project requires, and `fields` sets the others.',
       'Requires `issue:create` (Contributor and above on the project).',

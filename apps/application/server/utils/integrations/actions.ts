@@ -99,6 +99,8 @@ export interface CreateIssueActionPayload {
   shareUrl?: string | null;
   /** What the person filing it wrote, kept on the link so a description update puts it back first. */
   comment?: IssueComment | null;
+  /** The opening of the create dialog that sent it, so sending that submission again adds no comment. */
+  submissionId?: string | null;
 }
 
 /** An update action's snapshot: the rebuilt title and description of an issue Piwi filed. */
@@ -829,7 +831,17 @@ export async function runActionNow(db: DbClient, id: number): Promise<ActionOutc
   }
   const claimed = await claimOutboxRows(db, integrationActions, [action.id], { anySchedule: true });
   if (!claimed.has(action.id)) return null;
-  return runAction(db, action);
+  const current = await readClaimedAction(db, action.id);
+  return current ? runAction(db, current) : null;
+}
+
+/**
+ * The row as it stands once claimed, since another attempt may have run it, set its marker or replaced its payload
+ * after the caller read it. `attempts` is the count before the claim, which {@link runAction} expects.
+ */
+async function readClaimedAction(db: DbClient, id: number): Promise<IntegrationAction | null> {
+  const [row] = await db.select().from(integrationActions).where(eq(integrationActions.id, id));
+  return row ? { ...row, attempts: row.attempts - 1 } : null;
 }
 
 /** A create given up while it held its marker fails as Outcome unknown, so the person checks the tracker first. */
@@ -883,7 +895,9 @@ export async function sweepIntegrationActions(
   for (const action of due) {
     const claimed = await claimOutboxRows(db, integrationActions, [action.id]);
     if (!claimed.has(action.id)) continue;
-    const outcome = await runAction(db, action);
+    const current = await readClaimedAction(db, action.id);
+    if (!current) continue;
+    const outcome = await runAction(db, current);
     if (outcome.status === 'done') done++;
     else if (outcome.status === 'skipped') skipped++;
     else failed++;

@@ -14,7 +14,7 @@ import { compareWorkers } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
-import { buildRetryCommand, retryCaseOf, type RetryCase } from '~/utils/retry-command';
+import { buildRetryCommand, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -667,10 +667,8 @@ const selectedTestsLabel = computed(
   () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
-/** The Playwright projects the selected tests ran in. */
-const selectedProjects = computed(() => [
-  ...new Set(selectedRetryCases.value.map((c) => c.projectName).filter((p): p is string => Boolean(p))),
-]);
+/** The Playwright projects the selected tests ran in, the ones the command can name. */
+const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
 const selectionCommand = computed(() =>
   buildRetryCommand(selectedRetryCases.value, {
     mode: retryMode.value,

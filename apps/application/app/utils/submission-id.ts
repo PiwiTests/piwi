@@ -10,25 +10,56 @@ export function newSubmissionId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** The submission ids a queued filing holds, by what the form is about, for this page's life. */
-const held = new Map<string, string>();
+/** How long a queued filing's id is held: past it, the form files anew. */
+const HOLD_MS = 24 * 60 * 60 * 1000;
+
+const KEY_PREFIX = 'piwi:issue-submission:';
+
+/**
+ * The submission ids a queued filing holds, by what the form is about. Kept in the browser's storage, so a reload or
+ * another tab of the same browser sends the same id; in memory alone when the storage is unavailable.
+ */
+const memory = new Map<string, { id: string; at: number }>();
+
+function read(subject: string): string | null {
+  let entry = memory.get(subject) ?? null;
+  try {
+    const stored = globalThis.localStorage?.getItem(KEY_PREFIX + subject);
+    if (stored) entry = JSON.parse(stored) as { id: string; at: number };
+  } catch {
+    // Storage blocked or the entry unreadable: the memory copy stands.
+  }
+  if (!entry || typeof entry.id !== 'string' || !(Date.now() - entry.at < HOLD_MS)) return null;
+  return entry.id;
+}
 
 /** The id a new opening of the form about `subject` sends: the one a queued filing holds, else a new one. */
 export function submissionIdFor(subject: string): string {
-  return held.get(subject) ?? newSubmissionId();
+  return read(subject) ?? newSubmissionId();
 }
 
 /** Whether a filing about `subject` is queued with a held id. */
 export function submissionHeld(subject: string): boolean {
-  return held.has(subject);
+  return read(subject) !== null;
 }
 
 /** Keep `id` for `subject` while its filing is queued, so the form opened again retries it instead of filing anew. */
 export function holdSubmission(subject: string, id: string): void {
-  held.set(subject, id);
+  const entry = { id, at: Date.now() };
+  memory.set(subject, entry);
+  try {
+    globalThis.localStorage?.setItem(KEY_PREFIX + subject, JSON.stringify(entry));
+  } catch {
+    // Storage blocked: held for this page only.
+  }
 }
 
 /** Forget the id held for `subject`, once its filing is done. */
 export function releaseSubmission(subject: string): void {
-  held.delete(subject);
+  memory.delete(subject);
+  try {
+    globalThis.localStorage?.removeItem(KEY_PREFIX + subject);
+  } catch {
+    // Storage blocked: the memory copy is gone.
+  }
 }

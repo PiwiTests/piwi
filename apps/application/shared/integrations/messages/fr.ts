@@ -31,6 +31,7 @@ export const fr: Record<MessageKey, MessageValue> = {
   'table.owner': 'Propriétaire',
   'table.failures': 'Échecs',
   'text.moreTests': { one: '… et {count} autre test.', other: '… et {count} autres tests.' },
+  'text.moreClusters': { one: "… et {count} autre grappe d'échecs.", other: "… et {count} autres grappes d'échecs." },
 
   // Étiquettes en ligne
   'label.rootCause': 'Cause racine',

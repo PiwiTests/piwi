@@ -28,8 +28,8 @@ Its buttons, and a next step that runs in CI, show to people with
 repository, an SCM token must be set too. A CI server request goes without a credential when none applies.
 
 *Copy retry command* is the local counterpart of **Re-run in CI**: it copies an `npx playwright test` command to run
-the same tests on your machine. Its menu adds run options (headed, trace, repeat each up to 10, workers up to 4, and
-one project for a run of several), which the browser remembers, the project aside.
+the same tests on your machine. On a run's page, its menu adds remembered run options: headed, trace, repeat each up
+to 10 (without retries), workers up to 4, one project the tests ran in.
 
 An optional **Flake Lab** target names a second workflow, pipeline or job that runs `piwi flake` for one flaky test,
 started from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the GitHub workflow, and

@@ -207,6 +207,9 @@ export interface IssueFieldProblem {
   message?: string;
 }
 
+/** What became of a comment added to an issue already filed: added, still queued, or refused. */
+export type CommentStatus = 'added' | 'pending' | 'failed';
+
 /** What `POST issues` returns once the immediate attempt resolves. */
 export interface CreateIssueResponse {
   /** The queued action; null when the create was refused before anything was queued. */
@@ -216,8 +219,12 @@ export interface CreateIssueResponse {
   url?: string;
   /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
   alreadyFiled?: boolean;
-  /** The comment was added to that earlier issue instead. */
-  commentAdded?: boolean;
+  /** What became of the comment, added to that earlier issue instead: added, still queued, or refused. */
+  commentStatus?: CommentStatus;
+  /** Why the comment is not added yet. */
+  commentError?: string;
+  /** This submission filed the issue earlier: nothing was sent now. */
+  submissionFiled?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];

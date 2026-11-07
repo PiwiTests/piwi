@@ -11,8 +11,9 @@ claim of a request, the polling fallback, the demo's simulated target, the outbo
 option and entry D64 of the 1.0 register.
 
 **Status.** Proposed 2026-11-06. PR 1 is built: **Create issue** on runs and tests with a comment (D17) and the run
-options of **Copy retry command** (D18). Nothing else is built, and nothing here is on [`ROADMAP.md`](../ROADMAP.md)
-yet. The
+options of **Copy retry command** (D18). Headed is off by default, so a copied command runs headless until a person
+picks it (D3 says on), and a repeat adds `--retries=0`, as the editor's does. Nothing else is built, and nothing here
+is on [`ROADMAP.md`](../ROADMAP.md) yet. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE
 windows are left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries
 resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one

@@ -70,7 +70,10 @@ describe('the demo issue draft and create for a run', () => {
     const submissionId = '00000000-0000-4000-8000-00000000000a';
     const first = await create({ entityType: 'test_run', entityId: 5, submissionId, comment: 'Slow on reload.' });
     expect(first).toMatchObject({ status: 'done' });
-    expect(await create({ entityType: 'test_run', entityId: 5, submissionId })).toEqual(first);
+    expect(await create({ entityType: 'test_run', entityId: 5, submissionId })).toEqual({
+      ...first,
+      submissionFiled: true,
+    });
     const other = await create({
       entityType: 'test_run',
       entityId: 5,

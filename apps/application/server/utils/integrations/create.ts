@@ -52,7 +52,7 @@ import {
   type FieldValues,
   type TrackerField,
 } from '#shared/integrations/fields';
-import type { IssueFieldProblem } from '#shared/integrations/types';
+import type { CommentStatus, IssueFieldProblem } from '#shared/integrations/types';
 import { readProjectIntegration } from './binding';
 import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { commentOnFiledIssueKey, createIssueKey, createIssueSubmissionKey } from '#shared/integrations/action-keys';
@@ -97,8 +97,12 @@ export interface CreateIssueOutcome {
   url?: string;
   /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
   alreadyFiled?: boolean;
-  /** The comment was added to that earlier issue instead. */
-  commentAdded?: boolean;
+  /** What became of the comment, added to that earlier issue instead: added, still queued, or refused. */
+  commentStatus?: CommentStatus;
+  /** Why the comment is not added yet. */
+  commentError?: string;
+  /** This submission filed the issue earlier: nothing was sent now. */
+  submissionFiled?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];
@@ -323,17 +327,24 @@ const ENTITY_PAGES: Record<CreateIssueParams['entityType'], string> = {
 /**
  * Add the person's comment to the issue already filed for the cluster, so the
  * words they wrote reach it instead of being dropped. Queued once per
- * submission. False when there is no comment.
+ * submission; the submission that filed the issue already opened its body with
+ * the comment, so it adds none. Null when there is no comment, else what
+ * became of it: added, still queued, or refused.
  */
 async function commentOnFiledIssue(
   db: DbClient,
   params: CreateIssueParams,
   issue: IssueToFile,
-  connectionId: number,
+  filed: { connectionId: number; payload: unknown },
   issueKey: string,
-): Promise<boolean> {
+): Promise<{ status: CommentStatus; error?: string } | null> {
   const comment = issueComment(params);
-  if (!comment) return false;
+  if (!comment) return null;
+  const filedWith = filed.payload as CreateIssueActionPayload;
+  if (params.submissionId && filedWith.submissionId === params.submissionId && filedWith.comment) {
+    return { status: 'added' };
+  }
+  const connectionId = filed.connectionId;
   const locale = params.locale ?? DEFAULT_LOCALE;
   const base = params.siteUrl?.trim().replace(/\/$/, '') || null;
   const path = `${ENTITY_PAGES[params.entityType]}/${params.entityId}`;
@@ -354,8 +365,11 @@ async function commentOnFiledIssue(
     payload: { issueKey, document } satisfies CommentActionPayload,
     requestedBy: params.requestedBy ?? null,
   });
-  await runActionNow(db, action.id);
-  return true;
+  const outcome = await runActionNow(db, action.id);
+  if (!outcome) return { status: 'pending' };
+  if (outcome.status === 'done') return { status: 'added' };
+  if (outcome.status === 'skipped') return { status: 'failed', error: outcome.reason };
+  return { status: outcome.retrying ? 'pending' : 'failed', error: outcome.error };
 }
 
 /**
@@ -394,20 +408,26 @@ async function fileIssue(
   if (filed?.status === 'done') {
     const result = filed.result as CreateIssueResult | null;
     if (issue.perSubmission) {
-      // The same submission sent again: the issue it filed is the answer.
-      return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
+      // The same submission sent again: the issue it filed is the answer, and nothing is sent.
+      return {
+        actionId: filed.id,
+        status: 'done',
+        key: result?.key,
+        url: result?.url,
+        submissionFiled: true,
+        projectId: issue.projectId,
+      };
     }
     if (await filedIssueStillTracks(db, issue.linkEntityType, issue.linkEntityId, result)) {
-      const commentAdded = result?.key
-        ? await commentOnFiledIssue(db, params, issue, filed.connectionId, result.key)
-        : false;
+      const comment = result?.key ? await commentOnFiledIssue(db, params, issue, filed, result.key) : null;
       return {
         actionId: filed.id,
         status: 'done',
         key: result?.key,
         url: result?.url,
         alreadyFiled: true,
-        ...(commentAdded ? { commentAdded } : {}),
+        ...(comment ? { commentStatus: comment.status } : {}),
+        ...(comment?.error ? { commentError: comment.error } : {}),
         projectId: issue.projectId,
       };
     }
@@ -432,6 +452,7 @@ async function fileIssue(
     include: issue.include,
     shareUrl: issue.shareUrl,
     comment: issueComment(params),
+    submissionId: params.submissionId || null,
   };
 
   // Required fields: refuse before calling the tracker when the defaults and

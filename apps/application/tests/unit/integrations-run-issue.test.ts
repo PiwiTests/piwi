@@ -27,9 +27,12 @@ const { enqueueAction, runActionNow, outcomeUnknownMessage, sweepIntegrationActi
   await import('../../server/utils/integrations/actions');
 const { OUTBOX_MAX_ATTEMPTS } = await import('../../server/utils/outbox');
 const { enqueueDescriptionUpdate } = await import('../../server/utils/integrations/policies');
-const { buildRunIssue, listedRunTests, runIssueTitle, RUN_ISSUE_MAX_TESTS } =
+const { buildRunIssue, listedRunTests, runIssueTitle, RUN_ISSUE_MAX_CLUSTERS, RUN_ISSUE_MAX_TESTS } =
   await import('../../shared/integrations/run-issue');
 const { renderMarkdown } = await import('../../shared/integrations/render-markdown');
+const { buildRunIssue: buildStoredRunIssue } = await import('../../server/utils/integrations/documents');
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
+const { ADMIN_ACCESS } = await import('#shared/permissions');
 
 const SITE = 'https://runs.atlassian.net';
 
@@ -48,6 +51,10 @@ let dropCreateAnswers = false;
 let refuseConnections = false;
 /** Times the next creates out, as `AbortSignal.timeout` does, with no answer from Jira. */
 let timeOutCreates = false;
+/** Answers the next comments with this status instead of adding them. */
+let failCommentsWith: number | null = null;
+/** Runs as each create reaches Jira, before it is answered. */
+let onCreate: (() => Promise<void>) | null = null;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -60,6 +67,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
     if (refuseConnections) throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
     if (timeOutCreates) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     if (failCreatesWith) return json({ errorMessages: ['Unavailable'] }, failCreatesWith);
+    await onCreate?.();
     issueSeq += 1;
     creates.push(String(init.body));
     const { fields } = JSON.parse(String(init.body));
@@ -69,6 +77,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   }
   const comment = /\/rest\/api\/3\/issue\/([^/]+)\/comment$/.exec(url.pathname);
   if (comment && init?.method === 'POST') {
+    if (failCommentsWith) return json({ errorMessages: ['Issue does not exist'] }, failCommentsWith);
     comments.push({ key: comment[1]!, body: String(init.body) });
     return json({ id: '1' }, 201);
   }
@@ -188,6 +197,8 @@ beforeEach(() => {
   dropCreateAnswers = false;
   refuseConnections = false;
   timeOutCreates = false;
+  onCreate = null;
+  failCommentsWith = null;
 });
 
 const file = (entityType: 'test_run' | 'test_runs_case' | 'failure_cluster', entityId: number, extra = {}) =>
@@ -222,11 +233,52 @@ describe('an issue about a run', () => {
     expect(link).toMatchObject({ key: 'PROJ-1', origin: 'created', failureClusterId: null });
   });
 
+  test('lists the clusters with the most failed tests first, and counts the rest', async () => {
+    const clusterIds = Array.from({ length: RUN_ISSUE_MAX_CLUSTERS + 2 }, (_, i) => 101 + i);
+    await db.insert(schema.testRuns).values({ id: 8, projectId: 1, status: 'failed', startTime: new Date() });
+    await db.insert(schema.failureClusters).values(
+      clusterIds.map((id) => ({
+        id,
+        projectId: 1,
+        fingerprint: `fp-${id}`,
+        title: `Coupon refused ${id}`,
+        signature: `Error: refused ${id}`,
+        errorType: 'assertion',
+        firstSeenRunId: 8,
+        lastSeenRunId: 8,
+      })),
+    );
+    // The last cluster has three failed tests, the one before it two, the others one.
+    const failures = [...clusterIds, clusterIds.at(-1)!, clusterIds.at(-1)!, clusterIds.at(-2)!];
+    await db
+      .insert(schema.testCases)
+      .values(failures.map((_, i) => ({ id: 200 + i, projectId: 1, title: `case ${i}`, filePath: 'a.spec.ts' })));
+    await db.insert(schema.testRunsCases).values(
+      failures.map((clusterId, i) => ({
+        id: 800 + i,
+        testRunId: 8,
+        testCaseId: 200 + i,
+        status: 'failed',
+        error: `Error: refused ${clusterId}`,
+        failureClusterId: clusterId,
+      })),
+    );
+    const built = await buildStoredRunIssue(db as never, 8);
+    const markdown = renderMarkdown(built!.document);
+    const listed = clusterIds.filter((id) => markdown.includes(`refused ${id}`));
+    expect(listed).toHaveLength(RUN_ISSUE_MAX_CLUSTERS);
+    expect(markdown.indexOf('refused 112')).toBeLessThan(markdown.indexOf('refused 111'));
+    expect(markdown.indexOf('refused 111')).toBeLessThan(markdown.indexOf('refused 101'));
+    expect(markdown).toContain(`${RUN_ISSUE_MAX_CLUSTERS + 2} failure clusters`);
+    expect(markdown).toContain('…and 2 more failure clusters.');
+  });
+
   test('the same submission files once, a new one files again', async () => {
     const submissionId = '00000000-0000-4000-8000-000000000002';
     const first = await file('test_run', 7, { submissionId });
     const again = await file('test_run', 7, { submissionId });
-    expect(again).toMatchObject({ status: 'done', key: first.key });
+    expect(first?.submissionFiled).toBeUndefined();
+    expect(again).toMatchObject({ status: 'done', key: first.key, submissionFiled: true });
     expect(again?.alreadyFiled).toBeUndefined();
     const other = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000003' });
     expect(other?.key).not.toBe(first.key);
@@ -243,6 +295,22 @@ describe('an issue about an execution', () => {
     expect(link).toMatchObject({ testRunsCaseId: 71, failureClusterId: null });
   });
 
+  test('the MCP tool files one per cluster, so it refuses an execution with no cluster and Jira hears nothing', async () => {
+    const createIssueTool = MCP_TOOLS.find((t) => t.name === 'create_issue')!.handler;
+    await expect(
+      createIssueTool(
+        dbc as never,
+        { entityType: 'test_runs_case', entityId: 71 },
+        {
+          user: null,
+          access: ADMIN_ACCESS,
+          scope: 'all',
+        },
+      ),
+    ).rejects.toThrow('belongs to no failure cluster');
+    expect(creates).toHaveLength(0);
+  });
+
   test('a comment on a cluster already filed is added to its issue', async () => {
     const first = await file('failure_cluster', 1);
     expect(first).toMatchObject({ status: 'done' });
@@ -250,12 +318,23 @@ describe('an issue about an execution', () => {
       comment: 'Also fails on Safari.',
       submissionId: '00000000-0000-4000-8000-000000000005',
     });
-    expect(again).toMatchObject({ alreadyFiled: true, commentAdded: true, key: first!.key });
+    expect(again).toMatchObject({ alreadyFiled: true, commentStatus: 'added', key: first!.key });
     expect(creates).toHaveLength(1);
     expect(comments).toHaveLength(1);
     expect(comments[0]!.key).toBe(first!.key);
     expect(comments[0]!.body).toContain('Also fails on Safari.');
     expect(comments[0]!.body).toContain('Comment from Dana Lee');
+  });
+
+  test('a comment Jira refuses says so, rather than that it was added', async () => {
+    const first = await file('failure_cluster', 1);
+    failCommentsWith = 404;
+    const again = await file('test_runs_case', 72, {
+      comment: 'Still failing.',
+      submissionId: '00000000-0000-4000-8000-00000000000a',
+    });
+    expect(again).toMatchObject({ alreadyFiled: true, key: first!.key, commentStatus: 'failed' });
+    expect(again?.commentError).toBeTruthy();
   });
 
   test("a description update of a cluster's issue keeps the comment it was filed with first", async () => {
@@ -267,6 +346,25 @@ describe('an issue about an execution', () => {
     const body = updates[0]!.body;
     expect(body).toContain('Seen on staging.');
     expect(body.indexOf('Comment from Dana Lee')).toBeLessThan(body.indexOf('What happened'));
+  });
+
+  test('the submission that filed the issue, sent again, adds its comment nowhere else', async () => {
+    await db.insert(schema.failureClusters).values({
+      id: 3,
+      projectId: 1,
+      fingerprint: 'fp-3',
+      signature: 'Error: total rounded',
+      errorType: 'assertion',
+      firstSeenRunId: 7,
+      lastSeenRunId: 7,
+    });
+    const submissionId = '00000000-0000-4000-8000-00000000000b';
+    const filed = await file('failure_cluster', 3, { comment: 'Seen on staging twice.', submissionId });
+    expect(filed).toMatchObject({ status: 'done' });
+    const before = comments.length;
+    const again = await file('failure_cluster', 3, { comment: 'Seen on staging twice.', submissionId });
+    expect(again).toMatchObject({ alreadyFiled: true, key: filed!.key, commentStatus: 'added' });
+    expect(comments).toHaveLength(before);
   });
 });
 
@@ -308,9 +406,15 @@ describe('a create whose worker stopped during the call', () => {
       .where(eq(schema.integrationActions.id, pending!.actionId!));
     expect(row!.result).toBeNull();
     failCreatesWith = null;
-    const retried = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000006' });
+    // Sent again while still queued: the filing goes out with what the form holds now.
+    const retried = await file('test_run', 7, {
+      submissionId: '00000000-0000-4000-8000-000000000006',
+      title: 'Coupon accepted twice',
+    });
     expect(retried).toMatchObject({ status: 'done' });
+    expect(retried?.submissionFiled).toBeUndefined();
     expect(creates).toHaveLength(1);
+    expect(JSON.parse(creates[0]!).fields.summary).toBe('Coupon accepted twice');
   });
 
   test('a create Jira never received clears the marker, so the retry files', async () => {
@@ -361,6 +465,33 @@ describe('a create whose worker stopped during the call', () => {
       .where(eq(schema.integrationActions.id, action.id));
     await runActionNow(dbc, action.id);
     expect(await read()).toMatchObject({ status: 'failed', error: outcomeUnknownMessage('Coupon'), result: null });
+  });
+
+  test('a sweep reads a row again once claimed, so a create another attempt sent meanwhile is not sent twice', async () => {
+    const enqueueCreate = (key: string, title: string) =>
+      enqueueAction(dbc, {
+        connectionId,
+        projectId: 1,
+        kind: 'create-issue',
+        entityType: 'test_run',
+        entityId: 7,
+        dedupeKey: `create-issue:test_run:7:${key}`,
+        payload: { projectKey: 'PROJ', issueType: 'Bug', title, document: { nodes: [] }, labels: [] },
+      });
+    await enqueueCreate('swept-first', 'First');
+    const second = await enqueueCreate('swept-second', 'Second');
+    // While the sweep files the first, another attempt sends the second and loses Jira's answer.
+    onCreate = async () => {
+      onCreate = null;
+      await db
+        .update(schema.integrationActions)
+        .set({ result: { createStartedAt: Date.now() } as never })
+        .where(eq(schema.integrationActions.id, second.id));
+    };
+    await sweepIntegrationActions(dbc);
+    const [row] = await db.select().from(schema.integrationActions).where(eq(schema.integrationActions.id, second.id));
+    expect(row).toMatchObject({ status: 'failed', error: outcomeUnknownMessage('Second') });
+    expect(creates).toHaveLength(1);
   });
 
   test('a create given up on its last attempt while it held the marker fails as outcome unknown', async () => {

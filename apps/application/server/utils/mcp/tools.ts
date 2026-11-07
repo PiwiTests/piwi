@@ -2065,6 +2065,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
     if (!draft) throw new Error('No Jira connection is configured');
+    // One issue per cluster: an execution with no failure cluster is filed from the dashboard.
+    if (entityType === 'test_runs_case' && draft.clusterId == null) {
+      throw new Error("This execution belongs to no failure cluster: file its issue from the execution's page");
+    }
 
     // Already tracked: hand back the existing issue rather than filing a second.
     if (draft.existing.length) {

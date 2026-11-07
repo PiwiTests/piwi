@@ -427,7 +427,7 @@ async function create() {
         submissionId: submissionId.value,
       },
     });
-    if (res.status === 'done' && res.key && res.url && resendsQueued.value && !res.alreadyFiled) {
+    if (res.status === 'done' && res.key && res.url && resendsQueued.value && res.submissionFiled) {
       // The earlier filing went through in the meantime: what this form holds was not sent.
       toast.add({
         title: `${res.key} was filed from your earlier attempt`,
@@ -439,14 +439,25 @@ async function create() {
       emit('created', { key: res.key, url: res.url });
       open.value = false;
     } else if (res.status === 'done' && res.key && res.url) {
+      const already = `${res.key} was already filed for ${filedFor.value}.`;
+      const commentToast =
+        res.commentStatus === 'added'
+          ? { title: `Your comment was added to ${res.key}`, description: already }
+          : res.commentStatus === 'pending'
+            ? {
+                title: `Your comment to ${res.key} is queued`,
+                description: `${already} Jira did not answer yet: Piwi adds the comment once it does.`,
+              }
+            : res.commentStatus === 'failed'
+              ? {
+                  title: `Your comment was not added to ${res.key}`,
+                  description: `${already} Jira refused it${res.commentError ? `: ${res.commentError}` : '.'}`,
+                }
+              : null;
       toast.add({
-        title: res.commentAdded
-          ? `Your comment was added to ${res.key}`
-          : res.alreadyFiled
-            ? `${res.key} was already filed for ${filedFor.value}`
-            : `${res.key} created`,
-        ...(res.commentAdded ? { description: `${res.key} was already filed for ${filedFor.value}.` } : {}),
-        color: res.alreadyFiled ? 'info' : 'success',
+        title: res.alreadyFiled ? `${res.key} was already filed for ${filedFor.value}` : `${res.key} created`,
+        ...commentToast,
+        color: res.commentStatus === 'failed' ? 'warning' : res.alreadyFiled ? 'info' : 'success',
         actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
       releaseSubmission(submissionSubject.value);

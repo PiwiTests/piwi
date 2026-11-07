@@ -84,7 +84,17 @@ describe('the run page retry command under --repeat-each', () => {
 describe('the run options it carries', () => {
   test('the remembered options follow the command', async () => {
     const { command } = await retryCommandOf([pays(0, 0, 'failed')], { headed: true, repeatEach: 3, mode: 'grep' });
-    expect(command.value).toBe('npx playwright test --grep "pays" --project="chromium" --headed --repeat-each=3');
+    expect(command.value).toBe(
+      'npx playwright test --grep "pays" --project="chromium" --headed --repeat-each=3 --retries=0',
+    );
+  });
+
+  test('the projects offered are those the failing tests ran in, as the Tests list selection offers', async () => {
+    const { projects } = await retryCommandOf([
+      pays(0, 0, 'failed'),
+      { ...pays(0, 0, 'passed'), browser: { projectName: 'firefox' } },
+    ]);
+    expect(projects.value).toEqual(['chromium']);
   });
 
   test('a remembered value out of bounds reads as its default', async () => {

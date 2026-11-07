@@ -91,7 +91,9 @@ export interface RunIssueFacts {
   /** The tests listed, failed first; the rest are counted in `moreTests`. */
   tests: RunTestFact[];
   moreTests: number;
+  /** The clusters listed, those with the most failed tests first; the rest are counted in `moreClusters`. */
   clusters: RunClusterFact[];
+  moreClusters?: number;
   runUrl: string | null;
   /** Set for the issue of one execution: the link to it. */
   executionUrl?: string | null;
@@ -101,6 +103,9 @@ export interface RunIssueFacts {
 
 /** How many tests a run's issue lists before it counts the rest. */
 export const RUN_ISSUE_MAX_TESTS = 25;
+
+/** How many failure clusters a run's issue lists before it counts the rest. */
+export const RUN_ISSUE_MAX_CLUSTERS = 10;
 
 const RESULT_ORDER: Record<RunTestResult, number> = {
   failed: 0,
@@ -202,7 +207,8 @@ export function buildRunIssueDocument(
   }
 
   if (facts.clusters.length) {
-    b.heading(3, t(locale, 'section.failureClusters', { count: facts.clusters.length }));
+    const moreClusters = facts.moreClusters ?? 0;
+    b.heading(3, t(locale, 'section.failureClusters', { count: facts.clusters.length + moreClusters }));
     b.bullets(
       facts.clusters.map((cluster) => {
         const parts: Inline[] = [cluster.url ? { text: cluster.title, href: cluster.url } : cluster.title];
@@ -212,6 +218,7 @@ export function buildRunIssueDocument(
         return parts;
       }),
     );
+    if (moreClusters > 0) b.paragraph(t(locale, 'text.moreClusters', { count: moreClusters }));
   }
 
   const links: Inline[][] = [];

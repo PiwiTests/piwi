@@ -125,7 +125,8 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
     if (project) args.push(`--project=${project}`);
     args.push(...RUN_MODE_FLAGS[runMode]);
     if (options.trace) args.push('--trace=on');
-    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`);
+    // Each repetition reports its own result, as the editors' repeat does.
+    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
     steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
   }
   return steps;

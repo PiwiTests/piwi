@@ -123,14 +123,15 @@ function optionCount(value: number | null | undefined): number | null {
 /**
  * The flags of `options`, in a fixed order: the run mode, `--trace`,
  * `--repeat-each` and `--workers`. A value that is not a whole count in bounds
- * is left out, as is a repeat count of 1.
+ * is left out, as is a repeat count of 1. A repeat adds `--retries=0`, as the
+ * editor's repeat does, so each repetition reports its own result.
  */
 export function retryOptionFlags(options?: RetryRunOptions | null): string {
   if (!options) return '';
   let flags = RUN_MODE_FLAGS[options.runMode ?? 'normal'] ?? '';
   if (options.trace === 'on' || options.trace === 'retain-on-failure') flags += ` --trace=${options.trace}`;
   const repeatEach = optionCount(options.repeatEach);
-  if (repeatEach && repeatEach > 1) flags += ` --repeat-each=${repeatEach}`;
+  if (repeatEach && repeatEach > 1) flags += ` --repeat-each=${repeatEach} --retries=0`;
   const workers = optionCount(options.workers);
   if (workers) flags += ` --workers=${workers}`;
   return flags;
@@ -229,11 +230,13 @@ export function buildRetryCommand(
     if (args.length === 0) return '';
     const project = opts?.options?.project;
     const tail = (project && quoteShellArg(project) ? projectFlag(project) : '') + flags;
-    let cmd = `${baseCmd} ${args.join(' ')}`;
-    if (cmd.length + tail.length > MAX_CMD_LENGTH) {
-      cmd = cmd.slice(0, MAX_CMD_LENGTH - tail.length - 3) + '...';
+    // Whole quoted specs only, as many as fit before the tail.
+    let cmd = baseCmd;
+    for (const arg of args) {
+      if (cmd.length + 1 + arg.length + tail.length > MAX_CMD_LENGTH) break;
+      cmd += ` ${arg}`;
     }
-    return cmd + tail;
+    return cmd === baseCmd ? '' : cmd + tail;
   }
 
   return result;
@@ -274,6 +277,14 @@ export function buildRerunCommand(cases: RetryCase[]): string {
   const head = [base, ...files].join(' ');
   const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
   return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+}
+
+/**
+ * The Playwright projects a retry command can run these cases in, in their order: the projects they ran in whose
+ * names every shell leaves as they are.
+ */
+export function retryProjects(cases: RetryCase[]): string[] {
+  return caseProjects(cases).filter((project) => quoteShellArg(project) !== null);
 }
 
 /** The distinct Playwright projects of these cases, in their order. */

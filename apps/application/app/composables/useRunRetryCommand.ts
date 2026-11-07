@@ -1,6 +1,6 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildRetryCommand, retryCaseOf } from '~/utils/retry-command';
+import { buildRetryCommand, retryCaseOf, retryProjects } from '~/utils/retry-command';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 
 /**
@@ -46,10 +46,8 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
     casesWhere((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status))),
   );
 
-  /** The Playwright projects the run's tests ran in, in their order. */
-  const projects = computed(() => [
-    ...new Set(allCases.value.map((c) => c.projectName).filter((p): p is string => Boolean(p))),
-  ]);
+  /** The Playwright projects the failing tests ran in, the ones the command can name. */
+  const projects = computed(() => retryProjects(failedCases.value));
 
   const command = computed(() =>
     buildRetryCommand(failedCases.value, { mode: mode.value, options: optionsFor(projects.value) }),
