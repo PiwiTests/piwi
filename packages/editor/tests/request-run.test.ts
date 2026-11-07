@@ -83,7 +83,7 @@ describe('requestedRunArgs', () => {
     const args = requestedRunArgs(request({ options: { headed: false, project: 'firefox' } }), folder, true);
     expect(args).toEqual([
       specFilePattern(path.join(folder, 'tests', 'checkout.spec.ts')),
-      '--grep=(pays with a saved card|refunds \\(partly\\))',
+      '--grep=(?:^| )(?:pays with a saved card|refunds \\(partly\\))(?: @\\S+)*$',
       '--project=firefox',
     ]);
   });

@@ -8,7 +8,13 @@
  *
  * Every call carries the target's key, which holds `run:receive` alone, as a bearer token, through `instanceFetch`.
  */
-import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
+import {
+  parseRunRequest,
+  RUN_REQUEST_ID,
+  type RunRequest,
+  type RunRequestOffer,
+  type RunRequestOutcome,
+} from '@piwitests/core/run-request';
 import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
@@ -69,6 +75,24 @@ export class RequestHostError extends Error {
 const isRevokedStatus = (status: number) => status === 401 || status === 403;
 
 /**
+ * A request as the instance sent it, checked by the one parser, so nothing the target runs comes unchecked from the
+ * network. Null when it does not pass.
+ */
+function readRequest(value: unknown): RunRequest | null {
+  const parsed = parseRunRequest(value);
+  return parsed.ok ? parsed.value : null;
+}
+
+function readOffer(value: unknown): RunRequestOffer | null {
+  if (!value || typeof value !== 'object') return null;
+  const { expiresAt, ...rest } = value as Record<string, unknown>;
+  const request = readRequest(rest);
+  return request && typeof expiresAt === 'string' ? { ...request, expiresAt } : null;
+}
+
+const isRequestId = (id: unknown): id is string => typeof id === 'string' && RUN_REQUEST_ID.test(id);
+
+/**
  * Call `onData` with the data of each event of a `text/event-stream` body until it ends. Comment lines (the
  * heartbeats) and the other fields are skipped; `onActivity` hears every chunk, comments included.
  */
@@ -106,8 +130,14 @@ export class RequestHost {
   private readonly fetch: typeof instanceFetch;
   /** The requests offered and still waiting, by id, with when they stop waiting. */
   private readonly offered = new Map<string, number>();
+  /** When each waiting request was offered, so a list read before an offer never withdraws it. */
+  private readonly offeredAt = new Map<string, number>();
+  /** The requests this host claimed, which a list read before the claim never offers again. */
+  private readonly claimed = new Set<string>();
   /** The stops already told, so a stop listed every minute is told once. */
   private readonly stopsTold = new Set<string>();
+  /** The latest list asked for: an older one that answers later is left out. */
+  private listing = 0;
   private status: RequestHostStatus = 'offline';
   private stopped = false;
   private streamOpen = false;
@@ -142,8 +172,16 @@ export class RequestHost {
 
   /** Claim a request offered here: the instance answers the request, or refuses it once another app claimed it. */
   async claim(id: string): Promise<RunRequest> {
-    const claimed = await this.call<RunRequest>('POST', `/api/run-targets/requests/${id}/claim`);
+    if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
+    const claimed = readRequest(
+      await this.call('POST', `/api/run-targets/requests/${id}/claim`, undefined, { onlyRequest: true }),
+    );
+    this.claimed.add(id);
     this.offered.delete(id);
+    this.offeredAt.delete(id);
+    if (!claimed || claimed.id !== id) {
+      throw new RequestHostError(422, 'The instance sent a request this version of Piwi cannot read: update it');
+    }
     return claimed;
   }
 
@@ -155,10 +193,12 @@ export class RequestHost {
     id: string,
     decision: { decision: 'run' } | { decision: 'not-now' } | { decision: 'refused'; detail: string },
   ): Promise<{ requestToken?: string }> {
+    if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
     const answered = await this.call<{ requestToken?: unknown }>(
       'POST',
       `/api/run-targets/requests/${id}/answer`,
       decision,
+      { onlyRequest: true },
     );
     return typeof answered.requestToken === 'string' ? { requestToken: answered.requestToken } : {};
   }
@@ -170,7 +210,8 @@ export class RequestHost {
       | { state: 'running' | 'stopping'; detail?: string }
       | { state: 'ended'; outcome: RunRequestOutcome; detail?: string },
   ): Promise<void> {
-    await this.call('POST', `/api/run-targets/requests/${id}/state`, update);
+    if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
+    await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
   /** Tell the instance this app's platform, version and the projects it has a folder for. */
@@ -184,7 +225,16 @@ export class RequestHost {
     return this.status;
   }
 
-  private async call<T = unknown>(method: string, route: string, body?: unknown): Promise<T> {
+  /**
+   * Call a target route. A 401, or a 403 of a route about this app rather than one request, means its key no longer
+   * counts; a request's 403 (the capability turned off, a role changed) refuses that request alone.
+   */
+  private async call<T = unknown>(
+    method: string,
+    route: string,
+    body?: unknown,
+    { onlyRequest = false }: { onlyRequest?: boolean } = {},
+  ): Promise<T> {
     const response = await this.fetch(`${this.options.instance}${route}`, {
       method,
       headers: {
@@ -202,7 +252,7 @@ export class RequestHost {
           return typeof message === 'string' ? message : '';
         })
         .catch(() => '');
-      if (isRevokedStatus(response.status)) this.revoked(message);
+      if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) this.revoked(message);
       throw new RequestHostError(response.status, message || `The instance answered ${response.status}`);
     }
     return (await response.json().catch(() => ({}))) as T;
@@ -225,16 +275,16 @@ export class RequestHost {
     if (this.stopped) return;
     switch (event.type) {
       case 'snapshot':
-        this.takeList(event.requests, event.stops);
+        this.takeList(event.requests, event.stops, Number.POSITIVE_INFINITY);
         break;
       case 'request':
         this.offer(event.request);
         break;
       case 'stop':
-        this.tellStop(event.id);
+        if (isRequestId(event.id)) this.tellStop(event.id);
         break;
       case 'withdrawn':
-        this.withdraw(event.id);
+        if (isRequestId(event.id)) this.withdraw(event.id);
         break;
       case 'revoked':
         this.revoked();
@@ -242,24 +292,36 @@ export class RequestHost {
     }
   }
 
-  private takeList(requests: RunRequestOffer[], stops: string[]): void {
-    const listed = new Set(requests.map((r) => r.id));
-    for (const request of requests) this.offer(request);
+  /** Take a list of the requests read at `askedAt`: an offer made since then stays, whatever the list says. */
+  private takeList(requests: unknown, stops: unknown, askedAt: number): void {
+    const offers = Array.isArray(requests) ? requests : [];
+    const stopIds = (Array.isArray(stops) ? stops : []).filter(isRequestId);
+    const listed = new Set<string>();
+    for (const raw of offers) {
+      const id = (raw as { id?: unknown } | null)?.id;
+      if (isRequestId(id)) listed.add(id);
+      this.offer(raw);
+    }
     // A request offered earlier that the list no longer holds waits no more.
-    for (const id of Array.from(this.offered.keys())) if (!listed.has(id)) this.withdraw(id);
-    for (const id of stops) this.tellStop(id);
-    for (const id of Array.from(this.stopsTold)) if (!stops.includes(id)) this.stopsTold.delete(id);
+    for (const id of Array.from(this.offered.keys())) {
+      if (!listed.has(id) && (this.offeredAt.get(id) ?? 0) < askedAt) this.withdraw(id);
+    }
+    for (const id of stopIds) this.tellStop(id);
+    for (const id of Array.from(this.stopsTold)) if (!stopIds.includes(id)) this.stopsTold.delete(id);
   }
 
-  private offer(request: RunRequestOffer): void {
-    if (this.offered.has(request.id)) return;
+  private offer(raw: unknown): void {
+    const request = readOffer(raw);
+    if (!request || this.offered.has(request.id) || this.claimed.has(request.id)) return;
     const expires = Date.parse(request.expiresAt);
     if (Number.isFinite(expires) && expires <= Date.now()) return;
     this.offered.set(request.id, Number.isFinite(expires) ? expires : Date.now() + 2 * 60_000);
+    this.offeredAt.set(request.id, Date.now());
     this.options.onOffer(request);
   }
 
   private withdraw(id: string): void {
+    this.offeredAt.delete(id);
     if (!this.offered.delete(id)) return;
     this.options.onWithdrawn(id);
   }
@@ -285,17 +347,15 @@ export class RequestHost {
 
   private async listRequests(): Promise<void> {
     if (this.stopped) return;
+    const asked = ++this.listing;
+    const askedAt = Date.now();
     try {
-      const listed = await this.call<{ requests?: RunRequestOffer[]; stops?: string[] }>(
-        'GET',
-        '/api/run-targets/requests',
-      );
-      this.takeList(
-        Array.isArray(listed.requests) ? listed.requests : [],
-        Array.isArray(listed.stops) ? listed.stops : [],
-      );
+      const listed = await this.call<{ requests?: unknown; stops?: unknown }>('GET', '/api/run-targets/requests');
+      if (this.stopped || asked !== this.listing) return;
+      this.takeList(listed.requests, listed.stops, askedAt);
       if (!this.streamOpen) this.setStatus('online');
     } catch (error) {
+      if (this.stopped || asked !== this.listing) return;
       if (!this.streamOpen && !(error instanceof RequestHostError)) this.setStatus('offline');
     }
     this.expireOffers();

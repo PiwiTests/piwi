@@ -221,4 +221,31 @@ describe('the request host', () => {
     expect(refused).toMatchObject({ status: 409, message: 'answered 409' });
     expect(made.state).not.toBe('revoked');
   });
+
+  test('a refusal of one request leaves the key connected', async () => {
+    const instance = await fakeInstance({ status: (path) => (path.includes('/requests/') ? 403 : null) });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url);
+    const refused = await made.answer(id(1), { decision: 'run' }).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ status: 403 });
+    await made.claim(id(2)).catch(() => {});
+    expect(made.state).not.toBe('revoked');
+  });
+
+  test('offers only what the parser reads, and refuses a claim it cannot read', async () => {
+    const bad = { ...offer(id(2)), options: { headed: true, workers: 64 } };
+    const instance = await fakeInstance({
+      list: () => ({ requests: [offer(id(1)), bad, { id: '../x' } as never], stops: ['../../etc', id(9)] }),
+      status: () => null,
+    });
+    cleanups.push(instance.close);
+    const { made, heard } = host(instance.url);
+    made.start();
+    await until(() => heard.includes(`offer ${id(1)}`));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(heard.filter((h) => h.startsWith('offer'))).toEqual([`offer ${id(1)}`]);
+    expect(heard).toContain(`stop ${id(9)}`);
+    expect(heard.some((h) => h.includes('..'))).toBe(false);
+    await expect(made.claim('../x')).rejects.toMatchObject({ status: 404 });
+  });
 });

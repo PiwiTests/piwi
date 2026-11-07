@@ -80,8 +80,11 @@ export function requestedRunArgs(request: RunRequest, folder: string, byTitle: b
     ? unique(request.tests.map((t) => specFilePattern(files(t))))
     : unique(request.tests.map((t) => (t.line ? specFileArgument(files(t), t.line) : specFilePattern(files(t)))));
   if (byTitle) {
+    // Playwright matches the title path (project, file, describe blocks, title) and the tags, joined by spaces: each
+    // title is anchored at the end, before the tags, so a title that is part of another, of a describe block or of
+    // the file's path selects nothing more.
     const titles = unique(request.tests.map((t) => t.title)).map(escapeGrep);
-    args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);
+    args.push(`--grep=(?:^| )(?:${titles.join('|')})(?: @\\S+)*$`);
   }
   const { options } = request;
   const projects = options.project
