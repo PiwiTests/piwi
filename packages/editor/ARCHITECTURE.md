@@ -144,6 +144,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/run-target.ts`, `src/run-target-view.ts`: a run target of one team instance (**Run on my machine**) as a host
   serves it, the desktop app's server on its `/api/desktop/run-target` routes, and what its window shows.
 - `src/run-target-routes.ts`, `src/run-target-http.ts`: those routes, framework-neutral, and on a bare `node:http` host.
+- `src/run-target-session.ts`, `src/run-target-stream.ts`, `src/desktop-page.ts`: the window's session bootstrap, the
+  window's and the shell's event streams, and the dashboard page the window shows. Also served by that host.
 - `src/host-guard.ts`: who may call a host of the shell's routes (the access token, a browser's request, the launch
   nonce), over the request shape every host builds.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
@@ -1071,6 +1073,30 @@ surfaces as `server.ts` wires them to the client:
   `writeCode` that answers with the code has `code_write` give it back, between the page-content markers, where it goes
   and its import lines apart (`madeCode`). The desktop app's `/mcp` serves these tools
   (`apps/application/server/utils/mcp/run-tools.ts`).
+
+### The run target's streams
+
+The window and the shell follow the run target on two event streams of the host, next to the routes of
+`src/run-target-routes.ts` and behind the same guard (`src/host-guard.ts`). `src/run-target-stream.ts` decides what
+each says; the host only carries it:
+
+- The window's stream (`GET /api/desktop/events`) opens with `run-target`, the connection, then a `run-request` for
+  each request still asked about, then each change (`openWindowStream`). The desktop app's route carries the app's own
+  messages on the same stream (run progress, repro requests, pairings, hub runs) and takes the run target's part from
+  here only with the desktop token.
+- The shell's stream (`GET /api/desktop/notifications`) carries `requested-run-stop` (`openShellStream`), next to the
+  app's notifications.
+- The session (`GET /__piwi/session?token=…&to=…`, `src/run-target-session.ts`) sits outside the guard, as it
+  exchanges the token, and checks the token itself: it answers 404 on a host without one, 403 for a token that differs
+  or is sent twice, else sets the `piwi_token` cookie (httpOnly, `SameSite=Lax`, a year) and redirects to `to` when
+  `desktopPagePath` takes it (`src/desktop-page.ts`: a path on the host that is no API route and no file), or to `/`.
+- A host that writes to the response itself counts what the reader has not read (`StreamSink`, `limitedSend`): past
+  `STREAM_HOLD_BYTES` (1 MB) a message waits, in order, and the stream is cut past `STREAM_CUT_BYTES` (32 MB), counting
+  what waits, as the run hub does with a WebSocket (`MAX_HUB_BUFFERED`). `serveRunTarget` does; a host that hands a
+  `ReadableStream` to its framework has nothing to count, and sends every message.
+
+`tests/run-target-routes.test.ts` calls all three on the bare `node:http` host; the desktop app's Nitro routes answer
+the same (`apps/application/tests/unit/desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 
 ### The discovery file
 

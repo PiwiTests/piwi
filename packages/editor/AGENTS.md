@@ -196,9 +196,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks
   and the refusal of a browser on the shell-only ones are `src/run-target-routes.ts`, and who may call a host is
   `src/host-guard.ts`: the desktop app's Nitro routes and guard call them, never a copy.
-  `tests/run-target-routes.test.ts` holds the contract on the bare `node:http` host (`src/run-target-http.ts`), and
-  `apps/application/tests/unit/desktop-run-target.test.ts` the body, id and browser checks through the Nitro routes: a
-  change here runs both.
+  The window's session and its two event streams are `src/run-target-session.ts` and `src/run-target-stream.ts`, the
+  app's routes being adapters of them too. `tests/run-target-routes.test.ts` holds the contract on the bare `node:http`
+  host (`src/run-target-http.ts`), and `apps/application/tests/unit/desktop-run-target.test.ts`,
+  `desktop-session-routes.test.ts` and `desktop-events-stream.test.ts` the body, id, browser, session and stream checks
+  through the Nitro routes: a change here runs both. ([ARCHITECTURE.md](ARCHITECTURE.md#the-run-targets-streams))
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the
