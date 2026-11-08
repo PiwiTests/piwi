@@ -61,8 +61,8 @@ releases. PR 4a is built: the desktop app's side of a request (the host it runs,
 flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
 its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
 does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
-browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the launch
-nonce) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
+browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the answer to
+the readiness challenge) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
 handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
 the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. PR 4b is built: Piwi Runner (`apps/runner`), the same
 Rust crate built with the `runner` feature and `runner.conf.json` (its own name, identifier, one window, no file

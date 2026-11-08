@@ -3,6 +3,7 @@
  * and streams of the shared guard (the contract every host of them answers is `packages/editor/tests/
  * run-target-routes.test.ts`, which runs the same functions on a bare `node:http` host).
  */
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -13,8 +14,14 @@ import { resetDesktopRunTarget } from '@piwitests/editor/run-target';
 import { isLoopbackHost, runnerHandler } from '../server/host';
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
-const NONCE = 'n'.repeat(32);
 const SHELL = { 'x-piwi-token': TOKEN };
+const DESKTOP_CHALLENGE_HEADER = 'x-piwi-desktop-challenge';
+const DESKTOP_PROOF_HEADER = 'x-piwi-desktop-proof';
+
+/** The shell's side of the readiness probe: a fresh challenge, and the proof it expects for it on `port`. */
+const newDesktopChallenge = () => crypto.randomBytes(32).toString('hex');
+const desktopTokenProof = (token: string, port: number, challenge: string) =>
+  crypto.createHmac('sha256', token).update(`piwi-desktop-proof:${port}:${challenge}`).digest('hex');
 
 interface Answer {
   status: number;
@@ -35,7 +42,7 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(root, 'index.html'), '<!doctype html><title>Piwi Runner</title>');
   fs.writeFileSync(path.join(root, '_nuxt', 'entry.js'), 'export {};');
   fs.writeFileSync(secret, 'not for the window');
-  server = http.createServer(runnerHandler({ token: TOKEN, nonce: NONCE, root }));
+  server = http.createServer(runnerHandler({ token: TOKEN, root }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -64,23 +71,28 @@ function call(method: string, route: string, headers: Record<string, string> = {
 }
 
 describe('the readiness probe', () => {
-  test('answers 200 with the launch nonce, which the shell compares', async () => {
-    const answer = await call('GET', '/api/health');
+  test('answers 200 with the proof of the token for the challenge, bound to its own port', async () => {
+    const challenge = newDesktopChallenge();
+    const answer = await call('GET', '/api/health', { [DESKTOP_CHALLENGE_HEADER]: challenge });
     expect(answer.status).toBe(200);
-    expect(answer.headers['x-piwi-desktop-nonce']).toBe(NONCE);
+    const port = Number(new URL(base).port);
+    expect(answer.headers[DESKTOP_PROOF_HEADER]).toBe(desktopTokenProof(TOKEN, port, challenge));
+    expect(answer.headers[DESKTOP_PROOF_HEADER]).not.toBe(desktopTokenProof(TOKEN, port + 1, challenge));
   });
 
-  test('answers without a nonce when the shell gave none', async () => {
-    const bare = http.createServer(runnerHandler({ token: TOKEN, nonce: null, root }));
-    await new Promise<void>((resolve) => bare.listen(0, '127.0.0.1', resolve));
-    try {
-      const url = `http://127.0.0.1:${(bare.address() as AddressInfo).port}/api/health`;
-      const answer = await fetch(url);
+  test('answers a new challenge with a new proof, so an earlier answer proves nothing', async () => {
+    const first = await call('GET', '/api/health', { [DESKTOP_CHALLENGE_HEADER]: newDesktopChallenge() });
+    const second = await call('GET', '/api/health', { [DESKTOP_CHALLENGE_HEADER]: newDesktopChallenge() });
+    expect(first.headers[DESKTOP_PROOF_HEADER]).toBeTruthy();
+    expect(second.headers[DESKTOP_PROOF_HEADER]).not.toBe(first.headers[DESKTOP_PROOF_HEADER]);
+  });
+
+  test('answers 200 without a proof when there is no well-formed challenge', async () => {
+    for (const headers of [{}, { [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' }]) {
+      const answer = await call('GET', '/api/health', headers);
       expect(answer.status).toBe(200);
-      expect(answer.headers.get('x-piwi-desktop-nonce')).toBeNull();
-    } finally {
-      bare.closeAllConnections();
-      bare.close();
+      expect(answer.headers[DESKTOP_PROOF_HEADER]).toBeUndefined();
+      expect(answer.headers['x-piwi-desktop-nonce']).toBeUndefined();
     }
   });
 

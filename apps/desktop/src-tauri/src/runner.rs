@@ -651,11 +651,11 @@ impl RunEventPayload {
 
 /// The bundled server's run channel, and the address its runs' picks go to,
 /// asked of `GET /api/desktop/run-channel` with the desktop token, once the
-/// server at the port proved it is the one this launch started (the readiness
-/// nonce), so the token never goes to another process that took the port. None
-/// when it does not answer a channel.
-fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String, Option<String>)> {
-    if !crate::health_ok(port, nonce) {
+/// server at the port proved it holds the token (the readiness challenge), so
+/// the token never goes to another process that took the port. None when it
+/// does not answer a channel.
+fn bundled_run_channel(port: u16, token: String) -> Option<(String, Option<String>)> {
+    if !crate::health_ok(port, &token) {
         return None;
     }
     let server = crate::mcp_clients::ServerInfo { port, token };
@@ -678,20 +678,16 @@ pub(crate) async fn bundled_hub_env(
     id: u32,
     attended: bool,
 ) -> Vec<(&'static str, String)> {
-    let (port, token, nonce) = {
-        let (Some(server), Some(nonce)) = (
-            app.try_state::<crate::mcp_clients::ServerInfo>(),
-            app.try_state::<crate::LaunchNonce>(),
-        ) else {
+    let (port, token) = {
+        let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
             return crate::hub_env::hub_env(None, None, id, attended);
         };
-        (server.port, server.token.clone(), nonce.0.clone())
+        (server.port, server.token.clone())
     };
-    let found =
-        tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token, &nonce))
-            .await
-            .ok()
-            .flatten();
+    let found = tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token))
+        .await
+        .ok()
+        .flatten();
     let (channel, picks) = found.unzip();
     crate::hub_env::hub_env(channel.as_deref(), picks.flatten().as_deref(), id, attended)
 }

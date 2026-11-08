@@ -3057,11 +3057,13 @@ dependencies = [
 name = "piwi-desktop"
 version = "0.67.0"
 dependencies = [
+ "hmac",
  "keepawake",
  "keyring",
  "rand 0.9.5",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

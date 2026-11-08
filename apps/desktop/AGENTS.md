@@ -15,8 +15,8 @@ shell and are feature-equivalent.
 - **Never fork the server.** The desktop app must keep running the unmodified built server. Anything the shell needs
   from the backend goes in `apps/application/` behind a desktop-aware guard, not into a desktop-only copy.
 - **The window trusts only the sidecar it spawned.**
-  - The readiness probe requires the per-launch nonce the shell passes the sidecar (`PIWI_DESKTOP_LAUNCH_NONCE`,
-    echoed by `/api/health`) before it loads the session bootstrap.
+  - The readiness probe sends a fresh challenge, and the shell loads the session bootstrap only after `/api/health`
+    answers it with the proof of the desktop token (`x-piwi-desktop-proof`, checked in constant time).
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
   - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
@@ -57,7 +57,7 @@ shell and are feature-equivalent.
 - **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
-  `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and `PIWI_RUN_REF` (`hub_env.rs`,
+  `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
   `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
   its failures. The hub's WebSocket takes the desktop token in `hello`; its code is

@@ -2,13 +2,11 @@
  * The entry of Piwi Runner's sidecar: reads what the shell hands it in the environment, serves the host on the loopback
  * address and port the shell chose, and stops with the shell.
  *  - `PIWI_DESKTOP_TOKEN`: the access token (required).
- *  - `PIWI_DESKTOP_LAUNCH_NONCE`: echoed by the readiness probe.
  *  - `PIWI_RUNNER_PORT`: the port on `127.0.0.1` (required).
  *  - `PIWI_RUNNER_ROOT`: the folder of the window's files; `public` beside this file by default.
  */
 import * as http from 'node:http';
 import * as path from 'node:path';
-import { launchNonce } from '@piwitests/editor/host-guard';
 import { setRunTargetKind, setRunTargetVersion, shutdownRunTarget } from '@piwitests/editor/run-target';
 import { runnerHandler } from './host';
 
@@ -25,7 +23,7 @@ setRunTargetKind('runner');
 setRunTargetVersion(typeof __PIWI_RUNNER_VERSION__ === 'string' ? __PIWI_RUNNER_VERSION__ : '');
 
 const root = process.env.PIWI_RUNNER_ROOT || path.join(__dirname, 'public');
-const server = http.createServer(runnerHandler({ token, nonce: launchNonce(), root }));
+const server = http.createServer(runnerHandler({ token, root }));
 // A listen that fails ends the process with the reason on stderr; the shell logs it and starts the sidecar again.
 server.on('error', (error: NodeJS.ErrnoException) => {
   console.error(

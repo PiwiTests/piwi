@@ -1,17 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { getRequestHeader, setResponseHeader, type H3Event } from 'h3';
+import { setResponseHeader, type H3Event } from 'h3';
 import {
-  DESKTOP_CHALLENGE_HEADER,
-  DESKTOP_PROOF_HEADER,
-  desktopTokenProof,
-  isDesktopChallenge,
-} from '@piwitests/core/desktop-proof';
-import {
+  challengeAnswer,
   cookiesOf,
   headersOf,
   isBrowserRequest as isHostBrowserRequest,
-  LAUNCH_NONCE_HEADER,
-  launchNonce,
   presentsToken,
   type HostRequest,
 } from '@piwitests/editor/host-guard';
@@ -66,31 +59,19 @@ export function isOpenDesktopRoute(method: string, path: string): boolean {
   return method === 'GET' && /^\/api\/desktop\/picker-pairings\/[0-9a-f]{16}$/.test(pathname);
 }
 
-/** The response header that answers the desktop shell's readiness probe with the launch nonce. */
-export const DESKTOP_LAUNCH_NONCE_HEADER = LAUNCH_NONCE_HEADER;
-
 /**
- * The per-launch nonce the desktop shell hands its sidecar in `PIWI_DESKTOP_LAUNCH_NONCE`, or null outside the
- * desktop app (`launchNonce` of `@piwitests/editor/host-guard`). `/api/health` echoes it so the shell loads its
- * session bootstrap only from the server it spawned, never from another process that took the port.
- */
-export const desktopLaunchNonce = launchNonce;
-
-/**
- * Answers Piwi Picker's challenge on `/api/health` with the proof that this
- * server holds the desktop token, for the loopback port the request reached
- * (`@piwitests/core/desktop-proof`): the extension sends the token only to the
- * app that proves it. Does nothing outside the desktop app or without a challenge.
+ * Answers a challenge on `/api/health` with the proof that this server holds the desktop token, for the loopback port
+ * the request reached (`challengeAnswer` of `@piwitests/editor/host-guard`): the desktop shell and Piwi Picker send the
+ * token only to the app that proves it. Does nothing outside the desktop app or without a challenge.
  */
 export async function answerDesktopChallenge(
   event: H3Event,
   token: string | undefined = process.env.PIWI_DESKTOP_TOKEN,
 ): Promise<void> {
-  if (!token) return;
-  const challenge = getRequestHeader(event, DESKTOP_CHALLENGE_HEADER);
-  const port = event.node.req.socket?.localPort;
-  if (!port || !isDesktopChallenge(challenge)) return;
-  setResponseHeader(event, DESKTOP_PROOF_HEADER, await desktopTokenProof(token, port, challenge));
+  const headers = headersOf(event.node.req.headers);
+  for (const [name, value] of Object.entries(await challengeAnswer(headers, token, event.node.req.socket?.localPort))) {
+    setResponseHeader(event, name, value);
+  }
 }
 
 /**

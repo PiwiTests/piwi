@@ -3,7 +3,7 @@
 // It is this crate built with the `runner` feature (`run` in lib.rs hands over to it). On launch it:
 //   1. creates a per-user data folder for the folder links, the log and the settings,
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
-//   3. waits for `GET /api/health` to echo the launch nonce,
+//   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
 //   4. points the window at the host through the one-time token bootstrap (`/__piwi/session`).
 // There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
 // this machine may take it for one. Everything binds 127.0.0.1.
@@ -24,8 +24,8 @@ use crate::mcp_clients::ServerInfo;
 use crate::{
     append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
     hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, random_hex_32,
-    show_splash_status, shut_down, supervise_server, LaunchNonce, LogFile, QuitConfirmed,
-    ServerGaveUp, ServerProcess, ShuttingDown, LINK_SCHEME, READY_TIMEOUT_SECS,
+    show_splash_status, shut_down, supervise_server, LogFile, QuitConfirmed, ServerGaveUp,
+    ServerProcess, ShuttingDown, LINK_SCHEME, READY_TIMEOUT_SECS,
 };
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
@@ -42,8 +42,6 @@ const SPLASH_STOPPED: &str =
 struct HostConfig {
     entry: PathBuf,
     token: String,
-    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own host.
-    launch_nonce: String,
     port: u16,
     log_path: PathBuf,
 }
@@ -95,8 +93,7 @@ fn spawn_host(
         .args([node_path(&cfg.entry)])
         .env("NODE_ENV", "production")
         .env("PIWI_RUNNER_PORT", cfg.port.to_string())
-        .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
-        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone());
+        .env("PIWI_DESKTOP_TOKEN", cfg.token.clone());
     match cmd.spawn() {
         Ok(pair) => Some(pair),
         Err(e) => {
@@ -212,16 +209,14 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             append_log(&log_path, "----- launch -----");
             app.manage(LogFile(log_path.clone()));
 
-            // Nothing outlives this launch: the token and the nonce are made now and kept nowhere.
+            // Nothing outlives this launch: the token is made now and kept nowhere.
             let token = random_hex_32();
-            let launch_nonce = random_hex_32();
             let port = free_port();
             app.handle().add_capability(runner_capability(port))?;
             app.manage(ServerInfo {
                 port,
                 token: token.clone(),
             });
-            app.manage(LaunchNonce(launch_nonce.clone()));
 
             let shutting_down = Arc::new(AtomicBool::new(false));
             app.manage(ShuttingDown(shutting_down.clone()));
@@ -246,7 +241,6 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let host = HostConfig {
                 entry,
                 token: token.clone(),
-                launch_nonce: launch_nonce.clone(),
                 port,
                 log_path: log_path.clone(),
             };
@@ -271,7 +265,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 let started = Instant::now();
                 let mut slow = false;
                 let ready = loop {
-                    if health_ok(port, &launch_nonce) {
+                    if health_ok(port, &token) {
                         break true;
                     }
                     let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
@@ -299,13 +293,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     }
                     return;
                 }
-                follow_notifications(
-                    nav_handle.clone(),
-                    port,
-                    token.clone(),
-                    launch_nonce.clone(),
-                    quitting,
-                );
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
                 let bootstrap_url = bootstrap_url(port, &token, None);
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {

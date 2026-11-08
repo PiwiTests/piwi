@@ -39,8 +39,8 @@ built with the `runner` feature.
 - **It listens on `127.0.0.1` alone and checks `Host`.** A request whose `Host` is not a loopback address is refused
   with 421. The access token (`PIWI_DESKTOP_TOKEN`) opens every route except the readiness probe, the session
   bootstrap (which takes the token on its query string) and the window's files.
-- **The launch nonce** (`PIWI_DESKTOP_LAUNCH_NONCE`) is echoed by `/api/health`, so the shell loads its session only from
-  the host it started.
+- **`/api/health` answers the shell's challenge with the proof of the token** (`challengeAnswer` in `host-guard`), so the
+  shell loads its session only from the host it started.
 - **Nothing is stored.** The key lives in the OS keychain (the shell keeps it, under Runner's own service name), the
   folders in the shell's settings; the host keeps requests in memory only.
 - **The shell writes no `~/.piwi/desktop.json`.** That file names a dashboard to the reporter, the editor clients and the

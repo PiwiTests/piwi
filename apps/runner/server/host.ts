@@ -1,13 +1,13 @@
 /**
  * Piwi Runner's Node host, on `node:http`: what the Tauri shell starts as its sidecar and the window talks to.
- * It answers the shell's readiness probe (`/api/health`, echoing the launch nonce), the run-target routes, the
+ * It answers the shell's readiness probe (`/api/health`, proving it holds the access token), the run-target routes, the
  * window's session and its two event streams (`serveRunTarget` of `@piwitests/editor`, the same routes and guard the
  * dashboard's desktop build serves), and the window's own files. It has no database, no account and no other route.
  */
 import * as fs from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as path from 'node:path';
-import { LAUNCH_NONCE_HEADER } from '@piwitests/editor/host-guard';
+import { challengeAnswer, headersOf } from '@piwitests/editor/host-guard';
 import { serveRunTarget } from '@piwitests/editor/run-target-http';
 
 /** The readiness probe the shell sends before it loads the window's session. */
@@ -16,8 +16,6 @@ export const HEALTH_PATH = '/api/health';
 export interface RunnerHostOptions {
   /** The access token the shell holds: the window's cookie and the shell's calls carry it. */
   token: string;
-  /** The launch nonce the readiness probe echoes; null answers without one. */
-  nonce: string | null;
   /** The folder of the window's built files, with its `index.html`. */
   root: string;
 }
@@ -120,7 +118,8 @@ export function runnerHandler(options: RunnerHostOptions): (req: IncomingMessage
       const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
       if (pathname === HEALTH_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
         req.resume();
-        sendJson(res, 200, { status: 'ok' }, options.nonce ? { [LAUNCH_NONCE_HEADER]: options.nonce } : {});
+        const proof = await challengeAnswer(headersOf(req.headers), options.token, req.socket.localPort);
+        sendJson(res, 200, { status: 'ok' }, proof);
         return;
       }
       if (await serveRunTarget(req, res, options.token)) return;

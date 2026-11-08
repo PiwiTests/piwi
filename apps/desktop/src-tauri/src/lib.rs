@@ -178,11 +178,6 @@ struct LogFile(PathBuf);
 /// aux-window opener can mirror the main window and open the inspector too.
 struct DebugMode(bool);
 
-/// The nonce this launch gave its server (`PIWI_DESKTOP_LAUNCH_NONCE`): a
-/// request carrying the desktop token goes only to a server whose readiness
-/// probe echoes it (`health_ok`).
-struct LaunchNonce(String);
-
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
 /// yet. The shell only ever queues and pokes; the dashboard drains the queue
@@ -723,51 +718,83 @@ fn pick_port(preferred: u16) -> u16 {
         .expect("failed to acquire a free loopback port")
 }
 
-/// The response header the sidecar's `/api/health` echoes the launch nonce in.
-const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
+/// The request header carrying the readiness probe's challenge.
+const DESKTOP_CHALLENGE_HEADER: &str = "x-piwi-desktop-challenge";
+
+/// The response header the sidecar answers the challenge in.
+const DESKTOP_PROOF_HEADER: &str = "x-piwi-desktop-proof";
 
 /// How long one readiness probe waits to connect. Windows retries a connect to a
 /// loopback port nobody listens on for seconds before refusing it; this bound
 /// keeps each probe made while the server is still starting short.
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Dependency-free readiness probe. `/api/health` returns 200 only after the
-/// database has migrated, so a 200 means the app is ready to load — when it
-/// also carries this launch's nonce, which only the sidecar this app spawned
-/// knows. Another process that took the port first never gets the session
-/// bootstrap and its token.
-fn health_ok(port: u16, nonce: &str) -> bool {
+/// Readiness probe. `/api/health` returns 200 only after the database has
+/// migrated, so a 200 means the app is ready to load, when it also answers this
+/// probe's fresh challenge with the proof that it holds `token`
+/// (`proof_matches`), which only the sidecar this app spawned knows. Another
+/// process that took the port first never gets the session bootstrap and the
+/// token, and an answer it recorded earlier proves nothing for a new challenge.
+fn health_ok(port: u16, token: &str) -> bool {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let req =
-        format!("GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    let challenge = random_hex_32();
+    let req = format!(
+        "GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: close\r\n\r\n"
+    );
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
     // The headers fit well within this; a read cut short by the timeout keeps what arrived.
     let mut buf = Vec::new();
     let _ = stream.take(16 * 1024).read_to_end(&mut buf);
-    health_response_proves(&String::from_utf8_lossy(&buf), nonce)
+    health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
-/// Whether a raw `/api/health` response is a 200 carrying `nonce` in
-/// [`LAUNCH_NONCE_HEADER`].
-fn health_response_proves(response: &str, nonce: &str) -> bool {
+/// Whether a raw `/api/health` response is a 200 carrying, in
+/// [`DESKTOP_PROOF_HEADER`], the proof of `token` for `challenge` on `port`.
+fn health_response_proves(response: &str, token: &str, port: u16, challenge: &str) -> bool {
     let head = response.split("\r\n\r\n").next().unwrap_or("");
     let mut lines = head.split("\r\n");
     let ok = lines
         .next()
         .is_some_and(|status| status.split_whitespace().nth(1) == Some("200"));
-    ok && !nonce.is_empty()
+    ok && !token.is_empty()
         && lines.any(|line| {
             line.split_once(':').is_some_and(|(name, value)| {
-                name.trim().eq_ignore_ascii_case(LAUNCH_NONCE_HEADER) && value.trim() == nonce
+                name.trim().eq_ignore_ascii_case(DESKTOP_PROOF_HEADER)
+                    && proof_matches(token, port, challenge, value.trim())
             })
         })
+}
+
+/// Whether `proof` (hex) is HMAC-SHA256 keyed by `token` over
+/// `piwi-desktop-proof:<port>:<challenge>`, compared in constant time (the same
+/// proof `@piwitests/core/desktop-proof` makes).
+fn proof_matches(token: &str, port: u16, challenge: &str, proof: &str) -> bool {
+    use hmac::{Hmac, Mac};
+    let Some(proof) = decode_hex(proof) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()) else {
+        return false;
+    };
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.verify_slice(&proof).is_ok()
+}
+
+fn decode_hex(text: &str) -> Option<Vec<u8>> {
+    if text.len() % 2 != 0 || !text.is_ascii() {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok())
+        .collect()
 }
 
 /// The origin the bundled server is served from: the only web origin the
@@ -1011,8 +1038,6 @@ struct ServerConfig {
     storage_dir: PathBuf,
     secret: String,
     token: String,
-    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own server.
-    launch_nonce: String,
     port: u16,
     /// `PIWI_RETENTION_DAYS` for the server, when the user chose a retention.
     retention_days: Option<u32>,
@@ -1066,7 +1091,6 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
         .env("PIWI_SECRET_KEY", cfg.secret.clone())
         .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
-        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone())
         // Tell the bundled Nuxt app it is running in the desktop shell so it hides
         // account/user management (single-user, auth off) and surfaces the local
         // connection details (data location, reporter token, MCP endpoint).
@@ -2091,12 +2115,12 @@ fn show_or_log_notification(app: &AppHandle, data: &str) {
 /// ends, as soon as the server answers its readiness probe (`health_ok`), so a
 /// server restart loses only what happened while it was down. A stream the
 /// server refuses is asked for again less and less often.
-fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String, shutting_down: Arc<AtomicBool>) {
+fn follow_notifications(app: AppHandle, port: u16, token: String, shutting_down: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut retry = NOTIFICATION_RETRY_FIRST;
         let mut last_error: Option<String> = None;
         while !shutting_down.load(Ordering::SeqCst) {
-            if !health_ok(port, &nonce) {
+            if !health_ok(port, &token) {
                 std::thread::sleep(NOTIFICATION_RETRY_FIRST);
                 continue;
             }
@@ -2279,13 +2303,12 @@ async fn desktop_download(app: tauri::AppHandle, url: String, filename: String) 
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
-    let nonce = app.state::<LaunchNonce>().0.clone();
     let dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let name = download_file_name(&filename);
     let target = request_target(&parsed);
     let saved = tauri::async_runtime::spawn_blocking(move || {
         // The token goes only to the server this launch spawned.
-        if !health_ok(port, &nonce) {
+        if !health_ok(port, &token) {
             return Err("the local server is not answering".to_string());
         }
         stream_download(port, &token, &target, &dir, &name)
@@ -2884,14 +2907,12 @@ pub fn run() {
             if port != preferred_port {
                 append_log(&log_path, &format!("port {preferred_port} is in use, listening on {port}"));
             }
-            let launch_nonce = random_hex_32();
 
             // The dashboard's IPC grants, for this sidecar's exact origin only.
             app.handle().add_capability(remote_capability(port))?;
 
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
-            app.manage(LaunchNonce(launch_nonce.clone()));
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
             // MCP client configs written on earlier launches embed the URL and
@@ -2977,7 +2998,6 @@ pub fn run() {
                 storage_dir: storage_dir.clone(),
                 secret,
                 token: token.clone(),
-                launch_nonce: launch_nonce.clone(),
                 port,
                 retention_days,
                 log_path: log_path.clone(),
@@ -3012,7 +3032,7 @@ pub fn run() {
                 let started = Instant::now();
                 let mut slow = false;
                 let ready = loop {
-                    if health_ok(port, &launch_nonce) {
+                    if health_ok(port, &token) {
                         break true;
                     }
                     let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
@@ -3037,7 +3057,7 @@ pub fn run() {
                     return;
                 }
                 // The server's notifications show from now on, page or no page.
-                follow_notifications(nav_handle.clone(), port, token.clone(), launch_nonce.clone(), quitting.clone());
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
@@ -3311,7 +3331,7 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
+        health_ok, health_response_proves, proof_matches, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3959,20 +3979,122 @@ mod tests {
         assert!(script.starts_with("var s=document.getElementById('splash-status');"));
     }
 
+    const PROOF_TOKEN: &str = "pd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PROOF_CHALLENGE: &str =
+        "abababababababababababababababababababababababababababababababab";
+    /// What `desktopTokenProof` of `@piwitests/core/desktop-proof` makes of the two for port 4318.
+    const PROOF_4318: &str = "bd60241a0312fff0960cb18ebc24dc439b0f32cb3a1d82bf1a13d65367acf0ad";
+
+    fn health_answer(status: &str, headers: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}\r\n\r\n{{}}")
+    }
+
     #[test]
-    fn the_readiness_probe_needs_a_200_carrying_the_launch_nonce() {
-        let ok = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
-                  X-Piwi-Desktop-Nonce: abc123\r\n\r\n{}";
-        assert!(health_response_proves(ok, "abc123"));
-        // Another server on the port: a 200 without the nonce, or with another one.
-        assert!(!health_response_proves("HTTP/1.1 200 OK\r\n\r\n{}", "abc123"));
-        assert!(!health_response_proves(&ok.replace("abc123", "zzz"), "abc123"));
-        // The nonce in the body, not a header, proves nothing.
-        let in_body = "HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-nonce: abc123";
-        assert!(!health_response_proves(in_body, "abc123"));
+    fn the_readiness_probe_needs_a_200_carrying_the_proof_of_the_token() {
+        let proves =
+            |response: &str| health_response_proves(response, PROOF_TOKEN, 4318, PROOF_CHALLENGE);
+        let ok = health_answer("200 OK", &format!("X-Piwi-Desktop-Proof: {PROOF_4318}"));
+        assert!(proves(&ok));
+        // Another server on the port: a 200 without a proof, or with one made from another token, port or challenge.
+        assert!(!proves(&health_answer("200 OK", "")));
+        assert!(!proves(&ok.replace("bd60", "bd61")));
+        assert!(!health_response_proves(
+            &ok,
+            "pd_other",
+            4318,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4319,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4318,
+            &"cd".repeat(32)
+        ));
+        // The proof in the body, not a header, proves nothing.
+        let in_body = format!("HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-proof: {PROOF_4318}");
+        assert!(!proves(&in_body));
         let unavailable = ok.replace(" 200 OK", " 503 Service Unavailable");
-        assert!(!health_response_proves(&unavailable, "abc123"));
-        assert!(!health_response_proves(ok, ""));
+        assert!(!proves(&unavailable));
+        assert!(!health_response_proves(&ok, "", 4318, PROOF_CHALLENGE));
+    }
+
+    #[test]
+    fn a_proof_that_is_not_hex_is_refused() {
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, ""));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "xyz"));
+        assert!(!proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318[1..]
+        ));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "é"));
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            PROOF_4318
+        ));
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318.to_uppercase()
+        ));
+    }
+
+    #[test]
+    fn a_server_that_replays_an_earlier_answer_is_refused() {
+        use std::io::{Read, Write};
+        // The squatter records the proof of the first challenge it sees and answers every probe with it.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let token = PROOF_TOKEN;
+        let honest = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 2048];
+            let read = first.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let challenge = request
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap()
+                .to_string();
+            use hmac::Mac;
+            let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+            mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+            let proof: String = mac
+                .finalize()
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let answer = health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}"));
+            first.write_all(answer.as_bytes()).unwrap();
+            drop(first);
+            // Every later probe gets that same answer.
+            for _ in 0..2 {
+                let (mut next, _) = listener.accept().unwrap();
+                let _ = next.read(&mut buffer);
+                next.write_all(answer.as_bytes()).unwrap();
+            }
+        });
+        assert!(
+            health_ok(port, token),
+            "the first answer is for the first challenge"
+        );
+        assert!(
+            !health_ok(port, token),
+            "a recorded answer proves nothing for a new challenge"
+        );
+        assert!(!health_ok(port, "pd_other"));
+        honest.join().unwrap();
     }
 
     #[test]
