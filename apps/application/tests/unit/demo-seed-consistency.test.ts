@@ -1504,19 +1504,21 @@ describe('environment incidents', () => {
 });
 
 describe('keys in test tags', () => {
-  test('the checkout project stores both patterns, and they overlap on one seeded tag', () => {
+  test('the checkout project stores both patterns, each reads its own seeded tag and no tag matches both', () => {
     const [project] = q('select tag_keys from projects where id = 1');
     const patterns = JSON.parse(String(project!.tag_keys)) as { issue: string; testCase: string };
     expect(validateTagKeyPattern(patterns.issue).ok).toBe(true);
     expect(validateTagKeyPattern(patterns.testCase).ok).toBe(true);
 
     const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
-    const overlaps = new Set(
+    const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
+    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
+    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123']);
+    expect(
       tagged.flatMap((row) =>
         overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
       ),
-    );
-    expect([...overlaps]).toEqual(['SHOP-1234']);
+    ).toEqual([]);
   });
 
   test('the other projects leave them off', () => {
