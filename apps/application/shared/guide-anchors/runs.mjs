@@ -103,6 +103,18 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/4', expect: { run: { id: 4, project: 'e2e-checkout' } } },
   },
   {
+    id: 'run-tags-truncated',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Tags cut line of the run’s Details: the tests that declare more than 20 tags, and how many tags each one lost.',
+    shownWhen: 'When a test of the run declares more than 20 tags.',
+    help: 'run.tagsTruncated',
+    doc: 'reference/test-metadata#tag-limit',
+    sample: { route: '/test-runs/6', expect: { run: { id: 6, project: 'e2e-checkout' } } },
+  },
+  {
     id: 'run-coverage-gaps',
     kind: 'block',
     pages: ['/test-runs/[id]'],

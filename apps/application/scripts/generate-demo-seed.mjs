@@ -709,6 +709,16 @@ const NETWORK_REQUESTS = [];
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
 
+/** The run metadata naming `ids`' test cases as tests whose tags were cut, as the reporter records them. */
+function demoTagsTruncated(ids) {
+  const examples = ids.map((id, k) => {
+    const { file, title, declLine } = caseById.get(id);
+    const suitePath = (TEST_CASES.find((c) => c.id === id).suite_path || '').split('\x1f').filter(Boolean);
+    return { filePath: file, ...(suitePath.length ? { suitePath } : {}), title, line: declLine, dropped: k + 2 };
+  });
+  return { tests: examples.length, examples };
+}
+
 let runId = 1;
 let trcId = 1;
 let reportId = 1;
@@ -1266,6 +1276,9 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run whose suite declared more tags than a test keeps, so the run
+      // page names the tests whose tags were cut (`metadata.tagsTruncated`).
+      ...(proj.id === 1 && i === 5 ? { tagsTruncated: demoTagsTruncated(caseIds.slice(0, 2)) } : {}),
     };
 
     TEST_RUNS.push({

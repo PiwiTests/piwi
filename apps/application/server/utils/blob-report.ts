@@ -24,7 +24,7 @@ import {
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { distinctRunCountsFromAttempts, normalizeTestCaseStatus } from '#shared/utils/test-counts';
-import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
+import { parseTestMetadata } from '@piwitests/core/test-meta';
 import { MAX_RUN_ERRORS, runErrorOfReported } from '@piwitests/core/run-errors';
 import { boundTestOutput } from '@piwitests/core/test-output';
 import type { WireRunError } from '@piwitests/core/wire';
@@ -172,6 +172,7 @@ interface PlannedTest {
   column: number | null;
   suitePath: string[];
   annotations: TestAnnotation[];
+  /** As Playwright lists them: `persistRunCases` normalizes them and records the tests whose tags it cuts. */
   tags: string[];
   timeout: number | null;
   /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition is a test of its own. */
@@ -288,7 +289,7 @@ function collectPlannedTests(
           column: typeof location.column === 'number' ? location.column : null,
           suitePath,
           annotations: Array.isArray(child.annotations) ? (child.annotations as TestAnnotation[]) : [],
-          tags: normalizeTestTags(child.tags),
+          tags: Array.isArray(child.tags) ? child.tags.filter((tag): tag is string => typeof tag === 'string') : [],
           timeout: typeof child.timeout === 'number' ? child.timeout : projectTimeout,
           repeatEachIndex: typeof child.repeatEachIndex === 'number' ? child.repeatEachIndex : 0,
           projectName,

@@ -5,6 +5,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
@@ -181,8 +182,11 @@ export default eventHandler(async (event) => {
     ? keepIncidentMetadata(
         testRun.metadata,
         carryRequestOrigin(
-          carryExternalIdDuplicates(
-            carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          carryTagsTruncated(
+            carryExternalIdDuplicates(
+              carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+              testRun.metadata,
+            ),
             testRun.metadata,
           ),
           testRun.metadata,

@@ -13,9 +13,13 @@ kind (`ACTION_INTEGRATION_KINDS`, `boundConnectionId(db, projectId, kind)`); the
 each provider's own (`connectionBaseUrl`, `CONNECTION_CHECKS`); and the provider-neutral `IntegrationHttpError`
 carries a `Retry-After` (seconds or an HTTP date, capped at one hour) that sets the next attempt. A 429 pauses the
 connection for that wait, or a minute without one: no attempt calls it before then, and its pending actions are moved
-to that moment. Steps 2 to 7 remain. Revised after the review on #1161: provider dispatch in the outbox and the
-connection endpoints, a provider-neutral interface and tables, one binding table per integration kind, and a warning
-when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
+to that moment. Rollout step 2 built: `normalizeTestTagsWithDropped` counts the tags past the twentieth, the reporter
+warns once in `onBegin` and sends `metadata.tagsTruncated` (`collectTagsTruncated`), the server records the same from
+the raw tags of a payload sent without the reporter or imported from a blob report (`recordTagsTruncated`), a resent
+report counts once and each shard's adds up (`keepTagsTruncated`, `addTagsTruncated`), and the run page shows "Tags
+cut at 20 on N tests" with the tests in its Details. Steps 3 to 7 remain. Revised after the review on #1161: provider
+dispatch in the outbox and the connection endpoints, a provider-neutral interface and tables, one binding table per
+integration kind, and a warning when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
 twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
 run-data checklist, a `zephyr-scale` link provider, and the remedy for cut tags matched to Playwright's tag order.
 Revised a third time: the cycle key is committed as soon as the upload returns, so a failed link step retries without
