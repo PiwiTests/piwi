@@ -4,7 +4,9 @@
  * shows the instance that asked, the tests, the checks of the folder linked to the request's project on this machine
  * (with **Choose the folder** when none is), and the exact command. Nothing runs before **Run**; **Not now** declines
  * it, or refuses it with the checks that failed. The shell takes the command and the request token from this app's
- * server, never from this window.
+ * server, never from this window. **Run** answers the request shown, and only once it has been shown, unchanged, for
+ * `ARM_AFTER_MS`, so a key pressed as the window comes to the front, or as another request takes the place of the one
+ * shown, starts nothing.
  */
 import type { RunRequestPromptView } from '#shared/desktop-run-target';
 
@@ -13,6 +15,26 @@ const store = useDesktopLocalRuns();
 const toast = useToast();
 const starting = ref(false);
 const linking = ref(false);
+
+/** How long a request is shown, unchanged, before **Run** answers it. */
+const ARM_AFTER_MS = 1000;
+const armed = ref(false);
+let armTimer: ReturnType<typeof setTimeout> | null = null;
+const shown = computed(() =>
+  current.value ? `${current.value.id}\n${current.value.command}\n${current.value.runnable}` : null,
+);
+watch(
+  shown,
+  (value) => {
+    armed.value = false;
+    if (armTimer) clearTimeout(armTimer);
+    armTimer = value ? setTimeout(() => (armed.value = true), ARM_AFTER_MS) : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (armTimer) clearTimeout(armTimer);
+});
 
 const open = computed({
   get: () => !!current.value,
@@ -69,9 +91,10 @@ async function chooseFolder() {
   }
 }
 
-async function answer(decision: 'run' | 'not-now') {
+async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) {
   const request = current.value;
-  if (!request || starting.value) return;
+  if (!request || request.id !== shownId || starting.value) return;
+  if (decision === 'run' && !armed.value) return;
   if (decision === 'not-now') remove(request.id);
   else starting.value = true;
   try {
@@ -102,7 +125,7 @@ async function answer(decision: 'run' | 'not-now') {
 <template>
   <UModal v-model:open="open" title="Run on this machine?" :ui="{ content: 'max-w-2xl' }">
     <template #body>
-      <div v-if="current" class="space-y-4" data-shot="desktop-team-run-request">
+      <div v-if="current" :key="current.id" class="space-y-4" data-shot="desktop-team-run-request">
         <p class="text-sm text-muted">
           You asked <span class="font-medium text-highlighted">{{ host }}</span> to run
           {{ testCount === 1 ? 'a test' : `${testCount} tests` }} here, in the folder linked to its project. It runs the
@@ -140,20 +163,19 @@ async function answer(decision: 'run' | 'not-now') {
 
         <div v-if="current.command" class="space-y-1">
           <div class="text-xs text-muted">Runs in the linked folder and reports to {{ host }}</div>
-          <CodeBlock :code="current.command" lang="sh" />
+          <CodeBlock :code="current.command" lang="text" />
         </div>
       </div>
     </template>
 
     <template #footer>
       <div class="flex justify-end gap-2 w-full">
-        <UButton color="neutral" variant="ghost" @click="answer('not-now')">Not now</UButton>
+        <UButton color="neutral" variant="ghost" @click="answer('not-now', current?.id)">Not now</UButton>
         <UButton
           icon="i-lucide-play"
-          :disabled="!current?.runnable"
+          :disabled="!current?.runnable || !armed"
           :loading="starting"
-          autofocus
-          @click="answer('run')"
+          @click="answer('run', current?.id)"
           >Run</UButton
         >
       </div>

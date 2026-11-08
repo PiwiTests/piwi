@@ -185,7 +185,9 @@ version.
 Why: with the instance carrying the request, a click in the page proves nothing to the target. A script injected in an
 instance page, or a stolen session, can create requests (runs-from-the-dashboard reached the same conclusion in its
 open question 2). A QA suite often writes to a shared test environment, so an unasked run has effects beyond the
-machine. The confirmation is one click, with **Run** focused.
+machine. The confirmation is one click on **Run**, which answers only the request shown, and only once it has been
+shown unchanged for a second; **Run** is not focused, so a key pressed as the window comes to the front starts
+nothing.
 
 Possible later, if people ask: **Run without asking** per project and per machine, for the `run` kind only, shown as a
 five-second "Starting in 5 s · Cancel" notice in the target, and turned off from the target or from Connected apps

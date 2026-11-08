@@ -7606,6 +7606,8 @@ const SCENES = [
       );
       await page.reload();
       await page.locator('[data-shot="desktop-team-run-request"]').waitFor({ timeout: 60_000 });
+      // **Run** is armed once the request has been shown, unchanged, for a second.
+      await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Run$/ }).waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
