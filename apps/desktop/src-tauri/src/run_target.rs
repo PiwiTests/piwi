@@ -399,12 +399,14 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         port: server.port,
         token: server.token.clone(),
     };
-    // Held before the server hands the launch over, so a stop that arrives from then on is kept for it.
+    // Held before the server hands the launch over, so a stop that arrives from then on is kept for it. A request
+    // already held is being launched or is running: a second call leaves its entry alone.
     if let Some(runs) = app.try_state::<RequestedRuns>() {
-        runs.0
-            .lock()
-            .unwrap()
-            .insert(request_id.clone(), RequestedRun::default());
+        let mut held = runs.0.lock().unwrap();
+        if held.contains_key(&request_id) {
+            return Err("this request is already starting or running".into());
+        }
+        held.insert(request_id.clone(), RequestedRun::default());
     }
     let forget = |app: &AppHandle, request_id: &str| {
         if let Some(runs) = app.try_state::<RequestedRuns>() {
