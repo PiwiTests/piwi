@@ -26,9 +26,9 @@ async function load() {
   }
   if (unmounted) return;
   loaded.value = true;
-  if (read === null) return;
-  requests.value = read;
-  if (read.some((r) => !runRequestIsFinal(r))) timer = setTimeout(load, 5000);
+  // A failed read keeps the list as it was and tries again while one of them goes on.
+  if (read !== null) requests.value = read;
+  if (requests.value.some((r) => !runRequestIsFinal(r))) timer = setTimeout(load, 5000);
 }
 
 onMounted(load);

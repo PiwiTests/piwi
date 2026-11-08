@@ -87,23 +87,32 @@ const projectChoice = computed({
     </div>
     <div class="space-y-2 px-2" :class="naming ? 'border-t border-default pt-3' : ''">
       <p class="text-xs text-muted inline-flex items-center gap-1">Options <HelpHint topic="run.retryOptions" /></p>
-      <USwitch v-model="headed" label="Headed" size="sm" />
-      <label class="flex items-center justify-between gap-2 text-sm">
-        Trace
-        <USelect v-model="trace" :items="TRACE_ITEMS" size="xs" class="w-36" aria-label="Trace" />
-      </label>
-      <label class="flex items-center justify-between gap-2 text-sm">
-        Repeat each
-        <USelect v-model="repeatEach" :items="REPEAT_ITEMS" size="xs" class="w-36" aria-label="Repeat each" />
-      </label>
-      <label class="flex items-center justify-between gap-2 text-sm">
-        Workers
-        <USelect v-model="workers" :items="WORKER_ITEMS" size="xs" class="w-36" aria-label="Workers" />
-      </label>
-      <label v-if="(projects?.length ?? 0) > 1" class="flex items-center justify-between gap-2 text-sm">
-        Project
-        <USelect v-model="projectChoice" :items="projectItems" size="xs" class="w-36" aria-label="Project" />
-      </label>
+      <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-sm">
+        <span>Headed</span>
+        <USwitch v-model="headed" size="sm" aria-label="Headed" />
+        <span>Trace</span>
+        <USelect v-model="trace" :items="TRACE_ITEMS" size="xs" class="w-full max-w-36" aria-label="Trace" />
+        <span>Repeat each</span>
+        <USelect
+          v-model="repeatEach"
+          :items="REPEAT_ITEMS"
+          size="xs"
+          class="w-full max-w-36"
+          aria-label="Repeat each"
+        />
+        <span>Workers</span>
+        <USelect v-model="workers" :items="WORKER_ITEMS" size="xs" class="w-full max-w-36" aria-label="Workers" />
+        <template v-if="(projects?.length ?? 0) > 1">
+          <span>Project</span>
+          <USelect
+            v-model="projectChoice"
+            :items="projectItems"
+            size="xs"
+            class="w-full max-w-36"
+            aria-label="Project"
+          />
+        </template>
+      </div>
     </div>
   </div>
 </template>

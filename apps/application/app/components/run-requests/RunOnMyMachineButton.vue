@@ -3,10 +3,13 @@
  * **Run on my machine**: asks one of the person's own apps (the desktop app) to run tests of this page. The menu picks
  * what runs, which app, and the run options of Copy retry command; the app shows the request with its checks and the
  * command, and runs nothing before the person clicks **Run** there. Once sent, the same window follows the request
- * until it ends, with **Stop** while it goes on and **Run again** after.
+ * until it ends, with **Stop** while it goes on and **Run again** after; it shows the last request, ended or not, until
+ * **New request** or another send.
  */
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { RunOnMyMachineChoice, RunRequestSourceChoice } from '~/composables/useRunOnMyMachine';
+
+defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
   projectId: number;
@@ -80,8 +83,12 @@ function requestOptions(): RunRequestOptions {
 
 function openMenu() {
   open.value = true;
-  // A request still going on is shown again; one that ended makes way for a new one.
-  if (request.value && !runRequestIsFinal(request.value)) return;
+  // The last request is shown again, with its outcome once it ended.
+  if (request.value) return;
+  newRequest();
+}
+
+function newRequest() {
   reset();
   sendError.value = null;
   choiceIndex.value = 0;
@@ -123,6 +130,7 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
 <template>
   <template v-if="shown && choices.length">
     <UButton
+      v-bind="$attrs"
       size="xs"
       color="neutral"
       variant="outline"
@@ -197,13 +205,22 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
               v-if="runRequestCanStop(request)"
               color="neutral"
               variant="outline"
+              icon="i-lucide-square"
               :loading="stopping"
               @click="stopRequest"
               >Stop</UButton
             >
-            <UButton v-else color="neutral" variant="outline" :loading="sending" @click="sendRequest(true)"
-              >Run again</UButton
-            >
+            <template v-else>
+              <UButton color="neutral" variant="ghost" @click="newRequest">New request</UButton>
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-rotate-ccw"
+                :loading="sending"
+                @click="sendRequest(true)"
+                >Run again</UButton
+              >
+            </template>
             <UButton color="neutral" variant="ghost" @click="open = false">Close</UButton>
           </template>
           <template v-else>

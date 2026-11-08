@@ -22,16 +22,18 @@ export interface RunOnMyMachineChoice {
 export type RunTargetApp = ConnectedApp & { target: NonNullable<ConnectedApp['target']> };
 
 /**
- * **Run on my machine** on one project's pages: whether it shows (sign-in on, the capability on for the project, and
- * the person holds `run:request` there; never in the desktop window, which runs tests itself), the person's apps that
- * take requests, and sending one. The apps load in the browser, when the menu opens.
+ * **Run on my machine** on one project's pages: whether it shows (sign-in on, the capability read as on for the
+ * project, so a list that failed to load hides it, and the person holds `run:request` there; never in the desktop
+ * window, which runs tests itself), the person's apps that take requests, and sending one. The apps load in the
+ * browser, when the menu opens.
  */
 export async function useRunOnMyMachine(projectId: number) {
   const config = useRuntimeConfig();
   const { can, authState } = useAuth();
-  const { isHidden } = await useProjectCapabilities(projectId);
+  const { state, isHidden } = await useProjectCapabilities(projectId);
 
-  const shown = computed(() => config.public.authEnabled && !isHidden('machine-runs') && can('run:request', projectId));
+  const on = computed(() => ['active', 'available'].includes(state('machine-runs')) && !isHidden('machine-runs'));
+  const shown = computed(() => config.public.authEnabled && on.value && can('run:request', projectId));
 
   const apps = ref<RunTargetApp[]>([]);
   const appsLoaded = ref(false);
@@ -66,22 +68,37 @@ export async function useRunOnMyMachine(projectId: number) {
   return { shown, apps, appsLoaded, loadApps, send };
 }
 
-/** Follow one request every 2 seconds until it ends; `stop` asks for its end. */
+/**
+ * Follow one request every 2 seconds until it ends, not while the tab is hidden; `stop` asks for its end. Reading
+ * stops for good once the request is gone for this person, or they are signed out.
+ */
 export function useRunRequestProgress() {
   const request = ref<RunRequestView | null>(null);
   const error = ref<string | null>(null);
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let waitingToShow = false;
   let disposed = false;
 
   function clear() {
     if (timer) clearTimeout(timer);
     timer = null;
+    if (waitingToShow) document.removeEventListener('visibilitychange', pollWhenShown);
+    waitingToShow = false;
+  }
+
+  function pollWhenShown() {
+    if (!document.hidden) void poll();
   }
 
   async function poll() {
     clear();
     const current = request.value;
     if (disposed || !current || runRequestIsFinal(current)) return;
+    if (document.hidden) {
+      waitingToShow = true;
+      document.addEventListener('visibilitychange', pollWhenShown);
+      return;
+    }
     try {
       const read = await $fetch<RunRequestView>(`/api/run-requests/${current.id}`);
       // Another request was followed meanwhile, or the page went away.
@@ -91,8 +108,8 @@ export function useRunRequestProgress() {
     } catch (e) {
       if (disposed || request.value?.id !== current.id) return;
       error.value = errorMessage(e);
-      // The request is gone for this person (deleted, or its project no longer readable): nothing more to read.
-      if (statusOf(e) === 404 || statusOf(e) === 403) return;
+      // The request is gone for this person (deleted, or its project no longer readable), or they were signed out.
+      if ([401, 403, 404].includes(statusOf(e) ?? 0)) return;
     }
     if (request.value && !runRequestIsFinal(request.value)) timer = setTimeout(poll, 2000);
   }
