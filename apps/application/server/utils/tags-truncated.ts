@@ -4,9 +4,9 @@ import { addRunTagsTruncated } from '#shared/tags-truncated';
 import { updateRunMetadata } from './run-metadata';
 
 /**
- * Add the tests of a batch's stored executions whose raw tags pass the limit to the run's `metadata.tagsTruncated`,
- * so a payload sent without the reporter, which cuts and records them itself, shows them on the run page too. A batch
- * whose tests all fit, or whose executions the run already holds, writes nothing.
+ * Add the tests of a batch whose raw tags pass the limit to the run's `metadata.tagsTruncated`, so a payload sent
+ * without the reporter, which cuts and records them itself, shows them on the run page too. A batch whose tests all
+ * fit writes nothing.
  */
 export async function recordTagsTruncated(
   db: DrizzleDB,

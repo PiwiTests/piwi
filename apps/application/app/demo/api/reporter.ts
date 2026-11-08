@@ -950,11 +950,7 @@ export async function persistRunCases(
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
-  await recordTagsTruncated(
-    db,
-    testRunId,
-    result.map((r) => cases[r.inputIndex]!),
-  );
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,

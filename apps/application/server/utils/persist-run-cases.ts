@@ -747,11 +747,7 @@ export async function persistRunCases(
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
-  await recordTagsTruncated(
-    db,
-    testRunId,
-    result.map((r) => cases[r.inputIndex]!),
-  );
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,

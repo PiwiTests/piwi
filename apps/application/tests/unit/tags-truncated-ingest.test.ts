@@ -124,6 +124,35 @@ describe('metadata.tagsTruncated', () => {
     expect(await storedTagsTruncated(runId)).toEqual({ tests: 25, examples });
   });
 
+  test('adds the first streamed shard to a count a batch shard already left on the run', async () => {
+    const shard = { instanceId: 'ci-run-10', shardTotal: 2 };
+    const set = await setup({ body: { projectName: PROJECT, ...shard, shardIndex: 1 } });
+    const runId = set.runId as number;
+    const batch = {
+      projectName: PROJECT,
+      startTime: new Date().toISOString(),
+      duration: 10,
+      status: 'passed',
+      ...shard,
+      shardIndex: 2,
+      metadata: { tagsTruncated: { tests: 2, examples: [B] } },
+    };
+    const joined = await batchShardRun(db as never, projectId, shard.instanceId, batch as never);
+    expect(joined.id).toBe(runId);
+    await addBatchShard(db as never, runId, batchShardTally(batch as never, []));
+    await begin({
+      params: { id: String(runId) },
+      body: {
+        setupToken: set.setupToken,
+        totalTests: 1,
+        metadata: { tagsTruncated: { tests: 3, examples: [A] } },
+        ...shard,
+        shardIndex: 1,
+      },
+    });
+    expect(await storedTagsTruncated(runId)).toEqual({ tests: 5, examples: [B, A] });
+  });
+
   test("adds each batch shard's tests up, the first shard's once", async () => {
     const reports = [
       { tests: 3, examples: [A] },
@@ -167,7 +196,7 @@ describe('metadata.tagsTruncated', () => {
       execution('fits', tagList(MAX_TEST_TAGS)),
     ] as never);
     const report = await storedTagsTruncated(run!.id);
-    // The same batch sent again stores no execution and adds no test.
+    // The same batch sent again adds no test: the run already lists it.
     await persistRunCases(db as never, projectId, run!.id, [
       execution('covers many cases', tagList(MAX_TEST_TAGS + 4)),
     ] as never);
