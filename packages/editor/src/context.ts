@@ -30,6 +30,7 @@ import {
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
+import { holdDesktopToken } from './http.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -124,7 +125,9 @@ export function readDesktopDiscovery(env: Record<string, string | undefined>): D
         typeof p?.id === 'number' && typeof p.path === 'string' && p.path ? [{ id: p.id, path: p.path }] : [],
       )
     : [];
-  return { url: discovery.url.replace(/\/+$/, ''), token: discovery.token, projects };
+  const url = discovery.url.replace(/\/+$/, '');
+  holdDesktopToken(url, discovery.token);
+  return { url, token: discovery.token, projects };
 }
 
 function isInside(child: string, parent: string): boolean {

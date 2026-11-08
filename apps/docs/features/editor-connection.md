@@ -25,6 +25,13 @@ The desktop app needs no pairing with the editor: while it runs, it publishes it
 `~/.piwi/desktop.json`, which the editor reads, as the reporter does. The editor notices within seconds when the app
 starts or quits. With nothing else naming an instance, the editor uses the app as soon as it runs.
 
+The editor sends the app's token only to a server that proves it holds that token: before its first request that
+carries the token, the editor asks the address in `desktop.json` for the app's proof. A server that gives none, or the
+wrong one, gets no token, and the editor says the app's token was not sent. An app that does not answer is asked
+again on the next request. The MCP server entries the editor offers for AI assistants (**Copy MCP Server
+Configuration** and the VS Code agent's server list) include the app's token only after the same proof; the
+assistant that receives the entry sends the token to the address itself.
+
 The app is looked for on the machine the extension runs on: in a remote window of VS Code (Remote SSH, WSL, Dev
 Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` names it too.
 

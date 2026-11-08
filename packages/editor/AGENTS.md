@@ -90,6 +90,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   named instance (`namedInstance`: the environment, the workspace `.env`, the editor's settings), then the desktop app's
   discovery file; the reporter keeps its own order. Checked by `tests/context.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#connection-order-and-watching-head))
+- **The desktop app's token goes out only after the server proves it holds it.** `readDesktopDiscovery` registers
+  the token (`holdDesktopToken`); `instanceFetch` waits for `requireDesktopProof` (the shared `proveDesktopServer`)
+  before a request whose `X-API-Key` or bearer is a registered token, and `piwi/mcp` leaves out a desktop server that
+  did not prove it. Every request goes through `instanceFetch`; a new call site must too. Checked by
+  `tests/desktop-token-proof.test.ts` and `tests/lsp.test.ts` ("the desktop app’s MCP server for the agent").
 - **The desktop app sits beside a shared instance, never replaces it.** `piwi/status` keeps the named instance
   (`instance`) and says whether the app runs (`desktopUrl`), so Connect offers both. Checked by `tests/lsp.test.ts`
   ("the desktop app chosen with Connect").

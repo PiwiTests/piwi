@@ -134,6 +134,7 @@ import {
   type FixPlan,
   type FlakeLabEntry,
 } from './piwi-client.js';
+import { requireDesktopProof } from './http.js';
 import {
   isTestLocation,
   playwrightArgsOf,
@@ -3501,7 +3502,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return null;
   });
 
-  connection.onRequest(MCP_REQUEST, (): McpServersResult => {
+  connection.onRequest(MCP_REQUEST, async (): Promise<McpServersResult> => {
     const signIn = credentials.mcpAuthorization === 'sign-in';
     const seen = new Set<string>();
     const servers: McpServersResult['servers'] = [];
@@ -3509,6 +3510,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const conn = c.client?.connection;
       if (!conn || seen.has(conn.serverUrl)) continue;
       seen.add(conn.serverUrl);
+      if (
+        conn.apiKey &&
+        (await requireDesktopProof(conn.serverUrl, conn.apiKey).then(
+          () => false,
+          () => true,
+        ))
+      )
+        continue;
       let host = conn.serverUrl;
       try {
         host = new URL(conn.serverUrl).host;
