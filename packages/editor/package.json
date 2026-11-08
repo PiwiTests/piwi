@@ -10,6 +10,8 @@
     "./protocol": "./src/protocol.ts",
     "./discovery": "./src/discovery.ts",
     "./run-host": "./src/run-host.ts",
+    "./request-host": "./src/request-host.ts",
+    "./request-run": "./src/request-run.ts",
     "./mcp-protocol": "./src/mcp-protocol.ts",
     "./server": "./dist/piwi-language-server.cjs"
   },

@@ -496,6 +496,8 @@ const authEnabled = computed(() => config.public.authEnabled);
         <ConnectedAppsManager :user-id="me.user.id" />
       </SectionCard>
 
+      <RunRequestsCard />
+
       <!-- API keys section -->
       <SectionCard
         icon="i-lucide-key"

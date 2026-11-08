@@ -15,6 +15,9 @@ import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
+import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
 
 /**
@@ -166,6 +169,7 @@ const {
   failedCases,
   flakyCases,
   allCases,
+  everyCase,
   projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
@@ -238,6 +242,33 @@ const rerunSets = computed<LocalRunSet[]>(() => {
   return sets.filter((set) => set.cases.length > 0);
 });
 const rerunMain = computed(() => rerunSets.value[0] ?? null);
+
+/** What Run on my machine sends from a run: its failed tests when it has some, and all its tests. */
+const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
+  const runId = props.testRun?.id;
+  if (!runId) return [];
+  const max = RUN_REQUEST_LIMITS.tests.max;
+  const choices: RunOnMyMachineChoice[] = [];
+  const failed = failedCases.value.length;
+  if (failed && failed <= max) {
+    choices.push({
+      label: 'The failed tests',
+      count: failed,
+      source: { runId, tests: 'failed' },
+      projects: retryProjects.value,
+    });
+  }
+  const all = everyCase.value.length;
+  if (all && all <= max) {
+    choices.push({
+      label: 'All the tests of the run',
+      count: all,
+      source: { runId, tests: 'all' },
+      projects: retryProjectsOf(everyCase.value),
+    });
+  }
+  return choices;
+});
 
 const desktopBridge = ref(false);
 onMounted(() => {
@@ -385,6 +416,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
         :other-sets="rerunSets.slice(1)"
+      />
+
+      <RunOnMyMachineButton
+        v-if="testRun?.projectId && machineChoices.length"
+        :project-id="testRun.projectId"
+        :machine-runs="testRun.machineRuns ?? false"
+        :choices="machineChoices"
       />
 
       <UButton

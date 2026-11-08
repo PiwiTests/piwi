@@ -9,7 +9,7 @@ import type { RunOriginKind } from '@piwitests/core/wire';
 
 /** The fields of a local run a job's verdict reads. */
 export interface JobRunOutcome {
-  kind: 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake';
+  kind: 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake' | 'request';
   status: 'running' | 'passed' | 'failed' | 'stopped' | 'error';
   /** The phase the run was in when it ended: `test` once the failing tests ran. */
   phase: string | null;

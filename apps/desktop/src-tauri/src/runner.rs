@@ -723,30 +723,47 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await
+}
+
+/// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
+/// `folder` with the bundled Node sidecar, `envs` beside the run's own (the
+/// hub's, the colors, the folder's `PATH`), and stream its output as
+/// `piwi:local-run` events. `on_exit` hears its exit code once it ends, before
+/// the window does, and whether a stop was asked for it. Returns the run id.
+pub(crate) async fn spawn_tests(
+    app: &AppHandle,
+    folder: &Path,
+    cli: &Path,
+    args: Vec<String>,
+    envs: Vec<(&'static str, String)>,
+    on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
+) -> Result<u32, String> {
     let attended = crate::hub_env::attended_args(&args);
-    let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into()];
+    let mut cmd_args: Vec<String> = vec![node_path(cli), "test".into()];
     cmd_args.extend(args);
 
     let id = app.state::<LocalRuns>().allocate_id();
-    let hub = bundled_hub_env(&app, id, attended).await;
+    let hub = bundled_hub_env(app, id, attended).await;
     let command = app
         .shell()
         .sidecar("node")
         .map_err(|e| e.to_string())?
         .args(cmd_args)
-        .current_dir(&folder)
-        .envs(crate::worktree::run_path_env(&app, &folder))
+        .current_dir(folder)
+        .envs(crate::worktree::run_path_env(app, folder))
         .envs(COLOR_ENV)
-        .envs(origin)
+        .envs(envs)
         .envs(hub);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    state.label(id, run_label("tests", &folder));
+    state.label(id, run_label("tests", folder));
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
+    let mut on_exit = Some(on_exit);
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             let payload = match event {
@@ -762,8 +779,13 @@ pub async fn desktop_run_local_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
+                    let mut stopped = false;
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                        stopped = runs.stopping.lock().unwrap().contains(&id);
                         runs.drop_child(id);
+                    }
+                    if let Some(on_exit) = on_exit.take() {
+                        on_exit(status.code, stopped);
                     }
                     RunEventPayload::exit(id, status.code)
                 }

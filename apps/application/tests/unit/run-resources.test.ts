@@ -437,3 +437,17 @@ describe('machineFacts and resourceTotals', () => {
     expect(totals.artifactBytes).toBe(10_000_000);
   });
 });
+
+describe('getTestRun machineRuns', () => {
+  test('is the machine-runs capability of the run project: off until the instance turns it on, off again when the project declines it', async () => {
+    const { setInstanceDecisions, setProjectDecisions } = await import('../../shared/handlers/capabilities');
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'passed', startTime: new Date() });
+
+    expect(await getTestRun(db as any, 7)).toMatchObject({ machineRuns: false });
+    await setInstanceDecisions(db as any, { 'machine-runs': 'enabled' });
+    expect(await getTestRun(db as any, 7)).toMatchObject({ machineRuns: true });
+    await setProjectDecisions(db as any, 1, { 'machine-runs': 'declined' });
+    expect(await getTestRun(db as any, 7)).toMatchObject({ machineRuns: false });
+  });
+});

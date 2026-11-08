@@ -46,6 +46,9 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
     casesWhere((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status))),
   );
 
+  /** Every test of the run, skipped ones included, as a run request for all its tests resolves them. */
+  const everyCase = computed<RetryCase[]>(() => casesWhere(() => true));
+
   /** The Playwright projects the failing tests ran in, the ones the command can name. */
   const projects = computed(() => retryProjects(failedCases.value));
 
@@ -60,5 +63,5 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
 
   const title = computed(() => (copied.value ? 'Copied!' : copyPreview(command.value)));
 
-  return { mode, failedCases, flakyCases, allCases, projects, command, copyCommand, copied, title };
+  return { mode, failedCases, flakyCases, allCases, everyCase, projects, command, copyCommand, copied, title };
 }

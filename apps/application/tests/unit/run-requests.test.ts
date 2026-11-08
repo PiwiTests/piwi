@@ -38,6 +38,7 @@ const {
   resolveRequestTests,
   stopOwnRequest,
 } = await import('../../server/utils/run-requests');
+const { listOwnRequests } = await import('#shared/handlers/run-requests');
 const { RUN_REQUEST_LIMITS } = await import('@piwitests/core/run-request');
 const { buildAccessSummary, InstanceRole, ProjectRole } = await import('#shared/permissions');
 
@@ -503,6 +504,20 @@ describe('the life of a request', () => {
     expect(await findOwnRequest(db as never, id, userId, viewerOf(allowed))).not.toBeNull();
     expect(await findOwnRequest(db as never, id, userId, viewerOf(viewOnly))).toBeNull();
     expect(await findOwnRequest(db as never, id, otherUserId, viewerOf(allowed))).toBeNull();
+  });
+
+  test('the requester lists their own requests, newest first, in the projects they can read', async () => {
+    const t = await target();
+    const older = await request({ createdAt: new Date(T0.getTime() - 1000) });
+    const newer = await request({ targetId: t.targetId });
+    await request({ requesterId: otherUserId });
+    await request({ projectId: viewOnly });
+    const viewer = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: allowed, role: ProjectRole.VIEWER }]);
+    const listed = await listOwnRequests(db as never, userId, viewer);
+    expect(listed.map((r) => r.id)).toEqual([newer, older]);
+    expect(listed[0]!.target).toMatchObject({ id: t.targetId, kind: 'desktop' });
+    expect(await listOwnRequests(db as never, userId, viewer, { projectId: viewOnly })).toEqual([]);
+    expect((await listOwnRequests(db as never, userId, viewer, { projectId: allowed })).length).toBe(2);
   });
 
   test('a request whose target was disconnected ends at its stop', async () => {

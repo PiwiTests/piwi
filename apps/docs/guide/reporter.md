@@ -129,6 +129,8 @@ set, so developers' local runs stay out of a shared dashboard; CI runs, and loca
 provider's variable is set, or `CI` is anything but `false` or `0`. `'off'` never uses the app. `PIWI_DESKTOP_APP`
 overrides the option: `off` sends one local run to `serverUrl`. `init --desktop-app prefer` writes it.
 
+[Run on my machine](/features/run-on-my-machine#what-leaves-your-machine) runs report to the instance that asked.
+
 ## Sharding
 
 Playwright's `--shard` jobs are merged back into a single dashboard run automatically, as long as every shard uses the

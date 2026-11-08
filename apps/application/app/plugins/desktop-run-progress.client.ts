@@ -264,7 +264,8 @@ export default defineNuxtPlugin(() => {
         swept.set(id, now);
         changed = active.delete(id) || changed;
       }
-      const flash = run.kind === 'tests' ? null : finishedJobFlash({ ...run, kind: run.kind });
+      const flash =
+        run.kind === 'tests' || run.kind === 'request' ? null : finishedJobFlash({ ...run, kind: run.kind });
       if (flash) {
         lastFinished = flash;
         changed = true;

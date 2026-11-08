@@ -92,7 +92,8 @@ export function appendPrivateFile(file: string, text: string): void {
 }
 
 /** What `readPrivateFile` found at its path: the file's text, or why it is not trusted. */
-export type PrivateRead = { text: string } | { untrusted: string };
+/** What was read, with the mode of the file as opened, or why it was not trusted. */
+export type PrivateRead = { text: string; mode: number } | { untrusted: string };
 
 /**
  * Read `file` when it is a regular file this user alone may write (`untrustedReason`), checked on the path itself
@@ -105,9 +106,10 @@ export function readPrivateFile(file: string): PrivateRead | null {
   if (reason) return { untrusted: reason };
   const fd = fs.openSync(file, fs.constants.O_RDONLY | NO_FOLLOW | NO_WAIT);
   try {
-    const opened = untrustedReason(fs.fstatSync(fd));
+    const stat = fs.fstatSync(fd);
+    const opened = untrustedReason(stat);
     if (opened) return { untrusted: opened };
-    return { text: fs.readFileSync(fd, 'utf8') };
+    return { text: fs.readFileSync(fd, 'utf8'), mode: stat.mode };
   } finally {
     fs.closeSync(fd);
   }

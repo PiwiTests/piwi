@@ -7,6 +7,7 @@ import type { User } from '../../server/database/schema';
 import { apiError } from '../../server/utils/api-error';
 import { InstanceRole, ProjectRole } from '#shared/permissions';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * The routes that create, stop or revoke what a connected app holds tell its stream: a new request, a stop, and the
@@ -35,17 +36,6 @@ vi.mock('../../server/utils/auth', async (importOriginal) => {
 vi.mock('../../server/utils/project-access', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../server/utils/project-access')>()),
   requireProjectPermission: async () => {},
-}));
-vi.mock('../../server/utils/run-requests', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../server/utils/run-requests')>()),
-  resolveRequestTests: async (_db: unknown, source: { runId: number }) => ({
-    ok: true,
-    projectId: 0,
-    tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: 'chromium' }],
-    skipped: 0,
-    source: { runId: source.runId },
-    projects: ['chromium'],
-  }),
 }));
 vi.mock('../../server/utils/profile-picture', () => ({ deleteUserProfilePictures: async () => {} }));
 vi.stubGlobal('getRequestHeader', (event: { node: { req: { headers: Record<string, string> } } }, name: string) => {
@@ -135,6 +125,17 @@ beforeEach(async () => {
     .values({ projectId, status: 'failed', startTime: new Date(), branch: 'main', origin: 'ci' })
     .returning();
   runId = run!.id;
+  const [testCase] = await db
+    .insert(schema.testCases)
+    .values({ projectId, filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card' })
+    .returning();
+  await db
+    .insert(schema.testRunsCases)
+    .values(
+      withStoredVerdicts([
+        { testRunId: runId, testCaseId: testCase!.id, status: 'failed', line: 12, browserName: 'chromium' },
+      ]),
+    );
 });
 
 describe('what a connected app hears from the routes', () => {

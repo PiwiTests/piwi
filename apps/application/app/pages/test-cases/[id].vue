@@ -200,6 +200,11 @@ useViewScroll(
               :run-title="testCase ? testLabel(testCase) : null"
               :preset-options="REPEAT_PRESET"
             />
+            <RunOnMyMachineButton
+              v-if="testCase?.project?.id && testCase.lastExecutionId"
+              :project-id="testCase.project.id"
+              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.lastExecutionId } }]"
+            />
             <TestCaseMergeButton
               v-if="testCase?.project"
               :test-case-id="testCase.id"
