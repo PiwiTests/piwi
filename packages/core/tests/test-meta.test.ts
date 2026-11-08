@@ -5,6 +5,8 @@ import {
   compileExternalIdPattern,
   keepTagsTruncated,
   MAX_TAGS_TRUNCATED_EXAMPLES,
+  MAX_TAGS_TRUNCATED_SUITE_DEPTH,
+  MAX_TAGS_TRUNCATED_TEXT_CHARS,
   normalizeTestTagsWithDropped,
   readTagsTruncated,
   isPiwiAnnotation,
@@ -126,6 +128,47 @@ describe('readTagsTruncated', () => {
     expect(readTagsTruncated({ tests: 'many', examples: [] })).toBeNull();
     expect(readTagsTruncated({ tests: 1e308, examples: [] })).toBeNull();
     expect(readTagsTruncated(null)).toBeNull();
+  });
+});
+
+describe('readTagsTruncated limits', () => {
+  const long = 'x'.repeat(MAX_TAGS_TRUNCATED_TEXT_CHARS + 100);
+  const oversized = {
+    filePath: `tests/${long}.spec.ts`,
+    suitePath: Array.from({ length: MAX_TAGS_TRUNCATED_SUITE_DEPTH + 8 }, (_, i) => `${i}${long}`),
+    title: long,
+    line: 12,
+    dropped: 2,
+  };
+
+  test('cuts the file path, title, describe entries and describe depth', () => {
+    const [example] = readTagsTruncated({ tests: 1, examples: [oversized] })!.examples;
+    expect(example!.filePath).toBe(oversized.filePath.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+    expect(example!.title).toHaveLength(MAX_TAGS_TRUNCATED_TEXT_CHARS);
+    expect(example!.suitePath).toHaveLength(MAX_TAGS_TRUNCATED_SUITE_DEPTH);
+    expect(example!.suitePath!.every((entry) => entry.length === MAX_TAGS_TRUNCATED_TEXT_CHARS)).toBe(true);
+    expect(example!.suitePath![0]).toBe(oversized.suitePath[0]!.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+  });
+
+  test('keeps a line that is a positive safe integer and omits any other', () => {
+    const lineOf = (line: unknown) =>
+      readTagsTruncated({ tests: 1, examples: [{ filePath: 'a', title: 'b', dropped: 1, line }] })!.examples[0]!.line;
+    expect(lineOf(12)).toBe(12);
+    for (const line of [-3, 0, 1.5, Infinity, NaN, 2 ** 60, '12', null]) expect(lineOf(line)).toBeUndefined();
+  });
+
+  test('a collected oversized test and its read form are one test', () => {
+    const collected = collectTagsTruncated([{ ...oversized, tags: tagList(MAX_TEST_TAGS + 2) }])!;
+    expect(collected.examples[0]!.title).toHaveLength(MAX_TAGS_TRUNCATED_TEXT_CHARS);
+    expect(readTagsTruncated(collected)).toEqual(collected);
+  });
+
+  test('merging an oversized report with its cut form counts the test once', () => {
+    const cut = readTagsTruncated({ tests: 1, examples: [oversized] })!;
+    const raw = { tests: 1, examples: [oversized] };
+    expect(keepTagsTruncated(cut, raw)).toEqual(cut);
+    expect(keepTagsTruncated(raw, cut)).toEqual(cut);
+    expect(addTagsTruncated(cut, raw)).toEqual(cut);
   });
 });
 

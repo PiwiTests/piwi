@@ -105,6 +105,35 @@ export interface TagsTruncated {
 }
 
 export const MAX_TAGS_TRUNCATED_EXAMPLES = 20;
+/** The longest `filePath`, `title` and `suitePath` entry kept in a {@link TagsTruncatedTest}; a longer one is cut. */
+export const MAX_TAGS_TRUNCATED_TEXT_CHARS = 500;
+/** The most `suitePath` entries kept in a {@link TagsTruncatedTest}; the first ones are kept. */
+export const MAX_TAGS_TRUNCATED_SUITE_DEPTH = 32;
+
+/**
+ * A {@link TagsTruncatedTest} with every text and the describe path cut to their limits, and `line` kept when it is a
+ * positive safe integer.
+ */
+function cutTruncatedTest(
+  filePath: string,
+  suitePath: string[] | null | undefined,
+  title: string,
+  line: unknown,
+  dropped: number,
+): TagsTruncatedTest {
+  const test: TagsTruncatedTest = {
+    filePath: filePath.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS),
+    title: title.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS),
+    dropped,
+  };
+  if (suitePath?.length) {
+    test.suitePath = suitePath
+      .slice(0, MAX_TAGS_TRUNCATED_SUITE_DEPTH)
+      .map((entry) => entry.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+  }
+  if (typeof line === 'number' && Number.isSafeInteger(line) && line > 0) test.line = line;
+  return test;
+}
 
 function truncatedTestKey(test: { filePath: string; suitePath?: string[]; title: string }): string {
   return `${test.filePath}\u0000${(test.suitePath ?? []).join('\u001f')}\u0000${test.title}`;
@@ -115,16 +144,18 @@ function readTruncatedTest(raw: unknown): TagsTruncatedTest | null {
   const { filePath, suitePath, title, line, dropped } = raw as Record<string, unknown>;
   if (typeof filePath !== 'string' || typeof title !== 'string') return null;
   if (!Number.isSafeInteger(dropped) || (dropped as number) < 1) return null;
-  const test: TagsTruncatedTest = { filePath, title, dropped: dropped as number };
-  if (Array.isArray(suitePath) && suitePath.length > 0 && suitePath.every((s) => typeof s === 'string'))
-    test.suitePath = suitePath as string[];
-  if (typeof line === 'number' && Number.isFinite(line)) test.line = line;
-  return test;
+  const path =
+    Array.isArray(suitePath) && suitePath.length > 0 && suitePath.every((s) => typeof s === 'string')
+      ? (suitePath as string[])
+      : undefined;
+  return cutTruncatedTest(filePath, path, title, line, dropped as number);
 }
 
 /**
  * Read a stored or sent `metadata.tagsTruncated`, or null when it holds no test. Takes `unknown`: malformed examples
- * are dropped, the examples are capped, and the count is never below the examples kept.
+ * are dropped, the examples are capped, and the count is never below the examples kept. Each example's `filePath`,
+ * `title` and `suitePath` entries are cut to {@link MAX_TAGS_TRUNCATED_TEXT_CHARS}, its `suitePath` to
+ * {@link MAX_TAGS_TRUNCATED_SUITE_DEPTH} entries, and its `line` is kept only as a positive safe integer.
  */
 export function readTagsTruncated(raw: unknown): TagsTruncated | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -144,7 +175,8 @@ export function readTagsTruncated(raw: unknown): TagsTruncated | null {
 
 /**
  * The tests whose tags `normalizeTestTags` cuts, from their raw tags: one entry per file, describe path and title
- * (a test that runs in several Playwright projects counts once), or null when no test lost a tag.
+ * (a test that runs in several Playwright projects counts once), or null when no test lost a tag. Examples are cut
+ * the way {@link readTagsTruncated} cuts them, so a collected report and its read form name a test by the same key.
  */
 export function collectTagsTruncated(
   tests: Iterable<{
@@ -159,9 +191,7 @@ export function collectTagsTruncated(
   for (const test of tests) {
     const { dropped } = normalizeTestTagsWithDropped(test.tags);
     if (dropped === 0) continue;
-    const found: TagsTruncatedTest = { filePath: test.filePath, title: test.title, dropped };
-    if (test.suitePath?.length) found.suitePath = [...test.suitePath];
-    if (typeof test.line === 'number') found.line = test.line;
+    const found = cutTruncatedTest(test.filePath, test.suitePath, test.title, test.line, dropped);
     const key = truncatedTestKey(found);
     const known = byKey.get(key);
     if (!known || known.dropped < dropped) byKey.set(key, found);
