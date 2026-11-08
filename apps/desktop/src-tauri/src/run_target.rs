@@ -274,20 +274,27 @@ pub async fn desktop_keep_run_target_key(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Forget the connected instance on this machine: its key leaves the keychain
+/// and the cache, and the instance leaves the store. The folders stay, for a
+/// later connection to the same instance.
+fn forget_kept_key(app: &AppHandle) -> Result<(), String> {
+    if let Some(instance) = connected_instance(app) {
+        keychain::forget(&instance).map_err(|e| format!("could not remove the key from the keychain: {e}"))?;
+    }
+    if let Some(kept) = app.try_state::<KeptKey>() {
+        *kept.0.lock().unwrap() = None;
+    }
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.delete(INSTANCE_KEY);
+    store.save().map_err(|e| e.to_string())
+}
+
 /// Disconnect from the instance: the key leaves the keychain and the server.
 /// The folders stay, for a later connection to the same instance.
 #[tauri::command]
 pub async fn desktop_forget_run_target(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(instance) = connected_instance(&app) {
-            keychain::forget(&instance).map_err(|e| format!("could not remove the key from the keychain: {e}"))?;
-        }
-        if let Some(kept) = app.try_state::<KeptKey>() {
-            *kept.0.lock().unwrap() = None;
-        }
-        let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
-        store.delete(INSTANCE_KEY);
-        store.save().map_err(|e| e.to_string())?;
+        forget_kept_key(&app)?;
         if let Some(server) = server_info(&app) {
             local_call(&server, "DELETE", "/api/desktop/run-target/key", None)?;
         }
@@ -295,6 +302,18 @@ pub async fn desktop_forget_run_target(app: AppHandle) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The instance revoked the key of the connected instance: forget it here, so
+/// the next start of the server does not hand it back. Nothing for another
+/// instance than the connected one, whose key is not the one revoked.
+fn key_revoked(app: &AppHandle, instance: &str) {
+    if connected_instance(app).as_deref() != Some(instance) {
+        return;
+    }
+    if let Err(e) = forget_kept_key(app) {
+        log(app, &format!("could not forget the revoked key: {e}"));
+    }
 }
 
 /// The folders linked for the connected instance's projects.
@@ -578,17 +597,36 @@ pub(crate) fn stop_requested_run(app: &AppHandle, request_id: &str) {
     }
 }
 
+/// A command of the server on the shell's notification stream.
+#[derive(Debug, PartialEq)]
+enum ServerCommand {
+    /// Stop the run a request started; the id is checked where it is used.
+    StopRun(String),
+    /// The instance revoked the key it gave the connected app.
+    KeyRevoked(String),
+}
+
+/// The command `data` carries, or `None` when it is a notification to show.
+/// A command with a value that does not pass is read all the same, so it is
+/// never shown as a notification.
+fn server_command(data: &str) -> Option<ServerCommand> {
+    let value = serde_json::from_str::<serde_json::Value>(data).ok()?;
+    let text = |name: &str| value.get(name).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    match value.get("type")?.as_str()? {
+        "requested-run-stop" => Some(ServerCommand::StopRun(text("requestId"))),
+        "key-revoked" => Some(ServerCommand::KeyRevoked(text("instance"))),
+        _ => None,
+    }
+}
+
 /// A command of the server on the shell's notification stream: `true` when
 /// `data` was one, which then is no notification to show.
 pub(crate) fn take_server_command(app: &AppHandle, data: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
-        return false;
-    };
-    if value.get("type").and_then(|t| t.as_str()) != Some("requested-run-stop") {
-        return false;
-    }
-    if let Some(id) = value.get("requestId").and_then(|v| v.as_str()) {
-        stop_requested_run(app, id);
+    match server_command(data) {
+        Some(ServerCommand::StopRun(id)) => stop_requested_run(app, &id),
+        Some(ServerCommand::KeyRevoked(instance)) if valid_instance(&instance) => key_revoked(app, &instance),
+        Some(ServerCommand::KeyRevoked(_)) => {}
+        None => return false,
     }
     true
 }
@@ -603,6 +641,22 @@ mod tests {
         assert!(!valid_request_id(&"A1".repeat(16)));
         assert!(!valid_request_id("../../etc/passwd"));
         assert!(!valid_request_id(&"a".repeat(31)));
+    }
+
+    #[test]
+    fn the_server_tells_the_shell_to_stop_a_run_or_to_forget_a_key() {
+        let id = "a1".repeat(16);
+        assert_eq!(
+            server_command(&format!(r#"{{"type":"requested-run-stop","requestId":"{id}"}}"#)),
+            Some(ServerCommand::StopRun(id))
+        );
+        assert_eq!(
+            server_command(r#"{"type":"key-revoked","instance":"https://piwi.example.com"}"#),
+            Some(ServerCommand::KeyRevoked("https://piwi.example.com".into()))
+        );
+        assert_eq!(server_command(r#"{"type":"key-revoked"}"#), Some(ServerCommand::KeyRevoked(String::new())));
+        assert_eq!(server_command(r#"{"type":"notification","title":"x"}"#), None);
+        assert_eq!(server_command("not json"), None);
     }
 
     #[test]

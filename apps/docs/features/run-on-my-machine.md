@@ -43,7 +43,7 @@ In Piwi Desktop, open **Settings → Desktop app → Run on my machine**, enter 
 Once allowed, the app keeps its key in the operating system's keychain (Keychain on macOS, Credential Manager on
 Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs.
 An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
-the instance's Connected apps until you revoke it there.
+the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
 The folder of each project is linked on this machine, per instance: the first request for a project asks for it, and
 **Settings → Desktop app** lists the linked folders, with **Unlink**.

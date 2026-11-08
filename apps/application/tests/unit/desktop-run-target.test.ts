@@ -115,6 +115,9 @@ async function fakeInstance() {
     stop: (id: string) => {
       for (const res of streams) res.write(`data: ${JSON.stringify({ type: 'stop', id })}\n\n`);
     },
+    revoke: () => {
+      for (const res of streams) res.write(`data: ${JSON.stringify({ type: 'revoked' })}\n\n`);
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const res of streams) res.destroy();
@@ -261,6 +264,24 @@ describe('a request from the team instance', () => {
       detail: 'No folder is linked to this project on this machine.',
     });
     expect(launchOf(REQUEST_ID)).toBe(null);
+  });
+});
+
+describe('a key the instance revoked', () => {
+  test('tells the shell to forget it, once, and the window that the app is disconnected', async () => {
+    const heard: RunTargetMessage[] = [];
+    const shell: ShellRunTargetCommand[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    subscribeRunTargetShell((command) => shell.push(command));
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => heard.some((m) => m.type === 'run-request'));
+
+    instance.revoke();
+    await until(() => shell.length > 0);
+    expect(shell).toEqual([{ type: 'key-revoked', instance: instance.url }]);
+    expect(runTargetConnection()).toMatchObject({ state: 'revoked', keyToKeep: false });
+    expect(keyToKeep()).toBe(null);
+    expect(JSON.stringify(shell)).not.toContain(KEY);
   });
 });
 

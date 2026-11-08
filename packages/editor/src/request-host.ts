@@ -44,6 +44,11 @@ export interface RequestHostOptions {
   onStop: (id: string) => void;
   /** The connection changed: `revoked` once the key or its app was disconnected, after which the host stops. */
   onStatus?: (status: RequestHostStatus, detail?: string) => void;
+  /**
+   * The instance said the key no longer exists: its stream's `revoked` event, or a 401 that carries the instance's own
+   * message. A 403 stops the host and leaves the key, since it also answers a setting turned off or a permission.
+   */
+  onKeyRevoked?: () => void;
   /** `fetch` for the instance; `instanceFetch` by default. */
   fetch?: typeof instanceFetch;
   /** The pauses, in milliseconds, so tests can shorten them. */
@@ -77,6 +82,16 @@ export class RequestHostError extends Error {
 
 /** Whether a status says the key or its app no longer counts. */
 const isRevokedStatus = (status: number) => status === 401 || status === 403;
+
+/** The `message` of a refusal's JSON body; empty for a body that is not the instance's. */
+async function refusalMessage(response: Response): Promise<string> {
+  try {
+    const message = ((await response.json()) as { message?: unknown } | null)?.message;
+    return typeof message === 'string' ? message : '';
+  } catch {
+    return '';
+  }
+}
 
 /**
  * A request as the instance sent it, checked by the one parser, so nothing the target runs comes unchecked from the
@@ -268,14 +283,10 @@ export class RequestHost {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok) {
-      const message = await response
-        .json()
-        .then((answer: unknown) => {
-          const message = (answer as { message?: unknown } | null)?.message;
-          return typeof message === 'string' ? message : '';
-        })
-        .catch(() => '');
-      if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) this.revoked(message);
+      const message = await refusalMessage(response);
+      if (response.status === 401 || (!onlyRequest && isRevokedStatus(response.status))) {
+        this.revoked(message, response.status === 401 && message !== '');
+      }
       throw new RequestHostError(response.status, message || `The instance answered ${response.status}`);
     }
     return (await response.json().catch(() => ({}))) as T;
@@ -287,9 +298,10 @@ export class RequestHost {
     this.options.onStatus?.(status, detail);
   }
 
-  private revoked(detail?: string): void {
+  private revoked(detail?: string, keyGone = false): void {
     if (this.stopped) return;
     this.setStatus('revoked', detail);
+    if (keyGone) this.options.onKeyRevoked?.();
     this.close();
   }
 
@@ -310,7 +322,7 @@ export class RequestHost {
         if (isRequestId(event.id)) this.withdraw(event.id);
         break;
       case 'revoked':
-        this.revoked();
+        this.revoked(undefined, true);
         break;
     }
   }
@@ -395,12 +407,17 @@ export class RequestHost {
       idle = setTimeout(() => controller.abort(), this.timing.idleMs);
       idle.unref?.();
     };
-    const run = async (): Promise<number | null> => {
+    const run = async (): Promise<{ status: number; message: string } | null> => {
       const response = await this.fetch(`${this.options.instance}/api/run-targets/stream`, {
         headers: { Authorization: `Bearer ${this.options.key}`, Accept: 'text/event-stream' },
         signal: controller.signal,
       });
-      if (!response.ok || !response.body) return response.status;
+      if (!response.ok || !response.body) {
+        return {
+          status: response.status,
+          message: isRevokedStatus(response.status) ? await refusalMessage(response) : '',
+        };
+      }
       this.streamOpen = true;
       this.failures = 0;
       this.setStatus('online');
@@ -423,8 +440,10 @@ export class RequestHost {
     run()
       .then(
         (refused) => {
-          if (refused !== null && isRevokedStatus(refused)) this.revoked();
-          return refused;
+          if (refused !== null && isRevokedStatus(refused.status)) {
+            this.revoked(refused.message || undefined, refused.status === 401 && refused.message !== '');
+          }
+          return refused?.status ?? null;
         },
         () => null,
       )

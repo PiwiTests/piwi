@@ -94,7 +94,8 @@ shell and are feature-equivalent.
   `isBrowserRequest`), refuses no arguments or a folder linked since, writes the token to a private file for the
   reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. The instance's key lives in the OS keychain,
   read only while `runTargetInstance` is set, handed to the server after each start (`hand_kept_key`), never to the
-  window; a stop from the dashboard reaches the shell on its notification stream.
+  window; a stop from the dashboard reaches the shell on its notification stream, and so does `key-revoked`, which
+  forgets the key only when it names the connected instance (`key_revoked`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

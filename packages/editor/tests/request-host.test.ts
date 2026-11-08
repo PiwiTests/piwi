@@ -30,6 +30,8 @@ async function fakeInstance(handlers: {
   stream?: (res: http.ServerResponse) => void;
   list?: () => { requests: RunRequestOffer[]; stops: string[] };
   status?: (path: string) => number | null;
+  /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
+  refusalBody?: string;
 }) {
   const calls: { method: string; path: string; authorization?: string; body: string }[] = [];
   const streams: http.ServerResponse[] = [];
@@ -41,8 +43,8 @@ async function fakeInstance(handlers: {
       calls.push({ method: req.method ?? '', path, authorization: req.headers.authorization, body });
       const status = handlers.status?.(path) ?? null;
       if (status) {
-        res.writeHead(status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: `answered ${status}` }));
+        res.writeHead(status, { 'Content-Type': handlers.refusalBody ? 'text/html' : 'application/json' });
+        res.end(handlers.refusalBody ?? JSON.stringify({ message: `answered ${status}` }));
         return;
       }
       if (path === '/api/run-targets/stream') {
@@ -94,6 +96,7 @@ afterEach(async () => {
 function host(instance: string, overrides: Partial<ConstructorParameters<typeof RequestHost>[0]> = {}) {
   const heard: string[] = [];
   const statuses: string[] = [];
+  const keyGone: string[] = [];
   const made = new RequestHost({
     instance,
     key: KEY,
@@ -102,11 +105,12 @@ function host(instance: string, overrides: Partial<ConstructorParameters<typeof 
     onWithdrawn: (i) => heard.push(`withdrawn ${i}`),
     onStop: (i) => heard.push(`stop ${i}`),
     onStatus: (s) => statuses.push(s),
+    onKeyRevoked: () => keyGone.push('key revoked'),
     timing: { retryFirstMs: 20, retryLastMs: 40, pollOpenMs: 50, pollClosedMs: 30, idleMs: 2_000 },
     ...overrides,
   });
   cleanups.push(() => made.close());
-  return { made, heard, statuses };
+  return { made, heard, statuses, keyGone };
 }
 
 describe('postDeviceFlow', () => {
@@ -233,6 +237,39 @@ describe('the request host', () => {
     const streamsAsked = refusing.calls.filter((c) => c.path === '/api/run-targets/stream').length;
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(refusing.calls.filter((c) => c.path === '/api/run-targets/stream').length).toBe(streamsAsked);
+  });
+
+  test('tells the key is gone on the stream’s revoked event and on a 401 with the instance’s message, once', async () => {
+    const revoking = await fakeInstance({ stream: (res) => revoking.send(res, { type: 'revoked' }) });
+    cleanups.push(revoking.close);
+    const onEvent = host(revoking.url);
+    onEvent.made.start();
+    await until(() => onEvent.statuses.includes('revoked'));
+    expect(onEvent.keyGone).toEqual(['key revoked']);
+
+    const unauthorized = await fakeInstance({ status: () => 401 });
+    cleanups.push(unauthorized.close);
+    const onRefusal = host(unauthorized.url);
+    onRefusal.made.start();
+    await until(() => onRefusal.statuses.includes('revoked'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(onRefusal.keyGone).toEqual(['key revoked']);
+  });
+
+  test('keeps the key on a 403, and on a 401 that is not the instance’s own answer', async () => {
+    const forbidden = await fakeInstance({ status: () => 403 });
+    cleanups.push(forbidden.close);
+    const onForbidden = host(forbidden.url);
+    onForbidden.made.start();
+    await until(() => onForbidden.statuses.includes('revoked'));
+    expect(onForbidden.keyGone).toEqual([]);
+
+    const proxied = await fakeInstance({ status: () => 401, refusalBody: '<html>Sign in</html>' });
+    cleanups.push(proxied.close);
+    const onProxy = host(proxied.url);
+    onProxy.made.start();
+    await until(() => onProxy.statuses.includes('revoked'));
+    expect(onProxy.keyGone).toEqual([]);
   });
 
   test('claims, answers and reports, and says what the instance refused', async () => {

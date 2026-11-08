@@ -72,7 +72,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 - **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
   Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
-  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`).
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`). It tells the
+  shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or a 401 with the instance's JSON
+  message: a 403 or a proxy's 401 stops the host and keeps the key (`tests/request-host.test.ts`).
   ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`).

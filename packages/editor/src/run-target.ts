@@ -43,11 +43,10 @@ interface HeldRequest {
   expiry: ReturnType<typeof setTimeout> | null;
 }
 
-/** What the shell hears on its notification stream: stop the run a request started. */
-export interface ShellRunTargetCommand {
-  type: 'requested-run-stop';
-  requestId: string;
-}
+/** What the shell hears on its notification stream: stop the run a request started, or forget a revoked key. */
+export type ShellRunTargetCommand =
+  | { type: 'requested-run-stop'; requestId: string }
+  | { type: 'key-revoked'; instance: string };
 
 interface DeviceFlow {
   deviceCode: string;
@@ -236,6 +235,7 @@ function startHost(instance: string, key: string): void {
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
+    onKeyRevoked: () => tellShell({ type: 'key-revoked', instance }),
     onStatus: (status, detail) => {
       state.status = status;
       if (status === 'revoked') {
