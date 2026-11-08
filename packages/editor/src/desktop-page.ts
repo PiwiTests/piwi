@@ -20,12 +20,14 @@ const NON_PAGE_PREFIXES = ['/api/', '/_'];
  * request URL `url`, or `null` when `url` is not a dashboard page. Only a path
  * on this origin passes: a protocol-relative `//host`, a backslash and a control
  * character (which a browser drops from a URL, so `/<tab>/host` reads as
- * `//host`) are refused, so the result can never send the window to another site.
+ * `//host`) are refused, so the result can never send the window to another site. A `.` or `..` segment, written as
+ * is or with `%2e`, is refused too: a browser resolves it before the request reaches the server.
  */
 export function desktopPagePath(url: string): string | null {
   if (!url.startsWith('/') || url.startsWith('//') || url.includes('\\') || hasControlCharacter(url)) return null;
   const withoutHash = url.split('#', 1)[0]!;
   const pathname = withoutHash.split('?', 1)[0]!;
+  if (pathname.split('/').some((segment) => /^(\.|%2e)(\.|%2e)?$/i.test(segment))) return null;
   if (NON_PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
   // A dot in the last segment is a static file (`/logo.svg`, `/favicon.ico`).
   const lastSegment = pathname.slice(pathname.lastIndexOf('/') + 1);

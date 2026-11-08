@@ -67,7 +67,7 @@ export function limitedSend<T>(sink: StreamSink): (message: T) => void {
   sink.onDrain(flush);
   return (message) => {
     if (cut) return;
-    const size = JSON.stringify(message).length;
+    const size = Buffer.byteLength(`data: ${JSON.stringify(message)}\n\n`);
     if (unread() + waitingBytes + size > STREAM_CUT_BYTES) {
       cut = true;
       waiting.length = 0;

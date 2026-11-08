@@ -23,18 +23,21 @@ function send(res: ServerResponse, status: number, body: unknown, noStore = fals
   res.end(JSON.stringify(body));
 }
 
-/** The JSON body of a request, null for none or one that is not JSON; `false` past `MAX_RUN_TARGET_BODY`. */
-async function jsonBody(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
+/**
+ * The JSON a request's body holds, read from its `chunks` as they arrive: null for none or one that is not JSON;
+ * `false` past `MAX_RUN_TARGET_BODY`, reading no further.
+ */
+export async function readJsonBody(chunks: AsyncIterable<Uint8Array>): Promise<unknown> {
+  const parts: Uint8Array[] = [];
   let size = 0;
-  for await (const chunk of req as AsyncIterable<Buffer>) {
+  for await (const chunk of chunks) {
     size += chunk.length;
     if (size > MAX_RUN_TARGET_BODY) return false;
-    chunks.push(chunk);
+    parts.push(chunk);
   }
   if (size === 0) return null;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    return JSON.parse(Buffer.concat(parts).toString('utf8')) as unknown;
   } catch {
     return null;
   }
@@ -134,7 +137,7 @@ export async function serveRunTarget(req: IncomingMessage, res: ServerResponse, 
   // A body the route does not read is discarded, so the next request on the connection reads from its start.
   if (!readsBody) req.resume();
   try {
-    const body = readsBody ? await jsonBody(req) : null;
+    const body = readsBody ? await readJsonBody(req) : null;
     if (body === false) {
       req.resume();
       send(res, 413, { message: 'The body is too large' });

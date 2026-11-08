@@ -10,7 +10,7 @@ import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src
 import type * as RunTargetStream from '../src/run-target-stream';
 import { MAX_HUB_BUFFERED } from '../src/run-hub';
 import { resetDesktopRunTarget } from '../src/run-target';
-import { serveRunTarget } from '../src/run-target-http';
+import { MAX_RUN_TARGET_BODY, serveRunTarget } from '../src/run-target-http';
 import { matchRunTargetRoute, RUN_TARGET_BASE, RUN_TARGET_ROUTES } from '../src/run-target-routes';
 import { answerSession, queryOf, SESSION_PATH, sessionCookieHeader } from '../src/run-target-session';
 import {
@@ -142,7 +142,7 @@ async function bareHost() {
         const payload = body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
         const req = http.request(
           `${base}${RUN_TARGET_BASE}${route}`,
-          { method, headers: { ...headers, ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) } },
+          { method, headers: { ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers } },
           (res) => {
             let text = '';
             res.setEncoding('utf8');
@@ -248,6 +248,7 @@ const ROUTE_CALLS = Object.entries(RUN_TARGET_ROUTES).map(([name, route]) => ({
   method: route.method,
   route: route.path.replace(':id', REQUEST_ID),
   shellOnly: route.shellOnly,
+  readsBody: 'readsBody' in route,
 }));
 
 describe('the guard', () => {
@@ -310,6 +311,39 @@ describe('every host of the run-target routes', () => {
         400,
       );
     }
+  });
+
+  test('answers 415 to a body that is not application/json, on every route that reads one', async () => {
+    const decision = '{"decision":"run"}';
+    for (const call of ROUTE_CALLS.filter((c) => c.readsBody)) {
+      const route = call.route;
+      for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'text/plain;application/json']) {
+        const answer = await host.call(call.method, route, { ...SHELL, 'Content-Type': type }, decision);
+        expect(answer.status, `${call.name} ${type}`).toBe(415);
+        expect(answer.body).toEqual({ message: 'The body is application/json' });
+      }
+      const sent = await host.call(call.method, route, { ...SHELL, 'Content-Type': '' }, decision);
+      expect(sent.status, call.name).toBe(415);
+    }
+  });
+
+  test('reads a JSON body whatever the case or parameters of its type', async () => {
+    for (const type of ['application/json', 'Application/JSON', 'application/json; charset=utf-8']) {
+      const answer = await host.call(
+        'POST',
+        `/requests/${REQUEST_ID}/answer`,
+        { ...SHELL, 'Content-Type': type },
+        { decision: 'yes' },
+      );
+      expect(answer.status, type).toBe(400);
+    }
+  });
+
+  test('answers 413 to a body past 64 KB, and keeps answering', async () => {
+    const large = JSON.stringify({ instance: 'x'.repeat(MAX_RUN_TARGET_BODY) });
+    expect((await host.call('POST', '/connect', SHELL, large)).status).toBe(413);
+    expect((await host.call('POST', '/connect', SHELL, { instance: 'x'.repeat(1000) })).status).toBe(400);
+    expect((await host.call('GET', '', SHELL)).status).toBe(200);
   });
 
   test('settles a request whose client leaves mid-body, and answers the next one', async () => {
@@ -579,7 +613,7 @@ describe('the unread data of a stream', () => {
   test('cuts the stream once, counting what waits, past 32 MB', () => {
     const { sink, sent, state, read } = fakeSink();
     const send = limitedSend(sink);
-    state.unread = STREAM_CUT_BYTES - 10;
+    state.unread = STREAM_CUT_BYTES - 100;
     send({ i: 1 });
     expect(state.closed).toBe(0);
 
@@ -590,6 +624,27 @@ describe('the unread data of a stream', () => {
     read(0);
     expect(state.closed).toBe(1);
     expect(sent).toEqual([]);
+  });
+
+  test('counts the bytes a message is written as, framing included', () => {
+    const { sink, sent, state } = fakeSink();
+    const send = limitedSend(sink);
+    // Fewer characters than the cut, more bytes: each euro sign is one character and three bytes.
+    const text = '€'.repeat(12 * 1024 * 1024);
+    expect(JSON.stringify({ text }).length).toBeLessThan(STREAM_CUT_BYTES);
+    send({ text });
+    expect(state.closed).toBe(1);
+    expect(sent).toEqual([]);
+
+    const edge = fakeSink();
+    const sendEdge = limitedSend(edge.sink);
+    const framed = (message: unknown) => Buffer.byteLength(`data: ${JSON.stringify(message)}\n\n`);
+    edge.state.unread = STREAM_CUT_BYTES - framed({ i: 1 });
+    sendEdge({ i: 1 });
+    expect(edge.state.closed).toBe(0);
+    edge.state.unread += 1;
+    sendEdge({ i: 2 });
+    expect(edge.state.closed).toBe(1);
   });
 
   test('counts what waits toward the cut', () => {

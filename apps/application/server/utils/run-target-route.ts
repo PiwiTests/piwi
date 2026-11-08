@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3';
 import { cookiesOf, headersOf } from '@piwitests/editor/host-guard';
+import { readJsonBody } from '@piwitests/editor/run-target-http';
 import { answerRunTargetRoute, RUN_TARGET_ROUTES, type RunTargetRouteName } from '@piwitests/editor/run-target-routes';
 import { apiError } from './api-error';
 import { requireAuth } from './auth';
@@ -14,11 +15,14 @@ export async function runTargetRoute(event: H3Event, name: RunTargetRouteName): 
   await requireAuth(event);
   const headers = headersOf(event.node.req.headers);
   const method = RUN_TARGET_ROUTES[name].method;
+  // The body is read here, not by h3, so the size limit and the JSON parse are the node host's.
+  const body = method === 'GET' || method === 'DELETE' ? null : await readJsonBody(event.node.req);
+  if (body === false) throw apiError({ statusCode: 413, message: 'The body is too large' });
   const answer = await answerRunTargetRoute(name, {
     headers,
     cookies: cookiesOf(headers.cookie),
     id: getRouterParam(event, 'id'),
-    body: method === 'GET' || method === 'DELETE' ? null : await readBody(event).catch(() => null),
+    body,
   });
   if (answer.noStore) setResponseHeader(event, 'cache-control', 'no-store');
   if (answer.status >= 400) {

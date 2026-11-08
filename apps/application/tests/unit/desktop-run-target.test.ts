@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Readable } from 'node:stream';
 import type { H3Event } from 'h3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
@@ -41,7 +42,6 @@ vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('setResponseHeader', () => {});
-vi.stubGlobal('readBody', async (event: { body?: unknown }) => event.body);
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, name: string) => event.params?.[name]);
 vi.stubGlobal(
   'getRequestHeader',
@@ -307,8 +307,12 @@ describe('the host stopping', () => {
 
 describe('the shell’s routes', () => {
   type Route = (event: H3Event) => Promise<unknown>;
-  const asked = (headers: Record<string, string>, params: Record<string, string> = {}) =>
-    ({ context: {}, params, node: { req: { headers }, res: {} } }) as unknown as H3Event;
+  const asked = (headers: Record<string, string>, params: Record<string, string> = {}, body?: string) =>
+    ({
+      context: {},
+      params,
+      node: { req: Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(body)]), { headers }), res: {} },
+    }) as unknown as H3Event;
 
   test('refuse a request a browser sends, and answer the shell', async () => {
     const getKey = (await import('../../server/api/desktop/run-target/key.post')).default as Route;
@@ -318,6 +322,36 @@ describe('the shell’s routes', () => {
     await expect(launch(asked(browser, { id: REQUEST_ID }))).rejects.toMatchObject({ statusCode: 403 });
     await expect(getKey(asked({}))).rejects.toMatchObject({ statusCode: 404 });
     await expect(launch(asked({}, { id: 'x' }))).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test('refuse a body that is not application/json, as the node host does', async () => {
+    const connect = (await import('../../server/api/desktop/run-target/connect.post')).default as Route;
+    const answer = (await import('../../server/api/desktop/run-target/requests/[id]/answer.post')).default as Route;
+    const decision = '{"decision":"run"}';
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded']) {
+      await expect(answer(asked({ 'content-type': type }, { id: REQUEST_ID }, decision))).rejects.toMatchObject({
+        statusCode: 415,
+      });
+    }
+    await expect(
+      answer(asked({ 'content-type': 'text/plain' }, { id: REQUEST_ID }, 'decision=run')),
+    ).rejects.toMatchObject({ statusCode: 415 });
+    await expect(connect(asked({}, {}, '{"instance":"ftp://piwi.example.com"}'))).rejects.toMatchObject({
+      statusCode: 415,
+    });
+    for (const type of ['application/json', 'Application/JSON; charset=utf-8']) {
+      await expect(
+        connect(asked({ 'content-type': type }, {}, '{"instance":"ftp://piwi.example.com"}')),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+  });
+
+  test('refuse a body past 64 KB', async () => {
+    const connect = (await import('../../server/api/desktop/run-target/connect.post')).default as Route;
+    const large = JSON.stringify({ instance: 'x'.repeat(64 * 1024) });
+    await expect(connect(asked({ 'content-type': 'application/json' }, {}, large))).rejects.toMatchObject({
+      statusCode: 413,
+    });
   });
 
   test('answer 404 on the server build', async () => {
