@@ -66,8 +66,7 @@ browser on the shell-only ones, and one guard (`host-guard`: the access token, a
 the readiness challenge) that the app's guard calls; the app's routes are one-line adapters, and one contract test
 drives the handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature
 page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. PR 4b is built: Piwi Runner (`apps/runner`),
-the same
-Rust crate built with the `runner` feature and `runner.conf.json` (its own name, identifier, one window, no file
+the same Rust crate built with the `runner` feature and `runner.conf.json` (its own name, identifier, one window, no file
 associations and its own keychain service), with the desktop's Node sidecar running a small host
 (`apps/runner/server`) that serves the run-target handlers of PR 4a, the window's files and the readiness probe. The
 window is a single-page Nuxt app that extends `packages/run-ui`, the layer the dashboard's desktop pages now share (the
@@ -277,7 +276,8 @@ requests (D5), and the paths follow a rule repro requests already follow.
 - **Connecting a target uses the device flow that exists.** The target shows a code and opens the instance's connect
   page; the person signs in, checks that both show the same code, and allows. `clientKind` becomes a stored column with
   `desktop` and `runner` added, and the page gains their words ("Connect Piwi Runner", "My Piwi Runner shows this same
-  code"). `piwi://connect?instance=<origin>` from the instance's page starts the same flow in the app, which first asks
+  code"). The instance's page has one link per target: `piwi://connect?instance=<origin>` for the desktop app and
+  `piwi-runner://connect?instance=<origin>` for Piwi Runner. Each starts the same flow in its app, which first asks
   "Connect to piwi.acme.com?" and connects nothing from the link alone. Where the link is blocked, or the browser is on
   another machine, the person types the instance's address in the app.
 - **The key it gets is a target key**: it holds `run:receive` alone, which opens the request stream of its owner, reads
@@ -540,8 +540,8 @@ Wireframes; words as in D19.
 ```
 
 With no target connected, the button reads **Set up Run on my machine**: what it does, the download of the desktop app
-(and of Piwi Runner once it ships), and **Connect** (`piwi://connect?instance=…`). With the capability off, the button
-is not shown.
+(and of Piwi Runner once it ships), and **Connect**, one link per target (`piwi://connect?instance=…` for the desktop
+app, `piwi-runner://connect?instance=…` for Piwi Runner). With the capability off, the button is not shown.
 
 ### 2. The confirmation in the target
 
