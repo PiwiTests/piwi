@@ -72,7 +72,7 @@ window is a single-page Nuxt app that extends `packages/run-ui`, the layer the d
 connection card, the confirmation of a request, the stream of the host's events); it shows the runs the shell started,
 with their output and **Stop**. The shell answers `piwi://connect` by coming to the front. Runner has no hub of its own
 in this PR: a run it starts reports to the instance and shows in the window, but the pause, step and live view of D7
-are not wired yet. Signing, installers and updates are PR 4c. Its feature page is `features/piwi-runner`. The instance's
+are not wired yet. Signing, installers and updates are PR 4c. The instance's
 side of PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
 left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
 the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time
