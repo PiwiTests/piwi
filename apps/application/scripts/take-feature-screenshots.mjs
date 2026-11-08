@@ -2368,7 +2368,7 @@ const SCENES = [
     name: 'run-on-my-machine',
     mode: 'demo',
     description:
-      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, and Settings → Account → Your runs on my machine',
+      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, the window opened again on that outcome, and Settings → Account → Your runs on my machine',
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle }) {
@@ -2396,6 +2396,13 @@ const SCENES = [
       await state.filter({ hasText: 'Ended' }).waitFor({ timeout: 30_000 });
       await settle();
       await shoot('ended', { of: '[role="dialog"]', pad: 0 });
+      // Opened again, the window still shows the request that ended, until New request.
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      await button.click();
+      await dialog.getByTestId('run-request-state').filter({ hasText: 'Ended' }).waitFor();
+      await settle();
+      await shoot('reopened', { of: '[role="dialog"]', pad: 0 });
       await page.keyboard.press('Escape');
       await page.goto(page.url().replace(/\/test-run-cases\/.*$/, '/settings/account'));
       await page
@@ -2421,6 +2428,7 @@ const SCENES = [
       'run-on-my-machine-menu-phone.png',
       'run-on-my-machine-running.png',
       'run-on-my-machine-ended.png',
+      'run-on-my-machine-reopened.png',
       'run-on-my-machine-list.png',
     ],
   },
