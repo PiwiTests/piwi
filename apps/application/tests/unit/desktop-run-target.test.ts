@@ -201,7 +201,10 @@ describe('a request from the team instance', () => {
       statusCode: 409,
     });
     const shown = asked.type === 'run-request' ? asked.request.command : null;
+    // A plan under way when **Run** comes never shows the request again.
+    const replanning = planAgain(REQUEST_ID);
     const answering = answerRunRequest(REQUEST_ID, 'run', shown);
+    expect(await replanning).toBe(null);
     // Nothing plans the request again while **Run** is being answered.
     expect(await planAgain(REQUEST_ID)).toBe(null);
     expect(await answering).toEqual({ ok: true, launch: true });
@@ -269,11 +272,13 @@ describe('connecting', () => {
     expect(keyToKeep()).toBe(null);
   });
 
-  test('refuses a sign-in page on another site', async () => {
+  test('opens the sign-in page of the address connected to, whatever page the answer names', async () => {
     verifyAt = 'https://elsewhere.example.com/connect';
     const connection = await connectRunTarget(instance.url);
-    expect(connection).toMatchObject({ state: 'none', verificationUrl: null });
-    expect(connection.error).toMatch(/another site/);
+    expect(connection).toMatchObject({
+      state: 'signing-in',
+      verificationUrl: `${instance.url}/extension/connect?code=ABCD-EFGH`,
+    });
   });
 });
 

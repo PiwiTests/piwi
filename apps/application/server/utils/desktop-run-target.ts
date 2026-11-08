@@ -379,20 +379,9 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
     return runTargetConnection();
   }
   const { answer } = started;
-  if (
-    started.status !== 200 ||
-    typeof answer.deviceCode !== 'string' ||
-    typeof answer.userCode !== 'string' ||
-    typeof answer.verificationUrl !== 'string'
-  ) {
+  if (started.status !== 200 || typeof answer.deviceCode !== 'string' || typeof answer.userCode !== 'string') {
     state.error =
       typeof answer.message === 'string' ? answer.message : `The instance answered ${started.status} to connect.`;
-    tellConnection();
-    return runTargetConnection();
-  }
-  // The page the person allows the app on is the instance's own, never one its answer points elsewhere.
-  if (!sameOrigin(answer.verificationUrl, instance)) {
-    state.error = 'The instance named a sign-in page on another site.';
     tellConnection();
     return runTargetConnection();
   }
@@ -400,7 +389,9 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
   state.flow = {
     deviceCode: answer.deviceCode,
     userCode: answer.userCode,
-    verificationUrl: answer.verificationUrl,
+    // The page the person allows the app on is the instance's own, at the address they connected to, whatever
+    // page its answer names.
+    verificationUrl: `${instance}/extension/connect?code=${encodeURIComponent(answer.userCode)}`,
     interval,
     expiresAt: Date.now() + Math.min(Number(answer.expiresIn) || 600, 900) * 1000,
   };
@@ -450,18 +441,13 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
 /** Check a held request again, after the person linked its folder. */
 export async function planAgain(id: string): Promise<RunRequestPromptView | null> {
   const held = state.held.get(id);
-  if (!held || held.answering || held.token || held.launched) return null;
-  held.plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
+  const unanswered = () => !!held && state.held.get(id) === held && !held.answering && !held.token && !held.launched;
+  if (!held || !unanswered()) return null;
+  const plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
+  // Answered or gone while it was planned: the window shows it no more.
+  if (!unanswered()) return null;
+  held.plan = plan;
   return promptOf(held);
-}
-
-/** Whether `url` is on the origin of `instance`. */
-function sameOrigin(url: string, instance: string): boolean {
-  try {
-    return new URL(url).origin === new URL(instance).origin;
-  } catch {
-    return false;
-  }
 }
 
 /** Whether a value is a request id, as the routes take it. */
