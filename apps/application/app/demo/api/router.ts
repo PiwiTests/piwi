@@ -70,6 +70,13 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import {
+  apiCreateRunRequest,
+  apiGetRunRequest,
+  apiListRunRequests,
+  apiStopRunRequest,
+  demoReadRunRequestBody,
+} from './run-requests';
 import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
@@ -657,6 +664,18 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
   if (!demoCan(ctx, 'users:manage') && ctx?.actingUserId !== userId) {
     throw demoHttpError(403, 'Insufficient permissions');
   }
+}
+
+/** The person a run request belongs to: the acting persona, as the server's routes need a signed-in caller. */
+function demoRequester(ctx: DemoCtx | undefined): number {
+  if (!ctx?.actingUserId) {
+    throw demoHttpError(403, 'Run on my machine needs sign-in turned on: a request belongs to the person who made it');
+  }
+  return ctx.actingUserId;
+}
+
+function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
+  return ctx?.access ?? ADMIN_ACCESS;
 }
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
@@ -3359,6 +3378,32 @@ const routes: RouteEntry[] = [
       // The demo's simulated desktop app holds its stream open for as long as the demo runs.
       return { items: await listConnectedApps(await getDemoDb(), +m[1]!, () => true) };
     },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests$/,
+    handler: async (_m, _b, q, ctx) => apiListRunRequests(demoRequester(ctx), demoAccess(ctx), q),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests$/,
+    permission: 'run:request',
+    handler: async (_m, body, _q, ctx) => {
+      const requesterId = demoRequester(ctx);
+      const input = await demoReadRunRequestBody(body, requesterId);
+      assertDemoScope(ctx, input.projectId);
+      return apiCreateRunRequest(requesterId, input);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiGetRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests\/([^/]+)\/stop$/,
+    handler: async (m, _b, _q, ctx) => apiStopRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
   },
   {
     method: 'POST',

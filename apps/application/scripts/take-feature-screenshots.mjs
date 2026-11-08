@@ -2436,6 +2436,74 @@ const SCENES = [
     outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
   },
   {
+    name: 'run-on-my-machine',
+    mode: 'demo',
+    description:
+      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, the window opened again on that outcome, and Settings → Account → Your runs on my machine',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the request.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const button = page.getByRole('button', { name: 'Run on my machine' });
+      await button.waitFor({ timeout: 90_000 });
+      await button.click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('radio').first().waitFor({ timeout: 15_000 });
+      await settle();
+      await shoot('menu', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1000 });
+      await settle();
+      await shoot('menu-phone', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await dialog.getByRole('button', { name: 'Send' }).click();
+      const state = dialog.getByTestId('run-request-state');
+      await state.filter({ hasText: 'Running in' }).waitFor({ timeout: 20_000 });
+      await settle();
+      await shoot('running', { of: '[role="dialog"]', pad: 0 });
+      await state.filter({ hasText: 'Ended' }).waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('ended', { of: '[role="dialog"]', pad: 0 });
+      // Opened again, the window still shows the request that ended, until New request.
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      await button.click();
+      await dialog.getByTestId('run-request-state').filter({ hasText: 'Ended' }).waitFor();
+      await settle();
+      await shoot('reopened', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await page.goto(page.url().replace(/\/test-run-cases\/.*$/, '/settings/account'));
+      await page
+        .locator('[data-shot="account-run-requests"] [data-testid="run-requests-list"]')
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('list', { of: '[data-shot="account-run-requests"]', pad: 12 });
+      await page.goBack({ waitUntil: 'domcontentloaded' });
+      await page
+        .getByRole('link', { name: /^Run #\d+$/ })
+        .first()
+        .click();
+      await page
+        .locator('[data-shot="run-header"]')
+        .getByRole('button', { name: 'Run on my machine' })
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('run-header', { of: '[data-shot="run-header"]', pad: 0 });
+    },
+    outputs: [
+      'run-on-my-machine-run-header.png',
+      'run-on-my-machine-menu.png',
+      'run-on-my-machine-menu-phone.png',
+      'run-on-my-machine-running.png',
+      'run-on-my-machine-ended.png',
+      'run-on-my-machine-reopened.png',
+      'run-on-my-machine-list.png',
+    ],
+  },
+  {
     name: 'demo-simulator',
     mode: 'demo',
     description:
@@ -4802,6 +4870,25 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #6 has two tests that declare more tags than a test keeps.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 720 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1400 } },
+  ].map(({ suffix, viewport }) => ({
+    name: `run-tags-truncated${suffix}`,
+    description: `Run page at ${viewport.width} px of a run whose tests lost tags past the limit: the Tags cut fact on the facts line, and the Tags cut row in Details`,
+    route: '/test-runs/6',
+    viewport,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-tags-truncated-fact"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await page.locator('[data-shot="run-tags-truncated"]').waitFor();
+      await settle();
+      await shoot('details');
+    },
+  })),
   {
     name: 'run-errors',
     description:
@@ -7600,6 +7687,98 @@ const SCENES = [
       await page.getByText('/home/dev/shop').first().waitFor();
       await settle();
       await shoot();
+    },
+  },
+  {
+    name: 'desktop-team-run-request',
+    description:
+      'A run request from a team instance, asked about in the desktop window: the tests, the checks of the linked folder (off the run’s commit, so by title) and the command (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      // The desktop event stream delivers the request; outside the shell the
+      // run-target routes do not exist, so the stream is answered here.
+      const request = {
+        id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
+        instance: 'https://piwi.example.com',
+        projectId: 1,
+        tests: [
+          { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
+          {
+            filePath: 'tests/checkout.spec.ts',
+            title: 'applies a coupon to the total',
+            line: 77,
+            projectName: 'chromium',
+          },
+        ],
+        options: { headed: true, trace: 'retain-on-failure' },
+        source: { runId: 2, branch: 'main', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e' },
+        checks: [
+          { id: 'folder', level: 'ok', message: 'Linked folder: /home/dev/code/acme-checkout' },
+          { id: 'config', level: 'ok', message: 'Playwright config: playwright.config.ts' },
+          { id: 'specs', level: 'ok', message: 'Both spec files are in the folder' },
+          { id: 'playwright', level: 'ok', message: '@playwright/test 1.61.0 is installed' },
+          {
+            id: 'commit',
+            level: 'warn',
+            message:
+              'The run was on main at a1b2c3d; this folder is on feat/coupons at 9f8e7d6: the tests are picked by title',
+          },
+        ],
+        runnable: true,
+        command:
+          'npx playwright test /home/dev/code/acme-checkout/tests/checkout.spec.ts "--grep=(?:^| )(?:pays with a saved card|applies a coupon to the total)(?: @\\S+)*$" --project=chromium --headed --trace=retain-on-failure',
+        hasFolder: true,
+        answerBy: new Date(Date.now() + 600_000).toISOString(),
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      await page.locator('[data-shot="desktop-team-run-request"]').waitFor({ timeout: 60_000 });
+      // **Run** is armed once the request has been shown, unchanged, for a second.
+      await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Run$/ }).waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-team-instance-card',
+    description:
+      'Settings → Desktop app → Run on my machine: connected to a team instance, with a linked folder (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/desktop',
+    requestFolders: { 1: '/home/dev/code/acme-checkout' },
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      const connection = {
+        state: 'online',
+        instance: 'https://piwi.example.com',
+        userCode: null,
+        verificationUrl: null,
+        error: null,
+        keyToKeep: false,
+        linkedProjectIds: [1],
+      };
+      await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-target', connection })}\n\n`,
+        }),
+      );
+      await page.reload();
+      const card = page.locator('[data-shot="desktop-team-instance-card"]');
+      await card.getByText('Connected: requests from your pages come here').waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="desktop-team-instance-card"]', pad: 16 });
     },
   },
   {

@@ -69,6 +69,10 @@ How the server merges shards:
   write that shards of one run make one at a time (`tests/unit/sharded-run-setup.test.ts`).
 - **A shard's resource report replaces the one it sent before, whole**: one `test_run_resource_reports` row per run
   and shard (`saveResourceReportPart`, `shared/handlers/resource-reports.ts`), never merged into another shard's row.
+- **An environment snapshot replaces its row whole**: one `test_run_environment_snapshots` row per run, kind and scope
+  (shard, shard and project, origin), written only through `saveEnvironmentSnapshots`
+  (`shared/handlers/environment-snapshots.ts`), which keeps the listed fields alone; every ingest route, `begin`,
+  `start` and the demo's mirror included, passes it `body.environments` (`tests/unit/environment-snapshots.test.ts`).
 
 ### Stream tokens
 

@@ -12,8 +12,9 @@ import type {
   TrackerSummary,
 } from '#shared/integrations/types';
 import { foldText } from '#shared/utils/fold-text';
-import { nonSecretCredentials } from '#shared/integrations/registry';
+import { connectionBaseUrl, credentialFieldError, nonSecretCredentials } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import { demoHttpError } from './http-error';
 import {
   missingFieldsMessage,
   missingRequiredFields,
@@ -75,15 +76,33 @@ export function getDemoConnection(id: number): { connection: ConnectionSummary }
   return id === DEMO_CONNECTION.id ? { connection: demoConnection() } : null;
 }
 
-export function createDemoConnection(body: ConnectionInput): { connection: ConnectionSummary } {
+/**
+ * The base URL a connection is saved with, and its region, as the server sets them: the typed address, or the chosen
+ * region's host. Refuses a select credential field set to none of its options.
+ */
+function demoConnectionEndpoint(
+  provider: string,
+  body: { baseUrl?: string; region?: string; credentials?: Record<string, string> | null },
+): { baseUrl: string; region?: string } {
+  const endpoint = connectionBaseUrl(provider, body);
+  if ('error' in endpoint) throw demoHttpError(400, endpoint.error);
+  const fieldError = credentialFieldError(provider, body.credentials);
+  if (fieldError) throw demoHttpError(400, fieldError);
+  return endpoint;
+}
+
+export function createDemoConnection(body: Omit<ConnectionInput, 'baseUrl'> & { baseUrl?: string; region?: string }): {
+  connection: ConnectionSummary;
+} {
+  const endpoint = demoConnectionEndpoint(body.provider, body);
   return {
     connection: {
       ...DEMO_CONNECTION,
       id: 2,
       provider: body.provider,
       name: body.name,
-      baseUrl: body.baseUrl,
-      config: body.config ?? { flavor: 'cloud' },
+      baseUrl: endpoint.baseUrl,
+      config: endpoint.region ? { ...body.config, region: endpoint.region } : (body.config ?? { flavor: 'cloud' }),
       status: 'unverified',
       hasCredentials: !!body.credentials && Object.keys(body.credentials).length > 0,
       credentialValues: nonSecretCredentials(body.provider, body.credentials),
@@ -91,13 +110,21 @@ export function createDemoConnection(body: ConnectionInput): { connection: Conne
   };
 }
 
-export function updateDemoConnection(id: number, body: Partial<ConnectionInput>): { connection: ConnectionSummary } {
+export function updateDemoConnection(
+  id: number,
+  body: Partial<ConnectionInput> & { region?: string },
+): { connection: ConnectionSummary } {
+  // The demo's one connection is Jira, moved by a typed address only.
+  const baseUrl =
+    body.baseUrl !== undefined
+      ? demoConnectionEndpoint(DEMO_CONNECTION.provider, body).baseUrl
+      : DEMO_CONNECTION.baseUrl;
   return {
     connection: {
       ...DEMO_CONNECTION,
       id,
       name: body.name ?? DEMO_CONNECTION.name,
-      baseUrl: body.baseUrl ?? DEMO_CONNECTION.baseUrl,
+      baseUrl,
       // Mirror the server's merge: submitted non-secret fields override the stored ones.
       credentialValues: { ...DEMO_CONNECTION.credentialValues, ...nonSecretCredentials('jira', body.credentials) },
     },

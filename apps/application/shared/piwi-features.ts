@@ -190,6 +190,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/environment-incidents',
       },
       {
+        title: 'Run environment',
+        summary:
+          'Where each run executed (runner, browsers, servers under test) and what changed between runs, shards, or a failure and its last pass.',
+        needs: [],
+        where: 'Test run → Environment, Changes; Test → State',
+        doc: 'features/run-environment',
+      },
+      {
         title: 'Flaky tests & quarantine',
         summary:
           'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',

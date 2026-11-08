@@ -2,6 +2,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
 import FormData from 'form-data';
+import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
 
@@ -423,7 +424,8 @@ export class HttpClient {
 
   private applyAuth(headers: Record<string, string | number>, auth?: string | null): void {
     if (!auth) return;
-    if (auth.startsWith('pd_')) {
+    // An API key and a request token go as a bearer token; anything else is the session cookie a login gave.
+    if (auth.startsWith('pd_') || auth.startsWith(REQUEST_TOKEN_PREFIX)) {
       headers['Authorization'] = `Bearer ${auth}`;
     } else {
       headers['Cookie'] = auth;

@@ -56,6 +56,13 @@ import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from 
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
+import { demoBrowser, demoCiRunner, demoParisRunner, demoServer } from '../shared/demo/demo-environments.mjs';
+import {
+  environmentChangeMarkers,
+  environmentDigest,
+  environmentScope,
+  sanitizeEnvironmentSnapshot,
+} from '../shared/environment-snapshots.ts';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 import {
   WEB_DASHBOARD_PROJECT_ID,
@@ -471,6 +478,13 @@ const APP_SETTINGS = [
     },
     updated_at: ts('2025-04-20T09:00:00'),
   },
+  // Run on my machine is off until an administrator turns it on; the demo turns it on, so its simulated desktop app
+  // takes the requests of the run and test pages.
+  {
+    key: 'capabilities',
+    value: { decisions: { 'machine-runs': 'enabled' } },
+    updated_at: ts('2025-04-20T09:00:00'),
+  },
 ];
 // Runs kept forever: the v2.4.0 release run (by the release marker linked to
 // it below), one older run kept by hand, and one the reporter kept at ingest.
@@ -694,6 +708,16 @@ function locatorPagesPayloadId(proj) {
 const NETWORK_REQUESTS = [];
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
+
+/** The run metadata naming `ids`' test cases as tests whose tags were cut, as the reporter records them. */
+function demoTagsTruncated(ids) {
+  const examples = ids.map((id, k) => {
+    const { file, title, declLine } = caseById.get(id);
+    const suitePath = (TEST_CASES.find((c) => c.id === id).suite_path || '').split('\x1f').filter(Boolean);
+    return { filePath: file, ...(suitePath.length ? { suitePath } : {}), title, line: declLine, dropped: k + 2 };
+  });
+  return { tests: examples.length, examples };
+}
 
 let runId = 1;
 let trcId = 1;
@@ -1252,6 +1276,9 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run whose suite declared more tags than a test keeps, so the run
+      // page names the tests whose tags were cut (`metadata.tagsTruncated`).
+      ...(proj.id === 1 && i === 5 ? { tagsTruncated: demoTagsTruncated(caseIds.slice(0, 2)) } : {}),
     };
 
     TEST_RUNS.push({
@@ -2245,6 +2272,78 @@ const RESOURCE_OCCURRENCES = [];
         pages: finding.pages ?? null,
       });
     }
+  }
+}
+
+// ── Environment snapshots (post-processing, rng-free) ───────────────────────
+// Where each run executed, as the reporter and the capture fixtures record it
+// (`shared/demo/demo-environments.mjs`): every run's CI runner and each
+// project's page, the newest three runs of each project on a newer runner
+// image, one checkout run on the self-hosted Paris runner, the sharded web
+// run's second shard in another time zone, and the checkout API's clock 3 s
+// ahead on a recent checkout run. The markers the server writes for them are
+// replayed below, once the incident runs are known.
+const TEST_RUN_ENVIRONMENT_SNAPSHOTS = [];
+const ENVIRONMENT_MARKERS = [];
+/** Run id → its snapshots, as the server reads them back. */
+const SNAPSHOTS_BY_RUN = new Map();
+{
+  const byProject = new Map();
+  for (const run of TEST_RUNS) {
+    const list = byProject.get(run.project_id) ?? [];
+    list.push(run);
+    byProject.set(run.project_id, list);
+  }
+  /** Each run's projects, from its executions: name → engine. */
+  const projectsByRun = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const name = row.browser?.projectName;
+    if (!name) continue;
+    const projects = projectsByRun.get(row.test_run_id) ?? new Map();
+    if (!projects.has(name)) projects.set(name, row.browser?.browserName ?? null);
+    projectsByRun.set(row.test_run_id, projects);
+  }
+  const push = (run, snapshot) => {
+    const clean = sanitizeEnvironmentSnapshot(snapshot);
+    TEST_RUN_ENVIRONMENT_SNAPSHOTS.push({
+      id: TEST_RUN_ENVIRONMENT_SNAPSHOTS.length + 1,
+      run_id: run.id,
+      kind: clean.kind,
+      scope: environmentScope(clean),
+      snapshot: clean,
+      digest: environmentDigest(clean),
+      captured_at: run.start_time,
+    });
+    const list = SNAPSHOTS_BY_RUN.get(run.id) ?? [];
+    list.push(clean);
+    SNAPSHOTS_BY_RUN.set(run.id, list);
+  };
+  const browsers = (run, options) => {
+    const projects = [...(projectsByRun.get(run.id) ?? new Map()).entries()].sort((x, y) => x[0].localeCompare(y[0]));
+    for (const [project, browserName] of projects) push(run, demoBrowser({ ...options, project, browserName }));
+  };
+  for (const runs of byProject.values()) {
+    runs.sort((a, b) => b.start_time - a.start_time || b.id - a.id);
+    runs.forEach((run, index) => {
+      const newer = index < 3;
+      const paris = run.project_id === 1 && index === 5;
+      if (run.shard_total === 2) {
+        push(run, demoCiRunner({ shardIndex: 1, newerImage: newer }));
+        push(run, demoCiRunner({ shardIndex: 2, newerImage: newer, timeZone: 'America/New_York', host: 'fv-az207-3' }));
+        browsers(run, { shardIndex: 1, newer });
+        browsers(run, { shardIndex: 2, newer, timeZone: 'America/New_York' });
+      } else if (paris) {
+        push(run, demoParisRunner());
+        browsers(run, { newer, timeZone: 'Europe/Paris', locale: 'fr-FR' });
+      } else {
+        push(run, demoCiRunner({ newerImage: newer }));
+        browsers(run, { newer });
+      }
+      if (run.project_id === 1) {
+        const origin = new URL(DEMO_PROJECTS.find((p) => p.id === 1).baseUrl).origin;
+        push(run, demoServer({ origin, clockOffsetMs: index === 0 ? 3100 : 12 }));
+      }
+    });
   }
 }
 
@@ -5454,6 +5553,7 @@ const REBASE_SQL = [
   // fix_landed_at and announced_at are nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D}, announced_at = announced_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
+  `UPDATE test_run_environment_snapshots SET captured_at = captured_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -6282,6 +6382,47 @@ for (const gap of SCENARIO_GAPS) {
   );
 }
 
+// ── Environment change markers (rng-free) ───────────────────────────────────
+// What `syncEnvironmentMarkersForRun` writes as each run finishes: against the
+// previous run of its project on the same branch and environment label,
+// incident runs left out on both sides, one marker per kind that changed, none
+// for a project that declines markers.
+{
+  const declinesMarkers = new Set(PROJECTS.filter((p) => p.capabilities?.markers === 'declined').map((p) => p.id));
+  const eligible = TEST_RUNS.filter((run) => !incidentRunIds.has(run.id) && !declinesMarkers.has(run.project_id)).sort(
+    (a, b) => a.start_time - b.start_time || a.id - b.id,
+  );
+  for (const run of eligible) {
+    const prev = eligible
+      .filter(
+        (p) =>
+          p.project_id === run.project_id &&
+          p.start_time < run.start_time &&
+          (p.environment ?? null) === (run.environment ?? null) &&
+          (p.branch ?? null) === (run.branch ?? null),
+      )
+      .at(-1);
+    if (!prev) continue;
+    for (const change of environmentChangeMarkers(
+      SNAPSHOTS_BY_RUN.get(prev.id) ?? [],
+      SNAPSHOTS_BY_RUN.get(run.id) ?? [],
+    )) {
+      ENVIRONMENT_MARKERS.push({
+        project_id: run.project_id,
+        occurred_at: run.start_time,
+        label: change.label,
+        description: change.description,
+        category: change.category,
+        environment: run.environment ?? null,
+        source: 'auto',
+        run_id: run.id,
+        created_at: run.start_time,
+        updated_at: run.start_time,
+      });
+    }
+  }
+}
+
 // The v2.4.0 release marker, linked to the run it keeps.
 const releaseRun = TEST_RUNS.find((r) => r.keep_source === 'marker');
 const RELEASE_MARKERS = releaseRun
@@ -6687,6 +6828,13 @@ const lines = [
       ...m,
     })),
   ),
+  insert(
+    'markers',
+    ENVIRONMENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + INCIDENT_MARKERS.length + i + 1,
+      ...m,
+    })),
+  ),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),
@@ -6754,6 +6902,7 @@ const lines = [
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
   insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
+  insert('test_run_environment_snapshots', TEST_RUN_ENVIRONMENT_SNAPSHOTS),
   insert('resource_findings', RESOURCE_FINDINGS),
   insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',

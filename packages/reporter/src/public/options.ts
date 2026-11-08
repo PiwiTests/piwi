@@ -80,6 +80,13 @@ export interface PiwiDashboardOptions {
   collectScmInfo?: boolean;
   /** Auto-collect CI environment info. Defaults to `true`. */
   collectCiInfo?: boolean;
+  /**
+   * Record where the run executed: the runner's time zone, locale, OS, Node.js version and CI image, each browser as
+   * its page reports itself (with the capture fixtures), and each instrumented server under test. The dashboard
+   * shows when they change between runs or shards. Defaults to `true`. Can also be forced off with
+   * `PIWI_COLLECT_ENVIRONMENT_INFO=false`.
+   */
+  collectEnvironmentInfo?: boolean;
   /** Collect step timings, network requests and web vitals. Defaults to `true`. */
   collectPerformanceMetrics?: boolean;
   /**

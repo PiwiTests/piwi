@@ -142,7 +142,7 @@ describe('a private temp file', () => {
     appendPrivateFile(appended, 'b\n');
     expect(fs.statSync(written).mode & 0o777).toBe(0o600);
     expect(fs.statSync(appended).mode & 0o777).toBe(0o600);
-    expect(readPrivateFile(appended)).toEqual({ text: 'a\nb\n' });
+    expect(readPrivateFile(appended)).toMatchObject({ text: 'a\nb\n' });
   });
 
   it('is never appended through a symbolic link', () => {

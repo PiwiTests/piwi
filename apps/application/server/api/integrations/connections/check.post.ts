@@ -1,25 +1,29 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { isIntegrationProvider } from '#shared/integrations/registry';
-import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import {
+  connectionBaseUrl,
+  isIntegrationProvider,
+  providerEndpoint,
+  type IntegrationProviderName,
+} from '#shared/integrations/registry';
 import type { ConnectionCheckResult } from '#shared/integrations/types';
-import { credentialsForCheck } from '../../../utils/integrations/connections';
-import { checkJiraCredentials, probeJiraSite } from '../../../utils/integrations/jira/check';
+import { CONNECTION_CHECKS, ConnectionCheckRefusal } from '../../../utils/integrations/connection-check';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Check a connection before saving it',
     description:
-      'Reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. Each step carries a plain-language `hint` when it fails.',
+      "Runs the provider's own check, with each step carrying a plain-language `hint` when it fails. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. For Jira: reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees.",
     'x-required-permission': 'connections:manage',
   },
 });
 
 const schema = z.object({
   provider: z.string().refine(isIntegrationProvider, 'Unknown provider'),
-  baseUrl: z.string().min(1).max(2000),
+  baseUrl: z.string().min(1).max(2000).optional(),
+  region: z.string().max(50).optional(),
   credentials: z.record(z.string(), z.string()).nullable().optional(),
   connectionId: z.number().int().positive().nullable().optional(),
 });
@@ -31,21 +35,17 @@ export default eventHandler(async (event): Promise<ConnectionCheckResult> => {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
-  const site = normalizeJiraSiteUrl(parsed.data.baseUrl);
-  if (!site) {
-    throw apiError({ statusCode: 400, message: 'Enter the site address, e.g. https://your-team.atlassian.net' });
+  const { provider, ...input } = parsed.data;
+  // A provider reached on its own regional hosts is checked on the region's host, never on a typed one.
+  if (providerEndpoint(provider)?.kind === 'region') {
+    const endpoint = connectionBaseUrl(provider, input);
+    if ('error' in endpoint) throw apiError({ statusCode: 400, message: endpoint.error });
+    input.baseUrl = endpoint.baseUrl;
   }
-
-  const result: ConnectionCheckResult = { baseUrl: site.url, site: await probeJiraSite(site.url) };
-  // An unreachable address answers nothing more with credentials; skip the second wait.
-  if (!result.site.reachable) return result;
-
-  const db = await getDatabase();
-  const credentials = await credentialsForCheck(db, {
-    siteUrl: site.url,
-    credentials: parsed.data.credentials,
-    connectionId: parsed.data.connectionId,
-  });
-  if (!credentials) return result;
-  return { ...result, ...(await checkJiraCredentials(site.url, credentials)) };
+  try {
+    return await CONNECTION_CHECKS[provider as IntegrationProviderName](await getDatabase(), input);
+  } catch (err) {
+    if (err instanceof ConnectionCheckRefusal) throw apiError({ statusCode: 400, message: err.message });
+    throw err;
+  }
 });

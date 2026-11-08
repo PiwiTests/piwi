@@ -48,6 +48,7 @@ import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import {
   displayTitleOf,
@@ -102,7 +103,7 @@ import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-c
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { syncAutoMarkersForRun, syncEnvironmentMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
 import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
@@ -129,6 +130,7 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import {
   readShardDurations,
   readShardSpans,
@@ -138,6 +140,7 @@ import {
   withShardDurations,
 } from '~~/server/utils/shard-spans';
 import { updateRunMetadata } from '~~/server/utils/run-metadata';
+import { recordTagsTruncated } from '~~/server/utils/tags-truncated';
 import { publicRunUrl } from '#shared/run-url';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
@@ -414,6 +417,7 @@ export async function apiBeginTestRun(
     shardTotal?: number;
     isFullRun?: boolean;
     filterDetails?: Record<string, unknown> | null;
+    environments?: unknown;
   },
 ) {
   const db = await getDemoDb();
@@ -458,13 +462,16 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryExternalIdDuplicates(
+    const reported = carryExternalIdDuplicates(
       carryIngestHealth(
         sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
         testRun.metadata,
       ),
       testRun.metadata,
     );
+    const metadata = isSharded
+      ? withShardTagsTruncated(reported, testRun.metadata, body.metadata)
+      : carryTagsTruncated(reported, testRun.metadata);
     await db
       .update(testRuns)
       .set({
@@ -495,10 +502,15 @@ export async function apiBeginTestRun(
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
-    await updateRunMetadata(db, id, (stored) => ({ ...sanitizeMetadata(body.metadata), ...stored }), {
-      ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
-      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-    });
+    await updateRunMetadata(
+      db,
+      id,
+      (stored) => withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
+      {
+        ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+      },
+    );
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -509,6 +521,8 @@ export async function apiBeginTestRun(
       streamToken: testRun.streamToken ?? streamToken,
     };
   }
+
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   return {
     success: true,
@@ -936,6 +950,7 @@ export async function persistRunCases(
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,
@@ -1120,6 +1135,7 @@ let recordingFindings: Promise<unknown> = Promise.resolve();
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await syncEnvironmentMarkersForRun(db, id).catch(() => {});
   recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
   await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
@@ -1142,6 +1158,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   // This reporter's resource report, in its own row next to the other shards'.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
@@ -1277,7 +1294,13 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     : testRun.failedTests;
 
   const reportedMetadata = body.metadata
-    ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
+    ? carryTagsTruncated(
+        carryExternalIdDuplicates(
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          testRun.metadata,
+        ),
+        testRun.metadata,
+      )
     : null;
   const runErrors = storableRunErrors(body.runErrors);
 

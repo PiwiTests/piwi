@@ -74,6 +74,7 @@ export interface BrowserConfig {
   javaScriptEnabled?: boolean | null;
   serviceWorkers?: string | null;
   userAgent?: string | null;
+  headless?: boolean | null;
 }
 
 /**
@@ -689,4 +690,132 @@ export function parseTestStop(value: unknown): TestStop | null {
 /** How long an attempt stood stopped, in ms, as a `test-resumed` says it; null when it does not read. */
 export function parsePausedMs(value: unknown): number | null {
   return ms(value) ? value : null;
+}
+
+// ── Environment snapshots ─────────────────────────────────────────────────────
+
+/** The longest string a snapshot field keeps; a longer one is cut. */
+export const ENVIRONMENT_STRING_MAX = 200;
+
+/** The most environment snapshots one delivery carries: one shard's runner, its browsers and the servers it read. */
+export const ENVIRONMENT_SNAPSHOTS_MAX = 64;
+
+/** The path an instrumented server answers its environment on, beside `/__piwi/manifest`. */
+export const SERVER_ENVIRONMENT_PATH = '/__piwi/environment';
+
+/**
+ * The machine and Node.js process that run Playwright and the reporter, one per shard. Every field is null when it
+ * was not read; the dashboard reads a null as "not recorded".
+ */
+export interface WireRunnerEnvironment {
+  kind: 'runner';
+  v: 1;
+  /** Playwright's shard number (1-based), null for a run that is not sharded. */
+  shardIndex?: number | null;
+  /** `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
+  timeZone?: string | null;
+  /** Minutes east of UTC at run start. */
+  utcOffsetMinutes?: number | null;
+  /** `TZ`, null when unset. */
+  tzVariable?: string | null;
+  /** `Intl.DateTimeFormat().resolvedOptions().locale`. */
+  locale?: string | null;
+  /** `LANG`, `LC_ALL` and `LC_TIME` that are set, as `NAME=value` joined by spaces. */
+  langVariables?: string | null;
+  /** Platform, kernel release and distribution or OS version. */
+  os?: string | null;
+  arch?: string | null;
+  nodeVersion?: string | null;
+  icuVersion?: string | null;
+  /** The CI runner image (`ImageOS ImageVersion`, GitLab's runner version and tags). */
+  ciImage?: string | null;
+  /** `docker` or `kubernetes` when detected. */
+  container?: string | null;
+  cpuModel?: string | null;
+  cores?: number | null;
+  memoryBytes?: number | null;
+  hostname?: string | null;
+  /** Set by the dashboard on a snapshot it built from an imported report. */
+  imported?: boolean | null;
+}
+
+/** A launched browser as its page reports itself, one per shard and Playwright project. */
+export interface WireBrowserEnvironment {
+  kind: 'browser';
+  v: 1;
+  shardIndex?: number | null;
+  /** The Playwright project's name. */
+  project: string;
+  browserName?: string | null;
+  /** `browser.version()`. */
+  browserVersion?: string | null;
+  timeZone?: string | null;
+  locale?: string | null;
+  /** `navigator.languages`, joined by `, `. */
+  languages?: string | null;
+  /** A number and a fixed UTC date as the page formats them by default. */
+  formatSample?: string | null;
+  prefersColorScheme?: string | null;
+  prefersReducedMotion?: string | null;
+  /** `width×height`. */
+  screen?: string | null;
+  devicePixelRatio?: number | null;
+  userAgent?: string | null;
+  headless?: boolean | null;
+}
+
+/** What an instrumented server answers on {@link SERVER_ENVIRONMENT_PATH}. */
+export interface ServerEnvironmentResponse {
+  v: 1;
+  runtime?: string | null;
+  os?: string | null;
+  arch?: string | null;
+  timeZone?: string | null;
+  utcOffsetMinutes?: number | null;
+  locale?: string | null;
+  globalization?: string | null;
+  environmentName?: string | null;
+  appVersion?: string | null;
+  hostname?: string | null;
+  /** An id of the server process: another one after a restart. */
+  instance?: string | null;
+  /** When the process started, as an ISO date. */
+  startedAt?: string | null;
+  /** The server's clock, epoch ms. */
+  now?: number | null;
+}
+
+/** A server under test as the reporter read it, one per origin. */
+export interface WireServerEnvironment extends Omit<ServerEnvironmentResponse, 'v' | 'now'> {
+  kind: 'server';
+  v: 1;
+  origin: string;
+  /** When the reporter read it, epoch ms. */
+  fetchedAt?: number | null;
+  /** The server's clock minus the runner's, measured against the midpoint of the request. */
+  clockOffsetMs?: number | null;
+  /** Half the request's round trip: how far off `clockOffsetMs` may be. */
+  clockOffsetErrorMs?: number | null;
+  /** True when the server answered with another `instance` or `startedAt` at the run's end. */
+  restarted?: boolean | null;
+}
+
+export type WireEnvironmentSnapshot = WireRunnerEnvironment | WireBrowserEnvironment | WireServerEnvironment;
+
+export type EnvironmentKind = WireEnvironmentSnapshot['kind'];
+
+/**
+ * The server's clock offset from one request: `sentAt` and `receivedAt` on the runner's clock, `serverNow` on the
+ * server's, all epoch ms. The server is taken to have read its clock at the midpoint of the request.
+ */
+export function clockOffset(
+  sentAt: number,
+  receivedAt: number,
+  serverNow: number,
+): { clockOffsetMs: number; clockOffsetErrorMs: number } {
+  const roundTrip = Math.max(0, receivedAt - sentAt);
+  return {
+    clockOffsetMs: Math.round(serverNow - (sentAt + roundTrip / 2)),
+    clockOffsetErrorMs: Math.round(roundTrip / 2),
+  };
 }

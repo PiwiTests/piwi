@@ -2759,6 +2759,29 @@ export const testRunResourceReports = sqliteTable(
   }),
 );
 
+// Where a run executed, one row per run, kind and scope (`shared/handlers/environment-snapshots.ts`): the runner of
+// each shard (scope: the shard number, '' when not sharded), each browser (`<shard>|<project>`), each server under
+// test (its origin). A later delivery replaces the row whole.
+export const testRunEnvironmentSnapshots = sqliteTable(
+  'test_run_environment_snapshots',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'runner' | 'browser' | 'server'
+    scope: text('scope').notNull().default(''),
+    snapshot: text('snapshot', { mode: 'json' }).notNull(), // rebuilt field by field on ingest
+    digest: text('digest').notNull(), // fnv1a32 of the compared fields
+    capturedAt: integer('captured_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    runKindScopeIdx: uniqueIndex('idx_test_run_environment_snapshots_run_kind_scope').on(t.runId, t.kind, t.scope),
+  }),
+);
+
 // One batch delivery of a run's results (`/submit`, `/upload`, a shard's for a
 // sharded run), under the key the reporter generated for it, and the run it
 // went to. A delivery repeated with the same key, such as a slow upload the

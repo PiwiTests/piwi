@@ -27,29 +27,51 @@ project; a token that expires unspent ends its request as an error, and a reques
 its `request` origin (a reporter's is dropped) and its requester; the run is its requester's alone, and nobody's once
 the requester is deleted, and it feeds no team use (D14): it matches only the tests the project knows, its executions of
 any other left out, and adds or changes no test or suite. It shows on its run page and, for its requester, in the test's
-recent executions (PR 2c); a list of the requester's own runs is left for PR 3, with the page's button. A request whose
-tests resolve to more than 200 is refused, and the cap of 5 is counted once the request is stored. Every check runs
-before the spend, so a refused start leaves the token to a retry, and a request its requester stopped, or whose target
-was disconnected, starts nothing. Its requester, or someone who holds `run:delete`, deletes it; its stored files read as
-missing to anyone else; it records no coverage and never sets the project's default branch. The request token is not
-taken by the batch upload yet, and is spent by the first start: a requested run that falls back to the batch upload, or
-from `/setup` to `/start`, is refused. PR 2c is built: the stream (D11), whose snapshot and events a target keys by
-request id, with a comment line every 15 seconds; each offered request carries its `expiresAt`, and a waiting request
-that is stopped, or claimed by another of the owner's apps, is `withdrawn` from the others. An open stream checks its
-key again every minute and closes at once when the key is revoked; a target holds 3 streams at most. Presence is an open
-stream, in memory, of an app that called a target route within two minutes: the app calls one every minute while its
-stream is open. Connected apps (D16) lists every key the device flow made, on Settings → Account and in an
-administrator's view of a user, with **Revoke**; the API keys list leaves them out. Settings → Capabilities turns the
-capability on and off (D15), refused (409) while sign-in is off, and a project declines it while the instance has it on.
-The demo seeds one connected desktop app, online; its simulated answers to requests come with PR 3, when the page can
-make one. The feature page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of
-PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app
-first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request
-carries resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to
-one team instance at a time (D9); a requested run shows to its requester alone (D14); the administrator's switch is off
-by default in the first release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy
-retry command** gains the run options and ships first, with **Create issue** (D17, D18). Every other decision is a
-recommendation, and says which written decision it amends. The plan builds on three records that are not on `main`:
+recent executions (PR 2c); PR 3 lists the requester's own requests on Settings → Account. A request whose tests resolve
+to more than 200 is refused, and the cap of 5 is counted once the request is stored. Every check runs before the spend,
+so a refused start leaves the token to a retry, and a request its requester stopped, or whose target was disconnected,
+starts nothing. Its requester, or someone who holds `run:delete`, deletes it; its stored files read as missing to anyone
+else; it records no coverage and never sets the project's default branch. The request token is not taken by the batch
+upload yet, and is spent by the first start: a requested run that falls back to the batch upload, or from `/setup` to
+`/start`, is refused. PR 2c is built: the stream (D11), whose snapshot and events a target keys by request id, with a
+comment line every 15 seconds; each offered request carries its `expiresAt`, and a waiting request that is stopped, or
+claimed by another of the owner's apps, is `withdrawn` from the others. An open stream checks its key again every minute
+and closes at once when the key is revoked; a target holds 3 streams at most. Presence is an open stream, in memory, of
+an app that called a target route within two minutes: the app calls one every minute while its stream is open. Connected
+apps (D16) lists every key the device flow made, on Settings → Account and in an administrator's view of a user, with
+**Revoke**; the API keys list leaves them out. Settings → Capabilities turns the capability on and off (D15), refused
+(409) while sign-in is off, and a project declines it while the instance has it on. The demo seeds one connected desktop
+app, online, and turns the capability on. PR 3 is built: the desktop app takes requests from one team instance (D7, D9),
+connected by the device flow from **Settings → Desktop app**, its key kept in the OS keychain and handed to its own
+server at each start, never to the window. Each request opens a confirmation with the tests, the checks (the linked
+folder, its Playwright config, the specs inside it, `@playwright/test`, the branch and commit, uncommitted changes; off
+the run's commit the tests are picked by title) and the command, which the shell takes from its server with the request
+token; folders are linked per instance. The reporter's override (`PIWI_REQUEST_INSTANCE`, `PIWI_REQUEST_TOKEN_FILE`)
+sends the run to the instance that asked, whatever the config names, and refuses the batch upload. On the page, **Run on
+my machine** on a run (its failed tests, or all), an execution and a test, with its menu, its progress, **Stop** and
+**Run again**; the demo's seeded app answers the requests as they are read. The request host and the requested run's
+checks live in `@piwitests/editor` (`request-host`, `request-run`), for Piwi Runner (PR 4). **Run** starts only the
+command and the folder the window showed, once the request has been shown unchanged for a second, and the run's workers
+reach no other server. Left for later: `piwi://connect` (the address is typed in the app), the browsers check, a request
+from the run page's selection of tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance
+takes and no page offers yet), **Create issue** on a requested run's progress (D17), and the target recorded on the run
+(D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
+three after its spike (posted on #1163): 4a, the run target outside the dashboard's server, 4b, Piwi Runner, 4c, its
+releases. PR 4a is built: the desktop app's side of a request (the host it runs, the requests it holds, the device
+flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
+its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
+does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
+browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the launch
+nonce) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
+handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
+the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The maintainer
+settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
+left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
+the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time
+(D9); a requested run shows to its requester alone (D14); the administrator's switch is off by default in the first
+release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains
+the run options and ships first, with **Create issue** (D17, D18). Every other decision is a recommendation, and says
+which written decision it amends. The plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.
@@ -173,7 +195,9 @@ version.
 Why: with the instance carrying the request, a click in the page proves nothing to the target. A script injected in an
 instance page, or a stolen session, can create requests (runs-from-the-dashboard reached the same conclusion in its
 open question 2). A QA suite often writes to a shared test environment, so an unasked run has effects beyond the
-machine. The confirmation is one click, with **Run** focused.
+machine. The confirmation is one click on **Run**, which answers only the request shown, and only once it has been
+shown unchanged for a second in the visible, focused window; until then **Run**, **Not now** and closing the dialog
+answer nothing, so a click or a key that brings the window to the front starts or declines nothing.
 
 Possible later, if people ask: **Run without asking** per project and per machine, for the `run` kind only, shown as a
 five-second "Starting in 5 s · Cancel" notice in the target, and turned off from the target or from Connected apps
@@ -722,7 +746,9 @@ Piwi Runner, the privacy page, the connect page and the issue tracker page. PR 2
 ## Open questions
 
 1. **Piwi Runner's windows** (D8): does the static build of the dashboard's pages hold up, or does Piwi Runner need a
-   small app of its own sharing only the words? Settled by the spike before PR 4.
+   small app of its own sharing only the words? The spike (posted on #1163) found the static build does not hold up
+   (the hosting layout, plugins and middleware read the server) and proposes a small app of its own, served by a
+   small Node process that serves the run-target routes; the maintainer settles it before PR 4b.
 2. **Administrators and requested runs** (D14): do instance administrators see other people's requested runs, for
    support and audit, or the requester alone?
 3. **The capability's default** (D15): in which release does **Run on my machine** turn on by default?

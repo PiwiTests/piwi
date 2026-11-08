@@ -16,6 +16,7 @@ import type {
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { RunEnvironments } from '#shared/environment-snapshots';
 import type { TestStop } from '@piwitests/core/wire';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -578,12 +579,16 @@ export interface TestRunDetails {
   isFullRun?: boolean;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
+  machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: SetupStepEvent[] | null;
   /** The errors Playwright reported outside any test: a global setup that threw, a spec that did not load. */
   runErrors?: WireRunError[] | null;
+  /** Where the run executed: each shard's runner, each project's browser, each server under test. */
+  environments?: RunEnvironments;
   environment?: string | null;
   label?: string | null;
   playwrightVersion?: string | null;
@@ -1395,8 +1400,18 @@ export interface ConnectedApp {
   kind: 'picker' | 'editor' | 'desktop' | 'runner';
   createdAt: Date;
   lastUsedAt: Date | null;
-  /** For an app that runs tests: its device, when it was last seen, and whether its stream is open now. */
-  target: { platform: string | null; version: string | null; lastSeenAt: Date | null; online: boolean } | null;
+  /**
+   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for and
+   * may still take requests on, when it was last seen, and whether its stream is open now.
+   */
+  target: {
+    id: number;
+    platform: string | null;
+    version: string | null;
+    projectIds: number[];
+    lastSeenAt: Date | null;
+    online: boolean;
+  } | null;
 }
 
 export interface ConnectedAppsResponse {

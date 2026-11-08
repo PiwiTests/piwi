@@ -15,6 +15,9 @@ responsibilities.
    change and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts`
    pins the two together.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
+   - a requested run's `PIWI_REQUEST_INSTANCE` and `PIWI_REQUEST_TOKEN_FILE`, which beat every other server and
+     credential, in the reporter and in each worker's environment (`applyRequestedRunEnv`, written last), and skip
+     every rung but `/finish` ([`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects), `tests/requested-run.spec.ts`);
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment; the boolean ones `onBegin` writes as `true`
      or `false`, `normalizeBoolEnv`), and the ones `onBegin` sets for the workers: for a run started in a terminal or
@@ -23,6 +26,10 @@ responsibilities.
      Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
      `PIWI_EDITOR=on`), with one line saying so; and outside CI `PIWI_STOP_NOTES`, the private file each worker notes
      its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
+   - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
+     `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
+     `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
+     (`internal/collect/run-environments.ts`), unless `collectEnvironmentInfo` is off (`tests/environment-collect.spec.ts`);
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
      in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page

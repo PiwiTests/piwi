@@ -5,6 +5,9 @@
  */
 
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
+import type { EnvironmentGroup } from '#shared/environment-diff';
+import { computeSnapshotDiff } from '#shared/environment-snapshots';
+import type { WireEnvironmentSnapshot } from '#shared/types';
 
 /** One field that changed between two runs, for the "what changed" summary. */
 export interface MetaDiffEntry {
@@ -12,6 +15,14 @@ export interface MetaDiffEntry {
   label: string;
   before: string | null;
   after: string | null;
+  /** Where the field belongs: the run, its runner, a browser or a server under test. Absent reads as `run`. */
+  group?: EnvironmentGroup;
+}
+
+/** What the run-level diff reads of a run beyond its metadata. */
+export interface RunEnvironmentSide {
+  playwrightVersion?: string | null;
+  snapshots?: readonly WireEnvironmentSnapshot[];
 }
 
 /** The commit span between a baseline run and a later run, with a copyable git command. */
@@ -90,15 +101,17 @@ export function getBrowserList(meta: RunMetadataLike | null | undefined): string
 }
 
 /**
- * Diff two runs' environment, branch, CI provider, browser set and test order.
- * The test order counts as changed when one run was shuffled and the other was
- * not; two shuffled runs with different seeds do not differ here.
+ * Diff two runs' environment label, branch, CI provider, Playwright version, browser set and test order, then the
+ * compared fields of their environment snapshots (`computeSnapshotDiff`), when the sides carry them. The test order
+ * counts as changed when one run was shuffled and the other was not; two shuffled runs with different seeds do not
+ * differ here.
  */
 export function computeMetadataDiff(
   prevMeta: RunMetadataLike | null | undefined,
   currMeta: RunMetadataLike | null | undefined,
   prevEnv: string | null,
   currEnv: string | null,
+  sides?: { before: RunEnvironmentSide; after: RunEnvironmentSide },
 ): MetaDiffEntry[] {
   const diff: MetaDiffEntry[] = [];
 
@@ -115,6 +128,16 @@ export function computeMetadataDiff(
   if (prevCi !== currCi) {
     diff.push({ key: 'ci_provider', label: 'CI provider', before: prevCi, after: currCi });
   }
+  const prevPlaywright = sides?.before.playwrightVersion ?? null;
+  const currPlaywright = sides?.after.playwrightVersion ?? null;
+  if (prevPlaywright && currPlaywright && prevPlaywright !== currPlaywright) {
+    diff.push({
+      key: 'playwright_version',
+      label: 'Playwright version',
+      before: prevPlaywright,
+      after: currPlaywright,
+    });
+  }
   const prevBrowsers = getBrowserList(prevMeta);
   const currBrowsers = getBrowserList(currMeta);
   if (prevBrowsers !== currBrowsers) {
@@ -128,6 +151,7 @@ export function computeMetadataDiff(
       after: describeTestOrder(currMeta),
     });
   }
+  if (sides) diff.push(...computeSnapshotDiff(sides.before.snapshots ?? [], sides.after.snapshots ?? []));
 
   return diff;
 }

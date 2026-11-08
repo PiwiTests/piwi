@@ -37,6 +37,7 @@ import { isFlakyResult } from '#shared/status-classify';
 import { parseLocation } from '#shared/parse-location';
 import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
+import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
 
 /** Project from the demo seed (scripts/generate-demo-seed.mjs) */
 const DEMO_PROJECT_NAME = 'e2e-checkout';
@@ -1617,6 +1618,8 @@ async function runSingleSimulation(
       reporterVersion: '0.7.0',
       shardIndex: shardOverride?.shardIndex,
       shardTotal: shardOverride?.shardTotal,
+      // The runner snapshot rides on `/begin`, as the reporter sends it.
+      environments: [demoCiRunner({ shardIndex: shardOverride?.shardIndex ?? null })],
     },
   });
   const streamToken = begin.streamToken;
@@ -2023,6 +2026,19 @@ async function runSingleSimulation(
       reporterVersion: '0.7.0',
       ...(shardOverride ? { shardIndex: shardOverride.shardIndex, shardTotal: shardOverride.shardTotal } : {}),
       ...(scenario.resources ? { resourceReport: resourceReport() } : {}),
+      // Every snapshot rides on `/finish`: the runner again, then each project's browser.
+      environments: [
+        demoCiRunner({ shardIndex: shardOverride?.shardIndex ?? null }),
+        ...[
+          ...new Map(
+            runTests
+              .filter((t) => typeof t.browser?.projectName === 'string')
+              .map((t) => [t.browser!.projectName as string, (t.browser!.browserName as string | undefined) ?? null]),
+          ),
+        ].map(([project, browserName]) =>
+          demoBrowser({ project, browserName, shardIndex: shardOverride?.shardIndex ?? null }),
+        ),
+      ],
     },
   });
 

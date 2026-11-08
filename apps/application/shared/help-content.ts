@@ -665,6 +665,11 @@ export const HELP_TOPICS = {
     text: "Each of these IDs is declared by more than one test (with `piwi:id`, or in the title read by the reporter’s `externalId.pattern`). An ID names one test, so this run matched those tests by file, describe path and title instead, as if they had no ID: a renamed or moved one starts a new history. Give each test its own ID; set `externalId.onDuplicate: 'fail'` to fail the run while two tests share one.",
     doc: 'reference/test-metadata#external-test-ids',
   },
+  'run.tagsTruncated': {
+    title: 'Tags cut',
+    text: "These tests declare more than 20 tags, counting the config's, each `describe` block's, the title's and the test's own `tag` option. Piwi keeps the first 20 of each test and drops the rest, so a dropped tag is neither searched nor filtered on. Playwright lists config and describe tags first and the test's own `tag` option last: keep config and describe tags few, or put the tags that matter in the test title.",
+    doc: 'reference/test-metadata#tag-limit',
+  },
   'run.coverageIncomplete': {
     title: 'Incomplete server coverage',
     text: 'Part of this run’s server coverage is missing. A backend that **restarted** during the run starts its coverage empty: the lines each test ran are kept, but what the earlier process ran outside a request (startup, background work) is lost. One **unreachable** at the end of the run sent no run-level coverage: only the lines the tests ran are kept. The commit’s combined coverage says so in its notes.',
@@ -1455,7 +1460,26 @@ export const HELP_TOPICS = {
   // ── Environment diff ────────────────────────────────────────────────────
   'environment-diff': {
     title: 'Environment diff',
-    text: 'Compares this execution’s environment (Playwright version, browser config, locale, viewport, CI provider, …) against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+    text: [
+      'Compares this execution’s environment against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+      '- **Run** — Playwright and reporter versions, environment label, CI provider, branch.',
+      '- **Runner** — the machine that ran Playwright: time zone, `TZ`, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — the declared settings, then what the page reported (time zone, locale, version). A value marked inferred was not observed: the declared value, else the runner’s.',
+      '- **Server** — each instrumented server under test: time zone, culture, runtime, app version.',
+    ].join('\n'),
+    doc: 'features/run-environment',
+  },
+
+  'run-environment': {
+    title: 'Run environment',
+    text: [
+      'Where this run executed, as the reporter recorded it. A value that changed against the baseline, or that the shards of the run disagree on, is a possible cause of a failure that happens only there.',
+      '- **Runner** — one column per shard: time zone, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — one per project, as its page reported itself (needs the capture fixtures).',
+      '- **Server** — each instrumented server under test (`/__piwi/environment`), with its clock offset from the runner and whether it restarted during the run.',
+      'A run from an older reporter shows nothing here: it was never recorded.',
+    ].join('\n'),
+    doc: 'features/run-environment',
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────

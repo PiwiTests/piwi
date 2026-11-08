@@ -4,12 +4,23 @@ import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
-import { mergeExternalIdDuplicates, type ExternalIdDuplicateTest } from '@piwitests/core/test-meta';
+import {
+  MAX_TEST_TAGS,
+  mergeExternalIdDuplicates,
+  formatTagsTruncatedTests,
+  readTagsTruncated,
+  tagsTruncatedCount,
+  type ExternalIdDuplicateTest,
+} from '@piwitests/core/test-meta';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
 import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
+import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
+import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -61,6 +72,36 @@ const runIssueOpen = ref(false);
 
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
+
+const environmentOpen = ref(false);
+/** The runner's time zone, locale and OS in one line; null when the run recorded no environment. */
+const environmentSummary = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const runner = env.runner[0];
+  if (runner) {
+    const parts = [
+      runner.timeZone,
+      runner.locale,
+      runner.os,
+      runner.nodeVersion ? `Node.js ${runner.nodeVersion}` : null,
+    ];
+    const text = parts.filter(Boolean).join(' · ');
+    if (text) return text;
+  }
+  if (env.browser.length || env.server.length) return `${env.browser.length + env.server.length} recorded`;
+  return null;
+});
+/** What warns about the run's environment: shards that disagree, a server that restarted or whose clock is off. */
+const environmentWarning = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const differing = disagreeingFields(env.runner);
+  if (differing.length) return `shards differ on ${differing.map((f) => f.label).join(', ')}`;
+  const warned = env.server.filter((s) => serverWarnings(s).length > 0);
+  if (warned.length) return `${warned.length} server${warned.length === 1 ? '' : 's'} to check`;
+  return null;
+});
 const scm = computed(() => props.testRun?.metadata?.scm);
 /** Where the run started and the editor that steers it (`runStartedFrom`). */
 const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
@@ -96,7 +137,18 @@ const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.t
 const externalIdDuplicates = computed(() =>
   mergeExternalIdDuplicates((props.testRun?.metadata as Record<string, unknown> | null)?.externalIdDuplicates),
 );
-function duplicateTestLabel(test: ExternalIdDuplicateTest): string {
+/** The tests whose tags were cut at the limit: how many, and the ones the run recorded. */
+const tagsTruncated = computed(() =>
+  readTagsTruncated((props.testRun?.metadata as Record<string, unknown> | null)?.tagsTruncated),
+);
+const tagsTruncatedFact = computed(
+  () =>
+    `Tags cut at ${MAX_TEST_TAGS} on ${tagsTruncated.value ? formatTagsTruncatedTests(tagsTruncated.value) : '0 tests'}`,
+);
+const tagsTruncatedHasMore = computed(() =>
+  tagsTruncated.value ? tagsTruncatedCount(tagsTruncated.value).atLeast : false,
+);
+function runTestLabel(test: ExternalIdDuplicateTest): string {
   const where = test.line != null ? `${test.filePath}:${test.line}` : test.filePath;
   return `${where} · ${[...(test.suitePath ?? []), test.title].join(' › ')}`;
 }
@@ -122,6 +174,7 @@ const {
   failedCases,
   flakyCases,
   allCases,
+  everyCase,
   projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
@@ -194,6 +247,33 @@ const rerunSets = computed<LocalRunSet[]>(() => {
   return sets.filter((set) => set.cases.length > 0);
 });
 const rerunMain = computed(() => rerunSets.value[0] ?? null);
+
+/** What Run on my machine sends from a run: its failed tests when it has some, and all its tests. */
+const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
+  const runId = props.testRun?.id;
+  if (!runId) return [];
+  const max = RUN_REQUEST_LIMITS.tests.max;
+  const choices: RunOnMyMachineChoice[] = [];
+  const failed = failedCases.value.length;
+  if (failed && failed <= max) {
+    choices.push({
+      label: 'The failed tests',
+      count: failed,
+      source: { runId, tests: 'failed' },
+      projects: retryProjects.value,
+    });
+  }
+  const all = everyCase.value.length;
+  if (all && all <= max) {
+    choices.push({
+      label: 'All the tests of the run',
+      count: all,
+      source: { runId, tests: 'all' },
+      projects: retryProjectsOf(everyCase.value),
+    });
+  }
+  return choices;
+});
 
 const desktopBridge = ref(false);
 onMounted(() => {
@@ -343,6 +423,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         :other-sets="rerunSets.slice(1)"
       />
 
+      <RunOnMyMachineButton
+        v-if="testRun?.projectId && machineChoices.length"
+        :project-id="testRun.projectId"
+        :machine-runs="testRun.machineRuns ?? false"
+        :choices="machineChoices"
+      />
+
       <UButton
         v-if="primaryReport"
         :href="fileApiUrl(primaryReport.path, null, config.app?.baseURL)"
@@ -433,6 +520,16 @@ function onLabelKeydown(e: KeyboardEvent) {
           }}</span
         >
       </template>
+      <template v-if="tagsTruncated">
+        <span class="text-dimmed">·</span>
+        <span
+          class="text-warning"
+          :title="tagsTruncated.examples.map(runTestLabel).join('\n')"
+          data-testid="run-tags-truncated-fact"
+          data-shot="run-tags-truncated-fact"
+          >{{ tagsTruncatedFact }}</span
+        >
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
         <a
@@ -464,6 +561,30 @@ function onLabelKeydown(e: KeyboardEvent) {
           <template v-if="testRun?.reporterVersion">Piwi v{{ testRun.reporterVersion }}</template>
         </span>
       </div>
+      <div v-if="environmentSummary" class="flex items-start gap-1.5 min-w-0" data-tour="run-environment">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Environment <HelpHint topic="run-environment"
+        /></span>
+        <span class="min-w-0">
+          <button
+            type="button"
+            class="text-left break-words hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+            title="Where this run executed"
+            data-environment-open
+            @click="environmentOpen = true"
+          >
+            {{ environmentSummary }}
+          </button>
+          <span v-if="environmentWarning" class="text-highlighted" data-environment-warning>
+            · {{ environmentWarning }}</span
+          >
+        </span>
+      </div>
+      <UModal v-model:open="environmentOpen" title="Run environment" :ui="{ content: 'max-w-3xl' }">
+        <template #body>
+          <RunEnvironmentDetails v-if="testRun?.environments" :environments="testRun.environments" />
+        </template>
+      </UModal>
       <div v-if="shuffleSeed" class="flex items-center gap-1.5">
         <span class="text-muted inline-flex items-center gap-1">Order <HelpHint topic="run.shuffle" /></span>
         <span>Shuffled, seed</span>
@@ -522,11 +643,29 @@ function onLabelKeydown(e: KeyboardEvent) {
             <TestIdChip :external-id="duplicate.externalId" class="mr-1.5" />
             <span class="text-muted">declared by {{ duplicate.tests.length }} tests:</span>
             <ul class="ml-4 break-words">
-              <li v-for="test in duplicate.tests" :key="duplicateTestLabel(test)" class="text-xs text-muted">
-                {{ duplicateTestLabel(test) }}
+              <li v-for="test in duplicate.tests" :key="runTestLabel(test)" class="text-xs text-muted">
+                {{ runTestLabel(test) }}
               </li>
             </ul>
           </li>
+        </ul>
+      </div>
+      <div
+        v-if="tagsTruncated"
+        class="flex items-start gap-1.5"
+        data-testid="run-tags-truncated"
+        data-shot="run-tags-truncated"
+        data-tour="run-tags-truncated"
+      >
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Tags cut <HelpHint topic="run.tagsTruncated"
+        /></span>
+        <ul class="space-y-1 min-w-0 break-words">
+          <li v-for="test in tagsTruncated.examples" :key="runTestLabel(test)" class="text-xs text-muted">
+            {{ runTestLabel(test) }}
+            ({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)
+          </li>
+          <li v-if="tagsTruncatedHasMore" class="text-xs text-muted">and possibly more</li>
         </ul>
       </div>
       <div

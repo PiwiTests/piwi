@@ -44,6 +44,15 @@ What the package does to a user's run, process by process.
 - `PIWI_*` env vars (`internal/config/env.ts`). `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`
   and `PIWI_PROJECT_NAME` are also read from the `.env` in the Playwright config's
   folder, below the environment, by the reporter and the global setup alike.
+- A requested run (`internal/config/requested-run.ts`): with `PIWI_REQUEST_INSTANCE` and `PIWI_REQUEST_TOKEN_FILE`
+  (core's `REQUEST_RUN_ENV`, outside `PIWI_ENV_KEYS`), which the desktop app sets for a run a team instance asked
+  for, the instance and the request token beat the config, the environment, the `.env`, the desktop app and an
+  explicit `serverUrl`: the run streams there with that token alone, never kept, with no coverage, manifest, code
+  reach, environment snapshots or AI authoring. A pair this reporter cannot take (one variable alone, an instance
+  not http(s), a token file missing, not this user's alone, readable by others on Unix, or holding no request
+  token) turns the reporter off for the run. Its workers get the same: `applyRequestedRunEnv` writes their
+  variables last, in `applyOptionsToEnv` (each worker loads the config again) and in `onBegin`, and takes the
+  config's server and credentials out of their environment (`tests/requested-run.spec.ts`).
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
   `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
   and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
@@ -55,6 +64,10 @@ What the package does to a user's run, process by process.
 
 **In each test worker** (the capture fixtures)
 
+- The browser's environment: once per worker and project, the `page` fixture reads the still-blank page through
+  `internalCall` (time zone, locale, languages, formatting, media preferences, `browser.version()`) and the test's
+  capture attaches it as `piwi-environment` (`internal/capture/browser-environment.ts`). Off with
+  `PIWI_COLLECT_ENVIRONMENT_INFO=false`.
 - The `__piwiProbeElement` page global, seeded via `addInitScript`
   (`internal/capture/capture-fixtures.ts`), so a capture ships a stub call rather than
   the probe's source. The probe reads an action's element once the action succeeds.
@@ -491,6 +504,13 @@ What the package does to a user's run, process by process.
 
 **In the reporter process**
 
+- The run's environment snapshots (`internal/collect/run-environments.ts`): the runner's, read in `onBegin` from `os`,
+  `Intl`, `/etc/os-release`, `/.dockerenv` and a closed list of variables (`TZ`, `LANG`, `LC_ALL`, `LC_TIME`, the CI
+  image's) (`internal/collect/environment.ts`); each project's browser, from its first `piwi-environment` attachment;
+  and each instrumented server, a `GET /__piwi/environment` on each origin whose responses carried an instrumentation
+  header, as a test first reaches it, then again as the run's last test ends (before Playwright stops a `webServer`),
+  which says whether it restarted.
+  The runner's rides on `/start` and `/begin`, all of them on `/finish`, `/submit` and `/upload`.
 - The run sampler reads `/proc`, the cgroup filesystem or `ps` on an unref'd timer
   (`internal/collect/process-sampler.ts`).
 - While the dashboard says someone watches the run, another unref'd timer posts what the
@@ -615,6 +635,10 @@ error as a failure of the run. Every rung carries one `deliveryKey` per run, so 
 upload stores the `/submit` that follows it, or the recovery copy, once. A batch rung that follows a stream names the
 streamed run with its token (`replacesRun`, never for a shard), and the dashboard cancels that run while it has not
 settled, one a `/finish` whose answer was lost holds `finalizing` too, so the run's results land in one run.
+
+A requested run takes rung 1 alone: its request token starts one streamed run, so it has no `/start` after a
+`/begin` 409, no batch upload, no recovery copy and no replay of a saved run, and it finishes with what reached the
+instance even when results were lost on the way. A run that does not finish there is reported and dropped.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,

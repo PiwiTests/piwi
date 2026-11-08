@@ -12,8 +12,10 @@ import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
 import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { answeredRunUrl } from '../support/run-url.js';
+import { requestedRunTarget } from '../config/env.js';
 import { formatDuration } from '../flake/lab.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
+import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
 /**
  * Largest `/events` request body the dashboard accepts (`MAX_EVENT_BATCH_BYTES`
@@ -48,6 +50,8 @@ interface RunStart {
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
   plannedTotal?: number;
+  /** The runner's environment snapshot, sent as the stream opens. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 /**
@@ -228,6 +232,7 @@ export class StreamManager {
     isFullRun?: boolean,
     filterDetails?: FilterDetails | null,
     plannedTotal?: number,
+    environments?: WireEnvironmentSnapshot[],
   ): void {
     this.startedAt = Date.now();
     this._startPromise = this._doStart({
@@ -240,6 +245,7 @@ export class StreamManager {
       isFullRun,
       filterDetails,
       plannedTotal,
+      environments,
     });
   }
 
@@ -254,7 +260,8 @@ export class StreamManager {
         if (!authResolved) {
           this._auth = await this.httpClient.resolveAuth(this.options);
           authResolved = true;
-          await this.recovery.tryUpload(this.httpClient, this._auth);
+          // A request token starts this run alone: a run saved earlier is sent with another run's credentials.
+          if (!requestedRunTarget()) await this.recovery.tryUpload(this.httpClient, this._auth);
         }
         const response = await this.openRun(run);
         if (!response?.runId || !response?.streamToken) {
@@ -309,13 +316,15 @@ export class StreamManager {
             shardTotal,
             isFullRun: run.isFullRun,
             filterDetails: run.filterDetails,
+            ...(run.environments?.length ? { environments: run.environments } : {}),
           },
           this._auth,
           undefined,
           { headers: runTokenHeaders(setup.setupToken) },
         );
       } catch (error) {
-        if (!(error instanceof HttpError && error.status === 409)) throw error;
+        // A requested run's `/setup` spent its request token, so no `/start` follows it.
+        if (!(error instanceof HttpError && error.status === 409) || requestedRunTarget()) throw error;
         this.logger.debug(`Setup info expired, creating fresh run...`);
         this.setupInfo = null;
       }
@@ -339,6 +348,7 @@ export class StreamManager {
         isFullRun: run.isFullRun,
         filterDetails: run.filterDetails,
         totalTests: run.plannedTotal ?? 0,
+        ...(run.environments?.length ? { environments: run.environments } : {}),
       },
       this._auth,
     );
@@ -367,7 +377,14 @@ export class StreamManager {
 
   // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run.
   private giveUpStart(error: unknown): void {
-    if (error instanceof HttpError && error.status === 401) {
+    const requested = requestedRunTarget();
+    if (requested) {
+      // A requested run starts with its request token alone and has no batch upload to fall back to.
+      this.logger.warn(
+        `The run could not start on ${requested}, which asked for it (${errorMessage(error)}): ` +
+          `nothing is sent. The request may have ended, or its token expired.`,
+      );
+    } else if (error instanceof HttpError && error.status === 401) {
       this.logger.warn(
         `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
           `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +

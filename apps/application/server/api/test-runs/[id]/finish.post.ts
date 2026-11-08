@@ -5,6 +5,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
@@ -19,6 +20,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import { storableRunErrors } from '../../../utils/storable-values';
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
@@ -146,6 +148,7 @@ export default eventHandler(async (event) => {
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
   const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
@@ -179,8 +182,11 @@ export default eventHandler(async (event) => {
     ? keepIncidentMetadata(
         testRun.metadata,
         carryRequestOrigin(
-          carryExternalIdDuplicates(
-            carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          carryTagsTruncated(
+            carryExternalIdDuplicates(
+              carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+              testRun.metadata,
+            ),
             testRun.metadata,
           ),
           testRun.metadata,
@@ -340,6 +346,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
   // each write theirs, and none overwrites another's.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   await db
     .update(testRuns)

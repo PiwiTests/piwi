@@ -813,6 +813,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :run-title="testLabel(testCase)"
               :source-run-id="testCase?.testRun?.id"
             />
+            <RunOnMyMachineButton
+              v-if="testCase?.testRun?.project?.id"
+              class="mr-2"
+              :project-id="testCase.testRun.project.id"
+              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
+            />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"

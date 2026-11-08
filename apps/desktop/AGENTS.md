@@ -37,7 +37,8 @@ shell and are feature-equivalent.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`
   fails until they match.
 - **Everything binds `127.0.0.1`, behind the desktop token.** Every `/api` and `/mcp` request must present the
-  per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`,
+  per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`
+  with `@piwitests/editor/host-guard`,
   so only the app and the tools given the token (the reporter, the `piwi` commands), not other local processes or
   browser pages, can reach the bundled API. Any new desktop-only route must stay behind that guard.
 - **Three routes are open without the token, and each one needs the same care** (`isOpenDesktopRoute` in
@@ -69,6 +70,13 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+- **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
+  (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
+  its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
+  `isBrowserRequest`), refuses no arguments or a folder linked since, writes the token to a private file for the
+  reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. The instance's key lives in the OS keychain,
+  read only while `runTargetInstance` is set, handed to the server after each start (`hand_kept_key`), never to the
+  window; a stop from the dashboard reaches the shell on its notification stream.
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

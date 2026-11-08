@@ -35,6 +35,18 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-environment',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Environment line of the run’s Details: the runner’s time zone, locale and OS, opening every shard’s runner, browser and server.',
+    shownWhen: 'When the reporter recorded where the run executed.',
+    help: 'run-environment',
+    doc: 'features/run-environment',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
     id: 'run-retry-command',
     kind: 'action',
     pages: ['/test-runs/[id]'],
@@ -89,6 +101,18 @@ export const RUNS_ANCHORS = [
     help: 'run.ingestHealth',
     doc: 'features/ui-overview#test-run-detail',
     sample: { route: '/test-runs/4', expect: { run: { id: 4, project: 'e2e-checkout' } } },
+  },
+  {
+    id: 'run-tags-truncated',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Tags cut line of the run’s Details: the tests that declare more than 20 tags, and how many tags each one lost.',
+    shownWhen: 'When a test of the run declares more than 20 tags.',
+    help: 'run.tagsTruncated',
+    doc: 'reference/test-metadata#tag-limit',
+    sample: { route: '/test-runs/6', expect: { run: { id: 6, project: 'e2e-checkout' } } },
   },
   {
     id: 'run-coverage-gaps',

@@ -97,6 +97,7 @@ jobs:
               - 'apps/application/**'
               - 'apps/docs/**'
               - 'packages/core/**'
+              - 'packages/editor/**'
               - 'packages/picker-dom/**'
               - 'packages/reporter/**'
               - 'packages/server/**'

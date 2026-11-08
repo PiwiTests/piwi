@@ -12,6 +12,8 @@ import type {
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  requestedRunProblem,
+  requestedRunTarget,
   desktopReplacedServer,
   normalizeBoolEnv,
   usedDotEnv,
@@ -22,6 +24,7 @@ import {
   type DotEnvUse,
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
+import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
 import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
@@ -81,7 +84,12 @@ import {
   resolveUnrunReason,
   linkBlockedTests,
 } from '@piwitests/core/status-classify';
-import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import {
+  collectTestLocks,
+  collectTestMetadata,
+  collectTestTags,
+  formatTagsTruncated,
+} from '../internal/collect/test-meta.js';
 import {
   formatExternalIdDuplicates,
   planExternalIds,
@@ -92,6 +100,7 @@ import { buildErrorText } from '../internal/collect/error-text.js';
 import { runErrorOf } from '../internal/collect/run-errors.js';
 import { testOutputOf } from '../internal/collect/test-output.js';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import { collectTagsTruncated } from '@piwitests/core/test-meta';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
 import {
@@ -122,6 +131,8 @@ import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/serv
 import { backendManifestFetch } from '../internal/manifest/collect.js';
 import { configDirFromConfig, relativeTestPath } from '../internal/support/test-paths.js';
 import { RunManifests } from '../internal/manifest/run-manifests.js';
+import { collectRunnerEnvironment } from '../internal/collect/environment.js';
+import { RunEnvironments } from '../internal/collect/run-environments.js';
 import type {
   CollectedTestCase,
   StreamEvent,
@@ -131,6 +142,7 @@ import type {
   WireResourceReport,
   WireRunError,
 } from '../types.js';
+import type { WireEnvironmentSnapshot } from '../types/wire.js';
 import { readStopNotes, type StopNote, type StopNotesReader } from '../internal/support/stop-notes.js';
 
 /**
@@ -269,6 +281,8 @@ export class PiwiDashboardReporter {
   private readonly mergingReports = isMergeReports();
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
+  /** The team instance a requested run uploads to, or why it uploads nowhere. */
+  private requestedRun: { instance: string | null; problem: string | null };
   /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
   private readonly desktopReplaced: string | null;
   /** The config folder's `.env` file and the connection variables taken from it, if any. */
@@ -307,6 +321,8 @@ export class PiwiDashboardReporter {
   private lastTestWatch: LastTestWatch | null = null;
   /** The manifests of the instrumented origins the run reaches beyond its base URLs. */
   private manifests: RunManifests | null = null;
+  /** Where the run executes: the runner, each project's browser and each server under test; null when off. */
+  private environments: RunEnvironments | null = null;
   /** Result events that stream once their test's server coverage is in. */
   private coverageSends: Array<Promise<void>> = [];
   /** The errors Playwright reported outside any test (`onError`), the first `MAX_RUN_ERRORS` of them. */
@@ -334,6 +350,7 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl && !this.serverUrlProblem;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.requestedRun = { instance: requestedRunTarget(), problem: requestedRunProblem() };
     this.desktopReplaced = desktopReplacedServer();
     this.viaDotEnv = usedDotEnv();
     this.ignoredEnv = ignoredEnvValues();
@@ -392,6 +409,8 @@ export class PiwiDashboardReporter {
     }
     // The workers, which start after this hook, read the boolean variables as the reporter does.
     normalizeBoolEnv(process.env);
+    // A requested run's workers reach neither the config's server nor its credentials.
+    if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
     const followed = followEditor([configDirFromConfig(config), process.cwd()], {
@@ -409,7 +428,8 @@ export class PiwiDashboardReporter {
     // The hub its workers reach hears how far the run is, from its own process.
     this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
     if (!this.enabled) {
-      if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
+      if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
+      else if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
       else this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       // A run the editor follows says why it cannot be shared live.
       if (!detectCi(process.env)) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing('no-instance');
@@ -417,6 +437,9 @@ export class PiwiDashboardReporter {
     }
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
+    if (this.requestedRun.instance) {
+      this.logger.info(`Sending the run to ${this.requestedRun.instance}, which asked for it.`);
+    }
     if (this.viaDesktopApp) {
       this.logger.info(
         this.desktopReplaced
@@ -525,6 +548,7 @@ export class PiwiDashboardReporter {
     // attempts.
     this.plannedTests = suite.allTests();
     this.planExternalIds();
+    this.noteTagsTruncated();
 
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
@@ -535,6 +559,16 @@ export class PiwiDashboardReporter {
       this.options.projectName!,
       resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
     );
+
+    if (
+      this.options.collectEnvironmentInfo !== false &&
+      process.env[PIWI_ENV_KEYS.collectEnvironmentInfo] !== 'false'
+    ) {
+      this.environments = new RunEnvironments(
+        collectRunnerEnvironment(process.env, this.shardInfo?.current ?? null),
+        backendManifestFetch(ignoresHttpsErrors(config)),
+      );
+    }
 
     // Workers start after this hook and inherit the environment, so the
     // capture fixtures record the coverage the options switch on.
@@ -547,7 +581,10 @@ export class PiwiDashboardReporter {
         backendManifestFetch(ignoresHttpsErrors(config)),
       );
     }
-    if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
+    // The run's last test ending is when the servers under test are read again: Playwright stops a `webServer`
+    // before `onEnd`.
+    if (coverage.server !== 'off' || this.environments)
+      this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
@@ -576,6 +613,7 @@ export class PiwiDashboardReporter {
       // The planned suite size for this shard, known before any test runs, so
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
+      this.environments?.atBegin(),
     );
     if (this.streamManager) {
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
@@ -677,6 +715,36 @@ export class PiwiDashboardReporter {
     for (const line of formatExternalIdDuplicates(plan.duplicates, onDuplicate)) this.logger.warn(line);
     if (plan.duplicates.length > 0) this.metadata = { ...this.metadata, externalIdDuplicates: plan.duplicates };
     this.externalIds = plan;
+  }
+
+  /**
+   * Name the planned tests whose tags are cut at the limit, once, and record them on the run so the dashboard shows
+   * them too. A planned test whose properties cannot be read is left out.
+   */
+  private noteTagsTruncated(): void {
+    const readable: Array<{
+      filePath: string;
+      suitePath: string[];
+      title: string;
+      line: number;
+      tags: unknown;
+    }> = [];
+    for (const test of this.plannedTests) {
+      try {
+        readable.push({
+          filePath: testFile(test, this.testPathBase),
+          suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
+          title: test.title,
+          line: test.location.line,
+          tags: test.tags,
+        });
+      } catch (error) {
+        this.logger.debug(`Tags of a planned test not read: ${errorMessage(error)}`);
+      }
+    }
+    const found = collectTagsTruncated(readable);
+    for (const line of formatTagsTruncated(found)) this.logger.warn(line);
+    if (found) this.metadata = { ...this.metadata, tagsTruncated: found };
   }
 
   /** The external ID fields of a test's payload: `null` tells the dashboard the test has none to match on. */
@@ -1072,6 +1140,7 @@ export class PiwiDashboardReporter {
         break;
     }
 
+    this.environments?.noteTestEnd(result.attachments ?? [], testCase.networkRequests);
     this.testCases.push(testCase);
     if (status === 'failed' || status === 'timedOut') this.failedCases.push(testCase);
 
@@ -1121,6 +1190,7 @@ export class PiwiDashboardReporter {
       result.retry < (test.retries ?? 0);
     if (this.lastTestWatch?.end(test.id, willRetry)) {
       this.coverage?.lastTestEnded();
+      this.environments?.lastTestEnded();
     }
   }
 
@@ -1323,6 +1393,16 @@ export class PiwiDashboardReporter {
     }
   }
 
+  /** Every environment snapshot of the run; none when collection is off or reading them failed. */
+  private async readEnvironments(): Promise<WireEnvironmentSnapshot[] | undefined> {
+    try {
+      return await this.environments?.atEnd();
+    } catch (error) {
+      this.logger.debug(`Environment snapshots skipped: ${errorMessage(error)}`);
+      return undefined;
+    }
+  }
+
   private async finishRun(result: FullResult): Promise<void> {
     if (this.listMode || !this.enabled) return;
     // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
@@ -1387,13 +1467,16 @@ export class PiwiDashboardReporter {
           resourceReport: this.resourceReport,
           htmlReport: this.htmlReport,
           runErrors: this.runErrors,
+          environments: await this.readEnvironments(),
         },
         result,
       );
-      if (submitted && this.coverage) {
+      // A requested run's token starts the run alone: coverage and manifests are not taken from it.
+      const requested = this.requestedRun.instance !== null;
+      if (submitted && this.coverage && !requested) {
         await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
       }
-      if (submitted && this.manifests) {
+      if (submitted && this.manifests && !requested) {
         const branch = resolveScmBranch(process.env) ?? null;
         await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
       }

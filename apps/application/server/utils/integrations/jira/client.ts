@@ -21,6 +21,7 @@ import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
 import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
 import { isTransientImageStatus } from '../../public-image';
+import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
@@ -114,16 +115,16 @@ interface JiraIssueResponse {
 }
 
 /** A Jira REST error that keeps the credential out of its message. */
-export class JiraError extends Error {
+export class JiraError extends IntegrationHttpError {
   constructor(
-    readonly status: number,
+    status: number,
     message: string,
-    /** Seconds Jira asked us to wait, carried from a 429 `Retry-After`. */
-    readonly retryAfterSeconds?: number,
+    /** How long Jira asked us to wait, from a 429 `Retry-After`. */
+    retryAfterMs?: number,
     /** Jira's per-field refusals (`customfield_10042` → "Team is required."), from a 400. */
     readonly fieldErrors?: Record<string, string>,
   ) {
-    super(message);
+    super(status, message, retryAfterMs);
     this.name = 'JiraError';
   }
 }
@@ -174,12 +175,10 @@ async function jiraErrorDetail(
 /** The `JiraError` for a failed response: its status line plus Jira's explanation. */
 async function toJiraError(response: Response, what: string): Promise<JiraError> {
   if (response.status === 429) {
-    const header = response.headers.get('retry-after');
-    const retryAfter = header != null ? Number(header) : NaN;
     return new JiraError(
       429,
       'Jira rate limited the request (429)',
-      Number.isFinite(retryAfter) ? retryAfter : undefined,
+      parseRetryAfter(response.headers.get('retry-after')),
     );
   }
   const { detail, fieldErrors } = await jiraErrorDetail(response);

@@ -162,8 +162,28 @@ const hasAnyChange = computed(() => {
     flakyRows.value.length > 0 ||
     hasDurationChanges.value ||
     d.commitRange != null ||
-    d.metadataDiff.length > 0
+    d.metadataDiff.length > 0 ||
+    (d.shardDisagreement?.length ?? 0) > 0
   );
+});
+
+const ENVIRONMENT_GROUP_TITLES = {
+  run: 'Run',
+  runner: 'Runner',
+  browser: 'Browser',
+  server: 'Server under test',
+} as const;
+
+/** The environment changes grouped as the run section shows them: the run, its runner, browsers, servers. */
+const metadataGroups = computed(() => {
+  const entries = data.value?.metadataDiff ?? [];
+  return (['run', 'runner', 'browser', 'server'] as const)
+    .map((group) => ({
+      group,
+      title: ENVIRONMENT_GROUP_TITLES[group],
+      entries: entries.filter((e) => (e.group ?? 'run') === group),
+    }))
+    .filter((g) => g.entries.length > 0);
 });
 
 function clusterName(tc: TestCaseResult): string | null {
@@ -438,12 +458,15 @@ function clusterIssue(tc: TestCaseResult) {
 
       <!-- Environment changes -->
       <SectionCard
-        v-if="data.metadataDiff.length > 0"
+        v-if="data.metadataDiff.length > 0 || (data.shardDisagreement?.length ?? 0) > 0"
         icon="i-lucide-sliders-horizontal"
         icon-class="text-gray-500"
         title="Environment changes"
       >
-        <TableScroller min-width="32rem" :bleed="false">
+        <p v-if="data.shardDisagreement?.length" class="text-sm text-highlighted mb-3" data-shard-disagreement>
+          The shards of this run ran in different environments: {{ data.shardDisagreement.join(', ') }}.
+        </p>
+        <TableScroller v-if="data.metadataDiff.length > 0" min-width="32rem" :bleed="false">
           <table class="w-full min-w-[32rem] text-sm">
             <thead>
               <tr class="text-xs text-muted uppercase tracking-wider border-b border-default">
@@ -452,8 +475,13 @@ function clusterIssue(tc: TestCaseResult) {
                 <th class="text-left px-3 py-2 font-medium">Baseline</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="entry in data.metadataDiff" :key="entry.key" class="border-b last:border-b-0 border-default">
+            <tbody v-for="g in metadataGroups" :key="g.group">
+              <tr v-if="metadataGroups.length > 1" class="border-b border-default">
+                <th colspan="3" class="text-left px-3 pt-3 pb-1 text-sm font-semibold text-highlighted">
+                  {{ g.title }}
+                </th>
+              </tr>
+              <tr v-for="entry in g.entries" :key="entry.key" class="border-b last:border-b-0 border-default">
                 <td class="px-3 py-2 text-muted">{{ entry.label }}</td>
                 <td class="px-3 py-2 font-mono text-xs">
                   <span v-if="entry.after" class="text-red-700 dark:text-red-400">{{ entry.after }}</span>

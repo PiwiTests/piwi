@@ -23,6 +23,8 @@ export const READY_INSPECTION = {
  * shell build. Mirrors the real shell's commands. `shape` sets what the mock
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
+ * `requestFolders` (`desktop_request_folders`, the folders linked to a team
+ * instance's projects by project id, else none),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
  * native import picker returns, else none), `localRunId` (the shell's id of a
  * local run `desktop_run_local_tests` starts, which then goes on until the
@@ -43,6 +45,7 @@ export function bridgeScript(shape = {}) {
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
   const localRunId = shape.localRunId ?? null;
+  const requestFolders = shape.requestFolders ?? {};
   const serverPort = shape.serverPort ?? 3000;
   const activePort = shape.activePort ?? serverPort;
   const update = shape.update ?? null;
@@ -90,6 +93,8 @@ export function bridgeScript(shape = {}) {
               )});
             case 'desktop_get_release_notes':
               return ${update ? `Promise.resolve(${JSON.stringify(update.releaseNotes)})` : `Promise.reject('no update found, run a check first')`};
+            case 'desktop_request_folders':
+              return Promise.resolve(${JSON.stringify(requestFolders)});
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
             case 'desktop_run_local_tests':

@@ -15,6 +15,7 @@ except in those response headers, or from the coverage endpoints of a coverage b
 | [Backend logs](#backend-logs) | The server's warnings and errors, next to the request that caused them | ✓ | ✓ |
 | [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
 | [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | ✓ | ✓ |
+| [Server environment](#server-environment) | The server process's runtime, time zone, locale and start time | ✓ | ✓ |
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
 | [Server coverage](/features/server-coverage) | Backend files, functions and lines each test ran, from a coverage build | ✓ | ✓ |
 
@@ -160,6 +161,12 @@ such a path out of an OpenAPI document.
   every rule.
 - **Nitro** reads its route table at build time through the package's module
   (`modules: ['@piwitests/instrumentation-nitro/module']`, under `nitro` in Nuxt); without it, only matched routes.
+
+## Server environment
+
+Both packages serve `/__piwi/environment` under the same rule as the route manifest: the server process's runtime, OS,
+time zone, locale, start time and clock, so a failure that depends on them can be told from one in the code. No other
+environment variable, path or connection string. Never enable it on a public production server.
 
 ## Server probes
 

@@ -1,5 +1,6 @@
 import { desktopSessionTarget } from '#shared/desktop-handoff';
 import { timingSafeEqualStr } from '../../utils/timing-safe';
+import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
 
 // Desktop (Tauri) bootstrap endpoint.
 //
@@ -22,7 +23,7 @@ export default defineEventHandler((event) => {
     throw apiError({ statusCode: 403, statusMessage: 'Invalid desktop token' });
   }
 
-  setCookie(event, 'piwi_token', token, {
+  setCookie(event, TOKEN_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
