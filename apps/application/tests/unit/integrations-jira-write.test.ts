@@ -76,11 +76,11 @@ describe('JiraClient write methods', () => {
     expect((init as RequestInit).body).toBeInstanceOf(FormData);
   });
 
-  test('a 429 throws a JiraError carrying the retry-after seconds', async () => {
+  test('a 429 throws a JiraError carrying the retry-after wait', async () => {
     fetchMock.mockResolvedValueOnce(response({}, { ok: false, status: 429, headers: { 'retry-after': '30' } }));
     await expect(client.createIssue({ projectKey: 'P', issueType: 'Bug', title: 't', body })).rejects.toMatchObject({
       status: 429,
-      retryAfterSeconds: 30,
+      retryAfterMs: 30_000,
     });
   });
 

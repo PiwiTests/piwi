@@ -404,7 +404,7 @@ describe('a create whose worker stopped during the call', () => {
   });
 
   test('a create Jira answered with an error clears the marker, so the retry files', async () => {
-    failCreatesWith = 429;
+    failCreatesWith = 503;
     const pending = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000006' });
     expect(pending).toMatchObject({ status: 'pending' });
     const [row] = await db
