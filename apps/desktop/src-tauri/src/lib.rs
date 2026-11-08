@@ -2571,6 +2571,15 @@ fn desktop_pick_files_to_open(app: tauri::AppHandle) {
     pick_files_to_open(&app);
 }
 
+/// The app menu's Quit (Cmd+Q). It goes through [`quit_after_confirming`], since the
+/// predefined Quit sends `terminate:`, which no `ExitRequested` precedes.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn quit_menu_item(app: &AppHandle, app_name: &str) -> tauri::Result<tauri::menu::MenuItem<tauri::Wry>> {
+    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)
+}
+
 /// The macOS app menu: Tauri's default menu with Piwi's own items, which
 /// [`run_app_menu_action`] runs. Settings… (Cmd+,) in the app menu; its Quit
 /// (Cmd+Q) goes through [`quit_after_confirming`], since the predefined Quit
@@ -2608,7 +2617,7 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
             // After About and its separator, where macOS applications put Settings.
             submenu.insert(&item(APP_MENU_SETTINGS_ID, "Settings…", Some("CmdOrCtrl+,"))?, 2)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-            submenu.append(&item(APP_MENU_QUIT_ID, &format!("Quit {app_name}"), Some("CmdOrCtrl+Q"))?)?;
+            submenu.append(&quit_menu_item(app, &app_name)?)?;
         } else if title == "File" {
             submenu.insert(&item(APP_MENU_IMPORT_ID, "Import Playwright report…", Some("CmdOrCtrl+O"))?, 0)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 1)?;

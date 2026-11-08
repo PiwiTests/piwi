@@ -22,10 +22,10 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
-    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, random_hex_32,
-    show_splash_status, shut_down, supervise_server, LogFile, QuitConfirmed, ServerGaveUp,
-    ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
+    app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
+    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, quit_menu_item,
+    random_hex_32, run_app_menu_action, show_splash_status, shut_down, supervise_server, LogFile,
+    QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
@@ -151,6 +151,28 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
             &format!("ignored a {RUNNER_LINK_SCHEME}:// link that Piwi Runner does not answer"),
         );
     }
+}
+
+/// The macOS menu bar: the app menu with Quit, which asks before it stops runs that are going, and the standard Edit
+/// menu, so copy and paste work in the window's fields.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{MenuBuilder, SubmenuBuilder};
+
+    let app_name = app.package_info().name.clone();
+    let application = SubmenuBuilder::new(app, &app_name)
+        .item(&quit_menu_item(app, &app_name)?)
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    MenuBuilder::new(app).item(&application).item(&edit).build()
 }
 
 pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
@@ -325,6 +347,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 });
             });
 
+            #[cfg(target_os = "macos")]
+            {
+                app.set_menu(menu(app.handle())?)?;
+                app.on_menu_event(|app, event| {
+                    if let Some(action) = app_menu_action(event.id().as_ref()) {
+                        run_app_menu_action(app, action);
+                    }
+                });
+            }
+
             // Links into the app: the one that launched it (Windows and Linux pass it as the argument), then each
             // one that comes while it runs.
             #[cfg(target_os = "linux")]
@@ -423,6 +455,14 @@ mod tests {
         assert_eq!(
             patch["plugins"]["deep-link"]["desktop"]["schemes"],
             serde_json::json!([RUNNER_LINK_SCHEME])
+        );
+    }
+
+    #[test]
+    fn the_menus_quit_is_the_one_that_asks_before_stopping_runs() {
+        assert_eq!(
+            crate::app_menu_action(crate::APP_MENU_QUIT_ID),
+            Some(crate::AppMenuAction::Quit)
         );
     }
 
