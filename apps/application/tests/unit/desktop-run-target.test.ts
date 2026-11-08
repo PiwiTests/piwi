@@ -338,8 +338,9 @@ describe('the shell’s routes', () => {
     const browser = { origin: 'http://127.0.0.1:3000' };
     await expect(getKey(asked(browser))).rejects.toMatchObject({ statusCode: 403 });
     await expect(launch(asked(browser, { id: REQUEST_ID }))).rejects.toMatchObject({ statusCode: 403 });
-    await expect(getKey(asked({}))).rejects.toMatchObject({ statusCode: 404 });
-    await expect(launch(asked({}, { id: 'x' }))).rejects.toMatchObject({ statusCode: 400 });
+    const json = { 'content-type': 'application/json' };
+    await expect(getKey(asked(json))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(launch(asked(json, { id: 'x' }))).rejects.toMatchObject({ statusCode: 400 });
   });
 
   test('refuse a body that is not application/json, as the node host does', async () => {
@@ -364,12 +365,22 @@ describe('the shell’s routes', () => {
     }
   });
 
-  test('refuse a body past 64 KB', async () => {
-    const connect = (await import('../../server/api/desktop/run-target/connect.post')).default as Route;
-    const large = JSON.stringify({ instance: 'x'.repeat(64 * 1024) });
-    await expect(connect(asked({ 'content-type': 'application/json' }, {}, large))).rejects.toMatchObject({
-      statusCode: 413,
+  test('refuse a POST that is not application/json before reading its body, bodiless ones included', async () => {
+    const plan = (await import('../../server/api/desktop/run-target/requests/[id]/plan.post')).default as Route;
+    const launch = (await import('../../server/api/desktop/run-target/requests/[id]/launch.post')).default as Route;
+    const params = { id: REQUEST_ID };
+    for (const route of [plan, launch]) {
+      await expect(route(asked({}, params))).rejects.toMatchObject({ statusCode: 415 });
+      await expect(route(asked({ 'content-type': 'text/plain' }, params, '{}'))).rejects.toMatchObject({
+        statusCode: 415,
+      });
+    }
+    await expect(launch(asked({ 'content-type': 'application/json' }, params))).rejects.toMatchObject({
+      statusCode: 404,
     });
+    const body = asked({ 'content-type': 'text/plain' }, params, '{}');
+    await expect(plan(body)).rejects.toMatchObject({ statusCode: 415 });
+    expect(body.node.req.readableDidRead).toBe(false);
   });
 
   test('answer 404 on the server build', async () => {

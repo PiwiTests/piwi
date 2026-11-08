@@ -48,6 +48,28 @@ describe('bodyLimitError', () => {
   });
 });
 
+describe('the desktop app’s run-target routes', () => {
+  const routes = [
+    { method: 'POST', path: '/api/desktop/run-target/connect' },
+    { method: 'PUT', path: '/api/desktop/run-target/key' },
+    { method: 'PUT', path: '/api/desktop/run-target/links' },
+    { method: 'POST', path: '/api/desktop/run-target/requests/12/answer' },
+    { method: 'POST', path: '/api/desktop/run-target/requests/12/plan' },
+  ];
+
+  test('take up to 64 KiB, and a 413 past that', () => {
+    for (const route of routes) {
+      const request = { ...route, contentType: 'application/json' };
+      expect(bodyLimitError({ ...request, contentLength: String(64 * 1024) })).toBeNull();
+      expect(bodyLimitError({ ...request, contentLength: String(64 * 1024 + 1) })).toEqual({
+        statusCode: 413,
+        message: 'Request body over 64 KB',
+      });
+      expect(bodyLimitError({ ...request, transferEncoding: 'chunked' })?.statusCode).toBe(411);
+    }
+  });
+});
+
 describe('the routes that read a body before checking any credential', () => {
   const paths = [
     '/api/auth/login',

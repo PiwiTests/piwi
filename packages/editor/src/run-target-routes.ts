@@ -50,8 +50,6 @@ interface RouteDef {
   path: string;
   /** Called by the desktop shell alone: a browser's request is refused. */
   shellOnly: boolean;
-  /** Reads a JSON body: a request of another content type is refused (415). */
-  readsBody?: true;
   handle(request: RunTargetRequest): Promise<{ status: number; body: unknown }> | { status: number; body: unknown };
 }
 
@@ -74,7 +72,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'POST',
     path: '/connect',
     shellOnly: false,
-    readsBody: true,
     handle: async (request) => {
       const instance = instanceUrlOf(bodyOf(request).instance);
       if (!instance) return refused(400, 'The instance is an http or https URL');
@@ -96,7 +93,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'PUT',
     path: '/key',
     shellOnly: true,
-    readsBody: true,
     handle: (request) => {
       const body = bodyOf(request);
       const instance = instanceUrlOf(body.instance);
@@ -123,7 +119,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'PUT',
     path: '/links',
     shellOnly: true,
-    readsBody: true,
     handle: (request) => {
       const links = linksOf(bodyOf(request).links);
       if (!links) return refused(400, 'Invalid links');
@@ -146,7 +141,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'POST',
     path: '/requests/:id/answer',
     shellOnly: false,
-    readsBody: true,
     handle: async (request) => {
       const { decision, command } = bodyOf(request);
       if (decision !== 'run' && decision !== 'not-now') return refused(400, 'The decision is run or not-now');
@@ -169,7 +163,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'POST',
     path: '/requests/:id/started',
     shellOnly: true,
-    readsBody: true,
     handle: async (request) => {
       const { error } = bodyOf(request);
       if (typeof error === 'string' && error) await requestedRunFailed(request.id!, error);
@@ -182,7 +175,6 @@ export const RUN_TARGET_ROUTES = {
     method: 'POST',
     path: '/requests/:id/ended',
     shellOnly: true,
-    readsBody: true,
     handle: async (request) => {
       const { code, stopped } = bodyOf(request);
       await requestedRunEnded(
@@ -202,27 +194,45 @@ export function isJsonRequest(request: Pick<HostRequest, 'headers'>): boolean {
   return request.headers['content-type']?.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
 }
 
+/** Whether a method's request carries a JSON body, which `answerRunTargetRoute` reads: every method but GET and DELETE. */
+export function sendsBody(method: string): boolean {
+  const upper = method.toUpperCase();
+  return upper !== 'GET' && upper !== 'DELETE';
+}
+
 /**
- * Answer one run-target route. A shell-only route refuses a browser's request (403) before anything else; a route
- * that reads a body refuses one that is not `application/json` (415), which a page can send without a preflight; a
- * route under `/requests/:id` refuses an id that is not a request id (400). Every shell-only answer, and the status,
- * is not to be cached.
+ * Why a request to a route is refused before its body is read, or null: a shell-only route refuses a browser's request
+ * (403); a POST or PUT refuses a content type other than `application/json` (415), which a page can send without a
+ * preflight; a route under `/requests/:id` refuses an id that is not a request id (400). Every shell-only answer, and
+ * the status, is not to be cached.
  */
-export async function answerRunTargetRoute(
+export function refuseRunTargetRequest(
   name: RunTargetRouteName,
-  request: RunTargetRequest,
-): Promise<RunTargetAnswer> {
+  request: Omit<RunTargetRequest, 'body'>,
+): RunTargetAnswer | null {
   const route: RouteDef = RUN_TARGET_ROUTES[name];
   if (route.shellOnly && isBrowserRequest(request)) {
     return { ...refused(403, 'The desktop shell alone calls this route'), noStore: false };
   }
   const noStore = route.shellOnly || name === 'status';
-  if (route.readsBody && !isJsonRequest(request)) {
+  if (sendsBody(route.method) && !isJsonRequest(request)) {
     return { ...refused(415, 'The body is application/json'), noStore };
   }
   if (route.path.includes(':id') && !isRequestId(request.id)) {
     return { ...refused(400, 'Invalid request id'), noStore };
   }
+  return null;
+}
+
+/** Answer one run-target route: the refusal of `refuseRunTargetRequest`, else the route's own answer. */
+export async function answerRunTargetRoute(
+  name: RunTargetRouteName,
+  request: RunTargetRequest,
+): Promise<RunTargetAnswer> {
+  const refusal = refuseRunTargetRequest(name, request);
+  if (refusal) return refusal;
+  const route: RouteDef = RUN_TARGET_ROUTES[name];
+  const noStore = route.shellOnly || name === 'status';
   return { ...(await route.handle(request)), noStore };
 }
 

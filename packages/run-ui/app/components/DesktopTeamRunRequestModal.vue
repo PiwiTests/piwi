@@ -83,7 +83,12 @@ async function chooseFolder() {
       projectId: String(request.projectId),
     });
     if (!folder) return;
-    add(await $fetch<RunRequestPromptView>(`/api/desktop/run-target/requests/${request.id}/plan`, { method: 'POST' }));
+    add(
+      await $fetch<RunRequestPromptView>(`/api/desktop/run-target/requests/${request.id}/plan`, {
+        method: 'POST',
+        body: {},
+      }),
+    );
   } catch (error) {
     // Answered while its folder was linked: nothing is left to show.
     if ((error as { statusCode?: number } | null)?.statusCode === 404) return;

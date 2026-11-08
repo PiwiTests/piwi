@@ -93,7 +93,6 @@ describe('the readiness probe', () => {
       const answer = await call('GET', '/api/health', headers);
       expect(answer.status).toBe(200);
       expect(answer.headers[DESKTOP_PROOF_HEADER]).toBeUndefined();
-      expect(answer.headers['x-piwi-desktop-nonce']).toBeUndefined();
     }
   });
 

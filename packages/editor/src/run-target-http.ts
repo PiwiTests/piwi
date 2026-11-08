@@ -5,7 +5,13 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { cookiesOf, headersOf, presentsToken } from './host-guard';
-import { answerRunTargetRoute, matchRunTargetRoute, pathnameOf } from './run-target-routes';
+import {
+  answerRunTargetRoute,
+  matchRunTargetRoute,
+  pathnameOf,
+  refuseRunTargetRequest,
+  sendsBody,
+} from './run-target-routes';
 import { answerSession, queryOf, SESSION_PATH, sessionCookieHeader } from './run-target-session';
 import { limitedSend, matchStream, openShellStream, openWindowStream, type StreamSink } from './run-target-stream';
 
@@ -25,14 +31,17 @@ function send(res: ServerResponse, status: number, body: unknown, noStore = fals
 
 /**
  * The JSON a request's body holds, read from its `chunks` as they arrive: null for none or one that is not JSON;
- * `false` past `MAX_RUN_TARGET_BODY`, reading no further.
+ * `false` past `maxBytes`, reading no further.
  */
-export async function readJsonBody(chunks: AsyncIterable<Uint8Array>): Promise<unknown> {
+export async function readJsonBody(
+  chunks: AsyncIterable<Uint8Array>,
+  maxBytes = MAX_RUN_TARGET_BODY,
+): Promise<unknown> {
   const parts: Uint8Array[] = [];
   let size = 0;
   for await (const chunk of chunks) {
     size += chunk.length;
-    if (size > MAX_RUN_TARGET_BODY) return false;
+    if (size > maxBytes) return false;
     parts.push(chunk);
   }
   if (size === 0) return null;
@@ -133,8 +142,15 @@ export async function serveRunTarget(req: IncomingMessage, res: ServerResponse, 
     return true;
   }
   if (!route) return false;
-  const readsBody = req.method !== 'GET' && req.method !== 'DELETE';
-  // A body the route does not read is discarded, so the next request on the connection reads from its start.
+  // A refusal comes before the body is read; what the request sent is discarded, so the next request on the
+  // connection reads from its start.
+  const refusal = refuseRunTargetRequest(route.name, { ...guarded, id: route.id });
+  if (refusal) {
+    req.resume();
+    send(res, refusal.status, refusal.body, refusal.noStore);
+    return true;
+  }
+  const readsBody = sendsBody(method);
   if (!readsBody) req.resume();
   try {
     const body = readsBody ? await readJsonBody(req) : null;

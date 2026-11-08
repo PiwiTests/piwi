@@ -142,7 +142,15 @@ async function bareHost() {
         const payload = body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
         const req = http.request(
           `${base}${RUN_TARGET_BASE}${route}`,
-          { method, headers: { ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers } },
+          {
+            method,
+            headers: {
+              ...(payload === undefined && method !== 'POST' && method !== 'PUT'
+                ? {}
+                : { 'Content-Type': 'application/json' }),
+              ...headers,
+            },
+          },
           (res) => {
             let text = '';
             res.setEncoding('utf8');
@@ -248,7 +256,7 @@ const ROUTE_CALLS = Object.entries(RUN_TARGET_ROUTES).map(([name, route]) => ({
   method: route.method,
   route: route.path.replace(':id', REQUEST_ID),
   shellOnly: route.shellOnly,
-  readsBody: 'readsBody' in route,
+  sendsBody: route.method === 'POST' || route.method === 'PUT',
 }));
 
 describe('the guard', () => {
@@ -313,18 +321,27 @@ describe('every host of the run-target routes', () => {
     }
   });
 
-  test('answers 415 to a body that is not application/json, on every route that reads one', async () => {
+  test('answers 415 to a POST or PUT that is not application/json, with a body or without', async () => {
     const decision = '{"decision":"run"}';
-    for (const call of ROUTE_CALLS.filter((c) => c.readsBody)) {
-      const route = call.route;
+    for (const call of ROUTE_CALLS.filter((c) => c.sendsBody)) {
       for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'text/plain;application/json']) {
-        const answer = await host.call(call.method, route, { ...SHELL, 'Content-Type': type }, decision);
+        const answer = await host.call(call.method, call.route, { ...SHELL, 'Content-Type': type }, decision);
         expect(answer.status, `${call.name} ${type}`).toBe(415);
         expect(answer.body).toEqual({ message: 'The body is application/json' });
       }
-      const sent = await host.call(call.method, route, { ...SHELL, 'Content-Type': '' }, decision);
+      const sent = await host.call(call.method, call.route, { ...SHELL, 'Content-Type': '' }, decision);
       expect(sent.status, call.name).toBe(415);
+      const bodiless = await host.call(call.method, call.route, { ...SHELL, 'Content-Type': 'text/plain' });
+      expect(bodiless.status, `${call.name} without a body`).toBe(415);
     }
+  });
+
+  test('refuses a request by its headers before reading its body', async () => {
+    const large = JSON.stringify({ instance: 'x'.repeat(MAX_RUN_TARGET_BODY) });
+    expect((await host.call('POST', '/connect', { ...SHELL, 'Content-Type': 'text/plain' }, large)).status).toBe(415);
+    expect((await host.call('PUT', '/links', BROWSER, large)).status).toBe(403);
+    expect((await host.call('POST', '/requests/x/answer', SHELL, large)).status).toBe(400);
+    expect((await host.call('GET', '', SHELL)).status).toBe(200);
   });
 
   test('reads a JSON body whatever the case or parameters of its type', async () => {

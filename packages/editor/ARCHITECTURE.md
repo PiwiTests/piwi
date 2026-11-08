@@ -146,8 +146,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/run-target-routes.ts`, `src/run-target-http.ts`: those routes, framework-neutral, and on a bare `node:http` host.
 - `src/run-target-session.ts`, `src/run-target-stream.ts`, `src/desktop-page.ts`: the window's session bootstrap, the
   window's and the shell's event streams, and the dashboard page the window shows. Also served by that host.
-- `src/host-guard.ts`: who may call a host of the shell's routes (the access token, a browser's request, the launch
-  nonce), over the request shape every host builds.
+- `src/host-guard.ts`: who may call a host of the shell's routes (the access token, a browser's request), and the proof
+  of the token it answers the shell's health challenge with, over the request shape every host builds.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
 - `build.mjs`: writes the five files of `dist/`.
