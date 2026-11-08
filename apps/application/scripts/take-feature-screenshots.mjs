@@ -1308,6 +1308,15 @@ async function classifyFlakyTests({ base, request }) {
   }
 }
 
+/** Tag key patterns whose test case pattern also reads the story key SHOP-1234. */
+const TAG_KEYS_THAT_OVERLAP = { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-[A-Z]?[0-9]+$' };
+
+/** Saves `tagKeys` on project 1; null turns both patterns off. */
+async function setSceneTagKeys(request, base, tagKeys) {
+  const res = await request.patch(`${base}/api/projects/1`, { data: { tagKeys } });
+  if (!res.ok()) throw new Error(`setting the tag key patterns failed (${res.status()}): ${await res.text()}`);
+}
+
 /** An agent's diagnosis and two fix attempts on cluster 2, once per server. */
 async function prepareClusterActivity({ base, request }) {
   const activity = await (await request.get(`${base}/api/failure-clusters/2/activity`)).json();
@@ -2947,6 +2956,38 @@ const SCENES = [
       },
     })),
   ),
+  ...[
+    { name: 'project-tag-keys', width: 1280 },
+    { name: 'project-tag-keys-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Keys in test tags with two patterns that both read SHOP-1234, listed in the overlap warning, at ${width} px. The scene sets the patterns and puts the project's own back after the shot`,
+    viewport: { width, height: 1800 },
+    of: '[data-shot="project-tag-keys-settings"]',
+    async run({ page, base, goto, shoot, settle }) {
+      const res = await page.request.get(`${base}/api/projects/1`);
+      if (!res.ok()) throw new Error(`reading project 1 failed (${res.status()}): ${await res.text()}`);
+      const ownTagKeys = (await res.json()).tagKeys ?? null;
+      await setSceneTagKeys(page.request, base, TAG_KEYS_THAT_OVERLAP);
+      let shot = false;
+      try {
+        await goto('/projects/1?tab=settings&section=tag-keys');
+        await page.locator('[data-shot="project-tag-keys-settings"]').waitFor({ timeout: 90000 });
+        await page.getByText('Both patterns match these tags').waitFor({ timeout: 30000 });
+        await page.locator('[data-testid="tag-keys-overlaps"] code', { hasText: 'SHOP-1234' }).waitFor();
+        await settle();
+        await shoot();
+        shot = true;
+      } finally {
+        const restored = setSceneTagKeys(page.request, base, ownTagKeys);
+        if (shot) await restored;
+        else
+          await restored.catch((error) =>
+            console.error(`restoring project 1's tag key patterns failed: ${error.message}`),
+          );
+      }
+    },
+  })),
   ...[
     { name: 'project-settings', width: 1280, height: 1100 },
     { name: 'project-settings-mobile', width: 375, height: 1500 },
