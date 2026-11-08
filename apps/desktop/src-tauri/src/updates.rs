@@ -241,7 +241,8 @@ fn remember_offered(app: &AppHandle, version: &str) {
     let Ok(version) = Version::parse(version) else {
         return;
     };
-    let mut held = app.state::<ReleaseNotesState>().0.lock().unwrap();
+    let state = app.state::<ReleaseNotesState>();
+    let mut held = state.0.lock().unwrap();
     if held.as_ref().map(|(v, _)| v) != Some(&version) {
         held.replace((version, None));
     }
