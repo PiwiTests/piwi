@@ -13,14 +13,6 @@ const STATUS: Record<RunnerRunStatus, { label: string; color: 'primary' | 'succe
 };
 const SHOWN_LINES = 200;
 
-function host(instance: string): string {
-  try {
-    return new URL(instance).host;
-  } catch {
-    return instance;
-  }
-}
-
 function output(run: RunnerRun): string {
   return run.lines.slice(-SHOWN_LINES).join('\n');
 }
@@ -36,7 +28,7 @@ function output(run: RunnerRun): string {
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium">{{ run.title }}</p>
-          <p class="truncate text-xs text-muted">{{ host(run.instance) }}</p>
+          <p class="truncate text-xs text-muted">{{ teamInstanceHost(run.instance) }}</p>
         </div>
         <UBadge :color="STATUS[run.status].color" variant="subtle">
           {{ run.stopRequested && run.status === 'running' ? 'Stopping…' : STATUS[run.status].label }}
