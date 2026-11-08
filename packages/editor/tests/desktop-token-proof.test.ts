@@ -12,7 +12,7 @@ import { PiwiClient } from '../src/piwi-client.js';
 const TOKEN = 'pd_sample_desktop_token';
 
 /** A local server; `proves` is the token it proves, or null for no proof. Records the keys its requests carried. */
-async function serve(proves: string | null) {
+async function serve(proves: string | null, port = 0, status = 200) {
   const carried: Array<string | undefined> = [];
   const server = http.createServer(async (req, res) => {
     if (req.url === '/api/health') {
@@ -25,9 +25,10 @@ async function serve(proves: string | null) {
       carried.push(req.headers['x-api-key'] as string | undefined);
     }
     res.setHeader('Content-Type', 'application/json');
+    res.statusCode = req.url === '/api/health' ? 200 : status;
     res.end('{}');
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return { url, carried, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
@@ -49,8 +50,11 @@ describe("the desktop app's token", () => {
   });
 
   /** The app's discovery file naming `url`, read the way the service reads it. */
-  function discover(url: string) {
-    fs.writeFileSync(path.join(home, '.piwi', 'desktop.json'), JSON.stringify({ url, token: TOKEN, projects: [] }));
+  function discover(url: string, pid?: number) {
+    fs.writeFileSync(
+      path.join(home, '.piwi', 'desktop.json'),
+      JSON.stringify({ url, token: TOKEN, pid, projects: [] }),
+    );
     return readDesktopDiscovery({ PIWI_DESKTOP_CONFIG: path.join(home, '.piwi', 'desktop.json') });
   }
 
@@ -73,6 +77,52 @@ describe("the desktop app's token", () => {
     await expect(client.projects()).rejects.toBeInstanceOf(DesktopNotProvenError);
     await expect(client.projects()).rejects.toThrow(/did not prove/);
     expect(other.carried).toEqual([]);
+  });
+
+  describe('after the app restarts on the same port', () => {
+    const portOf = (url: string) => Number(new URL(url).port);
+
+    test('is not sent once the connection that carried it failed and the new server cannot prove it', async () => {
+      const app = await serve(TOKEN);
+      const desktop = discover(app.url)!;
+      const client = new PiwiClient({ serverUrl: desktop.url, apiKey: desktop.token, project: '' });
+      await client.projects();
+      await app.close();
+      await expect(client.projects()).rejects.toThrow();
+
+      const impostor = await serve(null, portOf(app.url));
+      stop.push(impostor.close);
+      await expect(client.projects()).rejects.toBeInstanceOf(DesktopNotProvenError);
+      expect(impostor.carried).toEqual([]);
+    });
+
+    test('is not sent once the old server refused it and the new server cannot prove it', async () => {
+      const app = await serve(TOKEN, 0, 401);
+      const desktop = discover(app.url)!;
+      const client = new PiwiClient({ serverUrl: desktop.url, apiKey: desktop.token, project: '' });
+      await expect(client.projects()).rejects.toThrow();
+      expect(app.carried).toEqual([TOKEN]);
+      await app.close();
+
+      const impostor = await serve(null, portOf(app.url));
+      stop.push(impostor.close);
+      await expect(client.projects()).rejects.toBeInstanceOf(DesktopNotProvenError);
+      expect(impostor.carried).toEqual([]);
+    });
+
+    test('is not sent once the discovery file names another process, with no request failing in between', async () => {
+      const app = await serve(TOKEN);
+      const desktop = discover(app.url, 100)!;
+      const client = new PiwiClient({ serverUrl: desktop.url, apiKey: desktop.token, project: '' });
+      await client.projects();
+      await app.close();
+
+      const impostor = await serve(null, portOf(app.url));
+      stop.push(impostor.close);
+      discover(app.url, 200);
+      await expect(client.projects()).rejects.toBeInstanceOf(DesktopNotProvenError);
+      expect(impostor.carried).toEqual([]);
+    });
   });
 
   test('is not sent while nothing answers, and is sent once the app does', async () => {

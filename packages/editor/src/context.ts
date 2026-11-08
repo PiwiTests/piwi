@@ -118,7 +118,12 @@ export interface DesktopDiscovery {
 
 /** The running desktop app, from its discovery file; null when it does not run. */
 export function readDesktopDiscovery(env: Record<string, string | undefined>): DesktopDiscovery | null {
-  const discovery = readJson(desktopConfigPath(env)) as { url?: unknown; token?: unknown; projects?: unknown } | null;
+  const discovery = readJson(desktopConfigPath(env)) as {
+    url?: unknown;
+    token?: unknown;
+    pid?: unknown;
+    projects?: unknown;
+  } | null;
   if (!discovery || typeof discovery.url !== 'string' || typeof discovery.token !== 'string') return null;
   const projects = Array.isArray(discovery.projects)
     ? discovery.projects.flatMap((p: { id?: unknown; path?: unknown }) =>
@@ -126,7 +131,7 @@ export function readDesktopDiscovery(env: Record<string, string | undefined>): D
       )
     : [];
   const url = discovery.url.replace(/\/+$/, '');
-  holdDesktopToken(url, discovery.token);
+  holdDesktopToken(url, discovery.token, typeof discovery.pid === 'number' ? discovery.pid : null);
   return { url, token: discovery.token, projects };
 }
 

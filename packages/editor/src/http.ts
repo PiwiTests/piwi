@@ -48,15 +48,30 @@ const tokenKey = (serverUrl: string, token: string): string | null => {
   }
 };
 
-/** Mark `token` as the desktop app's at `serverUrl`: a request that carries it waits for the server's proof. */
-export function holdDesktopToken(serverUrl: string, token: string): void {
+/** The process id the discovery file named when each held token was last read. */
+const desktopPids = new Map<string, number | null>();
+
+/**
+ * Mark `token` as the desktop app's at `serverUrl`: a request that carries it waits for the server's proof. `pid` is the
+ * process the discovery file names; a different one than the last read means the app restarted, so the proof is asked again.
+ */
+export function holdDesktopToken(serverUrl: string, token: string, pid: number | null = null): void {
   const key = tokenKey(serverUrl, token);
-  if (key && !desktopTokens.has(key)) desktopTokens.set(key, null);
+  if (!key) return;
+  if (!desktopTokens.has(key) || desktopPids.get(key) !== pid) desktopTokens.set(key, null);
+  desktopPids.set(key, pid);
+}
+
+/** Drop the proof of a held token, so the next request that carries it asks the server again. */
+function forgetProof(serverUrl: string, token: string): void {
+  const key = tokenKey(serverUrl, token);
+  if (key && desktopTokens.has(key)) desktopTokens.set(key, null);
 }
 
 /** Forget the desktop tokens held and their proofs. */
 export function forgetDesktopTokens(): void {
   desktopTokens.clear();
+  desktopPids.clear();
 }
 
 /** The error of a request that would carry the desktop token to a server that did not prove it holds the token. */
@@ -73,7 +88,9 @@ export class DesktopNotProvenError extends Error {
 
 /**
  * Resolves when the server at `serverUrl` proved it holds `token`, when `token` is the desktop app's; rejects with
- * {@link DesktopNotProvenError} when it did not. A proof is asked once, an unreachable server again on the next request.
+ * {@link DesktopNotProvenError} when it did not. A proof is asked once; an unreachable server, a request that carried the
+ * token and failed to connect or was refused (401, 403), and a restart of the app (a new process id in its discovery
+ * file) each make the next request ask again.
  */
 export async function requireDesktopProof(serverUrl: string, token: string): Promise<void> {
   const key = tokenKey(serverUrl, token);
@@ -104,6 +121,17 @@ function carriedKey(headers: RequestInit['headers'] | undefined): string | null 
 export async function instanceFetch(url: string, init: RequestInit = {}, env = process.env): Promise<Response> {
   const key = carriedKey(init.headers);
   if (key) await requireDesktopProof(url, key);
+  try {
+    const response = await send(url, init, env);
+    if (key && (response.status === 401 || response.status === 403)) forgetProof(url, key);
+    return response;
+  } catch (error) {
+    if (key) forgetProof(url, key);
+    throw error;
+  }
+}
+
+function send(url: string, init: RequestInit, env: Record<string, string | undefined>): Promise<Response> {
   const dispatcher = isLoopback(url) ? null : proxyAgent(env);
   if (!dispatcher) return fetch(url, init);
   return proxiedFetch(url, { ...init, dispatcher } as Parameters<
