@@ -226,8 +226,8 @@ fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
 /// response — no keep-alive or chunked framing to decode by hand.
 ///
 /// The connection comes from [`crate::connect_proving_token`]: the token goes out only
-/// once the server on the port has proved it holds it. A failed proof is an app that is
-/// not there yet, so it is retryable and nothing was sent.
+/// once the server on the port has proved it holds it. A failed proof is retryable and
+/// nothing was sent.
 fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
     if endpoint.host != LOOPBACK_HOST {
         return Err(PostError {

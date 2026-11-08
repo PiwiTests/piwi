@@ -37,6 +37,6 @@ shared with the desktop app:
 Closing the window and the app menu's Quit (Cmd+Q on macOS) ask for confirmation while a run is going
 (`hold_close_for_local_runs`, `quit_after_confirming`); Runner has no tray and no updater. The ways out that cannot be
 held, Quit from the Dock on macOS and logging out or shutting down on macOS and Windows, reach only `RunEvent::Exit`,
-since Tao gives no hook before it: they stop Runner's runs without asking (`shut_down` still runs). On Linux the
+with no hook before it: they stop Runner's runs without asking (`shut_down` still runs). On Linux the
 session's end stops the app without `shut_down`. The desktop app has the same exits
 ([`apps/desktop/README.md`](../desktop/README.md)).
