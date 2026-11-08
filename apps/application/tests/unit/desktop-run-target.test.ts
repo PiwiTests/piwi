@@ -52,6 +52,8 @@ const REQUEST_ID = 'c'.repeat(32);
 
 let folder: string;
 let instance: Awaited<ReturnType<typeof fakeInstance>>;
+/** The sign-in page the fake instance names, else its own `/connect`. */
+let verifyAt: string | null = null;
 
 function offer(): RunRequestOffer {
   return {
@@ -86,7 +88,7 @@ async function fakeInstance() {
           JSON.stringify({
             deviceCode: 'dev',
             userCode: 'ABCD-EFGH',
-            verificationUrl: 'x',
+            verificationUrl: verifyAt ?? `http://${req.headers.host}/connect`,
             interval: 1,
             expiresIn: 600,
           }),
@@ -139,6 +141,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  verifyAt = null;
   resetDesktopRunTarget();
   await instance.close();
   fs.rmSync(folder, { recursive: true, force: true });
@@ -264,6 +267,13 @@ describe('connecting', () => {
     expect(runTargetConnection().keyToKeep).toBe(true);
     useKeptKey(instance.url, KEY, new Map());
     expect(keyToKeep()).toBe(null);
+  });
+
+  test('refuses a sign-in page on another site', async () => {
+    verifyAt = 'https://elsewhere.example.com/connect';
+    const connection = await connectRunTarget(instance.url);
+    expect(connection).toMatchObject({ state: 'none', verificationUrl: null });
+    expect(connection.error).toMatch(/another site/);
   });
 });
 

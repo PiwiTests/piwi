@@ -390,6 +390,12 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
     tellConnection();
     return runTargetConnection();
   }
+  // The page the person allows the app on is the instance's own, never one its answer points elsewhere.
+  if (!sameOrigin(answer.verificationUrl, instance)) {
+    state.error = 'The instance named a sign-in page on another site.';
+    tellConnection();
+    return runTargetConnection();
+  }
   const interval = Math.min(Math.max(Number(answer.interval) || 5, 1), 60);
   state.flow = {
     deviceCode: answer.deviceCode,
@@ -447,6 +453,15 @@ export async function planAgain(id: string): Promise<RunRequestPromptView | null
   if (!held || held.answering || held.token || held.launched) return null;
   held.plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
   return promptOf(held);
+}
+
+/** Whether `url` is on the origin of `instance`. */
+function sameOrigin(url: string, instance: string): boolean {
+  try {
+    return new URL(url).origin === new URL(instance).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a value is a request id, as the routes take it. */

@@ -1399,8 +1399,8 @@ export interface ConnectedApp {
   createdAt: Date;
   lastUsedAt: Date | null;
   /**
-   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for,
-   * when it was last seen, and whether its stream is open now.
+   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for and
+   * may still take requests on, when it was last seen, and whether its stream is open now.
    */
   target: {
     id: number;
