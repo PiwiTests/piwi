@@ -48,7 +48,7 @@ import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
-import { addRunTagsTruncated, carryTagsTruncated } from '#shared/tags-truncated';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import {
   displayTitleOf,
@@ -462,16 +462,16 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryTagsTruncated(
-      carryExternalIdDuplicates(
-        carryIngestHealth(
-          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
-          testRun.metadata,
-        ),
+    const reported = carryExternalIdDuplicates(
+      carryIngestHealth(
+        sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
         testRun.metadata,
       ),
       testRun.metadata,
     );
+    const metadata = isSharded
+      ? withShardTagsTruncated(reported, testRun.metadata, body.metadata)
+      : carryTagsTruncated(reported, testRun.metadata);
     await db
       .update(testRuns)
       .set({
@@ -505,7 +505,7 @@ export async function apiBeginTestRun(
     await updateRunMetadata(
       db,
       id,
-      (stored) => addRunTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, body.metadata),
+      (stored) => withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
@@ -950,7 +950,11 @@ export async function persistRunCases(
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
-  await recordTagsTruncated(db, testRunId, cases);
+  await recordTagsTruncated(
+    db,
+    testRunId,
+    result.map((r) => cases[r.inputIndex]!),
+  );
   await recordIngestHealth(
     db,
     testRunId,

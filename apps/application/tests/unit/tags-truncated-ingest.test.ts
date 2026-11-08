@@ -104,6 +104,26 @@ describe('metadata.tagsTruncated', () => {
     expect(await storedTagsTruncated(runId)).toEqual({ tests: 5, examples: [A, B] });
   });
 
+  test("counts a later shard's report once when the first shard sent none", async () => {
+    const shard = { instanceId: 'ci-run-9', shardTotal: 2 };
+    const setups = [];
+    for (const shardIndex of [1, 2]) setups.push(await setup({ body: { projectName: PROJECT, ...shard, shardIndex } }));
+    const runId = setups[0]!.runId as number;
+    const examples = Array.from({ length: 20 }, (_, i) => ({
+      filePath: 'tests/b.spec.ts',
+      title: `t${i}`,
+      dropped: 1,
+    }));
+    const metadata = [{}, { tagsTruncated: { tests: 25, examples } }];
+    for (const [i, set] of setups.entries()) {
+      await begin({
+        params: { id: String(runId) },
+        body: { setupToken: set.setupToken, totalTests: 1, metadata: metadata[i], ...shard, shardIndex: i + 1 },
+      });
+    }
+    expect(await storedTagsTruncated(runId)).toEqual({ tests: 25, examples });
+  });
+
   test("adds each batch shard's tests up, the first shard's once", async () => {
     const reports = [
       { tests: 3, examples: [A] },
@@ -146,7 +166,13 @@ describe('metadata.tagsTruncated', () => {
       execution('covers many cases', tagList(MAX_TEST_TAGS + 4), 1),
       execution('fits', tagList(MAX_TEST_TAGS)),
     ] as never);
-    expect(await storedTagsTruncated(run!.id)).toEqual({
+    const report = await storedTagsTruncated(run!.id);
+    // The same batch sent again stores no execution and adds no test.
+    await persistRunCases(db as never, projectId, run!.id, [
+      execution('covers many cases', tagList(MAX_TEST_TAGS + 4)),
+    ] as never);
+    expect(await storedTagsTruncated(run!.id)).toEqual(report);
+    expect(report).toEqual({
       tests: 1,
       examples: [{ filePath: 'tests/cart.spec.ts', title: 'covers many cases', line: 4, dropped: 4 }],
     });

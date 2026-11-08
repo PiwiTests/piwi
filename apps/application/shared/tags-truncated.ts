@@ -35,3 +35,17 @@ export function addRunTagsTruncated(metadata: Record<string, unknown>, sent: unk
   const merged = addTagsTruncated(metadata.tagsTruncated, (sent as Record<string, unknown> | null)?.tagsTruncated);
   return withTagsTruncated(metadata, merged) ?? {};
 }
+
+/**
+ * A sharded run's metadata as one shard's `/begin` writes it (`next`): the tests whose tags were cut that the run
+ * holds (`stored`) plus the shard's own (`sent`, its metadata). Each shard reports its tests once, on its `/begin`.
+ */
+export function withShardTagsTruncated(
+  next: Record<string, unknown> | null,
+  stored: unknown,
+  sent: unknown,
+): Record<string, unknown> {
+  const kept = (stored as Record<string, unknown> | null)?.tagsTruncated;
+  const base = withoutTagsTruncated(next) ?? {};
+  return addRunTagsTruncated(kept === undefined ? base : { ...base, tagsTruncated: kept }, sent);
+}

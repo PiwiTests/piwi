@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { addRunTagsTruncated, carryTagsTruncated, withoutTagsTruncated } from '#shared/tags-truncated';
+import {
+  addRunTagsTruncated,
+  carryTagsTruncated,
+  withoutTagsTruncated,
+  withShardTagsTruncated,
+} from '#shared/tags-truncated';
 
 const a = { filePath: 'a.spec.ts', title: 'A', dropped: 1 };
 const b = { filePath: 'b.spec.ts', title: 'B', dropped: 2 };
@@ -48,5 +53,23 @@ describe('withoutTagsTruncated', () => {
       branch: 'main',
     });
     expect(withoutTagsTruncated(null)).toBeNull();
+  });
+});
+
+describe('withShardTagsTruncated', () => {
+  const many = (prefix: string, count: number) =>
+    Array.from({ length: count }, (_, i) => ({ filePath: `${prefix}.spec.ts`, title: `t${i}`, dropped: 1 }));
+
+  test("counts a shard's report once when the run holds none yet, past the examples too", () => {
+    const sent = { tagsTruncated: { tests: 25, examples: many('b', 20) } };
+    const next = { branch: 'main', ...sent };
+    expect(withShardTagsTruncated(next, { branch: 'main' }, sent).tagsTruncated).toEqual(sent.tagsTruncated);
+  });
+
+  test("adds a shard's report to the run's, whichever shard's metadata the run keeps", () => {
+    const stored = { tagsTruncated: { tests: 15, examples: many('a', 15) } };
+    const sent = { tagsTruncated: { tests: 10, examples: many('b', 10) } };
+    expect((withShardTagsTruncated(sent, stored, sent).tagsTruncated as { tests: number }).tests).toBe(25);
+    expect((withShardTagsTruncated(stored, stored, sent).tagsTruncated as { tests: number }).tests).toBe(25);
   });
 });

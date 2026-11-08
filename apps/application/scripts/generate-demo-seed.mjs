@@ -706,7 +706,8 @@ const FAILURE_CLUSTERS = [];
 function demoTagsTruncated(ids) {
   const examples = ids.map((id, k) => {
     const { file, title, declLine } = caseById.get(id);
-    return { filePath: file, title, line: declLine, dropped: k + 2 };
+    const suitePath = (TEST_CASES.find((c) => c.id === id).suite_path || '').split('\x1f').filter(Boolean);
+    return { filePath: file, ...(suitePath.length ? { suitePath } : {}), title, line: declLine, dropped: k + 2 };
   });
   return { tests: examples.length, examples };
 }
