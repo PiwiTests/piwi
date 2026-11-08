@@ -1,6 +1,16 @@
 import { describe, test, expect } from 'vitest';
 import {
+  addTagsTruncated,
+  collectTagsTruncated,
   compileExternalIdPattern,
+  keepTagsTruncated,
+  formatTagsTruncatedTests,
+  MAX_TAGS_TRUNCATED_EXAMPLES,
+  MAX_TAGS_TRUNCATED_SUITE_DEPTH,
+  MAX_TAGS_TRUNCATED_TEXT_CHARS,
+  normalizeTestTagsWithDropped,
+  readTagsTruncated,
+  tagsTruncatedCount,
   isPiwiAnnotation,
   MAX_EXTERNAL_ID_CHARS,
   MAX_EXTERNAL_ID_DUPLICATES,
@@ -49,6 +59,187 @@ describe('normalizeTestTags', () => {
   test('caps the length of a single tag', () => {
     const [tag] = normalizeTestTags(['x'.repeat(MAX_TEST_TAG_CHARS + 20)]);
     expect(tag).toHaveLength(MAX_TEST_TAG_CHARS);
+  });
+});
+
+const tagList = (count: number, prefix = 'SHOP-T') => Array.from({ length: count }, (_, i) => `@${prefix}${i + 1}`);
+
+describe('normalizeTestTagsWithDropped', () => {
+  test('counts the distinct tags past the limit, in declaration order', () => {
+    const { tags, dropped } = normalizeTestTagsWithDropped(tagList(MAX_TEST_TAGS + 5));
+    expect(tags).toEqual(tagList(MAX_TEST_TAGS).map((tag) => tag.slice(1)));
+    expect(dropped).toBe(5);
+  });
+
+  test('counts neither duplicates nor blanks, before or past the limit', () => {
+    const raw = [...tagList(MAX_TEST_TAGS), '@SHOP-T1', 'SHOP-T2', '', '  ', '@', 42, '@extra'];
+    expect(normalizeTestTagsWithDropped(raw)).toEqual({
+      tags: tagList(MAX_TEST_TAGS).map((tag) => tag.slice(1)),
+      dropped: 1,
+    });
+  });
+
+  test('counts a tag repeated past the limit once', () => {
+    expect(normalizeTestTagsWithDropped([...tagList(MAX_TEST_TAGS), '@x', 'x', '@x', '@y']).dropped).toBe(2);
+  });
+
+  test('drops nothing at the limit, and agrees with normalizeTestTags', () => {
+    const raw = tagList(MAX_TEST_TAGS);
+    expect(normalizeTestTagsWithDropped(raw).dropped).toBe(0);
+    expect(normalizeTestTagsWithDropped(tagList(30)).tags).toEqual(normalizeTestTags(tagList(30)));
+    expect(normalizeTestTagsWithDropped('nope')).toEqual({ tags: [], dropped: 0 });
+  });
+});
+
+describe('collectTagsTruncated', () => {
+  const test1 = { filePath: 'tests/cart.spec.ts', suitePath: ['cart'], title: 'pays', line: 4 };
+
+  test('names each test that lost a tag, once across Playwright projects', () => {
+    const found = collectTagsTruncated([
+      { ...test1, tags: tagList(MAX_TEST_TAGS + 2) },
+      { ...test1, tags: tagList(MAX_TEST_TAGS + 3) },
+      { filePath: 'tests/cart.spec.ts', title: 'fits', tags: tagList(3) },
+    ]);
+    expect(found).toEqual({ tests: 1, examples: [{ ...test1, dropped: 3 }] });
+  });
+
+  test('counts every test and keeps the first examples', () => {
+    const tests = Array.from({ length: MAX_TAGS_TRUNCATED_EXAMPLES + 4 }, (_, i) => ({
+      filePath: 'tests/a.spec.ts',
+      title: `t${i}`,
+      tags: tagList(MAX_TEST_TAGS + 1),
+    }));
+    const found = collectTagsTruncated(tests)!;
+    expect(found.tests).toBe(MAX_TAGS_TRUNCATED_EXAMPLES + 4);
+    expect(found.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+  });
+
+  test('is null when every test fits', () => {
+    expect(collectTagsTruncated([{ filePath: 'a', title: 'b', tags: tagList(MAX_TEST_TAGS) }])).toBeNull();
+  });
+});
+
+describe('readTagsTruncated', () => {
+  test('drops malformed examples and never counts fewer tests than it lists', () => {
+    expect(
+      readTagsTruncated({
+        tests: 0,
+        examples: [{ filePath: 'a', title: 'b', dropped: 2 }, { filePath: 'a', title: 'c', dropped: 0 }, 'x', null],
+      }),
+    ).toEqual({ tests: 1, examples: [{ filePath: 'a', title: 'b', dropped: 2 }] });
+    expect(readTagsTruncated({ tests: 'many', examples: [] })).toBeNull();
+    expect(readTagsTruncated({ tests: 1e308, examples: [] })).toBeNull();
+    expect(readTagsTruncated(null)).toBeNull();
+  });
+});
+
+describe('readTagsTruncated limits', () => {
+  const long = 'x'.repeat(MAX_TAGS_TRUNCATED_TEXT_CHARS + 100);
+  const oversized = {
+    filePath: `tests/${long}.spec.ts`,
+    suitePath: Array.from({ length: MAX_TAGS_TRUNCATED_SUITE_DEPTH + 8 }, (_, i) => `${i}${long}`),
+    title: long,
+    line: 12,
+    dropped: 2,
+  };
+
+  test('cuts the file path, title, describe entries and describe depth', () => {
+    const [example] = readTagsTruncated({ tests: 1, examples: [oversized] })!.examples;
+    expect(example!.filePath).toBe(oversized.filePath.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+    expect(example!.title).toHaveLength(MAX_TAGS_TRUNCATED_TEXT_CHARS);
+    expect(example!.suitePath).toHaveLength(MAX_TAGS_TRUNCATED_SUITE_DEPTH);
+    expect(example!.suitePath!.every((entry) => entry.length === MAX_TAGS_TRUNCATED_TEXT_CHARS)).toBe(true);
+    expect(example!.suitePath![0]).toBe(oversized.suitePath[0]!.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+  });
+
+  test('keeps a line that is a positive safe integer and omits any other', () => {
+    const lineOf = (line: unknown) =>
+      readTagsTruncated({ tests: 1, examples: [{ filePath: 'a', title: 'b', dropped: 1, line }] })!.examples[0]!.line;
+    expect(lineOf(12)).toBe(12);
+    for (const line of [-3, 0, 1.5, Infinity, NaN, 2 ** 60, '12', null]) expect(lineOf(line)).toBeUndefined();
+  });
+
+  test('a collected oversized test and its read form are one test', () => {
+    const collected = collectTagsTruncated([{ ...oversized, tags: tagList(MAX_TEST_TAGS + 2) }])!;
+    expect(collected.examples[0]!.title).toHaveLength(MAX_TAGS_TRUNCATED_TEXT_CHARS);
+    expect(readTagsTruncated(collected)).toEqual(collected);
+  });
+
+  test('merging an oversized report with its cut form counts the test once', () => {
+    const cut = readTagsTruncated({ tests: 1, examples: [oversized] })!;
+    const raw = { tests: 1, examples: [oversized] };
+    expect(keepTagsTruncated(cut, raw)).toEqual(cut);
+    expect(keepTagsTruncated(raw, cut)).toEqual(cut);
+    expect(addTagsTruncated(cut, raw)).toEqual(cut);
+  });
+});
+
+test('readTagsTruncated keeps each test once and caps the examples', () => {
+  const examples = Array.from({ length: MAX_TAGS_TRUNCATED_EXAMPLES + 5 }, (_, i) => ({
+    filePath: 'a',
+    title: `t${i % (MAX_TAGS_TRUNCATED_EXAMPLES + 2)}`,
+    dropped: 1,
+  }));
+  const read = readTagsTruncated({ tests: 40, examples })!;
+  expect(read.tests).toBe(40);
+  expect(read.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+  expect(new Set(read.examples.map((e) => e.title)).size).toBe(MAX_TAGS_TRUNCATED_EXAMPLES);
+});
+
+describe('merging tagsTruncated', () => {
+  const a = { filePath: 'a.spec.ts', title: 'A', dropped: 1 };
+  const b = { filePath: 'b.spec.ts', title: 'B', dropped: 2 };
+
+  test('a report sent again counts once, even past the examples', () => {
+    const report = { tests: 30, examples: [a, b] };
+    expect(keepTagsTruncated(report, report)).toEqual(report);
+    expect(keepTagsTruncated(null, report)).toEqual(report);
+  });
+
+  test("other shards' reports add up, less the tests both list", () => {
+    expect(addTagsTruncated({ tests: 3, examples: [a] }, { tests: 2, examples: [b] })).toEqual({
+      tests: 5,
+      examples: [a, b],
+    });
+    expect(addTagsTruncated({ tests: 1, examples: [a] }, { tests: 2, examples: [a, b] })).toEqual({
+      tests: 2,
+      examples: [a, b],
+    });
+    expect(addTagsTruncated(undefined, { tests: 1, examples: [a] })).toEqual({ tests: 1, examples: [a] });
+    expect(addTagsTruncated(undefined, undefined)).toBeNull();
+  });
+});
+
+describe('tagsTruncatedCount', () => {
+  const example = (i: number) => ({ filePath: 'a.spec.ts', title: `t${i}`, dropped: 1 });
+  const examples = (n: number) => Array.from({ length: n }, (_, i) => example(i));
+
+  test('is the exact count while the examples list every test', () => {
+    const one = { tests: 1, examples: examples(1) };
+    expect(tagsTruncatedCount(one)).toEqual({ count: 1, atLeast: false });
+    expect(formatTagsTruncatedTests(one)).toBe('1 test');
+    const some = { tests: 5, examples: examples(5) };
+    expect(tagsTruncatedCount(some)).toEqual({ count: 5, atLeast: false });
+    expect(formatTagsTruncatedTests(some)).toBe('5 tests');
+    const full = { tests: MAX_TAGS_TRUNCATED_EXAMPLES, examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES) };
+    expect(tagsTruncatedCount(full)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: false });
+  });
+
+  test('is at least the examples kept, never the stored count, when that is above them', () => {
+    const report = { tests: 47, examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES) };
+    expect(tagsTruncatedCount(report)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: true });
+    expect(formatTagsTruncatedTests(report)).toBe(`at least ${MAX_TAGS_TRUNCATED_EXAMPLES} tests`);
+  });
+
+  test('shows at least the examples kept for two overlapping reports merged past the examples', () => {
+    const shard = (from: number) => ({
+      tests: MAX_TAGS_TRUNCATED_EXAMPLES + 10,
+      examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES).map((_, i) => example(from + i)),
+    });
+    const merged = addTagsTruncated(shard(0), shard(5))!;
+    expect(merged.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+    expect(merged.tests).toBeGreaterThan(merged.examples.length);
+    expect(tagsTruncatedCount(merged)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: true });
   });
 });
 

@@ -6,6 +6,7 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
@@ -178,11 +179,18 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       metadata = await updateRunMetadata(
         db,
         id,
-        (stored) => withBegunShard(id, reported(stored), stored, body.setupToken, streamToken),
+        (stored) =>
+          withBegunShard(
+            id,
+            withShardTagsTruncated(reported(stored), stored, body.metadata),
+            stored,
+            body.setupToken,
+            streamToken,
+          ),
         running,
       );
     } else {
-      metadata = reported(testRun.metadata);
+      metadata = carryTagsTruncated(reported(testRun.metadata), testRun.metadata);
       await db
         .update(testRuns)
         .set({ ...running, metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
@@ -204,7 +212,13 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       db,
       id,
       (stored) =>
-        withBegunShard(id, { ...sanitizeMetadata(body.metadata), ...stored }, stored, body.setupToken, streamToken),
+        withBegunShard(
+          id,
+          withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
+          stored,
+          body.setupToken,
+          streamToken,
+        ),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         // The first shard to report a branch names the run's branch.

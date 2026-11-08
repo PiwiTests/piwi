@@ -78,6 +78,7 @@ import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import { int32, int64, storableRunCase } from './storable-values';
 import { workerLane } from '#shared/worker-lane';
+import { recordTagsTruncated } from './tags-truncated';
 import type { DbClient as DB } from '../database';
 
 /**
@@ -746,6 +747,7 @@ export async function persistRunCases(
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,

@@ -665,6 +665,11 @@ export const HELP_TOPICS = {
     text: "Each of these IDs is declared by more than one test (with `piwi:id`, or in the title read by the reporter’s `externalId.pattern`). An ID names one test, so this run matched those tests by file, describe path and title instead, as if they had no ID: a renamed or moved one starts a new history. Give each test its own ID; set `externalId.onDuplicate: 'fail'` to fail the run while two tests share one.",
     doc: 'reference/test-metadata#external-test-ids',
   },
+  'run.tagsTruncated': {
+    title: 'Tags cut',
+    text: "These tests declare more than 20 tags, counting the config's, each `describe` block's, the title's and the test's own `tag` option. Piwi keeps the first 20 of each test and drops the rest, so a dropped tag is neither searched nor filtered on. Playwright lists config and describe tags first and the test's own `tag` option last: keep config and describe tags few, or put the tags that matter in the test title.",
+    doc: 'reference/test-metadata#tag-limit',
+  },
   'run.coverageIncomplete': {
     title: 'Incomplete server coverage',
     text: 'Part of this run’s server coverage is missing. A backend that **restarted** during the run starts its coverage empty: the lines each test ran are kept, but what the earlier process ran outside a request (startup, background work) is lost. One **unreachable** at the end of the run sent no run-level coverage: only the lines the tests ran are kept. The commit’s combined coverage says so in its notes.',

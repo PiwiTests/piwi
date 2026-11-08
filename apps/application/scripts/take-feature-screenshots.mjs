@@ -976,6 +976,7 @@ const REPRO_SCENE_STEPS = (() => {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
+ *   update      — desktop mode: `{ check, releaseNotes }`, an update on offer and its release notes (default none)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
  *                 other scene captures as if Don't show again had been chosen,
  *                 so the hint never lands in an illustration by chance
@@ -2209,6 +2210,76 @@ async function routeNudgeScene(page, clusterId) {
     await route.fulfill({ response, json });
   });
 }
+
+/** The release notes the desktop shell reads for an update from v0.64.0 to v0.67.0, cut down from the real releases. */
+const DESKTOP_UPDATE_RELEASE_NOTES = {
+  installed: '0.64.0',
+  offered: '0.67.0',
+  complete: true,
+  releases: [
+    {
+      version: '0.67.0',
+      date: '2026-11-05T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.67.0',
+      body: [
+        '### ⚠ BREAKING CHANGES',
+        '',
+        "* **app:** the run insights endpoint's `workerImbalance` entries are `{ worker, workerIndex, shardIndex, count }`: `worker` is the lane from 1",
+        '',
+        '### Features',
+        '',
+        '* **app:** dispatch CI re-runs to a CI server (Jenkins and Custom presets) ([a4e9ce7](https://github.com/PiwiTests/piwi/commit/a4e9ce7))',
+        '* **app:** dock the live view beside the run page, with its address, zoom and verdict ([513f252](https://github.com/PiwiTests/piwi/commit/513f252))',
+        '* **app:** name each worker by its lane, sent by the reporter with every test ([6760875](https://github.com/PiwiTests/piwi/commit/6760875))',
+        '',
+        '### Bug Fixes',
+        '',
+        '* **app:** keep a reported history when a later batch carries its earlier attempt ([da47453](https://github.com/PiwiTests/piwi/commit/da47453))',
+        '* **reporter:** keep run errors and test output ([c95053f](https://github.com/PiwiTests/piwi/commit/c95053f))',
+      ].join('\n'),
+    },
+    {
+      version: '0.66.0',
+      date: '2026-11-04T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.66.0',
+      body: [
+        'This release makes the branch a first-class dimension, saves test selections and reads impact from a diff.',
+        '',
+        '**Full diff:** [v0.65.0…v0.66.0](https://github.com/PiwiTests/piwi/compare/v0.65.0...v0.66.0)',
+        '',
+        '## ✨ Highlights',
+        '',
+        '- **🌿 Branch as a first-class dimension** — Every page filters by branch, and the default branch is read from the repository.',
+        '- **🎯 Test selections** — Save a set of tests and run it again from the dashboard or the editor.',
+        '- **🔍 Impact-from-diff** — Paste a diff and see the tests it touches.',
+        '',
+        '## Features',
+        '',
+        '### Branches',
+        '',
+        '- **app:** filter every project tab by branch',
+        "- **reporter:** add `piwi rerun` to run a CI re-run's arguments without a shell",
+        '',
+        '## Bug Fixes',
+        '',
+        "- **app:** complete a stored retry's history when its earlier attempt comes with one",
+        '',
+        '<!-- notes:polished -->',
+      ].join('\n'),
+    },
+    {
+      version: '0.65.0',
+      date: '2026-11-03T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.65.0',
+      body: [
+        '### Features',
+        '',
+        '* **app:** pause and watch a running test from its row on the run page ([e98d6cc](https://github.com/PiwiTests/piwi/commit/e98d6cc))',
+        '* **app:** allow more host names with authentication off through PIWI_ALLOWED_HOSTS ([36b40ba](https://github.com/PiwiTests/piwi/commit/36b40ba))',
+      ].join('\n'),
+    },
+  ],
+};
 
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
@@ -4799,6 +4870,25 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #6 has two tests that declare more tags than a test keeps.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 720 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1400 } },
+  ].map(({ suffix, viewport }) => ({
+    name: `run-tags-truncated${suffix}`,
+    description: `Run page at ${viewport.width} px of a run whose tests lost tags past the limit: the Tags cut fact on the facts line, and the Tags cut row in Details`,
+    route: '/test-runs/6',
+    viewport,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-tags-truncated-fact"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await page.locator('[data-shot="run-tags-truncated"]').waitFor();
+      await settle();
+      await shoot('details');
+    },
+  })),
   {
     name: 'run-errors',
     description:
@@ -6761,6 +6851,43 @@ const SCENES = [
       await page.getByRole('menuitem', { name: 'Connect a suite' }).waitFor({ timeout: 15_000 });
       await settle();
       await shoot();
+    },
+  },
+  {
+    name: 'desktop-update-notes',
+    description:
+      "Settings → About in the desktop app with an update on offer: the Updates card's summary of the releases since the installed version, then What's new open, breaking changes first, at 1280 and 390 px",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    update: {
+      check: { state: 'available', version: '0.67.0', date: null },
+      releaseNotes: DESKTOP_UPDATE_RELEASE_NOTES,
+    },
+    outputs: [
+      'desktop-update-notes.png',
+      'desktop-update-notes-modal.png',
+      'desktop-update-notes-narrow.png',
+      'desktop-update-notes-modal-narrow.png',
+    ],
+    async run({ page, shoot, settle }) {
+      const capture = async (suffix) => {
+        const card = page.locator('[data-shot="desktop-update-card"]');
+        await card.getByRole('button', { name: "What's new" }).waitFor({ timeout: 60_000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot(suffix || undefined, { of: '[data-shot="desktop-update-card"]', pad: 24 });
+        await card.getByRole('button', { name: "What's new" }).click();
+        await page.locator('[data-shot="desktop-release-notes"]').waitFor();
+        await settle();
+        await shoot(suffix ? `modal-${suffix}` : 'modal');
+        await page.keyboard.press('Escape');
+      };
+      await capture('');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await capture('narrow');
     },
   },
   {

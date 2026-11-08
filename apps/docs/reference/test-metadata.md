@@ -139,6 +139,24 @@ next run that reports the test.
 Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
 leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
 
+#### Tag limit
+
+Piwi keeps at most 20 tags per test, each cut to 60 characters, in the order Playwright lists them; duplicates count
+once. A test that declares more keeps its first 20 and loses the rest. The reporter warns about it once as the run
+begins, naming the tests (20 at most), and records them on the run: the run page shows "Tags cut at 20 on N tests",
+with the tests in its Details. When more than 20 tests lost tags, the page shows "at least 20 tests", the number it
+lists, since merging a run's reports (shards, or a payload sent in batches) can count a test twice. The dashboard does
+the same for a run sent without the reporter, or imported from a blob report.
+
+Which tags are cut depends on Playwright's order. Playwright 1.64.1 builds `TestCase.tags` from the config's `tag`
+first, then each `describe` from the outermost in (the @-words of its title, then its `tag` option), then the @-words
+of the test title, and the test's own `tag` option last. So a tag in the test's `tag` option is the first to go. To
+keep the tags that matter:
+
+- keep config and `describe` tags few;
+- put the tags that matter in the test title (`test('checkout @SHOP-T123', …)`), which comes before the `tag` option;
+- for the one identifier that matters most, use an [external test ID](#external-test-ids) instead of a tag.
+
 ### Test locks
 
 Playwright 1.63 lets a test or a `describe` declare a **lock** — a named shared resource the runner never lets two

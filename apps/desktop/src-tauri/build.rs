@@ -60,6 +60,7 @@ fn main() {
             "desktop_skills_read",
             "desktop_skills_write",
             "desktop_check_update",
+            "desktop_get_release_notes",
             "desktop_install_update",
             "desktop_restart_app",
             "desktop_get_update_settings",
