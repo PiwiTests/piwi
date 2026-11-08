@@ -521,6 +521,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           class="text-warning"
           :title="tagsTruncated.examples.map(runTestLabel).join('\n')"
           data-testid="run-tags-truncated-fact"
+          data-shot="run-tags-truncated-fact"
           >{{ tagsTruncatedFact }}</span
         >
       </template>
@@ -648,6 +649,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         v-if="tagsTruncated"
         class="flex items-start gap-1.5"
         data-testid="run-tags-truncated"
+        data-shot="run-tags-truncated"
         data-tour="run-tags-truncated"
       >
         <span class="text-muted shrink-0 inline-flex items-center gap-1"
@@ -656,9 +658,9 @@ function onLabelKeydown(e: KeyboardEvent) {
         <ul class="space-y-1 min-w-0 break-words">
           <li v-for="test in tagsTruncated.examples" :key="runTestLabel(test)" class="text-xs text-muted">
             {{ runTestLabel(test) }}
-            <span class="text-dimmed">({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)</span>
+            ({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)
           </li>
-          <li v-if="tagsTruncated.tests > tagsTruncated.examples.length" class="text-xs text-dimmed">
+          <li v-if="tagsTruncated.tests > tagsTruncated.examples.length" class="text-xs text-muted">
             and {{ tagsTruncated.tests - tagsTruncated.examples.length }} more
           </li>
         </ul>

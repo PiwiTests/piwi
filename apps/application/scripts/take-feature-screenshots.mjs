@@ -4799,6 +4799,25 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #6 has two tests that declare more tags than a test keeps.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 720 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1400 } },
+  ].map(({ suffix, viewport }) => ({
+    name: `run-tags-truncated${suffix}`,
+    description: `Run page at ${viewport.width} px of a run whose tests lost tags past the limit: the Tags cut fact on the facts line, and the Tags cut row in Details`,
+    route: '/test-runs/6',
+    viewport,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-tags-truncated-fact"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await page.locator('[data-shot="run-tags-truncated"]').waitFor();
+      await settle();
+      await shoot('details');
+    },
+  })),
   {
     name: 'run-errors',
     description:
