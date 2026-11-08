@@ -26,9 +26,9 @@ channel, so a per-user install pulls a per-user update.
    `desktop_set_retention_days`) reaches the server as `PIWI_RETENTION_DAYS`;
    until one is picked, the server follows the environment the app started in.
 2. It polls `GET /api/health` (200 = database migrated) until the answer
-   carries the random nonce the shell gave this launch's sidecar
-   (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
-   process that took the port never receives the token, then points the window
+   answers the probe's fresh challenge with the proof of the desktop token
+   (`X-Piwi-Desktop-Proof`), so another process that took the port never
+   receives the token, then points the window
    at the server via a one-time token bootstrap (`/__piwi/session`). The
    window may only navigate to its bundled pages and that server's exact origin,
    and the app's IPC commands are granted to that origin alone

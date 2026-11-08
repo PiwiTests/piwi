@@ -10,7 +10,6 @@
  */
 import { gapClassSeverity } from '#shared/gap-classes';
 import { gapClassBadgeColor, gapClassFill } from '~/utils/gap-classes';
-import { errorMessage } from '~/utils';
 
 interface MapFeature {
   key: string;

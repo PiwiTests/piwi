@@ -1,6 +1,13 @@
 import type { H3Event } from 'h3';
 import { cookiesOf, headersOf } from '@piwitests/editor/host-guard';
-import { answerRunTargetRoute, RUN_TARGET_ROUTES, type RunTargetRouteName } from '@piwitests/editor/run-target-routes';
+import { readJsonBody } from '@piwitests/editor/run-target-http';
+import {
+  answerRunTargetRoute,
+  refuseRunTargetRequest,
+  RUN_TARGET_ROUTES,
+  sendsBody,
+  type RunTargetRouteName,
+} from '@piwitests/editor/run-target-routes';
 import { apiError } from './api-error';
 import { requireAuth } from './auth';
 
@@ -13,13 +20,13 @@ export async function runTargetRoute(event: H3Event, name: RunTargetRouteName): 
   if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
   await requireAuth(event);
   const headers = headersOf(event.node.req.headers);
-  const method = RUN_TARGET_ROUTES[name].method;
-  const answer = await answerRunTargetRoute(name, {
-    headers,
-    cookies: cookiesOf(headers.cookie),
-    id: getRouterParam(event, 'id'),
-    body: method === 'GET' || method === 'DELETE' ? null : await readBody(event).catch(() => null),
-  });
+  const request = { headers, cookies: cookiesOf(headers.cookie), id: getRouterParam(event, 'id') };
+  const answer =
+    refuseRunTargetRequest(name, request) ??
+    (await answerRunTargetRoute(name, {
+      ...request,
+      body: sendsBody(RUN_TARGET_ROUTES[name].method) ? await readJsonBody(event.node.req, Infinity) : null,
+    }));
   if (answer.noStore) setResponseHeader(event, 'cache-control', 'no-store');
   if (answer.status >= 400) {
     throw apiError({ statusCode: answer.status, message: (answer.body as { message: string }).message });

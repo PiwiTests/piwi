@@ -35,6 +35,8 @@ keepawake = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.9"
+hmac = "0.12"
+sha2 = "0.10"
 # The release notes of an update come from GitHub's releases API. These crates
 # are already built for `tauri-plugin-updater`, with its TLS stack: rustls on
 # ring, whose provider `fetch_release_notes` installs.
@@ -77,6 +79,9 @@ windows = { version = "0.62", features = [
 # the playwright control plugin and Tauri's runtime-ACL support so the capability
 # it needs can be added only in test builds — never in shipped installers.
 e2e-testing = ["dep:tauri-plugin-playwright", "tauri/dynamic-acl"]
+# Build with `--features runner --config src-tauri/runner.conf.json` for Piwi Runner: the same shell with the Runner host
+# as its sidecar instead of the dashboard's server (src/runner_app.rs), and its own keychain service.
+runner = []
 
 [profile.release]
 panic = "abort"

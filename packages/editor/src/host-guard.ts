@@ -4,6 +4,12 @@
  * that serves the same routes decides the same way.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  isDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
 
 /** What a host's guard and its routes read of a request. */
 export interface HostRequest {
@@ -15,9 +21,6 @@ export interface HostRequest {
 
 /** The cookie the window holds the access token in, set by the host's session route. */
 export const TOKEN_COOKIE = 'piwi_token';
-
-/** The response header that answers the shell's readiness probe with the launch nonce. */
-export const LAUNCH_NONCE_HEADER = 'X-Piwi-Desktop-Nonce';
 
 /** Node's request headers as a host reads them: a header sent more than once joined with `, `. */
 export function headersOf(
@@ -63,10 +66,15 @@ export function presentedToken(request: HostRequest): string | null {
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
+/** Whether `presented` is the access token `token`, compared in constant time whatever its length. */
+export function isAccessToken(presented: string, token: string): boolean {
+  return timingSafeEqual(digest(presented), digest(token));
+}
+
 /** Whether a request presents the access token `token`, compared in constant time whatever its length. */
 export function presentsToken(request: HostRequest, token: string): boolean {
   const presented = presentedToken(request);
-  return !!presented && timingSafeEqual(digest(presented), digest(token));
+  return !!presented && isAccessToken(presented, token);
 }
 
 /**
@@ -78,10 +86,17 @@ export function isBrowserRequest(request: Pick<HostRequest, 'headers'>): boolean
 }
 
 /**
- * The per-launch nonce the shell hands the host it starts in `PIWI_DESKTOP_LAUNCH_NONCE`, or null without one. The
- * readiness probe echoes it (`LAUNCH_NONCE_HEADER`), so the shell loads its session only from the host it started,
- * never from another process that took the port.
+ * The headers that answer a readiness probe's challenge (`x-piwi-desktop-challenge`): the proof that this host holds
+ * the access token `token`, bound to the loopback `port` it answers on (`@piwitests/core/desktop-proof`). Empty
+ * without a token, a port or a well-formed challenge. The shell sends a fresh challenge with every probe and sends the
+ * token only to a host whose proof for it checks, so a program that took the port, holding no token, never receives it.
  */
-export function launchNonce(env: Record<string, string | undefined> = process.env): string | null {
-  return env.PIWI_DESKTOP_LAUNCH_NONCE || null;
+export async function challengeAnswer(
+  headers: Readonly<Record<string, string | undefined>>,
+  token: string | undefined,
+  port: number | undefined,
+): Promise<Record<string, string>> {
+  const challenge = headers[DESKTOP_CHALLENGE_HEADER];
+  if (!token || !port || !isDesktopChallenge(challenge)) return {};
+  return { [DESKTOP_PROOF_HEADER]: await desktopTokenProof(token, port, challenge) };
 }

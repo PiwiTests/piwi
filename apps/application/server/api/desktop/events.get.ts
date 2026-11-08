@@ -10,7 +10,7 @@ import { createSSEEndpoint } from '../../utils/sse';
 import { subscribeDesktopOpenRequests } from '../../utils/desktop-handoff';
 import { subscribeReproRequests, waitingReproRequests } from '../../utils/desktop-repro';
 import { subscribePairings, waitingPairings } from '../../utils/desktop-pairing';
-import { runTargetConnection, subscribeRunTargetWindow, waitingRunRequests } from '@piwitests/editor/run-target';
+import { openWindowStream } from '@piwitests/editor/run-target-stream';
 import { getActiveTestRuns } from '#shared/handlers/test-runs';
 
 defineRouteMeta({
@@ -88,11 +88,7 @@ export default eventHandler(async (event) => {
       send({ type: 'picker-pairing', pairing });
     });
     for (const pairing of waitingPairings()) send({ type: 'picker-pairing', pairing });
-    const unsubscribeRunTarget = process.env.PIWI_DESKTOP_TOKEN ? subscribeRunTargetWindow(send) : () => {};
-    if (process.env.PIWI_DESKTOP_TOKEN) {
-      send({ type: 'run-target', connection: runTargetConnection() });
-      for (const request of waitingRunRequests()) send({ type: 'run-request', request });
-    }
+    const unsubscribeRunTarget = process.env.PIWI_DESKTOP_TOKEN ? openWindowStream(send) : () => {};
 
     // Initial catch-up: the runs already in flight when the shell connects.
     void (async () => {

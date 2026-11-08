@@ -58,6 +58,7 @@ jobs:
       vscode: ${{ steps.filter.outputs.vscode == 'true' || steps.filter.outputs.ci == 'true' }}
       jetbrains: ${{ steps.filter.outputs.jetbrains == 'true' || steps.filter.outputs.ci == 'true' }}
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
+      runner: ${{ steps.filter.outputs.runner == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
       guides: ${{ steps.filter.outputs.guides == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -100,6 +101,7 @@ jobs:
               - 'packages/editor/**'
               - 'packages/picker-dom/**'
               - 'packages/reporter/**'
+              - 'packages/run-ui/**'
               - 'packages/server/**'
               - 'integrations/nitro/**'
               - 'scripts/package-smoke.mjs'
@@ -112,6 +114,7 @@ jobs:
               - 'apps/application/**'
               - 'apps/docs/**'
               - 'apps/extension/**'
+              - 'apps/runner/**'
               - 'apps/vscode/**'
               - 'apps/showcase/**'
               - 'packages/**'
@@ -151,6 +154,15 @@ jobs:
             desktop:
               - 'apps/desktop/**'
               - 'Dockerfile'
+            # Piwi Runner's host and window, the layer the window shares with the dashboard, and the editor service's
+            # run target the host serves.
+            runner:
+              - 'apps/runner/**'
+              - 'packages/run-ui/**'
+              - 'packages/editor/**'
+              - 'packages/core/**'
+              - 'package.json'
+              - 'package-lock.json'
             # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
@@ -325,6 +337,8 @@ jobs:
           npm run core:format:check -w packages/core
           npm run picker-dom:format:check -w packages/picker-dom
           npm run editor:format:check -w packages/editor
+          npm run run-ui:format:check -w packages/run-ui
+          npm run runner:format:check -w apps/runner
           npm run reporter:format:check -w packages/reporter
           npm run showcase:format:check --prefix apps/showcase
 
@@ -335,6 +349,8 @@ jobs:
           npm run core:lint -w packages/core
           npm run picker-dom:lint -w packages/picker-dom
           npm run editor:lint -w packages/editor
+          npm run run-ui:lint -w packages/run-ui
+          npm run runner:lint -w apps/runner
           npm run vscode:lint -w apps/vscode
           npm run extension:lint -w apps/extension
           npm run showcase:lint --prefix apps/showcase
@@ -348,12 +364,18 @@ jobs:
         working-directory: apps/application
         run: npm run app:typecheck
 
+      # Only the dashboard's install prepares its `.nuxt`; the Runner's window typecheck reads its own.
+      - name: Prepare the Runner window
+        run: npm run runner:prepare -w apps/runner
+
       - name: Typecheck the packages
         run: |
           npm run reporter:typecheck -w packages/reporter
           npm run core:typecheck -w packages/core
           npm run picker-dom:typecheck -w packages/picker-dom
           npm run editor:typecheck -w packages/editor
+          npm run run-ui:typecheck -w packages/run-ui
+          npm run runner:typecheck -w apps/runner
           npm run vscode:typecheck -w apps/vscode
           npm run extension:typecheck -w apps/extension
 
@@ -553,6 +575,46 @@ jobs:
       - name: Test the showcase's cut
         working-directory: apps/showcase
         run: npm run showcase:test
+
+  # Piwi Runner: the shared layer's tests (it loads under the dashboard's server rendering and the window's single-page
+  # build), the host's and the window's tests, and both builds. The shell's Rust tests run in the desktop job.
+  runner:
+    name: Piwi Runner
+    needs: changes
+    if: needs.changes.outputs.runner == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Test the shared layer
+        working-directory: packages/run-ui
+        run: npm run run-ui:test
+
+      # The window's tsconfig extends the `.nuxt` that `nuxt prepare` writes; the install prepares the dashboard's.
+      - name: Prepare the Runner window
+        working-directory: apps/runner
+        run: npm run runner:prepare
+
+      - name: Test the host and the window
+        working-directory: apps/runner
+        run: npm run runner:test
+
+      - name: Build the host
+        working-directory: apps/runner
+        run: npm run runner:build
+
+      - name: Build the window
+        working-directory: apps/runner
+        run: npm run runner:window
 
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})
@@ -1010,7 +1072,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, runner, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

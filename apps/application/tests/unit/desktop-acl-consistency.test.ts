@@ -34,6 +34,16 @@ function handlerCommands(libRs: string): string[] {
     .filter((s) => /^[a-z][a-z0-9_]*$/.test(s));
 }
 
+/** Commands registered with the webview by Piwi Runner: module paths (`run_target::desktop_…`) or bare names. */
+function runnerHandlerCommands(runnerAppRs: string): string[] {
+  const block = runnerAppRs.match(/generate_handler!\[([\s\S]*?)\]/);
+  if (!block) throw new Error('generate_handler![…] block not found in runner_app.rs');
+  return block[1]
+    .split(',')
+    .map((s) => s.trim().split('::').pop() ?? '')
+    .filter((s) => /^[a-z][a-z0-9_]*$/.test(s));
+}
+
 /** Commands declared for permission autogeneration in `build.rs`. */
 function manifestCommands(buildRs: string): string[] {
   const block = buildRs.match(/\.commands\(&\[([\s\S]*?)\]\)/);
@@ -79,5 +89,37 @@ describe('desktop shell ACL wiring', () => {
   test('no stale grants that no longer map to a command', () => {
     const stale = remoteGrants.filter((cmd) => !handlers.includes(cmd));
     expect(stale, `allow-* grants in remote.json with no matching command: ${stale.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('Piwi Runner shell ACL wiring', () => {
+  const handlers = runnerHandlerCommands(read('../../../desktop/src-tauri/src/runner_app.rs'));
+  const manifest = manifestCommands(read('../../../desktop/src-tauri/build.rs'));
+  const desktopHandlers = handlerCommands(read('../../../desktop/src-tauri/src/lib.rs'));
+  const runnerGrants = grantedCommands(read('../../../desktop/src-tauri/runtime-capabilities/runner.json'));
+
+  test('the window is registered with commands (sanity)', () => {
+    expect(handlers.length).toBeGreaterThan(0);
+  });
+
+  test('every command is one the shell declares and the dashboard registers', () => {
+    expect(handlers.filter((cmd) => !manifest.includes(cmd))).toEqual([]);
+    expect(handlers.filter((cmd) => !desktopHandlers.includes(cmd))).toEqual([]);
+  });
+
+  test('the runner capability grants exactly the registered commands', () => {
+    expect([...runnerGrants].sort()).toEqual([...handlers].sort());
+  });
+
+  test('the runner window gets none of the dashboard-only commands', () => {
+    // The dashboard reads and writes its service settings, the project links, the IDE launchers and the update channel; the runner has none of those.
+    const forbidden = [
+      'desktop_set_server_port',
+      'desktop_open_in_ide',
+      'desktop_mcp_connect',
+      'desktop_install_update',
+      'desktop_skills_write',
+    ];
+    expect(forbidden.filter((cmd) => runnerGrants.includes(cmd))).toEqual([]);
   });
 });

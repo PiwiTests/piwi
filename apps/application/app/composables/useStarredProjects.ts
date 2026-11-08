@@ -1,4 +1,3 @@
-import { errorMessage } from '~/utils';
 import { MAX_BROWSER_STARS, parseStarredIds, STARRED_PROJECTS_STATE } from '~/utils/project-stars';
 
 /** The cookie that keeps a browser's stars while sign-in is off. */

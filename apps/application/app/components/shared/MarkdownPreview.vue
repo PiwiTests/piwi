@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { highlightCode } from '#shared/highlight';
+import { highlightCode } from '@piwitests/run-ui/highlight';
 import { inlineMarkdownHtml, type EntityLinkOptions } from '~/utils/markdown-inline';
 import { isModifiedClick } from '~/utils/link-click';
 

@@ -9,7 +9,9 @@
     "packages/server",
     "packages/reporter",
     "packages/editor",
+    "packages/run-ui",
     "apps/application",
+    "apps/runner",
     "apps/extension",
     "apps/vscode",
     "integrations/nitro"

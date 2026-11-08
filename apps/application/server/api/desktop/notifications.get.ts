@@ -10,7 +10,7 @@ import { apiError } from '../../utils/api-error';
 import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { desktopNotification } from '../../utils/desktop-notifications';
-import { subscribeRunTargetShell } from '@piwitests/editor/run-target';
+import { openShellStream } from '@piwitests/editor/run-target-stream';
 import type { NotificationEventData } from '#shared/notifications/browser-message';
 
 defineRouteMeta({
@@ -37,7 +37,7 @@ export default eventHandler(async (event) => {
       }
     };
     // A stop from the dashboard of a run a team instance asked for: the shell stops the run it started.
-    const unsubscribeRunTarget = subscribeRunTargetShell(send);
+    const unsubscribeRunTarget = openShellStream(send);
     const unsubscribe = runEventBus.subscribeNotifications((notificationEvent) => {
       if (!opensEveryProject(scope, notificationEvent)) return;
       const notification = desktopNotification(notificationEvent as unknown as NotificationEventData);

@@ -28,8 +28,17 @@ use crate::STORE_FILE;
 const INSTANCE_KEY: &str = "runTargetInstance";
 /// Store key of `{ instance → { project id → folder } }`.
 const LINKS_KEY: &str = "instanceLinks";
+/// The keychain service Piwi Dashboard keeps the instance's key under.
+const DESKTOP_KEYCHAIN_SERVICE: &str = "Piwi Desktop run requests";
+/// The keychain service Piwi Runner keeps the instance's key under: the two apps are on the same machine, and each
+/// holds its own key for the same instance.
+const RUNNER_KEYCHAIN_SERVICE: &str = "Piwi Runner run requests";
 /// The keychain service the instance's key is kept under, its account the instance's URL.
-const KEYCHAIN_SERVICE: &str = "Piwi Desktop run requests";
+const KEYCHAIN_SERVICE: &str = if cfg!(feature = "runner") {
+    RUNNER_KEYCHAIN_SERVICE
+} else {
+    DESKTOP_KEYCHAIN_SERVICE
+};
 
 /// The key read from the keychain, so it is read once a launch.
 #[derive(Default)]
@@ -142,7 +151,9 @@ fn server_info(app: &AppHandle) -> Option<ServerInfo> {
 }
 
 /// Call the bundled server with the app's token: `path` is built from validated
-/// parts only. Answers the JSON body of a 2xx, or the server's message.
+/// parts only. Answers the JSON body of a 2xx, or the server's message. The token
+/// goes only to a server that first proves it holds it
+/// ([`crate::connect_proving_token`]).
 fn local_call(
     server: &ServerInfo,
     method: &str,
@@ -150,22 +161,11 @@ fn local_call(
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", server.port)).map_err(|e| e.to_string())?;
+    let mut stream = crate::connect_proving_token(server.port, &server.token)?;
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
-    let payload = body.map(|b| b.to_string()).unwrap_or_default();
-    let mut request = format!(
-        "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n",
-        server.port, server.token
-    );
-    if body.is_some() {
-        request.push_str(&format!(
-            "Content-Type: application/json\r\nContent-Length: {}\r\n",
-            payload.len()
-        ));
-    }
-    request.push_str("\r\n");
-    request.push_str(&payload);
-    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(local_request(server, method, path, body).as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut response = Vec::new();
     stream.read_to_end(&mut response).map_err(|e| e.to_string())?;
     let body = crate::repro::http_body(&response)?;
@@ -173,6 +173,25 @@ fn local_call(
         return Ok(serde_json::Value::Null);
     }
     serde_json::from_slice(body).map_err(|_| "the local server sent something other than JSON".to_string())
+}
+
+/// The request `local_call` sends. Every method that sends a body (all but GET and DELETE) says
+/// it is JSON, with or without one, as the server's routes require.
+fn local_request(server: &ServerInfo, method: &str, path: &str, body: Option<&serde_json::Value>) -> String {
+    let payload = body.map(|b| b.to_string()).unwrap_or_default();
+    let mut request = format!(
+        "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n",
+        server.port, server.token
+    );
+    if !matches!(method, "GET" | "DELETE") {
+        request.push_str(&format!(
+            "Content-Type: application/json\r\nContent-Length: {}\r\n",
+            payload.len()
+        ));
+    }
+    request.push_str("\r\n");
+    request.push_str(&payload);
+    request
 }
 
 fn log(app: &AppHandle, line: &str) {
@@ -592,5 +611,92 @@ mod tests {
         assert!(valid_instance("http://localhost:7494/team"));
         assert!(!valid_instance("file:///etc"));
         assert!(!valid_instance("https://piwi.example.com\r\nHost: x"));
+    }
+
+    fn server_at(port: u16) -> ServerInfo {
+        ServerInfo {
+            port,
+            token: "pd_abc".into(),
+        }
+    }
+
+    #[test]
+    fn every_post_and_put_says_it_is_json_with_a_body_or_without() {
+        let body = serde_json::json!({ "a": 1 });
+        let put = local_request(&server_at(1), "PUT", "/p", Some(&body));
+        assert!(put.contains("\r\nContent-Type: application/json\r\n"), "{put}");
+        assert!(put.contains("\r\nContent-Length: 7\r\n"), "{put}");
+        assert!(put.ends_with("\r\n\r\n{\"a\":1}"), "{put}");
+        let bodiless = local_request(&server_at(1), "POST", "/p", None);
+        assert!(bodiless.contains("\r\nContent-Type: application/json\r\n"), "{bodiless}");
+        assert!(bodiless.contains("\r\nContent-Length: 0\r\n"), "{bodiless}");
+        for method in ["GET", "DELETE"] {
+            let request = local_request(&server_at(1), method, "/p", None);
+            assert!(!request.to_ascii_lowercase().contains("content-type"), "{request}");
+        }
+    }
+
+    /// A server on a free port that answers each request with `answer(request, port)`; the requests it saw.
+    fn serve_requests(
+        connections: usize,
+        answer: impl Fn(&str, u16) -> String + Send + 'static,
+    ) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for _ in 0..connections {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0u8; 4096];
+                let read = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+                stream.write_all(answer(&request, port).as_bytes()).unwrap();
+                requests.push(request);
+            }
+            requests
+        });
+        (port, seen)
+    }
+
+    #[test]
+    fn the_token_goes_only_to_a_server_that_proves_it_holds_it() {
+        // A process that took the port answers the probe without a proof.
+        let (port, seen) = serve_requests(1, |_, _| "HTTP/1.1 200 OK\r\n\r\n{}".to_string());
+        let error = local_call(&server_at(port), "POST", "/api/desktop/run-target/key", None).unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let requests = seen.join().unwrap();
+        assert_eq!(requests.len(), 1, "only the probe: {requests:?}");
+        assert!(!requests[0].to_ascii_lowercase().contains("x-piwi-token"), "{requests:?}");
+    }
+
+    #[test]
+    fn a_server_that_proves_it_holds_the_token_is_called() {
+        let (port, seen) = serve_requests(2, |request, port| {
+            if let Some(challenge) = request
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            {
+                let proof = crate::proof_of("pd_abc", port, challenge);
+                return format!("HTTP/1.1 200 OK\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}");
+            }
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"ok\":true}".to_string()
+        });
+        let answer = local_call(&server_at(port), "POST", "/api/desktop/run-target/key", None).unwrap();
+        assert_eq!(answer, serde_json::json!({ "ok": true }));
+        let requests = seen.join().unwrap();
+        assert!(requests[1].starts_with("POST /api/desktop/run-target/key HTTP/1.0\r\n"), "{requests:?}");
+        assert!(requests[1].contains("\r\nx-piwi-token: pd_abc\r\n"), "{requests:?}");
+    }
+
+    #[test]
+    fn each_app_keeps_its_keys_under_its_own_keychain_service() {
+        assert_ne!(DESKTOP_KEYCHAIN_SERVICE, RUNNER_KEYCHAIN_SERVICE);
+        let own = if cfg!(feature = "runner") {
+            RUNNER_KEYCHAIN_SERVICE
+        } else {
+            DESKTOP_KEYCHAIN_SERVICE
+        };
+        assert_eq!(KEYCHAIN_SERVICE, own);
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo, TestCaseResult } from '~~/types/api';
-import { highlightCode } from '#shared/highlight';
+import { highlightCode } from '@piwitests/run-ui/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';

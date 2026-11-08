@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Piwi Runner",
+  "identifier": "io.piwitests.runner",
+  "mainBinaryName": "piwi-runner",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Piwi Runner",
+        "width": 960,
+        "height": 680,
+        "minWidth": 640,
+        "minHeight": 480,
+        "resizable": true,
+        "backgroundThrottling": "disabled",
+        "url": "runner.html"
+      }
+    ]
+  },
+  "bundle": {
+    "fileAssociations": null,
+    "windows": { "nsis": { "installerHooks": null } },
+    "resources": ["resources/runner-host"],
+    "shortDescription": "Run the tests a Piwi team instance asks for on this machine.",
+    "longDescription": "Piwi Runner takes run requests from one Piwi team instance and runs them in the folders you link on this machine, with your own tools and environment. It keeps no database and serves no dashboard."
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["piwi-runner"]
+      }
+    }
+  }
+}

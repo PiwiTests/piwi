@@ -17,7 +17,7 @@
  * or undetermined, and a screen reader reads the class after the line number.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
-import { highlightLines, languageForPath } from '#shared/highlight';
+import { highlightLines, languageForPath } from '@piwitests/run-ui/highlight';
 import { lineRangesText } from '~/utils/suspect-lines';
 import type { LineClasses } from '#shared/coverage-combine';
 import {

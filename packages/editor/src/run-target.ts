@@ -181,6 +181,13 @@ export function setRunTargetVersion(version: string): void {
   appVersion = version || '0.0.0';
 }
 
+let appKind: 'runner' | 'desktop' = 'desktop';
+
+/** Which app serves the target, named to the instance in the device flow: `desktop` unless set by Piwi Runner. */
+export function setRunTargetKind(kind: 'runner' | 'desktop'): void {
+  appKind = kind;
+}
+
 function platformName(): string {
   return { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform as string] ?? process.platform;
 }
@@ -364,7 +371,7 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
   let started: Awaited<ReturnType<typeof postDeviceFlow>>;
   try {
     started = await postDeviceFlow(instance, '/api/extension/connect', {
-      target: 'desktop',
+      target: appKind,
       device: os.hostname().slice(0, 100) || 'this computer',
       os: platformName(),
     });
@@ -570,11 +577,17 @@ export async function requestedRunFailed(id: string, detail: string): Promise<vo
   await state.host?.report(id, { state: 'ended', outcome: 'error', detail: detail.slice(0, 500) }).catch(() => {});
 }
 
-/** For tests: forget everything. */
-export function resetDesktopRunTarget(): void {
+/** The host is stopping: the connection to the instance closes, and the window's and the shell's listeners go. */
+export function shutdownRunTarget(): void {
   disconnectRunTarget();
-  appVersion = '0.0.0';
-  state.links = new Map();
   windowListeners.clear();
   shellListeners.clear();
+}
+
+/** For tests: forget everything. */
+export function resetDesktopRunTarget(): void {
+  shutdownRunTarget();
+  appVersion = '0.0.0';
+  appKind = 'desktop';
+  state.links = new Map();
 }

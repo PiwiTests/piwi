@@ -6,12 +6,7 @@ import {
   desktopTokenProof,
   newDesktopChallenge,
 } from '@piwitests/core/desktop-proof';
-import {
-  DESKTOP_LAUNCH_NONCE_HEADER,
-  answerDesktopChallenge,
-  desktopLaunchNonce,
-  presentsDesktopToken,
-} from '../../server/utils/desktop-access';
+import { answerDesktopChallenge, presentsDesktopToken } from '../../server/utils/desktop-access';
 
 const TOKEN = 'pd_desktop_token';
 
@@ -36,39 +31,7 @@ describe('the desktop access token', () => {
   });
 });
 
-describe('the desktop launch nonce', () => {
-  it('is the value the shell gave the sidecar, and absent outside the desktop app', () => {
-    expect(desktopLaunchNonce({ PIWI_DESKTOP_LAUNCH_NONCE: 'a1b2' })).toBe('a1b2');
-    expect(desktopLaunchNonce({})).toBeNull();
-    expect(desktopLaunchNonce({ PIWI_DESKTOP_LAUNCH_NONCE: '' })).toBeNull();
-  });
-
-  it('is echoed by /api/health once the database answers, so the shell knows its own server', async () => {
-    vi.resetModules();
-    vi.doMock('../../server/database', () => ({
-      getDatabase: async () => ({ select: () => ({ from: () => ({ limit: async () => [] }) }) }),
-    }));
-    const headers = new Map<string, string>();
-    vi.stubGlobal('defineRouteMeta', () => {});
-    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-    vi.stubGlobal('setResponseHeader', (_event: unknown, name: string, value: string) => headers.set(name, value));
-    vi.stubGlobal('setResponseStatus', () => {});
-    vi.stubEnv('PIWI_DESKTOP_LAUNCH_NONCE', 'launch-nonce');
-    try {
-      const health = (await import('../../server/api/health.get')).default as unknown as (
-        e: unknown,
-      ) => Promise<unknown>;
-      expect(await health({})).toEqual({ status: 'ok', database: 'ok' });
-      expect(headers.get(DESKTOP_LAUNCH_NONCE_HEADER)).toBe('launch-nonce');
-    } finally {
-      vi.unstubAllEnvs();
-      vi.unstubAllGlobals();
-      vi.doUnmock('../../server/database');
-    }
-  });
-});
-
-describe("Piwi Picker's challenge", () => {
+describe("the shell's and Piwi Picker's challenge", () => {
   /** A request to `/api/health` on loopback port `port`, and the response headers it gets. */
   function healthRequest(headers: Record<string, string>, port = 3000) {
     const sent = new Map<string, string>();
@@ -95,6 +58,55 @@ describe("Piwi Picker's challenge", () => {
     expect(outside.sent.size).toBe(0);
     const malformed = healthRequest({ [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' });
     await answerDesktopChallenge(malformed.event, TOKEN);
+    expect(malformed.sent.size).toBe(0);
+  });
+});
+
+describe('/api/health in the desktop app', () => {
+  /** Runs the health route itself, answering a request on loopback port `port` with `headers`. */
+  async function getHealth(headers: Record<string, string>, port = 4318) {
+    vi.resetModules();
+    vi.doMock('../../server/database', () => ({
+      getDatabase: async () => ({ select: () => ({ from: () => ({ limit: async () => [] }) }) }),
+    }));
+    const sent = new Map<string, string>();
+    const statuses: number[] = [];
+    vi.stubGlobal('defineRouteMeta', () => {});
+    vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('setResponseStatus', (_event: unknown, status: number) => statuses.push(status));
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+    try {
+      const health = (await import('../../server/api/health.get')).default as unknown as (
+        e: H3Event,
+      ) => Promise<unknown>;
+      const event = {
+        context: {},
+        node: {
+          req: { headers, socket: { localPort: port } },
+          res: { setHeader: (name: string, value: string) => sent.set(name.toLowerCase(), value) },
+        },
+      } as unknown as H3Event;
+      return { body: await health(event), sent, statuses };
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      vi.doUnmock('../../server/database');
+    }
+  }
+
+  it('answers a challenge with the proof of the token, on a 200', async () => {
+    const challenge = newDesktopChallenge();
+    const { body, sent, statuses } = await getHealth({ [DESKTOP_CHALLENGE_HEADER]: challenge }, 4318);
+    expect(body).toEqual({ status: 'ok', database: 'ok' });
+    expect(statuses).toEqual([]);
+    expect(sent.get(DESKTOP_PROOF_HEADER)).toBe(await desktopTokenProof(TOKEN, 4318, challenge));
+  });
+
+  it('sets no proof without a challenge, or with one that is not a challenge', async () => {
+    const none = await getHealth({});
+    expect(none.body).toEqual({ status: 'ok', database: 'ok' });
+    expect(none.sent.size).toBe(0);
+    const malformed = await getHealth({ [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' });
     expect(malformed.sent.size).toBe(0);
   });
 });

@@ -95,7 +95,7 @@ the run, and it says why; on macOS and Linux, so does a file others can read.
 ## Connected apps
 
 **Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
-the desktop app, Piwi Runner. Each shows when it connected and, for an app that runs tests, **Online now** while it
+the desktop app. Each shows when it connected and, for an app that runs tests, **Online now** while it
 holds its connection to the instance open and has called the instance within the last two minutes, or else when it
 was last seen. **Revoke** disconnects one: the instance closes the connection of an app that runs tests at once, and
 refuses its next call. An administrator sees the same list for any user in **Settings → Users → API keys**. The keys

@@ -52,21 +52,31 @@ my machine** on a run (its failed tests, or all), an execution and a test, with 
 **Run again**; the demo's seeded app answers the requests as they are read. The request host and the requested run's
 checks live in `@piwitests/editor` (`request-host`, `request-run`), for Piwi Runner (PR 4). **Run** starts only the
 command and the folder the window showed, once the request has been shown unchanged for a second, and the run's workers
-reach no other server. Left for later: `piwi://connect` (the address is typed in the app), the browsers check, a request
-from the run page's selection of tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance
-takes and no page offers yet), **Create issue** on a requested run's progress (D17), and the target recorded on the run
-(D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
+reach no other server. Left for later: `piwi://connect` on the desktop app (the address is typed in the app; Piwi Runner
+answers `piwi-runner://connect` by coming to the front), the browsers check, a request from the run page's selection of
+tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance takes and no page offers yet),
+**Create issue** on a requested run's progress (D17), and the target recorded on the run (D14's
+`piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
 three after its spike (posted on #1163): 4a, the run target outside the dashboard's server, 4b, Piwi Runner, 4c, its
 releases. PR 4a is built: the desktop app's side of a request (the host it runs, the requests it holds, the device
 flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
 its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
 does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
-browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the launch
-nonce) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
-handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
-the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The maintainer
-settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
-left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
+browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the answer to
+the readiness challenge) that the app's guard calls; the app's routes are one-line adapters, and one contract test
+drives the handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature
+page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. PR 4b is built: Piwi Runner (`apps/runner`),
+the same Rust crate built with the `runner` feature and `runner.conf.json` (its own name, identifier, one window, no file
+associations and its own keychain service), with the desktop's Node sidecar running a small host
+(`apps/runner/server`) that serves the run-target handlers of PR 4a, the window's files and the readiness probe. The
+window is a single-page Nuxt app that extends `packages/run-ui`, the layer the dashboard's desktop pages now share (the
+connection card, the confirmation of a request, the stream of the host's events); it shows the runs the shell started,
+with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of
+its own in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or
+watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Signing, installers and updates
+are PR 4c. The instance's side of PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner
+take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
+confirmed in the target (D2); a request carries resolved tests and is
 the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time
 (D9); a requested run shows to its requester alone (D14); the administrator's switch is off by default in the first
 release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains
@@ -266,7 +276,8 @@ requests (D5), and the paths follow a rule repro requests already follow.
 - **Connecting a target uses the device flow that exists.** The target shows a code and opens the instance's connect
   page; the person signs in, checks that both show the same code, and allows. `clientKind` becomes a stored column with
   `desktop` and `runner` added, and the page gains their words ("Connect Piwi Runner", "My Piwi Runner shows this same
-  code"). `piwi://connect?instance=<origin>` from the instance's page starts the same flow in the app, which first asks
+  code"). The instance's page has one link per target: `piwi://connect?instance=<origin>` for the desktop app and
+  `piwi-runner://connect?instance=<origin>` for Piwi Runner. Each starts the same flow in its app, which first asks
   "Connect to piwi.acme.com?" and connects nothing from the link alone. Where the link is blocked, or the browser is on
   another machine, the person types the instance's address in the app.
 - **The key it gets is a target key**: it holds `run:receive` alone, which opens the request stream of its owner, reads
@@ -315,7 +326,8 @@ after it; IDE windows are not a target in this plan.
   it runs `run-host` for its own runs; Piwi Runner runs it as a small Node process, without the server or the database
   (D8).
 - **Each target is a hub for the runs it starts**, through `run-host`, so a requested run can be paused, watched and
-  shared live from that machine's own surfaces like any local run.
+  shared live from that machine's own surfaces like any local run. Piwi Runner's side, the run-host wiring, ships as
+  the PR after 4b and before 4c; until then a run requested in Piwi Runner cannot be paused or watched there.
 - **The native parts stay native**: starting and stopping the process tree, the keychain, the tray, the notifications
   and the `piwi://` scheme stay in the Rust shell.
 - **Which target takes a request**: the page lists the person's online targets for the project (a target says which
@@ -333,16 +345,20 @@ only: it does not become the fallback hub of terminal runs, which stays the desk
 
 **Recommended**, each point to confirm with a spike before its PR:
 
-- **The same Rust crate as the desktop app**, built with a cargo feature (`runner`) and its own Tauri configuration:
-  product name "Piwi Runner", its own identifier, no server sidecar, no database, no file associations, the `piwi`
-  scheme shared with the desktop app (the one installed last answers; both read the same routes).
-- **Its windows are pages of the dashboard's own code, built as a static app.** The demo already builds the app with no
-  server (`app:generate:demo`). Piwi Runner's build keeps the confirmation, the folders and the connection pages, so the
-  desktop window and Piwi Runner show the same components with the same words. If the spike shows this does not hold,
-  Piwi Runner gets a small app of its own sharing only the words.
+- **The same Rust crate as the desktop app**, built with a cargo feature (`runner`) and its own Tauri configuration
+  (`runner.conf.json`): product name "Piwi Runner", its own identifier, no database, no file associations, the
+  `piwi-runner` scheme (the desktop app keeps `piwi`, so a link reaches the one app that reads it), the binary
+  `piwi-runner` with none of the desktop app's installer hooks, and its own keychain service so neither app reads the
+  other's key. Built in PR 4b.
+- **Its window is a small app of its own on a shared layer**: a single-page Nuxt app (`apps/runner`) that extends
+  `packages/run-ui`, which holds the confirmation, the connection card and the host's event stream the dashboard's
+  desktop pages use, so both show the same components with the same words. Built in PR 4b (open question 1).
 - **Node**: bundled, as the desktop app bundles it (`binaries/node`), so the run code takes one path on both and does
-  not depend on the `PATH` a launch from Finder or the Start menu sees.
-- **Updates**: signed, from the same release, as a separate artifact on each platform.
+  not depend on the `PATH` a launch from Finder or the Start menu sees. Piwi Runner runs the same sidecar with its own
+  host script (`resources/runner-host`).
+- **Updates**: signed, from the same release, as a separate artifact on each platform (PR 4c).
+- **Before the installers (PR 4c)**: on Linux, where the package puts the bundled Node and how the host script finds
+  it, checked on the `.deb`, the `.rpm` and the AppImage; and Runner's own installer art.
 
 Alternatives:
 
@@ -524,8 +540,8 @@ Wireframes; words as in D19.
 ```
 
 With no target connected, the button reads **Set up Run on my machine**: what it does, the download of the desktop app
-(and of Piwi Runner once it ships), and **Connect** (`piwi://connect?instance=…`). With the capability off, the button
-is not shown.
+(and of Piwi Runner once it ships), and **Connect**, one link per target (`piwi://connect?instance=…` for the desktop
+app, `piwi-runner://connect?instance=…` for Piwi Runner). With the capability off, the button is not shown.
 
 ### 2. The confirmation in the target
 
@@ -719,7 +735,7 @@ simulator answers, so **Run on my machine**, the confirmation's outcome and the 
 | 1 | **Create issue on runs and tests, with a comment** (D17), and the run options on **Copy retry command** (D18) | M |
 | 2 | **The instance's side**: `run_requests` and `run_targets`, the routes, `@piwitests/core/run-request`, `run:request` and `run:receive`, keys that hold one permission, the stored `clientKind`, request tokens, the stream and its polling, the `request` origin with its rules and its visibility, the capability off by default, Connected apps | L |
 | 3 | **The request host and the desktop app as a target**: the confirmation, the checks (browsers and branch for Run locally too, selection by title), folders per instance, `piwi://connect`, the device flow for `desktop`, the keychain, the reporter's override; on the page, the button, its menu and the progress | L |
-| 4 | **Piwi Runner**, after the spike of D8: the `runner` build, its windows, signed releases and updates | L |
+| 4 | **Piwi Runner**, after the spike of D8: the run target outside the dashboard's server (4a), the `runner` build and its window (4b), the run-host wiring so a requested run can be paused, stepped and watched (its own PR, before 4c), then signed releases, installers and updates (4c) | L |
 | 5 | **Share live from the confirmation** (D13), with live-runs P9 | S |
 
 Each PR updates the docs it changes: a feature page for Run on my machine (connect, link a folder, run, follow, stop,
@@ -738,17 +754,17 @@ Piwi Runner, the privacy page, the connect page and the issue tracker page. PR 2
 - Unit (reporter): a requested run is sent to the token's origin even when the config names another server.
 - Unit (outbox): a `create-issue` row reclaimed after its lease, with the marker and no issue key, never calls the
   tracker again.
-- Rust: `piwi://connect` brings the window forward and connects nothing without a confirmation; every other unknown path
-  still returns nothing.
+- Rust: `piwi-runner://connect` brings the window forward and connects nothing without a confirmation; every other
+  unknown path still returns nothing.
 - E2E: **Run on my machine** with a simulated target, from the request to the progress's end and **Run again**;
   **Revoke** closes the target's stream; **Create issue** on a run with a comment.
 
 ## Open questions
 
-1. **Piwi Runner's windows** (D8): does the static build of the dashboard's pages hold up, or does Piwi Runner need a
-   small app of its own sharing only the words? The spike (posted on #1163) found the static build does not hold up
-   (the hosting layout, plugins and middleware read the server) and proposes a small app of its own, served by a
-   small Node process that serves the run-target routes; the maintainer settles it before PR 4b.
+1. **Piwi Runner's windows** (D8, settled by PR 4b): the static build of the dashboard's pages did not hold up (the
+   hosting layout, plugins and middleware read the server), so Piwi Runner is a small app of its own, served by a
+   small Node process that serves the run-target routes, and it shares the dashboard's components through the
+   `packages/run-ui` layer instead of only the words.
 2. **Administrators and requested runs** (D14): do instance administrators see other people's requested runs, for
    support and audit, or the requester alone?
 3. **The capability's default** (D15): in which release does **Run on my machine** turn on by default?

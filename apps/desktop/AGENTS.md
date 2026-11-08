@@ -15,8 +15,8 @@ shell and are feature-equivalent.
 - **Never fork the server.** The desktop app must keep running the unmodified built server. Anything the shell needs
   from the backend goes in `apps/application/` behind a desktop-aware guard, not into a desktop-only copy.
 - **The window trusts only the sidecar it spawned.**
-  - The readiness probe requires the per-launch nonce the shell passes the sidecar (`PIWI_DESKTOP_LAUNCH_NONCE`,
-    echoed by `/api/health`) before it loads the session bootstrap.
+  - The readiness probe sends a fresh challenge, and the shell loads the session bootstrap only after `/api/health`
+    answers it with the proof of the desktop token (`x-piwi-desktop-proof`, checked in constant time).
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
   - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
@@ -32,10 +32,15 @@ shell and are feature-equivalent.
 - **A `piwi://` link only shows a page.** Anyone can send one, so the shell reads only `piwi://open/<page>`
   (`link_page`), the page passes `desktopPagePath` again in the window and at the session bootstrap, and a launch whose
   first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`).
+- **Piwi Runner answers `piwi-runner://connect` and no other link.** It only brings the window forward (`is_connect_link`
+  in `runner_app.rs`), so no host, instance or key can arrive on a link; the desktop app keeps `piwi`.
 - **A new Tauri command is wired in three places**: `tauri::generate_handler!` in `src-tauri/src/lib.rs`, the
   `.commands(&[…])` list in `src-tauri/build.rs`, and an `allow-*` grant in `runtime-capabilities/remote.json`.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`
   fails until they match.
+- **Piwi Runner's commands are wired apart**: its own `generate_handler!` in `runner_app.rs` and its own grant,
+  `runtime-capabilities/runner.json`. `desktop-acl-consistency.test.ts` requires the grant to equal that handler's
+  commands and to hold none of the dashboard-only ones; a command both apps use is wired in both.
 - **Everything binds `127.0.0.1`, behind the desktop token.** Every `/api` and `/mcp` request must present the
   per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`
   with `@piwitests/editor/host-guard`,
@@ -51,7 +56,7 @@ shell and are feature-equivalent.
 - **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
-  `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and `PIWI_RUN_REF` (`hub_env.rs`,
+  `GET /api/desktop/run-channel` only after `health_ok` proved the host holds the token, and `PIWI_RUN_REF` (`hub_env.rs`,
   `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
   its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
@@ -70,6 +75,7 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
@@ -88,10 +94,12 @@ shell and are feature-equivalent.
 
   They ship separately, so changing the path or the shape means changing all of them; a new field is fine, since
   every reader ignores the ones it does not know.
+
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
   one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
-  JSON-RPC on stdin/stdout.
+  JSON-RPC on stdin/stdout. It sends the token only through `connect_proving_token` and only to `127.0.0.1`
+  (`mcp_stdio.rs`).
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install
@@ -103,8 +111,13 @@ shell and are feature-equivalent.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
+- **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
+  product, the sidecar's script and the keychain service, and shares the rest of `run_target.rs`, the window guards and
+  the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
+- **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
+  `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
-  `app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
+  `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
 - **The sidecar layout** (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
   packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means

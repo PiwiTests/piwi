@@ -178,11 +178,6 @@ struct LogFile(PathBuf);
 /// aux-window opener can mirror the main window and open the inspector too.
 struct DebugMode(bool);
 
-/// The nonce this launch gave its server (`PIWI_DESKTOP_LAUNCH_NONCE`): a
-/// request carrying the desktop token goes only to a server whose readiness
-/// probe echoes it (`health_ok`).
-struct LaunchNonce(String);
-
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
 /// yet. The shell only ever queues and pokes; the dashboard drains the queue
@@ -620,7 +615,7 @@ fn desktop_set_run_progress(
 pub(crate) fn random_hex_32() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -723,51 +718,103 @@ fn pick_port(preferred: u16) -> u16 {
         .expect("failed to acquire a free loopback port")
 }
 
-/// The response header the sidecar's `/api/health` echoes the launch nonce in.
-const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
+/// The request header carrying the readiness probe's challenge.
+const DESKTOP_CHALLENGE_HEADER: &str = "x-piwi-desktop-challenge";
+
+/// The response header the sidecar answers the challenge in.
+const DESKTOP_PROOF_HEADER: &str = "x-piwi-desktop-proof";
 
 /// How long one readiness probe waits to connect. Windows retries a connect to a
 /// loopback port nobody listens on for seconds before refusing it; this bound
 /// keeps each probe made while the server is still starting short.
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Dependency-free readiness probe. `/api/health` returns 200 only after the
-/// database has migrated, so a 200 means the app is ready to load — when it
-/// also carries this launch's nonce, which only the sidecar this app spawned
-/// knows. Another process that took the port first never gets the session
-/// bootstrap and its token.
-fn health_ok(port: u16, nonce: &str) -> bool {
+/// Readiness probe. `/api/health` returns 200 only after the database has
+/// migrated, so a 200 means the app is ready to load, when it also answers this
+/// probe's fresh challenge with the proof that it holds `token`
+/// (`proof_matches`), which only the sidecar this app spawned knows. Another
+/// process that took the port first never gets the session bootstrap and the
+/// token, and an answer it recorded earlier proves nothing for a new challenge.
+fn health_ok(port: u16, token: &str) -> bool {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let req =
-        format!("GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    let challenge = random_hex_32();
+    let req = format!(
+        "GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: close\r\n\r\n"
+    );
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
     // The headers fit well within this; a read cut short by the timeout keeps what arrived.
     let mut buf = Vec::new();
     let _ = stream.take(16 * 1024).read_to_end(&mut buf);
-    health_response_proves(&String::from_utf8_lossy(&buf), nonce)
+    health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
-/// Whether a raw `/api/health` response is a 200 carrying `nonce` in
-/// [`LAUNCH_NONCE_HEADER`].
-fn health_response_proves(response: &str, nonce: &str) -> bool {
+/// Open a connection to the server on `port` for a request that carries `token`, once the
+/// server has proved it holds the token (`health_ok`). Every request the shell makes with the
+/// token goes through here, so the token never reaches another process that took the port.
+pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
+    if !health_ok(port, token) {
+        return Err("the local server is not answering".to_string());
+    }
+    std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())
+}
+
+/// Whether a raw `/api/health` response is a 200 carrying, in
+/// [`DESKTOP_PROOF_HEADER`], the proof of `token` for `challenge` on `port`.
+fn health_response_proves(response: &str, token: &str, port: u16, challenge: &str) -> bool {
     let head = response.split("\r\n\r\n").next().unwrap_or("");
     let mut lines = head.split("\r\n");
     let ok = lines
         .next()
         .is_some_and(|status| status.split_whitespace().nth(1) == Some("200"));
-    ok && !nonce.is_empty()
+    ok && !token.is_empty()
         && lines.any(|line| {
             line.split_once(':').is_some_and(|(name, value)| {
-                name.trim().eq_ignore_ascii_case(LAUNCH_NONCE_HEADER) && value.trim() == nonce
+                name.trim().eq_ignore_ascii_case(DESKTOP_PROOF_HEADER)
+                    && proof_matches(token, port, challenge, value.trim())
             })
         })
+}
+
+/// Whether `proof` (hex) is HMAC-SHA256 keyed by `token` over
+/// `piwi-desktop-proof:<port>:<challenge>`, compared in constant time (the same
+/// proof `@piwitests/core/desktop-proof` makes).
+fn proof_matches(token: &str, port: u16, challenge: &str, proof: &str) -> bool {
+    use hmac::{Hmac, Mac};
+    let Some(proof) = decode_hex(proof) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()) else {
+        return false;
+    };
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.verify_slice(&proof).is_ok()
+}
+
+/// The proof an honest server makes for `challenge` (the Rust side of `desktopTokenProof`).
+#[cfg(test)]
+pub(crate) fn proof_of(token: &str, port: u16, challenge: &str) -> String {
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn decode_hex(text: &str) -> Option<Vec<u8>> {
+    let nibbles = text.chars().map(|c| c.to_digit(16)).collect::<Option<Vec<_>>>()?;
+    if nibbles.len() % 2 != 0 {
+        return None;
+    }
+    nibbles
+        .chunks(2)
+        .map(|pair| u8::try_from(pair[0] * 16 + pair[1]).ok())
+        .collect()
 }
 
 /// The origin the bundled server is served from: the only web origin the
@@ -1011,8 +1058,6 @@ struct ServerConfig {
     storage_dir: PathBuf,
     secret: String,
     token: String,
-    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own server.
-    launch_nonce: String,
     port: u16,
     /// `PIWI_RETENTION_DAYS` for the server, when the user chose a retention.
     retention_days: Option<u32>,
@@ -1066,7 +1111,6 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
         .env("PIWI_SECRET_KEY", cfg.secret.clone())
         .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
-        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone())
         // Tell the bundled Nuxt app it is running in the desktop shell so it hides
         // account/user management (single-user, auth off) and surfaces the local
         // connection details (data location, reporter token, MCP endpoint).
@@ -1092,10 +1136,12 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
 /// port and token with a capped backoff so the window is never left pointed at a
 /// dead port. A tight crash-loop (`MAX_RESTARTS_IN_WINDOW` inside
 /// `RESTART_WINDOW_SECS`) stops the loop rather than hammering. Runs on its own
-/// thread and keeps `ServerProcess` pointing at the live child.
+/// thread and keeps `ServerProcess` pointing at the live child. `respawn` starts
+/// the sidecar again; its output goes to `log_path`.
 fn supervise_server(
     app: AppHandle,
-    cfg: ServerConfig,
+    log_path: PathBuf,
+    respawn: impl Fn(&AppHandle) -> Option<(Receiver<CommandEvent>, CommandChild)> + Send + 'static,
     initial: (Receiver<CommandEvent>, CommandChild),
     shutting_down: Arc<AtomicBool>,
 ) {
@@ -1112,17 +1158,17 @@ fn supervise_server(
             while let Some(event) = rx.blocking_recv() {
                 match event {
                     CommandEvent::Stdout(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
                     CommandEvent::Stderr(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
-                    CommandEvent::Error(err) => append_log(&cfg.log_path, &format!("[server:proc] {err}")),
+                    CommandEvent::Error(err) => append_log(&log_path, &format!("[server:proc] {err}")),
                     CommandEvent::Terminated(payload) => {
                         append_log(
-                            &cfg.log_path,
+                            &log_path,
                             &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
                         );
                         break;
@@ -1144,7 +1190,7 @@ fn supervise_server(
             }
             if restarts >= MAX_RESTARTS_IN_WINDOW {
                 append_log(
-                    &cfg.log_path,
+                    &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
                 give_up_server(&app);
@@ -1153,7 +1199,7 @@ fn supervise_server(
 
             let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
             restarts += 1;
-            append_log(&cfg.log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            append_log(&log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
             let _ = app.emit("server-status", "restarting");
             std::thread::sleep(Duration::from_secs(backoff));
 
@@ -1161,7 +1207,7 @@ fn supervise_server(
                 break;
             }
 
-            match spawn_server_process(&app, &cfg) {
+            match respawn(&app) {
                 Some((new_rx, new_child)) => {
                     app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
                     rx = new_rx;
@@ -2042,7 +2088,7 @@ fn read_event_stream(reader: impl std::io::BufRead, mut on_data: impl FnMut(&str
 /// ended cleanly.
 fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered: &mut bool) -> Result<(), String> {
     use std::io::{BufRead, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(NOTIFICATION_STREAM_IDLE));
     let request = format!(
         "GET /api/desktop/notifications HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2089,12 +2135,12 @@ fn show_or_log_notification(app: &AppHandle, data: &str) {
 /// ends, as soon as the server answers its readiness probe (`health_ok`), so a
 /// server restart loses only what happened while it was down. A stream the
 /// server refuses is asked for again less and less often.
-fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String, shutting_down: Arc<AtomicBool>) {
+fn follow_notifications(app: AppHandle, port: u16, token: String, shutting_down: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut retry = NOTIFICATION_RETRY_FIRST;
         let mut last_error: Option<String> = None;
         while !shutting_down.load(Ordering::SeqCst) {
-            if !health_ok(port, &nonce) {
+            if !health_ok(port, &token) {
                 std::thread::sleep(NOTIFICATION_RETRY_FIRST);
                 continue;
             }
@@ -2277,13 +2323,12 @@ async fn desktop_download(app: tauri::AppHandle, url: String, filename: String) 
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
-    let nonce = app.state::<LaunchNonce>().0.clone();
     let dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let name = download_file_name(&filename);
     let target = request_target(&parsed);
     let saved = tauri::async_runtime::spawn_blocking(move || {
         // The token goes only to the server this launch spawned.
-        if !health_ok(port, &nonce) {
+        if !health_ok(port, &token) {
             return Err("the local server is not answering".to_string());
         }
         stream_download(port, &token, &target, &dir, &name)
@@ -2317,7 +2362,7 @@ const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// ends short of its `Content-Length`, removes the partial file.
 fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str) -> Result<PathBuf, String> {
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(DOWNLOAD_READ_TIMEOUT));
     let request = format!(
         "GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2413,14 +2458,28 @@ pub(crate) fn confirm_stopping_local_runs(
         });
 }
 
-/// Quit the app, asking first while local test runs are going: the tray's Quit
-/// and, on macOS, the app menu's.
-fn quit_after_confirming(app: &AppHandle) {
-    let handle = app.clone();
-    confirm_stopping_local_runs(app, "Quit Piwi?", "quitting", "Quit", move || {
-        handle.exit(0);
-    });
+/// The question asked before quitting stops local runs, titled with the app's name.
+fn quit_question(app_name: &str) -> String {
+    format!("Quit {app_name}?")
 }
+
+/// Quit the app called `app_name`, asking first while local test runs are going:
+/// the tray's Quit and, on macOS, the app menu's.
+fn quit_after_confirming(app: &AppHandle, app_name: &str) {
+    let handle = app.clone();
+    confirm_stopping_local_runs(
+        app,
+        &quit_question(app_name),
+        "quitting",
+        "Quit",
+        move || {
+            handle.exit(0);
+        },
+    );
+}
+
+/// What the desktop app's questions call it ([`quit_question`]).
+const DESKTOP_APP_NAME: &str = "Piwi";
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -2472,9 +2531,9 @@ fn app_menu_action(id: &str) -> Option<AppMenuAction> {
 
 /// Run an app menu item's action.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
+fn run_app_menu_action(app: &AppHandle, app_name: &str, action: AppMenuAction) {
     match action {
-        AppMenuAction::Quit => quit_after_confirming(app),
+        AppMenuAction::Quit => quit_after_confirming(app, app_name),
         AppMenuAction::OpenPage(path) => show_page(app, path),
         AppMenuAction::Import => pick_files_to_open(app),
         AppMenuAction::History(direction) => {
@@ -2546,6 +2605,34 @@ fn desktop_pick_files_to_open(app: tauri::AppHandle) {
     pick_files_to_open(&app);
 }
 
+/// The app menu's Quit (Cmd+Q): it goes through [`quit_after_confirming`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn quit_menu_item<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    app_name: &str,
+) -> tauri::Result<tauri::menu::MenuItem<R>> {
+    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)
+}
+
+/// Swap the predefined Quit at the end of the app submenu for [`quit_menu_item`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn replace_quit<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    submenu: &tauri::menu::Submenu<R>,
+    app_name: &str,
+) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+
+    if let Some(MenuItemKind::Predefined(quit)) = submenu.items()?.last() {
+        if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
+            submenu.remove(quit)?;
+        }
+    }
+    submenu.append(&quit_menu_item(app, app_name)?)
+}
+
 /// The macOS app menu: Tauri's default menu with Piwi's own items, which
 /// [`run_app_menu_action`] runs. Settings… (Cmd+,) in the app menu; its Quit
 /// (Cmd+Q) goes through [`quit_after_confirming`], since the predefined Quit
@@ -2574,16 +2661,10 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
         };
         let title = submenu.text()?;
         if title == app_name {
-            let items = submenu.items()?;
-            if let Some(MenuItemKind::Predefined(quit)) = items.last() {
-                if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
-                    submenu.remove(quit)?;
-                }
-            }
             // After About and its separator, where macOS applications put Settings.
             submenu.insert(&item(APP_MENU_SETTINGS_ID, "Settings…", Some("CmdOrCtrl+,"))?, 2)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-            submenu.append(&item(APP_MENU_QUIT_ID, &format!("Quit {app_name}"), Some("CmdOrCtrl+Q"))?)?;
+            replace_quit(app, &submenu, &app_name)?;
         } else if title == "File" {
             submenu.insert(&item(APP_MENU_IMPORT_ID, "Import Playwright report…", Some("CmdOrCtrl+O"))?, 0)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
@@ -2608,7 +2689,7 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
 /// has already agreed to stop it. Confirming closes the window again, which runs
 /// the normal exit path; `QuitConfirmed` is what tells that close apart from the
 /// one the user made.
-fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
+fn hold_close_for_local_runs(window: &tauri::Window, app_name: &str) -> bool {
     let confirmed = window
         .try_state::<QuitConfirmed>()
         .is_some_and(|s| s.0.load(Ordering::SeqCst));
@@ -2626,7 +2707,7 @@ fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
     let target = window.clone();
     confirm_stopping_local_runs(
         window.app_handle(),
-        "Quit Piwi?",
+        &quit_question(app_name),
         "quitting",
         "Quit",
         move || {
@@ -2651,6 +2732,9 @@ const E2E_PLAYWRIGHT_CAPABILITY: &str = r#"{
   "permissions": ["playwright:default"]
 }"#;
 
+// After the commands it registers, whose macros it reaches by their position in this file.
+mod runner_app;
+
 pub fn run() {
     // Windows: a stop request for a local run starts a short-lived copy of this
     // binary to deliver the Ctrl+C (see interrupt.rs). Handled first — it never
@@ -2661,6 +2745,16 @@ pub fn run() {
         if args.first().map(String::as_str) == Some(interrupt::HELPER_ARG) {
             interrupt::run_helper(args.get(1).map(String::as_str));
         }
+    }
+
+    // The app's context, made once: the macro embeds the bundle's Info.plist, which one crate holds a single copy of.
+    let context = tauri::generate_context!();
+
+    // Piwi Runner is this same crate built with the `runner` feature: it has its own entry, with no server, tray or
+    // reporter discovery file (`runner_app`).
+    if cfg!(feature = "runner") {
+        runner_app::run(context);
+        return;
     }
 
     let args = args_to_act_on(std::env::args().collect());
@@ -2756,8 +2850,6 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_playwright::init());
     }
-
-    let context = tauri::generate_context!();
 
     // Update support exists only in builds made with the signing key: CI then
     // applies an updater overlay (tauri.updater.conf.json for .msi,
@@ -2873,14 +2965,12 @@ pub fn run() {
             if port != preferred_port {
                 append_log(&log_path, &format!("port {preferred_port} is in use, listening on {port}"));
             }
-            let launch_nonce = random_hex_32();
 
             // The dashboard's IPC grants, for this sidecar's exact origin only.
             app.handle().add_capability(remote_capability(port))?;
 
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
-            app.manage(LaunchNonce(launch_nonce.clone()));
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
             // MCP client configs written on earlier launches embed the URL and
@@ -2966,7 +3056,6 @@ pub fn run() {
                 storage_dir: storage_dir.clone(),
                 secret,
                 token: token.clone(),
-                launch_nonce: launch_nonce.clone(),
                 port,
                 retention_days,
                 log_path: log_path.clone(),
@@ -2978,7 +3067,15 @@ pub fn run() {
                 }),
             };
             if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
-                supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
+                let respawn_config = server_config;
+                let supervised_log = respawn_config.log_path.clone();
+                supervise_server(
+                    app.handle().clone(),
+                    supervised_log,
+                    move |app| spawn_server_process(app, &respawn_config),
+                    initial,
+                    shutting_down.clone(),
+                );
             } else {
                 give_up_server(app.handle());
             }
@@ -2993,7 +3090,7 @@ pub fn run() {
                 let started = Instant::now();
                 let mut slow = false;
                 let ready = loop {
-                    if health_ok(port, &launch_nonce) {
+                    if health_ok(port, &token) {
                         break true;
                     }
                     let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
@@ -3018,7 +3115,7 @@ pub fn run() {
                     return;
                 }
                 // The server's notifications show from now on, page or no page.
-                follow_notifications(nav_handle.clone(), port, token.clone(), launch_nonce.clone(), quitting.clone());
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
@@ -3103,7 +3200,7 @@ pub fn run() {
                         let _ = if enabled { mgr.disable() } else { mgr.enable() };
                         let _ = login_i.set_checked(!enabled);
                     }
-                    "quit" => quit_after_confirming(app),
+                    "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
                             let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
@@ -3119,7 +3216,7 @@ pub fn run() {
                 app.set_menu(app_menu(app.handle())?)?;
                 app.on_menu_event(|app, event| {
                     if let Some(action) = app_menu_action(event.id().as_ref()) {
-                        run_app_menu_action(app, action);
+                        run_app_menu_action(app, DESKTOP_APP_NAME, action);
                     }
                 });
             }
@@ -3246,7 +3343,7 @@ pub fn run() {
                     api.prevent_close();
                     return;
                 }
-                if hold_close_for_local_runs(window) {
+                if hold_close_for_local_runs(window, DESKTOP_APP_NAME) {
                     api.prevent_close();
                 }
             }
@@ -3292,7 +3389,7 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
+        connect_proving_token, decode_hex, health_ok, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3541,27 +3638,75 @@ mod tests {
         }
     }
 
-    /// Answer one request on a free loopback port with `response`; the handle
-    /// yields the request it received.
-    fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
+    /// A server on a free loopback port that holds `token`: it answers the readiness probe with the
+    /// proof, then `response` to the request after it. The handle yields that request.
+    pub(crate) fn serve_as_holder_of(
+        token: &'static str,
+        response: Vec<u8>,
+    ) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let read_request = |stream: &mut std::net::TcpStream| {
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut buf).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                }
+                String::from_utf8_lossy(&request).to_string()
+            };
+            let (mut probe, _) = listener.accept().unwrap();
+            let asked = read_request(&mut probe);
+            let challenge = asked
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap()
+                .to_string();
+            let proof = proof_of(token, port, &challenge);
+            probe
+                .write_all(health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}")).as_bytes())
+                .unwrap();
+            drop(probe);
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_request(&mut stream);
+            stream.write_all(&response).unwrap();
+            request
+        });
+        (port, handle)
+    }
+
+    /// A process that took the port: it answers the readiness probe with a 200 and no proof, and
+    /// accepts no other connection. The handle yields the one request it saw.
+    pub(crate) fn serve_as_squatter() -> (u16, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0u8; 1024];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = stream.read(&mut buf).unwrap();
-                if n == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buf[..n]);
-            }
-            stream.write_all(&response).unwrap();
-            String::from_utf8_lossy(&request).to_string()
+            let mut buf = [0u8; 2048];
+            let read = stream.read(&mut buf).unwrap();
+            stream.write_all(health_answer("200 OK", "").as_bytes()).unwrap();
+            String::from_utf8_lossy(&buf[..read]).to_string()
         });
         (port, handle)
+    }
+
+    #[test]
+    fn a_connection_for_the_token_needs_a_server_that_proves_it_holds_it() {
+        let (port, squatter) = serve_as_squatter();
+        let error = connect_proving_token(port, "pd_x").unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let seen = squatter.join().unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-piwi-token"), "{seen}");
+
+        let (port, holder) = serve_as_holder_of("pd_x", Vec::new());
+        assert!(connect_proving_token(port, "pd_x").is_ok());
+        let _ = holder.join();
     }
 
     fn download_dir(test: &str) -> std::path::PathBuf {
@@ -3580,7 +3725,7 @@ mod tests {
                 .into_bytes();
         response.extend_from_slice(&body);
 
-        let (port, server) = serve_once(response.clone());
+        let (port, server) = serve_as_holder_of("pd_x", response.clone());
         let saved = stream_download(port, "pd_x", "/api/files/a.zip?x=1", &dir, "trace.zip").unwrap();
         assert_eq!(saved, dir.join("trace.zip"));
         assert_eq!(fs::read(&saved).unwrap(), body);
@@ -3590,7 +3735,7 @@ mod tests {
         assert!(request.contains("\r\nSec-Fetch-Site: same-origin\r\n"), "{request}");
 
         // The same name again never replaces the first file.
-        let (port, server) = serve_once(response);
+        let (port, server) = serve_as_holder_of("pd_x", response);
         let again = stream_download(port, "pd_x", "/api/files/a.zip", &dir, "trace.zip").unwrap();
         server.join().unwrap();
         assert_eq!(again, dir.join("trace (1).zip"));
@@ -3602,13 +3747,13 @@ mod tests {
     fn a_refused_or_cut_download_leaves_no_file() {
         let dir = download_dir("refused");
         let refusal = b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n\r\n{\"message\":\"Trace not found\"}";
-        let (port, server) = serve_once(refusal.to_vec());
+        let (port, server) = serve_as_holder_of("pd_x", refusal.to_vec());
         let error = stream_download(port, "pd_x", "/api/files/gone.zip", &dir, "gone.zip").unwrap_err();
         server.join().unwrap();
         assert_eq!(error, "Trace not found");
 
         let cut = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nonly ten b".to_vec();
-        let (port, server) = serve_once(cut);
+        let (port, server) = serve_as_holder_of("pd_x", cut);
         let error = stream_download(port, "pd_x", "/api/files/cut.zip", &dir, "cut.zip").unwrap_err();
         server.join().unwrap();
         assert!(error.contains("before the whole file"), "{error}");
@@ -3940,20 +4085,129 @@ mod tests {
         assert!(script.starts_with("var s=document.getElementById('splash-status');"));
     }
 
+    const PROOF_TOKEN: &str = "pd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PROOF_CHALLENGE: &str =
+        "abababababababababababababababababababababababababababababababab";
+    /// What `desktopTokenProof` of `@piwitests/core/desktop-proof` makes of the two for port 4318.
+    const PROOF_4318: &str = "bd60241a0312fff0960cb18ebc24dc439b0f32cb3a1d82bf1a13d65367acf0ad";
+
+    fn health_answer(status: &str, headers: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}\r\n\r\n{{}}")
+    }
+
     #[test]
-    fn the_readiness_probe_needs_a_200_carrying_the_launch_nonce() {
-        let ok = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
-                  X-Piwi-Desktop-Nonce: abc123\r\n\r\n{}";
-        assert!(health_response_proves(ok, "abc123"));
-        // Another server on the port: a 200 without the nonce, or with another one.
-        assert!(!health_response_proves("HTTP/1.1 200 OK\r\n\r\n{}", "abc123"));
-        assert!(!health_response_proves(&ok.replace("abc123", "zzz"), "abc123"));
-        // The nonce in the body, not a header, proves nothing.
-        let in_body = "HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-nonce: abc123";
-        assert!(!health_response_proves(in_body, "abc123"));
+    fn the_readiness_probe_needs_a_200_carrying_the_proof_of_the_token() {
+        let proves =
+            |response: &str| health_response_proves(response, PROOF_TOKEN, 4318, PROOF_CHALLENGE);
+        let ok = health_answer("200 OK", &format!("X-Piwi-Desktop-Proof: {PROOF_4318}"));
+        assert!(proves(&ok));
+        // Another server on the port: a 200 without a proof, or with one made from another token, port or challenge.
+        assert!(!proves(&health_answer("200 OK", "")));
+        assert!(!proves(&ok.replace("bd60", "bd61")));
+        assert!(!health_response_proves(
+            &ok,
+            "pd_other",
+            4318,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4319,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4318,
+            &"cd".repeat(32)
+        ));
+        // The proof in the body, not a header, proves nothing.
+        let in_body = format!("HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-proof: {PROOF_4318}");
+        assert!(!proves(&in_body));
         let unavailable = ok.replace(" 200 OK", " 503 Service Unavailable");
-        assert!(!health_response_proves(&unavailable, "abc123"));
-        assert!(!health_response_proves(ok, ""));
+        assert!(!proves(&unavailable));
+        assert!(!health_response_proves(&ok, "", 4318, PROOF_CHALLENGE));
+    }
+
+    #[test]
+    fn a_proof_that_is_not_hex_is_refused() {
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, ""));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "xyz"));
+        assert!(!proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318[1..]
+        ));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "é"));
+        // A sign or a prefix is not a digit.
+        for signed in ["+f", "-1", "0x", " f", "f "] {
+            assert_eq!(decode_hex(signed), None, "{signed:?}");
+        }
+        assert_eq!(decode_hex("0aFf"), Some(vec![0x0a, 0xff]));
+        assert_eq!(decode_hex(""), Some(vec![]));
+        assert_eq!(decode_hex("abc"), None);
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            PROOF_4318
+        ));
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318.to_uppercase()
+        ));
+    }
+
+    #[test]
+    fn a_server_that_replays_an_earlier_answer_is_refused() {
+        use std::io::{Read, Write};
+        // The squatter records the proof of the first challenge it sees and answers every probe with it.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let token = PROOF_TOKEN;
+        let honest = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 2048];
+            let read = first.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let challenge = request
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap()
+                .to_string();
+            use hmac::Mac;
+            let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+            mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+            let proof: String = mac
+                .finalize()
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let answer = health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}"));
+            first.write_all(answer.as_bytes()).unwrap();
+            drop(first);
+            // Every later probe gets that same answer.
+            for _ in 0..2 {
+                let (mut next, _) = listener.accept().unwrap();
+                let _ = next.read(&mut buffer);
+                next.write_all(answer.as_bytes()).unwrap();
+            }
+        });
+        assert!(
+            health_ok(port, token),
+            "the first answer is for the first challenge"
+        );
+        assert!(
+            !health_ok(port, token),
+            "a recorded answer proves nothing for a new challenge"
+        );
+        assert!(!health_ok(port, "pd_other"));
+        honest.join().unwrap();
     }
 
     #[test]

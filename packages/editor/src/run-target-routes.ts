@@ -189,29 +189,60 @@ export const RUN_TARGET_ROUTES = {
 
 export type RunTargetRouteName = keyof typeof RUN_TARGET_ROUTES;
 
+/** Whether a request's `Content-Type` is `application/json`, parameters (`charset`) aside and in any case. */
+export function isJsonRequest(request: Pick<HostRequest, 'headers'>): boolean {
+  return request.headers['content-type']?.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
+}
+
+/** Whether a method's request carries a JSON body, which `answerRunTargetRoute` reads: every method but GET and DELETE. */
+export function sendsBody(method: string): boolean {
+  const upper = method.toUpperCase();
+  return upper !== 'GET' && upper !== 'DELETE';
+}
+
 /**
- * Answer one run-target route. A shell-only route refuses a browser's request (403) before anything else; a route
- * under `/requests/:id` refuses an id that is not a request id (400). Every shell-only answer, and the status, is
- * not to be cached.
+ * Why a request to a route is refused before its body is read, or null: a browser's request to a shell-only route
+ * (403); a POST or PUT whose content type is not `application/json` (415); an id under `/requests/:id` that is not a
+ * request id (400). The 415 and 400 refusals of a shell-only route are `noStore`.
  */
-export async function answerRunTargetRoute(
+export function refuseRunTargetRequest(
   name: RunTargetRouteName,
-  request: RunTargetRequest,
-): Promise<RunTargetAnswer> {
+  request: Omit<RunTargetRequest, 'body'>,
+): RunTargetAnswer | null {
   const route: RouteDef = RUN_TARGET_ROUTES[name];
   if (route.shellOnly && isBrowserRequest(request)) {
     return { ...refused(403, 'The desktop shell alone calls this route'), noStore: false };
   }
   const noStore = route.shellOnly || name === 'status';
+  if (sendsBody(route.method) && !isJsonRequest(request)) {
+    return { ...refused(415, 'The body is application/json'), noStore };
+  }
   if (route.path.includes(':id') && !isRequestId(request.id)) {
     return { ...refused(400, 'Invalid request id'), noStore };
   }
+  return null;
+}
+
+/** Answer one run-target route: the refusal of `refuseRunTargetRequest`, else the route's own answer. */
+export async function answerRunTargetRoute(
+  name: RunTargetRouteName,
+  request: RunTargetRequest,
+): Promise<RunTargetAnswer> {
+  const refusal = refuseRunTargetRequest(name, request);
+  if (refusal) return refusal;
+  const route: RouteDef = RUN_TARGET_ROUTES[name];
+  const noStore = route.shellOnly || name === 'status';
   return { ...(await route.handle(request)), noStore };
+}
+
+/** The path of a request URL, without its query and a trailing slash. */
+export function pathnameOf(url: string): string {
+  return url.split('?')[0]!.replace(/(.)\/$/, '$1');
 }
 
 /** The route a method and a path name, with the request id of a `/requests/:id` path; null for none. */
 export function matchRunTargetRoute(method: string, path: string): { name: RunTargetRouteName; id?: string } | null {
-  const pathname = path.split('?')[0]!.replace(/(.)\/$/, '$1');
+  const pathname = pathnameOf(path);
   if (pathname !== RUN_TARGET_BASE && !pathname.startsWith(`${RUN_TARGET_BASE}/`)) return null;
   const rest = pathname.slice(RUN_TARGET_BASE.length);
   const id = rest.match(/^\/requests\/([^/]+)\//)?.[1];

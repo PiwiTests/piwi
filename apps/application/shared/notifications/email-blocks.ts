@@ -9,7 +9,7 @@
 import { STATUS_COLORS } from '#shared/status-colors';
 import { BRAND_VIOLET } from '#shared/brand';
 import { EMAIL_PAD_CLASS, EMAIL_TIGHT_CLASS, emailButton, escapeHtml } from '#shared/email-layout';
-import { highlightLines, languageForPath, SCOPE_ROLES, type TokenRole } from '#shared/highlight';
+import { highlightLines, languageForPath, SCOPE_ROLES, type TokenRole } from '@piwitests/run-ui/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import type { FailureSource, HistoryOutcome, RunHistoryEntry, TopFailure } from '#shared/notification-events';
 import {
