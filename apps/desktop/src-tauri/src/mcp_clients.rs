@@ -2,11 +2,13 @@
 //
 // The dashboard's /mcp page shows copy-paste snippets for connecting MCP
 // clients; on this machine the shell can do better and write the client's own
-// config file. Almost every client is configured the same way: a `piwi-desktop`
-// entry inside the client's server map, pointing at this app's /mcp endpoint with
-// the local access token as the Bearer header. Claude Desktop is the exception —
-// it accepts only stdio servers there, so it gets a command instead (see
-// `stdio_bridge_entry`).
+// config file. Every client is configured the same way: a `piwi-desktop` entry
+// inside the client's server map that runs this app in bridge mode as a local
+// command (see `mcp_stdio` and `stdio_entry_for`). The bridge reads the address
+// and the token from the reporter discovery file when it runs and sends the token
+// only to a server that proves it holds it, so no port and no token is written
+// into another app's config. A client that takes only a URL could not be given
+// this entry; none of the clients below is one.
 //
 // The entry is keyed `piwi-desktop`, not `piwi`, so it never collides with a
 // hosted Piwi a user has added by hand under `piwi` — the two coexist in one
@@ -19,13 +21,14 @@
 //   - the previous content is copied to `<name>.piwi-backup.json` (the file's
 //     extension replaced) before a write;
 //   - the file is replaced through a temporary copy, keeping its permissions
-//     (owner-only for a new file, since the entry carries the access token);
+//     (owner-only for a new file);
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
 //     everything else in the file is preserved as parsed.
 //
-// A written URL embeds the port picked at launch, which is not guaranteed
-// across launches — so `heal_configured_clients` runs at startup and rewrites
-// any entry that no longer matches what this app would write today.
+// `heal_configured_clients` runs at startup and rewrites an entry of the bridge
+// shape that no longer matches what this app would write today (the app moved).
+// An entry of an older shape, a URL with the token in a header, is rewritten when
+// the user connects the client again.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -40,15 +43,6 @@ use crate::mcp_stdio;
 pub struct ServerInfo {
     pub port: u16,
     pub token: String,
-}
-
-impl ServerInfo {
-    fn mcp_url(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", self.port)
-    }
-    fn bearer(&self) -> String {
-        format!("Bearer {}", self.token)
-    }
 }
 
 /// The key this app writes its MCP entry under. Distinct from `piwi` so a hosted
@@ -91,32 +85,25 @@ fn label_of(id: &str) -> &'static str {
     }
 }
 
-/// The `piwi` entry in each client's native shape.
-fn entry_for(id: &str, info: &ServerInfo) -> Value {
-    let url = info.mcp_url();
-    let bearer = info.bearer();
-    match id {
-        "claude-desktop" => stdio_bridge_entry(&bridge_command()),
-        "cursor" => json!({ "url": url, "headers": { "Authorization": bearer } }),
-        "opencode" => json!({ "type": "remote", "url": url, "headers": { "Authorization": bearer } }),
-        "windsurf" => json!({ "serverUrl": url, "headers": { "Authorization": bearer } }),
-        "gemini-cli" => json!({ "httpUrl": url, "headers": { "Authorization": bearer } }),
-        // Claude Code and VS Code share the `type: http` shape.
-        _ => json!({ "type": "http", "url": url, "headers": { "Authorization": bearer } }),
-    }
+/// The `piwi` entry in each client's native shape: this app in bridge mode as a local command.
+fn entry_for(id: &str) -> Value {
+    stdio_entry_for(id, &bridge_command())
 }
 
-/// Claude Desktop reads **only stdio servers** from `claude_desktop_config.json`
-/// — an entry carrying a `url` is refused at startup ("the following entries in
-/// claude_desktop_config.json are not valid MCP server configurations and were
-/// ignored"), so a remote endpoint has to arrive behind a local command.
+/// `command` as a local server in the shape `id` reads. Claude Desktop reads **only stdio servers** from
+/// `claude_desktop_config.json` — an entry carrying a `url` is refused at startup ("the following entries in
+/// claude_desktop_config.json are not valid MCP server configurations and were ignored").
 ///
 /// That command is this very app in bridge mode (see `mcp_stdio`): nothing to
 /// install, no Node or `npx` on PATH, and because the bridge resolves the
 /// address from the reporter discovery file when it runs, the entry never
 /// drifts with the port and no token is copied into another app's config.
-fn stdio_bridge_entry(command: &str) -> Value {
-    json!({ "command": command, "args": [mcp_stdio::STDIO_ARG] })
+fn stdio_entry_for(id: &str, command: &str) -> Value {
+    match id {
+        "claude-code" | "vscode" => json!({ "type": "stdio", "command": command, "args": [mcp_stdio::STDIO_ARG] }),
+        "opencode" => json!({ "type": "local", "command": [command, mcp_stdio::STDIO_ARG] }),
+        _ => json!({ "command": command, "args": [mcp_stdio::STDIO_ARG] }),
+    }
 }
 
 /// This executable, as the path another app can spawn it by. `current_exe`
@@ -329,11 +316,21 @@ fn is_local_piwi_entry(value: &Value) -> bool {
             }
         }
     }
-    let has_bridge_arg = value
-        .get("args")
-        .and_then(|v| v.as_array())
-        .is_some_and(|args| args.iter().any(|a| a.as_str() == Some(mcp_stdio::STDIO_ARG)));
-    has_bridge_arg && value.get("command").is_some()
+    is_bridge_entry(value)
+}
+
+/// Whether an entry runs this app in bridge mode: a command with the bridge argument, in `args` or, for
+/// Opencode, in the command list itself.
+fn is_bridge_entry(value: &Value) -> bool {
+    let named = |list: Option<&Value>| {
+        list.and_then(|v| v.as_array())
+            .is_some_and(|items| items.iter().any(|a| a.as_str() == Some(mcp_stdio::STDIO_ARG)))
+    };
+    match value.get("command") {
+        Some(Value::String(_)) => named(value.get("args")),
+        Some(list @ Value::Array(_)) => named(Some(list)),
+        _ => false,
+    }
 }
 
 /// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`), preserving everything
@@ -384,7 +381,7 @@ fn read_config(path: &PathBuf) -> Result<Option<Value>, String> {
     })
 }
 
-fn status_of(app: &AppHandle, id: &str, info: &ServerInfo) -> McpClientStatus {
+fn status_of(app: &AppHandle, id: &str) -> McpClientStatus {
     let (config_path, detect_dir) = match paths_of(app, id) {
         Some(paths) => paths,
         None => {
@@ -403,7 +400,7 @@ fn status_of(app: &AppHandle, id: &str, info: &ServerInfo) -> McpClientStatus {
     } else {
         match read_config(&config_path) {
             Err(_) => "manual",
-            Ok(existing) => classify(existing.as_ref(), container_key(id), &entry_for(id, info)),
+            Ok(existing) => classify(existing.as_ref(), container_key(id), &entry_for(id)),
         }
     };
     McpClientStatus {
@@ -432,34 +429,35 @@ fn write_config(path: &PathBuf, doc: &Value) -> Result<(), String> {
 }
 
 fn set_entry(app: &AppHandle, id: &str, connect: bool) -> Result<McpClientStatus, String> {
-    let info = app
-        .try_state::<ServerInfo>()
-        .ok_or("server details unavailable")?;
     let (config_path, detect_dir) = paths_of(app, id).ok_or("unknown client")?;
     if !detect_dir.exists() && !config_path.is_file() {
         return Err(format!("{} does not appear to be installed", label_of(id)));
     }
     let existing = read_config(&config_path)?.unwrap_or_else(|| json!({}));
     let entry = if connect {
-        Some(entry_for(id, &info))
+        Some(entry_for(id))
     } else {
         None
     };
     let doc = merge_piwi_entry(existing, container_key(id), entry);
     write_config(&config_path, &doc)?;
-    Ok(status_of(app, id, &info))
+    Ok(status_of(app, id))
 }
 
-/// Rewrite the entry of every already-configured client that no longer matches
-/// what this app would write — the port is not guaranteed across launches.
+/// Rewrite the entry of every already-configured client that runs this app in bridge mode and no longer matches
+/// what this app would write (the app moved). An entry of another shape is left for the user to connect again.
 /// Quietly skips anything unreadable or manual.
 pub fn heal_configured_clients(app: &AppHandle) {
-    let Some(info) = app.try_state::<ServerInfo>() else {
-        return;
-    };
     for id in CLIENT_IDS {
-        let status = status_of(app, id, &info);
-        if status.status == "stale" {
+        let Some((config_path, _)) = paths_of(app, id) else {
+            continue;
+        };
+        let current = read_config(&config_path).ok().flatten();
+        let ours = current
+            .as_ref()
+            .and_then(|doc| doc.get(container_key(id)))
+            .and_then(|servers| servers.get(PIWI_ENTRY_KEY));
+        if ours.is_some_and(is_bridge_entry) && status_of(app, id).status == "stale" {
             let _ = set_entry(app, id, true);
         }
     }
@@ -467,13 +465,7 @@ pub fn heal_configured_clients(app: &AppHandle) {
 
 #[tauri::command]
 pub fn desktop_mcp_clients(app: AppHandle) -> Result<Vec<McpClientStatus>, String> {
-    let info = app
-        .try_state::<ServerInfo>()
-        .ok_or("server details unavailable")?;
-    Ok(CLIENT_IDS
-        .iter()
-        .map(|id| status_of(&app, id, &info))
-        .collect())
+    Ok(CLIENT_IDS.iter().map(|id| status_of(&app, id)).collect())
 }
 
 #[tauri::command]
@@ -661,87 +653,94 @@ mod tests {
         }
     }
 
-    fn info() -> ServerInfo {
-        ServerInfo {
-            port: 3000,
-            token: "pd_test".into(),
-        }
-    }
+    const EXE: &str = "/Applications/Piwi.app/Contents/MacOS/piwi-desktop";
 
+    /// Every client runs this app in bridge mode as a local command, in the shape it reads, with no URL, no header
+    /// and no token in the entry.
     #[test]
-    fn entry_shapes_match_each_client() {
-        let i = info();
+    fn every_client_gets_the_bridge_command_in_its_own_shape() {
         assert_eq!(
-            entry_for("cursor", &i),
-            json!({ "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_test" } })
+            stdio_entry_for("cursor", EXE),
+            json!({ "command": EXE, "args": ["mcp-stdio"] })
         );
-        assert_eq!(
-            entry_for("windsurf", &i)["serverUrl"],
-            "http://127.0.0.1:3000/mcp"
-        );
-        assert_eq!(
-            entry_for("gemini-cli", &i)["httpUrl"],
-            "http://127.0.0.1:3000/mcp"
-        );
-        assert_eq!(
-            entry_for("opencode", &i),
-            json!({ "type": "remote", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_test" } })
-        );
+        for id in ["windsurf", "gemini-cli", "claude-desktop"] {
+            assert_eq!(
+                stdio_entry_for(id, EXE),
+                json!({ "command": EXE, "args": ["mcp-stdio"] })
+            );
+        }
         for id in ["claude-code", "vscode"] {
-            assert_eq!(entry_for(id, &i)["type"], "http");
+            assert_eq!(
+                stdio_entry_for(id, EXE),
+                json!({ "type": "stdio", "command": EXE, "args": ["mcp-stdio"] })
+            );
+        }
+        assert_eq!(
+            stdio_entry_for("opencode", EXE),
+            json!({ "type": "local", "command": [EXE, "mcp-stdio"] })
+        );
+        for id in CLIENT_IDS {
+            let text = entry_for(id).to_string();
+            for forbidden in ["url", "Url", "headers", "Authorization", "Bearer", "pd_", "127.0.0.1"] {
+                assert!(!text.contains(forbidden), "{id} entry carries {forbidden}: {text}");
+            }
+            assert!(is_bridge_entry(&entry_for(id)), "{id} entry is not a bridge entry");
         }
     }
 
-    /// Claude Desktop ignores any entry that is not a local command, so it gets
-    /// this app in bridge mode — never a URL.
+    /// The entry carries no port and no token, so it stays correct whatever port the app lands on — while an entry
+    /// of the older shape, a URL with the token in a header, reads as stale.
     #[test]
-    fn claude_desktop_gets_a_stdio_command_not_a_url() {
-        let entry = stdio_bridge_entry(r"C:\Program Files\Piwi Dashboard\piwi-desktop.exe");
-        assert_eq!(
-            entry,
-            json!({
-                "command": r"C:\Program Files\Piwi Dashboard\piwi-desktop.exe",
-                "args": ["mcp-stdio"],
-            })
-        );
+    fn a_url_entry_with_the_token_is_stale_and_not_ours_to_heal() {
+        for id in CLIENT_IDS {
+            let expected = entry_for(id);
+            let container = container_key(id);
+            let configured = json!({ container: { "piwi-desktop": expected.clone() } });
+            assert_eq!(classify(Some(&configured), container, &expected), "connected");
 
-        let live = entry_for("claude-desktop", &info());
-        assert!(live.get("url").is_none());
-        assert!(live.get("type").is_none());
-        assert!(live["command"].as_str().is_some_and(|c| !c.is_empty()));
+            let old_shape = json!({
+                container: { "piwi-desktop": {
+                    "type": "http",
+                    "url": "http://127.0.0.1:3000/mcp",
+                    "headers": { "Authorization": "Bearer pd_test" }
+                } }
+            });
+            assert_eq!(classify(Some(&old_shape), container, &expected), "stale");
+            assert!(!is_bridge_entry(&old_shape[container]["piwi-desktop"]));
+        }
     }
 
-    /// The bridge entry carries no port and no token, so it stays correct
-    /// whatever port the app lands on — while a URL entry, the shape Claude
-    /// Desktop refuses, is classified stale and rewritten on the next launch.
+    /// Connecting again replaces an entry of the older shape whole: no header of it stays.
     #[test]
-    fn the_claude_desktop_entry_survives_a_port_change() {
-        let expected = entry_for("claude-desktop", &info());
-        let other_port = entry_for(
-            "claude-desktop",
-            &ServerInfo {
-                port: 51234,
-                token: "pd_other".into(),
-            },
-        );
-        assert_eq!(expected, other_port);
-
-        let configured = json!({ "mcpServers": { "piwi-desktop": expected } });
-        assert_eq!(
-            classify(Some(&configured), "mcpServers", &expected),
-            "connected"
-        );
-
-        let old_shape = json!({
-            "mcpServers": { "piwi-desktop": { "type": "http", "url": "http://127.0.0.1:3000/mcp" } }
+    fn connecting_again_replaces_a_url_entry_with_the_bridge_command() {
+        let existing = json!({
+            "mcpServers": {
+                "piwi-desktop": { "type": "http", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_old" } },
+                "other": { "command": "npx" }
+            }
         });
-        assert_eq!(classify(Some(&old_shape), "mcpServers", &expected), "stale");
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(stdio_entry_for("claude-code", EXE)));
+        assert_eq!(
+            merged["mcpServers"]["piwi-desktop"],
+            json!({ "type": "stdio", "command": EXE, "args": ["mcp-stdio"] })
+        );
+        assert!(!merged.to_string().contains("pd_old"));
+        assert_eq!(merged["mcpServers"]["other"], json!({ "command": "npx" }));
+    }
+
+    #[test]
+    fn a_bridge_entry_is_told_from_other_commands() {
+        assert!(is_bridge_entry(&json!({ "command": EXE, "args": ["mcp-stdio"] })));
+        assert!(is_bridge_entry(&json!({ "type": "local", "command": [EXE, "mcp-stdio"] })));
+        assert!(!is_bridge_entry(&json!({ "command": "npx", "args": ["-y", "some-server"] })));
+        assert!(!is_bridge_entry(&json!({ "type": "local", "command": ["npx", "some-server"] })));
+        assert!(!is_bridge_entry(&json!({ "url": "http://127.0.0.1:3000/mcp" })));
+        assert!(!is_bridge_entry(&json!({ "args": ["mcp-stdio"] })));
     }
 
     #[test]
     fn classify_distinguishes_missing_current_and_stale() {
-        let i = info();
-        let expected = entry_for("cursor", &i);
+        let expected = entry_for("cursor");
         assert_eq!(classify(None, "mcpServers", &expected), "not_connected");
         let empty = json!({});
         assert_eq!(
@@ -762,7 +761,7 @@ mod tests {
     /// app only ever looks at its own `piwi-desktop` key, so the two never fight.
     #[test]
     fn a_hosted_piwi_under_the_legacy_key_does_not_read_as_connected() {
-        let expected = entry_for("cursor", &info());
+        let expected = entry_for("cursor");
         let hosted = json!({ "mcpServers": { "piwi": { "url": "https://piwi.example.com/mcp" } } });
         assert_eq!(
             classify(Some(&hosted), "mcpServers", &expected),
