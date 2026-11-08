@@ -21,6 +21,7 @@ import {
   requestedRunEnded,
   requestedRunStarted,
   resetDesktopRunTarget,
+  setRunTargetKind,
   setRunTargetVersion,
   shutdownRunTarget,
   runTargetConnection,
@@ -273,6 +274,23 @@ describe('connecting', () => {
     expect(runTargetConnection().keyToKeep).toBe(true);
     useKeptKey(instance.url, KEY, new Map());
     expect(keyToKeep()).toBe(null);
+  });
+
+  test('names the app that serves the target: the desktop app unless Piwi Runner sets it', async () => {
+    await connectRunTarget(instance.url);
+    expect(instance.calls[0]).toMatchObject({ path: '/api/extension/connect', body: { target: 'desktop' } });
+
+    setRunTargetKind('runner');
+    await connectRunTarget(instance.url);
+    expect(instance.calls.filter((c) => c.path === '/api/extension/connect').pop()).toMatchObject({
+      body: { target: 'runner' },
+    });
+
+    resetDesktopRunTarget();
+    await connectRunTarget(instance.url);
+    expect(instance.calls.filter((c) => c.path === '/api/extension/connect').pop()).toMatchObject({
+      body: { target: 'desktop' },
+    });
   });
 
   test('opens the sign-in page of the address connected to, whatever page the answer names', async () => {

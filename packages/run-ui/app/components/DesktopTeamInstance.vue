@@ -8,6 +8,9 @@
  */
 import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
 
+/** The app's name, as the instance's page asks the person to allow it. */
+defineProps<{ appName: string }>();
+
 const { connection } = useDesktopTeamRequests();
 const toast = useToast();
 const instanceUrl = ref('');
@@ -101,7 +104,7 @@ async function unlink(projectId: string) {
 
     <div v-if="connection.state === 'signing-in'" class="space-y-2">
       <p class="text-muted">
-        The instance's page asks you to allow <strong>Piwi Desktop</strong> with this code:
+        The instance's page asks you to allow <strong>{{ appName }}</strong> with this code:
         <code class="text-highlighted">{{ connection.userCode }}</code>
       </p>
       <div class="flex flex-wrap gap-2">

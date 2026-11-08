@@ -9,7 +9,7 @@
 import * as http from 'node:http';
 import * as path from 'node:path';
 import { launchNonce } from '@piwitests/editor/host-guard';
-import { setRunTargetVersion, shutdownRunTarget } from '@piwitests/editor/run-target';
+import { setRunTargetKind, setRunTargetVersion, shutdownRunTarget } from '@piwitests/editor/run-target';
 import { runnerHandler } from './host';
 
 declare const __PIWI_RUNNER_VERSION__: string | undefined;
@@ -21,6 +21,7 @@ if (!token || !Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 
+setRunTargetKind('runner');
 setRunTargetVersion(typeof __PIWI_RUNNER_VERSION__ === 'string' ? __PIWI_RUNNER_VERSION__ : '');
 
 const root = process.env.PIWI_RUNNER_ROOT || path.join(__dirname, 'public');

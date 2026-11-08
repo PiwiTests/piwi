@@ -22,7 +22,7 @@ onMounted(() => {
           <h2 class="text-sm font-semibold">Run on my machine</h2>
           <p class="text-xs text-muted">{{ CONNECTION_INTRO }}</p>
         </template>
-        <DesktopTeamInstance />
+        <DesktopTeamInstance app-name="Piwi Runner" />
       </UCard>
       <RunnerRunList />
     </main>

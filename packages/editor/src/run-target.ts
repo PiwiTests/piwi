@@ -181,6 +181,13 @@ export function setRunTargetVersion(version: string): void {
   appVersion = version || '0.0.0';
 }
 
+let appKind: 'runner' | 'desktop' = 'desktop';
+
+/** Which app serves the target, named to the instance in the device flow: `desktop` unless set by Piwi Runner. */
+export function setRunTargetKind(kind: 'runner' | 'desktop'): void {
+  appKind = kind;
+}
+
 function platformName(): string {
   return { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[process.platform as string] ?? process.platform;
 }
@@ -364,7 +371,7 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
   let started: Awaited<ReturnType<typeof postDeviceFlow>>;
   try {
     started = await postDeviceFlow(instance, '/api/extension/connect', {
-      target: 'desktop',
+      target: appKind,
       device: os.hostname().slice(0, 100) || 'this computer',
       os: platformName(),
     });
@@ -581,5 +588,6 @@ export function shutdownRunTarget(): void {
 export function resetDesktopRunTarget(): void {
   shutdownRunTarget();
   appVersion = '0.0.0';
+  appKind = 'desktop';
   state.links = new Map();
 }
