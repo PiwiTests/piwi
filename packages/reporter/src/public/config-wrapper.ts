@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { applyOptionsToEnv, readBool, PIWI_ENV_KEYS, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
+import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
 import { isProbeMode } from '../internal/probe/mode.js';
 import { isFlakeMode, labModeConflict } from '../internal/flake/mode.js';
 import { PIWI_REPORTER_MODULE, isPiwiReporterModule } from '../internal/support/reporter-entry.js';
@@ -119,6 +120,8 @@ function resolveSetupModule(): string {
  */
 export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOptions?: PiwiDashboardOptions): T {
   if (piwiOptions) applyOptionsToEnv(piwiOptions);
+  // A requested run's overrides also go over what the config put in the environment itself (a `.env` file).
+  else if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
 
   // Piwi's module runs first so the run is registered before the user's own
   // globalSetup, showing as "initializing" on the dashboard while that setup runs.

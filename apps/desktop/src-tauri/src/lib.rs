@@ -18,6 +18,7 @@ mod mcp_clients;
 mod mcp_stdio;
 mod private_fs;
 mod repro;
+mod run_target;
 mod runner;
 #[cfg(windows)]
 mod taskbar_win;
@@ -63,6 +64,10 @@ use runner::{
     desktop_set_project_link, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
+use run_target::{
+    desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder, desktop_request_folders,
+    desktop_run_requested_tests, desktop_unlink_request_folder,
+};
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
 };
@@ -2058,15 +2063,25 @@ fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered:
             break;
         }
     }
-    read_event_stream(reader, |data| match serde_json::from_str::<ServerNotification>(data) {
+    read_event_stream(reader, |data| {
+        if run_target::take_server_command(app, data) {
+            return;
+        }
+        show_or_log_notification(app, data);
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Show a notification the server streamed, or log one the shell cannot read.
+fn show_or_log_notification(app: &AppHandle, data: &str) {
+    match serde_json::from_str::<ServerNotification>(data) {
         Ok(notification) => show_server_notification(app, notification),
         Err(e) => {
             if let Some(log) = app.try_state::<LogFile>() {
                 append_log(&log.0, &format!("unreadable notification from the server: {e}"));
             }
         }
-    })
-    .map_err(|e| e.to_string())
+    }
 }
 
 /// Show the server's notifications for as long as the app runs, whether or
@@ -2083,6 +2098,8 @@ fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String,
                 std::thread::sleep(NOTIFICATION_RETRY_FIRST);
                 continue;
             }
+            // The server keeps no key: each start of it gets the kept one back.
+            run_target::hand_kept_key(&app);
             let mut answered = false;
             let outcome = follow_notification_stream(&app, port, &token, &mut answered);
             if answered {
@@ -2778,6 +2795,12 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_keep_run_target_key,
+            desktop_forget_run_target,
+            desktop_request_folders,
+            desktop_link_request_folder,
+            desktop_unlink_request_folder,
+            desktop_run_requested_tests,
             desktop_run_repro,
             desktop_reproduce_here,
             desktop_bisect_here,
@@ -2804,6 +2827,8 @@ pub fn run() {
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())
         .manage(runner::LocalRuns::default())
+        .manage(run_target::KeptKey::default())
+        .manage(run_target::RequestedRuns::default())
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())

@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'List the apps a user connected',
     description:
-      'Returns the apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner), newest first: each `id` is its key’s, which `DELETE /api/users/{id}/api-keys/{keyId}` revokes to disconnect it. An app that runs tests has a `target`: its platform, version, when it was last seen, and `online`, whether it holds its request stream open and called the instance within the last two minutes. Anyone but an administrator can only list their own.',
+      'Returns the apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner), newest first: each `id` is its key’s, which `DELETE /api/users/{id}/api-keys/{keyId}` revokes to disconnect it. An app that runs tests has a `target`: its `id` (what `POST /api/run-requests` takes as `targetId`), platform, version, the projects it has a folder for and may still take requests on (`projectIds`), when it was last seen, and `online`, whether it holds its request stream open and called the instance within the last two minutes. Anyone but an administrator can only list their own.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'signed-in',
   },

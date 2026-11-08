@@ -44,6 +44,15 @@ What the package does to a user's run, process by process.
 - `PIWI_*` env vars (`internal/config/env.ts`). `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`
   and `PIWI_PROJECT_NAME` are also read from the `.env` in the Playwright config's
   folder, below the environment, by the reporter and the global setup alike.
+- A requested run (`internal/config/requested-run.ts`): with `PIWI_REQUEST_INSTANCE` and `PIWI_REQUEST_TOKEN_FILE`
+  (core's `REQUEST_RUN_ENV`, outside `PIWI_ENV_KEYS`), which the desktop app sets for a run a team instance asked
+  for, the instance and the request token beat the config, the environment, the `.env`, the desktop app and an
+  explicit `serverUrl`: the run streams there with that token alone, never kept, with no coverage, manifest, code
+  reach, environment snapshots or AI authoring. A pair this reporter cannot take (one variable alone, an instance
+  not http(s), a token file missing, not this user's alone, readable by others on Unix, or holding no request
+  token) turns the reporter off for the run. Its workers get the same: `applyRequestedRunEnv` writes their
+  variables last, in `applyOptionsToEnv` (each worker loads the config again) and in `onBegin`, and takes the
+  config's server and credentials out of their environment (`tests/requested-run.spec.ts`).
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
   `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
   and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
@@ -626,6 +635,10 @@ error as a failure of the run. Every rung carries one `deliveryKey` per run, so 
 upload stores the `/submit` that follows it, or the recovery copy, once. A batch rung that follows a stream names the
 streamed run with its token (`replacesRun`, never for a shard), and the dashboard cancels that run while it has not
 settled, one a `/finish` whose answer was lost holds `finalizing` too, so the run's results land in one run.
+
+A requested run takes rung 1 alone: its request token starts one streamed run, so it has no `/start` after a
+`/begin` 409, no batch upload, no recovery copy and no replay of a saved run, and it finishes with what reached the
+instance even when results were lost on the way. A run that does not finish there is reported and dropped.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,

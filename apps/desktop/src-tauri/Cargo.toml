@@ -47,7 +47,15 @@ tauri-plugin-playwright = { version = "0.4", optional = true }
 # see `kill_server` in src/lib.rs). Pinned to the same `windows` version Tauri already resolves
 # so the `HWND` returned by `WebviewWindow::hwnd()` is the same type (one shared
 # copy of the crate), and so nothing extra is pulled in.
+# The OS keychain holds the key of each instance the app takes run requests from.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_System_Com",

@@ -579,6 +579,8 @@ export interface TestRunDetails {
   isFullRun?: boolean;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
+  machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
@@ -1398,8 +1400,18 @@ export interface ConnectedApp {
   kind: 'picker' | 'editor' | 'desktop' | 'runner';
   createdAt: Date;
   lastUsedAt: Date | null;
-  /** For an app that runs tests: its device, when it was last seen, and whether its stream is open now. */
-  target: { platform: string | null; version: string | null; lastSeenAt: Date | null; online: boolean } | null;
+  /**
+   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for and
+   * may still take requests on, when it was last seen, and whether its stream is open now.
+   */
+  target: {
+    id: number;
+    platform: string | null;
+    version: string | null;
+    projectIds: number[];
+    lastSeenAt: Date | null;
+    online: boolean;
+  } | null;
 }
 
 export interface ConnectedAppsResponse {

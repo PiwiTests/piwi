@@ -45,7 +45,7 @@ export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'erro
  * Lab session (`piwi flake`) at the commit of a test's latest failure, on a
  * test of this app or on an editor's plan.
  */
-export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake';
+export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake' | 'request';
 
 /** What a Flake Lab session runs: which arms, how many runs, and its budget. */
 export interface FlakeLabOptions {
@@ -228,6 +228,8 @@ export interface LocalRun {
   finishedAt: number | null;
   /** The editor's job this run answers (kind === 'reproduce', 'bisect' or 'flake'). */
   jobRequestId: string | null;
+  /** The run request of a team instance it answers (kind === 'request'): the shell reports it there. */
+  teamRequest: { id: string; instance: string } | null;
   /**
    * The origin reference the reporter records for this run (`PIWI_ORIGIN_REF`):
    * the cluster or bug report it was launched for, else one made for it alone.
@@ -643,6 +645,10 @@ export function useDesktopLocalRuns() {
         originRef: run.originRef,
       });
     }
+    if (run.kind === 'request' && run.teamRequest) {
+      // Only the request: the shell takes its command and its request token from this app's server.
+      return spawnCommand(run, 'desktop_run_requested_tests', { requestId: run.teamRequest.id });
+    }
     if (run.kind === 'flake' && run.jobRequestId) {
       // Only the request: the shell reads its commit and plan from this app's
       // server, writes the plan file and builds the command itself.
@@ -954,6 +960,7 @@ export function useDesktopLocalRuns() {
     flake?: FlakeLabRunState | null;
     flakeTestCaseId?: number | null;
     jobRequestId?: string | null;
+    teamRequest?: { id: string; instance: string } | null;
   }): LocalRun {
     // What the shell stamps as the reference: the cluster or bug report a run was launched for wins.
     const named = input.clusterId ?? input.bisectTarget?.clusterId ?? input.repro?.bugReportId ?? null;
@@ -989,6 +996,7 @@ export function useDesktopLocalRuns() {
       labReport: null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       jobRequestId: input.jobRequestId ?? null,
+      teamRequest: input.teamRequest ?? null,
       originRef,
       status: 'running',
       lines: [],
@@ -1010,8 +1018,9 @@ export function useDesktopLocalRuns() {
     if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
     else {
       // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
-      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile.
-      void captureBaseline(tracked);
+      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile. A
+      // run a team instance asked for reports there, so no run of this app's server is its baseline.
+      if (tracked.kind !== 'request') void captureBaseline(tracked);
       void drive(tracked);
     }
     return tracked;
@@ -1194,6 +1203,36 @@ export function useDesktopLocalRuns() {
    * as a spec in the project's test directory, runs it and removes it. The
    * request is marked running here and done, with its verdict, when it ends.
    */
+  /**
+   * Run a request a team instance sent, after **Run** in its confirmation: the shell starts it in the folder linked
+   * to its project for that instance, and the run reports to that instance.
+   */
+  function startTeamRequest(input: {
+    requestId: string;
+    instance: string;
+    projectId: number;
+    cases: RetryCase[];
+    title: string;
+  }): LocalRun | null {
+    if (!tauriCore()) return null;
+    let host = input.instance;
+    try {
+      host = new URL(input.instance).host;
+    } catch {
+      // The instance as given.
+    }
+    return spawn({
+      kind: 'request',
+      projectId: input.projectId,
+      projectLabel: host,
+      cases: input.cases,
+      title: input.title,
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      steps: [],
+      teamRequest: { id: input.requestId, instance: input.instance },
+    });
+  }
+
   async function startRepro(input: {
     projectId: string | number;
     projectLabel?: string | null;
@@ -1391,6 +1430,7 @@ export function useDesktopLocalRuns() {
     startBisect,
     startFlakeLab,
     startRepro,
+    startTeamRequest,
     startJob,
     rerun,
     stopRun,

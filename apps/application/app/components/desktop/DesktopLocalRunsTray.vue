@@ -282,7 +282,7 @@ function runDetail(run: LocalRun): string {
               Stop
             </UButton>
             <UTooltip
-              v-else-if="run.kind !== 'flake' || run.flake"
+              v-else-if="(run.kind !== 'flake' || run.flake) && run.kind !== 'request'"
               :text="`Run again: ${localRunTitle(run)}, with the same options`"
             >
               <UButton

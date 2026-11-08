@@ -328,4 +328,21 @@ describe('Connected apps', () => {
     ).toBe(false);
     expect(runTargetStreamCount(targetId)).toBe(0);
   });
+
+  test('names only the projects an app may still take requests on', async () => {
+    const [other] = await db.insert(schema.projects).values({ name: 'admin' }).returning();
+    const { targetId } = await target();
+    await db
+      .update(schema.runTargets)
+      .set({ projectIds: [projectId, other!.id] })
+      .where(eq(schema.runTargets.id, targetId));
+    const projectsOf = async () =>
+      (await listConnectedApps(db as never, userId, () => true)).find((a) => a.target?.id === targetId)!.target!
+        .projectIds;
+    // No role on the other project.
+    expect(await projectsOf()).toEqual([projectId]);
+    // The capability turned off.
+    state.machineRuns.delete(projectId);
+    expect(await projectsOf()).toEqual([]);
+  });
 });

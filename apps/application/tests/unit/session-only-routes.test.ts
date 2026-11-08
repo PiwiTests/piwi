@@ -24,14 +24,6 @@ vi.mock('../../server/database', () => ({
         },
       }),
     }),
-    insert: () => ({
-      values: () => ({
-        returning: async () => {
-          state.acted.push('run-request');
-          return [{}];
-        },
-      }),
-    }),
   }),
 }));
 vi.mock('../../server/utils/auth', async () => ({
@@ -85,20 +77,17 @@ vi.mock('../../server/utils/project-access', async (original) => ({
   resolveRunProjectId: async () => 1,
 }));
 vi.mock('../../server/utils/run-requests', () => ({
-  countWaitingRequests: async () => 0,
-  MAX_WAITING_REQUESTS: 5,
   newRunRequestId: () => '0123456789abcdef0123456789abcdef',
   requireMachineRunsOn: async () => {},
   requireSignInForRunRequests: () => {},
-  resolveRequestTests: async () => ({
-    ok: true,
-    projectId: 1,
-    tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 12, projectName: null }],
-    skipped: 0,
-    source: { runId: 1 },
-    projects: [],
-  }),
   runRequestView: async () => ({}),
+}));
+vi.mock('#shared/handlers/run-requests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#shared/handlers/run-requests')>()),
+  createRunRequest: async () => {
+    state.acted.push('run-request');
+    return { ok: true, row: { id: '0123456789abcdef0123456789abcdef' }, skipped: 0 };
+  },
 }));
 vi.mock('../../server/utils/public-base-url', () => ({ publicBaseUrl: () => 'http://localhost' }));
 vi.mock('../../server/utils/profile-picture', () => ({

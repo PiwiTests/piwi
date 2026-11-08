@@ -16,6 +16,9 @@ import { deleteAssistantConversationsOf } from './assistant';
 import { deleteAssistantNudgeDismissalsOf } from './assistant-nudges';
 import { deleteProjectStarsOf } from './project-stars';
 import type { DrizzleDB } from './db';
+import { isOptInCapabilityOn } from './capabilities';
+import { getUserAccess } from './role-bindings';
+import { can } from '#shared/permissions';
 
 export async function listUsers(db: DrizzleDB) {
   const allUsers = await db
@@ -148,15 +151,39 @@ export async function listConnectedApps(
       platform: runTargets.platform,
       version: runTargets.version,
       lastSeenAt: runTargets.lastSeenAt,
+      projectIds: runTargets.projectIds,
     })
     .from(apiKeys)
     .leftJoin(runTargets, eq(runTargets.apiKeyId, apiKeys.id))
     .where(and(eq(apiKeys.userId, userId), isNotNull(apiKeys.clientKind)))
     .orderBy(desc(apiKeys.createdAt));
-  return rows.map(({ targetId, platform, version, lastSeenAt, ...app }) => ({
+  // A target's projects are the ones it may still receive on: `run:receive` there, and the capability on.
+  const receivable = new Map<number, boolean>();
+  if (rows.some((row) => Array.isArray(row.projectIds) && row.projectIds.length > 0)) {
+    const [owner] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId));
+    const access = owner ? await getUserAccess(db, owner) : null;
+    const ids = new Set(rows.flatMap((row) => (Array.isArray(row.projectIds) ? (row.projectIds as number[]) : [])));
+    for (const id of ids) {
+      receivable.set(
+        id,
+        !!access && can(access, 'run:receive', id) && (await isOptInCapabilityOn(db, id, 'machine-runs')),
+      );
+    }
+  }
+  return rows.map(({ targetId, platform, version, lastSeenAt, projectIds, ...app }) => ({
     ...app,
     kind: app.kind as ConnectedApp['kind'],
-    target: targetId === null ? null : { platform, version, lastSeenAt, online: isOnline(targetId, lastSeenAt) },
+    target:
+      targetId === null
+        ? null
+        : {
+            id: targetId,
+            platform,
+            version,
+            projectIds: Array.isArray(projectIds) ? (projectIds as number[]).filter((id) => receivable.get(id)) : [],
+            lastSeenAt,
+            online: isOnline(targetId, lastSeenAt),
+          },
   }));
 }
 
