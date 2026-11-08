@@ -82,6 +82,7 @@ import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
 import { MAX_LIVE_MASKS, MAX_LIVE_MASK_LENGTH, parseLiveMasks } from '@piwitests/core/live-view';
 import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
+import { parseTagKeyPatterns, resolveTagKeyPatterns } from '../integrations/tag-keys';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -495,6 +496,7 @@ export async function getProject(
     effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
     hasCiServerToken: !!project.ciServerToken,
+    tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
@@ -585,6 +587,14 @@ export const INVALID_LIVE_VIEW_MASKS = `liveViewMasks must be a list of at most 
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
 
+/** The error `updateProject` throws for tag key patterns `parseTagKeyPatterns` refuses; the message names the field. */
+export class InvalidTagKeysError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidTagKeysError';
+  }
+}
+
 /**
  * The status filter `updateProject` stores: null for none, and for a filter
  * every non-lab run passes (every branch, every environment, partial runs too).
@@ -634,6 +644,8 @@ export async function updateProject(
     coverageAreas?: unknown;
     /** The runs that set the project's status (`ProjectRunScope`); null for every run. */
     statusFilter?: unknown;
+    /** The patterns that read the issue key and the test case key out of a test's tags (`TagKeyPatterns`); null turns both off. */
+    tagKeys?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -662,6 +674,7 @@ export async function updateProject(
     coverageScope,
     coverageAreas,
     statusFilter,
+    tagKeys,
     tagIds: dataTagIds,
   } = data;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
@@ -684,6 +697,12 @@ export async function updateProject(
   const areasChanged =
     storedAreas !== undefined &&
     JSON.stringify(storedAreas) !== JSON.stringify(projectResults[0].coverageAreas ?? null);
+  let storedTagKeys: ReturnType<typeof resolveTagKeyPatterns> | null | undefined;
+  if (tagKeys !== undefined) {
+    const parsed = parseTagKeyPatterns(tagKeys);
+    if (!parsed.ok) throw new InvalidTagKeysError(parsed.message);
+    storedTagKeys = parsed.tagKeys;
+  }
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
@@ -710,6 +729,7 @@ export async function updateProject(
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
+        tagKeys: storedTagKeys,
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),

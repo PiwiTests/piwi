@@ -556,6 +556,20 @@ export const HELP_TOPICS = {
     doc: 'features/ci-rerun',
     envVars: ['PIWI_CI_SERVER_URL', 'PIWI_CI_SERVER_USER', 'PIWI_CI_SERVER_TOKEN', 'PIWI_CI_SERVER_HOSTS'],
   },
+  'project.tag-keys': {
+    title: 'Keys in test tags',
+    text: [
+      'Two patterns that read a key out of a test’s tags, so the issue tracker and the test management integration can tell the tags apart.',
+      '',
+      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`.',
+      '- **Test case key** — a tag naming the test case a test covers, such as `SHOP-T123`.',
+      '',
+      'Each is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor it with `^` and `$` (`^SHOP-T[0-9]+$`) and use letters, digits, character classes and quantifiers only: no groups or `|`. A pattern that breaks the rule, matches an empty tag, or does not compile is refused. Leave a field empty to turn it off; both are off by default.',
+      '',
+      'When both are on, the tags of the last complete run (the whole suite, finished) that both patterns match are listed with a test that carries each. Such a tag would be read as an issue and as a test case.',
+    ].join('\n'),
+    doc: 'reference/test-metadata#keys-in-test-tags',
+  },
   'project.local-folder': {
     title: 'Linked local folder',
     text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. Its default run options are what each Re-run button of the project starts from. Both stay on this machine, never on the server.',

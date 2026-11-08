@@ -611,6 +611,18 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=issue-tracker', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-tag-keys',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'tag-keys' } }],
+    describes:
+      'The Keys in test tags section: the patterns that read an issue key and a test case key out of a test’s tags, and the tags both match.',
+    requires: { permission: 'project:manage' },
+    help: 'project.tag-keys',
+    doc: 'reference/test-metadata#keys-in-test-tags',
+    sample: { route: '/projects/1?tab=settings&section=tag-keys', persona: 1, expect: PROJECT_1 },
+  },
+  {
     id: 'issue-tracker-required-fields',
     kind: 'block',
     pages: ['/projects/[id]'],

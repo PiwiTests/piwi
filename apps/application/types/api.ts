@@ -466,6 +466,8 @@ export interface ProjectWithTestRuns {
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
+  /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
+  tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -506,6 +508,8 @@ export interface ProjectDetails {
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
+  /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
+  tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
