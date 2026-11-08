@@ -141,6 +141,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
 - `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
+- `src/run-target.ts`, `src/run-target-view.ts`: a run target of one team instance (**Run on my machine**) as a host
+  serves it, the desktop app's server on its `/api/desktop/run-target` routes, and what its window shows.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
 - `build.mjs`: writes the five files of `dist/`.
