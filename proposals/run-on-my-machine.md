@@ -53,29 +53,31 @@ my machine** on a run (its failed tests, or all), an execution and a test, with 
 checks live in `@piwitests/editor` (`request-host`, `request-run`), for Piwi Runner (PR 4). **Run** starts only the
 command and the folder the window showed, once the request has been shown unchanged for a second, and the run's workers
 reach no other server. Left for later: `piwi://connect` on the desktop app (the address is typed in the app; Piwi Runner
-answers `piwi-runner://connect` by coming to the front), the browsers check, a request from the run page's selection of tests, a
-request for one spec file (D3's `{ runId, filePath }`, which the instance takes and no page offers yet), **Create issue**
-on a requested run's progress (D17), and the target recorded on the run (D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
+answers `piwi-runner://connect` by coming to the front), the browsers check, a request from the run page's selection of
+tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance takes and no page offers yet),
+**Create issue** on a requested run's progress (D17), and the target recorded on the run (D14's
+`piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
 three after its spike (posted on #1163): 4a, the run target outside the dashboard's server, 4b, Piwi Runner, 4c, its
 releases. PR 4a is built: the desktop app's side of a request (the host it runs, the requests it holds, the device
 flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
 its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
 does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
 browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the answer to
-the readiness challenge) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
-handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
-the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. PR 4b is built: Piwi Runner (`apps/runner`), the same
+the readiness challenge) that the app's guard calls; the app's routes are one-line adapters, and one contract test
+drives the handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature
+page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. PR 4b is built: Piwi Runner (`apps/runner`),
+the same
 Rust crate built with the `runner` feature and `runner.conf.json` (its own name, identifier, one window, no file
 associations and its own keychain service), with the desktop's Node sidecar running a small host
 (`apps/runner/server`) that serves the run-target handlers of PR 4a, the window's files and the readiness probe. The
 window is a single-page Nuxt app that extends `packages/run-ui`, the layer the dashboard's desktop pages now share (the
 connection card, the confirmation of a request, the stream of the host's events); it shows the runs the shell started,
-with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of its own
-in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or watched
-live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Signing, installers and updates are
-PR 4c. The instance's
-side of PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
-left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
+with their output and **Stop**. The shell answers `piwi-runner://connect` by coming to the front. Runner has no hub of
+its own in this PR: a run it starts reports to the instance and shows in the window, but cannot be paused, stepped or
+watched live. The run-host wiring that gives it those (D7) is the next PR, before 4c. Signing, installers and updates
+are PR 4c. The instance's side of PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner
+take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
+confirmed in the target (D2); a request carries resolved tests and is
 the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time
 (D9); a requested run shows to its requester alone (D14); the administrator's switch is off by default in the first
 release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains
@@ -117,39 +119,39 @@ Its contracts are entry D64 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
 ## Terms
 
-| Term              | Meaning in this document                                                                                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **team instance** | A Piwi server that several people and CI report to.                                                                                                                                |
-| **run request**   | What a page asks for: a kind, a project, the resolved tests, and options from a closed list. Stored on the instance with an id, claimed once, expired unclaimed after two minutes. |
-| **target**        | A program on the person's machine that takes run requests: the desktop app, or Piwi Runner.                                                                                        |
-| **Piwi Runner**   | The standalone target: a small app with no dashboard and no database, that takes run requests, checks the folder, asks, runs Playwright and reports.                               |
-| **request host**  | The code both targets share to take a request: check the tests against the folder, show the confirmation, build the command, run it, report its state.                             |
-| **target key**    | The credential a target holds on the team instance: an API key that holds one permission, `run:receive`.                                                                           |
-| **request token** | A credential the instance gives a target for one accepted request: it uploads one run, with the request's id as its ref, to one project.                                           |
-| **hub**           | The local process that steers a run's workers over the run channel (`@piwitests/core/run-hub`): the desktop app's server, or Piwi Runner's request host.                           |
+| Term | Meaning in this document |
+| --- | --- |
+| **team instance** | A Piwi server that several people and CI report to. |
+| **run request** | What a page asks for: a kind, a project, the resolved tests, and options from a closed list. Stored on the instance with an id, claimed once, expired unclaimed after two minutes. |
+| **target** | A program on the person's machine that takes run requests: the desktop app, or Piwi Runner. |
+| **Piwi Runner** | The standalone target: a small app with no dashboard and no database, that takes run requests, checks the folder, asks, runs Playwright and reports. |
+| **request host** | The code both targets share to take a request: check the tests against the folder, show the confirmation, build the command, run it, report its state. |
+| **target key** | The credential a target holds on the team instance: an API key that holds one permission, `run:receive`. |
+| **request token** | A credential the instance gives a target for one accepted request: it uploads one run, with the request's id as its ref, to one project. |
+| **hub** | The local process that steers a run's workers over the run channel (`@piwitests/core/run-hub`): the desktop app's server, or Piwi Runner's request host. |
 
 The word **agent** is not used for Piwi Runner: in Piwi it names the coding agents (Claude Code, Copilot), in the MCP
 tools, the `agent-diagnoses` capability and "Paused by the agent".
 
 ## What exists
 
-| Piece                      | Where                                                                                                           | What this plan takes                                                                                                                                                                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run locally                | `DesktopRunLocallyButton.vue`, `useDesktopLocalRuns.ts`, `runner.rs`                                            | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch.                  |
-| Copy retry command         | `RunHeader.vue`, `useRunRetryCommand.ts`, `TestCasesList.vue`, `test-run-cases/[id].vue`, `retry-command.ts`    | A copyable `npx playwright test` command for a run's failures, an execution or a selection, by line or by title. Missing: the run options (headed, trace, repeat).                                                                                                   |
-| Test selection by title    | `buildBisectArgs` in `local-run-args.ts`                                                                        | The files and an escaped `--grep` of the titles, so a test whose line moved still matches.                                                                                                                                                                           |
-| Folder links               | `projectLinks` in the shell's `settings.json`                                                                   | Links stay on the machine. They are keyed by the bundled server's project ids, so they need the instance in their key.                                                                                                                                               |
-| `piwi://`                  | `link_page` in `lib.rs`, the rule in `apps/desktop/AGENTS.md`                                                   | "A `piwi://` link only shows a page." This plan keeps the rule and adds one route that only asks.                                                                                                                                                                    |
-| Device flow                | `server/utils/extension-connect.ts`, `app/pages/extension/connect.vue`, `extension_device_codes`                | A code like `ABCD-EFGH`, valid 10 minutes, single use, named after the client and the device, confirmed on both sides (RFC 8628). Used by Piwi Picker, VS Code and JetBrains. `clientKind` (`picker` or `editor`) is read from the client name's prefix, not stored. |
-| API keys                   | `api_keys`, `ApiKeysManager.vue` in Settings → Account                                                          | No scope: a key carries its owner's access (`adr/extension-connect.md`). Remote browsers propose keys that hold one permission (`grid:connect`, entry D61 of the register), not built.                                                                               |
-| Desktop jobs               | `DesktopJobRequest` in `@piwitests/core/desktop-job`, `shared/desktop-repro.ts`, `DesktopReproRequestModal.vue` | The rule "names commits, tests and lab conditions, never code or command-line flags"; a spec path relative to the config, with no leading `-`, `/` or drive and no `..` (D36); a window that runs nothing before a click.                                            |
-| Event stream               | `GET /api/stream` (SSE)                                                                                         | Authenticated by session or key. The bus is in memory, so an instance runs one replica ([deployment](../apps/docs/operate/deployment.md)).                                                                                                                           |
-| Following a run by its ref | `GET /api/projects/:id/latest-run?origin&ref`, `run-started` on `/api/stream`                                   | How the editor follows its own runs; the page follows a requested run the same way.                                                                                                                                                                                  |
-| Run host                   | `@piwitests/editor/run-host`                                                                                    | The hub, the run sessions, the stop actions and the agents' tools, already shared by the editor service and the desktop app's server.                                                                                                                                |
-| Run origins                | `RUN_ORIGIN_KINDS` (`packages/core/src/wire.ts`), `RUN_USES` (`shared/run-eligibility.ts`)                      | A run from `local` or `desktop` that runs the whole suite sends notifications, pull-request feedback and tracker writes (`completeOnlyFor`), and every local origin counts in flakiness and analytics.                                                               |
-| Create issue               | `CreateIssueModal.vue`, `POST /api/integrations/issues`, the integration outbox                                 | The issue type is already chosen in the modal, from Jira. A run is not an entity it files (`IssueEntityType`), an execution files for its cluster only, and the body has no free text.                                                                               |
-| Capabilities               | `shared/capabilities.ts`, Settings → Capabilities                                                               | An instance or a project declines a feature. Enforced on the server for the MCP tools only.                                                                                                                                                                          |
-| Permissions                | `shared/permissions.ts`                                                                                         | `issue:create` from Contributor; `run:submit` for Maintainer, Project admin and Uploader only.                                                                                                                                                                       |
+| Piece | Where | What this plan takes |
+| --- | --- | --- |
+| Run locally | `DesktopRunLocallyButton.vue`, `useDesktopLocalRuns.ts`, `runner.rs` | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch. |
+| Copy retry command | `RunHeader.vue`, `useRunRetryCommand.ts`, `TestCasesList.vue`, `test-run-cases/[id].vue`, `retry-command.ts` | A copyable `npx playwright test` command for a run's failures, an execution or a selection, by line or by title. Missing: the run options (headed, trace, repeat). |
+| Test selection by title | `buildBisectArgs` in `local-run-args.ts` | The files and an escaped `--grep` of the titles, so a test whose line moved still matches. |
+| Folder links | `projectLinks` in the shell's `settings.json` | Links stay on the machine. They are keyed by the bundled server's project ids, so they need the instance in their key. |
+| `piwi://` | `link_page` in `lib.rs`, the rule in `apps/desktop/AGENTS.md` | "A `piwi://` link only shows a page." This plan keeps the rule and adds one route that only asks. |
+| Device flow | `server/utils/extension-connect.ts`, `app/pages/extension/connect.vue`, `extension_device_codes` | A code like `ABCD-EFGH`, valid 10 minutes, single use, named after the client and the device, confirmed on both sides (RFC 8628). Used by Piwi Picker, VS Code and JetBrains. `clientKind` (`picker` or `editor`) is read from the client name's prefix, not stored. |
+| API keys | `api_keys`, `ApiKeysManager.vue` in Settings → Account | No scope: a key carries its owner's access (`adr/extension-connect.md`). Remote browsers propose keys that hold one permission (`grid:connect`, entry D61 of the register), not built. |
+| Desktop jobs | `DesktopJobRequest` in `@piwitests/core/desktop-job`, `shared/desktop-repro.ts`, `DesktopReproRequestModal.vue` | The rule "names commits, tests and lab conditions, never code or command-line flags"; a spec path relative to the config, with no leading `-`, `/` or drive and no `..` (D36); a window that runs nothing before a click. |
+| Event stream | `GET /api/stream` (SSE) | Authenticated by session or key. The bus is in memory, so an instance runs one replica ([deployment](../apps/docs/operate/deployment.md)). |
+| Following a run by its ref | `GET /api/projects/:id/latest-run?origin&ref`, `run-started` on `/api/stream` | How the editor follows its own runs; the page follows a requested run the same way. |
+| Run host | `@piwitests/editor/run-host` | The hub, the run sessions, the stop actions and the agents' tools, already shared by the editor service and the desktop app's server. |
+| Run origins | `RUN_ORIGIN_KINDS` (`packages/core/src/wire.ts`), `RUN_USES` (`shared/run-eligibility.ts`) | A run from `local` or `desktop` that runs the whole suite sends notifications, pull-request feedback and tracker writes (`completeOnlyFor`), and every local origin counts in flakiness and analytics. |
+| Create issue | `CreateIssueModal.vue`, `POST /api/integrations/issues`, the integration outbox | The issue type is already chosen in the modal, from Jira. A run is not an entity it files (`IssueEntityType`), an execution files for its cluster only, and the body has no free text. |
+| Capabilities | `shared/capabilities.ts`, Settings → Capabilities | An instance or a project declines a feature. Enforced on the server for the MCP tools only. |
+| Permissions | `shared/permissions.ts` | `issue:create` from Contributor; `run:submit` for Maintainer, Project admin and Uploader only. |
 
 ## The flow
 
@@ -183,11 +185,11 @@ Why:
 
 Alternatives:
 
-| Route                                                        | Why not as the main route                                                                                                                                                                                                   |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A `piwi://run?…` link per request (#1163 option 1)           | Any page can open the link, so it must carry a secret or the app must hold a key anyway. The browser asks for each click (Safari every time), the page cannot tell whether the link was taken, and Stop needs another link. |
-| Piwi Picker carries the request (runs-from-the-dashboard D2) | It checks that a person clicked (`isTrusted`), which this route cannot. But it needs the extension in the browser, and a QA engineer may not have it.                                                                       |
-| The page calls the target on `127.0.0.1` (#1163 option 3)    | Rejected by #1163 and by [live-runs.md](live-runs.md) for the same reasons: Chrome's local network access prompt, mixed content in Safari, and any page could try the port.                                                 |
+| Route | Why not as the main route |
+| --- | --- |
+| A `piwi://run?…` link per request (#1163 option 1) | Any page can open the link, so it must carry a secret or the app must hold a key anyway. The browser asks for each click (Safari every time), the page cannot tell whether the link was taken, and Stop needs another link. |
+| Piwi Picker carries the request (runs-from-the-dashboard D2) | It checks that a person clicked (`isTrusted`), which this route cannot. But it needs the extension in the browser, and a QA engineer may not have it. |
+| The page calls the target on `127.0.0.1` (#1163 option 3) | Rejected by #1163 and by [live-runs.md](live-runs.md) for the same reasons: Chrome's local network access prompt, mixed content in Safari, and any page could try the port. |
 
 No **Links only** mode: links never carry runs.
 
@@ -275,7 +277,7 @@ requests (D5), and the paths follow a rule repro requests already follow.
 - **Connecting a target uses the device flow that exists.** The target shows a code and opens the instance's connect
   page; the person signs in, checks that both show the same code, and allows. `clientKind` becomes a stored column with
   `desktop` and `runner` added, and the page gains their words ("Connect Piwi Runner", "My Piwi Runner shows this same
-  code"). `piwi://connect?instance=<origin>` from the instance's page (`piwi-runner://connect?instance=<origin>` for Piwi Runner) starts the same flow in the app, which first asks
+  code"). `piwi://connect?instance=<origin>` from the instance's page starts the same flow in the app, which first asks
   "Connect to piwi.acme.com?" and connects nothing from the link alone. Where the link is blocked, or the browser is on
   another machine, the person types the instance's address in the app.
 - **The key it gets is a target key**: it holds `run:receive` alone, which opens the request stream of its owner, reads
@@ -345,8 +347,9 @@ only: it does not become the fallback hub of terminal runs, which stays the desk
 
 - **The same Rust crate as the desktop app**, built with a cargo feature (`runner`) and its own Tauri configuration
   (`runner.conf.json`): product name "Piwi Runner", its own identifier, no database, no file associations, the
-  `piwi-runner` scheme (the desktop app keeps `piwi`, so a link reaches the one app that reads it), and its own
-  keychain service so neither app reads the other's key. Built in PR 4b.
+  `piwi-runner` scheme (the desktop app keeps `piwi`, so a link reaches the one app that reads it), the binary
+  `piwi-runner` with none of the desktop app's installer hooks, and its own keychain service so neither app reads the
+  other's key. Built in PR 4b.
 - **Its window is a small app of its own on a shared layer**: a single-page Nuxt app (`apps/runner`) that extends
   `packages/run-ui`, which holds the confirmation, the connection card and the host's event stream the dashboard's
   desktop pages use, so both show the same components with the same words. Built in PR 4b (open question 1).
@@ -355,8 +358,7 @@ only: it does not become the fallback hub of terminal runs, which stays the desk
   host script (`resources/runner-host`).
 - **Updates**: signed, from the same release, as a separate artifact on each platform (PR 4c).
 - **Before the installers (PR 4c)**: on Linux, where the package puts the bundled Node and how the host script finds
-  it, checked on the `.deb`, the `.rpm` and the AppImage. Piwi Runner's binary is `piwi-runner`, and its Windows
-  installer carries none of the desktop app's installer hooks.
+  it, checked on the `.deb`, the `.rpm` and the AppImage; and Runner's own installer art.
 
 Alternatives:
 
@@ -381,14 +383,14 @@ confirmation itself (**Choose the folder**), and the folder is checked before **
 **Recommended.** Shown as rows in the confirmation, each with its fix where one exists; the request host runs them, so
 both targets check the same things:
 
-| Check                                             | Fails                                                                                                               | Warns                                                                                          |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| The folder is linked and exists                   | **Choose the folder**                                                                                               |                                                                                                |
-| The specs are in it                               | which are missing                                                                                                   |                                                                                                |
-| Its Playwright is installed                       | "Run `npm install` in the folder"                                                                                   |                                                                                                |
-| The browsers of the chosen projects are installed | **Install browsers** (the target runs `playwright install <browser>` with the folder's Playwright, after the click) |                                                                                                |
-| The branch and commit                             |                                                                                                                     | "Your folder is on `feat/cart` at `a1b2c3d`; the run you came from was on `main` at `9f8e7d6`" |
-| Uncommitted changes                               |                                                                                                                     | "Your folder has uncommitted changes"                                                          |
+| Check | Fails | Warns |
+| --- | --- | --- |
+| The folder is linked and exists | **Choose the folder** | |
+| The specs are in it | which are missing | |
+| Its Playwright is installed | "Run `npm install` in the folder" | |
+| The browsers of the chosen projects are installed | **Install browsers** (the target runs `playwright install <browser>` with the folder's Playwright, after the click) | |
+| The branch and commit | | "Your folder is on `feat/cart` at `a1b2c3d`; the run you came from was on `main` at `9f8e7d6`" |
+| Uncommitted changes | | "Your folder has uncommitted changes" |
 
 **When the branch or commit differs, the target selects the tests by title**, as `buildBisectArgs` does (the files and
 an escaped `--grep` of the titles), since a line may have moved; the confirmation shows the command it will run. On the
@@ -508,16 +510,16 @@ machine** menu among the other ways.
 
 **Recommended.** The same words on every surface, held by a drift test as live-runs D6 does for the live words:
 
-| Concept                | Word                                                                | Not                                                                          |
-| ---------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| The page's action      | **Run on my machine**                                               | Run locally (stays the desktop window's own button), Reproduce on my machine |
-| The standalone app     | **Piwi Runner**                                                     | agent, local runner                                                          |
-| The confirmation       | **Run on this machine?** with **Run** and **Not now**               | Allow, Accept                                                                |
-| Connecting             | **Connect** a target to an instance; the list is **Connected apps** | pair, link (a folder is linked, an app is connected)                         |
-| Ending a run           | **Stop**                                                            | Cancel, Kill                                                                 |
-| Starting it again      | **Run again**                                                       | Re-run (kept for **Re-run in CI**)                                           |
-| Filing                 | **Create issue**                                                    | Raise a ticket, File a ticket                                                |
-| Showing it to the team | **Share live**, then **Watch**                                      |                                                                              |
+| Concept | Word | Not |
+| --- | --- | --- |
+| The page's action | **Run on my machine** | Run locally (stays the desktop window's own button), Reproduce on my machine |
+| The standalone app | **Piwi Runner** | agent, local runner |
+| The confirmation | **Run on this machine?** with **Run** and **Not now** | Allow, Accept |
+| Connecting | **Connect** a target to an instance; the list is **Connected apps** | pair, link (a folder is linked, an app is connected) |
+| Ending a run | **Stop** | Cancel, Kill |
+| Starting it again | **Run again** | Re-run (kept for **Re-run in CI**) |
+| Filing | **Create issue** | Raise a ticket, File a ticket |
+| Showing it to the team | **Share live**, then **Watch** | |
 
 ## The surfaces
 
@@ -538,7 +540,7 @@ Wireframes; words as in D19.
 ```
 
 With no target connected, the button reads **Set up Run on my machine**: what it does, the download of the desktop app
-(and of Piwi Runner once it ships), and **Connect** (`piwi://connect?instance=…`, `piwi-runner://…` for Piwi Runner). With the capability off, the button
+(and of Piwi Runner once it ships), and **Connect** (`piwi://connect?instance=…`). With the capability off, the button
 is not shown.
 
 ### 2. The confirmation in the target
@@ -636,17 +638,17 @@ D5 and D6): `waiting` (stored, not claimed), `claimed` (shown in the target, not
 
 ## The instance's routes
 
-| Route                                       | Who                                    | What                                                                                                                                                        |
-| ------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/run-requests`                    | a signed-in session with `run:request` | Creates a request for one of the person's targets from an execution, a run's failed or all tests, or a spec file of a run; the instance resolves the tests. |
-| `GET /api/run-requests/:id`                 | its requester                          | The request's state.                                                                                                                                        |
-| `POST /api/run-requests/:id/stop`           | its requester                          | Sends a stop to the target that runs it.                                                                                                                    |
-| `GET /api/run-targets/stream`               | a target key                           | New requests and stops, with a heartbeat.                                                                                                                   |
-| `GET /api/run-targets/requests`             | a target key                           | The requests still `waiting`, for a reconnect or polling.                                                                                                   |
-| `POST /api/run-targets/requests/:id/claim`  | a target key                           | `waiting` to `claimed`; 409 on a second claim.                                                                                                              |
-| `POST /api/run-targets/requests/:id/answer` | a target key                           | **Run** (answers the request token), **Not now**, or a failed check.                                                                                        |
-| `POST /api/run-targets/requests/:id/state`  | a target key                           | `running`, `stopping`, `ended`, and a stop obeyed.                                                                                                          |
-| `PUT /api/run-targets/self`                 | a target key                           | Its platform, version and the projects it has a folder for.                                                                                                 |
+| Route | Who | What |
+| --- | --- | --- |
+| `POST /api/run-requests` | a signed-in session with `run:request` | Creates a request for one of the person's targets from an execution, a run's failed or all tests, or a spec file of a run; the instance resolves the tests. |
+| `GET /api/run-requests/:id` | its requester | The request's state. |
+| `POST /api/run-requests/:id/stop` | its requester | Sends a stop to the target that runs it. |
+| `GET /api/run-targets/stream` | a target key | New requests and stops, with a heartbeat. |
+| `GET /api/run-targets/requests` | a target key | The requests still `waiting`, for a reconnect or polling. |
+| `POST /api/run-targets/requests/:id/claim` | a target key | `waiting` to `claimed`; 409 on a second claim. |
+| `POST /api/run-targets/requests/:id/answer` | a target key | **Run** (answers the request token), **Not now**, or a failed check. |
+| `POST /api/run-targets/requests/:id/state` | a target key | `running`, `stopping`, `ended`, and a stop obeyed. |
+| `PUT /api/run-targets/self` | a target key | Its platform, version and the projects it has a folder for. |
 
 Two tables, in both schemas with a migration each: `run_requests` (the request, its requester, its target, its state,
 its claim and expiry, the run once it begins) and `run_targets` (the key, the kind, the device name, the platform, the
@@ -669,38 +671,38 @@ The rules every tool follows:
    (D14).
 7. **The administrator's switch is off by default and enforced on the server** (D15).
 
-| Threat                                                     | What happens                                                                                                                                                |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Threat | What happens |
+| --- | --- |
 | A script injected in an instance page, or a stolen session | It can create requests for that person. Each is shown in the target and runs only on **Run**; the tests are the person's own checkout, the options bounded. |
-| A malicious `piwi://` link                                 | It can open a page or ask to connect to an instance; the connection needs the same code on both sides and a signed-in person who allows it.                 |
-| A stolen target key                                        | It receives that person's requests until revoked in Connected apps. It cannot read the project's data or upload a run.                                      |
-| A request token that leaks                                 | It uploads one run with one ref to one project, for the life of that run.                                                                                   |
-| A Playwright config that names another server              | The reporter sends a requested run only to the token's instance (D5).                                                                                       |
-| A request whose spec path climbs out of the folder         | The parser refuses it, and the target checks each path against its folder before showing the confirmation (D3).                                             |
-| Another person's account                                   | Requests reach only the targets of the person who created them. Starting a run on someone else's machine is not possible.                                   |
-| Another user of the machine                                | The key is in the person's keychain; the request token's file is readable by the person only.                                                               |
+| A malicious `piwi://` link | It can open a page or ask to connect to an instance; the connection needs the same code on both sides and a signed-in person who allows it. |
+| A stolen target key | It receives that person's requests until revoked in Connected apps. It cannot read the project's data or upload a run. |
+| A request token that leaks | It uploads one run with one ref to one project, for the life of that run. |
+| A Playwright config that names another server | The reporter sends a requested run only to the token's instance (D5). |
+| A request whose spec path climbs out of the folder | The parser refuses it, and the target checks each path against its folder before showing the confirmation (D3). |
+| Another person's account | Requests reach only the targets of the person who created them. Starting a run on someone else's machine is not possible. |
+| Another user of the machine | The key is in the person's keychain; the request token's file is readable by the person only. |
 
 What leaves the machine: what the reporter already sends for a run, and which projects have a folder. Never a
 folder's path.
 
 ## Compared with #1163 and local-runner.md
 
-| Asked                                                                                                                                  | This plan                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Run on my machine from a test, a spec file or a run                                                                                    | Kept, plus a saved selection (D3)                                                                                            |
-| The runner checks the folder, the spec, Playwright, the browsers and the branch                                                        | Kept, as one request host for both targets, with selection by title when the branch differs (D10)                            |
-| Options: headed by default, headless, trace, capped repeat, workers, Playwright project; defaults per project on the machine           | Kept (D3, surface 4)                                                                                                         |
-| A runner mode of the desktop app, or a separate app (local-runner.md prefers the separate app)                                         | Both, the desktop app first (D7, D8)                                                                                         |
-| Option 2 (paired runners through the instance) with option 1 (links) as fallback; an Off / Links only / Paired setting, off by default | Option 2 alone; links only open, start or connect; the setting is a capability, off by default (D1, D15)                     |
-| Pairing with a single-use code that names the device; a typed code as fallback                                                         | The existing device flow, with the instance's address typed in the app as fallback (D5)                                      |
-| A scoped runner key in the OS keychain that also uploads; Profile → Connected runners                                                  | A target key that only receives, and a request token per run; Settings → Account → Connected apps for every client (D5, D16) |
-| A claim that answers 409 the second time; one run per request                                                                          | Kept (D4)                                                                                                                    |
-| SSE with a polling fallback                                                                                                            | Kept (D11)                                                                                                                   |
-| Run without asking, per project on the machine                                                                                         | Not in the first version (D2)                                                                                                |
-| A progress panel with Stop, Run again and Watch                                                                                        | Kept; Watch needs **Share live** in the confirmation (D12, D13)                                                              |
-| Raise a ticket with a type and a comment, filed once                                                                                   | **Create issue** on runs and tests with a comment, filed once per submission, several per run (D17)                          |
-| Local runs out of analytics by default                                                                                                 | Requested runs out of every team measure, by a new origin, and shown to their requester alone (D14)                          |
-| The request schema in the app's `shared/`                                                                                              | In `@piwitests/core/run-request`, as the same object as the CI dispatch (D3)                                                 |
+| Asked | This plan |
+| --- | --- |
+| Run on my machine from a test, a spec file or a run | Kept, plus a saved selection (D3) |
+| The runner checks the folder, the spec, Playwright, the browsers and the branch | Kept, as one request host for both targets, with selection by title when the branch differs (D10) |
+| Options: headed by default, headless, trace, capped repeat, workers, Playwright project; defaults per project on the machine | Kept (D3, surface 4) |
+| A runner mode of the desktop app, or a separate app (local-runner.md prefers the separate app) | Both, the desktop app first (D7, D8) |
+| Option 2 (paired runners through the instance) with option 1 (links) as fallback; an Off / Links only / Paired setting, off by default | Option 2 alone; links only open, start or connect; the setting is a capability, off by default (D1, D15) |
+| Pairing with a single-use code that names the device; a typed code as fallback | The existing device flow, with the instance's address typed in the app as fallback (D5) |
+| A scoped runner key in the OS keychain that also uploads; Profile → Connected runners | A target key that only receives, and a request token per run; Settings → Account → Connected apps for every client (D5, D16) |
+| A claim that answers 409 the second time; one run per request | Kept (D4) |
+| SSE with a polling fallback | Kept (D11) |
+| Run without asking, per project on the machine | Not in the first version (D2) |
+| A progress panel with Stop, Run again and Watch | Kept; Watch needs **Share live** in the confirmation (D12, D13) |
+| Raise a ticket with a type and a comment, filed once | **Create issue** on runs and tests with a comment, filed once per submission, several per run (D17) |
+| Local runs out of analytics by default | Requested runs out of every team measure, by a new origin, and shown to their requester alone (D14) |
+| The request schema in the app's `shared/` | In `@piwitests/core/run-request`, as the same object as the CI dispatch (D3) |
 
 ## What changes in other records
 
@@ -728,13 +730,13 @@ Each PR is usable on its own, and ships its demo (`app/demo/AGENTS.md`): the han
 the simulator, and `npm run app:seed:demo`. From PR 2 the demo has a simulated connected target whose requests the
 simulator answers, so **Run on my machine**, the confirmation's outcome and the progress work there.
 
-| PR  | Content                                                                                                                                                                                                                                                                                                                                          | Size |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- |
-| 1   | **Create issue on runs and tests, with a comment** (D17), and the run options on **Copy retry command** (D18)                                                                                                                                                                                                                                    | M    |
-| 2   | **The instance's side**: `run_requests` and `run_targets`, the routes, `@piwitests/core/run-request`, `run:request` and `run:receive`, keys that hold one permission, the stored `clientKind`, request tokens, the stream and its polling, the `request` origin with its rules and its visibility, the capability off by default, Connected apps | L    |
-| 3   | **The request host and the desktop app as a target**: the confirmation, the checks (browsers and branch for Run locally too, selection by title), folders per instance, `piwi://connect`, the device flow for `desktop`, the keychain, the reporter's override; on the page, the button, its menu and the progress                               | L    |
-| 4   | **Piwi Runner**, after the spike of D8: the run target outside the dashboard's server (4a), the `runner` build and its window (4b), the run-host wiring so a requested run can be paused, stepped and watched (its own PR, before 4c), then signed releases, installers and updates (4c)                                                         | L    |
-| 5   | **Share live from the confirmation** (D13), with live-runs P9                                                                                                                                                                                                                                                                                    | S    |
+| PR | Content | Size |
+| --- | --- | --- |
+| 1 | **Create issue on runs and tests, with a comment** (D17), and the run options on **Copy retry command** (D18) | M |
+| 2 | **The instance's side**: `run_requests` and `run_targets`, the routes, `@piwitests/core/run-request`, `run:request` and `run:receive`, keys that hold one permission, the stored `clientKind`, request tokens, the stream and its polling, the `request` origin with its rules and its visibility, the capability off by default, Connected apps | L |
+| 3 | **The request host and the desktop app as a target**: the confirmation, the checks (browsers and branch for Run locally too, selection by title), folders per instance, `piwi://connect`, the device flow for `desktop`, the keychain, the reporter's override; on the page, the button, its menu and the progress | L |
+| 4 | **Piwi Runner**, after the spike of D8: the run target outside the dashboard's server (4a), the `runner` build and its window (4b), the run-host wiring so a requested run can be paused, stepped and watched (its own PR, before 4c), then signed releases, installers and updates (4c) | L |
+| 5 | **Share live from the confirmation** (D13), with live-runs P9 | S |
 
 Each PR updates the docs it changes: a feature page for Run on my machine (connect, link a folder, run, follow, stop,
 create an issue; what leaves the machine; the administrator's switch; one replica), the desktop app's page, a page for
@@ -752,8 +754,8 @@ Piwi Runner, the privacy page, the connect page and the issue tracker page. PR 2
 - Unit (reporter): a requested run is sent to the token's origin even when the config names another server.
 - Unit (outbox): a `create-issue` row reclaimed after its lease, with the marker and no issue key, never calls the
   tracker again.
-- Rust: `piwi://connect` brings the window forward and connects nothing without a confirmation; every other unknown path
-  still returns nothing.
+- Rust: `piwi-runner://connect` brings the window forward and connects nothing without a confirmation; every other
+  unknown path still returns nothing.
 - E2E: **Run on my machine** with a simulated target, from the request to the progress's end and **Run again**;
   **Revoke** closes the target's stream; **Create issue** on a run with a comment.
 
