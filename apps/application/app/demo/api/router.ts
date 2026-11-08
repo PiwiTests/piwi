@@ -70,6 +70,8 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
+import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
 import {
   apiCreateRunRequest,
   apiGetRunRequest,
@@ -191,6 +193,7 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidTagKeysError,
   updateProject,
   createProject,
   getProjectMenu,
@@ -990,6 +993,7 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
+        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -1210,6 +1214,22 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const days = Math.min(90, Math.max(1, parseInt(q?.get('days') || '30')));
       return getProjectAiStepCoverage(await getDemoDb(), +m[1]!, days);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/tag-key-overlaps$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const [project] = await db
+        .select({ tagKeys: projects.tagKeys })
+        .from(projects)
+        .where(eq(projects.id, +m[1]!))
+        .limit(1);
+      if (!project) throw demoHttpError(404, 'Project not found');
+      return lastCompleteRunTagOverlap(db, +m[1]!, resolveTagKeyPatterns(project.tagKeys));
     },
   },
   {

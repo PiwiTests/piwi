@@ -220,8 +220,10 @@ test.describe('checkout', { tag: '@SHOP-T200' }, () => {
 });
 ```
 
-- **Source**: the tags of each execution that match the binding's key pattern, by default `^<projectKey>-T[0-9]+$` (so
-  `SHOP-T123` matches and the story tag `SHOP-1234` does not). No reporter change and no new annotation.
+- **Source**: the tags of each execution that match the project's test case key pattern (`projects.tag_keys.testCase`).
+  While it is null, the binding's default `^<projectKey>-T[0-9]+$` applies (so `SHOP-T123` matches and the story tag
+  `SHOP-1234` does not); step 5 applies that default, the project settings of step 3 only store the pattern. No
+  reporter change and no new annotation.
 - **Optional second source**: `test_cases.external_id`, when the team already declares the key with `piwi:id` or the
   reporter's `externalId.pattern` and it matches the key pattern. Off by default: an external ID holds one value per
   test, and a project may use it for another tool.
@@ -231,10 +233,11 @@ test.describe('checkout', { tag: '@SHOP-T200' }, () => {
   (titles), the issue-key pattern of [#1153](https://github.com/PiwiTests/piwi/issues/1153) (tags naming the bug a
   failure is tracked in) and this key pattern (tags naming the case a test covers). The two tag patterns use one helper
   (`matchTagKeys(tags, pattern)` in `apps/application/shared/integrations/tag-keys.ts`; no reporter or extension code
-  reads these patterns, so it stays out of the MIT `@piwitests/core`) and are edited in one place, a
-  *Keys in test tags* section of the project's Integrations tab. The defaults do not collide (`SHOP-T123` fails
-  `^[A-Z][A-Z0-9]+-\d+$`); custom ones can, so the section warns when a tag of the last complete run matches both
-  patterns, naming the tag and a test that carries it.
+  reads these patterns, so it stays out of the MIT `@piwitests/core`) and are edited in one place, their own
+  *Keys in test tags* section of the project's Integrations tab. A pattern is anchored with `^` and `$` and built from
+  literals, escapes, character classes and quantifiers, with no groups or `|`, so matching a tag takes time linear in
+  its length. The defaults do not collide (`SHOP-T123` fails `^[A-Z][A-Z0-9]+-\d+$`); custom ones can, so the section
+  warns when a tag of the last complete run matches both patterns, naming the tag and a test that carries it.
 - **Mapping held in the tool instead.** Some teams record the automated test in each case (in the objective or a
   custom field). Piwi does not read that: the docs page shows a one-time script outline that turns such a mapping into
   tags, run once in the test repository.
@@ -434,12 +437,18 @@ project_test_management
   id, project_id (FK cascade, unique), connection_id (FK integration_connections, cascade),
   enabled bool, dry_run bool,
   provider_project_key text,
-  key_sources json         -- { tags: true, externalId: false, pattern: '^SHOP-T[0-9]+$' }
+  key_sources json         -- { tags: true, externalId: false }
   run_scope json           -- TrackerRunScope: branches, environments
   run_policy json          -- { mode: 'per-run' | 'reuse', nameTemplate, runKey?, folderId?, version? }
   statuses json            -- { pass, fail, flaky, notExecuted }: the tool's status names
   options json             -- { flakyAs, skippedAs, includeError, includeComment }
   created_at, updated_at
+```
+
+**Tag key patterns** (a nullable column on `projects`, shared with #1153, see [3](#3-mapping-a-test-to-a-test-case)):
+
+```
+projects.tag_keys json     -- { issue: '^[A-Z][A-Z0-9]+-[0-9]+$' | null, testCase: '^SHOP-T[0-9]+$' | null }; null = both off
 ```
 
 **Catalog**:

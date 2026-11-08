@@ -8,6 +8,7 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_COVERAGE_SCOPE,
   INVALID_REPOSITORY_URL,
+  InvalidTagKeysError,
   updateProject,
 } from '#shared/handlers/projects';
 import { recountProjectCoverage } from '../../utils/coverage-summary';
@@ -33,7 +34,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      "Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once, and turned on again, the runs that had a view and still run get it back), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. `ciRerun.via` is `repository` (the default: the repository host's CI, with the SCM token) or `ci-server` (one HTTP request to `ciRerun.ciServer`, a preset such as `jenkins` with its fields, or `custom` with its request templates). `ciServerToken` is the CI server credential: it is stored with the base URL in effect when it is saved (the project's `ciRerun.ciServer.baseUrl`, else the instance's `PIWI_CI_SERVER_URL`) and sent only to URLs under it; omitting it keeps the stored token, `null` or an empty string removes it, a new one answers HTTP 409 while `PIWI_SECRET_KEY` is unset and 400 when no base URL is set. A `ciRerun.ciServer` that cannot dispatch (an unknown preset, a missing required field, a base URL that is not an http(s) URL, a Flake Lab request it names that cannot dispatch) answers 400 and leaves the stored target as it is, whatever `via` and `enabled` say. Requires `project:manage` (Project admin on the project).",
+      "Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once, and turned on again, the runs that had a view and still run get it back), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), the tag key patterns (`tagKeys`: `{ issue, testCase }`, each a regular expression without flags of at most 200 characters, tested against a tag without its `@`, that reads the issue key or the test case key out of a test’s tags; it is anchored with `^` and `$` and built from literals, escapes, character classes and quantifiers, with no groups or `|`; a pattern that is left out, null or empty is off, a pattern that breaks the rule, does not compile or matches an empty tag answers HTTP 400, and null turns both off), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. `ciRerun.via` is `repository` (the default: the repository host's CI, with the SCM token) or `ci-server` (one HTTP request to `ciRerun.ciServer`, a preset such as `jenkins` with its fields, or `custom` with its request templates). `ciServerToken` is the CI server credential: it is stored with the base URL in effect when it is saved (the project's `ciRerun.ciServer.baseUrl`, else the instance's `PIWI_CI_SERVER_URL`) and sent only to URLs under it; omitting it keeps the stored token, `null` or an empty string removes it, a new one answers HTTP 409 while `PIWI_SECRET_KEY` is unset and 400 when no base URL is set. A `ciRerun.ciServer` that cannot dispatch (an unknown preset, a missing required field, a base URL that is not an http(s) URL, a Flake Lab request it names that cannot dispatch) answers 400 and leaves the stored target as it is, whatever `via` and `enabled` say. Requires `project:manage` (Project admin on the project).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -97,6 +98,8 @@ const updateProjectSchema = z.object({
   coverageScope: z.unknown().optional(),
   /** Named areas of the code, `[{ name, include }]`, each counted apart; null or [] removes them. */
   coverageAreas: z.unknown().optional(),
+  /** The patterns that read the issue key and the test case key out of a test's tags, `{ issue, testCase }`; null turns both off. */
+  tagKeys: z.unknown().optional(),
   /** The runs that set the project's status, a run scope; null for every run. */
   statusFilter: z
     .object({
@@ -151,6 +154,7 @@ export default eventHandler(async (event) => {
     coverageScope,
     coverageAreas,
     statusFilter,
+    tagKeys,
     tagIds,
   } = validation.data;
 
@@ -232,6 +236,7 @@ export default eventHandler(async (event) => {
       coverageScope,
       coverageAreas,
       statusFilter,
+      tagKeys,
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
@@ -266,6 +271,7 @@ export default eventHandler(async (event) => {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });
     }
+    if (e instanceof InvalidTagKeysError) throw apiError({ statusCode: 400, message: e.message });
     if (
       e?.message === 'One or more tag IDs are invalid' ||
       e?.message === INVALID_COVERAGE_SCOPE ||

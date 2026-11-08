@@ -157,6 +157,24 @@ keep the tags that matter:
 - put the tags that matter in the test title (`test('checkout @SHOP-T123', …)`), which comes before the `tag` option;
 - for the one identifier that matters most, use an [external test ID](#external-test-ids) instead of a tag.
 
+#### Keys in test tags
+
+A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it covers (`SHOP-T123`). Two patterns, under
+**Project → Settings → Integrations → Keys in test tags**, tell Piwi which tags are which:
+
+- **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`.
+- **Test case key**: a tag naming a test case, such as `^SHOP-T[0-9]+$`.
+
+A pattern is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor
+it with `^` and `$` and use letters, digits, character classes and quantifiers only, with no groups or `|`:
+`^SHOP-T[0-9]+$` matches `SHOP-T123` and not `SHOP-1234`. A pattern that breaks that rule, does not compile, or matches
+an empty tag (and so every tag) is refused. Leave a field empty to turn it off; both are off by default, and neither
+needs a tracker connection. Saving needs the same role as the rest of the project's settings.
+
+When both patterns are on, the section lists the tags of the project's last complete run (the whole suite, finished;
+partial, lab and private runs are skipped) that both patterns match, each with a test that carries it. Piwi would read
+such a tag as an issue and as a test case, so anchor the patterns until the list is empty. It lists 20 tags at most.
+
 ### Test locks
 
 Playwright 1.63 lets a test or a `describe` declare a **lock** — a named shared resource the runner never lets two

@@ -1156,6 +1156,13 @@
       "when": 1794089453118,
       "tag": "0164_large_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1794162681902,
+      "tag": "0165_amusing_scarecrow",
+      "breakpoints": true
     }
   ]
 }

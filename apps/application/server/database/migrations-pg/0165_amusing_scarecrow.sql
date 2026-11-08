@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "tag_keys" jsonb;
