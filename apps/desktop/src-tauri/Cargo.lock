@@ -2816,6 +2816,8 @@ version = "0.67.0"
 dependencies = [
  "keepawake",
  "rand",
+ "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

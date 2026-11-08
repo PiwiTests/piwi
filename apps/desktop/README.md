@@ -302,6 +302,13 @@ keeps the previous release the latest when it creates one, and the `latest` job 
 a release builds, or when one of its legs failed, the app keeps finding the
 previous release and its complete manifests.
 
+When a check finds an update, the card asks the shell for the notes of every
+release after the installed version up to the offered one
+(`desktop_get_release_notes`): the shell reads GitHub's public releases API
+(`api.github.com/repos/PiwiTests/piwi/releases`, anonymous, up to four pages of
+30) and keeps the answer for that version. GitHub allows 60 anonymous requests
+an hour per address; past that, the card links to the releases page instead.
+
 The `.exe` channel installs **quietly**: its overlay sets the updater's
 `windows.installMode` to `quiet`, so the plugin starts the NSIS installer with
 `/S /R` — no window, and the installer relaunches the app when it is done. The

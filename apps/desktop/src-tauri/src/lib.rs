@@ -54,8 +54,8 @@ use mcp_clients::{
     desktop_skills_write,
 };
 use updates::{
-    desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
-    desktop_set_update_notification,
+    desktop_check_update, desktop_get_release_notes, desktop_get_update_settings, desktop_install_update,
+    desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
@@ -2794,6 +2794,7 @@ pub fn run() {
             desktop_skills_read,
             desktop_skills_write,
             desktop_check_update,
+            desktop_get_release_notes,
             desktop_install_update,
             desktop_restart_app,
             desktop_get_update_settings,
@@ -2810,6 +2811,7 @@ pub fn run() {
         .manage(LinkedPage::default())
         .manage(updates::UpdaterSupport(updater_supported))
         .manage(updates::PendingUpdate::default())
+        .manage(updates::ReleaseNotesState::default())
         .setup(move |app| {
             // --- data locations (survive app updates; outside the read-only bundle) ---
             let app_data_dir = app.path().app_data_dir()?;
