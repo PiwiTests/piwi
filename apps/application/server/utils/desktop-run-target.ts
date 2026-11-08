@@ -26,6 +26,8 @@ interface HeldRequest {
   answerBy: number;
   /** After **Run**: the request token, until the shell takes it, and whether the run started. */
   token: string | null;
+  /** What **Run** approved: the arguments the window showed and the folder they were checked in. */
+  approved: { args: string[]; folder: string } | null;
   launched: boolean;
   /** Whether the requester asked to stop it. */
   stopRequested: boolean;
@@ -268,6 +270,7 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
       plan,
       answerBy: Date.now() + ANSWER_WITHIN_MS,
       token: null,
+      approved: null,
       launched: false,
       stopRequested: false,
       answering: false,
@@ -441,7 +444,7 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
 /** Check a held request again, after the person linked its folder. */
 export async function planAgain(id: string): Promise<RunRequestPromptView | null> {
   const held = state.held.get(id);
-  if (!held || held.token || held.launched) return null;
+  if (!held || held.answering || held.token || held.launched) return null;
   held.plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
   return promptOf(held);
 }
@@ -468,9 +471,10 @@ export async function answerRunRequest(
   held.answering = true;
   try {
     if (decision === 'run') {
-      held.plan = await planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null);
+      const folder = state.links.get(held.request.projectId) ?? null;
+      held.plan = await planRequestedRun(held.request, folder);
       // The folder changed since the window showed it: it shows the checks and the command again.
-      if (!held.plan.runnable || held.plan.display !== shownCommand) {
+      if (!folder || !held.plan.runnable || held.plan.args.length === 0 || held.plan.display !== shownCommand) {
         tellWindow({ type: 'run-request', request: promptOf(held) });
         return {
           ok: false,
@@ -480,6 +484,7 @@ export async function answerRunRequest(
             : 'A check failed: the run cannot start',
         };
       }
+      const approved = { args: [...held.plan.args], folder };
       const { requestToken } = await host.answer(id, { decision: 'run' });
       if (!requestToken) throw new RequestHostError(502, 'The instance gave no request token');
       if (state.held.get(id) !== held || held.stopRequested) {
@@ -488,6 +493,7 @@ export async function answerRunRequest(
         return { ok: true, launch: false };
       }
       held.token = requestToken;
+      held.approved = approved;
       // A token the window never hands the shell (the window closed) is dropped once it can start nothing.
       expireLater(id, held, REQUEST_TOKEN_LIFETIME_MS);
       tellWindow({ type: 'run-request-gone', id, reason: 'answered' });
@@ -510,18 +516,22 @@ export async function answerRunRequest(
 }
 
 /**
- * What the shell starts for a request after **Run**: the instance and the request token, once, the project its
- * folder is linked for, and the arguments after `playwright test`. Null for any other request.
+ * What the shell starts for a request after **Run**: the instance and the request token, once, the project, the
+ * folder **Run** approved, and the arguments after `playwright test` it approved. Null for any other request, and for
+ * one approved with no arguments, which would run every test.
  */
-export function launchOf(id: string): { instance: string; token: string; projectId: number; args: string[] } | null {
+export function launchOf(
+  id: string,
+): { instance: string; token: string; projectId: number; folder: string; args: string[] } | null {
   const held = state.held.get(id);
-  if (!held?.token || held.launched || !state.instance) return null;
+  const approved = held?.approved;
+  if (!held?.token || held.launched || !state.instance || !approved || approved.args.length === 0) return null;
   const token = held.token;
   held.token = null;
   held.launched = true;
   if (held.expiry) clearTimeout(held.expiry);
   held.expiry = null;
-  return { instance: state.instance, token, projectId: held.request.projectId, args: held.plan.args };
+  return { instance: state.instance, token, projectId: held.request.projectId, ...approved };
 }
 
 /** The shell started the run of a request. */

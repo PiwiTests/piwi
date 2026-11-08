@@ -16,6 +16,7 @@ import {
   launchOf,
   linksOf,
   outcomeOf,
+  planAgain,
   requestedRunEnded,
   requestedRunStarted,
   resetDesktopRunTarget,
@@ -23,6 +24,7 @@ import {
   subscribeRunTargetShell,
   subscribeRunTargetWindow,
   useKeptKey,
+  useLinks,
   type ShellRunTargetCommand,
 } from '../../server/utils/desktop-run-target';
 
@@ -196,10 +198,16 @@ describe('a request from the team instance', () => {
       statusCode: 409,
     });
     const shown = asked.type === 'run-request' ? asked.request.command : null;
-    expect(await answerRunRequest(REQUEST_ID, 'run', shown)).toEqual({ ok: true, launch: true });
+    const answering = answerRunRequest(REQUEST_ID, 'run', shown);
+    // Nothing plans the request again while **Run** is being answered.
+    expect(await planAgain(REQUEST_ID)).toBe(null);
+    expect(await answering).toEqual({ ok: true, launch: true });
     expect(JSON.stringify(heard)).not.toContain(TOKEN);
+    // A folder linked after **Run** changes nothing it approved: the shell refuses a folder other than this one.
+    useLinks(new Map([[3, path.join(folder, 'elsewhere')]]));
+    expect(await planAgain(REQUEST_ID)).toBe(null);
     const launch = launchOf(REQUEST_ID)!;
-    expect(launch).toMatchObject({ instance: instance.url, token: TOKEN, projectId: 3 });
+    expect(launch).toMatchObject({ instance: instance.url, token: TOKEN, projectId: 3, folder });
     expect(launch.args).toContain('--headed');
     expect(launchOf(REQUEST_ID)).toBe(null);
 
@@ -214,6 +222,20 @@ describe('a request from the team instance', () => {
       { state: 'stopping', detail: 'Stopped from the dashboard' },
       { state: 'ended', outcome: 'stopped' },
     ]);
+  });
+
+  test('a folder without its specs is never launched, as it would run every test', async () => {
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    fs.rmSync(path.join(folder, 'tests', 'checkout.spec.ts'));
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => heard.some((m) => m.type === 'run-request'));
+    const asked = heard.find((m) => m.type === 'run-request')!;
+    expect(asked.type === 'run-request' && asked.request.runnable).toBe(false);
+    const shown = asked.type === 'run-request' ? asked.request.command : null;
+    expect(await answerRunRequest(REQUEST_ID, 'run', shown)).toMatchObject({ ok: false, statusCode: 409 });
+    expect(launchOf(REQUEST_ID)).toBe(null);
+    expect(instance.calls.some((c) => c.path.endsWith('/answer'))).toBe(false);
   });
 
   test('without a linked folder, Not now refuses it with the failed check', async () => {
