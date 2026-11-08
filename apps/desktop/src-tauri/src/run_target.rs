@@ -328,6 +328,8 @@ struct Launch {
     instance: String,
     token: String,
     project_id: String,
+    /// The folder **Run** approved, which the run's folder must still be.
+    folder: String,
     args: Vec<String>,
 }
 
@@ -339,7 +341,9 @@ fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
         Some(&json!({})),
     )?;
     let text = |name: &str| answer.get(name).and_then(|v| v.as_str()).map(str::to_string);
-    let instance = text("instance").filter(|url| valid_instance(url)).ok_or("no instance to run for")?;
+    let instance = text("instance")
+        .filter(|url| valid_instance(url))
+        .ok_or("no instance to run for")?;
     let token = text("token")
         .filter(|t| t.len() == 68 && t.starts_with("pdq_") && t[4..].bytes().all(|b| b.is_ascii_hexdigit()))
         .ok_or("no request token")?;
@@ -348,12 +352,23 @@ fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
         .and_then(|v| v.as_u64())
         .map(|id| id.to_string())
         .ok_or("no project")?;
+    let folder = text("folder").filter(|f| !f.is_empty()).ok_or("no folder")?;
     let args = answer
         .get("args")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
         .ok_or("no command")?;
-    Ok(Launch { instance, token, project_id, args })
+    Ok(Launch {
+        instance,
+        token,
+        project_id,
+        folder,
+        args,
+    })
 }
 
 /// Tell the server a requested run started, or why it could not.
@@ -384,16 +399,27 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         port: server.port,
         token: server.token.clone(),
     };
-    let launch = tauri::async_runtime::spawn_blocking(move || launch_of(&launch_server, &asked))
-        .await
-        .map_err(|e| e.to_string())??;
-    // Held from now on, so a stop that arrives while the run starts is kept for it.
+    // Held before the server hands the launch over, so a stop that arrives from then on is kept for it.
     if let Some(runs) = app.try_state::<RequestedRuns>() {
-        runs.0.lock().unwrap().insert(request_id.clone(), RequestedRun::default());
+        runs.0
+            .lock()
+            .unwrap()
+            .insert(request_id.clone(), RequestedRun::default());
     }
     let forget = |app: &AppHandle, request_id: &str| {
         if let Some(runs) = app.try_state::<RequestedRuns>() {
             runs.0.lock().unwrap().remove(request_id);
+        }
+    };
+    let launch = match tauri::async_runtime::spawn_blocking(move || launch_of(&launch_server, &asked))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|launched| launched)
+    {
+        Ok(launch) => launch,
+        Err(e) => {
+            forget(&app, &request_id);
+            return Err(e);
         }
     };
 
@@ -406,6 +432,22 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
             return Err(e);
         }
     };
+
+    // A stop that came while the run was being prepared ends it before anything runs.
+    let stopped_early = app
+        .try_state::<RequestedRuns>()
+        .is_some_and(|runs| runs.0.lock().unwrap().get(&request_id).is_some_and(|held| held.stop));
+    if stopped_early {
+        forget(&app, &request_id);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = local_call(
+            &server,
+            "POST",
+            &format!("/api/desktop/run-target/requests/{request_id}/ended"),
+            Some(&json!({ "code": null, "stopped": true })),
+        );
+        return Err("the request was stopped before its run started".into());
+    }
 
     let envs = vec![
         ("PIWI_DESKTOP_APP", "off".to_string()),
@@ -469,11 +511,18 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
     if connected_instance(app).as_deref() != Some(launch.instance.as_str()) {
         return Err("the request is not from the connected instance".into());
     }
+    if launch.args.is_empty() {
+        return Err("the request names no test to run".into());
+    }
     crate::runner::validate_args(&launch.args)?;
-    let folder = links_of(app, &launch.instance)
+    let linked = links_of(app, &launch.instance)
         .get(&launch.project_id)
-        .map(PathBuf::from)
+        .cloned()
         .ok_or("no folder is linked to this project")?;
+    if linked != launch.folder {
+        return Err("the folder linked to this project changed since Run: answer the request again".into());
+    }
+    let folder = PathBuf::from(linked);
     if !folder.is_dir() {
         return Err("the linked folder no longer exists: pick it again".into());
     }

@@ -70,8 +70,9 @@ shell and are feature-equivalent.
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
-  (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command and the request
-  token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only, `isBrowserRequest`), writes the token
+  (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved, its folder and the request
+  token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only, `isBrowserRequest`), refuses no
+  arguments or a folder linked since, writes the token
   to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. The instance's key
   lives in the OS keychain, read only while `runTargetInstance` is set, handed to the server after each start
   (`hand_kept_key`), never to the window; a stop from the dashboard reaches the shell on its notification stream.
