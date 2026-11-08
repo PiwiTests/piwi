@@ -66,6 +66,10 @@ export function demoTags(filePath, index) {
   const tags = [];
   if (index === 0) tags.push('smoke');
   if (/\/checkout\//.test(`/${filePath}`)) tags.push('critical');
+  if (/\/checkout\/checkout\.spec\.ts$/.test(`/${filePath}`)) {
+    if (index === 1) tags.push('SHOP-1234');
+    if (index === 2) tags.push('SHOP-T123');
+  }
   if (/\/api\//.test(`/${filePath}`)) tags.push('api');
   if (index % 3 === 0) tags.push('regression');
   return tags;

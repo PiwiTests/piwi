@@ -188,6 +188,9 @@ const PROJECTS = [
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
     // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
     external_id_url: 'https://tcm.example.com/case/{id}',
+    // Keys in test tags: the checkout tests carry a story key (SHOP-1234) and a test case key (SHOP-T123). The test
+    // case pattern's optional letter also reads the story key SHOP-1234, which the overlap list shows.
+    tag_keys: { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-[A-Z]?[0-9]+$' },
   },
   {
     id: 2,

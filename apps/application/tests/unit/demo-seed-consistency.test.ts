@@ -31,6 +31,7 @@ import { isEligibleRun } from '#shared/run-eligibility';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
+import { overlappingTagKeys, validateTagKeyPattern } from '#shared/integrations/tag-keys';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -1499,6 +1500,27 @@ describe('environment incidents', () => {
       select count(*) as n from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
       where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
     expect(rows[0]!.n).toBe(0);
+  });
+});
+
+describe('keys in test tags', () => {
+  test('the checkout project stores both patterns, and they overlap on one seeded tag', () => {
+    const [project] = q('select tag_keys from projects where id = 1');
+    const patterns = JSON.parse(String(project!.tag_keys)) as { issue: string; testCase: string };
+    expect(validateTagKeyPattern(patterns.issue).ok).toBe(true);
+    expect(validateTagKeyPattern(patterns.testCase).ok).toBe(true);
+
+    const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
+    const overlaps = new Set(
+      tagged.flatMap((row) =>
+        overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
+      ),
+    );
+    expect([...overlaps]).toEqual(['SHOP-1234']);
+  });
+
+  test('the other projects leave them off', () => {
+    expect(q('select id from projects where id <> 1 and tag_keys is not null')).toEqual([]);
   });
 });
 
