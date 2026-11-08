@@ -6,15 +6,17 @@ extends it with its server render, and Piwi Runner's window (`apps/runner`) exte
 
 ## What it holds
 
-| Path                                                | What                                                                                     |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `app/components/DesktopTeamRunRequestModal.vue`     | The confirmation of a run request a team instance sent; emits `start` when **Run** wins  |
-| `app/components/DesktopTeamInstance.vue`            | Connecting to a team instance (the device flow), its status, its linked folders          |
-| `app/components/CodeBlock.vue`                      | A code block with a copy button                                                          |
-| `app/composables/useDesktopTeamRequests.ts`         | The connection and the queue of requests the confirmation shows                          |
-| `app/composables/useTauri.ts`, `useCopy.ts`         | The Tauri bridge (`tauriCore`, `tauriEvent`, `tauriWindowLabel`) and the clipboard       |
-| `app/utils/run-target-words.ts`, `text.ts`          | The words of the connection and the request, `errorMessage`, `copyPreview`               |
-| `src/highlight.ts` (`@piwitests/run-ui/highlight`)  | The one syntax-highlighting setup, also used by the server's exports and notifications   |
+| Path                                               | What                                                                                    |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `app/components/DesktopTeamRunRequestModal.vue`    | The confirmation of a run request a team instance sent; emits `start` when **Run** wins |
+| `app/components/DesktopTeamInstance.vue`           | Connecting to a team instance (the device flow), its status, its linked folders         |
+| `app/components/CodeBlock.vue`                     | A code block with a copy button                                                         |
+| `app/composables/useDesktopTeamRequests.ts`        | The connection and the queue of requests the confirmation shows                         |
+| `app/composables/useTauri.ts`, `useCopy.ts`        | The Tauri bridge (`tauriCore`, `tauriEvent`, `tauriWindowLabel`) and the clipboard      |
+| `app/utils/run-target-words.ts`, `text.ts`         | The words of the connection and the request, `errorMessage`, `copyPreview`              |
+| `app/utils/desktop-events.ts`                      | The one shared `EventSource` on `/api/desktop/events` (`subscribeDesktopEvents`)        |
+| `app/plugins/desktop-team-requests.client.ts`      | Feeds the host's run-request queue from that stream inside the shell's main window      |
+| `src/highlight.ts` (`@piwitests/run-ui/highlight`) | The one syntax-highlighting setup, also used by the server's exports and notifications  |
 
 ## Rules
 
@@ -33,8 +35,8 @@ extends it with its server render, and Piwi Runner's window (`apps/runner`) exte
   imported by name in the hosts, so a name is unique across the layer and every host, and across the repository's other
   exports: `npm run knip` reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere (the
   extension's) as unused.
-- **A host's hosts-only file stays in the host**: the dashboard's `plugins/desktop-team-requests.client.ts`, its
-  settings page and its layout.
+- **A host's own framing stays in the host**: the dashboard's settings page, `SectionCard` and layout, and the Runner's
+  window.
 
 ## Commands
 
