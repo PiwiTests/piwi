@@ -209,6 +209,10 @@ function toPlanCondition(condition: ProfileCondition, tests: Map<number, FlakeTe
         : { kind: 'fail', route: condition.route, status: condition.status, match: 'all' };
     case 'cpu':
       return { kind: 'cpu', rate: condition.rate };
+    case 'timezone':
+      return { kind: 'timezone', timeZone: condition.timeZone };
+    case 'locale':
+      return { kind: 'locale', locale: condition.locale };
     case 'alongside':
     case 'after': {
       const test = tests.get(condition.testCaseId);

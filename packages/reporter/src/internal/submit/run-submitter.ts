@@ -16,6 +16,7 @@ import { requestedRunTarget } from '../config/env.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport, WireRunError } from '../../types.js';
+import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -80,6 +81,8 @@ export interface CollectedRun {
   htmlReport?: string | null;
   /** The errors Playwright reported outside any test (`onError`), as the run keeps them. */
   runErrors?: WireRunError[];
+  /** The run's environment snapshots: the runner's, each project's browser and each server under test. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 /** The run the dashboard took, and the credential that reached it. */
@@ -338,6 +341,7 @@ export class RunSubmitter {
       resourceReport: run.resourceReport ?? null,
       setupSteps: run.setupSteps,
       runErrors: run.runErrors,
+      environments: run.environments,
       deliveryKey: this.deliveryKey,
       replacesRun: this.streamedRun(run),
     };
@@ -393,6 +397,7 @@ export class RunSubmitter {
       };
       if (run.resourceReport) finishBody.resourceReport = run.resourceReport;
       if (run.runErrors?.length) finishBody.runErrors = run.runErrors;
+      if (run.environments?.length) finishBody.environments = run.environments;
       if (run.shardInfo) {
         finishBody.shardIndex = run.shardInfo.current;
         finishBody.shardTotal = run.shardInfo.total;

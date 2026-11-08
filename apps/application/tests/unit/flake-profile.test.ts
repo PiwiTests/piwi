@@ -348,3 +348,50 @@ describe('buildFlakeProfile', () => {
     expect(buildFlakeProfile(input([])).attempts).toBe(0);
   });
 });
+
+describe('environment factors', () => {
+  const onRunner = (timeZone: string) => ({ environment: { runnerTimeZone: timeZone, runnerLocale: 'en-US' } });
+
+  test('names the runner time zone the failures share and the passes do not', () => {
+    const attempts = [
+      ...Array.from({ length: 6 }, () => attempt('failed', onRunner('UTC'))),
+      ...Array.from({ length: 10 }, () => attempt('passed', onRunner('Europe/Paris'))),
+    ];
+    const profile = buildFlakeProfile({ testCaseId: 1, attempts });
+    const suspect = profile.suspects.find((c) => c.kind === 'environment');
+    expect(suspect).toMatchObject({
+      label: 'on runner time zone UTC',
+      counts: { failuresWith: 6, passesWith: 0 },
+      condition: { kind: 'timezone', timeZone: 'UTC' },
+      conditionLabel: 'run in time zone UTC',
+    });
+    expect(profile.suspects.some((c) => c.label.includes('locale'))).toBe(false);
+  });
+
+  test('names the runner image as context, which no lab condition applies', () => {
+    const on = (image: string) => ({ environment: { runnerImage: image } });
+    const attempts = [
+      ...Array.from({ length: 6 }, () => attempt('failed', on('ubuntu24 20261102.1'))),
+      ...Array.from({ length: 10 }, () => attempt('passed', on('ubuntu24 20261020.1'))),
+    ];
+    const profile = buildFlakeProfile({ testCaseId: 1, attempts });
+    expect(profile.context.find((c) => c.kind === 'environment')?.label).toBe('on runner image ubuntu24 20261102.1');
+  });
+
+  test('says nothing when the field never changed or was not recorded', () => {
+    const same = [
+      ...Array.from({ length: 6 }, () => attempt('failed', onRunner('UTC'))),
+      ...Array.from({ length: 6 }, () => attempt('passed', onRunner('UTC'))),
+    ];
+    expect(buildFlakeProfile({ testCaseId: 1, attempts: same }).suspects.some((c) => c.kind === 'environment')).toBe(
+      false,
+    );
+    const unrecorded = [
+      ...Array.from({ length: 6 }, () => attempt('failed')),
+      ...Array.from({ length: 6 }, () => attempt('passed')),
+    ];
+    expect(
+      buildFlakeProfile({ testCaseId: 1, attempts: unrecorded }).suspects.some((c) => c.kind === 'environment'),
+    ).toBe(false);
+  });
+});

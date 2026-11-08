@@ -115,7 +115,17 @@ export function runFacts(run: Record<string, any>): Fact[] {
     ['Commit', commit],
     ['CI build', build],
     ['Playwright', run.playwrightVersion ?? null],
+    ['Runner', runnerFact(run.environments?.runner)],
   ];
+}
+
+/** The runner's time zone, locale and OS in one line, every shard's when they differ; null when not recorded. */
+function runnerFact(runners: Array<Record<string, any>> | undefined): string | null {
+  if (!Array.isArray(runners) || runners.length === 0) return null;
+  const lines = [
+    ...new Set(runners.map((r) => [r.timeZone, r.locale, r.os, r.ciImage].filter(Boolean).join(' · ')).filter(Boolean)),
+  ];
+  return lines.length ? lines.join(' / ') : null;
 }
 
 /** How a run's tests ended, by outcome, or null for a run that counted none. */

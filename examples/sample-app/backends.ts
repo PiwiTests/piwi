@@ -22,6 +22,8 @@ export interface BackendFeatures {
   backendLogs: boolean;
   /** The routes the backend declares, served at `/__piwi/manifest`, including the ones no request has reached. */
   routeManifest: boolean;
+  /** The server process's runtime facts (runtime, time zone, locale, start time), served at `/__piwi/environment`. */
+  serverEnvironment: boolean;
   /** The server's spans on each response's `X-Piwi-Trace` header. */
   serverSpans: boolean;
   /** A signed fault (`X-Piwi-Probe`) applied inside the server. */
@@ -51,7 +53,7 @@ export const BACKENDS = {
     // backends/aspnetcore/Properties/launchSettings.json.
     command: 'dotnet run --project backends/aspnetcore -p:PiwiCoverage=true',
     startTimeout: 300_000,
-    features: { backendLogs: true, routeManifest: true, serverSpans: false, serverProbes: true, serverCoverage: true },
+    features: { backendLogs: true, routeManifest: true, serverEnvironment: true, serverSpans: false, serverProbes: true, serverCoverage: true },
   },
   nitro: {
     name: 'nitro',
@@ -61,7 +63,7 @@ export const BACKENDS = {
     // the server's code, from backends/nitro/nitro.config.ts.
     command: `nitro dev backends/nitro --port ${PORT}`,
     startTimeout: 60_000,
-    features: { backendLogs: true, routeManifest: true, serverSpans: true, serverProbes: true, serverCoverage: true },
+    features: { backendLogs: true, routeManifest: true, serverEnvironment: true, serverSpans: true, serverProbes: true, serverCoverage: true },
   },
 } satisfies Record<string, Backend>;
 

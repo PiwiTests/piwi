@@ -112,6 +112,7 @@ describe('the facts an export states', () => {
       ['Commit', 'a1b2c3d Paginate on the server (Eva)'],
       ['CI build', 'GitHub Actions #1192'],
       ['Playwright', '1.51.0'],
+      ['Runner', null],
     ]);
   });
 

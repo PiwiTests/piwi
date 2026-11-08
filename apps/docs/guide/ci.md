@@ -79,7 +79,7 @@ Unconfigured, the reporter records:
   [baselines](/guide/concepts#baseline-last-green-run) fall back to when the branch has no history of its own.
 - **CI**: provider, workflow or job name, build number, and a link back to the CI build.
 - **Origin**: [what launched it](/reference/test-metadata#run-origin).
-- **Environment**: the Playwright version, and each test's browser and viewport.
+- **Environment**: Playwright version, browser and viewport, [run environment](/features/run-environment).
 - **Shard index**: from Playwright's own `--shard` config.
 
 [Test metadata](/reference/test-metadata#scm-information-git) lists the variables each field comes from.

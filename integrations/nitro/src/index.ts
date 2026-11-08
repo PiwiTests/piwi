@@ -16,6 +16,7 @@ import {
   type ManifestRouteEntry,
 } from './manifest.js';
 import { declaredRoutes } from './route-table.js';
+import { buildServerEnvironment } from './environment.js';
 import { requestScope } from './request-scope.js';
 import {
   beginRequestCoverage,
@@ -51,6 +52,7 @@ export {
 } from './probe.js';
 export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest.js';
 export * from './faults.js';
+export { buildServerEnvironment, type ServerEnvironment, type EnvironmentReaders } from './environment.js';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -213,6 +215,9 @@ const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
 /** The declared-surface route path the plugin serves outside production. */
 const MANIFEST_PATH = '/__piwi/manifest';
 
+/** The runtime facts of the server process, served beside the manifest. */
+const ENVIRONMENT_PATH = '/__piwi/environment';
+
 /** The coverage endpoints a coverage build serves beside the manifest. */
 const COVERAGE_COLLECT_PATH = '/__piwi/coverage/collect';
 const COVERAGE_RUN_PATH = '/__piwi/coverage/run';
@@ -333,9 +338,9 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   // als.run() scope covers every hook, middleware, and route handler.
   const originalHandler = nitroApp.h3App.handler;
   nitroApp.h3App.handler = ((event) => {
-    // Serve the declared-surface manifest outside production (the plugin already
-    // returned early when log capture is disabled): the routes the module declared,
-    // then the ones observed.
+    // Serve the declared-surface manifest and the process's runtime facts outside
+    // production (the plugin already returned early when log capture is disabled):
+    // the manifest lists the routes the module declared, then the ones observed.
     const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
     if (serveCoverage(event, requestPath)) return;
     if (requestPath === MANIFEST_PATH) {
@@ -345,6 +350,14 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(buildRouteManifest(routes)));
+      return;
+    }
+    if (requestPath === ENVIRONMENT_PATH) {
+      const res = event.node.res as any;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(JSON.stringify(buildServerEnvironment()));
       return;
     }
 

@@ -15,6 +15,8 @@ import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 import { liveWorkerName } from '#shared/live-view';
 import { workerKey, workerNumber } from '#shared/worker-lane';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { comparableSnapshots, disagreeingFields } from '#shared/environment-snapshots';
 
 interface TestCaseEntry {
   executionId: number;
@@ -94,6 +96,8 @@ export interface RunInsightsResult {
   newFailures: number;
   commitRange: CommitRange | null;
   metadataDiff: MetaDiffEntry[];
+  /** The runner fields this run's shards disagree on (another time zone, another image), by label. */
+  shardDisagreement: string[];
   totalTests: number;
   passedTests: number;
   failedTests: number;
@@ -265,6 +269,7 @@ export async function computeRunInsights(
     newFailures: 0,
     commitRange: null,
     metadataDiff: [],
+    shardDisagreement: [],
     totalTests: 0,
     passedTests: 0,
     failedTests: 0,
@@ -285,7 +290,13 @@ export async function computeRunInsights(
     clusterNew: [],
   };
 
-  if (!baselineRun) return empty;
+  // Shards that disagree say so whether or not a baseline exists.
+  const snapshots = await loadRunsSnapshots(db, baselineRun ? [baselineRun.id, run.id] : [run.id]);
+  const currentSnapshots = snapshots.get(run.id) ?? [];
+  const shardDisagreement = disagreeingFields(
+    comparableSnapshots(currentSnapshots).filter((s) => s.kind === 'runner'),
+  ).map((f) => f.label);
+  if (!baselineRun) return { ...empty, shardDisagreement };
 
   const baselineRows: any[] = await db
     .select({
@@ -455,7 +466,10 @@ export async function computeRunInsights(
     baseMeta?.scm?.commit ?? null,
     currMeta?.scm?.commit ?? null,
   );
-  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment);
+  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment, {
+    before: { playwrightVersion: baselineRun.playwrightVersion, snapshots: snapshots.get(baselineRun.id) ?? [] },
+    after: { playwrightVersion: run.playwrightVersion, snapshots: currentSnapshots },
+  });
 
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
@@ -500,6 +514,7 @@ export async function computeRunInsights(
     newFailures: newRegressions.length,
     commitRange,
     metadataDiff,
+    shardDisagreement,
     totalTests,
     passedTests,
     failedTests,

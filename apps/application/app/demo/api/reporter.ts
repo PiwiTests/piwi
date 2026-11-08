@@ -102,7 +102,7 @@ import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-c
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { syncAutoMarkersForRun, syncEnvironmentMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
 import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
@@ -129,6 +129,7 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import {
   readShardDurations,
   readShardSpans,
@@ -414,6 +415,7 @@ export async function apiBeginTestRun(
     shardTotal?: number;
     isFullRun?: boolean;
     filterDetails?: Record<string, unknown> | null;
+    environments?: unknown;
   },
 ) {
   const db = await getDemoDb();
@@ -509,6 +511,8 @@ export async function apiBeginTestRun(
       streamToken: testRun.streamToken ?? streamToken,
     };
   }
+
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   return {
     success: true,
@@ -1120,6 +1124,7 @@ let recordingFindings: Promise<unknown> = Promise.resolve();
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await syncEnvironmentMarkersForRun(db, id).catch(() => {});
   recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
   await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
@@ -1142,6 +1147,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   // This reporter's resource report, in its own row next to the other shards'.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
