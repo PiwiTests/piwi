@@ -52,7 +52,9 @@ describe('tags cut on the wire', () => {
     server = undefined;
   });
 
-  async function run(tests: Array<{ title: string; tags: string[] }>): Promise<{ body: any; warnings: string[] }> {
+  async function run(
+    tests: Array<{ title: string; tags: string[] | null }>,
+  ): Promise<{ body: any; warnings: string[] }> {
     let body: any;
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
@@ -76,11 +78,19 @@ describe('tags cut on the wire', () => {
     const cases = tests.map((t, i) => ({
       ...fakeTestCase({ title: t.title, parent: suite, line: i + 1 }),
       id: `t${i}`,
-      tags: t.tags,
+      tags: t.tags ?? [],
     }));
+    tests.forEach((t, i) => {
+      if (t.tags) return;
+      Object.defineProperty(cases[i], 'tags', {
+        get() {
+          throw new Error('tags are gone');
+        },
+      });
+    });
     suite.allTests = () => cases;
     reporter.onBegin(fakeConfig(), suite);
-    for (const test of cases) {
+    for (const test of cases.filter((_, i) => tests[i]!.tags)) {
       reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
       reporter.onTestEnd(test, fakeResult({ status: 'passed', duration: 5, workerIndex: 0 }));
     }
@@ -100,6 +110,18 @@ describe('tags cut on the wire', () => {
     expect(body.testCases[0].tags).toHaveLength(MAX_TEST_TAGS);
     expect(warnings.filter((line) => line.includes(`more than ${MAX_TEST_TAGS} tags`))).toHaveLength(1);
     expect(warnings.some((line) => line.includes('covers many cases (3 tags dropped)'))).toBe(true);
+  });
+
+  it('names the readable tests when a planned test cannot be read', async () => {
+    const { body, warnings } = await run([
+      { title: 'unreadable', tags: null },
+      { title: 'covers many cases', tags: many(MAX_TEST_TAGS + 2) },
+    ]);
+    expect(body.metadata.tagsTruncated).toEqual({
+      tests: 1,
+      examples: [{ filePath: expect.any(String), title: 'covers many cases', line: 2, dropped: 2 }],
+    });
+    expect(warnings.some((line) => line.includes('covers many cases (2 tags dropped)'))).toBe(true);
   });
 
   it('records nothing and stays quiet when every test fits', async () => {

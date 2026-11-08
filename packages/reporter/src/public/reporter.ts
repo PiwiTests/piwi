@@ -719,18 +719,30 @@ export class PiwiDashboardReporter {
 
   /**
    * Name the planned tests whose tags are cut at the limit, once, and record them on the run so the dashboard shows
-   * them too.
+   * them too. A planned test whose properties cannot be read is left out.
    */
   private noteTagsTruncated(): void {
-    const found = collectTagsTruncated(
-      this.plannedTests.map((test) => ({
-        filePath: testFile(test, this.testPathBase),
-        suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
-        title: test.title,
-        line: test.location.line,
-        tags: test.tags,
-      })),
-    );
+    const readable: Array<{
+      filePath: string;
+      suitePath: string[];
+      title: string;
+      line: number;
+      tags: unknown;
+    }> = [];
+    for (const test of this.plannedTests) {
+      try {
+        readable.push({
+          filePath: testFile(test, this.testPathBase),
+          suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
+          title: test.title,
+          line: test.location.line,
+          tags: test.tags,
+        });
+      } catch (error) {
+        this.logger.debug(`Tags of a planned test not read: ${errorMessage(error)}`);
+      }
+    }
+    const found = collectTagsTruncated(readable);
     for (const line of formatTagsTruncated(found)) this.logger.warn(line);
     if (found) this.metadata = { ...this.metadata, tagsTruncated: found };
   }
