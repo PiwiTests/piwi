@@ -1,7 +1,7 @@
 /**
- * Desktop build: what the window shows of **Run on my machine**, the desktop app taking run requests from one team
- * instance (`server/utils/desktop-run-target.ts`). Never the instance's key nor a request token: the shell alone
- * reads those.
+ * What the window shows of **Run on my machine**, the app taking run requests from one team instance
+ * (`./run-target.ts`). Never the instance's key nor a request token: the shell alone reads those. Types only, so the
+ * window's code imports it with nothing of the server.
  */
 import type { RunRequestOptions, RunRequestSource, RunRequestTest } from '@piwitests/core/run-request';
 

@@ -55,7 +55,15 @@ command and the folder the window showed, once the request has been shown unchan
 reach no other server. Left for later: `piwi://connect` (the address is typed in the app), the browsers check, a request
 from the run page's selection of tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance
 takes and no page offers yet), **Create issue** on a requested run's progress (D17), and the target recorded on the run
-(D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. The feature page and
+(D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
+three after its spike (posted on #1163): 4a, the run target outside the dashboard's server, 4b, Piwi Runner, 4c, its
+releases. PR 4a is built: the desktop app's side of a request (the host it runs, the requests it holds, the device
+flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
+its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
+does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
+browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the launch
+nonce) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
+handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
 the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The maintainer
 settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
 left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
@@ -738,7 +746,9 @@ Piwi Runner, the privacy page, the connect page and the issue tracker page. PR 2
 ## Open questions
 
 1. **Piwi Runner's windows** (D8): does the static build of the dashboard's pages hold up, or does Piwi Runner need a
-   small app of its own sharing only the words? Settled by the spike before PR 4.
+   small app of its own sharing only the words? The spike (posted on #1163) found the static build does not hold up
+   (the hosting layout, plugins and middleware read the server) and proposes a small app of its own, served by a
+   small Node process that serves the run-target routes; the maintainer settles it before PR 4b.
 2. **Administrators and requested runs** (D14): do instance administrators see other people's requested runs, for
    support and audit, or the requester alone?
 3. **The capability's default** (D15): in which release does **Run on my machine** turn on by default?

@@ -1,4 +1,4 @@
-import type { RunRequestPromptView, RunTargetConnectionView } from '#shared/desktop-run-target';
+import type { RunRequestPromptView, RunTargetConnectionView } from '@piwitests/editor/run-target-view';
 
 /**
  * Desktop shell: hear the connection to the team instance and the run requests it sends. A key the device flow just

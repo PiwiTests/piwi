@@ -1,6 +1,5 @@
-import { requireAuth } from '../../../../../utils/auth';
-import { apiError } from '../../../../../utils/api-error';
-import { isRequestId, planAgain } from '../../../../../utils/desktop-run-target';
+import { runTargetRoute } from '../../../../../utils/run-target-route';
+
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
@@ -11,12 +10,4 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  await requireAuth(event);
-  const id = getRouterParam(event, 'id');
-  if (!isRequestId(id)) throw apiError({ statusCode: 400, message: 'Invalid request id' });
-  const prompt = await planAgain(id);
-  if (!prompt) throw apiError({ statusCode: 404, message: 'This request is no longer asked about' });
-  return prompt;
-});
+export default eventHandler((event) => runTargetRoute(event, 'plan'));

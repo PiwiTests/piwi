@@ -12,6 +12,11 @@
     "./run-host": "./src/run-host.ts",
     "./request-host": "./src/request-host.ts",
     "./request-run": "./src/request-run.ts",
+    "./host-guard": "./src/host-guard.ts",
+    "./run-target": "./src/run-target.ts",
+    "./run-target-routes": "./src/run-target-routes.ts",
+    "./run-target-http": "./src/run-target-http.ts",
+    "./run-target-view": "./src/run-target-view.ts",
     "./mcp-protocol": "./src/mcp-protocol.ts",
     "./server": "./dist/piwi-language-server.cjs"
   },

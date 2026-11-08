@@ -1,0 +1,225 @@
+/**
+ * The routes of a run target (`./run-target.ts`) under `/api/desktop/run-target`, framework-neutral: each takes a
+ * request (its headers, cookies, path id and parsed body) and answers a status and a body. A host adapts them to its
+ * framework (the desktop app's Nitro routes, `./run-target-http.ts`) after its guard took the access token
+ * (`./host-guard.ts`); the routes check the body and refuse a browser on the shell-only routes, so every host answers
+ * the same.
+ */
+import { isBrowserRequest, type HostRequest } from './host-guard';
+import {
+  answerRunRequest,
+  connectRunTarget,
+  disconnectRunTarget,
+  instanceUrlOf,
+  isRequestId,
+  keyToKeep,
+  launchOf,
+  linksOf,
+  planAgain,
+  requestedRunEnded,
+  requestedRunFailed,
+  requestedRunStarted,
+  runTargetConnection,
+  useKeptKey,
+  useLinks,
+  waitingRunRequests,
+} from './run-target';
+
+/** The path every run-target route sits under. */
+export const RUN_TARGET_BASE = '/api/desktop/run-target';
+
+/** A request to a run-target route. */
+export interface RunTargetRequest extends HostRequest {
+  /** The request id of a `/requests/:id/…` route. */
+  id?: string;
+  /** The parsed JSON body, or null. */
+  body: unknown;
+}
+
+/** A route's answer: an error's body is `{ message }`. */
+export interface RunTargetAnswer {
+  status: number;
+  body: unknown;
+  /** Whether the answer must not be cached (`Cache-Control: no-store`). */
+  noStore: boolean;
+}
+
+interface RouteDef {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  /** The path after `RUN_TARGET_BASE`, `:id` standing for a request id. */
+  path: string;
+  /** Called by the desktop shell alone: a browser's request is refused. */
+  shellOnly: boolean;
+  handle(request: RunTargetRequest): Promise<{ status: number; body: unknown }> | { status: number; body: unknown };
+}
+
+const ok = (body: unknown) => ({ status: 200, body });
+const refused = (status: number, message: string) => ({ status, body: { message } });
+const bodyOf = (request: RunTargetRequest) =>
+  (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>;
+const TARGET_KEY = /^pd_[0-9a-f]{16,128}$/;
+
+export const RUN_TARGET_ROUTES = {
+  /** The connection and the requests the window asks about. */
+  status: {
+    method: 'GET',
+    path: '',
+    shellOnly: false,
+    handle: () => ok({ connection: runTargetConnection(), requests: waitingRunRequests() }),
+  },
+  /** Start the device flow on an instance. */
+  connect: {
+    method: 'POST',
+    path: '/connect',
+    shellOnly: false,
+    handle: async (request) => {
+      const instance = instanceUrlOf(bodyOf(request).instance);
+      if (!instance) return refused(400, 'The instance is an http or https URL');
+      return ok(await connectRunTarget(instance));
+    },
+  },
+  /** The key the device flow gave, for the shell to keep. */
+  keepKey: {
+    method: 'POST',
+    path: '/key',
+    shellOnly: true,
+    handle: () => {
+      const kept = keyToKeep();
+      return kept ? ok(kept) : refused(404, 'No key to keep');
+    },
+  },
+  /** The kept key and the linked folders, from the shell after each start. */
+  useKey: {
+    method: 'PUT',
+    path: '/key',
+    shellOnly: true,
+    handle: (request) => {
+      const body = bodyOf(request);
+      const instance = instanceUrlOf(body.instance);
+      const links = linksOf(body.links ?? {});
+      if (!instance || typeof body.key !== 'string' || !TARGET_KEY.test(body.key) || !links) {
+        return refused(400, 'Invalid instance, key or links');
+      }
+      useKeptKey(instance, body.key, links);
+      return ok({ ok: true });
+    },
+  },
+  /** Disconnect. */
+  forgetKey: {
+    method: 'DELETE',
+    path: '/key',
+    shellOnly: true,
+    handle: () => {
+      disconnectRunTarget();
+      return ok({ ok: true });
+    },
+  },
+  /** The folders linked to the instance's projects. */
+  links: {
+    method: 'PUT',
+    path: '/links',
+    shellOnly: true,
+    handle: (request) => {
+      const links = linksOf(bodyOf(request).links);
+      if (!links) return refused(400, 'Invalid links');
+      useLinks(links);
+      return ok({ ok: true });
+    },
+  },
+  /** Check a request again, after the person linked its folder. */
+  plan: {
+    method: 'POST',
+    path: '/requests/:id/plan',
+    shellOnly: false,
+    handle: async (request) => {
+      const prompt = await planAgain(request.id!);
+      return prompt ? ok(prompt) : refused(404, 'This request is no longer asked about');
+    },
+  },
+  /** The person's answer in the window. */
+  answer: {
+    method: 'POST',
+    path: '/requests/:id/answer',
+    shellOnly: false,
+    handle: async (request) => {
+      const { decision, command } = bodyOf(request);
+      if (decision !== 'run' && decision !== 'not-now') return refused(400, 'The decision is run or not-now');
+      const answered = await answerRunRequest(request.id!, decision, typeof command === 'string' ? command : null);
+      return answered.ok ? ok({ launch: answered.launch }) : refused(answered.statusCode, answered.message);
+    },
+  },
+  /** What the shell starts after **Run**, once. */
+  launch: {
+    method: 'POST',
+    path: '/requests/:id/launch',
+    shellOnly: true,
+    handle: (request) => {
+      const launch = launchOf(request.id!);
+      return launch ? ok(launch) : refused(404, 'No run to start for this request');
+    },
+  },
+  /** The shell started the run, or could not. */
+  started: {
+    method: 'POST',
+    path: '/requests/:id/started',
+    shellOnly: true,
+    handle: async (request) => {
+      const { error } = bodyOf(request);
+      if (typeof error === 'string' && error) await requestedRunFailed(request.id!, error);
+      else await requestedRunStarted(request.id!);
+      return ok({ ok: true });
+    },
+  },
+  /** The run ended, with its exit code. */
+  ended: {
+    method: 'POST',
+    path: '/requests/:id/ended',
+    shellOnly: true,
+    handle: async (request) => {
+      const { code, stopped } = bodyOf(request);
+      await requestedRunEnded(
+        request.id!,
+        typeof code === 'number' && Number.isInteger(code) ? code : null,
+        stopped === true,
+      );
+      return ok({ ok: true });
+    },
+  },
+} as const satisfies Record<string, RouteDef>;
+
+export type RunTargetRouteName = keyof typeof RUN_TARGET_ROUTES;
+
+/**
+ * Answer one run-target route. A shell-only route refuses a browser's request (403) before anything else; a route
+ * under `/requests/:id` refuses an id that is not a request id (400). Every shell-only answer, and the status, is
+ * not to be cached.
+ */
+export async function answerRunTargetRoute(
+  name: RunTargetRouteName,
+  request: RunTargetRequest,
+): Promise<RunTargetAnswer> {
+  const route: RouteDef = RUN_TARGET_ROUTES[name];
+  if (route.shellOnly && isBrowserRequest(request)) {
+    return { ...refused(403, 'The desktop shell alone calls this route'), noStore: false };
+  }
+  const noStore = route.shellOnly || name === 'status';
+  if (route.path.includes(':id') && !isRequestId(request.id)) {
+    return { ...refused(400, 'Invalid request id'), noStore };
+  }
+  return { ...(await route.handle(request)), noStore };
+}
+
+/** The route a method and a path name, with the request id of a `/requests/:id` path; null for none. */
+export function matchRunTargetRoute(method: string, path: string): { name: RunTargetRouteName; id?: string } | null {
+  const pathname = path.split('?')[0]!.replace(/(.)\/$/, '$1');
+  if (pathname !== RUN_TARGET_BASE && !pathname.startsWith(`${RUN_TARGET_BASE}/`)) return null;
+  const rest = pathname.slice(RUN_TARGET_BASE.length);
+  const id = rest.match(/^\/requests\/([^/]+)\//)?.[1];
+  const shape = id === undefined ? rest : rest.replace(`/requests/${id}/`, '/requests/:id/');
+  for (const [name, route] of Object.entries(RUN_TARGET_ROUTES) as [RunTargetRouteName, RouteDef][]) {
+    if (route.method === method.toUpperCase() && route.path === shape) {
+      return id === undefined ? { name } : { name, id };
+    }
+  }
+  return null;
+}

@@ -192,6 +192,13 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its
   tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
+- **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
+  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks
+  and the refusal of a browser on the shell-only ones are `src/run-target-routes.ts`, and who may call a host is
+  `src/host-guard.ts`: the desktop app's Nitro routes and guard call them, never a copy.
+  `tests/run-target-routes.test.ts` holds the contract on the bare `node:http` host (`src/run-target-http.ts`), and
+  `apps/application/tests/unit/desktop-run-target.test.ts` the body, id and browser checks through the Nitro routes: a
+  change here runs both.
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the

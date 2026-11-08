@@ -1,6 +1,5 @@
-import { requireAuth } from '../../../utils/auth';
-import { apiError } from '../../../utils/api-error';
-import { connectRunTarget, instanceUrlOf } from '../../../utils/desktop-run-target';
+import { runTargetRoute } from '../../../utils/run-target-route';
+
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
@@ -11,11 +10,4 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  await requireAuth(event);
-  const body = ((await readBody(event).catch(() => null)) ?? {}) as { instance?: unknown };
-  const instance = instanceUrlOf(body.instance);
-  if (!instance) throw apiError({ statusCode: 400, message: 'The instance is an http or https URL' });
-  return connectRunTarget(instance);
-});
+export default eventHandler((event) => runTargetRoute(event, 'connect'));

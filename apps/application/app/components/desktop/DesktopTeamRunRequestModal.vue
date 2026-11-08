@@ -8,7 +8,7 @@
  * it has been shown, unchanged, in the visible and focused window for `ARM_AFTER_MS`, so a click or a key that brings
  * the window to the front, or lands as another request takes the place of the one shown, answers nothing.
  */
-import type { RunRequestPromptView } from '#shared/desktop-run-target';
+import type { RunRequestPromptView } from '@piwitests/editor/run-target-view';
 
 const { current, add, remove } = useDesktopTeamRequests();
 const store = useDesktopLocalRuns();

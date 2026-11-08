@@ -7,6 +7,7 @@
  * (`./request-run`) and starts the run.
  *
  * Every call carries the target's key, which holds `run:receive` alone, as a bearer token, through `instanceFetch`.
+ * The device flow that gives the target its key (`postDeviceFlow`) goes through it too, with no key.
  */
 import {
   parseRunRequest,
@@ -49,6 +50,9 @@ export interface RequestHostOptions {
   timing?: Partial<typeof DEFAULT_TIMING>;
 }
 
+/** How long a request token starts a run after **Run**, in milliseconds: the instance's grant, and the target's wait. */
+export const REQUEST_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
+
 const DEFAULT_TIMING = {
   /** The first pause before the stream is opened again; each next one doubles, up to `retryLastMs`. */
   retryFirstMs: 2_000,
@@ -88,6 +92,25 @@ function readOffer(value: unknown): RunRequestOffer | null {
   const { expiresAt, ...rest } = value as Record<string, unknown>;
   const request = readRequest(rest);
   return request && typeof expiresAt === 'string' ? { ...request, expiresAt } : null;
+}
+
+/**
+ * A call of the device flow that connects a target, before it has a key: `body` posted to `path` on `instance`
+ * through `instanceFetch`. Answers the status and the JSON answer, `{}` for an answer that is not JSON.
+ */
+export async function postDeviceFlow(
+  instance: string,
+  path: '/api/extension/connect' | '/api/extension/connect/token',
+  body: unknown,
+  fetchImpl: typeof instanceFetch = instanceFetch,
+): Promise<{ status: number; answer: Record<string, unknown> }> {
+  const response = await fetchImpl(`${instance}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const answer = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  return { status: response.status, answer };
 }
 
 const isRequestId = (id: unknown): id is string => typeof id === 'string' && RUN_REQUEST_ID.test(id);

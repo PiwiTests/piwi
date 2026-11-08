@@ -3,7 +3,7 @@
  * gives the connection (`run-target`) and each request the window asks the person about (`run-request`, the ones
  * still asked about again on every connection); the confirmation shows the first, oldest first.
  */
-import type { RunRequestPromptView, RunTargetConnectionView } from '#shared/desktop-run-target';
+import type { RunRequestPromptView, RunTargetConnectionView } from '@piwitests/editor/run-target-view';
 
 const NO_CONNECTION: RunTargetConnectionView = {
   state: 'none',

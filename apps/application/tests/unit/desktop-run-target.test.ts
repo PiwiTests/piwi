@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import type { H3Event } from 'h3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
-import type { RunTargetMessage } from '#shared/desktop-run-target';
+import type { RunTargetMessage } from '@piwitests/editor/run-target-view';
 import { apiError } from '../../server/utils/api-error';
 import {
   answerRunRequest,
@@ -20,13 +20,14 @@ import {
   requestedRunEnded,
   requestedRunStarted,
   resetDesktopRunTarget,
+  setRunTargetVersion,
   runTargetConnection,
   subscribeRunTargetShell,
   subscribeRunTargetWindow,
   useKeptKey,
   useLinks,
   type ShellRunTargetCommand,
-} from '../../server/utils/desktop-run-target';
+} from '@piwitests/editor/run-target';
 
 /**
  * The desktop app as a run target: the bundled server claims what a team instance offers, checks it against the
@@ -181,6 +182,7 @@ describe('a request from the team instance', () => {
     const shell: ShellRunTargetCommand[] = [];
     subscribeRunTargetWindow((message) => heard.push(message));
     subscribeRunTargetShell((command) => shell.push(command));
+    setRunTargetVersion('0.68.0');
     useKeptKey(instance.url, KEY, new Map([[3, folder]]));
 
     await until(() => heard.some((m) => m.type === 'run-request'));
@@ -193,7 +195,7 @@ describe('a request from the team instance', () => {
     });
     expect(JSON.stringify(heard)).not.toContain(KEY);
     const self = instance.calls.find((c) => c.path === '/api/run-targets/self')!;
-    expect(self.body).toMatchObject({ projectIds: [3] });
+    expect(self.body).toMatchObject({ version: '0.68.0', projectIds: [3] });
 
     // Run with a command the window did not show is asked about again.
     expect(await answerRunRequest(REQUEST_ID, 'run', 'npx playwright test')).toMatchObject({
