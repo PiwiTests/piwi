@@ -10,6 +10,7 @@ import {
   usedDesktopDiscovery,
 } from '../src/internal/config/env.js';
 import { readRequestedRun } from '../src/internal/config/requested-run.js';
+import { wrapConfig } from '../src/public/config-wrapper.js';
 
 const TOKEN = `pdq_${'c'.repeat(64)}`;
 const INSTANCE = 'https://piwi.example.com';
@@ -29,6 +30,7 @@ const TOUCHED_ENV = [
   'PIWI_COVERAGE_SERVER',
   'PIWI_COVERAGE_CSS',
   'PIWI_COLLECT_ENVIRONMENT_INFO',
+  'PIWI_DEFAULTED_CAPTURE',
   'CI',
 ];
 
@@ -175,6 +177,17 @@ describe('a requested run', () => {
     expect(process.env.PIWI_API_KEY).toBe(undefined);
     expect(process.env.PIWI_USERNAME).toBe(undefined);
     expect(process.env.PIWI_PASSWORD).toBe(undefined);
+  });
+
+  it('takes the server and credentials a `.env` file gives the workers, with no Piwi options', () => {
+    process.env.PIWI_REQUEST_TOKEN_FILE = tokenFile;
+    process.env.PIWI_REQUEST_INSTANCE = INSTANCE;
+    process.env.PIWI_DASHBOARD_URL = 'https://other.example.com';
+    process.env.PIWI_API_KEY = `pd_${'d'.repeat(64)}`;
+    wrapConfig({});
+    expect(process.env.PIWI_DASHBOARD_URL).toBe(undefined);
+    expect(process.env.PIWI_API_KEY).toBe(undefined);
+    expect(process.env.PIWI_AI).toBe('replay');
   });
 
   it('leaves the workers’ environment alone outside a requested run', () => {
