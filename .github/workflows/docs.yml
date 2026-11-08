@@ -11,6 +11,7 @@ on:
       - 'apps/application/**'
       - 'packages/core/**'
       - 'packages/picker-dom/**'
+      - 'packages/run-ui/**'
       - 'packages/reporter/src/public/options.ts'
       - 'packages/reporter/src/internal/config/env.ts'
       - 'CHANGELOG.md'

@@ -13,6 +13,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `apps/application/`: the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md)   |
 | `packages/reporter/`: the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
 | `apps/desktop/`: the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
+| `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md)     |
 | `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
 | `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
 | `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
@@ -47,6 +48,7 @@ packages/core/        @piwitests/core: private, zero-dependency logic shared by 
 packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
 packages/editor/      @piwitests/editor: the language server both editor clients bundle (scope `ide`)
+packages/run-ui/      @piwitests/run-ui: the Nuxt layer the dashboard and Piwi Runner share (run request UI, Tauri bridge)
 packages/server/      @piwitests/server: the published npm run option (`npx @piwitests/server`)
 integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
 examples/sample-app/  One web app and its Playwright suite, served by each supported backend

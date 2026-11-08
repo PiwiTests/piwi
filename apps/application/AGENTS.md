@@ -43,6 +43,13 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   without a folder prefix (`pathPrefix: false` in `nuxt.config.ts`), so two components of the same name collide.
 - **Import `shared/` as `#shared/...`** from `app/`, `server/` and the demo, never with a relative path or
   `~~/shared/...`. `shared/` holds the types, constants and pure helpers the app, the server and the demo share.
+- **Code both this app and Piwi Runner's window use lives in the `@piwitests/run-ui` layer** (`packages/run-ui/`,
+  extended in `nuxt.config.ts`): the team run request confirmation and connection (`DesktopTeamRunRequestModal`,
+  `DesktopTeamInstance`, `useDesktopTeamRequests`, the `desktop-team-requests.client.ts` plugin), the host's event
+  stream (`subscribeDesktopEvents`), `CodeBlock`, `useCopy`, the Tauri bridge (`useTauri.ts`), `errorMessage`,
+  `copyPreview` and the syntax highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules
+  that a vitest file loads without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`,
+  `@piwitests/run-ui/text`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
   or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
   there: `packages/core/tests/boundary.test.ts` fails on a dependency or on an import that is not relative (`node:`, a

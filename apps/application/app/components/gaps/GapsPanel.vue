@@ -9,7 +9,7 @@
  * Self-contained: fetches its own data with watch + $fetch so it fires only when
  * the view mounts.
  */
-import { errorMessage, SENTENCE_LINK_CLASS } from '~/utils';
+import { SENTENCE_LINK_CLASS } from '~/utils';
 import { coverageTabLink } from '~/utils/coverage-tab';
 import type { GapRowItem } from '~/utils/gap-row';
 import type { GapCode } from '~~/server/utils/coverage-summary';

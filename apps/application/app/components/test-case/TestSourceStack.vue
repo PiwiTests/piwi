@@ -10,7 +10,7 @@
 import type { TestSourceFrame } from '~~/types/api';
 import type { DebugInIdeTarget } from '~/composables/useOpenInIde';
 import { atFailurePlace } from '~/utils/ide-links';
-import { highlightLines, languageForPath } from '#shared/highlight';
+import { highlightLines, languageForPath } from '@piwitests/run-ui/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 
 const props = defineProps<{

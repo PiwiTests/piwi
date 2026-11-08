@@ -594,7 +594,7 @@ rule):
     the `ChartMarkerLines` in its slot, outside the SVG), `ChartTooltip`, `ChartMarkerLines`, `ChartLegend`,
     `ChartMarkerTooltip`; and `MiniRunBars`.
   - `DurationValue`: a tight `210ms`, through the pure `splitDuration`.
-  - `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`.
+  - `CodeBlock` (from the `@piwitests/run-ui` layer), `MarkdownPreview`, `DiffPatch` / `DiffFile`.
   - `CoverageSourceView`: a source file with the lines a coverage ran and the executable lines it did not, the
     functions that ran linked above it, and an optional per-line annotation column; without the source, the line
     numbers alone.
@@ -644,7 +644,7 @@ rule):
 `app/composables/` holds state and behavior shared across components:
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
-  `useTauri.ts`).
+  `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
 - **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
   the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
@@ -668,7 +668,7 @@ rule):
 - **The assistant**: `useAssistant` (the panel's state across navigation, the question asked with its page, the
   answer's event stream, its Stop and Try again, the question being typed, the question history) and
   `useAssistantDock` (where the panel sits, and its width).
-- **Small utilities**: `useCopy` / `useCopyRich` (use them instead of calling `navigator.clipboard` by hand),
+- **Small utilities**: `useCopy` (from the `@piwitests/run-ui` layer) / `useCopyRich` (use them instead of calling `navigator.clipboard` by hand),
   `useAiStatus`, `useChartTooltip`.
 
 How the guide engine plays a guide (`app/composables/useGuide.ts`):
@@ -689,7 +689,7 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
 `app/utils/` holds pure helpers. The main ones:
 
 - `index.ts`: `formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`,
-  `createSortHeader`, `formatBytes`, `errorMessage`, patch and commit helpers, the cluster color maps.
+  `createSortHeader`, `formatBytes`, patch and commit helpers, the cluster color maps.
 - `page-error.ts`: `showPageLoadError`. A detail page whose entity does not load shows `app/error.vue`, inside the
   dashboard layout, and answers with the API's 404 or 403.
 - `route-query.ts`: `replaceQuery`. Query changes made in the same tick (a tab switch and the list the tab mounts) add

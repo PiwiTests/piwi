@@ -16,7 +16,7 @@
 import { markdownToHtml } from '#shared/markdown-to-html';
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from './html';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightCode, highlightLines, languageForPath } from '#shared/highlight';
+import { highlightCode, highlightLines, languageForPath } from '@piwitests/run-ui/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { stepLabelParts } from '@piwitests/core/step-analysis';
 import { outcomeText, percent } from '#shared/notifications/message-parts';

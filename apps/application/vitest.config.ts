@@ -12,10 +12,10 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts'],
     // Migrates one SQLite database for every test file to copy (`migrateToLatest`, tests/unit/temp-db.ts).
     globalSetup: ['tests/unit/global-setup.ts'],
-    // @piwitests/core and @piwitests/editor ship TS source; inline them so
+    // @piwitests/core, @piwitests/editor and @piwitests/run-ui ship TS source; inline them so
     // Vitest transpiles them from the workspace instead of trying to load them
     // as built dependencies.
-    server: { deps: { inline: [/@piwitests\/core/, /@piwitests\/editor/] } },
+    server: { deps: { inline: [/@piwitests\/core/, /@piwitests\/editor/, /@piwitests\/run-ui/] } },
     coverage: {
       provider: 'v8',
       // json-summary + json feed the PR coverage comment (see .github/workflows/ci.yml).

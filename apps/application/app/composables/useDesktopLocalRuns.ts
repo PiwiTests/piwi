@@ -1215,16 +1215,10 @@ export function useDesktopLocalRuns() {
     title: string;
   }): LocalRun | null {
     if (!tauriCore()) return null;
-    let host = input.instance;
-    try {
-      host = new URL(input.instance).host;
-    } catch {
-      // The instance as given.
-    }
     return spawn({
       kind: 'request',
       projectId: input.projectId,
-      projectLabel: host,
+      projectLabel: teamInstanceHost(input.instance),
       cases: input.cases,
       title: input.title,
       options: { ...DEFAULT_LOCAL_RUN_OPTIONS },

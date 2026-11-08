@@ -6,7 +6,6 @@
  * either a covered application or a map that cannot see yet.
  */
 import { docsUrl } from '#shared/docs';
-import { errorMessage } from '~/utils';
 
 interface HealthRow {
   id: string;

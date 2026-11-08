@@ -9,6 +9,7 @@
     "packages/server",
     "packages/reporter",
     "packages/editor",
+    "packages/run-ui",
     "apps/application",
     "apps/extension",
     "apps/vscode",

@@ -52,7 +52,7 @@ import {
   type Tone,
 } from '#shared/notifications/message-parts';
 import type { StatusColorKey } from '#shared/status-colors';
-import { languageForPath } from '#shared/highlight';
+import { languageForPath } from '@piwitests/run-ui/highlight';
 import { durationShort } from '#shared/relative-time';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { sparkline } from '#shared/reports/chart';

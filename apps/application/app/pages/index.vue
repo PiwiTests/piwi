@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
-import { errorMessage } from '~/utils';
 import { overviewInEnvironments, runsInFilters } from '~/utils/home-overview';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import type { RecentRunCount } from '#shared/handlers/test-runs';

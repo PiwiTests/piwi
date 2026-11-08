@@ -88,6 +88,8 @@ const demoPwaConfig = isDemo
     { disable: true };
 
 export default defineNuxtConfig({
+  // The team run request confirmation, the connection card and the helpers they use are shared with Piwi Runner.
+  extends: ['../../packages/run-ui'],
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
   // Baked into the demo's static HTML and shown until the app first renders,
@@ -117,14 +119,15 @@ export default defineNuxtConfig({
   },
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
-  // with the reporter), and so does @piwitests/editor, whose run control the
-  // desktop build's server hosts (server/utils/desktop-runs.ts); Vite must
+  // with the reporter), and so do @piwitests/editor, whose run control the
+  // desktop build's server hosts (server/utils/desktop-runs.ts), and
+  // @piwitests/run-ui, whose highlighter the server renders exports with; Vite must
   // transpile them since node_modules is not transpiled by default. Nuxt also
   // passes this list to Nitro's externals.inline, so they are bundled into the
   // server build instead of being copied as TypeScript into
   // .output/server/node_modules.
   build: {
-    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor'],
+    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor', '@piwitests/run-ui'],
   },
 
   devtools: {
@@ -488,7 +491,7 @@ export default defineNuxtConfig({
         'drizzle-orm/sqlite-proxy',
         // The guided tour's engine, loaded when a tour starts.
         'driver.js',
-        // The languages shared/highlight.ts registers.
+        // The languages @piwitests/run-ui's highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',
         'highlight.js/lib/languages/css',

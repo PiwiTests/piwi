@@ -8,6 +8,7 @@ import { starredFirst } from '~/utils/project-stars';
 const route = useRoute();
 const toast = useToast();
 const config = useRuntimeConfig();
+const localRuns = useDesktopLocalRuns();
 
 const open = ref(false);
 const searchTerm = ref('');
@@ -620,7 +621,7 @@ onMounted(async () => {
     <DesktopPickerPairingModal />
 
     <!-- Desktop shell: a team instance asks to run tests here, waiting for the person's Run -->
-    <DesktopTeamRunRequestModal />
+    <DesktopTeamRunRequestModal @start="localRuns.startTeamRequest" />
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />

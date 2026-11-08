@@ -6,12 +6,24 @@
  * it, or refuses it with the checks that failed. The shell takes the command and the request token from this app's
  * server, never from this window. **Run**, **Not now** and closing the dialog answer the request shown, and only once
  * it has been shown, unchanged, in the visible and focused window for `ARM_AFTER_MS`, so a click or a key that brings
- * the window to the front, or lands as another request takes the place of the one shown, answers nothing.
+ * the window to the front, or lands as another request takes the place of the one shown, answers nothing. Once the
+ * shell is told to run a request, the modal emits `start`: the host decides what shows the run.
  */
 import type { RunRequestPromptView } from '@piwitests/editor/run-target-view';
 
+const emit = defineEmits<{
+  start: [
+    run: {
+      requestId: string;
+      instance: string;
+      projectId: number;
+      cases: RunRequestPromptView['tests'];
+      title: string;
+    },
+  ];
+}>();
+
 const { current, add, remove } = useDesktopTeamRequests();
-const store = useDesktopLocalRuns();
 const toast = useToast();
 const starting = ref(false);
 const linking = ref(false);
@@ -56,35 +68,10 @@ const open = computed({
   },
 });
 
-const host = computed(() => {
-  const url = current.value?.instance;
-  if (!url) return 'your team instance';
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-});
+const host = computed(() => teamInstanceHost(current.value?.instance));
 const testCount = computed(() => current.value?.tests.length ?? 0);
 const answerBy = computed(() => (current.value ? new Date(current.value.answerBy) : null));
-const options = computed(() => {
-  const o = current.value?.options;
-  if (!o) return [];
-  return [
-    o.headed ? 'headed' : 'headless',
-    o.trace ? `trace ${o.trace}` : null,
-    o.repeatEach && o.repeatEach > 1 ? `repeat ${o.repeatEach}×` : null,
-    o.workers ? `${o.workers} workers` : null,
-    o.project ? `project ${o.project}` : null,
-  ].filter(Boolean) as string[];
-});
-
-const CHECK_ICONS = {
-  ok: 'i-lucide-circle-check',
-  warn: 'i-lucide-triangle-alert',
-  fail: 'i-lucide-circle-x',
-} as const;
-const CHECK_COLORS = { ok: 'text-success', warn: 'text-warning', fail: 'text-error' } as const;
+const options = computed(() => optionWords(current.value?.options));
 
 async function chooseFolder() {
   const request = current.value;
@@ -117,7 +104,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
       body: { decision, command: request.command },
     });
     if (decision === 'run' && answered.launch) {
-      store.startTeamRequest({
+      emit('start', {
         requestId: request.id,
         instance: request.instance,
         projectId: request.projectId,
@@ -142,9 +129,9 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
       <div v-if="current" :key="current.id" class="space-y-4" data-shot="desktop-team-run-request">
         <p class="text-sm text-muted">
           You asked <span class="font-medium text-highlighted">{{ host }}</span> to run
-          {{ testCount === 1 ? 'a test' : `${testCount} tests` }} here, in the folder linked to its project. It runs the
-          code of that folder on this machine; nothing runs until you click <strong>Run</strong>. The request ends
-          unanswered at {{ answerBy?.toLocaleTimeString() }}.
+          {{ testCountWords(testCount) }} here, in the folder linked to its project. It runs the code of that folder on
+          this machine; nothing runs until you click <strong>Run</strong>. The request ends unanswered at
+          {{ answerBy?.toLocaleTimeString() }}.
         </p>
 
         <ul class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm">

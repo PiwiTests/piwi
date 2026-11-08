@@ -38,7 +38,7 @@ import {
   type DesktopRunEvent,
   type DesktopRunPick,
 } from '#shared/desktop-runs';
-import { errorMessage } from '~/utils';
+import { errorMessage } from '@piwitests/run-ui/text';
 import { desktopLaneKey, desktopLaneRun, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */

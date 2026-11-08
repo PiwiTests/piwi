@@ -7,7 +7,7 @@
  * left edge and `data-suspect`.
  */
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
-import { highlightDiffRows, languageForPath } from '#shared/highlight';
+import { highlightDiffRows, languageForPath } from '@piwitests/run-ui/highlight';
 import { patchHeadLines } from '~/utils/suspect-lines';
 
 const props = defineProps<{

@@ -7,7 +7,7 @@ import {
   highlightToSpans,
   isKnownLanguage,
   languageForPath,
-} from '../../shared/highlight';
+} from '../src/highlight';
 
 /** The visible text of a highlighted fragment. */
 function textOf(fragment: string): string {
