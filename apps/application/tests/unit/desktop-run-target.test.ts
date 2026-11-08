@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import type { H3Event } from 'h3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
-import type { RunTargetMessage } from '#shared/desktop-run-target';
+import type { RunTargetMessage } from '@piwitests/editor/run-target-view';
 import { apiError } from '../../server/utils/api-error';
 import {
   answerRunRequest,
@@ -26,7 +26,7 @@ import {
   useKeptKey,
   useLinks,
   type ShellRunTargetCommand,
-} from '../../server/utils/desktop-run-target';
+} from '@piwitests/editor/run-target';
 
 /**
  * The desktop app as a run target: the bundled server claims what a team instance offers, checks it against the

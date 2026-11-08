@@ -1,6 +1,6 @@
 /**
- * Desktop build: the desktop app as a run target of one team instance (**Run on my machine**). The bundled server
- * runs the request host (`@piwitests/editor/request-host`) with the key the shell keeps in the OS keychain, claims
+ * A run target of one team instance (**Run on my machine**), as the desktop app's bundled server serves it on its
+ * `/api/desktop/run-target` routes. It runs the request host (`@piwitests/editor/request-host`) with the key the shell keeps in the OS keychain, claims
  * each request offered, checks it against the folder linked to its project on this machine and asks the person in the
  * window. After **Run**, the shell takes the request token and the command from here (`launchOf`), starts the run and
  * reports it started and ended; a stop from the dashboard goes to the shell on its notification stream.
@@ -8,13 +8,18 @@
  * Nothing is stored: the key and the folders come from the shell after each start (`useKeptKey`), the requests live
  * in memory while they are asked about or run. The window never reads the key nor a request token.
  */
-import os from 'node:os';
+import * as os from 'node:os';
 import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
 import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
-import { RequestHost, RequestHostError, type RequestHostStatus } from '@piwitests/editor/request-host';
-import { planRequestedRun, type RequestPlan } from '@piwitests/editor/request-run';
-import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from '#shared/desktop-run-target';
-import { REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
+import {
+  postDeviceFlow,
+  REQUEST_TOKEN_LIFETIME_MS,
+  RequestHost,
+  RequestHostError,
+  type RequestHostStatus,
+} from './request-host';
+import { planRequestedRun, type RequestPlan } from './request-run';
+import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from './run-target-view';
 
 /** How long a claimed request waits for the person's answer, as the instance counts it. */
 const ANSWER_WITHIN_MS = 10 * 60 * 1000;
@@ -168,12 +173,11 @@ export function linksOf(value: unknown): Map<number, string> | null {
   return links.size <= 200 ? links : null;
 }
 
-function desktopVersion(): string {
-  try {
-    return (useRuntimeConfig().public as { appVersion?: string }).appVersion || '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
+let appVersion = '0.0.0';
+
+/** The version the target describes itself with to the instance, set once by the app that serves it. */
+export function setRunTargetVersion(version: string): void {
+  appVersion = version || '0.0.0';
 }
 
 function platformName(): string {
@@ -220,7 +224,7 @@ function startHost(instance: string, key: string): void {
   const host = new RequestHost({
     instance,
     key,
-    describe: () => ({ platform: platformName(), version: desktopVersion(), projectIds: [...state.links.keys()] }),
+    describe: () => ({ platform: platformName(), version: appVersion, projectIds: [...state.links.keys()] }),
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
@@ -349,16 +353,6 @@ export function disconnectRunTarget(): void {
   tellConnection();
 }
 
-async function postJson(url: string, body: unknown): Promise<{ status: number; answer: Record<string, unknown> }> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const answer = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  return { status: response.status, answer };
-}
-
 /**
  * Connect to `instance`: start the device flow there, for the person to allow the app on its page. Connecting to
  * another instance disconnects the first. Answers the code and the page to open.
@@ -366,9 +360,9 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; a
 export async function connectRunTarget(instance: string): Promise<RunTargetConnectionView> {
   disconnectRunTarget();
   state.instance = instance;
-  let started: Awaited<ReturnType<typeof postJson>>;
+  let started: Awaited<ReturnType<typeof postDeviceFlow>>;
   try {
-    started = await postJson(`${instance}/api/extension/connect`, {
+    started = await postDeviceFlow(instance, '/api/extension/connect', {
       target: 'desktop',
       device: os.hostname().slice(0, 100) || 'this computer',
       os: platformName(),
@@ -411,9 +405,9 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
       tellConnection();
       return;
     }
-    let polled: Awaited<ReturnType<typeof postJson>> | null = null;
+    let polled: Awaited<ReturnType<typeof postDeviceFlow>> | null = null;
     try {
-      polled = await postJson(`${instance}/api/extension/connect/token`, { deviceCode: flow.deviceCode });
+      polled = await postDeviceFlow(instance, '/api/extension/connect/token', { deviceCode: flow.deviceCode });
     } catch {
       polled = null;
     }

@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
 import { isBrowserRequest } from '../../../utils/desktop-access';
-import { instanceUrlOf, linksOf, useKeptKey } from '../../../utils/desktop-run-target';
+import { instanceUrlOf, linksOf, useKeptKey } from '@piwitests/editor/run-target';
 defineRouteMeta({
   openAPI: {
     tags: ['System'],

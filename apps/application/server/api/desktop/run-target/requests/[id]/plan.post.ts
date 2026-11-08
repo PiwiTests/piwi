@@ -1,6 +1,6 @@
 import { requireAuth } from '../../../../../utils/auth';
 import { apiError } from '../../../../../utils/api-error';
-import { isRequestId, planAgain } from '../../../../../utils/desktop-run-target';
+import { isRequestId, planAgain } from '@piwitests/editor/run-target';
 defineRouteMeta({
   openAPI: {
     tags: ['System'],

@@ -1,7 +1,7 @@
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';
 import { isBrowserRequest } from '../../../utils/desktop-access';
-import { disconnectRunTarget } from '../../../utils/desktop-run-target';
+import { disconnectRunTarget } from '@piwitests/editor/run-target';
 defineRouteMeta({
   openAPI: {
     tags: ['System'],

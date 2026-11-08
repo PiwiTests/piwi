@@ -10,7 +10,7 @@ import { createSSEEndpoint } from '../../utils/sse';
 import { subscribeDesktopOpenRequests } from '../../utils/desktop-handoff';
 import { subscribeReproRequests, waitingReproRequests } from '../../utils/desktop-repro';
 import { subscribePairings, waitingPairings } from '../../utils/desktop-pairing';
-import { runTargetConnection, subscribeRunTargetWindow, waitingRunRequests } from '../../utils/desktop-run-target';
+import { runTargetConnection, subscribeRunTargetWindow, waitingRunRequests } from '@piwitests/editor/run-target';
 import { getActiveTestRuns } from '#shared/handlers/test-runs';
 
 defineRouteMeta({

@@ -6,7 +6,7 @@
  * with none asks for its folder in its confirmation. Disconnecting removes the key from the keychain; it stays listed
  * in the instance's Connected apps until it is revoked there.
  */
-import type { RunTargetConnectionView } from '#shared/desktop-run-target';
+import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
 
 const { connection } = useDesktopTeamRequests();
 const toast = useToast();

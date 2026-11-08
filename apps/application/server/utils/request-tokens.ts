@@ -17,8 +17,7 @@ import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
  * the requester, and is spent as that run is stored. The run's own stream token takes over from there.
  */
 
-/** How long a request token starts a run after **Run**, in milliseconds. */
-export const REQUEST_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
+export { REQUEST_TOKEN_LIFETIME_MS } from '@piwitests/editor/request-host';
 
 /** A new request token, and the digest the request keeps in its place. */
 export function newRequestToken(): { token: string; digest: string } {

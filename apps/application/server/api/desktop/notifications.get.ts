@@ -10,7 +10,7 @@ import { apiError } from '../../utils/api-error';
 import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { desktopNotification } from '../../utils/desktop-notifications';
-import { subscribeRunTargetShell } from '../../utils/desktop-run-target';
+import { subscribeRunTargetShell } from '@piwitests/editor/run-target';
 import type { NotificationEventData } from '#shared/notifications/browser-message';
 
 defineRouteMeta({
