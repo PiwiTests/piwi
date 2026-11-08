@@ -1,0 +1,456 @@
+// Piwi Runner: the shell of the app that runs the tests a team instance asks for on this machine.
+//
+// It is this crate built with the `runner` feature (`run` in lib.rs hands over to it). On launch it:
+//   1. creates a per-user data folder for the folder links, the log and the settings,
+//   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
+//   3. waits for `GET /api/health` to echo the launch nonce,
+//   4. points the window at the host through the one-time token bootstrap (`/__piwi/session`).
+// There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
+// this machine may take it for one. Everything binds 127.0.0.1.
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use serde_json::json;
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt as _;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt as _;
+use tauri_plugin_window_state::StateFlags;
+
+use crate::mcp_clients::ServerInfo;
+use crate::{
+    append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
+    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, random_hex_32,
+    show_splash_status, shut_down, supervise_server, LaunchNonce, LogFile, QuitConfirmed,
+    ServerGaveUp, ServerProcess, ShuttingDown, LINK_SCHEME, READY_TIMEOUT_SECS,
+};
+use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
+
+/// The log of the shell and of the host's output, in the app's data folder.
+const LOG_FILE: &str = "runner.log";
+/// The splash's status line once the host takes longer than `READY_TIMEOUT_SECS`.
+const SPLASH_SLOW: &str =
+    "The local host is taking longer than usual to start. Still waiting: the window opens once it is up.";
+/// The splash's status line once the supervisor stopped restarting the host.
+const SPLASH_STOPPED: &str =
+    "The local host stopped and could not be restarted. Quit and relaunch Piwi Runner.";
+
+/// What the Runner host needs to be spawned again on the same port and token.
+struct HostConfig {
+    entry: PathBuf,
+    token: String,
+    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own host.
+    launch_nonce: String,
+    port: u16,
+    log_path: PathBuf,
+}
+
+/// A free loopback port for the host: Runner has no address anyone bookmarks, so it takes whatever is free.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|addr| addr.port())
+        .expect("failed to acquire a free loopback port")
+}
+
+/// The IPC grants of the window (`runtime-capabilities/runner.json`), scoped to the exact origin of the host this
+/// launch spawned.
+fn runner_capability(port: u16) -> String {
+    let mut capability: serde_json::Value =
+        serde_json::from_str(include_str!("../runtime-capabilities/runner.json"))
+            .expect("runtime-capabilities/runner.json is valid JSON");
+    capability["remote"] = json!({ "urls": [crate::sidecar_origin(port)] });
+    capability.to_string()
+}
+
+/// The bundled host's entry. Tauri may place the resource at `<res>/resources/runner-host` (keeping the
+/// config-relative path) or `<res>/runner-host`: accept either.
+fn host_entry_candidates(resource_dir: &Path) -> [PathBuf; 2] {
+    [
+        resource_dir
+            .join("resources")
+            .join("runner-host")
+            .join("server.cjs"),
+        resource_dir.join("runner-host").join("server.cjs"),
+    ]
+}
+
+/// Spawn the bundled Node sidecar running the Runner host. Returns its event stream and child handle, or `None` when
+/// the sidecar is missing or the spawn fails (both logged; the readiness probe then times out).
+fn spawn_host(
+    app: &AppHandle,
+    cfg: &HostConfig,
+) -> Option<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild)> {
+    let cmd = match app.shell().sidecar("node") {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("sidecar 'node' not found: {e}"));
+            return None;
+        }
+    };
+    let cmd = cmd
+        .args([node_path(&cfg.entry)])
+        .env("NODE_ENV", "production")
+        .env("PIWI_RUNNER_PORT", cfg.port.to_string())
+        .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
+        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone());
+    match cmd.spawn() {
+        Ok(pair) => Some(pair),
+        Err(e) => {
+            append_log(&cfg.log_path, &format!("failed to spawn the host: {e}"));
+            None
+        }
+    }
+}
+
+/// Whether `url` is the `piwi://connect` link: the one link Runner answers. It carries nothing to act on, so the
+/// link only brings the window forward; connecting an instance and every run stay a click in the window.
+fn is_connect_link(url: &tauri::Url) -> bool {
+    url.scheme() == LINK_SCHEME
+        && url
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("connect"))
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+}
+
+/// Bring the window forward for a `piwi://connect` link; any other `piwi://` link is ignored, and logged.
+fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
+    // On macOS the files the app opens come through here too, as `file:` URLs.
+    if !urls.iter().any(|url| url.scheme() == LINK_SCHEME) {
+        return;
+    }
+    if urls.iter().any(is_connect_link) {
+        if let Some(w) = app.get_webview_window("main") {
+            bring_to_front(&w);
+        }
+        return;
+    }
+    if let Some(log) = app.try_state::<LogFile>() {
+        append_log(
+            &log.0,
+            &format!("ignored a {LINK_SCHEME}:// link that Piwi Runner does not answer"),
+        );
+    }
+}
+
+pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch focuses the running window and starts no second host.
+            if let Some(w) = app.get_webview_window("main") {
+                bring_to_front(&w);
+            }
+        }))
+        // `piwi://connect` links (`open_links`). Registered after single-instance, which hands it a second launch's
+        // link.
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    StateFlags::all().difference(StateFlags::VISIBLE.union(StateFlags::FULLSCREEN)),
+                )
+                .build(),
+        )
+        // The window stays on the app's own pages and the host's exact origin.
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("piwi-navigation")
+                .on_navigation(|webview, url| {
+                    let dev_url = if tauri::is_dev() {
+                        webview.config().build.dev_url.as_ref()
+                    } else {
+                        None
+                    };
+                    webview.label() != "main"
+                        || main_window_may_navigate(
+                            url,
+                            webview.try_state::<ServerInfo>().map(|s| s.port),
+                            dev_url,
+                        )
+                })
+                .build(),
+        );
+    #[cfg(feature = "e2e-testing")]
+    {
+        builder = builder.plugin(tauri_plugin_playwright::init());
+    }
+
+    builder
+        .invoke_handler(tauri::generate_handler![
+            desktop_bring_to_front,
+            desktop_open_external,
+            runner::desktop_stop_local_tests,
+            run_target::desktop_keep_run_target_key,
+            run_target::desktop_forget_run_target,
+            run_target::desktop_request_folders,
+            run_target::desktop_link_request_folder,
+            run_target::desktop_unlink_request_folder,
+            run_target::desktop_run_requested_tests
+        ])
+        .manage(ServerProcess::default())
+        .manage(ServerGaveUp::default())
+        .manage(runner::LocalRuns::default())
+        .manage(run_target::KeptKey::default())
+        .manage(run_target::RequestedRuns::default())
+        .manage(QuitConfirmed::default())
+        .setup(|app| {
+            let app_data_dir = app.path().app_data_dir()?;
+            private_fs::create_private_dir(&app_data_dir)?;
+            let log_dir = app_data_dir.join("logs");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_path = log_dir.join(LOG_FILE);
+            append_log(&log_path, "----- launch -----");
+            app.manage(LogFile(log_path.clone()));
+
+            // Nothing outlives this launch: the token and the nonce are made now and kept nowhere.
+            let token = random_hex_32();
+            let launch_nonce = random_hex_32();
+            let port = free_port();
+            app.handle().add_capability(runner_capability(port))?;
+            app.manage(ServerInfo {
+                port,
+                token: token.clone(),
+            });
+            app.manage(LaunchNonce(launch_nonce.clone()));
+
+            let shutting_down = Arc::new(AtomicBool::new(false));
+            app.manage(ShuttingDown(shutting_down.clone()));
+
+            let resource_dir = app.path().resource_dir()?;
+            let candidates = host_entry_candidates(&resource_dir);
+            let entry = candidates
+                .iter()
+                .find(|p| p.exists())
+                .cloned()
+                .unwrap_or_else(|| candidates[0].clone());
+            append_log(
+                &log_path,
+                &format!(
+                    "host entry: {} (exists: {}), port: {}",
+                    entry.display(),
+                    entry.exists(),
+                    port
+                ),
+            );
+
+            let host = HostConfig {
+                entry,
+                token: token.clone(),
+                launch_nonce: launch_nonce.clone(),
+                port,
+                log_path: log_path.clone(),
+            };
+            if let Some(initial) = spawn_host(app.handle(), &host) {
+                supervise_server(
+                    app.handle().clone(),
+                    log_path.clone(),
+                    move |app| spawn_host(app, &host),
+                    initial,
+                    shutting_down.clone(),
+                );
+            } else {
+                crate::give_up_server(app.handle());
+            }
+
+            // When the host is ready, follow its notifications (the stop of a run, asked in the dashboard) and
+            // navigate the window to it. The wait goes on past `READY_TIMEOUT_SECS`, which only changes what the
+            // splash says, and ends when the supervisor gives up or the app quits.
+            let nav_handle = app.handle().clone();
+            let quitting = shutting_down.clone();
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                let mut slow = false;
+                let ready = loop {
+                    if health_ok(port, &launch_nonce) {
+                        break true;
+                    }
+                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
+                    if gave_up || quitting.load(Ordering::SeqCst) {
+                        break false;
+                    }
+                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
+                        slow = true;
+                        append_log(&log_path, "host not ready yet, still waiting");
+                        show_splash_status(&nav_handle, SPLASH_SLOW);
+                    }
+                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
+                };
+                append_log(
+                    &log_path,
+                    if ready {
+                        "host ready"
+                    } else {
+                        "host never became ready"
+                    },
+                );
+                if !ready {
+                    if !quitting.load(Ordering::SeqCst) {
+                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                    }
+                    return;
+                }
+                follow_notifications(
+                    nav_handle.clone(),
+                    port,
+                    token.clone(),
+                    launch_nonce.clone(),
+                    quitting,
+                );
+                let bootstrap_url = bootstrap_url(port, &token, None);
+                let inner = nav_handle.clone();
+                let _ = nav_handle.run_on_main_thread(move || {
+                    if let Some(w) = inner.get_webview_window("main") {
+                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
+                    }
+                });
+            });
+
+            // Links into the app: the one that launched it (Windows and Linux pass it as the argument), then each
+            // one that comes while it runs.
+            #[cfg(target_os = "linux")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = handle.deep_link().register_all() {
+                        if let Some(log) = handle.try_state::<LogFile>() {
+                            append_log(
+                                &log.0,
+                                &format!("could not register {LINK_SCHEME}:// links: {e}"),
+                            );
+                        }
+                    }
+                });
+            }
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                open_links(app.handle(), &urls);
+            }
+            let link_handle = app.handle().clone();
+            app.deep_link()
+                .on_open_url(move |event| open_links(&link_handle, &event.urls()));
+
+            #[cfg(feature = "e2e-testing")]
+            {
+                let _ = app
+                    .handle()
+                    .add_capability(crate::E2E_PLAYWRIGHT_CAPABILITY);
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // The window is the app: closing it quits, once the user agrees to stop the runs still going.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && hold_close_for_local_runs(window) {
+                    api.prevent_close();
+                }
+            }
+        })
+        .build(context)
+        .expect("error while building the Piwi Runner app")
+        .run(|app_handle, event| match event {
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => shut_down(app_handle, None),
+            _ => {}
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(text: &str) -> tauri::Url {
+        tauri::Url::parse(text).expect("a valid URL")
+    }
+
+    #[test]
+    fn only_the_connect_link_is_answered() {
+        assert!(is_connect_link(&url("piwi://connect")));
+        assert!(is_connect_link(&url("piwi://CONNECT/")));
+        // Anything it carries is not read.
+        assert!(is_connect_link(&url(
+            "piwi://connect?instance=https://evil.example"
+        )));
+        assert!(!is_connect_link(&url("piwi://open/runs")));
+        assert!(!is_connect_link(&url("piwi://connect.evil.example")));
+        assert!(!is_connect_link(&url("piwi://user@connect")));
+        assert!(!is_connect_link(&url("piwi://connect:80")));
+        assert!(!is_connect_link(&url("https://connect")));
+        assert!(!is_connect_link(&url("piwi:///connect")));
+    }
+
+    #[test]
+    fn the_connect_link_is_not_a_page_of_the_dashboard() {
+        assert_eq!(crate::link_page(&url("piwi://connect")), None);
+        assert!(crate::link_page(&url("piwi://open/runs")).is_some());
+    }
+
+    #[test]
+    fn the_host_is_found_in_either_resource_layout() {
+        let [nested, flat] = host_entry_candidates(Path::new("/res"));
+        assert_eq!(nested, Path::new("/res/resources/runner-host/server.cjs"));
+        assert_eq!(flat, Path::new("/res/runner-host/server.cjs"));
+    }
+
+    #[test]
+    fn the_free_port_can_be_bound() {
+        let port = free_port();
+        assert!(port > 0);
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
+    }
+
+    #[test]
+    fn the_capability_is_scoped_to_the_hosts_origin_and_the_main_window() {
+        let capability: serde_json::Value = serde_json::from_str(&runner_capability(4321)).unwrap();
+        assert_eq!(
+            capability["remote"]["urls"],
+            json!(["http://127.0.0.1:4321"])
+        );
+        assert_eq!(capability["windows"], json!(["main"]));
+    }
+
+    #[test]
+    fn the_capability_grants_the_commands_the_window_is_registered_with() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../runtime-capabilities/runner.json")).unwrap();
+        let mut granted: Vec<String> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter_map(|p| p.strip_prefix("allow-"))
+            .map(|p| p.replace('-', "_"))
+            .collect();
+        granted.sort();
+        let source = include_str!("runner_app.rs");
+        let block = source
+            .split("generate_handler![")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .unwrap();
+        let mut registered: Vec<String> = block
+            .split(',')
+            .map(|name| name.trim().rsplit("::").next().unwrap().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+        registered.sort();
+        assert_eq!(granted, registered);
+    }
+
+    #[test]
+    fn the_app_never_publishes_the_discovery_file() {
+        // The reporter, the MCP bridge and the editor take `~/.piwi/desktop.json` for a Piwi server: Runner is not one.
+        let source = include_str!("runner_app.rs");
+        let code = source.split("#[cfg(test)]").next().unwrap();
+        assert!(!code.contains("write_discovery_file"));
+        assert!(!code.contains("DiscoveryFile"));
+        assert!(!code.contains("DISCOVERY_FILE"));
+    }
+}

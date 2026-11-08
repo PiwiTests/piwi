@@ -1,13 +1,14 @@
 {
   "name": "@piwitests/runner",
   "version": "0.67.0",
-  "description": "Piwi Runner: the app that runs the tests a team instance asks for on this machine, with the window and the Node host that serve it",
   "private": true,
+  "description": "Piwi Runner: the app that runs the tests a team instance asks for on this machine, with the window and the Node host that serve it",
   "license": "FSL-1.1-MIT",
   "type": "module",
   "scripts": {
     "runner:build": "node scripts/build.mjs",
     "runner:window": "nuxt generate",
+    "runner:stage": "node scripts/stage.mjs",
     "runner:window:dev": "nuxt dev --strictPort",
     "runner:prepare": "nuxt prepare",
     "runner:test": "vitest run",

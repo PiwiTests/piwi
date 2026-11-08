@@ -1092,10 +1092,12 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
 /// port and token with a capped backoff so the window is never left pointed at a
 /// dead port. A tight crash-loop (`MAX_RESTARTS_IN_WINDOW` inside
 /// `RESTART_WINDOW_SECS`) stops the loop rather than hammering. Runs on its own
-/// thread and keeps `ServerProcess` pointing at the live child.
+/// thread and keeps `ServerProcess` pointing at the live child. `respawn` starts
+/// the sidecar again; its output goes to `log_path`.
 fn supervise_server(
     app: AppHandle,
-    cfg: ServerConfig,
+    log_path: PathBuf,
+    respawn: impl Fn(&AppHandle) -> Option<(Receiver<CommandEvent>, CommandChild)> + Send + 'static,
     initial: (Receiver<CommandEvent>, CommandChild),
     shutting_down: Arc<AtomicBool>,
 ) {
@@ -1112,17 +1114,17 @@ fn supervise_server(
             while let Some(event) = rx.blocking_recv() {
                 match event {
                     CommandEvent::Stdout(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
                     CommandEvent::Stderr(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
-                    CommandEvent::Error(err) => append_log(&cfg.log_path, &format!("[server:proc] {err}")),
+                    CommandEvent::Error(err) => append_log(&log_path, &format!("[server:proc] {err}")),
                     CommandEvent::Terminated(payload) => {
                         append_log(
-                            &cfg.log_path,
+                            &log_path,
                             &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
                         );
                         break;
@@ -1144,7 +1146,7 @@ fn supervise_server(
             }
             if restarts >= MAX_RESTARTS_IN_WINDOW {
                 append_log(
-                    &cfg.log_path,
+                    &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
                 give_up_server(&app);
@@ -1153,7 +1155,7 @@ fn supervise_server(
 
             let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
             restarts += 1;
-            append_log(&cfg.log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            append_log(&log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
             let _ = app.emit("server-status", "restarting");
             std::thread::sleep(Duration::from_secs(backoff));
 
@@ -1161,7 +1163,7 @@ fn supervise_server(
                 break;
             }
 
-            match spawn_server_process(&app, &cfg) {
+            match respawn(&app) {
                 Some((new_rx, new_child)) => {
                     app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
                     rx = new_rx;
@@ -2651,6 +2653,9 @@ const E2E_PLAYWRIGHT_CAPABILITY: &str = r#"{
   "permissions": ["playwright:default"]
 }"#;
 
+// After the commands it registers, whose macros it reaches by their position in this file.
+mod runner_app;
+
 pub fn run() {
     // Windows: a stop request for a local run starts a short-lived copy of this
     // binary to deliver the Ctrl+C (see interrupt.rs). Handled first — it never
@@ -2661,6 +2666,16 @@ pub fn run() {
         if args.first().map(String::as_str) == Some(interrupt::HELPER_ARG) {
             interrupt::run_helper(args.get(1).map(String::as_str));
         }
+    }
+
+    // The app's context, made once: the macro embeds the bundle's Info.plist, which one crate holds a single copy of.
+    let context = tauri::generate_context!();
+
+    // Piwi Runner is this same crate built with the `runner` feature: it has its own entry, with no server, tray or
+    // reporter discovery file (`runner_app`).
+    if cfg!(feature = "runner") {
+        runner_app::run(context);
+        return;
     }
 
     let args = args_to_act_on(std::env::args().collect());
@@ -2756,8 +2771,6 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_playwright::init());
     }
-
-    let context = tauri::generate_context!();
 
     // Update support exists only in builds made with the signing key: CI then
     // applies an updater overlay (tauri.updater.conf.json for .msi,
@@ -2976,7 +2989,15 @@ pub fn run() {
                 }),
             };
             if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
-                supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
+                let respawn_config = server_config;
+                let supervised_log = respawn_config.log_path.clone();
+                supervise_server(
+                    app.handle().clone(),
+                    supervised_log,
+                    move |app| spawn_server_process(app, &respawn_config),
+                    initial,
+                    shutting_down.clone(),
+                );
             } else {
                 give_up_server(app.handle());
             }

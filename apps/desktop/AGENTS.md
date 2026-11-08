@@ -32,10 +32,16 @@ shell and are feature-equivalent.
 - **A `piwi://` link only shows a page.** Anyone can send one, so the shell reads only `piwi://open/<page>`
   (`link_page`), the page passes `desktopPagePath` again in the window and at the session bootstrap, and a launch whose
   first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`).
+  Piwi Runner answers one more link, `piwi://connect` (`is_connect_link` in `runner_app.rs`): it brings the window
+  forward and carries nothing, so no host, instance or key can arrive on a link. Any other link is logged and ignored.
 - **A new Tauri command is wired in three places**: `tauri::generate_handler!` in `src-tauri/src/lib.rs`, the
   `.commands(&[…])` list in `src-tauri/build.rs`, and an `allow-*` grant in `runtime-capabilities/remote.json`.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`
   fails until they match.
+  Piwi Runner has its own `generate_handler!` in `src-tauri/src/runner_app.rs` and its own grant,
+  `runtime-capabilities/runner.json`; the same test requires that grant to equal that handler's commands and to hold none
+  of the dashboard-only ones (`desktop_set_server_port`, `desktop_open_in_ide`, `desktop_mcp_connect`,
+  `desktop_install_update`, `desktop_skills_write`). A command both apps use is wired in both.
 - **Everything binds `127.0.0.1`, behind the desktop token.** Every `/api` and `/mcp` request must present the
   per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`
   with `@piwitests/editor/host-guard`,
@@ -70,6 +76,7 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
@@ -88,6 +95,7 @@ shell and are feature-equivalent.
 
   They ship separately, so changing the path or the shape means changing all of them; a new field is fine, since
   every reader ignores the ones it does not know.
+
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
   one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
@@ -103,6 +111,13 @@ shell and are feature-equivalent.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
+- **The `runner` cargo feature builds Piwi Runner from this crate.** `cargo tauri build --features runner --config
+  runner.conf.json` swaps the entry (`runner_app::run`), the product (name, identifier, one window, no file
+  associations), the sidecar's script (`resources/runner-host`, staged by `npm run runner:stage` in `apps/runner`) and
+  the keychain service (`Piwi Runner run requests`, so an entry written by one app is never read by the other). The rest
+  of `run_target.rs`, the window guards and the supervisor are shared. Runner has no tray, no updater, no hub of its own
+  and never writes `~/.piwi/desktop.json`: do not add any of them to `runner_app.rs`. `runner_app` is compiled with and
+  without the feature so `cargo test` covers both.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
