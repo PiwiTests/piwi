@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import {
+  applyOptionsToEnv,
   requestedRunProblem,
   requestedRunTarget,
   resolveOptions,
@@ -21,6 +22,13 @@ const TOUCHED_ENV = [
   'PIWI_API_KEY',
   'PIWI_USERNAME',
   'PIWI_PASSWORD',
+  'PIWI_AI',
+  'PIWI_AI_UPDATE',
+  'PIWI_CAPTURE_CODE_REACH',
+  'PIWI_COVERAGE_BROWSER',
+  'PIWI_COVERAGE_SERVER',
+  'PIWI_COVERAGE_CSS',
+  'PIWI_COLLECT_ENVIRONMENT_INFO',
   'CI',
 ];
 
@@ -139,7 +147,40 @@ describe('a requested run', () => {
     expect(opts.captureCodeReach).toBe(false);
     expect(opts.coverage).toBe(undefined);
     expect(opts.ai?.mode).toBe('replay');
+    expect(opts.collectEnvironmentInfo).toBe(false);
     expect(requestedRunTarget()).toBe(INSTANCE);
+  });
+
+  it('gives the workers no AI authoring, capture of reach or coverage, environment, server or credentials', () => {
+    process.env.PIWI_REQUEST_TOKEN_FILE = tokenFile;
+    process.env.PIWI_REQUEST_INSTANCE = INSTANCE;
+    // What `wrapConfig` bridges from the config each worker loads again.
+    applyOptionsToEnv({
+      serverUrl: 'https://other.example.com',
+      apiKey: `pd_${'d'.repeat(64)}`,
+      username: 'robin',
+      password: 'secret',
+      captureCodeReach: true,
+      coverage: { browser: 'lines', server: 'lines', css: 'rules' },
+      ai: { mode: 'resolve' },
+    });
+    expect(process.env.PIWI_AI).toBe('replay');
+    expect(process.env.PIWI_AI_UPDATE).toBe('false');
+    expect(process.env.PIWI_CAPTURE_CODE_REACH).toBe('false');
+    expect(process.env.PIWI_COVERAGE_BROWSER).toBe('off');
+    expect(process.env.PIWI_COVERAGE_SERVER).toBe('off');
+    expect(process.env.PIWI_COVERAGE_CSS).toBe('off');
+    expect(process.env.PIWI_COLLECT_ENVIRONMENT_INFO).toBe('false');
+    expect(process.env.PIWI_DASHBOARD_URL).toBe(undefined);
+    expect(process.env.PIWI_API_KEY).toBe(undefined);
+    expect(process.env.PIWI_USERNAME).toBe(undefined);
+    expect(process.env.PIWI_PASSWORD).toBe(undefined);
+  });
+
+  it('leaves the workers’ environment alone outside a requested run', () => {
+    applyOptionsToEnv({ serverUrl: 'https://other.example.com', ai: { mode: 'resolve' } });
+    expect(process.env.PIWI_DASHBOARD_URL).toBe('https://other.example.com');
+    expect(process.env.PIWI_AI).toBe('resolve');
   });
 
   it('sends nothing when the token cannot be read, rather than reach another server', () => {

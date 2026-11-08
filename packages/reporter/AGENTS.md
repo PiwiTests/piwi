@@ -15,6 +15,9 @@ responsibilities.
    change and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts`
    pins the two together.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
+   - a requested run's `PIWI_REQUEST_INSTANCE` and `PIWI_REQUEST_TOKEN_FILE`, which beat every other server and
+     credential, in the reporter and in each worker's environment (`applyRequestedRunEnv`, written last), and skip
+     every rung but `/finish` ([`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects), `tests/requested-run.spec.ts`);
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment; the boolean ones `onBegin` writes as `true`
      or `false`, `normalizeBoolEnv`), and the ones `onBegin` sets for the workers: for a run started in a terminal or

@@ -3,7 +3,7 @@ import type { PiwiDashboardOptions } from '../../public/options.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
-import { readRequestedRun } from './requested-run.js';
+import { applyRequestedRunEnv, namesRequestedRun, readRequestedRun } from './requested-run.js';
 
 /**
  * Built-in option defaults, merged *under* any user-provided or env-derived
@@ -542,6 +542,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
     mergedRaw.sampleAriaOnPass = false;
     mergedRaw.uploadManifest = false;
     mergedRaw.captureCodeReach = false;
+    mergedRaw.collectEnvironmentInfo = false;
     delete mergedRaw.coverage;
     // AI steps only replay what the project committed: authoring reaches the server the config names.
     mergedRaw.ai = { ...mergedRaw.ai, mode: 'replay' };
@@ -652,4 +653,6 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
     env[PIWI_ENV_KEYS.aiResponseWaitTimeout] = String(options.ai.responseWaitTimeout);
   if (options.ai?.screenshotFallback !== undefined)
     env[PIWI_ENV_KEYS.aiScreenshotFallback] = String(options.ai.screenshotFallback);
+  // Each worker loads the config again, so a requested run's overrides go last, over what the config bridged.
+  if (namesRequestedRun(env)) applyRequestedRunEnv(env);
 }

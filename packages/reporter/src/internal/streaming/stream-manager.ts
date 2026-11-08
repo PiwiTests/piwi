@@ -377,7 +377,14 @@ export class StreamManager {
 
   // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run.
   private giveUpStart(error: unknown): void {
-    if (error instanceof HttpError && error.status === 401) {
+    const requested = requestedRunTarget();
+    if (requested) {
+      // A requested run starts with its request token alone and has no batch upload to fall back to.
+      this.logger.warn(
+        `The run could not start on ${requested}, which asked for it (${errorMessage(error)}): ` +
+          `nothing is sent. The request may have ended, or its token expired.`,
+      );
+    } else if (error instanceof HttpError && error.status === 401) {
       this.logger.warn(
         `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
           `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +

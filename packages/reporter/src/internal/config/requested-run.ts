@@ -1,4 +1,3 @@
-import * as fs from 'node:fs';
 import { REQUEST_RUN_ENV, REQUEST_TOKEN } from '@piwitests/core/run-request';
 import { readPrivateFile } from '../support/private-file.js';
 
@@ -36,7 +35,7 @@ export function readRequestedRun(env: NodeJS.ProcessEnv): RequestedRun | { probl
     read = null;
   }
   if (!read) return { problem: `The request token file in ${REQUEST_RUN_ENV.tokenFile} cannot be read.` };
-  if ('untrusted' in read || readableByOthers(file)) {
+  if ('untrusted' in read || readableByOthers(read.mode)) {
     return { problem: `The request token file in ${REQUEST_RUN_ENV.tokenFile} is not this user's alone.` };
   }
   const token = read.text.trim();
@@ -46,12 +45,35 @@ export function readRequestedRun(env: NodeJS.ProcessEnv): RequestedRun | { probl
   return { instance: `${url.origin}${url.pathname.replace(/\/+$/, '')}`, token };
 }
 
-/** Whether another user may read `file`: a request token is this user's alone, to read as to write. */
-function readableByOthers(file: string): boolean {
+/**
+ * Whether another user may read the file opened with `mode`: a request token is this user's alone, to read as to
+ * write. Unix only: on Windows the mode bits say nothing, and the private temp folder's access list guards the file.
+ */
+function readableByOthers(mode: number): boolean {
   if (typeof process.getuid !== 'function') return false;
-  try {
-    return (fs.statSync(file).mode & 0o044) !== 0;
-  } catch {
-    return true;
-  }
+  return (mode & 0o044) !== 0;
+}
+
+/** Whether `env` names a requested run at all, one this reporter can take or not. */
+export function namesRequestedRun(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env[REQUEST_RUN_ENV.tokenFile] || env[REQUEST_RUN_ENV.instance]);
+}
+
+/**
+ * The worker environment of a requested run, written over what the config bridged: AI steps replay only, code reach,
+ * coverage and environment snapshots stay off, and no worker holds the config's server or credentials, which the
+ * request does not reach.
+ */
+export function applyRequestedRunEnv(env: NodeJS.ProcessEnv): void {
+  env.PIWI_AI = 'replay';
+  env.PIWI_AI_UPDATE = 'false';
+  env.PIWI_CAPTURE_CODE_REACH = 'false';
+  env.PIWI_COVERAGE_BROWSER = 'off';
+  env.PIWI_COVERAGE_SERVER = 'off';
+  env.PIWI_COVERAGE_CSS = 'off';
+  env.PIWI_COLLECT_ENVIRONMENT_INFO = 'false';
+  delete env.PIWI_DASHBOARD_URL;
+  delete env.PIWI_API_KEY;
+  delete env.PIWI_USERNAME;
+  delete env.PIWI_PASSWORD;
 }

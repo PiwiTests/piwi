@@ -232,11 +232,12 @@ export class RunSubmitter {
     // in. Fall through to the batch upload, which re-sends the full run from the
     // reporter's own in-memory collection, so the missing detail is recovered. A
     // run the dashboard ended while it streamed takes nothing more, so it goes
-    // whole in the batch upload too.
+    // whole in the batch upload too. A requested run has no batch upload, so it finishes with what reached the
+    // instance.
     if (sm?.runEnded) {
       fallbackReason = 'run-ended';
     } else if (sm?.enabled && sm?.runId != null) {
-      if (sm.lostResults) fallbackReason = 'results-lost';
+      if (sm.lostResults && !requested) fallbackReason = 'results-lost';
       else {
         outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests, reports);
         if (!outcome.done) fallbackReason = 'finish-failed';

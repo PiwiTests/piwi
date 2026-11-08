@@ -24,6 +24,7 @@ import {
   type DotEnvUse,
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
+import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
 import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
@@ -402,6 +403,8 @@ export class PiwiDashboardReporter {
     }
     // The workers, which start after this hook, read the boolean variables as the reporter does.
     normalizeBoolEnv(process.env);
+    // A requested run's workers reach neither the config's server nor its credentials.
+    if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
     const followed = followEditor([configDirFromConfig(config), process.cwd()], {
