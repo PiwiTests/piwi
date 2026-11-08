@@ -44,5 +44,5 @@ npm run runner:stage         # copies dist/server.cjs and .output/public into th
 ```
 
 The app itself is built from the desktop crate: after `runner:build`, `runner:window` and `runner:stage`, run
-`npx tauri build --features runner --config runner.conf.json` from `apps/desktop`.
+`npx tauri build --features runner --config src-tauri/runner.conf.json` from `apps/desktop`.
 Signing, installers and publishing are not wired yet.
