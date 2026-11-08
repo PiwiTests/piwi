@@ -87,6 +87,21 @@ describe('requestedRunArgs', () => {
       '--project=firefox',
     ]);
   });
+
+  test('a test with no line never runs its whole file: the request goes by title', () => {
+    const args = requestedRunArgs(
+      request({
+        tests: [{ filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: null, projectName: null }],
+      }),
+      folder,
+      false,
+    );
+    expect(args).toEqual([
+      specFilePattern(path.join(folder, 'tests', 'checkout.spec.ts')),
+      '--grep=(?:^| )(?:pays with a saved card)(?: @\\S+)*$',
+      '--headed',
+    ]);
+  });
 });
 
 describe('planRequestedRun', () => {

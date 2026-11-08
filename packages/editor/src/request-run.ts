@@ -67,22 +67,29 @@ function sameCommit(a: string, b: string): boolean {
   return x.length >= 7 && y.length >= 7 && (x.startsWith(y) || y.startsWith(x));
 }
 
+/** Whether a request's tests are picked by title: off its commit, with changes, or when a test has no line. */
+export function picksByTitle(request: RunRequest, offCommit: boolean): boolean {
+  return offCommit || request.tests.some((t) => !t.line);
+}
+
 /**
  * The arguments after `playwright test` for `request` in `folder` (its real path, as Playwright resolves the
  * config's folder): each test by `file:line`, or with `byTitle` each spec file and one `--grep` of the titles, then
- * the project and the options. A `--grep` value is one element written `--grep=<pattern>`, so it never reads as an
- * option.
+ * the project and the options. A test with no line is never run as its whole file: the request goes by title. A
+ * `--grep` value is one element written `--grep=<pattern>`, so it never reads as an option.
  */
 export function requestedRunArgs(request: RunRequest, folder: string, byTitle: boolean): string[] {
+  byTitle = picksByTitle(request, byTitle);
   const unique = (values: string[]) => [...new Set(values)];
   const files = (test: { filePath: string }) => path.resolve(folder, test.filePath.replaceAll('\\', '/'));
   const args = byTitle
     ? unique(request.tests.map((t) => specFilePattern(files(t))))
-    : unique(request.tests.map((t) => (t.line ? specFileArgument(files(t), t.line) : specFilePattern(files(t)))));
+    : unique(request.tests.map((t) => specFileArgument(files(t), t.line!)));
   if (byTitle) {
-    // Playwright matches the title path (project, file, describe blocks, title) and the tags, joined by spaces: each
-    // title is anchored at the end, before the tags, so a title that is part of another, of a describe block or of
-    // the file's path selects nothing more.
+    // Playwright matches the title path (project, file, describe blocks, title) and the tags, joined by spaces, and
+    // ignores case. Each title is anchored at the end, before the tags, and after a space or the start: a test whose
+    // title path ends with the title as whole words is selected too, in any case ("logs in" selects "user logs in"
+    // and "LOGS IN"), within the request's spec files.
     const titles = unique(request.tests.map((t) => t.title)).map(escapeGrep);
     args.push(`--grep=(?:^| )(?:${titles.join('|')})(?: @\\S+)*$`);
   }
@@ -184,6 +191,6 @@ export async function planRequestedRun(request: RunRequest, folder: string | nul
   if (changed) {
     checks.push({ id: 'changes', level: 'warn', message: 'Your folder has uncommitted changes.' });
   }
-  const byTitle = !onCommit || changed;
+  const byTitle = picksByTitle(request, !onCommit || changed);
   return done({ args: requestedRunArgs(request, real, byTitle), byTitle, branch, commit });
 }
