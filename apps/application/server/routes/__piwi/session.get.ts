@@ -1,6 +1,4 @@
-import { desktopSessionTarget } from '#shared/desktop-handoff';
-import { timingSafeEqualStr } from '../../utils/timing-safe';
-import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
+import { answerSession } from '@piwitests/editor/run-target-session';
 
 // Desktop (Tauri) bootstrap endpoint.
 //
@@ -11,24 +9,13 @@ import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
 // authorized by server/middleware/desktop-guard.ts. It then shows the page
 // `to` names (a `piwi://open/…` link that launched the app), or the home page.
 // Responds 404 unless PIWI_DESKTOP_TOKEN is set, so it does not exist on the
-// normal server build.
+// normal server build. The answer comes from the editor service, which serves
+// the same route on its own host.
 export default defineEventHandler((event) => {
-  const token = process.env.PIWI_DESKTOP_TOKEN;
-  if (!token) {
-    throw apiError({ statusCode: 404, statusMessage: 'Not found' });
+  const answer = answerSession(getQuery(event), process.env.PIWI_DESKTOP_TOKEN);
+  if (answer.status !== 302) {
+    throw apiError({ statusCode: answer.status, statusMessage: answer.message });
   }
-
-  const provided = getQuery(event).token;
-  if (typeof provided !== 'string' || !timingSafeEqualStr(provided, token)) {
-    throw apiError({ statusCode: 403, statusMessage: 'Invalid desktop token' });
-  }
-
-  setCookie(event, TOKEN_COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
-  });
-
-  return sendRedirect(event, desktopSessionTarget(getQuery(event).to));
+  setCookie(event, answer.cookie.name, answer.cookie.value, answer.cookie.options);
+  return sendRedirect(event, answer.location);
 });
