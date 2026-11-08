@@ -3,40 +3,24 @@
 Rules for working inside `packages/run-ui/` (`@piwitests/run-ui`, a Nuxt layer). The dashboard (`apps/application`)
 extends it with its server render, and Piwi Runner's window (`apps/runner`) extends it with `ssr: false`. Read
 [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventions.
-
-## What it holds
-
-| Path                                               | What                                                                                    |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `app/components/DesktopTeamRunRequestModal.vue`    | The confirmation of a run request a team instance sent; emits `start` when **Run** wins |
-| `app/components/DesktopTeamInstance.vue`           | Connecting to a team instance (the device flow), its status, its linked folders         |
-| `app/components/CodeBlock.vue`                     | A code block with a copy button                                                         |
-| `app/composables/useDesktopTeamRequests.ts`        | The connection and the queue of requests the confirmation shows                         |
-| `app/composables/useTauri.ts`, `useCopy.ts`        | The Tauri bridge (`tauriCore`, `tauriEvent`, `tauriWindowLabel`) and the clipboard      |
-| `app/utils/run-target-words.ts`, `text.ts`         | The words of the connection and the request, `errorMessage`, `copyPreview`              |
-| `app/utils/desktop-events.ts`                      | The one shared `EventSource` on `/api/desktop/events` (`subscribeDesktopEvents`)        |
-| `app/plugins/desktop-team-requests.client.ts`      | Feeds the host's run-request queue from that stream inside the shell's main window      |
-| `src/highlight.ts` (`@piwitests/run-ui/highlight`) | The one syntax-highlighting setup, also used by the server's exports and notifications  |
+[`ARCHITECTURE.md`](ARCHITECTURE.md) lists what the layer holds.
 
 ## Rules
 
 - **Shared code moves here; it is never copied.** A component, composable or helper both hosts need lives in this
   layer, and each host uses it by auto-import. A second copy in a host is a bug.
-- **The layer knows no host.** It imports nothing from `apps/*`, `~/` or `#shared/`. What only a host can do reaches the
-  layer as an event (the modal's `start`) or a slot, and what a host frames (the dashboard's `SectionCard`) stays in the
+- **The layer knows no host.** It imports nothing from `apps/*`, `~/` or `#shared/`. What only a host can do reaches
+  the layer as an event (the modal's `start`), a slot or a prop (the app's name), and what a host frames stays in the
   host.
 - **It builds with and without a server render.** A component renders on the server and hydrates, or mounts in a
-  single-page app; browser-only globals (`window`, `document`, the Tauri bridge) are read in `onMounted` or behind
-  `tauriCore()`. `tests/layer.test.ts` loads the layer as a host extends it, both ways.
+  single-page app, so browser-only globals are read in `onMounted` or behind `tauriCore()`. `tests/layer.test.ts` loads
+  the layer as a host extends it, both ways.
 - **The logic is not here.** The held requests, the reconnect key and the checks live in `@piwitests/editor`
-  (`request-host.ts`, `run-target.ts`); the layer renders the views it sends (`run-target-view.ts`) and calls the host's
+  (`request-host.ts`, `run-target.ts`), and the layer renders the views it sends and calls the host's
   `/api/desktop/run-target/*` routes. The layer does not decide the guard.
-- **Auto-imports are the layer's interface.** A file in `app/components/`, `app/composables/` or `app/utils/` is
-  imported by name in the hosts, so a name is unique across the layer and every host, and across the repository's other
-  exports: `npm run knip` reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere (the
-  extension's) as unused.
-- **A host's own framing stays in the host**: the dashboard's settings page, `SectionCard` and layout, and the Runner's
-  window.
+- **Auto-imports are the layer's interface.** A name is unique across the layer, every host and the repository's other
+  exports, since a file in `app/components/`, `app/composables/` or `app/utils/` is imported by name. `npm run knip`
+  reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere as unused.
 
 ## Commands
 

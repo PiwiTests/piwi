@@ -1,5 +1,5 @@
-// Bundle the Node host into one file, dist/server.cjs, stamped with the app's version. The window's files
-// (`nuxt generate`) are copied beside it as dist/public by the staging step that bundles the app.
+// Bundle the Node host into one file, dist/server.cjs, stamped with the app's version. The staging step copies it, with
+// the window's files (`nuxt generate`) as public/, to apps/desktop/src-tauri/resources/runner-host/.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';

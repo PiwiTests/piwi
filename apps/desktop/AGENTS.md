@@ -32,16 +32,15 @@ shell and are feature-equivalent.
 - **A `piwi://` link only shows a page.** Anyone can send one, so the shell reads only `piwi://open/<page>`
   (`link_page`), the page passes `desktopPagePath` again in the window and at the session bootstrap, and a launch whose
   first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`).
-  Piwi Runner answers one more link, `piwi://connect` (`is_connect_link` in `runner_app.rs`): it brings the window
-  forward and carries nothing, so no host, instance or key can arrive on a link. Any other link is logged and ignored.
+- **Piwi Runner answers `piwi-runner://connect` and no other link.** It only brings the window forward (`is_connect_link`
+  in `runner_app.rs`), so no host, instance or key can arrive on a link; the desktop app keeps `piwi`.
 - **A new Tauri command is wired in three places**: `tauri::generate_handler!` in `src-tauri/src/lib.rs`, the
   `.commands(&[…])` list in `src-tauri/build.rs`, and an `allow-*` grant in `runtime-capabilities/remote.json`.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`
   fails until they match.
-  Piwi Runner has its own `generate_handler!` in `src-tauri/src/runner_app.rs` and its own grant,
-  `runtime-capabilities/runner.json`; the same test requires that grant to equal that handler's commands and to hold none
-  of the dashboard-only ones (`desktop_set_server_port`, `desktop_open_in_ide`, `desktop_mcp_connect`,
-  `desktop_install_update`, `desktop_skills_write`). A command both apps use is wired in both.
+- **Piwi Runner's commands are wired apart**: its own `generate_handler!` in `runner_app.rs` and its own grant,
+  `runtime-capabilities/runner.json`. `desktop-acl-consistency.test.ts` requires the grant to equal that handler's
+  commands and to hold none of the dashboard-only ones; a command both apps use is wired in both.
 - **Everything binds `127.0.0.1`, behind the desktop token.** Every `/api` and `/mcp` request must present the
   per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`
   with `@piwitests/editor/host-guard`,
@@ -111,13 +110,11 @@ shell and are feature-equivalent.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.
-- **The `runner` cargo feature builds Piwi Runner from this crate.** `cargo tauri build --features runner --config
-  runner.conf.json` swaps the entry (`runner_app::run`), the product (name, identifier, one window, no file
-  associations), the sidecar's script (`resources/runner-host`, staged by `npm run runner:stage` in `apps/runner`) and
-  the keychain service (`Piwi Runner run requests`, so an entry written by one app is never read by the other). The rest
-  of `run_target.rs`, the window guards and the supervisor are shared. Runner has no tray, no updater, no hub of its own
-  and never writes `~/.piwi/desktop.json`: do not add any of them to `runner_app.rs`. `runner_app` is compiled with and
-  without the feature so `cargo test` covers both.
+- **The `runner` cargo feature builds Piwi Runner from this crate.** It swaps the entry (`runner_app::run`), the
+  product, the sidecar's script and the keychain service, and shares the rest of `run_target.rs`, the window guards and
+  the supervisor ([layout](../runner/ARCHITECTURE.md#the-shell-build)).
+- **Piwi Runner has no tray, updater or hub of its own and never writes `~/.piwi/desktop.json`.** Nothing in
+  `runner_app.rs` adds any of them, and `runner_app` compiles with and without the feature so `cargo test` covers both.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `packages/run-ui/app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
