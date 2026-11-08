@@ -11,15 +11,21 @@ import type { RunOnMyMachineChoice, RunRequestSourceChoice } from '~/composables
 
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<{
-  projectId: number;
-  /** What the page can send, the first one chosen. */
-  choices: RunOnMyMachineChoice[];
-  /** The Playwright projects the tests ran in. */
-  projects?: readonly string[];
-}>();
+// An absent `machineRuns` stays undefined, not Vue's `false` for a boolean prop: the button then reads the capability list.
+const props = withDefaults(
+  defineProps<{
+    projectId: number;
+    /** Whether the capability is on for the project, when the page's data already says so: the button then loads no capability list. */
+    machineRuns?: boolean;
+    /** What the page can send, the first one chosen. */
+    choices: RunOnMyMachineChoice[];
+    /** The Playwright projects the tests ran in. */
+    projects?: readonly string[];
+  }>(),
+  { machineRuns: undefined, projects: undefined },
+);
 
-const { shown, apps, appsLoaded, loadApps, send } = await useRunOnMyMachine(props.projectId);
+const { shown, apps, appsLoaded, loadApps, send } = await useRunOnMyMachine(props.projectId, props.machineRuns);
 const { prefs, project } = useRetryOptions();
 const { request, error: progressError, follow, stop, reset } = useRunRequestProgress();
 const config = useRuntimeConfig();

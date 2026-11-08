@@ -408,6 +408,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       <RunOnMyMachineButton
         v-if="testRun?.projectId && machineChoices.length"
         :project-id="testRun.projectId"
+        :machine-runs="testRun.machineRuns ?? false"
         :choices="machineChoices"
       />
 

@@ -1,3 +1,4 @@
+import { capabilityHidden } from '#shared/capabilities';
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { RunRequestView } from '#shared/handlers/run-requests';
 import type { ConnectedApp, ConnectedAppsResponse } from '~~/types/api';
@@ -25,14 +26,21 @@ export type RunTargetApp = ConnectedApp & { target: NonNullable<ConnectedApp['ta
  * **Run on my machine** on one project's pages: whether it shows (sign-in on, the capability read as on for the
  * project, so a list that failed to load hides it, and the person holds `run:request` there; never in the desktop
  * window, which runs tests itself), the person's apps that take requests, and sending one. The apps load in the
- * browser, when the menu opens.
+ * browser, when the menu opens. A page whose data says whether the capability is on (the run's `machineRuns`) passes
+ * it, and the project's capability list is then not loaded.
  */
-export async function useRunOnMyMachine(projectId: number) {
+export async function useRunOnMyMachine(projectId: number, machineRuns?: boolean) {
   const config = useRuntimeConfig();
   const { can, authState } = useAuth();
-  const { state, isHidden } = await useProjectCapabilities(projectId);
+  const isDesktop = useIsDesktop();
+  const capabilities = machineRuns === undefined ? await useProjectCapabilities(projectId) : null;
 
-  const on = computed(() => ['active', 'available'].includes(state('machine-runs')) && !isHidden('machine-runs'));
+  const on = computed(() => {
+    if (!capabilities) return !!machineRuns && !capabilityHidden('machine-runs', 'available', isDesktop);
+    return (
+      ['active', 'available'].includes(capabilities.state('machine-runs')) && !capabilities.isHidden('machine-runs')
+    );
+  });
   const shown = computed(() => config.public.authEnabled && on.value && can('run:request', projectId));
 
   const apps = ref<RunTargetApp[]>([]);

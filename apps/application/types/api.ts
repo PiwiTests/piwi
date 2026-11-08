@@ -579,6 +579,8 @@ export interface TestRunDetails {
   isFullRun?: boolean;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
+  machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
