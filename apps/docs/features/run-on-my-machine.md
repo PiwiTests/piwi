@@ -83,13 +83,14 @@ your last 20 requests, with **Stop** for one still going on.
 ## What leaves your machine
 
 The run's results, as any run reports them: the tests, their steps, errors, attachments, traces and reports, sent to
-the instance that asked and seen by you alone. The reporter sends no coverage, no test manifest and no code reach for a
-requested run, keeps it out of the desktop app's own dashboard, and is not kept forever.
+the instance that asked and seen by you alone. For a requested run, the reporter sends no coverage, test manifest,
+code reach or environment details, AI steps only replay, and the run stays out of the desktop app's own dashboard. The
+instance never keeps it forever.
 
 The app starts the run with `PIWI_REQUEST_INSTANCE`, the instance that asked, and `PIWI_REQUEST_TOKEN_FILE`, a file
-only you can read that holds the key of that one run. The reporter sends the run there with that key, whatever
-`serverUrl` and credentials the config names. A file that is missing, readable by others or holding no key turns the
-reporter off for the run, and it says why.
+only you can read that holds the key of that one run. The reporter and its workers send the run there with that key,
+whatever server and credentials the config names. A file that is missing or holds no key turns the reporter off for
+the run, and it says why; on macOS and Linux, so does a file others can read.
 
 ## Connected apps
 

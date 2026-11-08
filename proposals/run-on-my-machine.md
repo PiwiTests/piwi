@@ -50,18 +50,20 @@ token; folders are linked per instance. The reporter's override (`PIWI_REQUEST_I
 sends the run to the instance that asked, whatever the config names, and refuses the batch upload. On the page, **Run on
 my machine** on a run (its failed tests, or all), an execution and a test, with its menu, its progress, **Stop** and
 **Run again**; the demo's seeded app answers the requests as they are read. The request host and the requested run's
-checks live in `@piwitests/editor` (`request-host`, `request-run`), for Piwi Runner (PR 4). Left for later:
-`piwi://connect` (the address is typed in the app), the browsers check, a request from the run page's selection of
-tests, and the target recorded on the run (D14's `piwiInteractive.client`); the Linux keychain is built but not yet
-tried on a Linux desktop. The feature page and the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The
-instance's side of PR 2 is done. The maintainer settled on 2026-11-06: the desktop app and Piwi Runner take run
-requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is confirmed in
-the target (D2); a request carries resolved tests and is the same object as a CI dispatch, parsed in `@piwitests/core`
-(D3); a target connects to one team instance at a time (D9); a requested run shows to its requester alone (D14); the
-administrator's switch is off by default in the first release (D15); no request comes from an AI agent in the first
-version (D6); the existing **Copy retry command** gains the run options and ships first, with **Create issue** (D17,
-D18). Every other decision is a recommendation, and says which written decision it amends. The plan builds on three
-records that are not on `main`:
+checks live in `@piwitests/editor` (`request-host`, `request-run`), for Piwi Runner (PR 4). **Run** starts only the
+command and the folder the window showed, once the request has been shown unchanged for a second, and the run's workers
+reach no other server. Left for later: `piwi://connect` (the address is typed in the app), the browsers check, a request
+from the run page's selection of tests, a request for one spec file (D3's `{ runId, filePath }`, which the instance
+takes and no page offers yet), **Create issue** on a requested run's progress (D17), and the target recorded on the run
+(D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. The feature page and
+the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The maintainer
+settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
+left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is
+the same object as a CI dispatch, parsed in `@piwitests/core` (D3); a target connects to one team instance at a time
+(D9); a requested run shows to its requester alone (D14); the administrator's switch is off by default in the first
+release (D15); no request comes from an AI agent in the first version (D6); the existing **Copy retry command** gains
+the run options and ships first, with **Create issue** (D17, D18). Every other decision is a recommendation, and says
+which written decision it amends. The plan builds on three records that are not on `main`:
 
 - `proposals/runs-from-the-dashboard.md` (branch `claude/nifty-hopper-lnt8h6`): this plan keeps its rules on what a
   request may name and its list of request kinds for later, and leaves it the IDE as a target.
