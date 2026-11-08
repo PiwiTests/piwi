@@ -15,8 +15,8 @@ out of everything the team sees.
 
 ## Experimental
 
-**Experimental.** Run on my machine is off by default, and the desktop app is the one app that takes requests in this
-release. The design is in the
+**Experimental.** Run on my machine is off by default. The desktop app and [Piwi Runner](./piwi-runner) take requests.
+The design is in the
 [Run on my machine design record](https://github.com/PiwiTests/piwi/blob/main/proposals/run-on-my-machine.md).
 
 ## Turn it on
@@ -134,5 +134,6 @@ the [deployment page](/operate/deployment) requires.
 ## Related
 
 - [Desktop app](./desktop): the app that takes requests, and its Settings page
+- [Piwi Runner](./piwi-runner): the same requests on a machine without the dashboard
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts and how you follow them
 - [Share links](./share-links): showing one execution to someone without an account
