@@ -63,10 +63,15 @@ export function presentedToken(request: HostRequest): string | null {
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
+/** Whether `presented` is the access token `token`, compared in constant time whatever its length. */
+export function isAccessToken(presented: string, token: string): boolean {
+  return timingSafeEqual(digest(presented), digest(token));
+}
+
 /** Whether a request presents the access token `token`, compared in constant time whatever its length. */
 export function presentsToken(request: HostRequest, token: string): boolean {
   const presented = presentedToken(request);
-  return !!presented && timingSafeEqual(digest(presented), digest(token));
+  return !!presented && isAccessToken(presented, token);
 }
 
 /**

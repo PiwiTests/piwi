@@ -209,9 +209,14 @@ export async function answerRunTargetRoute(
   return { ...(await route.handle(request)), noStore };
 }
 
+/** The path of a request URL, without its query and a trailing slash. */
+export function pathnameOf(url: string): string {
+  return url.split('?')[0]!.replace(/(.)\/$/, '$1');
+}
+
 /** The route a method and a path name, with the request id of a `/requests/:id` path; null for none. */
 export function matchRunTargetRoute(method: string, path: string): { name: RunTargetRouteName; id?: string } | null {
-  const pathname = path.split('?')[0]!.replace(/(.)\/$/, '$1');
+  const pathname = pathnameOf(path);
   if (pathname !== RUN_TARGET_BASE && !pathname.startsWith(`${RUN_TARGET_BASE}/`)) return null;
   const rest = pathname.slice(RUN_TARGET_BASE.length);
   const id = rest.match(/^\/requests\/([^/]+)\//)?.[1];
