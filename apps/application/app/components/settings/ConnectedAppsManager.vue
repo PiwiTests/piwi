@@ -2,7 +2,7 @@
 import type { ConnectedApp, ConnectedAppsResponse } from '~~/types/api';
 
 /**
- * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner), each with
+ * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app), each with
  * when it last connected and, for an app that runs tests, whether it is online now; **Revoke** disconnects one. Keyed
  * by `userId`, as `ApiKeysManager` is, so it serves the Account page and the administrator's Users page alike.
  */
@@ -57,8 +57,8 @@ async function revoke() {
 <template>
   <div class="space-y-4">
     <p class="text-sm text-muted">
-      The apps connected to this instance from their own window: Piwi Picker, an editor, the desktop app, Piwi Runner.
-      Each holds a key of its own; revoke one to disconnect it.
+      The apps connected to this instance from their own window: Piwi Picker, an editor, the desktop app. Each holds a
+      key of its own; revoke one to disconnect it.
     </p>
 
     <div v-if="apps.length > 0" class="space-y-2" data-shot="connected-apps">
@@ -98,7 +98,7 @@ async function revoke() {
     </div>
 
     <div v-else class="text-center text-muted py-6 text-sm">
-      No connected apps. Connect Piwi Picker, an editor, the desktop app or Piwi Runner from its own window.
+      No connected apps. Connect Piwi Picker, an editor or the desktop app from its own window.
     </div>
 
     <ClientOnly>

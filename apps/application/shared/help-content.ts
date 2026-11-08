@@ -1236,7 +1236,7 @@ export const HELP_TOPICS = {
   },
   'settings.connected-apps': {
     title: 'Connected apps',
-    text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app, Piwi Runner), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
+    text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
     doc: 'features/run-on-my-machine#connected-apps',
   },
   'settings.tags': {
