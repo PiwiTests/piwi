@@ -35,8 +35,9 @@ channel, so a per-user install pulls a per-user update.
    (`src-tauri/runtime-capabilities/remote.json`, added at startup for the port).
    The splash says when the server takes longer than a minute and keeps waiting;
    it says the server stopped once the supervisor, which restarts a crashed server
-   with a backoff, gives up. The dashboard shows the restarts as a toast
-   (`server-status` events).
+   with a backoff, gives up. While the server restarts, the window shows the
+   splash with that status and the other windows close; the dashboard loads again
+   once the new process proves it holds the token.
 3. The tray offers **Run in background** (keep serving after the window closes;
    on macOS a click on the Dock icon brings the window back), **Start on login**,
    **Open data folder** and **Show logs**, which reveals `logs/server.log` in the

@@ -20,6 +20,7 @@ mod private_fs;
 mod repro;
 mod run_target;
 mod runner;
+mod session;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;
@@ -100,9 +101,17 @@ const READY_TIMEOUT_SECS: u64 = 60;
 /// The splash's status line once the server takes longer than `READY_TIMEOUT_SECS`.
 const SPLASH_SLOW: &str =
     "The local server is taking longer than usual to start. Still waiting: the window opens the dashboard once it is up.";
+/// The splash's status line while the server restarts.
+const SPLASH_RESTARTING: &str = "The local server stopped. Restarting it: the window opens the dashboard again once it is up.";
 /// The splash's status line once the supervisor stopped restarting the server.
 const SPLASH_STOPPED: &str =
     "The local server stopped and could not be restarted. Quit and relaunch, or open the logs from the tray.";
+/// How the wait for the server's proof paces itself.
+const PROOF_PACE: session::ProofPace = session::ProofPace {
+    slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
+    poll: Duration::from_millis(250),
+    slow_poll: Duration::from_millis(1000),
+};
 /// Backoff before each auto-restart of a crashed server, capped at the last value.
 const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
 /// Stop auto-restarting once the server has crashed this many times inside
@@ -152,7 +161,7 @@ struct ShuttingDown(Arc<AtomicBool>);
 
 /// Set once the supervisor stopped restarting the server: the readiness wait ends then.
 #[derive(Default)]
-struct ServerGaveUp(AtomicBool);
+pub(crate) struct ServerGaveUp(AtomicBool);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -1252,6 +1261,7 @@ fn supervise_server(
     respawn: impl Fn(&AppHandle) -> Option<(Receiver<CommandEvent>, CommandChild)> + Send + 'static,
     initial: (Receiver<CommandEvent>, CommandChild),
     shutting_down: Arc<AtomicBool>,
+    server: session::ServerSession,
 ) {
     let (mut rx, child) = initial;
     app.state::<ServerProcess>().0.lock().unwrap().replace(child);
@@ -1305,6 +1315,7 @@ fn supervise_server(
                 break;
             }
 
+            let restart = session::server_stopped(&app, &server);
             let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
             restarts += 1;
             append_log(&log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
@@ -1319,7 +1330,7 @@ fn supervise_server(
                 Some((new_rx, new_child)) => {
                     app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
                     rx = new_rx;
-                    let _ = app.emit("server-status", "ready");
+                    session::server_restarted(&app, server.clone(), restart, shutting_down.clone());
                 }
                 None => {
                     give_up_server(&app);
@@ -1517,6 +1528,9 @@ fn splash_status_script(text: &str) -> String {
 /// Write `text` in the splash's status line and bring the window up: a launch
 /// to the tray hides it.
 fn show_splash_status(app: &AppHandle, text: &'static str) {
+    if let Some(session) = app.try_state::<session::Session>() {
+        session.set_status(Some(text));
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
@@ -1524,6 +1538,14 @@ fn show_splash_status(app: &AppHandle, text: &'static str) {
             let _ = w.show();
         }
     });
+}
+
+/// Write the splash's status line again once the splash loads: a status set while the window was still
+/// leaving the server's page would be lost.
+pub(crate) fn reapply_splash_status(webview: &tauri::Webview) {
+    if let Some(text) = webview.try_state::<session::Session>().and_then(|s| s.status()) {
+        let _ = webview.eval(&splash_status_script(text));
+    }
 }
 
 /// Everything leaving the app must undo: remember the window state, stop the
@@ -2938,6 +2960,9 @@ pub fn run() {
                 // A new page in the dashboard window leaves no one to feed the
                 // run output windows: they close.
                 .on_page_load(|webview, payload| {
+                    if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        reapply_splash_status(webview);
+                    }
                     if webview.label() == "main"
                         && payload.event() == tauri::webview::PageLoadEvent::Started
                     {
@@ -3062,6 +3087,10 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            app.manage(session::Session::new(
+                app.get_webview_window("main").and_then(|w| w.url().ok()),
+                app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
+            ));
             #[cfg(not(target_os = "macos"))]
             report_notification_clicks(app.handle());
 
@@ -3183,6 +3212,16 @@ pub fn run() {
                     move |app| spawn_server_process(app, &respawn_config),
                     initial,
                     shutting_down.clone(),
+                    session::ServerSession {
+                        port,
+                        token: token.clone(),
+                        texts: session::SplashTexts {
+                            restarting: SPLASH_RESTARTING,
+                            slow: SPLASH_SLOW,
+                            stopped: SPLASH_STOPPED,
+                        },
+                        pace: &PROOF_PACE,
+                    },
                 );
             } else {
                 give_up_server(app.handle());
@@ -3195,23 +3234,16 @@ pub fn run() {
             let ready_log = log_path.clone();
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let started = Instant::now();
-                let mut slow = false;
-                let ready = loop {
-                    if health_ok(port, &token) {
-                        break true;
-                    }
-                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-                    if gave_up || quitting.load(Ordering::SeqCst) {
-                        break false;
-                    }
-                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
-                        slow = true;
+                let ready = session::wait_for_proof(
+                    port,
+                    &token,
+                    &PROOF_PACE,
+                    || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
+                    || {
                         append_log(&ready_log, "server not ready yet, still waiting");
                         show_splash_status(&nav_handle, SPLASH_SLOW);
-                    }
-                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
-                };
+                    },
+                );
                 append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
                 // Startup has settled: look for an update and announce one
                 // (a no-op when the build cannot update or the user opted out).
@@ -3226,13 +3258,10 @@ pub fn run() {
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
-                let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
-                let inner = nav_handle.clone();
-                let _ = nav_handle.run_on_main_thread(move || {
-                    if let Some(w) = inner.get_webview_window("main") {
-                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                    }
-                });
+                if let Some(session) = nav_handle.try_state::<session::Session>() {
+                    session.mark_opened();
+                }
+                session::SessionWindows::load_session(&nav_handle, bootstrap_url(port, &token, page.as_deref()));
             });
 
             // --- tray ---
