@@ -599,6 +599,11 @@ jobs:
         working-directory: packages/run-ui
         run: npm run run-ui:test
 
+      # The window's tsconfig extends the `.nuxt` that `nuxt prepare` writes; the install prepares the dashboard's.
+      - name: Prepare the Runner window
+        working-directory: apps/runner
+        run: npm run runner:prepare
+
       - name: Test the host and the window
         working-directory: apps/runner
         run: npm run runner:test
