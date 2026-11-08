@@ -2605,8 +2605,7 @@ fn desktop_pick_files_to_open(app: tauri::AppHandle) {
     pick_files_to_open(&app);
 }
 
-/// The app menu's Quit (Cmd+Q). It goes through [`quit_after_confirming`], since the
-/// predefined Quit sends `terminate:`, which no `ExitRequested` precedes.
+/// The app menu's Quit (Cmd+Q): it goes through [`quit_after_confirming`].
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn quit_menu_item<R: tauri::Runtime>(
     app: &AppHandle<R>,

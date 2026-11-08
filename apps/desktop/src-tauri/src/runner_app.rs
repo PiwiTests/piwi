@@ -112,15 +112,15 @@ const RUNNER_LINK_SCHEME: &str = "piwi-runner";
 /// The identifier of the Piwi Runner bundle (`runner.conf.json`).
 const RUNNER_IDENTIFIER: &str = "io.piwitests.runner";
 
-/// Why this build may not start as Piwi Runner, or `None` when it may: its bundle identifier is Runner's. Built with
-/// the `runner` feature but without `runner.conf.json`, the app would open the desktop app's data folder and settings.
+/// Why this build may not start as Piwi Runner, or `None` when it may: it starts only with Runner's own bundle
+/// identifier (`runner.conf.json`).
 fn identifier_refusal(identifier: &str) -> Option<String> {
     if identifier == RUNNER_IDENTIFIER {
         return None;
     }
     Some(format!(
         "Piwi Runner starts only with the identifier {RUNNER_IDENTIFIER}, and this build has {identifier}: \
-         build it with --config runner.conf.json."
+         build it with --config src-tauri/runner.conf.json."
     ))
 }
 
