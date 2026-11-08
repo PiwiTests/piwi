@@ -54,9 +54,9 @@ const SERVER_STOP_WAIT: Duration = Duration::from_secs(5);
 
 /// The releases of the repository, newest first, as the releases page lists them.
 const RELEASES_API: &str = "https://api.github.com/repos/PiwiTests/piwi/releases";
-const RELEASES_PER_PAGE: usize = 30;
-/// At most this many pages are read: the notes of the 120 newest releases.
-const MAX_RELEASE_PAGES: usize = 4;
+const RELEASES_PER_PAGE: usize = 100;
+/// At most this many pages are read: the notes of the 200 newest releases.
+const MAX_RELEASE_PAGES: usize = 2;
 const NOTES_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Whether this build carries updater config (set at startup from the
@@ -109,15 +109,16 @@ struct GithubRelease {
 
 /// The releases of one API page newer than `installed` and up to `offered`
 /// (drafts, prereleases and tags that are not `v<semver>` left out), and
-/// whether the page reaches the installed version or an older one, so no
-/// further page is needed.
+/// whether the page ends at the installed version or an older one, so no
+/// further page is needed. The API lists releases newest-created first, so a
+/// release of an older line published later (a backport) does not end it.
 fn select_releases(
     page: &[GithubRelease],
     installed: &Version,
     offered: &Version,
 ) -> (Vec<ReleaseNote>, bool) {
     let mut selected = Vec::new();
-    let mut reached = false;
+    let mut last = None;
     for release in page {
         if release.draft || release.prerelease {
             continue;
@@ -130,9 +131,7 @@ fn select_releases(
         else {
             continue;
         };
-        if version <= *installed {
-            reached = true;
-        } else if version <= *offered {
+        if version > *installed && version <= *offered {
             selected.push(ReleaseNote {
                 version: version.to_string(),
                 date: release.published_at.clone(),
@@ -140,7 +139,9 @@ fn select_releases(
                 body: release.body.clone().unwrap_or_default(),
             });
         }
+        last = Some(version);
     }
+    let reached = last.is_some_and(|v| v <= *installed);
     (selected, reached)
 }
 
@@ -173,6 +174,9 @@ async fn fetch_release_notes(
     installed: &Version,
     offered: &Version,
 ) -> Result<ReleaseNotes, String> {
+    // reqwest is built with rustls and no crypto provider of its own; this
+    // installs ring's, the one the updater uses, unless one is already set.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::builder()
         .timeout(NOTES_TIMEOUT)
         .build()
@@ -505,6 +509,20 @@ mod tests {
         assert_eq!(
             versions(&newer, "0.64.0", "0.67.0"),
             (vec!["0.65.0".to_string()], false)
+        );
+    }
+
+    #[test]
+    fn a_backport_listed_first_does_not_end_the_reading() {
+        let listed = page(&format!(
+            "[{},{},{}]",
+            release("v0.64.1", false, false),
+            release("v0.67.0", false, false),
+            release("v0.66.0", false, false),
+        ));
+        assert_eq!(
+            versions(&listed, "0.65.0", "0.67.0"),
+            (vec!["0.67.0".to_string(), "0.66.0".to_string()], false)
         );
     }
 
