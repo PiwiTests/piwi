@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { desktopRunFacts, desktopRunFactsReader } from '../../server/utils/desktop-run-facts';
+import { resetDesktopRunTarget, runTargetConnection } from '@piwitests/editor/run-target';
 
 const state = vi.hoisted(() => ({
   db: null as unknown,
@@ -213,6 +214,31 @@ describe('the desktop event stream', () => {
     await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'hub-runs', live: 0 }));
     stream.end();
     expect(state.listeners.size).toBe(0);
+  });
+});
+
+describe('the run target in the desktop event stream', () => {
+  afterEach(() => {
+    delete process.env.PIWI_DESKTOP_TOKEN;
+    resetDesktopRunTarget();
+  });
+
+  test('tells the window the connection as it opens, and each change, in the desktop build', async () => {
+    process.env.PIWI_DESKTOP_TOKEN = 'desktop-token';
+    const stream = await openStream();
+    await vi.waitFor(() =>
+      expect(stream.messages).toContainEqual({ type: 'run-target', connection: runTargetConnection() }),
+    );
+    expect(stream.messages.filter((m) => m.type === 'run-target')).toHaveLength(1);
+
+    stream.end();
+  });
+
+  test('says nothing of the run target without the desktop token', async () => {
+    const stream = await openStream();
+    await snapshotOf(stream.messages);
+    expect(stream.messages.some((m) => m.type === 'run-target' || m.type === 'run-request')).toBe(false);
+    stream.end();
   });
 });
 

@@ -4,16 +4,55 @@ import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src/host-guard';
+import type * as RunTargetStream from '../src/run-target-stream';
+import { MAX_HUB_BUFFERED } from '../src/run-hub';
 import { resetDesktopRunTarget } from '../src/run-target';
 import { serveRunTarget } from '../src/run-target-http';
 import { matchRunTargetRoute, RUN_TARGET_BASE, RUN_TARGET_ROUTES } from '../src/run-target-routes';
+import { answerSession, queryOf, SESSION_PATH, sessionCookieHeader } from '../src/run-target-session';
+import {
+  limitedSend,
+  matchStream,
+  SHELL_STREAM_PATH,
+  STREAM_CUT_BYTES,
+  STREAM_HOLD_BYTES,
+  WINDOW_STREAM_PATH,
+  type StreamSink,
+} from '../src/run-target-stream';
+
+/** How many times each stream's `stop` ran: the stop a stream returns runs once, when its reader leaves. */
+const stopped = vi.hoisted(() => ({ window: 0, shell: 0, opened: 0 }));
+
+vi.mock('../src/run-target-stream', async (importOriginal) => {
+  const actual = await importOriginal<typeof RunTargetStream>();
+  return {
+    ...actual,
+    openWindowStream: (send: Parameters<typeof actual.openWindowStream>[0]) => {
+      stopped.opened++;
+      const stop = actual.openWindowStream(send);
+      return () => {
+        stopped.window++;
+        stop();
+      };
+    },
+    openShellStream: (send: Parameters<typeof actual.openShellStream>[0]) => {
+      stopped.opened++;
+      const stop = actual.openShellStream(send);
+      return () => {
+        stopped.shell++;
+        stop();
+      };
+    },
+  };
+});
 
 /**
- * The contract of the run-target routes, on a bare `node:http` host: what every host of them answers (the desktop
- * app's Nitro routes answer the same, `apps/application/tests/unit/desktop-run-target.test.ts`).
+ * The contract of the run-target routes, the window's session and its two event streams, on a bare `node:http` host:
+ * what every host of them answers (the desktop app's Nitro routes answer the same,
+ * `apps/application/tests/unit/desktop-run-target.test.ts` and `desktop-events-stream.test.ts`).
  */
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
@@ -60,6 +99,10 @@ async function fakeInstance() {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    /** The instance asks the app to stop the requests `stops`. */
+    stop: (...stops: string[]) => {
+      for (const res of streams) res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [], stops })}\n\n`);
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const res of streams) res.destroy();
@@ -67,6 +110,14 @@ async function fakeInstance() {
         server.close(() => resolve());
       }),
   };
+}
+
+interface OpenStream {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  /** The messages received so far. */
+  messages: unknown[];
+  close(): void;
 }
 
 /** The bare host: the run-target routes, and 404 for anything else. */
@@ -107,6 +158,49 @@ async function bareHost() {
         );
         req.on('error', reject);
         req.end(payload);
+      }),
+    /** A GET of `route` on the host, its redirect not followed. */
+    get: (route: string, headers: Record<string, string> = {}) =>
+      new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Record<string, unknown> | null }>(
+        (resolve, reject) => {
+          http
+            .get(`${base}${route}`, { headers }, (res) => {
+              let text = '';
+              res.setEncoding('utf8');
+              res.on('data', (chunk: string) => (text += chunk));
+              res.on('end', () =>
+                resolve({
+                  status: res.statusCode ?? 0,
+                  headers: res.headers,
+                  body: text ? (JSON.parse(text) as Record<string, unknown>) : null,
+                }),
+              );
+            })
+            .on('error', reject);
+        },
+      ),
+    /** An event stream of the host: the status, the headers and, as they arrive, the messages. */
+    stream: (route: string, headers: Record<string, string> = {}) =>
+      new Promise<OpenStream>((resolve, reject) => {
+        const messages: unknown[] = [];
+        const req = http.get(`${base}${route}`, { headers }, (res) => {
+          let pending = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => {
+            pending += chunk;
+            for (let end = pending.indexOf('\n\n'); end >= 0; end = pending.indexOf('\n\n')) {
+              const frame = pending.slice(0, end);
+              pending = pending.slice(end + 2);
+              if (frame.startsWith('data: ')) messages.push(JSON.parse(frame.slice(6)));
+            }
+          });
+          res.on('error', () => {});
+          if (res.statusCode !== 200) res.resume();
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, messages, close: () => req.destroy() });
+        });
+        req.on('error', (error) => {
+          if ((error as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(error);
+        });
       }),
     served,
     port: (server.address() as AddressInfo).port,
@@ -259,5 +353,254 @@ describe('every host of the run-target routes', () => {
       body: { instance: instance.url, token: REQUEST_TOKEN, projectId: 3, folder },
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
+  });
+});
+
+describe('every host of the window session', () => {
+  const session = (query: string) => `${SESSION_PATH}${query}`;
+
+  test('answers 403 to a token that is missing, wrong or sent twice', async () => {
+    for (const query of ['', '?token=', `?token=${TOKEN}0`, `?token=${TOKEN}&token=${TOKEN}`, `?token[]=${TOKEN}`]) {
+      const answer = await host.get(session(query));
+      expect(answer.status, query).toBe(403);
+      expect(answer.body, query).toEqual({ message: 'Invalid desktop token' });
+      expect(answer.headers['set-cookie'], query).toBeUndefined();
+    }
+  });
+
+  test('exchanges the token for the cookie and redirects to the home page', async () => {
+    const answer = await host.get(session(`?token=${TOKEN}`));
+    expect(answer.status).toBe(302);
+    expect(answer.headers.location).toBe('/');
+    expect(answer.headers['set-cookie']).toEqual([
+      `${TOKEN_COOKIE}=${TOKEN}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax`,
+    ]);
+  });
+
+  test('redirects to the dashboard page `to` names, and to the home page for anything else', async () => {
+    const to = async (page: string) =>
+      (await host.get(session(`?token=${TOKEN}&to=${encodeURIComponent(page)}`))).headers.location;
+    expect(await to('/projects/3/runs?tab=failed#top')).toBe('/projects/3/runs?tab=failed');
+    for (const refused of [
+      '//evil.example',
+      '/\\evil.example',
+      '/\t/evil.example',
+      '/api/projects',
+      '/_nuxt/a',
+      '/logo.svg',
+      'https://evil.example',
+    ]) {
+      expect(await to(refused), refused).toBe('/');
+    }
+  });
+
+  test('answers 400 to a page a Location header cannot hold, and sets no cookie', async () => {
+    for (const page of ['/日本', '/caf\u00e9', '/a\u2028b']) {
+      const answer = await host.get(session(`?token=${TOKEN}&to=${encodeURIComponent(page)}`));
+      expect(answer.status, page).toBe(400);
+      expect(answer.body, page).toEqual({ message: 'Invalid page' });
+      expect(answer.headers['set-cookie'], page).toBeUndefined();
+    }
+    expect(answerSession({ token: TOKEN, to: '/日本' }, TOKEN)).toEqual({ status: 400, message: 'Invalid page' });
+  });
+
+  test('answers without the guard, and the cookie it sets passes the guard of the streams', async () => {
+    expect((await host.get(WINDOW_STREAM_PATH)).status).toBe(401);
+    const set = (await host.get(session(`?token=${TOKEN}`))).headers['set-cookie']![0]!;
+    const stream = await host.stream(WINDOW_STREAM_PATH, { cookie: set.split(';')[0]! });
+    expect(stream.status).toBe(200);
+    stream.close();
+  });
+
+  test('answers 404 on a host without a token, and builds the cookie header as the hosts send it', () => {
+    expect(answerSession({ token: TOKEN }, undefined)).toEqual({ status: 404, message: 'Not found' });
+    expect(answerSession({ token: TOKEN }, '')).toEqual({ status: 404, message: 'Not found' });
+    const answer = answerSession({ token: TOKEN, to: '/runs' }, TOKEN);
+    expect(answer).toMatchObject({ status: 302, location: '/runs' });
+    if (answer.status !== 302) throw new Error('not signed in');
+    expect(sessionCookieHeader({ ...answer.cookie, value: 'a b;c' })).toBe(
+      `${TOKEN_COOKIE}=a%20b%3Bc; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax`,
+    );
+    expect(queryOf('/x?a=1&b=2&a=3&c=%20')).toEqual({ a: ['1', '3'], b: '2', c: ' ' });
+  });
+});
+
+describe('every host of the run target streams', () => {
+  test('matches the streams by method and path, and nothing else', () => {
+    expect(matchStream('GET', `${WINDOW_STREAM_PATH}?x=1`)).toBe('window');
+    expect(matchStream('get', `${SHELL_STREAM_PATH}/`)).toBe('shell');
+    expect(matchStream('POST', WINDOW_STREAM_PATH)).toBeNull();
+    expect(matchStream('GET', `${WINDOW_STREAM_PATH}-other`)).toBeNull();
+    expect(matchStream('GET', '/api/desktop/runs/events')).toBeNull();
+  });
+
+  test('answers 401 to a request without the token, and serves the stream with it', async () => {
+    for (const route of [WINDOW_STREAM_PATH, SHELL_STREAM_PATH]) {
+      expect(await host.get(route), route).toMatchObject({
+        status: 401,
+        body: { message: 'Desktop access token required' },
+      });
+      expect((await host.get(route, { 'x-piwi-token': 'pd_wrong' })).status, route).toBe(401);
+      const stream = await host.stream(route, SHELL);
+      expect(stream.status, route).toBe(200);
+      expect(stream.headers['content-type'], route).toBe('text/event-stream');
+      expect(stream.headers['cache-control'], route).toBe('no-cache, no-transform');
+      expect(stream.headers['x-accel-buffering'], route).toBe('no');
+      stream.close();
+    }
+  });
+
+  test('tells the window the connection first, then each request it is asked about', async () => {
+    const first = await host.stream(WINDOW_STREAM_PATH, SHELL);
+    await until(() => first.messages.length === 1);
+    expect(first.messages[0]).toMatchObject({ type: 'run-target', connection: { state: 'none' } });
+
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    await until(() => first.messages.some((m) => (m as { type: string }).type === 'run-request'));
+    expect(first.messages.map((m) => (m as { type: string }).type)[0]).toBe('run-target');
+    first.close();
+
+    // A window that opens later hears the connection, then the request again.
+    const later = await host.stream(WINDOW_STREAM_PATH, SHELL);
+    await until(() => later.messages.length >= 2);
+    expect(later.messages.map((m) => (m as { type: string }).type).slice(0, 2)).toEqual(['run-target', 'run-request']);
+    expect(later.messages[1]).toMatchObject({ request: { id: REQUEST_ID } });
+    later.close();
+  });
+
+  test('tells the shell the stop of a run it started, and nothing before', async () => {
+    const shell = await host.stream(SHELL_STREAM_PATH, SHELL);
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    await until(async () => (((await host.call('GET', '', SHELL)).body?.requests ?? []) as unknown[]).length === 1);
+    const asked = ((await host.call('GET', '', SHELL)).body!.requests as { command: string }[])[0]!;
+    await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'run', command: asked.command });
+    await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+    expect(shell.messages).toEqual([]);
+
+    instance.stop(REQUEST_ID);
+    await until(() => shell.messages.length === 1);
+    expect(shell.messages).toEqual([{ type: 'requested-run-stop', requestId: REQUEST_ID }]);
+    shell.close();
+  });
+
+  test('ends the stream of a reader that leaves, once, and keeps answering', async () => {
+    // The streams of the tests before have left.
+    await until(() => stopped.window + stopped.shell === stopped.opened);
+    const before = { ...stopped };
+    const window = await host.stream(WINDOW_STREAM_PATH, SHELL);
+    const shell = await host.stream(SHELL_STREAM_PATH, SHELL);
+    await until(() => window.messages.length === 1);
+    expect(stopped.window + stopped.shell).toBe(before.window + before.shell);
+
+    window.close();
+    await until(() => stopped.window === before.window + 1);
+    expect(stopped.shell).toBe(before.shell);
+
+    shell.close();
+    await until(() => stopped.shell === before.shell + 1);
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    expect((await host.call('GET', '', SHELL)).status).toBe(200);
+    expect(stopped).toMatchObject({ window: before.window + 1, shell: before.shell + 1 });
+  });
+});
+
+/** A sink with a reader that has read `unread` bytes less than was written. */
+function fakeSink(counts = true) {
+  const sent: unknown[] = [];
+  const drains: (() => void)[] = [];
+  const state = { unread: 0, closed: 0 };
+  const base = { send: (message: unknown) => void sent.push(message), close: () => void state.closed++ };
+  const sink: StreamSink = counts
+    ? { ...base, buffered: () => state.unread, onDrain: (listener) => void drains.push(listener) }
+    : base;
+  return {
+    sink,
+    sent,
+    state,
+    /** The reader reads everything but `left` bytes. */
+    read: (left: number) => {
+      state.unread = left;
+      for (const listener of drains) listener();
+    },
+  };
+}
+
+describe('the unread data of a stream', () => {
+  test('requires a sink that counts to say when its reader reads', () => {
+    // @ts-expect-error `buffered` without `onDrain`
+    const half: StreamSink = { send: () => undefined, close: () => undefined, buffered: () => 0 };
+    expect(half.onDrain).toBeUndefined();
+  });
+
+  test('keeps the cut where the run hub puts it', () => {
+    expect(STREAM_CUT_BYTES).toBe(MAX_HUB_BUFFERED);
+    expect(STREAM_HOLD_BYTES).toBe(1024 * 1024);
+  });
+
+  test('sends straight out when the sink cannot count', () => {
+    const { sink, sent, state } = fakeSink(false);
+    const send = limitedSend(sink);
+    for (let i = 0; i < 3; i++) send({ i });
+    expect(sent).toEqual([{ i: 0 }, { i: 1 }, { i: 2 }]);
+    expect(state.closed).toBe(0);
+  });
+
+  test('holds a message past 1 MB and sends the held ones in order once the reader catches up', () => {
+    const { sink, sent, state, read } = fakeSink();
+    const send = limitedSend(sink);
+    send({ i: 0 });
+    state.unread = STREAM_HOLD_BYTES + 1;
+    send({ i: 1 });
+    send({ i: 2 });
+    expect(sent).toEqual([{ i: 0 }]);
+
+    // Still behind: nothing goes out.
+    read(STREAM_HOLD_BYTES + 1);
+    expect(sent).toEqual([{ i: 0 }]);
+
+    read(0);
+    expect(sent).toEqual([{ i: 0 }, { i: 1 }, { i: 2 }]);
+    // A message after the flush does not overtake, and does not wait.
+    send({ i: 3 });
+    expect(sent[sent.length - 1]).toEqual({ i: 3 });
+    expect(state.closed).toBe(0);
+  });
+
+  test('keeps a message behind the ones that wait, though the reader is caught up', () => {
+    const { sink, sent, state } = fakeSink();
+    const send = limitedSend(sink);
+    state.unread = STREAM_HOLD_BYTES + 1;
+    send({ i: 1 });
+    state.unread = 0;
+    send({ i: 2 });
+    expect(sent).toEqual([]);
+  });
+
+  test('cuts the stream once, counting what waits, past 32 MB', () => {
+    const { sink, sent, state, read } = fakeSink();
+    const send = limitedSend(sink);
+    state.unread = STREAM_CUT_BYTES - 10;
+    send({ i: 1 });
+    expect(state.closed).toBe(0);
+
+    state.unread = STREAM_CUT_BYTES;
+    send({ i: 2 });
+    expect(state.closed).toBe(1);
+    send({ i: 3 });
+    read(0);
+    expect(state.closed).toBe(1);
+    expect(sent).toEqual([]);
+  });
+
+  test('counts what waits toward the cut', () => {
+    const { sink, state } = fakeSink();
+    const send = limitedSend(sink);
+    state.unread = STREAM_HOLD_BYTES + 1;
+    const big = { text: 'x'.repeat(STREAM_CUT_BYTES / 2) };
+    send(big);
+    expect(state.closed).toBe(0);
+    send(big);
+    send(big);
+    expect(state.closed).toBe(1);
   });
 });
