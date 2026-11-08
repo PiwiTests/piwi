@@ -3390,7 +3390,7 @@ const routes: RouteEntry[] = [
     permission: 'run:request',
     handler: async (_m, body, _q, ctx) => {
       const requesterId = demoRequester(ctx);
-      const input = await demoReadRunRequestBody(body);
+      const input = await demoReadRunRequestBody(body, requesterId);
       assertDemoScope(ctx, input.projectId);
       return apiCreateRunRequest(requesterId, input);
     },

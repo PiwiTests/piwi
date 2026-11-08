@@ -17,6 +17,7 @@ import {
   type RunRequestSourceInput,
 } from '#shared/handlers/run-requests';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
+import { isVisibleRun } from '#shared/run-eligibility';
 import type { AccessSummary } from '#shared/permissions';
 import { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
@@ -55,8 +56,11 @@ async function answerAsTheApp(requesterId: number, now = new Date()): Promise<vo
     .where(and(eq(runRequests.requesterId, requesterId), inArray(runRequests.state, HELD)));
   for (const row of held) {
     if (row.targetId != null && row.targetId !== app.id) continue;
-    if (row.state === 'waiting' && row.expiresAt.getTime() <= now.getTime()) continue;
+    if (row.state === 'waiting' && row.expiresAt.getTime() <= row.createdAt.getTime() + CLAIM_AFTER_MS) continue;
     let state = simulatedState(now.getTime() - row.createdAt.getTime());
+    // Claimed and answered when the app would have, whenever the request is read again.
+    const claimedAt = new Date(row.createdAt.getTime() + CLAIM_AFTER_MS);
+    const answeredAt = new Date(row.createdAt.getTime() + RUN_AFTER_MS);
     let outcome: 'passed' | 'stopped' | null = state === 'ended' ? 'passed' : null;
     if (row.stopRequestedAt) {
       const stopped = now.getTime() - row.stopRequestedAt.getTime() >= STOPPED_AFTER_MS;
@@ -70,37 +74,40 @@ async function answerAsTheApp(requesterId: number, now = new Date()): Promise<vo
         state,
         outcome,
         targetId: state === 'waiting' ? row.targetId : app.id,
-        claimedAt: state === 'waiting' ? row.claimedAt : (row.claimedAt ?? now),
-        answeredAt: ['waiting', 'claimed'].includes(state) ? row.answeredAt : (row.answeredAt ?? now),
+        claimedAt: state === 'waiting' ? row.claimedAt : (row.claimedAt ?? claimedAt),
+        answeredAt: ['waiting', 'claimed'].includes(state) ? row.answeredAt : (row.answeredAt ?? answeredAt),
         updatedAt: now,
       })
       .where(eq(runRequests.id, row.id));
   }
 }
 
-/** The project of a request's source, or null when the run or the execution does not exist. */
-export async function demoRunRequestProjectId(source: RunRequestSourceInput): Promise<number | null> {
+/** The project of a request's source; null when its run or execution is missing, or not the viewer's to see. */
+export async function demoRunRequestProjectId(
+  source: RunRequestSourceInput,
+  viewerId: number | null,
+): Promise<number | null> {
   const db = await getDemoDb();
-  if ('executionId' in source) {
-    const [row] = await db
-      .select({ projectId: testRuns.projectId })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.id, source.executionId));
-    return row?.projectId ?? null;
-  }
-  const [row] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, source.runId));
-  return row?.projectId ?? null;
+  const columns = { projectId: testRuns.projectId, origin: testRuns.origin, requesterId: testRuns.requesterId };
+  const [row] =
+    'executionId' in source
+      ? await db
+          .select(columns)
+          .from(testRunsCases)
+          .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+          .where(eq(testRunsCases.id, source.executionId))
+      : await db.select(columns).from(testRuns).where(eq(testRuns.id, source.runId));
+  return row && isVisibleRun(row, viewerId) ? row.projectId : null;
 }
 
 /** The body of POST /api/run-requests, checked as the server checks it, with its project. */
-export async function demoReadRunRequestBody(body: unknown) {
+export async function demoReadRunRequestBody(body: unknown, viewerId: number | null) {
   const parsed = runRequestBodySchema.safeParse(body);
   if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
   const options = parseRunRequestOptions(parsed.data.options);
   if (!options.ok) throw demoHttpError(422, options.problems.join(' '));
   const source = parsed.data.source as RunRequestSourceInput;
-  const projectId = await demoRunRequestProjectId(source);
+  const projectId = await demoRunRequestProjectId(source, viewerId);
   if (projectId === null) {
     throw demoHttpError(404, 'executionId' in source ? 'Execution not found' : 'Test run not found');
   }
