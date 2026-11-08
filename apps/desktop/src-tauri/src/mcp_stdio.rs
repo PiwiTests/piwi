@@ -17,8 +17,8 @@
 // exists only while it serves. When it is absent the bridge answers requests
 // with a JSON-RPC error saying so instead of hanging.
 
+use std::fmt::Display;
 use std::io::{BufRead, Read, Write};
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -203,20 +203,42 @@ fn split_http_url(url: &str) -> Option<(String, u16)> {
     }
 }
 
-/// One request, one connection. HTTP/1.0 with `Connection: close` makes the
-/// server end the body by closing the socket, so reading to EOF is the whole
-/// response — no keep-alive or chunked framing to decode by hand.
-fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
-    let unreachable = |e: std::io::Error| PostError {
+/// The only host the bridge sends the token to: the address the app publishes and
+/// [`crate::connect_proving_token`] dials.
+const LOOPBACK_HOST: &str = "127.0.0.1";
+
+/// A failure to reach the app, before the message went out.
+fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
+    PostError {
         message: format!(
-            "cannot reach Piwi Dashboard at http://{}:{} ({e})",
+            "cannot reach Piwi Dashboard at http://{}:{} ({detail})",
             endpoint.host, endpoint.port
         ),
         retryable: true,
         sent: false,
-    };
-    let mut stream =
-        TcpStream::connect((endpoint.host.as_str(), endpoint.port)).map_err(unreachable)?;
+    }
+}
+
+/// One request, one connection. HTTP/1.0 with `Connection: close` makes the
+/// server end the body by closing the socket, so reading to EOF is the whole
+/// response — no keep-alive or chunked framing to decode by hand.
+///
+/// The connection comes from [`crate::connect_proving_token`]: the token goes out only
+/// once the server on the port has proved it holds it. A failed proof is an app that is
+/// not there yet, so it is retryable and nothing was sent.
+fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
+    if endpoint.host != LOOPBACK_HOST {
+        return Err(PostError {
+            message: format!(
+                "the discovery file names {}, and the bridge sends the access token to {LOOPBACK_HOST} only",
+                endpoint.host
+            ),
+            retryable: false,
+            sent: false,
+        });
+    }
+    let mut stream = crate::connect_proving_token(endpoint.port, &endpoint.token)
+        .map_err(|e| unreachable(endpoint, e))?;
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
@@ -233,16 +255,16 @@ fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
         token = endpoint.token,
         len = body.len(),
     );
-    stream.write_all(head.as_bytes()).map_err(unreachable)?;
-    stream.write_all(body.as_bytes()).map_err(unreachable)?;
-    stream.flush().map_err(unreachable)?;
+    stream.write_all(head.as_bytes()).map_err(|e| unreachable(endpoint, e))?;
+    stream.write_all(body.as_bytes()).map_err(|e| unreachable(endpoint, e))?;
+    stream.flush().map_err(|e| unreachable(endpoint, e))?;
 
     // From here the app has the whole message: a reply lost now may follow an
     // action already taken.
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).map_err(|e| PostError {
         sent: true,
-        ..unreachable(e)
+        ..unreachable(endpoint, e)
     })?;
     split_response(&raw)
 }
@@ -314,7 +336,7 @@ mod tests {
     use super::*;
 
     use std::io::BufReader;
-    use std::net::TcpListener;
+    use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     /// A discovery file under the OS temp dir, removed when the test ends.
@@ -344,46 +366,100 @@ mod tests {
         }
     }
 
-    /// A one-shot HTTP server: hands back `response` and reports the raw request
-    /// it received. Enough to drive the bridge over a real socket.
+    /// The access token the stub servers hold and the discovery files carry.
+    const TOKEN: &str = "pd_test";
+
+    /// Read one request: the head, then the announced body.
+    fn read_request(stream: &mut TcpStream) -> String {
+        let mut buf = Vec::new();
+        let mut byte = [0u8; 1];
+        loop {
+            match stream.read(&mut byte) {
+                Ok(0) => break,
+                Ok(_) => buf.push(byte[0]),
+                Err(_) => break,
+            }
+            let text = String::from_utf8_lossy(&buf);
+            if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                let len: usize = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("Content-Length: "))
+                    .and_then(|v| v.trim().parse().ok())
+                    .unwrap_or(0);
+                if body.len() >= len {
+                    break;
+                }
+            }
+        }
+        String::from_utf8_lossy(&buf).to_string()
+    }
+
+    /// Answer one `/api/health` probe, with the proof of `TOKEN` or with none. Returns the probe.
+    fn answer_probe(stream: &mut TcpStream, port: u16, proves: bool) -> String {
+        let probe = read_request(stream);
+        let proof = probe
+            .lines()
+            .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            .filter(|_| proves)
+            .map(|challenge| {
+                format!(
+                    "x-piwi-desktop-proof: {}\r\n",
+                    crate::proof_of(TOKEN, port, challenge)
+                )
+            })
+            .unwrap_or_default();
+        let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\n{proof}\r\n{{}}").as_bytes());
+        probe
+    }
+
+    /// A one-shot HTTP server that holds `TOKEN`: it proves it on the readiness probe, then hands
+    /// back `response` and reports the raw request it received after that. Enough to drive the
+    /// bridge over a real socket.
     fn stub_server(response: &'static str) -> (u16, std::thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
         let port = listener.local_addr().expect("stub addr").port();
         let handle = std::thread::spawn(move || {
+            let (mut probe, _) = listener.accept().expect("accept the probe");
+            answer_probe(&mut probe, port, true);
+            drop(probe);
             let (mut stream, _) = listener.accept().expect("accept");
-            // The client half-closes only at the end, so read exactly the
-            // announced body rather than to EOF.
-            let mut buf = Vec::new();
-            let mut byte = [0u8; 1];
-            loop {
-                match stream.read(&mut byte) {
-                    Ok(0) => break,
-                    Ok(_) => buf.push(byte[0]),
-                    Err(_) => break,
-                }
-                let text = String::from_utf8_lossy(&buf);
-                if let Some((head, body)) = text.split_once("\r\n\r\n") {
-                    let len: usize = head
-                        .lines()
-                        .find_map(|l| l.strip_prefix("Content-Length: "))
-                        .and_then(|v| v.trim().parse().ok())
-                        .unwrap_or(0);
-                    if body.len() >= len {
-                        break;
-                    }
-                }
-            }
+            let request = read_request(&mut stream);
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
             drop(stream);
-            String::from_utf8_lossy(&buf).to_string()
+            request
+        });
+        (port, handle)
+    }
+
+    /// A server that restarts: it answers the first probe without the proof (another process on the
+    /// port), the second with it, then serves one request. The handle yields the first probe and
+    /// the request.
+    fn restarting_server(
+        response: &'static str,
+    ) -> (u16, std::thread::JoinHandle<(String, String)>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+        let port = listener.local_addr().expect("stub addr").port();
+        let handle = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().expect("accept the first probe");
+            let squatted = answer_probe(&mut first, port, false);
+            drop(first);
+            let (mut probe, _) = listener.accept().expect("accept the second probe");
+            answer_probe(&mut probe, port, true);
+            drop(probe);
+            let (mut stream, _) = listener.accept().expect("accept");
+            let request = read_request(&mut stream);
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+            drop(stream);
+            (squatted, request)
         });
         (port, handle)
     }
 
     fn discovery_for(port: u16) -> DiscoveryFile {
         DiscoveryFile::new(&format!(
-            r#"{{"url":"http://127.0.0.1:{port}","token":"pd_test"}}"#
+            r#"{{"url":"http://127.0.0.1:{port}","token":"{TOKEN}"}}"#
         ))
     }
 
@@ -452,7 +528,7 @@ mod tests {
 
         let request = server.join().expect("stub server");
         assert!(request.starts_with("POST /mcp HTTP/1.0\r\n"), "{request}");
-        assert!(request.contains("Authorization: Bearer pd_test\r\n"), "{request}");
+        assert!(request.contains(&format!("Authorization: Bearer {TOKEN}\r\n")), "{request}");
         assert!(request.ends_with("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"), "{request}");
         assert_eq!(out, "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n");
     }
@@ -557,6 +633,84 @@ mod tests {
         let message = reply["error"]["message"].as_str().expect("message");
         assert!(message.contains("may have run"), "{reply}");
         assert!(!message.contains("cannot reach"), "{reply}");
+    }
+
+    #[test]
+    fn a_server_that_cannot_prove_the_token_is_never_sent_it() {
+        let (port, squatter) = crate::tests::serve_as_squatter();
+        let discovery = discovery_for(port);
+
+        let out = run_pump(&discovery.0, "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"ping\"}\n");
+
+        let seen = squatter.join().expect("squatter");
+        assert!(seen.starts_with("GET /api/health "), "{seen}");
+        assert!(!seen.to_ascii_lowercase().contains("authorization"), "{seen}");
+        assert!(!seen.contains(TOKEN), "{seen}");
+        let reply: Value = serde_json::from_str(out.trim()).expect("json reply");
+        assert_eq!(reply["id"], 5);
+        let message = reply["error"]["message"].as_str().expect("message");
+        assert!(message.contains("cannot reach"), "{reply}");
+    }
+
+    #[test]
+    fn a_failed_proof_is_retried_and_the_token_goes_to_the_server_that_proves_it() {
+        let (port, server) = restarting_server("HTTP/1.1 200 OK\r\n\r\n{\"id\":6,\"result\":{}}");
+        let discovery = discovery_for(port);
+
+        let mut out = Vec::new();
+        pump(
+            &discovery.0,
+            Duration::from_secs(5),
+            BufReader::new("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"ping\"}\n".as_bytes()),
+            &mut out,
+        );
+
+        let (squatted, request) = server.join().expect("server");
+        assert!(!squatted.to_ascii_lowercase().contains("authorization"), "{squatted}");
+        assert!(request.contains(&format!("Authorization: Bearer {TOKEN}\r\n")), "{request}");
+        assert_eq!(String::from_utf8(out).expect("utf8"), "{\"id\":6,\"result\":{}}\n");
+    }
+
+    #[test]
+    fn a_tool_call_is_not_sent_to_a_server_that_has_not_proved_the_token() {
+        // Nothing went out, so the call is retried like any other message.
+        let (port, server) = restarting_server("HTTP/1.1 200 OK\r\n\r\n{\"id\":8,\"result\":{}}");
+        let discovery = discovery_for(port);
+
+        let mut out = Vec::new();
+        pump(
+            &discovery.0,
+            Duration::from_secs(5),
+            BufReader::new(
+                "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"page_act\"}}\n"
+                    .as_bytes(),
+            ),
+            &mut out,
+        );
+
+        let (squatted, request) = server.join().expect("server");
+        assert!(!squatted.contains("page_act"), "{squatted}");
+        assert!(request.contains("page_act"), "{request}");
+        assert_eq!(String::from_utf8(out).expect("utf8"), "{\"id\":8,\"result\":{}}\n");
+    }
+
+    #[test]
+    fn a_host_other_than_loopback_is_refused_without_connecting() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.set_nonblocking(true).expect("non-blocking");
+        let port = listener.local_addr().expect("addr").port();
+        for host in ["localhost", "192.0.2.7", "[::1]"] {
+            let discovery = DiscoveryFile::new(&format!(
+                r#"{{"url":"http://{host}:{port}","token":"{TOKEN}"}}"#
+            ));
+
+            let out = run_pump(&discovery.0, "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}\n");
+
+            let reply: Value = serde_json::from_str(out.trim()).expect("json reply");
+            let message = reply["error"]["message"].as_str().expect("message");
+            assert!(message.contains(host) && message.contains("127.0.0.1"), "{reply}");
+            assert!(listener.accept().is_err(), "{host} was dialed");
+        }
     }
 
     #[test]
