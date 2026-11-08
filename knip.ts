@@ -100,8 +100,10 @@ const config: KnipConfig = {
       entry: ['app/**/*.{ts,vue}'],
     },
     'apps/runner': {
-      // The Node host the sidecar runs, bundled by `scripts/build.mjs`.
-      entry: ['server/main.ts'],
+      // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
+      entry: ['server/main.ts', 'app/**/*.{ts,vue}'],
+      // `nuxt typecheck` runs `vue-tsc`.
+      ignoreDependencies: ['vue-tsc'],
     },
     'integrations/nitro': {},
   },
