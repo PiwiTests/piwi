@@ -1,6 +1,12 @@
 import { describe, test, expect } from 'vitest';
 import {
+  addTagsTruncated,
+  collectTagsTruncated,
   compileExternalIdPattern,
+  keepTagsTruncated,
+  MAX_TAGS_TRUNCATED_EXAMPLES,
+  normalizeTestTagsWithDropped,
+  readTagsTruncated,
   isPiwiAnnotation,
   MAX_EXTERNAL_ID_CHARS,
   MAX_EXTERNAL_ID_DUPLICATES,
@@ -49,6 +55,96 @@ describe('normalizeTestTags', () => {
   test('caps the length of a single tag', () => {
     const [tag] = normalizeTestTags(['x'.repeat(MAX_TEST_TAG_CHARS + 20)]);
     expect(tag).toHaveLength(MAX_TEST_TAG_CHARS);
+  });
+});
+
+const tagList = (count: number, prefix = 'SHOP-T') => Array.from({ length: count }, (_, i) => `@${prefix}${i + 1}`);
+
+describe('normalizeTestTagsWithDropped', () => {
+  test('counts the distinct tags past the limit, in declaration order', () => {
+    const { tags, dropped } = normalizeTestTagsWithDropped(tagList(MAX_TEST_TAGS + 5));
+    expect(tags).toEqual(tagList(MAX_TEST_TAGS).map((tag) => tag.slice(1)));
+    expect(dropped).toBe(5);
+  });
+
+  test('counts neither duplicates nor blanks, before or past the limit', () => {
+    const raw = [...tagList(MAX_TEST_TAGS), '@SHOP-T1', 'SHOP-T2', '', '  ', '@', 42, '@extra'];
+    expect(normalizeTestTagsWithDropped(raw)).toEqual({
+      tags: tagList(MAX_TEST_TAGS).map((tag) => tag.slice(1)),
+      dropped: 1,
+    });
+  });
+
+  test('drops nothing at the limit, and agrees with normalizeTestTags', () => {
+    const raw = tagList(MAX_TEST_TAGS);
+    expect(normalizeTestTagsWithDropped(raw).dropped).toBe(0);
+    expect(normalizeTestTagsWithDropped(tagList(30)).tags).toEqual(normalizeTestTags(tagList(30)));
+    expect(normalizeTestTagsWithDropped('nope')).toEqual({ tags: [], dropped: 0 });
+  });
+});
+
+describe('collectTagsTruncated', () => {
+  const test1 = { filePath: 'tests/cart.spec.ts', suitePath: ['cart'], title: 'pays', line: 4 };
+
+  test('names each test that lost a tag, once across Playwright projects', () => {
+    const found = collectTagsTruncated([
+      { ...test1, tags: tagList(MAX_TEST_TAGS + 2) },
+      { ...test1, tags: tagList(MAX_TEST_TAGS + 3) },
+      { filePath: 'tests/cart.spec.ts', title: 'fits', tags: tagList(3) },
+    ]);
+    expect(found).toEqual({ tests: 1, examples: [{ ...test1, dropped: 3 }] });
+  });
+
+  test('counts every test and keeps the first examples', () => {
+    const tests = Array.from({ length: MAX_TAGS_TRUNCATED_EXAMPLES + 4 }, (_, i) => ({
+      filePath: 'tests/a.spec.ts',
+      title: `t${i}`,
+      tags: tagList(MAX_TEST_TAGS + 1),
+    }));
+    const found = collectTagsTruncated(tests)!;
+    expect(found.tests).toBe(MAX_TAGS_TRUNCATED_EXAMPLES + 4);
+    expect(found.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+  });
+
+  test('is null when every test fits', () => {
+    expect(collectTagsTruncated([{ filePath: 'a', title: 'b', tags: tagList(MAX_TEST_TAGS) }])).toBeNull();
+  });
+});
+
+describe('readTagsTruncated', () => {
+  test('drops malformed examples and never counts fewer tests than it lists', () => {
+    expect(
+      readTagsTruncated({
+        tests: 0,
+        examples: [{ filePath: 'a', title: 'b', dropped: 2 }, { filePath: 'a', title: 'c', dropped: 0 }, 'x', null],
+      }),
+    ).toEqual({ tests: 1, examples: [{ filePath: 'a', title: 'b', dropped: 2 }] });
+    expect(readTagsTruncated({ tests: 'many', examples: [] })).toBeNull();
+    expect(readTagsTruncated(null)).toBeNull();
+  });
+});
+
+describe('merging tagsTruncated', () => {
+  const a = { filePath: 'a.spec.ts', title: 'A', dropped: 1 };
+  const b = { filePath: 'b.spec.ts', title: 'B', dropped: 2 };
+
+  test('a report sent again counts once, even past the examples', () => {
+    const report = { tests: 30, examples: [a, b] };
+    expect(keepTagsTruncated(report, report)).toEqual(report);
+    expect(keepTagsTruncated(null, report)).toEqual(report);
+  });
+
+  test("other shards' reports add up, less the tests both list", () => {
+    expect(addTagsTruncated({ tests: 3, examples: [a] }, { tests: 2, examples: [b] })).toEqual({
+      tests: 5,
+      examples: [a, b],
+    });
+    expect(addTagsTruncated({ tests: 1, examples: [a] }, { tests: 2, examples: [a, b] })).toEqual({
+      tests: 2,
+      examples: [a, b],
+    });
+    expect(addTagsTruncated(undefined, { tests: 1, examples: [a] })).toEqual({ tests: 1, examples: [a] });
+    expect(addTagsTruncated(undefined, undefined)).toBeNull();
   });
 });
 

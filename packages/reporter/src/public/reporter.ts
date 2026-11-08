@@ -81,7 +81,12 @@ import {
   resolveUnrunReason,
   linkBlockedTests,
 } from '@piwitests/core/status-classify';
-import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import {
+  collectTestLocks,
+  collectTestMetadata,
+  collectTestTags,
+  formatTagsTruncated,
+} from '../internal/collect/test-meta.js';
 import {
   formatExternalIdDuplicates,
   planExternalIds,
@@ -92,6 +97,7 @@ import { buildErrorText } from '../internal/collect/error-text.js';
 import { runErrorOf } from '../internal/collect/run-errors.js';
 import { testOutputOf } from '../internal/collect/test-output.js';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import { collectTagsTruncated } from '@piwitests/core/test-meta';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
 import {
@@ -530,6 +536,7 @@ export class PiwiDashboardReporter {
     // attempts.
     this.plannedTests = suite.allTests();
     this.planExternalIds();
+    this.noteTagsTruncated();
 
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
@@ -696,6 +703,24 @@ export class PiwiDashboardReporter {
     for (const line of formatExternalIdDuplicates(plan.duplicates, onDuplicate)) this.logger.warn(line);
     if (plan.duplicates.length > 0) this.metadata = { ...this.metadata, externalIdDuplicates: plan.duplicates };
     this.externalIds = plan;
+  }
+
+  /**
+   * Name the planned tests whose tags are cut at the limit, once, and record them on the run so the dashboard shows
+   * them too.
+   */
+  private noteTagsTruncated(): void {
+    const found = collectTagsTruncated(
+      this.plannedTests.map((test) => ({
+        filePath: testFile(test, this.testPathBase),
+        suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
+        title: test.title,
+        line: test.location.line,
+        tags: test.tags,
+      })),
+    );
+    for (const line of formatTagsTruncated(found)) this.logger.warn(line);
+    if (found) this.metadata = { ...this.metadata, tagsTruncated: found };
   }
 
   /** The external ID fields of a test's payload: `null` tells the dashboard the test has none to match on. */
