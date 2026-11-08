@@ -4,11 +4,13 @@ import {
   collectTagsTruncated,
   compileExternalIdPattern,
   keepTagsTruncated,
+  formatTagsTruncatedTests,
   MAX_TAGS_TRUNCATED_EXAMPLES,
   MAX_TAGS_TRUNCATED_SUITE_DEPTH,
   MAX_TAGS_TRUNCATED_TEXT_CHARS,
   normalizeTestTagsWithDropped,
   readTagsTruncated,
+  tagsTruncatedCount,
   isPiwiAnnotation,
   MAX_EXTERNAL_ID_CHARS,
   MAX_EXTERNAL_ID_DUPLICATES,
@@ -205,6 +207,39 @@ describe('merging tagsTruncated', () => {
     });
     expect(addTagsTruncated(undefined, { tests: 1, examples: [a] })).toEqual({ tests: 1, examples: [a] });
     expect(addTagsTruncated(undefined, undefined)).toBeNull();
+  });
+});
+
+describe('tagsTruncatedCount', () => {
+  const example = (i: number) => ({ filePath: 'a.spec.ts', title: `t${i}`, dropped: 1 });
+  const examples = (n: number) => Array.from({ length: n }, (_, i) => example(i));
+
+  test('is the exact count while the examples list every test', () => {
+    const one = { tests: 1, examples: examples(1) };
+    expect(tagsTruncatedCount(one)).toEqual({ count: 1, atLeast: false });
+    expect(formatTagsTruncatedTests(one)).toBe('1 test');
+    const some = { tests: 5, examples: examples(5) };
+    expect(tagsTruncatedCount(some)).toEqual({ count: 5, atLeast: false });
+    expect(formatTagsTruncatedTests(some)).toBe('5 tests');
+    const full = { tests: MAX_TAGS_TRUNCATED_EXAMPLES, examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES) };
+    expect(tagsTruncatedCount(full)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: false });
+  });
+
+  test('is at least the examples kept, never the stored count, when that is above them', () => {
+    const report = { tests: 47, examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES) };
+    expect(tagsTruncatedCount(report)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: true });
+    expect(formatTagsTruncatedTests(report)).toBe(`at least ${MAX_TAGS_TRUNCATED_EXAMPLES} tests`);
+  });
+
+  test('shows at least the examples kept for two overlapping reports merged past the examples', () => {
+    const shard = (from: number) => ({
+      tests: MAX_TAGS_TRUNCATED_EXAMPLES + 10,
+      examples: examples(MAX_TAGS_TRUNCATED_EXAMPLES).map((_, i) => example(from + i)),
+    });
+    const merged = addTagsTruncated(shard(0), shard(5))!;
+    expect(merged.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+    expect(merged.tests).toBeGreaterThan(merged.examples.length);
+    expect(tagsTruncatedCount(merged)).toEqual({ count: MAX_TAGS_TRUNCATED_EXAMPLES, atLeast: true });
   });
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { formatTagsTruncatedTests, MAX_TAGS_TRUNCATED_EXAMPLES, readTagsTruncated } from '@piwitests/core/test-meta';
 import {
   addRunTagsTruncated,
   carryTagsTruncated,
@@ -71,5 +72,25 @@ describe('withShardTagsTruncated', () => {
     const sent = { tagsTruncated: { tests: 10, examples: many('b', 10) } };
     expect((withShardTagsTruncated(sent, stored, sent).tagsTruncated as { tests: number }).tests).toBe(25);
     expect((withShardTagsTruncated(stored, stored, sent).tagsTruncated as { tests: number }).tests).toBe(25);
+  });
+});
+
+describe('the count shown for shards whose reports overlap past the examples', () => {
+  const shardReport = (from: number) => ({
+    tagsTruncated: {
+      tests: MAX_TAGS_TRUNCATED_EXAMPLES + 5,
+      examples: Array.from({ length: MAX_TAGS_TRUNCATED_EXAMPLES }, (_, i) => ({
+        filePath: 'a.spec.ts',
+        title: `t${from + i}`,
+        dropped: 1,
+      })),
+    },
+  });
+
+  test('is at least the examples kept, not the added-up count', () => {
+    const merged = addRunTagsTruncated(shardReport(0), shardReport(10));
+    const report = readTagsTruncated(merged.tagsTruncated)!;
+    expect(report.tests).toBeGreaterThan(MAX_TAGS_TRUNCATED_EXAMPLES);
+    expect(formatTagsTruncatedTests(report)).toBe(`at least ${MAX_TAGS_TRUNCATED_EXAMPLES} tests`);
   });
 });

@@ -7,7 +7,9 @@ import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import {
   MAX_TEST_TAGS,
   mergeExternalIdDuplicates,
+  formatTagsTruncatedTests,
   readTagsTruncated,
+  tagsTruncatedCount,
   type ExternalIdDuplicateTest,
 } from '@piwitests/core/test-meta';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
@@ -139,10 +141,13 @@ const externalIdDuplicates = computed(() =>
 const tagsTruncated = computed(() =>
   readTagsTruncated((props.testRun?.metadata as Record<string, unknown> | null)?.tagsTruncated),
 );
-const tagsTruncatedFact = computed(() => {
-  const tests = tagsTruncated.value?.tests ?? 0;
-  return `Tags cut at ${MAX_TEST_TAGS} on ${tests === 1 ? '1 test' : `${tests} tests`}`;
-});
+const tagsTruncatedFact = computed(
+  () =>
+    `Tags cut at ${MAX_TEST_TAGS} on ${tagsTruncated.value ? formatTagsTruncatedTests(tagsTruncated.value) : '0 tests'}`,
+);
+const tagsTruncatedHasMore = computed(() =>
+  tagsTruncated.value ? tagsTruncatedCount(tagsTruncated.value).atLeast : false,
+);
 function runTestLabel(test: ExternalIdDuplicateTest): string {
   const where = test.line != null ? `${test.filePath}:${test.line}` : test.filePath;
   return `${where} · ${[...(test.suitePath ?? []), test.title].join(' › ')}`;
@@ -660,9 +665,7 @@ function onLabelKeydown(e: KeyboardEvent) {
             {{ runTestLabel(test) }}
             ({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)
           </li>
-          <li v-if="tagsTruncated.tests > tagsTruncated.examples.length" class="text-xs text-muted">
-            and {{ tagsTruncated.tests - tagsTruncated.examples.length }} more
-          </li>
+          <li v-if="tagsTruncatedHasMore" class="text-xs text-muted">and possibly more</li>
         </ul>
       </div>
       <div

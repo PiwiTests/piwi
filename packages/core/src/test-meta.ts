@@ -100,11 +100,33 @@ export interface TagsTruncatedTest {
  * tests (by file, describe path and title) and up to `MAX_TAGS_TRUNCATED_EXAMPLES` of them.
  */
 export interface TagsTruncated {
+  /**
+   * How many tests lost tags. Merging reports of the same tests past {@link MAX_TAGS_TRUNCATED_EXAMPLES} tests can
+   * count one twice, so this can be above the distinct tests; the `examples` kept are always distinct. Display it
+   * through {@link tagsTruncatedCount}.
+   */
   tests: number;
   examples: TagsTruncatedTest[];
 }
 
 export const MAX_TAGS_TRUNCATED_EXAMPLES = 20;
+
+/**
+ * The number of tests to show for a report: `tests` when the examples list every one of them, otherwise the number
+ * of examples with `atLeast` set, since `tests` can count a test twice past {@link MAX_TAGS_TRUNCATED_EXAMPLES}.
+ */
+export function tagsTruncatedCount(report: TagsTruncated): { count: number; atLeast: boolean } {
+  if (report.tests <= report.examples.length) return { count: report.tests, atLeast: false };
+  return { count: report.examples.length, atLeast: true };
+}
+
+/** {@link tagsTruncatedCount} as words: `1 test`, `5 tests`, `at least 20 tests`. */
+export function formatTagsTruncatedTests(report: TagsTruncated): string {
+  const { count, atLeast } = tagsTruncatedCount(report);
+  const tests = count === 1 ? '1 test' : `${count} tests`;
+  return atLeast ? `at least ${tests}` : tests;
+}
+
 /** The longest `filePath`, `title` and `suitePath` entry kept in a {@link TagsTruncatedTest}; a longer one is cut. */
 export const MAX_TAGS_TRUNCATED_TEXT_CHARS = 500;
 /** The most `suitePath` entries kept in a {@link TagsTruncatedTest}; the first ones are kept. */

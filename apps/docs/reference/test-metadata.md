@@ -144,8 +144,9 @@ leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-me
 Piwi keeps at most 20 tags per test, each cut to 60 characters, in the order Playwright lists them; duplicates count
 once. A test that declares more keeps its first 20 and loses the rest. The reporter warns about it once as the run
 begins, naming the tests (20 at most), and records them on the run: the run page shows "Tags cut at 20 on N tests",
-with the tests in its Details. The dashboard does the same for a run sent without the reporter, or imported from a
-blob report.
+with the tests in its Details. When more than 20 tests lost tags, the page shows "at least 20 tests", the number it
+lists, since merging a run's reports (shards, or a payload sent in batches) can count a test twice. The dashboard does
+the same for a run sent without the reporter, or imported from a blob report.
 
 Which tags are cut depends on Playwright's order. Playwright 1.64.1 builds `TestCase.tags` from the config's `tag`
 first, then each `describe` from the outermost in (the @-words of its title, then its `tag` option), then the @-words
