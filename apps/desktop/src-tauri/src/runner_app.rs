@@ -25,7 +25,7 @@ use crate::{
     append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
     hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, random_hex_32,
     show_splash_status, shut_down, supervise_server, LogFile, QuitConfirmed, ServerGaveUp,
-    ServerProcess, ShuttingDown, LINK_SCHEME, READY_TIMEOUT_SECS,
+    ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
@@ -103,10 +103,28 @@ fn spawn_host(
     }
 }
 
-/// Whether `url` is the `piwi://connect` link: the one link Runner answers. It carries nothing to act on, so the
-/// link only brings the window forward; connecting an instance and every run stay a click in the window.
+/// The scheme of Runner's links. The desktop app keeps `piwi`, so a `piwi:` link never reaches Runner.
+const RUNNER_LINK_SCHEME: &str = "piwi-runner";
+
+/// The identifier of the Piwi Runner bundle (`runner.conf.json`).
+const RUNNER_IDENTIFIER: &str = "io.piwitests.runner";
+
+/// Why this build may not start as Piwi Runner, or `None` when it may: its bundle identifier is Runner's. Built with
+/// the `runner` feature but without `runner.conf.json`, the app would open the desktop app's data folder and settings.
+fn identifier_refusal(identifier: &str) -> Option<String> {
+    if identifier == RUNNER_IDENTIFIER {
+        return None;
+    }
+    Some(format!(
+        "Piwi Runner starts only with the identifier {RUNNER_IDENTIFIER}, and this build has {identifier}: \
+         build it with --config runner.conf.json."
+    ))
+}
+
+/// Whether `url` is the `piwi-runner://connect` link: the one link Runner answers. It carries nothing to act on, so
+/// the link only brings the window forward; connecting an instance and every run stay a click in the window.
 fn is_connect_link(url: &tauri::Url) -> bool {
-    url.scheme() == LINK_SCHEME
+    url.scheme() == RUNNER_LINK_SCHEME
         && url
             .host_str()
             .is_some_and(|host| host.eq_ignore_ascii_case("connect"))
@@ -115,10 +133,10 @@ fn is_connect_link(url: &tauri::Url) -> bool {
         && url.port().is_none()
 }
 
-/// Bring the window forward for a `piwi://connect` link; any other `piwi://` link is ignored, and logged.
+/// Bring the window forward for a `piwi-runner://connect` link; any other `piwi-runner://` link is ignored, and logged.
 fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     // On macOS the files the app opens come through here too, as `file:` URLs.
-    if !urls.iter().any(|url| url.scheme() == LINK_SCHEME) {
+    if !urls.iter().any(|url| url.scheme() == RUNNER_LINK_SCHEME) {
         return;
     }
     if urls.iter().any(is_connect_link) {
@@ -130,12 +148,16 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     if let Some(log) = app.try_state::<LogFile>() {
         append_log(
             &log.0,
-            &format!("ignored a {LINK_SCHEME}:// link that Piwi Runner does not answer"),
+            &format!("ignored a {RUNNER_LINK_SCHEME}:// link that Piwi Runner does not answer"),
         );
     }
 }
 
 pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
+    if let Some(refusal) = identifier_refusal(&context.config().identifier) {
+        eprintln!("{refusal}");
+        std::process::exit(2);
+    }
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -144,7 +166,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 bring_to_front(&w);
             }
         }))
-        // `piwi://connect` links (`open_links`). Registered after single-instance, which hands it a second launch's
+        // `piwi-runner://connect` links (`open_links`). Registered after single-instance, which hands it a second launch's
         // link.
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
@@ -313,7 +335,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                         if let Some(log) = handle.try_state::<LogFile>() {
                             append_log(
                                 &log.0,
-                                &format!("could not register {LINK_SCHEME}:// links: {e}"),
+                                &format!("could not register {RUNNER_LINK_SCHEME}:// links: {e}"),
                             );
                         }
                     }
@@ -360,24 +382,48 @@ mod tests {
 
     #[test]
     fn only_the_connect_link_is_answered() {
-        assert!(is_connect_link(&url("piwi://connect")));
-        assert!(is_connect_link(&url("piwi://CONNECT/")));
+        assert!(is_connect_link(&url("piwi-runner://connect")));
+        assert!(is_connect_link(&url("piwi-runner://CONNECT/")));
         // Anything it carries is not read.
         assert!(is_connect_link(&url(
-            "piwi://connect?instance=https://evil.example"
+            "piwi-runner://connect?instance=https://evil.example"
         )));
-        assert!(!is_connect_link(&url("piwi://open/runs")));
-        assert!(!is_connect_link(&url("piwi://connect.evil.example")));
-        assert!(!is_connect_link(&url("piwi://user@connect")));
-        assert!(!is_connect_link(&url("piwi://connect:80")));
+        assert!(!is_connect_link(&url("piwi-runner://open/runs")));
+        assert!(!is_connect_link(&url("piwi-runner://connect.evil.example")));
+        assert!(!is_connect_link(&url("piwi-runner://user@connect")));
+        assert!(!is_connect_link(&url("piwi-runner://connect:80")));
         assert!(!is_connect_link(&url("https://connect")));
-        assert!(!is_connect_link(&url("piwi:///connect")));
+        assert!(!is_connect_link(&url("piwi-runner:///connect")));
     }
 
     #[test]
-    fn the_connect_link_is_not_a_page_of_the_dashboard() {
-        assert_eq!(crate::link_page(&url("piwi://connect")), None);
-        assert!(crate::link_page(&url("piwi://open/runs")).is_some());
+    fn the_desktop_apps_links_are_not_answered() {
+        assert!(!is_connect_link(&url("piwi://connect")));
+        assert!(!is_connect_link(&url("piwi://open/runs")));
+    }
+
+    #[test]
+    fn only_runners_own_identifier_starts_it() {
+        assert_eq!(identifier_refusal("io.piwitests.runner"), None);
+        let refusal =
+            identifier_refusal("io.piwitests.dashboard").expect("the desktop app's identifier");
+        assert!(refusal.contains("io.piwitests.runner"), "{refusal}");
+        assert!(refusal.contains("io.piwitests.dashboard"), "{refusal}");
+        assert!(refusal.contains("runner.conf.json"), "{refusal}");
+        assert!(identifier_refusal("").is_some());
+        assert!(identifier_refusal("io.piwitests.runner.other").is_some());
+        assert!(identifier_refusal("IO.PIWITESTS.RUNNER").is_some());
+    }
+
+    #[test]
+    fn the_bundle_config_names_runner_alone() {
+        let patch: serde_json::Value =
+            serde_json::from_str(include_str!("../runner.conf.json")).unwrap();
+        assert_eq!(patch["identifier"], RUNNER_IDENTIFIER);
+        assert_eq!(
+            patch["plugins"]["deep-link"]["desktop"]["schemes"],
+            serde_json::json!([RUNNER_LINK_SCHEME])
+        );
     }
 
     #[test]
