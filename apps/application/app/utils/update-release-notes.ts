@@ -3,6 +3,7 @@
  * (`desktop_get_release_notes`), and the summary the update card shows of them.
  */
 import { splitEntryScope, type ChangelogRelease } from '#shared/changelog';
+import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { inlineMarkdownHtml } from './markdown-inline';
 
@@ -26,11 +27,11 @@ export interface DesktopReleaseNotes {
   complete: boolean;
 }
 
-export const RELEASES_PAGE_URL = 'https://github.com/PiwiTests/piwi/releases';
+export const RELEASES_PAGE_URL = PROJECT_LINKS.releases;
 
 /** The GitHub comparison of two versions' tags. */
 export function compareUrl(installed: string, offered: string): string {
-  return `https://github.com/PiwiTests/piwi/compare/v${installed}...v${offered}`;
+  return `${PROJECT_LINKS.repository}/compare/v${installed}...v${offered}`;
 }
 
 /** A release page link, or the releases page when the shell's URL is not an http(s) one. */

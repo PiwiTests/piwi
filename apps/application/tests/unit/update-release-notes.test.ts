@@ -65,7 +65,7 @@ describe('summarizeReleaseNotes', () => {
 });
 
 test('compareUrl compares the two version tags', () => {
-  expect(compareUrl('0.64.0', '0.67.0')).toBe('https://github.com/PiwiTests/piwi/compare/v0.64.0...v0.67.0');
+  expect(compareUrl('0.64.0', '0.67.0')).toBe('https://github.com/piwitests/piwi/compare/v0.64.0...v0.67.0');
 });
 
 describe('releaseNoteHtml', () => {
@@ -88,5 +88,5 @@ test('releasePageUrl keeps an http(s) release page, else points at the releases 
   expect(releasePageUrl({ ...note, url: 'https://github.com/PiwiTests/piwi/releases/tag/v1.0.0' })).toBe(
     'https://github.com/PiwiTests/piwi/releases/tag/v1.0.0',
   );
-  expect(releasePageUrl({ ...note, url: 'javascript:alert(1)' })).toBe('https://github.com/PiwiTests/piwi/releases');
+  expect(releasePageUrl({ ...note, url: 'javascript:alert(1)' })).toBe('https://github.com/piwitests/piwi/releases');
 });
