@@ -48,6 +48,7 @@ import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { addRunTagsTruncated, carryTagsTruncated } from '#shared/tags-truncated';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import {
   displayTitleOf,
@@ -139,6 +140,7 @@ import {
   withShardDurations,
 } from '~~/server/utils/shard-spans';
 import { updateRunMetadata } from '~~/server/utils/run-metadata';
+import { recordTagsTruncated } from '~~/server/utils/tags-truncated';
 import { publicRunUrl } from '#shared/run-url';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
@@ -460,9 +462,12 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryExternalIdDuplicates(
-      carryIngestHealth(
-        sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+    const metadata = carryTagsTruncated(
+      carryExternalIdDuplicates(
+        carryIngestHealth(
+          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+          testRun.metadata,
+        ),
         testRun.metadata,
       ),
       testRun.metadata,
@@ -497,10 +502,15 @@ export async function apiBeginTestRun(
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
-    await updateRunMetadata(db, id, (stored) => ({ ...sanitizeMetadata(body.metadata), ...stored }), {
-      ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
-      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-    });
+    await updateRunMetadata(
+      db,
+      id,
+      (stored) => addRunTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, body.metadata),
+      {
+        ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+      },
+    );
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -940,6 +950,7 @@ export async function persistRunCases(
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,
@@ -1283,7 +1294,13 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     : testRun.failedTests;
 
   const reportedMetadata = body.metadata
-    ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
+    ? carryTagsTruncated(
+        carryExternalIdDuplicates(
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          testRun.metadata,
+        ),
+        testRun.metadata,
+      )
     : null;
   const runErrors = storableRunErrors(body.runErrors);
 

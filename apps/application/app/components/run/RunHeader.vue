@@ -4,7 +4,12 @@ import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
-import { mergeExternalIdDuplicates, type ExternalIdDuplicateTest } from '@piwitests/core/test-meta';
+import {
+  MAX_TEST_TAGS,
+  mergeExternalIdDuplicates,
+  readTagsTruncated,
+  type ExternalIdDuplicateTest,
+} from '@piwitests/core/test-meta';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
 import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
@@ -127,7 +132,15 @@ const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.t
 const externalIdDuplicates = computed(() =>
   mergeExternalIdDuplicates((props.testRun?.metadata as Record<string, unknown> | null)?.externalIdDuplicates),
 );
-function duplicateTestLabel(test: ExternalIdDuplicateTest): string {
+/** The tests whose tags were cut at the limit: how many, and the ones the run recorded. */
+const tagsTruncated = computed(() =>
+  readTagsTruncated((props.testRun?.metadata as Record<string, unknown> | null)?.tagsTruncated),
+);
+const tagsTruncatedFact = computed(() => {
+  const tests = tagsTruncated.value?.tests ?? 0;
+  return `Tags cut at ${MAX_TEST_TAGS} on ${tests === 1 ? '1 test' : `${tests} tests`}`;
+});
+function runTestLabel(test: ExternalIdDuplicateTest): string {
   const where = test.line != null ? `${test.filePath}:${test.line}` : test.filePath;
   return `${where} · ${[...(test.suitePath ?? []), test.title].join(' › ')}`;
 }
@@ -464,6 +477,15 @@ function onLabelKeydown(e: KeyboardEvent) {
           }}</span
         >
       </template>
+      <template v-if="tagsTruncated">
+        <span class="text-dimmed">·</span>
+        <span
+          class="text-warning"
+          :title="tagsTruncated.examples.map(runTestLabel).join('\n')"
+          data-testid="run-tags-truncated-fact"
+          >{{ tagsTruncatedFact }}</span
+        >
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
         <a
@@ -577,10 +599,29 @@ function onLabelKeydown(e: KeyboardEvent) {
             <TestIdChip :external-id="duplicate.externalId" class="mr-1.5" />
             <span class="text-muted">declared by {{ duplicate.tests.length }} tests:</span>
             <ul class="ml-4 break-words">
-              <li v-for="test in duplicate.tests" :key="duplicateTestLabel(test)" class="text-xs text-muted">
-                {{ duplicateTestLabel(test) }}
+              <li v-for="test in duplicate.tests" :key="runTestLabel(test)" class="text-xs text-muted">
+                {{ runTestLabel(test) }}
               </li>
             </ul>
+          </li>
+        </ul>
+      </div>
+      <div
+        v-if="tagsTruncated"
+        class="flex items-start gap-1.5"
+        data-testid="run-tags-truncated"
+        data-tour="run-tags-truncated"
+      >
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Tags cut <HelpHint topic="run.tagsTruncated"
+        /></span>
+        <ul class="space-y-1 min-w-0 break-words">
+          <li v-for="test in tagsTruncated.examples" :key="runTestLabel(test)" class="text-xs text-muted">
+            {{ runTestLabel(test) }}
+            <span class="text-dimmed">({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)</span>
+          </li>
+          <li v-if="tagsTruncated.tests > tagsTruncated.examples.length" class="text-xs text-dimmed">
+            and {{ tagsTruncated.tests - tagsTruncated.examples.length }} more
           </li>
         </ul>
       </div>

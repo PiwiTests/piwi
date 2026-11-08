@@ -6,6 +6,7 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { addRunTagsTruncated, carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
@@ -168,7 +169,10 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     };
     const reported = (stored: unknown) =>
       carryRequestOrigin(
-        carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored),
+        carryTagsTruncated(
+          carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored),
+          stored,
+        ),
         stored,
       );
 
@@ -204,7 +208,13 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       db,
       id,
       (stored) =>
-        withBegunShard(id, { ...sanitizeMetadata(body.metadata), ...stored }, stored, body.setupToken, streamToken),
+        withBegunShard(
+          id,
+          addRunTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, body.metadata),
+          stored,
+          body.setupToken,
+          streamToken,
+        ),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         // The first shard to report a branch names the run's branch.

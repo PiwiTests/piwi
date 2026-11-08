@@ -25,6 +25,7 @@ import { flakyFinalAttempts, sumFailedAndTimedOut } from '#shared/utils/test-cou
 import { resolveBrowserName } from '#shared/browser-name';
 import type { TestCasePayload, TestRunSubmitPayload, WireRunError } from '#shared/types';
 import { storableRunErrors } from './storable-values';
+import { addRunTagsTruncated, withoutTagsTruncated } from '#shared/tags-truncated';
 
 /**
  * The initializing or running sharded run of a project instance, split into
@@ -133,7 +134,8 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
     if (active) return active;
 
     await cancelInstanceRuns(db, projectId, instanceId, undefined, true);
-    const metadata = sanitizeMetadata(body.metadata || null);
+    // Each shard's cut tags join the run as `addBatchShard` counts the shard in, the first shard's too.
+    const metadata = withoutTagsTruncated(sanitizeMetadata(body.metadata || null));
     const [run] = await db
       .insert(testRuns)
       .values({
@@ -181,7 +183,10 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
     db,
     runId,
     span,
-    (metadata) => (hasShardEnded(metadata, span.shardIndex) ? null : withShardDurations(metadata, tally.durations)),
+    (metadata) =>
+      hasShardEnded(metadata, span.shardIndex)
+        ? null
+        : withShardDurations(addRunTagsTruncated(metadata, tally.shard.metadata), tally.durations),
     {
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
