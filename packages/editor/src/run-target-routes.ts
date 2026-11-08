@@ -201,10 +201,9 @@ export function sendsBody(method: string): boolean {
 }
 
 /**
- * Why a request to a route is refused before its body is read, or null: a shell-only route refuses a browser's request
- * (403); a POST or PUT refuses a content type other than `application/json` (415), which a page can send without a
- * preflight; a route under `/requests/:id` refuses an id that is not a request id (400). Every shell-only answer, and
- * the status, is not to be cached.
+ * Why a request to a route is refused before its body is read, or null: a browser's request to a shell-only route
+ * (403); a POST or PUT whose content type is not `application/json` (415); an id under `/requests/:id` that is not a
+ * request id (400). The answers of a shell-only route and of `status` are `noStore`.
  */
 export function refuseRunTargetRequest(
   name: RunTargetRouteName,
