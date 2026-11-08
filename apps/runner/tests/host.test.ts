@@ -88,7 +88,8 @@ describe('the readiness probe', () => {
   });
 
   test('answers 200 without a proof when there is no well-formed challenge', async () => {
-    for (const headers of [{}, { [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' }]) {
+    const requests: Record<string, string>[] = [{}, { [DESKTOP_CHALLENGE_HEADER]: 'not-a-challenge' }];
+    for (const headers of requests) {
       const answer = await call('GET', '/api/health', headers);
       expect(answer.status).toBe(200);
       expect(answer.headers[DESKTOP_PROOF_HEADER]).toBeUndefined();
