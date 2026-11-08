@@ -29,7 +29,10 @@ export const READY_INSPECTION = {
  * native import picker returns, else none), `localRunId` (the shell's id of a
  * local run `desktop_run_local_tests` starts, which then goes on until the
  * scene ends; else none starts), and `serverPort` and `activePort` (the port
- * the settings name and the one the server listens on, else both 3000).
+ * the settings name and the one the server listens on, else both 3000), and
+ * `update` (`{ check, releaseNotes }`: the update the startup check found and
+ * the release notes `desktop_get_release_notes` answers; else the build has
+ * no update channel).
  * `window.__emitTauri(name, payload)` plays an event of the shell, such as a
  * `piwi:local-run` output line, `window.__outputWindowName` is the name of
  * the last run output window opened, and `window.__runArgs` what the last
@@ -45,6 +48,7 @@ export function bridgeScript(shape = {}) {
   const requestFolders = shape.requestFolders ?? {};
   const serverPort = shape.serverPort ?? 3000;
   const activePort = shape.activePort ?? serverPort;
+  const update = shape.update ?? null;
   return `
     window.__mockLink = ${JSON.stringify(link)};
     const listeners = {};
@@ -82,7 +86,13 @@ export function bridgeScript(shape = {}) {
             case 'desktop_set_server_port':
               return Promise.resolve(null);
             case 'desktop_check_update':
-              return Promise.resolve({ state: 'unsupported' });
+              return Promise.resolve(${JSON.stringify(update?.check ?? { state: 'unsupported' })});
+            case 'desktop_get_update_settings':
+              return Promise.resolve(${JSON.stringify(
+                update ? { supported: true, notify_on_startup: true, pending: update.check } : null,
+              )});
+            case 'desktop_get_release_notes':
+              return ${update ? `Promise.resolve(${JSON.stringify(update.releaseNotes)})` : `Promise.reject('no update found, run a check first')`};
             case 'desktop_request_folders':
               return Promise.resolve(${JSON.stringify(requestFolders)});
             case 'desktop_mcp_clients':

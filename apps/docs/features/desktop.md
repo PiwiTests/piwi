@@ -142,9 +142,9 @@ run. Restart the client after connecting. The page also installs the
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart, and checks at
-startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are
-verified against the project's signing key.
+**Settings → About → Updates** checks for a newer release (also at startup), lists what changed since your version,
+breaking changes first, and installs it on restart. The `.exe` needs no admin rights; the `.msi` does. Downloads are
+signature-checked.
 
 ## Limits
 
