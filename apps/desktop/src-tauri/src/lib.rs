@@ -615,7 +615,7 @@ fn desktop_set_run_progress(
 pub(crate) fn random_hex_32() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -755,6 +755,16 @@ fn health_ok(port: u16, token: &str) -> bool {
     health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
+/// Open a connection to the server on `port` for a request that carries `token`, once the
+/// server has proved it holds the token (`health_ok`). Every request the shell makes with the
+/// token goes through here, so the token never reaches another process that took the port.
+pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
+    if !health_ok(port, token) {
+        return Err("the local server is not answering".to_string());
+    }
+    std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())
+}
+
 /// Whether a raw `/api/health` response is a 200 carrying, in
 /// [`DESKTOP_PROOF_HEADER`], the proof of `token` for `challenge` on `port`.
 fn health_response_proves(response: &str, token: &str, port: u16, challenge: &str) -> bool {
@@ -787,13 +797,23 @@ fn proof_matches(token: &str, port: u16, challenge: &str, proof: &str) -> bool {
     mac.verify_slice(&proof).is_ok()
 }
 
+/// The proof an honest server makes for `challenge` (the Rust side of `desktopTokenProof`).
+#[cfg(test)]
+pub(crate) fn proof_of(token: &str, port: u16, challenge: &str) -> String {
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 || !text.is_ascii() {
+    let nibbles = text.chars().map(|c| c.to_digit(16)).collect::<Option<Vec<_>>>()?;
+    if nibbles.len() % 2 != 0 {
         return None;
     }
-    (0..text.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok())
+    nibbles
+        .chunks(2)
+        .map(|pair| u8::try_from(pair[0] * 16 + pair[1]).ok())
         .collect()
 }
 
@@ -2068,7 +2088,7 @@ fn read_event_stream(reader: impl std::io::BufRead, mut on_data: impl FnMut(&str
 /// ended cleanly.
 fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered: &mut bool) -> Result<(), String> {
     use std::io::{BufRead, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(NOTIFICATION_STREAM_IDLE));
     let request = format!(
         "GET /api/desktop/notifications HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2342,7 +2362,7 @@ const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// ends short of its `Content-Length`, removes the partial file.
 fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str) -> Result<PathBuf, String> {
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(DOWNLOAD_READ_TIMEOUT));
     let request = format!(
         "GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2438,14 +2458,28 @@ pub(crate) fn confirm_stopping_local_runs(
         });
 }
 
-/// Quit the app, asking first while local test runs are going: the tray's Quit
-/// and, on macOS, the app menu's.
-fn quit_after_confirming(app: &AppHandle) {
-    let handle = app.clone();
-    confirm_stopping_local_runs(app, "Quit Piwi?", "quitting", "Quit", move || {
-        handle.exit(0);
-    });
+/// The question asked before quitting stops local runs, titled with the app's name.
+fn quit_question(app_name: &str) -> String {
+    format!("Quit {app_name}?")
 }
+
+/// Quit the app called `app_name`, asking first while local test runs are going:
+/// the tray's Quit and, on macOS, the app menu's.
+fn quit_after_confirming(app: &AppHandle, app_name: &str) {
+    let handle = app.clone();
+    confirm_stopping_local_runs(
+        app,
+        &quit_question(app_name),
+        "quitting",
+        "Quit",
+        move || {
+            handle.exit(0);
+        },
+    );
+}
+
+/// What the desktop app's questions call it ([`quit_question`]).
+const DESKTOP_APP_NAME: &str = "Piwi";
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -2497,9 +2531,9 @@ fn app_menu_action(id: &str) -> Option<AppMenuAction> {
 
 /// Run an app menu item's action.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
+fn run_app_menu_action(app: &AppHandle, app_name: &str, action: AppMenuAction) {
     match action {
-        AppMenuAction::Quit => quit_after_confirming(app),
+        AppMenuAction::Quit => quit_after_confirming(app, app_name),
         AppMenuAction::OpenPage(path) => show_page(app, path),
         AppMenuAction::Import => pick_files_to_open(app),
         AppMenuAction::History(direction) => {
@@ -2574,13 +2608,30 @@ fn desktop_pick_files_to_open(app: tauri::AppHandle) {
 /// The app menu's Quit (Cmd+Q). It goes through [`quit_after_confirming`], since the
 /// predefined Quit sends `terminate:`, which no `ExitRequested` precedes.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn quit_menu_item(
-    app: &AppHandle,
+fn quit_menu_item<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     app_name: &str,
-) -> tauri::Result<tauri::menu::MenuItem<tauri::Wry>> {
+) -> tauri::Result<tauri::menu::MenuItem<R>> {
     MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
         .accelerator("CmdOrCtrl+Q")
         .build(app)
+}
+
+/// Swap the predefined Quit at the end of the app submenu for [`quit_menu_item`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn replace_quit<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    submenu: &tauri::menu::Submenu<R>,
+    app_name: &str,
+) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+
+    if let Some(MenuItemKind::Predefined(quit)) = submenu.items()?.last() {
+        if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
+            submenu.remove(quit)?;
+        }
+    }
+    submenu.append(&quit_menu_item(app, app_name)?)
 }
 
 /// The macOS app menu: Tauri's default menu with Piwi's own items, which
@@ -2611,16 +2662,10 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
         };
         let title = submenu.text()?;
         if title == app_name {
-            let items = submenu.items()?;
-            if let Some(MenuItemKind::Predefined(quit)) = items.last() {
-                if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
-                    submenu.remove(quit)?;
-                }
-            }
             // After About and its separator, where macOS applications put Settings.
             submenu.insert(&item(APP_MENU_SETTINGS_ID, "Settings…", Some("CmdOrCtrl+,"))?, 2)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-            submenu.append(&quit_menu_item(app, &app_name)?)?;
+            replace_quit(app, &submenu, &app_name)?;
         } else if title == "File" {
             submenu.insert(&item(APP_MENU_IMPORT_ID, "Import Playwright report…", Some("CmdOrCtrl+O"))?, 0)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
@@ -2645,7 +2690,7 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
 /// has already agreed to stop it. Confirming closes the window again, which runs
 /// the normal exit path; `QuitConfirmed` is what tells that close apart from the
 /// one the user made.
-fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
+fn hold_close_for_local_runs(window: &tauri::Window, app_name: &str) -> bool {
     let confirmed = window
         .try_state::<QuitConfirmed>()
         .is_some_and(|s| s.0.load(Ordering::SeqCst));
@@ -2663,7 +2708,7 @@ fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
     let target = window.clone();
     confirm_stopping_local_runs(
         window.app_handle(),
-        "Quit Piwi?",
+        &quit_question(app_name),
         "quitting",
         "Quit",
         move || {
@@ -3154,7 +3199,7 @@ pub fn run() {
                         let _ = if enabled { mgr.disable() } else { mgr.enable() };
                         let _ = login_i.set_checked(!enabled);
                     }
-                    "quit" => quit_after_confirming(app),
+                    "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
                             let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
@@ -3170,7 +3215,7 @@ pub fn run() {
                 app.set_menu(app_menu(app.handle())?)?;
                 app.on_menu_event(|app, event| {
                     if let Some(action) = app_menu_action(event.id().as_ref()) {
-                        run_app_menu_action(app, action);
+                        run_app_menu_action(app, DESKTOP_APP_NAME, action);
                     }
                 });
             }
@@ -3297,7 +3342,7 @@ pub fn run() {
                     api.prevent_close();
                     return;
                 }
-                if hold_close_for_local_runs(window) {
+                if hold_close_for_local_runs(window, DESKTOP_APP_NAME) {
                     api.prevent_close();
                 }
             }
@@ -3343,7 +3388,7 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        health_ok, health_response_proves, proof_matches, ide_launcher_args, is_known_launcher,
+        connect_proving_token, decode_hex, health_ok, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3592,27 +3637,75 @@ mod tests {
         }
     }
 
-    /// Answer one request on a free loopback port with `response`; the handle
-    /// yields the request it received.
-    fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
+    /// A server on a free loopback port that holds `token`: it answers the readiness probe with the
+    /// proof, then `response` to the request after it. The handle yields that request.
+    pub(crate) fn serve_as_holder_of(
+        token: &'static str,
+        response: Vec<u8>,
+    ) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let read_request = |stream: &mut std::net::TcpStream| {
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut buf).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                }
+                String::from_utf8_lossy(&request).to_string()
+            };
+            let (mut probe, _) = listener.accept().unwrap();
+            let asked = read_request(&mut probe);
+            let challenge = asked
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap()
+                .to_string();
+            let proof = proof_of(token, port, &challenge);
+            probe
+                .write_all(health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}")).as_bytes())
+                .unwrap();
+            drop(probe);
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_request(&mut stream);
+            stream.write_all(&response).unwrap();
+            request
+        });
+        (port, handle)
+    }
+
+    /// A process that took the port: it answers the readiness probe with a 200 and no proof, and
+    /// accepts no other connection. The handle yields the one request it saw.
+    pub(crate) fn serve_as_squatter() -> (u16, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0u8; 1024];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = stream.read(&mut buf).unwrap();
-                if n == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buf[..n]);
-            }
-            stream.write_all(&response).unwrap();
-            String::from_utf8_lossy(&request).to_string()
+            let mut buf = [0u8; 2048];
+            let read = stream.read(&mut buf).unwrap();
+            stream.write_all(health_answer("200 OK", "").as_bytes()).unwrap();
+            String::from_utf8_lossy(&buf[..read]).to_string()
         });
         (port, handle)
+    }
+
+    #[test]
+    fn a_connection_for_the_token_needs_a_server_that_proves_it_holds_it() {
+        let (port, squatter) = serve_as_squatter();
+        let error = connect_proving_token(port, "pd_x").unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let seen = squatter.join().unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-piwi-token"), "{seen}");
+
+        let (port, holder) = serve_as_holder_of("pd_x", Vec::new());
+        assert!(connect_proving_token(port, "pd_x").is_ok());
+        let _ = holder.join();
     }
 
     fn download_dir(test: &str) -> std::path::PathBuf {
@@ -3631,7 +3724,7 @@ mod tests {
                 .into_bytes();
         response.extend_from_slice(&body);
 
-        let (port, server) = serve_once(response.clone());
+        let (port, server) = serve_as_holder_of("pd_x", response.clone());
         let saved = stream_download(port, "pd_x", "/api/files/a.zip?x=1", &dir, "trace.zip").unwrap();
         assert_eq!(saved, dir.join("trace.zip"));
         assert_eq!(fs::read(&saved).unwrap(), body);
@@ -3641,7 +3734,7 @@ mod tests {
         assert!(request.contains("\r\nSec-Fetch-Site: same-origin\r\n"), "{request}");
 
         // The same name again never replaces the first file.
-        let (port, server) = serve_once(response);
+        let (port, server) = serve_as_holder_of("pd_x", response);
         let again = stream_download(port, "pd_x", "/api/files/a.zip", &dir, "trace.zip").unwrap();
         server.join().unwrap();
         assert_eq!(again, dir.join("trace (1).zip"));
@@ -3653,13 +3746,13 @@ mod tests {
     fn a_refused_or_cut_download_leaves_no_file() {
         let dir = download_dir("refused");
         let refusal = b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n\r\n{\"message\":\"Trace not found\"}";
-        let (port, server) = serve_once(refusal.to_vec());
+        let (port, server) = serve_as_holder_of("pd_x", refusal.to_vec());
         let error = stream_download(port, "pd_x", "/api/files/gone.zip", &dir, "gone.zip").unwrap_err();
         server.join().unwrap();
         assert_eq!(error, "Trace not found");
 
         let cut = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nonly ten b".to_vec();
-        let (port, server) = serve_once(cut);
+        let (port, server) = serve_as_holder_of("pd_x", cut);
         let error = stream_download(port, "pd_x", "/api/files/cut.zip", &dir, "cut.zip").unwrap_err();
         server.join().unwrap();
         assert!(error.contains("before the whole file"), "{error}");
@@ -4047,6 +4140,13 @@ mod tests {
             &PROOF_4318[1..]
         ));
         assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "é"));
+        // A sign or a prefix is not a digit.
+        for signed in ["+f", "-1", "0x", " f", "f "] {
+            assert_eq!(decode_hex(signed), None, "{signed:?}");
+        }
+        assert_eq!(decode_hex("0aFf"), Some(vec![0x0a, 0xff]));
+        assert_eq!(decode_hex(""), Some(vec![]));
+        assert_eq!(decode_hex("abc"), None);
         assert!(proof_matches(
             PROOF_TOKEN,
             4318,

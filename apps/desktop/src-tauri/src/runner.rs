@@ -655,9 +655,6 @@ impl RunEventPayload {
 /// the token never goes to another process that took the port. None when it
 /// does not answer a channel.
 fn bundled_run_channel(port: u16, token: String) -> Option<(String, Option<String>)> {
-    if !crate::health_ok(port, &token) {
-        return None;
-    }
     let server = crate::mcp_clients::ServerInfo { port, token };
     let body = crate::repro::local_get_json(&server, "/api/desktop/run-channel").ok()?;
     let channel = body.get("runChannel")?.as_str()?.to_string();

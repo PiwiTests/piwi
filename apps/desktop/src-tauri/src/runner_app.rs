@@ -23,11 +23,14 @@ use tauri_plugin_window_state::StateFlags;
 use crate::mcp_clients::ServerInfo;
 use crate::{
     app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
-    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs, quit_menu_item,
-    random_hex_32, run_app_menu_action, show_splash_status, shut_down, supervise_server, LogFile,
-    QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
+    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs,
+    random_hex_32, run_app_menu_action, show_splash_status, shut_down, supervise_server,
+    LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
+
+/// The app's name, in its menu and in the questions it asks.
+const APP_NAME: &str = "Piwi Runner";
 
 /// The log of the shell and of the host's output, in the app's data folder.
 const LOG_FILE: &str = "runner.log";
@@ -153,26 +156,22 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     }
 }
 
-/// The macOS menu bar: the app menu with Quit, which asks before it stops runs that are going, and the standard Edit
-/// menu, so copy and paste work in the window's fields.
+/// The macOS menu bar: Tauri's default menu, with its Quit swapped for the one that asks before it stops runs that
+/// are going, so About, Hide, Window and Edit stay as macOS applications have them.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{MenuBuilder, SubmenuBuilder};
+fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
+    use tauri::menu::MenuItemKind;
 
-    let app_name = app.package_info().name.clone();
-    let application = SubmenuBuilder::new(app, &app_name)
-        .item(&quit_menu_item(app, &app_name)?)
-        .build()?;
-    let edit = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
-        .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
-        .build()?;
-    MenuBuilder::new(app).item(&application).item(&edit).build()
+    let menu = tauri::menu::Menu::default(app)?;
+    let default_name = app.package_info().name.clone();
+    for entry in menu.items()? {
+        if let MenuItemKind::Submenu(submenu) = entry {
+            if submenu.text()? == default_name {
+                crate::replace_quit(app, &submenu, APP_NAME)?;
+            }
+        }
+    }
+    Ok(menu)
 }
 
 pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
@@ -352,7 +351,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 app.set_menu(menu(app.handle())?)?;
                 app.on_menu_event(|app, event| {
                     if let Some(action) = app_menu_action(event.id().as_ref()) {
-                        run_app_menu_action(app, action);
+                        run_app_menu_action(app, APP_NAME, action);
                     }
                 });
             }
@@ -391,7 +390,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .on_window_event(|window, event| {
             // The window is the app: closing it quits, once the user agrees to stop the runs still going.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && hold_close_for_local_runs(window) {
+                if window.label() == "main" && hold_close_for_local_runs(window, APP_NAME) {
                     api.prevent_close();
                 }
             }
@@ -464,6 +463,12 @@ mod tests {
             crate::app_menu_action(crate::APP_MENU_QUIT_ID),
             Some(crate::AppMenuAction::Quit)
         );
+    }
+
+    #[test]
+    fn the_quit_question_names_the_app() {
+        assert_eq!(crate::quit_question(APP_NAME), "Quit Piwi Runner?");
+        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi?");
     }
 
     #[test]
