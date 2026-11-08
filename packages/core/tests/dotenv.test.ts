@@ -67,6 +67,7 @@ describe('resolvePiwiConnection', () => {
       serverUrl: 'http://127.0.0.1:3000',
       apiKey: 'pd_desk',
       project: '',
+      desktop: true,
     });
     expect(resolvePiwiConnection({ env: { PIWI_DASHBOARD_URL: 'https://other' }, desktop })!.apiKey).toBeNull();
     // A URL from any layer that is the desktop app's own gets its token when that layer has no key.
@@ -74,5 +75,24 @@ describe('resolvePiwiConnection', () => {
       'pd_desk',
     );
     expect(resolvePiwiConnection({})).toBeNull();
+  });
+
+  test("a key is the desktop app's when the app's file gave it or the app's own run marks it", () => {
+    const desktop = { url: 'http://127.0.0.1:3000', token: 'pd_desk' };
+    const run = { PIWI_DASHBOARD_URL: 'http://127.0.0.1:3000', PIWI_API_KEY: 'pd_desk', PIWI_DESKTOP_KEY: '1' };
+    expect(resolvePiwiConnection({ env: run })!.desktop).toBe(true);
+    expect(resolvePiwiConnection({ dotEnv: { PIWI_DASHBOARD_URL: 'http://127.0.0.1:3000/' }, desktop })!.desktop).toBe(
+      true,
+    );
+    // A key the person chose is theirs, with or without the mark in the environment.
+    expect(resolvePiwiConnection({ flags: { apiKey: 'pd_mine' }, env: run })!.desktop).toBeUndefined();
+    expect(resolvePiwiConnection({ env: { ...run, PIWI_DESKTOP_KEY: undefined } })!.desktop).toBeUndefined();
+    expect(
+      resolvePiwiConnection({
+        env: { PIWI_DASHBOARD_URL: 'https://piwi.example', PIWI_API_KEY: 'pd_team' },
+        dotEnv: { PIWI_DASHBOARD_URL: 'http://127.0.0.1:3000', PIWI_API_KEY: 'pd_desk' },
+        desktop,
+      })!.desktop,
+    ).toBeUndefined();
   });
 });

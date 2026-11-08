@@ -1,6 +1,6 @@
 import { errorMessage } from '../internal/support/errors.js';
 import type { PiwiDashboardOptions } from './options.js';
-import { resolveOptions } from '../internal/config/env.js';
+import { resolveOptions, usedDesktopToken } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
@@ -105,7 +105,13 @@ export function createGlobalSetup(
       return;
     }
 
-    const httpClient = new HttpClient(opts.serverUrl, logger);
+    const httpClient = new HttpClient(
+      opts.serverUrl,
+      logger,
+      undefined,
+      undefined,
+      usedDesktopToken() ? (opts.apiKey ?? null) : null,
+    );
     // The run registered here is the one the reporter streams into. A run sent in one batch at its end creates its
     // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
     const registers = opts.streaming !== false;

@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -434,6 +435,93 @@ describe('HttpClient (against fake http.Server)', () => {
         (server as any).closeAllConnections?.();
         server.close();
         await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
+  describe("the desktop app's token", () => {
+    const TOKEN = 'pd_desktop_token';
+
+    /** A server that answers the health check with `proofOf(challenge, port)` and everything else with `{}`. */
+    async function desktopServer(proofOf: (challenge: string, port: number) => Promise<string | null>, status = 200) {
+      const started = await startServer(() => undefined);
+      const port = Number(new URL(started.url).port);
+      started.server.removeAllListeners('request');
+      started.server.on('request', async (req, res) => {
+        const rec = { method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, body: '' };
+        started.requests.push(rec);
+        if (req.url === '/api/health') {
+          const proof = await proofOf(String(req.headers['x-piwi-desktop-challenge'] ?? ''), port);
+          res.writeHead(status, proof ? { 'x-piwi-desktop-proof': proof } : {});
+          res.end('{}');
+          return;
+        }
+        req.resume();
+        req.on('end', () => jsonRes(res, 200, {}));
+      });
+      return started;
+    }
+    const honest = (challenge: string, port: number) => desktopTokenProof(TOKEN, port, challenge);
+    const close = (server: http.Server) => new Promise<void>((r) => server.close(() => r()));
+
+    it('sends the token after the server proved it holds it, and asks once', async () => {
+      const { server, url, requests } = await desktopServer(honest);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await client.postJSON('/api/a', {}, TOKEN);
+        await client.postJSON('/api/b', {}, TOKEN);
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/health', undefined],
+          ['/api/a', `Bearer ${TOKEN}`],
+          ['/api/b', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it.each([
+      ['proves it with another token', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 200],
+      ['proves it for another port', (c: string) => desktopTokenProof(TOKEN, 1, c), 200],
+      ['gives no proof', async () => null, 200],
+      ['answers the check with an error', honest, 503],
+    ])('sends no token to a server that %s', async (_name, proofOf, status) => {
+      const { server, url, requests } = await desktopServer(proofOf, status);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow(/token is not sent to http:\/\/127\.0\.0\.1:\d+/);
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(requests.map((r) => r.url)).toEqual(['/api/health']);
+        expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends no token when nothing answers the check, and asks again with the next request', async () => {
+      const { server, url, requests } = await desktopServer(honest);
+      await close(server);
+      const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+      await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow('did not answer');
+      await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow('did not answer');
+      expect(requests).toHaveLength(0);
+    });
+
+    it('makes no check for a request that carries another credential, or for a client that holds no desktop token', async () => {
+      const { server, url, requests } = await desktopServer(async () => null);
+      try {
+        const held = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await held.postJSON('/api/a', {}, 'pd_someone_else');
+        await held.postJSON('/api/b', {}, null);
+        const plain = new HttpClient(url, new Logger(false));
+        await plain.postJSON('/api/c', {}, TOKEN);
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/a', 'Bearer pd_someone_else'],
+          ['/api/b', undefined],
+          ['/api/c', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
       }
     });
   });

@@ -20,7 +20,7 @@
  */
 import * as fs from 'node:fs';
 import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/core/gate';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 
 const EXIT_OK = 0;
 const EXIT_VIOLATED = 1;
@@ -172,7 +172,7 @@ async function requestGate(args: GateArgs): Promise<GateResult> {
 
   // `maxUncoveredChanges` and `minPatchCoverage` are warn-only body fields the
   // server reads outside the policy; JSON.stringify drops them when undefined.
-  const res = await fetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
+  const res = await cliFetch(`${args.serverUrl}/api/test-runs/${args.runId}/gate`, {
     method: 'POST',
     headers,
     body: JSON.stringify({

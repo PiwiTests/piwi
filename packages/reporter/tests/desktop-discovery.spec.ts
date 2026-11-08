@@ -8,6 +8,7 @@ import {
   desktopReplacedServer,
   resolveOptions,
   usedDesktopDiscovery,
+  usedDesktopToken,
 } from '../src/internal/config/env.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../src/internal/config/desktop.js';
 
@@ -35,6 +36,7 @@ const TOUCHED_ENV = [
   'PIWI_USERNAME',
   'PIWI_PASSWORD',
   'PIWI_DESKTOP_APP',
+  'PIWI_DESKTOP_KEY',
   ...CI_ENV,
 ];
 
@@ -108,6 +110,32 @@ describe('desktop discovery', () => {
       expect(opts.serverUrl).toBe(DESKTOP_URL);
       expect(opts.apiKey).toBe(DESKTOP_TOKEN);
       expect(usedDesktopDiscovery()).toBe(true);
+    });
+
+    it('holds the desktop token when the file gave the key, or the app marks its own key in the environment', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      fs.rmSync(configPath);
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+    });
+
+    it('does not take a key for the desktop token that the marker does not cover', () => {
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      fs.writeFileSync(path.join(tmpDir, '.env'), 'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_dotenv\n');
+      expect(resolveOptions({ apiKey: 'pd_from_config' }).apiKey).toBe('pd_from_config');
+      expect(usedDesktopToken()).toBe(false);
     });
 
     it('leaves options untouched when the app is not running', () => {

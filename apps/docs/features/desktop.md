@@ -56,7 +56,8 @@ It listens on port 3000, or the one set in the `.exe` installer or in **Settings
 
 While the app runs, the reporter finds it by itself: a config with only a `projectName` reports here. It reads the
 address and token the app writes to `~/.piwi/desktop.json` only when nothing else sets a server, so a CI job is never
-redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
+redirected, and the token goes only to a server that proves it holds it
+([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
 its local runs here with
 [`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the
 **Connect a suite** snippets carry once you turn on **CI reports to a team server**.

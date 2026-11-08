@@ -81,6 +81,9 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+  They also carry `PIWI_DESKTOP_KEY=1`, which marks `PIWI_API_KEY` as the app's token: a reporter or `piwi` that knows
+  the marker sends it only after the server proves it holds it (`proveDesktopServer`), the same proof the discovery
+  file's token gets.
 
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,

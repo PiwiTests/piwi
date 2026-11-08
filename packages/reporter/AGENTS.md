@@ -130,7 +130,10 @@ responsibilities.
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
-   release cycles, so a path or shape change must land in both. The editors' discovery files
+   release cycles, so a path or shape change must land in both. The token that file gives, and the `PIWI_API_KEY` of a
+   run the shell starts with `PIWI_DESKTOP_KEY=1`, is sent only after `proveDesktopServer` (`@piwitests/core/desktop-proof`)
+   returns `proven` for the address: `HttpClient` holds it for the reporter, `cliFetch` for the commands. Any new
+   request that carries it goes through one of them. The editors' discovery files
    (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor service's: this package reads
    them for a run started in a terminal (`internal/config/editors.ts`), from a folder this user alone can enter, and
    never deletes one.

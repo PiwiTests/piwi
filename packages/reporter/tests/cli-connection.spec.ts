@@ -2,8 +2,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectionFolders, resolveCliConnection } from '../src/internal/support/connection.js';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
+import { cliFetch, connectionFolders, resolveCliConnection } from '../src/internal/support/connection.js';
 
 describe('resolveCliConnection', () => {
   let dir: string;
@@ -34,6 +37,7 @@ describe('resolveCliConnection', () => {
     expect(resolveCliConnection({}, { PIWI_DESKTOP_CONFIG: desktopFile }, [])).toEqual({
       serverUrl: 'http://127.0.0.1:3917',
       apiKey: 'pd_desktop',
+      desktop: true,
       project: '',
     });
   });
@@ -53,6 +57,7 @@ describe('resolveCliConnection', () => {
     expect(resolveCliConnection({}, env, [folder])).toEqual({
       serverUrl: 'http://127.0.0.1:3917',
       apiKey: 'pd_desktop',
+      desktop: true,
       project: 'shop',
     });
     expect(resolveCliConnection({ serverUrl: 'https://flag.example' }, env, [folder])?.serverUrl).toBe(
@@ -71,6 +76,7 @@ describe('resolveCliConnection', () => {
     expect(resolveCliConnection({}, env, [])).toEqual({
       serverUrl: 'http://127.0.0.1:3917',
       apiKey: 'pd_desktop',
+      desktop: true,
       project: '',
     });
     expect(resolveCliConnection({}, { ...env, PIWI_DASHBOARD_URL: undefined }, [])?.apiKey).toBe('pd_desktop');
@@ -172,5 +178,96 @@ describe('connectionFolders', () => {
     } finally {
       fs.rmSync(outer, { recursive: true, force: true });
     }
+  });
+});
+
+describe('cliFetch', () => {
+  let dir: string;
+  let server: http.Server;
+  let port: number;
+  let seen: Array<{ url: string; key: string | undefined; challenge: string | undefined }>;
+  let answer: (challenge: string | undefined) => Promise<string | null>;
+  let status: number;
+
+  beforeEach(async () => {
+    seen = [];
+    status = 200;
+    answer = async (challenge) => (challenge ? await desktopTokenProof('pd_desktop', port, challenge) : null);
+    server = http.createServer(async (req, res) => {
+      const challenge = req.headers['x-piwi-desktop-challenge'] as string | undefined;
+      seen.push({ url: req.url ?? '', key: req.headers['x-api-key'] as string | undefined, challenge });
+      const proof = req.url === '/api/health' ? await answer(challenge) : null;
+      res.writeHead(req.url === '/api/health' ? status : 200, proof ? { 'x-piwi-desktop-proof': proof } : {});
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    port = (server.address() as AddressInfo).port;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-cli-fetch-'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Resolve the desktop app's connection as a command does, from a discovery file for the test server. */
+  const desktopConnection = (env: Record<string, string> = {}) => {
+    const file = path.join(dir, 'desktop.json');
+    fs.writeFileSync(file, JSON.stringify({ url: `http://127.0.0.1:${port}`, token: 'pd_desktop' }));
+    return resolveCliConnection({}, { PIWI_DESKTOP_CONFIG: file, ...env }, [])!;
+  };
+
+  it('sends the desktop key after the server proved it holds the key, and asks once', async () => {
+    const connection = desktopConnection();
+    const headers = { 'X-API-Key': connection.apiKey! };
+    expect((await cliFetch(`${connection.serverUrl}/api/a`, { headers })).status).toBe(200);
+    expect((await cliFetch(`${connection.serverUrl}/api/b`, { headers })).status).toBe(200);
+    expect(seen.map((r) => [r.url, r.key])).toEqual([
+      ['/api/health', undefined],
+      ['/api/a', 'pd_desktop'],
+      ['/api/b', 'pd_desktop'],
+    ]);
+  });
+
+  it.each([
+    ['proves it with another key', () => (answer = (c) => desktopTokenProof('pd_other', port, c ?? ''))],
+    ['sends no proof', () => (answer = async () => null)],
+    ['answers the check with an error', () => (status = 503)],
+  ])('sends no key to a server that %s', async (_name, break_) => {
+    break_();
+    const connection = desktopConnection();
+    await expect(
+      cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
+    ).rejects.toThrow(/token is not sent to http:\/\/127\.0\.0\.1:\d+/);
+    expect(seen.every((r) => r.key === undefined)).toBe(true);
+    expect(seen.map((r) => r.url)).toEqual(['/api/health']);
+  });
+
+  it('proves a key the desktop app\'s run marks, and a key the user named only on a flag needs no proof', async () => {
+    const file = path.join(dir, 'desktop.json');
+    fs.writeFileSync(file, JSON.stringify({ url: 'http://127.0.0.1:1', token: 'pd_unrelated' }));
+    const url = `http://127.0.0.1:${port}`;
+    const env = { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off', PIWI_DASHBOARD_URL: url, PIWI_API_KEY: 'pd_desktop' };
+
+    const own = resolveCliConnection({}, env, [])!;
+    await cliFetch(`${url}/api/own`, { headers: { 'X-API-Key': own.apiKey! } });
+    expect(seen.map((r) => r.url)).toEqual(['/api/own']);
+
+    seen.length = 0;
+    const marked = resolveCliConnection({}, { ...env, PIWI_DESKTOP_KEY: '1' }, [])!;
+    await cliFetch(`${url}/api/marked`, { headers: { 'X-API-Key': marked.apiKey! } });
+    expect(seen.map((r) => [r.url, r.key])).toEqual([
+      ['/api/health', undefined],
+      ['/api/marked', 'pd_desktop'],
+    ]);
+  });
+
+  it('makes no check for a request that does not carry the desktop key', async () => {
+    desktopConnection();
+    await cliFetch(`http://127.0.0.1:${port}/api/plain`, { headers: { 'X-API-Key': 'pd_someone_else' } });
+    await cliFetch(`http://127.0.0.1:${port}/api/none`);
+    expect(seen.map((r) => r.url)).toEqual(['/api/plain', '/api/none']);
   });
 });

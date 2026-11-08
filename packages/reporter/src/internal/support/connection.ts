@@ -13,9 +13,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
+import { proveDesktopServer } from '@piwitests/core/desktop-proof';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../config/desktop.js';
 import { readDotEnv } from '../config/dotenv.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_ENV_KEYS, desktopAppMode } from '../config/env.js';
+import { DesktopNotProvenError } from '../transport/http-client.js';
 import { detectCi } from './ci.js';
 
 const CONFIG_NAMES = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.cjs'];
@@ -116,5 +118,35 @@ export function resolveCliConnection(
       `${command}: --api-key is not sent to ${connection.serverUrl}, which comes from ${from}: a key goes only to the URL given with it. Pass --server-url to name the instance the key is for.`,
     );
   }
+  if (connection?.desktop && connection.apiKey) desktopKeys.add(keyAt(connection.serverUrl, connection.apiKey));
   return connection;
+}
+
+/** The desktop app's keys the commands resolved, each with the server it belongs to. */
+const desktopKeys = new Set<string>();
+/** Those of them whose server proved it holds the key. */
+const provenKeys = new Set<string>();
+
+function keyAt(serverUrl: string, key: string): string {
+  try {
+    return `${new URL(serverUrl).origin}\n${key}`;
+  } catch {
+    return `${serverUrl}\n${key}`;
+  }
+}
+
+/**
+ * `fetch` for the commands. A request that carries the desktop app's key goes out only after the server behind the
+ * URL proved it holds that key; otherwise it throws and nothing is sent. Any other request is `fetch`.
+ */
+export async function cliFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  const key = new Headers(init?.headers).get('x-api-key');
+  const target = key ? keyAt(String(input), key) : null;
+  if (key && target && desktopKeys.has(target) && !provenKeys.has(target)) {
+    const serverUrl = new URL(input).origin;
+    const proof = await proveDesktopServer(serverUrl, key);
+    if (proof !== 'proven') throw new DesktopNotProvenError(serverUrl, proof);
+    provenKeys.add(target);
+  }
+  return fetch(input, init);
 }

@@ -121,6 +121,12 @@ access token to `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Wi
 `PIWI_DESKTOP_CONFIG` overrides the path. A CI job or a project pointed elsewhere is never redirected, unless it opts
 in below.
 
+The app's token goes to the address only after the server there proves it holds the token: before the first upload the
+reporter sends a one-time challenge to `/api/health` and checks the proof in the answer. A server that gives no proof, or
+the wrong one, gets no token and nothing is uploaded; the reporter says so in one line. A run the app starts itself
+(a reproduction or a flake lab) exports `PIWI_DESKTOP_KEY=1` beside `PIWI_API_KEY` to mark that key as the app's, so it
+is held to the same proof; a key you set yourself, with or without a server URL, is sent as before.
+
 ### Local runs to the desktop app, CI to a team server
 
 With `desktopApp: 'prefer'`, a run not on CI lands in the desktop app whenever it is running, even with `serverUrl`
