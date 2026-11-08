@@ -11,7 +11,9 @@
 // stdout. The address and token are read from the reporter discovery file
 // (`~/.piwi/desktop.json`) on each message rather than baked into the client's
 // config, so the entry survives a port change and no credential is ever copied
-// into another app's file.
+// into another app's file. The token goes out only to `127.0.0.1`, over a
+// connection from `connect_proving_token`: once the server on the port has
+// proved it holds the token.
 //
 // The app must be running for the bridge to reach anything: the discovery file
 // exists only while it serves. When it is absent the bridge answers requests

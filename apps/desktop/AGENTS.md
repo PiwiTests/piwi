@@ -98,7 +98,8 @@ shell and are feature-equivalent.
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
   one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
-  JSON-RPC on stdin/stdout.
+  JSON-RPC on stdin/stdout. It sends the token only through `connect_proving_token` and only to `127.0.0.1`
+  (`mcp_stdio.rs`).
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install
