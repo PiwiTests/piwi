@@ -225,9 +225,9 @@ fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
 /// server end the body by closing the socket, so reading to EOF is the whole
 /// response — no keep-alive or chunked framing to decode by hand.
 ///
-/// The connection comes from [`crate::connect_proving_token`]: the token goes out only
-/// once the server on the port has proved it holds it. A failed proof is retryable and
-/// nothing was sent.
+/// The request goes on the connection [`crate::connect_proving_token`] proved: the token
+/// goes out only on the stream whose server proved it holds it. A failed proof is
+/// retryable and nothing was sent.
 fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
     if endpoint.host != LOOPBACK_HOST {
         return Err(PostError {
@@ -410,21 +410,19 @@ mod tests {
                 )
             })
             .unwrap_or_default();
-        let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\n{proof}\r\n{{}}").as_bytes());
+        let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\n{proof}\r\n{{}}").as_bytes());
         probe
     }
 
     /// A one-shot HTTP server that holds `TOKEN`: it proves it on the readiness probe, then hands
-    /// back `response` and reports the raw request it received after that. Enough to drive the
+    /// back `response` on the same connection and reports the raw request it received after that. Enough to drive the
     /// bridge over a real socket.
     fn stub_server(response: &'static str) -> (u16, std::thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
         let port = listener.local_addr().expect("stub addr").port();
         let handle = std::thread::spawn(move || {
-            let (mut probe, _) = listener.accept().expect("accept the probe");
-            answer_probe(&mut probe, port, true);
-            drop(probe);
             let (mut stream, _) = listener.accept().expect("accept");
+            answer_probe(&mut stream, port, true);
             let request = read_request(&mut stream);
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
@@ -446,10 +444,8 @@ mod tests {
             let (mut first, _) = listener.accept().expect("accept the first probe");
             let squatted = answer_probe(&mut first, port, false);
             drop(first);
-            let (mut probe, _) = listener.accept().expect("accept the second probe");
-            answer_probe(&mut probe, port, true);
-            drop(probe);
-            let (mut stream, _) = listener.accept().expect("accept");
+            let (mut stream, _) = listener.accept().expect("accept the second probe");
+            answer_probe(&mut stream, port, true);
             let request = read_request(&mut stream);
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();

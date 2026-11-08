@@ -17,6 +17,9 @@ shell and are feature-equivalent.
 - **The window trusts only the sidecar it spawned.**
   - The readiness probe sends a fresh challenge, and the shell loads the session bootstrap only after `/api/health`
     answers it with the proof of the desktop token (`x-piwi-desktop-proof`, checked in constant time).
+  - The shell sends the token to the sidecar only on the connection that proved it (`connect_proving_token`): the
+    proof and the token request travel on one keep-alive connection, and a server that ends the connection after the
+    proof gets no token on a new one.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
   - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's

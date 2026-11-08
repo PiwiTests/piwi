@@ -636,21 +636,20 @@ mod tests {
         }
     }
 
-    /// A server on a free port that answers each request with `answer(request, port)`; the requests it saw.
+    /// A server on a free port that answers the requests of one connection with `answer(request, port)`;
+    /// the requests it saw.
     fn serve_requests(
-        connections: usize,
+        requests_to_answer: usize,
         answer: impl Fn(&str, u16) -> String + Send + 'static,
     ) -> (u16, std::thread::JoinHandle<Vec<String>>) {
-        use std::io::{Read, Write};
+        use std::io::Write;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let seen = std::thread::spawn(move || {
             let mut requests = Vec::new();
-            for _ in 0..connections {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut buffer = [0u8; 4096];
-                let read = stream.read(&mut buffer).unwrap();
-                let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let (mut stream, _) = listener.accept().unwrap();
+            for _ in 0..requests_to_answer {
+                let request = crate::tests::read_request_from(&mut stream);
                 stream.write_all(answer(&request, port).as_bytes()).unwrap();
                 requests.push(request);
             }
@@ -662,7 +661,7 @@ mod tests {
     #[test]
     fn the_token_goes_only_to_a_server_that_proves_it_holds_it() {
         // A process that took the port answers the probe without a proof.
-        let (port, seen) = serve_requests(1, |_, _| "HTTP/1.1 200 OK\r\n\r\n{}".to_string());
+        let (port, seen) = serve_requests(1, |_, _| "HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}".to_string());
         let error = local_call(&server_at(port), "POST", "/api/desktop/run-target/key", None).unwrap_err();
         assert_eq!(error, "the local server is not answering");
         let requests = seen.join().unwrap();
@@ -678,9 +677,9 @@ mod tests {
                 .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
             {
                 let proof = crate::proof_of("pd_abc", port, challenge);
-                return format!("HTTP/1.1 200 OK\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}");
+                return format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}");
             }
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"ok\":true}".to_string()
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n{\"ok\":true}".to_string()
         });
         let answer = local_call(&server_at(port), "POST", "/api/desktop/run-target/key", None).unwrap();
         assert_eq!(answer, serde_json::json!({ "ok": true }));

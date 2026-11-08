@@ -755,14 +755,122 @@ fn health_ok(port: u16, token: &str) -> bool {
     health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
+/// The most a proof response may hold, head and body together.
+const MAX_PROOF_RESPONSE: usize = 16 * 1024;
+
 /// Open a connection to the server on `port` for a request that carries `token`, once the
-/// server has proved it holds the token (`health_ok`). Every request the shell makes with the
-/// token goes through here, so the token never reaches another process that took the port.
+/// server has proved on that connection that it holds the token (`health_ok`'s challenge). The
+/// connection is kept open and returned, so the request with the token goes to the process that
+/// proved it, never to one that took the port after the proof. A server that answers the proof
+/// and ends the connection gets nothing: the caller opens no other. Every request the shell makes
+/// with the token goes through here.
 pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
-    if !health_ok(port, token) {
-        return Err("the local server is not answering".to_string());
+    use std::io::{Read, Write};
+    const NOT_ANSWERING: &str = "the local server is not answering";
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT)
+        .map_err(|_| NOT_ANSWERING.to_string())?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let challenge = random_hex_32();
+    let request = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: keep-alive\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).map_err(|_| NOT_ANSWERING.to_string())?;
+    let mut received = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let (head, exact) = loop {
+        if let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+            let body = &received[end + 4..];
+            let head = String::from_utf8_lossy(&received[..end]).to_string();
+            match response_body_len(&head, body) {
+                Ok(Some(len)) => break (head, len == body.len()),
+                Ok(None) => {}
+                Err(()) => return Err(NOT_ANSWERING.to_string()),
+            }
+        }
+        if received.len() > MAX_PROOF_RESPONSE {
+            return Err(NOT_ANSWERING.to_string());
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return Err(NOT_ANSWERING.to_string()),
+            Ok(n) => received.extend_from_slice(&chunk[..n]),
+        }
+    };
+    if !exact
+        || head_has_connection_close(&head)
+        || !health_response_proves(&head, token, port, &challenge)
+        || !connection_is_open(&stream)
+    {
+        return Err(NOT_ANSWERING.to_string());
     }
-    std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())
+    let _ = stream.set_read_timeout(None);
+    Ok(stream)
+}
+
+/// How many bytes of `body` the response with `head` has, when `body` holds all of it: `Some`, or
+/// `None` when more is to come. A response whose end is not framed (no `Content-Length`, not chunked) is
+/// `Err`: it ends only with the connection.
+fn response_body_len(head: &str, body: &[u8]) -> Result<Option<usize>, ()> {
+    let header = |wanted: &str| {
+        head.split("\r\n").skip(1).find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim().eq_ignore_ascii_case(wanted).then(|| value.trim().to_string())
+        })
+    };
+    if header("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked")) {
+        return Ok(chunked_body_len(body));
+    }
+    let len: usize = header("content-length").ok_or(())?.parse().map_err(|_| ())?;
+    Ok((body.len() >= len).then_some(len))
+}
+
+/// The length of the chunked body at the start of `body` through its last chunk and trailer, or
+/// `None` while it is incomplete or unreadable.
+fn chunked_body_len(body: &[u8]) -> Option<usize> {
+    let mut at = 0;
+    loop {
+        let line_end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+        let size_text = std::str::from_utf8(&body[at..line_end]).ok()?;
+        let size = usize::from_str_radix(size_text.split(';').next()?.trim(), 16).ok()?;
+        at = line_end + 2;
+        if size == 0 {
+            // Trailer lines, then the empty line.
+            loop {
+                let end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+                let empty = end == at;
+                at = end + 2;
+                if empty {
+                    return Some(at);
+                }
+            }
+        }
+        at = at.checked_add(size)?.checked_add(2)?;
+        if body.len() < at {
+            return None;
+        }
+    }
+}
+
+/// Whether a response head says the server ends the connection after it.
+fn head_has_connection_close(head: &str) -> bool {
+    head.split("\r\n").skip(1).any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("connection") && value.to_ascii_lowercase().contains("close")
+        })
+    })
+}
+
+/// Whether the peer still holds `stream` open with nothing more to say: a closed or reset
+/// connection, or bytes nobody asked for, is not one to send a token on.
+fn connection_is_open(stream: &std::net::TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return false;
+    }
+    let open = matches!(
+        stream.peek(&mut [0u8; 1]),
+        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+    );
+    stream.set_nonblocking(false).is_ok() && open
 }
 
 /// Whether a raw `/api/health` response is a 200 carrying, in
@@ -3387,9 +3495,11 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        connect_proving_token, decode_hex, health_ok, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
+        connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3638,42 +3748,59 @@ mod tests {
         }
     }
 
+    /// Read one request's head from `stream`, and the body its `Content-Length` announces.
+    pub(crate) fn read_request_from(stream: &mut std::net::TcpStream) -> String {
+        use std::io::Read;
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let announced = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + announced {
+                    break;
+                }
+            }
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).to_string()
+    }
+
+    /// The proof response of a server that holds `token`, for the challenge in `request`.
+    pub(crate) fn proof_response(request: &str, token: &str, port: u16) -> String {
+        let challenge = request
+            .lines()
+            .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            .unwrap_or_default();
+        health_answer(
+            "200 OK",
+            &format!("x-piwi-desktop-proof: {}", proof_of(token, port, challenge)),
+        )
+    }
+
     /// A server on a free loopback port that holds `token`: it answers the readiness probe with the
-    /// proof, then `response` to the request after it. The handle yields that request.
+    /// proof, then `response` to the request after it, on the same connection. The handle yields
+    /// that request.
     pub(crate) fn serve_as_holder_of(
         token: &'static str,
         response: Vec<u8>,
     ) -> (u16, std::thread::JoinHandle<String>) {
-        use std::io::{Read, Write};
+        use std::io::Write;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
-            let read_request = |stream: &mut std::net::TcpStream| {
-                let mut request = Vec::new();
-                let mut buf = [0u8; 1024];
-                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                    let n = stream.read(&mut buf).unwrap();
-                    if n == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buf[..n]);
-                }
-                String::from_utf8_lossy(&request).to_string()
-            };
-            let (mut probe, _) = listener.accept().unwrap();
-            let asked = read_request(&mut probe);
-            let challenge = asked
-                .lines()
-                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
-                .unwrap()
-                .to_string();
-            let proof = proof_of(token, port, &challenge);
-            probe
-                .write_all(health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}")).as_bytes())
-                .unwrap();
-            drop(probe);
             let (mut stream, _) = listener.accept().unwrap();
-            let request = read_request(&mut stream);
+            let asked = read_request_from(&mut stream);
+            stream.write_all(proof_response(&asked, token, port).as_bytes()).unwrap();
+            let request = read_request_from(&mut stream);
             stream.write_all(&response).unwrap();
             request
         });
@@ -3707,6 +3834,115 @@ mod tests {
         let (port, holder) = serve_as_holder_of("pd_x", Vec::new());
         assert!(connect_proving_token(port, "pd_x").is_ok());
         let _ = holder.join();
+    }
+
+    /// A server that holds `token` and counts the connections it accepts: it proves itself on the
+    /// first and, when `keep_open`, answers the request after the proof on it with `after` (else
+    /// ends the connection). The handle yields the connections accepted and the requests seen on
+    /// the first.
+    fn serve_counting_connections(
+        token: &'static str,
+        keep_open: bool,
+        proof_headers: &'static str,
+        after: &'static str,
+    ) -> (u16, std::thread::JoinHandle<(usize, Vec<String>)>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut accepted = 1;
+            let mut seen = Vec::new();
+            let (mut first, _) = listener.accept().unwrap();
+            let asked = read_request_from(&mut first);
+            let mut answer = proof_response(&asked, token, port);
+            if !proof_headers.is_empty() {
+                answer = answer.replacen("\r\n\r\n", &format!("\r\n{proof_headers}\r\n\r\n"), 1);
+            }
+            seen.push(asked);
+            first.write_all(answer.as_bytes()).unwrap();
+            if keep_open {
+                seen.push(read_request_from(&mut first));
+                first.write_all(after.as_bytes()).unwrap();
+            } else {
+                drop(first);
+            }
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + Duration::from_millis(400);
+            while std::time::Instant::now() < until {
+                if listener.accept().is_ok() {
+                    accepted += 1;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            (accepted, seen)
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn the_proof_and_the_token_request_travel_on_one_connection() {
+        use std::io::{Read, Write};
+        let (port, server) = serve_counting_connections(
+            "pd_x",
+            true,
+            "",
+            "HTTP/1.1 200 OK\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}",
+        );
+        let mut stream = connect_proving_token(port, "pd_x").unwrap();
+        stream
+            .write_all(b"GET /api/x HTTP/1.0\r\nx-piwi-token: pd_x\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).unwrap();
+        assert!(answer.ends_with("{\"ok\":true}"), "{answer}");
+        let (accepted, seen) = server.join().unwrap();
+        assert_eq!(accepted, 1, "the proof and the token request share a connection");
+        assert!(seen[0].starts_with("GET /api/health HTTP/1.1\r\n"), "{seen:?}");
+        assert!(!seen[0].to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        assert!(seen[1].contains("x-piwi-token: pd_x"), "{seen:?}");
+    }
+
+    #[test]
+    fn a_server_that_ends_the_connection_after_the_proof_gets_no_token() {
+        for (keep_open, headers) in [(false, ""), (true, "connection: close")] {
+            let (port, server) = serve_counting_connections("pd_x", keep_open, headers, "");
+            let error = connect_proving_token(port, "pd_x");
+            assert_eq!(error.unwrap_err(), "the local server is not answering");
+            let (accepted, seen) = server.join().unwrap();
+            assert_eq!(accepted, 1, "no other connection is opened for the token");
+            assert!(!seen.join("").to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        }
+    }
+
+    #[test]
+    fn a_connection_the_peer_closed_is_not_open() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (peer, _) = listener.accept().unwrap();
+        assert!(connection_is_open(&client));
+        drop(peer);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!connection_is_open(&client));
+    }
+
+    #[test]
+    fn a_proof_response_is_read_to_its_framed_end() {
+        let sized = "HTTP/1.1 200 OK\r\nContent-Length: 2";
+        assert_eq!(response_body_len(sized, b"{}"), Ok(Some(2)));
+        assert_eq!(response_body_len(sized, b"{"), Ok(None));
+        // Bytes beyond the body are counted out, for the caller to refuse.
+        assert_eq!(response_body_len(sized, b"{}extra"), Ok(Some(2)));
+        // A body that ends with the connection has no end to read to.
+        assert_eq!(response_body_len("HTTP/1.1 200 OK", b"{}"), Err(()));
+        assert_eq!(response_body_len("HTTP/1.1 200 OK\r\nContent-Length: x", b""), Err(()));
+        let chunked = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked";
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n\r\n"), Ok(Some(12)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\nx: y\r\n\r\n"), Ok(Some(18)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"zz\r\n"), Ok(None));
+        assert!(head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: Close"));
+        assert!(!head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: keep-alive"));
     }
 
     fn download_dir(test: &str) -> std::path::PathBuf {
@@ -4092,7 +4328,7 @@ mod tests {
     const PROOF_4318: &str = "bd60241a0312fff0960cb18ebc24dc439b0f32cb3a1d82bf1a13d65367acf0ad";
 
     fn health_answer(status: &str, headers: &str) -> String {
-        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}\r\n\r\n{{}}")
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: 2\r\n{headers}\r\n\r\n{{}}")
     }
 
     #[test]
