@@ -19,14 +19,19 @@ async function load() {
   if (timer) clearTimeout(timer);
   timer = null;
   let read: RunRequestView[] | null = null;
+  let refused = false;
   try {
     read = (await $fetch<{ items: RunRequestView[] }>('/api/run-requests')).items;
-  } catch {
+  } catch (error) {
     read = null;
+    const status = (error as { statusCode?: number } | null)?.statusCode ?? 0;
+    refused = [401, 403, 404].includes(status);
   }
   if (unmounted) return;
   loaded.value = true;
-  // A failed read keeps the list as it was and tries again while one of them goes on.
+  // A refused read (signed out, no access, the feature off) stops; another failed read keeps the list as it was and
+  // tries again while one of them goes on.
+  if (refused) return;
   if (read !== null) requests.value = read;
   if (requests.value.some((r) => !runRequestIsFinal(r))) timer = setTimeout(load, 5000);
 }

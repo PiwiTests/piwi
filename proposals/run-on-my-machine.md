@@ -188,8 +188,8 @@ Why: with the instance carrying the request, a click in the page proves nothing 
 instance page, or a stolen session, can create requests (runs-from-the-dashboard reached the same conclusion in its
 open question 2). A QA suite often writes to a shared test environment, so an unasked run has effects beyond the
 machine. The confirmation is one click on **Run**, which answers only the request shown, and only once it has been
-shown unchanged for a second; **Run** is not focused, so a key pressed as the window comes to the front starts
-nothing.
+shown unchanged for a second in the visible, focused window; until then **Run**, **Not now** and closing the dialog
+answer nothing, so a click or a key that brings the window to the front starts or declines nothing.
 
 Possible later, if people ask: **Run without asking** per project and per machine, for the `run` kind only, shown as a
 five-second "Starting in 5 s · Cancel" notice in the target, and turned off from the target or from Connected apps

@@ -4,9 +4,9 @@
  * shows the instance that asked, the tests, the checks of the folder linked to the request's project on this machine
  * (with **Choose the folder** when none is), and the exact command. Nothing runs before **Run**; **Not now** declines
  * it, or refuses it with the checks that failed. The shell takes the command and the request token from this app's
- * server, never from this window. **Run** answers the request shown, and only once it has been shown, unchanged, for
- * `ARM_AFTER_MS`, so a key pressed as the window comes to the front, or as another request takes the place of the one
- * shown, starts nothing.
+ * server, never from this window. **Run**, **Not now** and closing the dialog answer the request shown, and only once
+ * it has been shown, unchanged, in the visible and focused window for `ARM_AFTER_MS`, so a click or a key that brings
+ * the window to the front, or lands as another request takes the place of the one shown, answers nothing.
  */
 import type { RunRequestPromptView } from '#shared/desktop-run-target';
 
@@ -16,12 +16,15 @@ const toast = useToast();
 const starting = ref(false);
 const linking = ref(false);
 
-/** How long a request is shown, unchanged, before **Run** answers it. */
+/** How long a request is shown, unchanged, in the visible and focused window before it can be answered. */
 const ARM_AFTER_MS = 1000;
 const armed = ref(false);
+/** Whether the window is in front: counted from mount, so the arm never runs in the server render. */
+const inFront = ref(false);
+const readFront = () => (inFront.value = document.visibilityState === 'visible' && document.hasFocus());
 let armTimer: ReturnType<typeof setTimeout> | null = null;
 const shown = computed(() =>
-  current.value ? `${current.value.id}\n${current.value.command}\n${current.value.runnable}` : null,
+  current.value && inFront.value ? `${current.value.id}\n${current.value.command}\n${current.value.runnable}` : null,
 );
 watch(
   shown,
@@ -32,14 +35,24 @@ watch(
   },
   { immediate: true },
 );
+onMounted(() => {
+  readFront();
+  window.addEventListener('focus', readFront);
+  window.addEventListener('blur', readFront);
+  document.addEventListener('visibilitychange', readFront);
+});
 onBeforeUnmount(() => {
   if (armTimer) clearTimeout(armTimer);
+  window.removeEventListener('focus', readFront);
+  window.removeEventListener('blur', readFront);
+  document.removeEventListener('visibilitychange', readFront);
 });
 
 const open = computed({
   get: () => !!current.value,
+  // Escape or the close button declines, once armed; before that the dialog stays.
   set: (value) => {
-    if (!value && current.value) void answer('not-now');
+    if (!value && current.value && armed.value) void answer('not-now');
   },
 });
 
@@ -85,6 +98,8 @@ async function chooseFolder() {
     if (!folder) return;
     add(await $fetch<RunRequestPromptView>(`/api/desktop/run-target/requests/${request.id}/plan`, { method: 'POST' }));
   } catch (error) {
+    // Answered while its folder was linked: nothing is left to show.
+    if ((error as { statusCode?: number } | null)?.statusCode === 404) return;
     toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
   } finally {
     linking.value = false;
@@ -93,8 +108,7 @@ async function chooseFolder() {
 
 async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) {
   const request = current.value;
-  if (!request || request.id !== shownId || starting.value) return;
-  if (decision === 'run' && !armed.value) return;
+  if (!request || request.id !== shownId || starting.value || !armed.value) return;
   if (decision === 'not-now') remove(request.id);
   else starting.value = true;
   try {
@@ -170,7 +184,9 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
 
     <template #footer>
       <div class="flex justify-end gap-2 w-full">
-        <UButton color="neutral" variant="ghost" @click="answer('not-now', current?.id)">Not now</UButton>
+        <UButton color="neutral" variant="ghost" :disabled="!armed" @click="answer('not-now', current?.id)">
+          Not now
+        </UButton>
         <UButton
           icon="i-lucide-play"
           :disabled="!current?.runnable || !armed"
