@@ -548,6 +548,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   if (Object.keys(externalId).length > 0) mergedRaw.externalId = externalId;
 
   if (requested && 'instance' in requested) {
+    desktopTokenHeld = false;
     mergedRaw.serverUrl = requested.instance;
     mergedRaw.apiKey = requested.token;
     mergedRaw.username = null;

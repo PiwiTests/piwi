@@ -489,7 +489,9 @@ describe('HttpClient (against fake http.Server)', () => {
       const { server, url, requests } = await desktopServer(proofOf, status);
       try {
         const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
-        await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow(/token is not sent to http:\/\/127\.0\.0\.1:\d+/);
+        await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow(
+          /token is not sent to http:\/\/127\.0\.0\.1:\d+/,
+        );
         await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
         expect(requests.map((r) => r.url)).toEqual(['/api/health']);
         expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
@@ -505,6 +507,70 @@ describe('HttpClient (against fake http.Server)', () => {
       await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow('did not answer');
       await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow('did not answer');
       expect(requests).toHaveLength(0);
+    });
+
+    it('fails a server that did not answer like a connection that never opened, and one that did not prove it for good', async () => {
+      const gone = await desktopServer(honest);
+      await close(gone.server);
+      const down = await new HttpClient(gone.url, new Logger(false), 30000, 1000, TOKEN)
+        .postJSON('/api/a', {}, TOKEN)
+        .catch((error) => error);
+      expect((down as { code?: string }).code).toBe('ECONNREFUSED');
+
+      const silent = await desktopServer(async () => null);
+      try {
+        const refused = await new HttpClient(silent.url, new Logger(false), 30000, 1000, TOKEN)
+          .postJSON('/api/a', {}, TOKEN)
+          .catch((error) => error);
+        expect(refused.name).toBe('DesktopNotProvenError');
+        expect((refused as { code?: string }).code).toBeUndefined();
+      } finally {
+        await close(silent.server);
+      }
+    });
+
+    it('asks for the proof again after a request that carried the token was refused', async () => {
+      let proves = true;
+      const { server, url, requests } = await desktopServer(async (c, p) => (proves ? honest(c, p) : null));
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await client.postJSON('/api/a', {}, TOKEN);
+        proves = false;
+        server.removeAllListeners('request');
+        server.on('request', (req, res) => {
+          requests.push({ method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, body: '' });
+          req.resume();
+          res.writeHead(req.url === '/api/health' ? 200 : 401).end('{}');
+        });
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/401/);
+        requests.length = 0;
+        await expect(client.postJSON('/api/c', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([['/api/health', undefined]]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('asks for the proof again after a request that carried the token could not connect', async () => {
+      const first = await desktopServer(honest);
+      const client = new HttpClient(first.url, new Logger(false), 30000, 1000, TOKEN);
+      await client.postJSON('/api/a', {}, TOKEN);
+      await close(first.server);
+      await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow();
+
+      const replaced: Array<[string | undefined, string | undefined]> = [];
+      const impostor = http.createServer((req, res) => {
+        replaced.push([req.url, req.headers['authorization']]);
+        req.resume();
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => impostor.listen(Number(new URL(first.url).port), '127.0.0.1', resolve));
+      try {
+        await expect(client.postJSON('/api/c', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(replaced).toEqual([['/api/health', undefined]]);
+      } finally {
+        await close(impostor);
+      }
     });
 
     it('makes no check for a request that carries another credential, or for a client that holds no desktop token', async () => {

@@ -30,6 +30,9 @@ export class HttpError extends Error {
  * The message is the line to show.
  */
 export class DesktopNotProvenError extends Error {
+  /** The code of a connection that never opened for a server that did not answer, so a request that waits retries. */
+  readonly code?: string;
+
   constructor(serverUrl: string, proof: DesktopProof) {
     super(
       proof === 'unreachable'
@@ -37,6 +40,7 @@ export class DesktopNotProvenError extends Error {
         : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token, so nothing is uploaded. Restart the desktop app, or name another instance with a server URL and an API key.`,
     );
     this.name = 'DesktopNotProvenError';
+    if (proof === 'unreachable') this.code = 'ECONNREFUSED';
   }
 }
 
@@ -363,15 +367,24 @@ export class HttpClient {
    * that is not an `http://` or `https://` URL.
    */
   private async request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
-    if (this.desktopToken && opts.auth === this.desktopToken) await this.requireDesktopProof();
-    return this.send(method, pathname, opts);
+    if (!this.desktopToken || opts.auth !== this.desktopToken) return this.send(method, pathname, opts);
+    await this.requireDesktopProof();
+    try {
+      const res = await this.send(method, pathname, opts);
+      if (res.status === 401 || res.status === 403) this.desktopProof = null;
+      return res;
+    } catch (error) {
+      this.desktopProof = null;
+      throw error;
+    }
   }
 
   private desktopProof: Promise<void> | null = null;
 
   /**
    * Resolves once the server proved it holds the desktop token; the first request that carries the token asks, and a
-   * proof or a refusal stands for every later one. A server that did not answer is asked again by the next request.
+   * proof or a refusal stands for the later ones. A server that did not answer is asked again by the next request, and
+   * so is one after a request that carried the token failed or was refused with 401 or 403.
    */
   private requireDesktopProof(): Promise<void> {
     this.desktopProof ??= (async () => {

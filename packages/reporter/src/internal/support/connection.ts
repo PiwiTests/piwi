@@ -136,11 +136,13 @@ function keyAt(serverUrl: string, key: string): string {
 }
 
 /**
- * `fetch` for the commands. A request that carries the desktop app's key goes out only after the server behind the
- * URL proved it holds that key; otherwise it throws and nothing is sent. Any other request is `fetch`.
+ * `fetch` for the commands. A request that carries the desktop app's key, in `X-API-Key` or as a bearer token, goes
+ * out only after the server behind the URL proved it holds that key; otherwise it throws and nothing is sent. Any
+ * other request is `fetch`.
  */
 export async function cliFetch(input: string | URL, init?: RequestInit): Promise<Response> {
-  const key = new Headers(init?.headers).get('x-api-key');
+  const headers = new Headers(init?.headers);
+  const key = headers.get('x-api-key') ?? /^Bearer\s+(.+)$/i.exec(headers.get('authorization') ?? '')?.[1] ?? null;
   const target = key ? keyAt(String(input), key) : null;
   if (key && target && desktopKeys.has(target) && !provenKeys.has(target)) {
     const serverUrl = new URL(input).origin;

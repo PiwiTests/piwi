@@ -128,12 +128,35 @@ describe('desktop discovery', () => {
       expect(usedDesktopToken()).toBe(true);
     });
 
+    it('holds no desktop token for a run a team instance asked for, whatever key the environment marks', () => {
+      const tokenFile = path.join(tmpDir, 'request-token');
+      fs.writeFileSync(tokenFile, `pdq_${'c'.repeat(64)}\n`, { mode: 0o600 });
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      process.env.PIWI_REQUEST_TOKEN_FILE = tokenFile;
+      process.env.PIWI_REQUEST_INSTANCE = 'https://piwi.example.com';
+      try {
+        resolveOptions({});
+        expect(usedDesktopToken()).toBe(false);
+      } finally {
+        delete process.env.PIWI_REQUEST_TOKEN_FILE;
+        delete process.env.PIWI_REQUEST_INSTANCE;
+      }
+    });
+
     it('does not take a key for the desktop token that the marker does not cover', () => {
       process.env.PIWI_DESKTOP_KEY = '1';
       resolveOptions({});
       expect(usedDesktopToken()).toBe(false);
       process.env.PIWI_API_KEY = DESKTOP_TOKEN;
-      fs.writeFileSync(path.join(tmpDir, '.env'), 'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_dotenv\n');
+      fs.writeFileSync(
+        path.join(tmpDir, '.env'),
+        'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_dotenv\n',
+      );
       expect(resolveOptions({ apiKey: 'pd_from_config' }).apiKey).toBe('pd_from_config');
       expect(usedDesktopToken()).toBe(false);
     });

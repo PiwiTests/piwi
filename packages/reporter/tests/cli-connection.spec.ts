@@ -231,6 +231,16 @@ describe('cliFetch', () => {
     ]);
   });
 
+  it('asks for the proof of a desktop key carried as a bearer token too', async () => {
+    answer = async () => null;
+    const connection = desktopConnection();
+    await expect(
+      cliFetch(`${connection.serverUrl}/api/a`, { headers: { Authorization: `Bearer ${connection.apiKey}` } }),
+    ).rejects.toThrow(/token is not sent/);
+    expect(seen.every((r) => r.key === undefined)).toBe(true);
+    expect(seen.map((r) => r.url)).toEqual(['/api/health']);
+  });
+
   it.each([
     ['proves it with another key', () => (answer = (c) => desktopTokenProof('pd_other', port, c ?? ''))],
     ['sends no proof', () => (answer = async () => null)],
@@ -245,11 +255,16 @@ describe('cliFetch', () => {
     expect(seen.map((r) => r.url)).toEqual(['/api/health']);
   });
 
-  it('proves a key the desktop app\'s run marks, and a key the user named only on a flag needs no proof', async () => {
+  it("proves a key the desktop app's run marks, and a key the user named only on a flag needs no proof", async () => {
     const file = path.join(dir, 'desktop.json');
     fs.writeFileSync(file, JSON.stringify({ url: 'http://127.0.0.1:1', token: 'pd_unrelated' }));
     const url = `http://127.0.0.1:${port}`;
-    const env = { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off', PIWI_DASHBOARD_URL: url, PIWI_API_KEY: 'pd_desktop' };
+    const env = {
+      PIWI_DESKTOP_CONFIG: file,
+      PIWI_DESKTOP_APP: 'off',
+      PIWI_DASHBOARD_URL: url,
+      PIWI_API_KEY: 'pd_desktop',
+    };
 
     const own = resolveCliConnection({}, env, [])!;
     await cliFetch(`${url}/api/own`, { headers: { 'X-API-Key': own.apiKey! } });
