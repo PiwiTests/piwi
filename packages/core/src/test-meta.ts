@@ -114,8 +114,8 @@ function readTruncatedTest(raw: unknown): TagsTruncatedTest | null {
   if (!raw || typeof raw !== 'object') return null;
   const { filePath, suitePath, title, line, dropped } = raw as Record<string, unknown>;
   if (typeof filePath !== 'string' || typeof title !== 'string') return null;
-  if (typeof dropped !== 'number' || !Number.isInteger(dropped) || dropped < 1) return null;
-  const test: TagsTruncatedTest = { filePath, title, dropped };
+  if (!Number.isSafeInteger(dropped) || (dropped as number) < 1) return null;
+  const test: TagsTruncatedTest = { filePath, title, dropped: dropped as number };
   if (Array.isArray(suitePath) && suitePath.length > 0 && suitePath.every((s) => typeof s === 'string'))
     test.suitePath = suitePath as string[];
   if (typeof line === 'number' && Number.isFinite(line)) test.line = line;
@@ -137,7 +137,7 @@ export function readTagsTruncated(raw: unknown): TagsTruncated | null {
       if (test && !byKey.has(truncatedTestKey(test))) byKey.set(truncatedTestKey(test), test);
     }
   }
-  const count = typeof tests === 'number' && Number.isInteger(tests) && tests > 0 ? tests : 0;
+  const count = Number.isSafeInteger(tests) && (tests as number) > 0 ? (tests as number) : 0;
   const total = Math.max(count, byKey.size);
   return total > 0 ? { tests: total, examples: [...byKey.values()] } : null;
 }

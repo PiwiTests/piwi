@@ -75,6 +75,10 @@ describe('normalizeTestTagsWithDropped', () => {
     });
   });
 
+  test('counts a tag repeated past the limit once', () => {
+    expect(normalizeTestTagsWithDropped([...tagList(MAX_TEST_TAGS), '@x', 'x', '@x', '@y']).dropped).toBe(2);
+  });
+
   test('drops nothing at the limit, and agrees with normalizeTestTags', () => {
     const raw = tagList(MAX_TEST_TAGS);
     expect(normalizeTestTagsWithDropped(raw).dropped).toBe(0);
@@ -120,8 +124,21 @@ describe('readTagsTruncated', () => {
       }),
     ).toEqual({ tests: 1, examples: [{ filePath: 'a', title: 'b', dropped: 2 }] });
     expect(readTagsTruncated({ tests: 'many', examples: [] })).toBeNull();
+    expect(readTagsTruncated({ tests: 1e308, examples: [] })).toBeNull();
     expect(readTagsTruncated(null)).toBeNull();
   });
+});
+
+test('readTagsTruncated keeps each test once and caps the examples', () => {
+  const examples = Array.from({ length: MAX_TAGS_TRUNCATED_EXAMPLES + 5 }, (_, i) => ({
+    filePath: 'a',
+    title: `t${i % (MAX_TAGS_TRUNCATED_EXAMPLES + 2)}`,
+    dropped: 1,
+  }));
+  const read = readTagsTruncated({ tests: 40, examples })!;
+  expect(read.tests).toBe(40);
+  expect(read.examples).toHaveLength(MAX_TAGS_TRUNCATED_EXAMPLES);
+  expect(new Set(read.examples.map((e) => e.title)).size).toBe(MAX_TAGS_TRUNCATED_EXAMPLES);
 });
 
 describe('merging tagsTruncated', () => {
