@@ -7,7 +7,7 @@
 
 /**
  * What a provider is for: it files tickets (tracker), receives test results (test management) or publishes pages
- * (wiki). Each kind has its own client factory and its own per-project binding.
+ * (wiki). The outbox reads a project's binding and builds a client per kind: a kind with neither runs nothing.
  */
 export type IntegrationKind = 'tracker' | 'test-management' | 'wiki';
 
@@ -117,19 +117,23 @@ export function nonSecretCredentials(
   return out;
 }
 
+/** How a provider is reached, or null for a provider this build does not know. */
+export function providerEndpoint(provider: string): ProviderEndpoint | null {
+  return isIntegrationProvider(provider) ? (INTEGRATION_PROVIDERS[provider].endpoint as ProviderEndpoint) : null;
+}
+
 /**
- * The base URL a new or edited connection is stored with: the typed address for a `url` provider, the chosen region's
- * host for a `region` provider. An error message when the input does not name one.
+ * The base URL a connection reached through `endpoint` is stored with: the typed address for a `url` endpoint, the
+ * chosen region's host for a `region` endpoint, which ignores any typed address and also returns the region. An error
+ * message when the input does not name one.
  */
-export function connectionBaseUrl(
-  provider: string,
+export function endpointBaseUrl(
+  endpoint: ProviderEndpoint,
   input: { baseUrl?: string | null; region?: string | null },
-): { baseUrl: string } | { error: string } {
-  if (!isIntegrationProvider(provider)) return { error: 'Unknown provider' };
-  const endpoint = INTEGRATION_PROVIDERS[provider].endpoint as ProviderEndpoint;
+): { baseUrl: string; region?: string } | { error: string } {
   if (endpoint.kind === 'region') {
     const region = endpoint.regions.find((r) => r.id === input.region);
-    return region ? { baseUrl: region.baseUrl } : { error: 'Choose one of the provider’s regions' };
+    return region ? { baseUrl: region.baseUrl, region: region.id } : { error: 'Choose one of the provider’s regions' };
   }
   if (!input.baseUrl) return { error: 'Enter the address of the site' };
   try {
@@ -138,4 +142,35 @@ export function connectionBaseUrl(
     return { error: 'Must be a valid URL' };
   }
   return { baseUrl: input.baseUrl };
+}
+
+/** {@link endpointBaseUrl} for a provider by name. */
+export function connectionBaseUrl(
+  provider: string,
+  input: { baseUrl?: string | null; region?: string | null },
+): { baseUrl: string; region?: string } | { error: string } {
+  const endpoint = providerEndpoint(provider);
+  return endpoint ? endpointBaseUrl(endpoint, input) : { error: 'Unknown provider' };
+}
+
+/** Why a credential map does not fit `fields`: a `select` field set to none of its options. Else null. */
+export function selectFieldError(
+  fields: readonly CredentialField[],
+  credentials: Record<string, string> | null | undefined,
+): string | null {
+  for (const field of fields) {
+    const value = credentials?.[field.key];
+    if (field.type !== 'select' || value == null || value === '') continue;
+    if (!field.options?.some((option) => option.value === value)) return `${field.label}: choose one of its options`;
+  }
+  return null;
+}
+
+/** {@link selectFieldError} for a provider's credential fields; null for a provider this build does not know. */
+export function credentialFieldError(
+  provider: string,
+  credentials: Record<string, string> | null | undefined,
+): string | null {
+  if (!isIntegrationProvider(provider)) return null;
+  return selectFieldError(INTEGRATION_PROVIDERS[provider].credentialFields as readonly CredentialField[], credentials);
 }

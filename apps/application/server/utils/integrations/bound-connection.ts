@@ -1,8 +1,8 @@
 /**
  * The one connection a project reads and writes each kind of integration
- * through: the one its binding for that kind names. Each kind keeps its binding
- * in a table of its own, so writing one never touches another. Links are
- * tracker issues, read through the tracker binding. A link belongs to the project of the entity it is
+ * through: the one its binding for that kind names. The tracker binding is
+ * `project_integrations`; a kind with no binding table binds no project. Links
+ * are tracker issues, read through the tracker binding. A link belongs to the project of the entity it is
  * pinned to (a failure cluster, a bug report, a run, an execution or a test).
  * Creating a link matches its URL against that connection alone, so a link to
  * another site stays a plain link. A link that carries another connection keeps

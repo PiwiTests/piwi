@@ -9,11 +9,13 @@ integration layer of [issue-tracker-integrations.md](issue-tracker-integrations.
 
 **Status.** Rollout step 1 built: the outbox runs each action through the binding and the client of its integration
 kind (`ACTION_INTEGRATION_KINDS`, `boundConnectionId(db, projectId, kind)`); the registry has its `endpoint` and
-`select` fields; the connection create, edit and check routes work per provider (`connectionBaseUrl`,
-`CONNECTION_CHECKS`); and the provider-neutral `IntegrationHttpError` carries a `Retry-After` (seconds or an HTTP date,
-capped at one hour) that sets the next attempt and, on a 429, holds the connection's other pending actions. Steps 2 to
-7 remain. Revised after the review on #1161: provider dispatch in the outbox and the connection endpoints, a
-provider-neutral interface and tables, one binding table per integration kind, and a warning when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
+`select` fields; the connection create and edit routes derive a regional provider's host, and the pre-save check runs
+each provider's own (`connectionBaseUrl`, `CONNECTION_CHECKS`); and the provider-neutral `IntegrationHttpError`
+carries a `Retry-After` (seconds or an HTTP date, capped at one hour) that sets the next attempt. A 429 pauses the
+connection for that wait, or a minute without one: no attempt calls it before then, and its pending actions are moved
+to that moment. Steps 2 to 7 remain. Revised after the review on #1161: provider dispatch in the outbox and the
+connection endpoints, a provider-neutral interface and tables, one binding table per integration kind, and a warning
+when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
 twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
 run-data checklist, a `zephyr-scale` link provider, and the remedy for cut tags matched to Playwright's tag order.
 Revised a third time: the cycle key is committed as soon as the upload returns, so a failed link step retries without

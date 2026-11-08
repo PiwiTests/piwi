@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { isIntegrationProvider, type IntegrationProviderName } from '#shared/integrations/registry';
+import {
+  connectionBaseUrl,
+  isIntegrationProvider,
+  providerEndpoint,
+  type IntegrationProviderName,
+} from '#shared/integrations/registry';
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { CONNECTION_CHECKS, ConnectionCheckRefusal } from '../../../utils/integrations/connection-check';
 
@@ -31,6 +36,12 @@ export default eventHandler(async (event): Promise<ConnectionCheckResult> => {
   }
 
   const { provider, ...input } = parsed.data;
+  // A provider reached on its own regional hosts is checked on the region's host, never on a typed one.
+  if (providerEndpoint(provider)?.kind === 'region') {
+    const endpoint = connectionBaseUrl(provider, input);
+    if ('error' in endpoint) throw apiError({ statusCode: 400, message: endpoint.error });
+    input.baseUrl = endpoint.baseUrl;
+  }
   try {
     return await CONNECTION_CHECKS[provider as IntegrationProviderName](await getDatabase(), input);
   } catch (err) {

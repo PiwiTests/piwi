@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
-import { connectionBaseUrl } from '#shared/integrations/registry';
+import { connectionBaseUrl, credentialFieldError, providerEndpoint } from '#shared/integrations/registry';
 import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -44,12 +44,24 @@ export default eventHandler(async (event) => {
     });
   }
 
+  const fieldError = credentialFieldError(row.provider, parsed.data.credentials);
+  if (fieldError) throw apiError({ statusCode: 400, message: fieldError });
+
+  // A typed address moves a `url` provider; a region moves a `region` provider, which keeps its region otherwise.
   const { region, ...input } = parsed.data;
-  if (input.baseUrl !== undefined || region !== undefined) {
+  const regional = providerEndpoint(row.provider)?.kind === 'region';
+  if (regional ? region !== undefined : input.baseUrl !== undefined) {
     const endpoint = connectionBaseUrl(row.provider, parsed.data);
     if ('error' in endpoint) throw apiError({ statusCode: 400, message: endpoint.error });
     input.baseUrl = endpoint.baseUrl;
-    if (region) input.config = { ...((input.config ?? row.config) as Record<string, unknown> | null), region };
+    if (endpoint.region) {
+      const config = input.config === undefined ? (row.config as Record<string, unknown> | null) : input.config;
+      input.config = { ...config, region: endpoint.region };
+    }
+  } else if (regional) {
+    delete input.baseUrl;
+    const stored = (row.config as Record<string, unknown> | null)?.region;
+    if (input.config !== undefined && typeof stored === 'string') input.config = { ...input.config, region: stored };
   }
 
   const connection = await updateConnection(db, id, input);

@@ -19,10 +19,14 @@ export class IntegrationHttpError extends Error {
   }
 }
 
+/** An HTTP date as RFC 9110 sends it (IMF-fixdate): `Sun, 08 Nov 2026 06:00:30 GMT`. */
+const IMF_FIXDATE =
+  /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
 /**
- * A `Retry-After` header in milliseconds: delay-seconds (`120`) or an HTTP date (`Wed, 21 Oct 2026 07:28:00 GMT`),
- * counted from `now`, capped at {@link RETRY_AFTER_CAP_MS}. Undefined for a missing or unreadable header; a date in
- * the past waits 0.
+ * A `Retry-After` header in milliseconds: delay-seconds (`120`) or an HTTP date (`Sun, 08 Nov 2026 06:00:30 GMT`),
+ * counted from `now`, capped at {@link RETRY_AFTER_CAP_MS}. Undefined for a missing header or one in neither form; a
+ * date in the past waits 0.
  */
 export function parseRetryAfter(header: string | null | undefined, now: number = Date.now()): number | undefined {
   const value = header?.trim();
@@ -30,11 +34,12 @@ export function parseRetryAfter(header: string | null | undefined, now: number =
   let ms: number;
   if (/^\d+$/.test(value)) {
     ms = Number(value) * 1000;
-  } else {
-    // An HTTP date names its day and month; a bare number such as `-5` is no date.
-    const at = /[a-z]/i.test(value) ? Date.parse(value) : NaN;
+  } else if (IMF_FIXDATE.test(value)) {
+    const at = Date.parse(value);
     if (Number.isNaN(at)) return undefined;
     ms = Math.max(0, at - now);
+  } else {
+    return undefined;
   }
   return Math.min(ms, RETRY_AFTER_CAP_MS);
 }

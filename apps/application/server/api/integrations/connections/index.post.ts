@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { connectionBaseUrl, isIntegrationProvider, type IntegrationProviderName } from '#shared/integrations/registry';
+import {
+  connectionBaseUrl,
+  credentialFieldError,
+  isIntegrationProvider,
+  type IntegrationProviderName,
+} from '#shared/integrations/registry';
 import { createConnection } from '../../../utils/integrations/connections';
 
 defineRouteMeta({
@@ -34,14 +39,15 @@ export default eventHandler(async (event) => {
   const provider = parsed.data.provider as IntegrationProviderName;
   const endpoint = connectionBaseUrl(provider, parsed.data);
   if ('error' in endpoint) throw apiError({ statusCode: 400, message: endpoint.error });
+  const fieldError = credentialFieldError(provider, parsed.data.credentials);
+  if (fieldError) throw apiError({ statusCode: 400, message: fieldError });
 
   const db = await getDatabase();
-  const { region } = parsed.data;
   const connection = await createConnection(db, {
     provider,
     name: parsed.data.name,
     baseUrl: endpoint.baseUrl,
-    config: region ? { ...parsed.data.config, region } : (parsed.data.config ?? null),
+    config: endpoint.region ? { ...parsed.data.config, region: endpoint.region } : (parsed.data.config ?? null),
     credentials: parsed.data.credentials ?? null,
   });
   return { connection };

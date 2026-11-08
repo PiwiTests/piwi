@@ -23,7 +23,7 @@
  * runs: one whose project is bound to another connection, or to none, is
  * skipped.
  */
-import { and, eq, inArray, isNotNull, isNull, lt, lte, ne, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, lte, ne } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
@@ -361,22 +361,55 @@ function retryAfterMs(err: unknown): number | null {
   return err instanceof IntegrationHttpError ? (err.retryAfterMs ?? null) : null;
 }
 
+/** How long a 429 holds its connection when the provider names no wait of its own. */
+const RATE_LIMIT_PAUSE_MS = 60 * 1000;
+
 /**
- * Hold a connection's other pending actions until `until`, after the provider rate limited one of them: the sweep
- * claims none of them before then. A click still tries its own action at once.
+ * When each rate-limited connection may be called again, as this server process learned it. Every attempt reads it
+ * before calling the provider (a click and a write made at once included), and a 429 also moves the connection's
+ * pending actions in the database, so another process's sweep waits for them too.
  */
-async function pauseConnection(db: DbClient, connectionId: number, until: Date, exceptId: number): Promise<void> {
+const connectionPauses = new Map<number, number>();
+
+/** The moment a rate-limited connection may be called again, or null when it is not paused. */
+function connectionPausedUntil(connectionId: number, now: Date): Date | null {
+  const until = connectionPauses.get(connectionId);
+  if (until == null) return null;
+  if (until <= now.getTime()) {
+    connectionPauses.delete(connectionId);
+    return null;
+  }
+  return new Date(until);
+}
+
+/**
+ * Pause a connection the provider rate limited, for as long as it asked (`RATE_LIMIT_PAUSE_MS` when it named no wait):
+ * no attempt calls it before then, and its other pending actions are moved to that moment.
+ */
+async function pauseConnection(db: DbClient, action: IntegrationAction, waitMs: number, now: Date): Promise<void> {
+  const until = new Date(now.getTime() + waitMs);
+  connectionPauses.set(action.connectionId, Math.max(connectionPauses.get(action.connectionId) ?? 0, until.getTime()));
   await db
     .update(integrationActions)
     .set({ scheduledFor: until })
     .where(
       and(
-        eq(integrationActions.connectionId, connectionId),
+        eq(integrationActions.connectionId, action.connectionId),
         eq(integrationActions.status, 'pending'),
-        ne(integrationActions.id, exceptId),
-        or(isNull(integrationActions.scheduledFor), lt(integrationActions.scheduledFor, until)),
+        ne(integrationActions.id, action.id),
+        lt(integrationActions.scheduledFor, until),
       ),
     );
+}
+
+/** Put an action back until its connection's pause ends, without counting an attempt or calling the provider. */
+async function waitForPause(db: DbClient, action: IntegrationAction, until: Date): Promise<ActionOutcome> {
+  const error = `Waiting until ${until.toISOString()}: the provider rate limited this connection`;
+  await db
+    .update(integrationActions)
+    .set({ status: 'pending', attempts: action.attempts, error, scheduledFor: until, finishedAt: null })
+    .where(eq(integrationActions.id, action.id));
+  return { status: 'failed', error, final: false, retrying: true };
 }
 
 /** What Piwi just wrote, read back from the tracker; null when the tracker cannot say. */
@@ -720,8 +753,8 @@ export type ActionOutcome =
 /**
  * Run one action once, after the caller has claimed its row. The action's integration kind names the binding it must
  * go through and the client that runs it. Marks the row terminal on success or skip; on failure bumps attempts and
- * reschedules with backoff (honoring a `Retry-After`) until the cap turns it `failed`. A 429 also holds the
- * connection's other pending actions for as long. Returns the outcome for the caller.
+ * reschedules with backoff (honoring a `Retry-After`) until the cap turns it `failed`. A 429 pauses the connection:
+ * until it ends, an attempt on it is put back without calling the provider. Returns the outcome for the caller.
  */
 export async function runAction(db: DbClient, action: IntegrationAction): Promise<ActionOutcome> {
   const now = new Date();
@@ -749,6 +782,9 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .where(eq(integrationActions.id, action.id));
     return { status: 'failed', error, final: true };
   }
+
+  const pausedUntil = connectionPausedUntil(action.connectionId, now);
+  if (pausedUntil) return waitForPause(db, action, pausedUntil);
 
   switch (kind) {
     case 'tracker': {
@@ -840,8 +876,8 @@ async function failAttempt(
       ...(unknown ? { result: null } : {}),
     })
     .where(eq(integrationActions.id, action.id));
-  if (err instanceof IntegrationHttpError && err.status === 429 && next.status === 'pending' && next.scheduledFor) {
-    await pauseConnection(db, action.connectionId, next.scheduledFor, action.id);
+  if (err instanceof IntegrationHttpError && err.status === 429) {
+    await pauseConnection(db, action, retryAfterMs(err) || RATE_LIMIT_PAUSE_MS, now);
   }
   console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
   const fieldErrors = errorFields(err);

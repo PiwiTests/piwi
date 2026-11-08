@@ -9,12 +9,19 @@ import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
 import { integrationKindOf } from '../../shared/integrations/action-keys';
-import { connectionBaseUrl } from '../../shared/integrations/registry';
+import {
+  connectionBaseUrl,
+  endpointBaseUrl,
+  INTEGRATION_PROVIDERS,
+  selectFieldError,
+  type CredentialField,
+  type ProviderEndpoint,
+} from '../../shared/integrations/registry';
 import { IntegrationHttpError, parseRetryAfter, RETRY_AFTER_CAP_MS } from '../../server/utils/integrations/http-error';
 
 /**
  * The outbox runs each action through the binding and the client of its integration kind; a provider's
- * `Retry-After` sets the next attempt, and a 429 holds the connection's other pending actions as long.
+ * `Retry-After` sets the next attempt, and a 429 pauses the connection: no attempt calls it before the pause ends.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -23,23 +30,28 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 const { createConnection } = await import('../../server/utils/integrations/connections');
 const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { boundConnectionId } = await import('../../server/utils/integrations/bound-connection');
-const { enqueueAction, isFinalRefusal, runActionNow } = await import('../../server/utils/integrations/actions');
+const { enqueueAction, isFinalRefusal, runActionNow, sweepIntegrationActions } =
+  await import('../../server/utils/integrations/actions');
 const { JiraError } = await import('../../server/utils/integrations/jira/client');
 const { CONNECTION_CHECKS } = await import('../../server/utils/integrations/connection-check');
 const { buildFixComment } = await import('../../shared/integrations/policy-comments');
 
-const SITE = 'https://dispatch.atlassian.net';
-const OTHER_SITE = 'https://elsewhere.atlassian.net';
-
-/** What the stub Jira answers a comment with: 201, or a 429 with this `Retry-After`. */
-let commentAnswer: { status: 201 } | { status: 429; retryAfter: string } = { status: 201 };
+/** What the stub Jira answers a comment with: 201, a 429 (with this `Retry-After`, if any) or a 503. */
+let commentAnswer: { status: 201 } | { status: 429; retryAfter?: string } | { status: 503 } = { status: 201 };
+/** How many comments the stub Jira was asked to post. */
+let commentCalls = 0;
 
 async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   if (/\/rest\/api\/3\/issue\/[^/]+\/comment$/.test(url.pathname) && init?.method === 'POST') {
+    commentCalls++;
     if (commentAnswer.status === 429) {
-      return new Response('{}', { status: 429, headers: { 'retry-after': commentAnswer.retryAfter } });
+      const headers: Record<string, string> = commentAnswer.retryAfter
+        ? { 'retry-after': commentAnswer.retryAfter }
+        : {};
+      return new Response('{}', { status: 429, headers });
     }
+    if (commentAnswer.status === 503) return new Response('down', { status: 503 });
     return new Response(JSON.stringify({ id: '1' }), { status: 201, headers: { 'Content-Type': 'application/json' } });
   }
   return new Response(JSON.stringify({ errorMessages: ['Not found'] }), { status: 404 });
@@ -49,16 +61,34 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 let dbc: DbClient;
 let client: ReturnType<typeof createClient>;
 let tmpDir: string;
-let connectionId = 0;
-let otherConnectionId = 0;
 let seq = 0;
 
-function commentInput(overrides: { connectionId?: number; projectId?: number; kind?: string } = {}) {
+/** A new project bound to a new Jira connection, so a pause on one test's connection holds no other test's. */
+async function boundProject(): Promise<{ projectId: number; connectionId: number }> {
+  seq++;
+  const [project] = await db
+    .insert(schema.projects)
+    .values({ name: `dispatch-${seq}`, label: `Dispatch ${seq}` })
+    .returning();
+  const connection = await createConnection(dbc, {
+    provider: 'jira',
+    name: `Jira ${seq}`,
+    baseUrl: `https://dispatch-${seq}.atlassian.net`,
+    credentials: { email: 'ci@example.com', apiToken: 'token' },
+  });
+  await writeProjectIntegration(dbc, project!.id, {
+    connectionId: connection.id,
+    projectKey: 'PROJ',
+    issueType: 'Bug',
+  });
+  return { projectId: project!.id, connectionId: connection.id };
+}
+
+function commentInput(on: { projectId: number; connectionId: number }, kind = 'comment') {
   seq++;
   return {
-    connectionId,
-    projectId: 1,
-    kind: 'comment',
+    ...on,
+    kind,
     entityType: 'failure_cluster',
     entityId: 1,
     dedupeKey: `comment:failure_cluster:1:dispatch:${seq}`,
@@ -71,7 +101,6 @@ function commentInput(overrides: { connectionId?: number; projectId?: number; ki
         clusterUrl: null,
       }),
     },
-    ...overrides,
   };
 }
 
@@ -86,18 +115,7 @@ beforeAll(async () => {
   db = drizzle(client, { schema });
   await migrateToLatest(db);
   dbc = db as unknown as DbClient;
-  await db.insert(schema.projects).values([
-    { id: 1, name: 'shop', label: 'Shop' },
-    { id: 2, name: 'admin', label: 'Admin' },
-  ]);
   vi.stubGlobal('fetch', vi.fn(jira));
-  const credentials = { email: 'ci@example.com', apiToken: 'token' };
-  connectionId = (await createConnection(dbc, { provider: 'jira', name: 'Shop Jira', baseUrl: SITE, credentials })).id;
-  otherConnectionId = (
-    await createConnection(dbc, { provider: 'jira', name: 'Admin Jira', baseUrl: OTHER_SITE, credentials })
-  ).id;
-  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
-  await writeProjectIntegration(dbc, 2, { connectionId: otherConnectionId, projectKey: 'ADM', issueType: 'Bug' });
 });
 
 afterAll(async () => {
@@ -108,6 +126,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   commentAnswer = { status: 201 };
+  commentCalls = 0;
   await db.delete(schema.integrationActions);
 });
 
@@ -126,11 +145,10 @@ describe('Retry-After', () => {
     expect(parseRetryAfter('Sat, 07 Nov 2026 06:00:00 GMT', now)).toBe(0);
   });
 
-  test('ignores a missing or unreadable header', () => {
-    expect(parseRetryAfter(null, now)).toBeUndefined();
-    expect(parseRetryAfter('', now)).toBeUndefined();
-    expect(parseRetryAfter('soon', now)).toBeUndefined();
-    expect(parseRetryAfter('-5', now)).toBeUndefined();
+  test('ignores a missing header and one in neither form', () => {
+    for (const header of [null, '', 'soon', '-5', '1.5', 'a 2027', 'Retry 3000', 'Sun, 08 Nov 2026 06:00:30']) {
+      expect(parseRetryAfter(header, now)).toBeUndefined();
+    }
   });
 
   test('a refusal from any provider is final or retried by its status alone', () => {
@@ -151,36 +169,37 @@ describe('integration kinds', () => {
   });
 
   test("a project's binding is read per kind", async () => {
-    expect(await boundConnectionId(dbc, 1, 'tracker')).toBe(connectionId);
-    expect(await boundConnectionId(dbc, 1, 'test-management')).toBeNull();
-    expect(await boundConnectionId(dbc, 1, 'wiki')).toBeNull();
+    const shop = await boundProject();
+    expect(await boundConnectionId(dbc, shop.projectId, 'tracker')).toBe(shop.connectionId);
+    expect(await boundConnectionId(dbc, shop.projectId, 'test-management')).toBeNull();
+    expect(await boundConnectionId(dbc, shop.projectId, 'wiki')).toBeNull();
     expect(await boundConnectionId(dbc, null, 'tracker')).toBeNull();
   });
 
   test('an action of a kind the outbox does not run is skipped without a call', async () => {
-    const fetchMock = vi.mocked(fetch);
-    const calls = fetchMock.mock.calls.length;
-    const action = await enqueueAction(dbc, commentInput({ kind: 'sync-status' }));
+    const action = await enqueueAction(dbc, commentInput(await boundProject(), 'sync-status'));
     expect(await runActionNow(dbc, action.id)).toEqual({
       status: 'skipped',
       reason: "unsupported action kind 'sync-status'",
     });
-    expect(fetchMock.mock.calls.length).toBe(calls);
+    expect(commentCalls).toBe(0);
   });
 });
 
 describe('a rate-limited connection', () => {
-  test("waits as long as the provider asks, and holds the connection's other actions as long", async () => {
+  test("pauses for as long as the provider asks, holding the connection's other actions", async () => {
+    const shop = await boundProject();
+    const elsewhere = await boundProject();
     commentAnswer = { status: 429, retryAfter: '600' };
-    const limited = await enqueueAction(dbc, commentInput());
-    const waiting = await enqueueAction(dbc, commentInput());
-    const later = await enqueueAction(dbc, commentInput());
+    const limited = await enqueueAction(dbc, commentInput(shop));
+    const waiting = await enqueueAction(dbc, commentInput(shop));
+    const later = await enqueueAction(dbc, commentInput(shop));
     const farLater = new Date(Date.now() + 2 * 60 * 60 * 1000);
     await db
       .update(schema.integrationActions)
       .set({ scheduledFor: farLater })
       .where(eq(schema.integrationActions.id, later.id));
-    const elsewhere = await enqueueAction(dbc, commentInput({ connectionId: otherConnectionId, projectId: 2 }));
+    const other = await enqueueAction(dbc, commentInput(elsewhere));
 
     const before = Date.now();
     expect(await runActionNow(dbc, limited.id)).toMatchObject({ status: 'failed', retrying: true });
@@ -192,27 +211,99 @@ describe('a rate-limited connection', () => {
     expect((await actionRow(waiting.id)).scheduledFor!.getTime()).toBe(retryAt);
     expect((await actionRow(later.id)).scheduledFor!.getTime()).toBe(farLater.getTime());
     // Another connection is not held.
-    expect((await actionRow(elsewhere.id)).scheduledFor!.getTime()).toBeLessThan(retryAt);
+    expect((await actionRow(other.id)).scheduledFor!.getTime()).toBeLessThan(retryAt);
   });
 
-  test('a failure that is not a 429 holds nothing else', async () => {
-    const failing = await enqueueAction(dbc, { ...commentInput(), payload: { issueKey: 'PROJ-X', document: null } });
-    const other = await enqueueAction(dbc, commentInput());
+  test('a write made during the pause waits without calling the provider or spending an attempt', async () => {
+    const shop = await boundProject();
+    commentAnswer = { status: 429, retryAfter: '600' };
+    await runActionNow(dbc, (await enqueueAction(dbc, commentInput(shop))).id);
+    expect(commentCalls).toBe(1);
+
+    commentAnswer = { status: 201 };
+    const fresh = await enqueueAction(dbc, commentInput(shop));
+    const outcome = await runActionNow(dbc, fresh.id);
+    expect(outcome).toMatchObject({ status: 'failed', final: false, retrying: true });
+    expect(commentCalls).toBe(1);
+    const row = await actionRow(fresh.id);
+    expect(row).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(row.error).toMatch(/^Waiting until .*: the provider rate limited this connection$/);
+    expect(row.scheduledFor!.getTime() - Date.now()).toBeGreaterThan(590_000);
+
+    // The sweep finds nothing of the connection's due before then.
+    await sweepIntegrationActions(dbc);
+    expect(commentCalls).toBe(1);
+  });
+
+  test('without a wait of its own, the pause is one minute, whatever the backoff of the limited action', async () => {
+    const shop = await boundProject();
+    commentAnswer = { status: 429 };
+    const limited = await enqueueAction(dbc, commentInput(shop));
+    // On its fourth attempt, the limited action itself backs off an hour.
+    await db.update(schema.integrationActions).set({ attempts: 3 }).where(eq(schema.integrationActions.id, limited.id));
+    const waiting = await enqueueAction(dbc, commentInput(shop));
+    const before = Date.now();
+    await runActionNow(dbc, limited.id);
+
+    expect((await actionRow(limited.id)).scheduledFor!.getTime() - before).toBeGreaterThanOrEqual(60 * 60_000);
+    const held = (await actionRow(waiting.id)).scheduledFor!.getTime() - before;
+    expect(held).toBeGreaterThanOrEqual(60_000);
+    expect(held).toBeLessThan(70_000);
+  });
+
+  test('a refusal that is not a 429 pauses nothing', async () => {
+    const shop = await boundProject();
+    commentAnswer = { status: 503 };
+    const failing = await enqueueAction(dbc, commentInput(shop));
+    const other = await enqueueAction(dbc, commentInput(shop));
     const scheduled = (await actionRow(other.id)).scheduledFor!.getTime();
-    expect(await runActionNow(dbc, failing.id)).toMatchObject({ status: 'failed' });
+    expect(await runActionNow(dbc, failing.id)).toMatchObject({ status: 'failed', retrying: true });
     expect((await actionRow(other.id)).scheduledFor!.getTime()).toBe(scheduled);
+
+    commentAnswer = { status: 201 };
+    expect(await runActionNow(dbc, other.id)).toEqual({ status: 'done' });
   });
 });
 
 describe('connection endpoints', () => {
   test('a provider reached at a typed address needs a valid URL', () => {
-    expect(connectionBaseUrl('jira', { baseUrl: SITE })).toEqual({ baseUrl: SITE });
+    const site = 'https://acme.atlassian.net';
+    expect(connectionBaseUrl('jira', { baseUrl: site })).toEqual({ baseUrl: site });
+    expect(connectionBaseUrl('jira', { baseUrl: site, region: 'eu' })).toEqual({ baseUrl: site });
     expect(connectionBaseUrl('jira', { baseUrl: 'not a url' })).toEqual({ error: 'Must be a valid URL' });
     expect(connectionBaseUrl('jira', {})).toEqual({ error: 'Enter the address of the site' });
-    expect(connectionBaseUrl('linear', { baseUrl: SITE })).toEqual({ error: 'Unknown provider' });
+    expect(connectionBaseUrl('linear', { baseUrl: site })).toEqual({ error: 'Unknown provider' });
+  });
+
+  test("a regional provider is reached on its region's host, never on a typed one", () => {
+    const regional: ProviderEndpoint = {
+      kind: 'region',
+      regions: [
+        { id: 'us', label: 'United States', baseUrl: 'https://api.example.com/v2' },
+        { id: 'eu', label: 'Europe', baseUrl: 'https://eu.api.example.com/v2' },
+      ],
+    };
+    expect(endpointBaseUrl(regional, { region: 'eu', baseUrl: 'https://attacker.example' })).toEqual({
+      baseUrl: 'https://eu.api.example.com/v2',
+      region: 'eu',
+    });
+    expect(endpointBaseUrl(regional, { baseUrl: 'https://api.example.com/v2' })).toEqual({
+      error: 'Choose one of the provider’s regions',
+    });
+    expect(endpointBaseUrl(regional, { region: 'mars' })).toHaveProperty('error');
+  });
+
+  test('a select credential field takes one of its options only', () => {
+    const fields: CredentialField[] = [
+      { key: 'flavor', label: 'Flavor', type: 'select', options: [{ value: 'cloud', label: 'Cloud' }] },
+      { key: 'apiToken', label: 'API token', type: 'password', secret: true },
+    ];
+    expect(selectFieldError(fields, { flavor: 'cloud', apiToken: 'x' })).toBeNull();
+    expect(selectFieldError(fields, { apiToken: 'x' })).toBeNull();
+    expect(selectFieldError(fields, { flavor: 'server' })).toBe('Flavor: choose one of its options');
   });
 
   test('every provider has a pre-save check', () => {
-    expect(Object.keys(CONNECTION_CHECKS)).toEqual(['jira']);
+    expect(Object.keys(CONNECTION_CHECKS).sort()).toEqual(Object.keys(INTEGRATION_PROVIDERS).sort());
   });
 });
