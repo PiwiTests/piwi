@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -70,8 +71,11 @@ async function fakeInstance() {
 
 /** The bare host: the run-target routes, and 404 for anything else. */
 async function bareHost() {
+  const served: Promise<boolean>[] = [];
   const server = http.createServer((req, res) => {
-    void serveRunTarget(req, res, TOKEN).then((served) => {
+    const serving = serveRunTarget(req, res, TOKEN);
+    served.push(serving);
+    void serving.then((served) => {
       if (!served) {
         res.writeHead(404);
         res.end();
@@ -104,6 +108,8 @@ async function bareHost() {
         req.on('error', reject);
         req.end(payload);
       }),
+    served,
+    port: (server.address() as AddressInfo).port,
     other: () => fetch(`${base}/api/health`).then((r) => r.status),
     close: () =>
       new Promise<void>((resolve) => {
@@ -169,6 +175,7 @@ describe('the guard', () => {
       name: 'launch',
       id: REQUEST_ID,
     });
+    expect(matchRunTargetRoute('POST', `${RUN_TARGET_BASE}/connect/`)).toEqual({ name: 'connect' });
     expect(matchRunTargetRoute('GET', `${RUN_TARGET_BASE}/key`)).toBeNull();
     expect(matchRunTargetRoute('GET', `${RUN_TARGET_BASE}-other`)).toBeNull();
     expect(matchRunTargetRoute('POST', '/api/desktop/runs/picks')).toBeNull();
@@ -209,6 +216,21 @@ describe('every host of the run-target routes', () => {
         400,
       );
     }
+  });
+
+  test('settles a request whose client leaves mid-body, and answers the next one', async () => {
+    await new Promise<void>((resolve) => {
+      const socket = net.connect(host.port, '127.0.0.1', () => {
+        socket.write(
+          `POST ${RUN_TARGET_BASE}/connect HTTP/1.1\r\nHost: 127.0.0.1\r\nx-piwi-token: ${TOKEN}\r\n` +
+            'Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"ins',
+          () => setTimeout(() => (socket.destroy(), resolve()), 50),
+        );
+      });
+    });
+    await until(() => host.served.length > 0);
+    await expect(Promise.all(host.served)).resolves.toEqual([true]);
+    expect((await host.call('GET', '', SHELL)).status).toBe(200);
   });
 
   test('answers launch once, after Run, and keeps the shell’s answers out of caches', async () => {

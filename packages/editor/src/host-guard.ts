@@ -3,7 +3,7 @@
  * server): who may call it, and which callers a route refuses. It decides over a plain request shape, so every host
  * that serves the same routes decides the same way.
  */
-import { sameToken } from './recorder/handoff';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 /** What a host's guard and its routes read of a request. */
 export interface HostRequest {
@@ -61,10 +61,12 @@ export function presentedToken(request: HostRequest): string | null {
   );
 }
 
-/** Whether a request presents the access token `token`, compared in constant time. */
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
+/** Whether a request presents the access token `token`, compared in constant time whatever its length. */
 export function presentsToken(request: HostRequest, token: string): boolean {
   const presented = presentedToken(request);
-  return !!presented && sameToken(presented, token);
+  return !!presented && timingSafeEqual(digest(presented), digest(token));
 }
 
 /**

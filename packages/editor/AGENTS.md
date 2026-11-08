@@ -197,7 +197,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   and the refusal of a browser on the shell-only ones are `src/run-target-routes.ts`, and who may call a host is
   `src/host-guard.ts`: the desktop app's Nitro routes and guard call them, never a copy.
   `tests/run-target-routes.test.ts` holds the contract on the bare `node:http` host (`src/run-target-http.ts`), and
-  `apps/application/tests/unit/desktop-run-target.test.ts` the same through Nitro: a change here runs both.
+  `apps/application/tests/unit/desktop-run-target.test.ts` the body, id and browser checks through the Nitro routes: a
+  change here runs both.
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the

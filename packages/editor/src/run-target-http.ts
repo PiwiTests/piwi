@@ -36,7 +36,7 @@ async function jsonBody(req: IncomingMessage): Promise<unknown> {
 
 /**
  * Answer `req` when it names a run-target route, with the access token `token`: 401 without it. Answers false, having
- * written nothing, for any other path, for the host to answer.
+ * written nothing, for any other path, for the host to answer. Never rejects.
  */
 export async function serveRunTarget(req: IncomingMessage, res: ServerResponse, token: string): Promise<boolean> {
   const route = matchRunTargetRoute(req.method ?? 'GET', req.url ?? '/');
@@ -51,17 +51,19 @@ export async function serveRunTarget(req: IncomingMessage, res: ServerResponse, 
   const readsBody = req.method !== 'GET' && req.method !== 'DELETE';
   // A body the route does not read is discarded, so the next request on the connection reads from its start.
   if (!readsBody) req.resume();
-  const body = readsBody ? await jsonBody(req) : null;
-  if (body === false) {
-    req.resume();
-    send(res, 413, { message: 'The body is too large' });
-    return true;
-  }
   try {
+    const body = readsBody ? await jsonBody(req) : null;
+    if (body === false) {
+      req.resume();
+      send(res, 413, { message: 'The body is too large' });
+      return true;
+    }
     const answer = await answerRunTargetRoute(route.name, { ...guarded, id: route.id, body });
     send(res, answer.status, answer.body, answer.noStore);
   } catch {
-    send(res, 500, { message: 'The route failed' });
+    // A client gone mid-body leaves nothing to answer; anything else answers 500.
+    if (req.destroyed || res.headersSent) res.destroy();
+    else send(res, 500, { message: 'The route failed' });
   }
   return true;
 }
