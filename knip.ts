@@ -99,6 +99,10 @@ const config: KnipConfig = {
       // Piwi Runner).
       entry: ['app/**/*.{ts,vue}'],
     },
+    'apps/runner': {
+      // The Node host the sidecar runs, bundled by `scripts/build.mjs`.
+      entry: ['server/main.ts'],
+    },
     'integrations/nitro': {},
   },
 };

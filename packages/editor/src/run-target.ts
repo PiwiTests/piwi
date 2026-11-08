@@ -570,11 +570,16 @@ export async function requestedRunFailed(id: string, detail: string): Promise<vo
   await state.host?.report(id, { state: 'ended', outcome: 'error', detail: detail.slice(0, 500) }).catch(() => {});
 }
 
-/** For tests: forget everything. */
-export function resetDesktopRunTarget(): void {
+/** The host is stopping: the connection to the instance closes, and the window's and the shell's listeners go. */
+export function shutdownRunTarget(): void {
   disconnectRunTarget();
-  appVersion = '0.0.0';
-  state.links = new Map();
   windowListeners.clear();
   shellListeners.clear();
+}
+
+/** For tests: forget everything. */
+export function resetDesktopRunTarget(): void {
+  shutdownRunTarget();
+  appVersion = '0.0.0';
+  state.links = new Map();
 }

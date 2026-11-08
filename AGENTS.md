@@ -14,6 +14,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `packages/reporter/`: the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
 | `apps/desktop/`: the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
 | `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md)     |
+| `apps/runner/`: Piwi Runner, the window and Node host that run a team instance's requests | [`apps/runner/AGENTS.md`](apps/runner/AGENTS.md) |
 | `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
 | `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
 | `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
@@ -39,6 +40,7 @@ locator healing, notifications and an MCP server for AI agents. Self-hosted only
 ```
 apps/application/     Nuxt 4 dashboard: app (UI), server (API), demo SPA, MCP server; `shared/` imported as `#shared/...`
 apps/desktop/         Tauri desktop shell that bundles and runs the same server locally
+apps/runner/          Piwi Runner: the window (Nuxt, `ssr: false`) and Node host the desktop crate's `runner` feature bundles
 apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalone
 apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
 apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)

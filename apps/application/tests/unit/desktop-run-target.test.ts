@@ -21,6 +21,7 @@ import {
   requestedRunStarted,
   resetDesktopRunTarget,
   setRunTargetVersion,
+  shutdownRunTarget,
   runTargetConnection,
   subscribeRunTargetShell,
   subscribeRunTargetWindow,
@@ -281,6 +282,26 @@ describe('connecting', () => {
       state: 'signing-in',
       verificationUrl: `${instance.url}/extension/connect?code=ABCD-EFGH`,
     });
+  });
+});
+
+describe('the host stopping', () => {
+  test('closes the connection to the instance, tells the window its requests are gone, and drops the listeners', async () => {
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => heard.some((m) => m.type === 'run-request'));
+
+    shutdownRunTarget();
+    expect(runTargetConnection().state).toBe('none');
+    expect(heard.some((m) => m.type === 'run-request-gone' && m.id === REQUEST_ID)).toBe(true);
+
+    const count = heard.length;
+    const calls = instance.calls.length;
+    useLinks(new Map([[3, folder]]));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(heard).toHaveLength(count);
+    expect(instance.calls).toHaveLength(calls);
   });
 });
 

@@ -1,0 +1,25 @@
+{
+  "name": "@piwitests/runner",
+  "version": "0.67.0",
+  "description": "Piwi Runner: the app that runs the tests a team instance asks for on this machine, with the window and the Node host that serve it",
+  "private": true,
+  "license": "FSL-1.1-MIT",
+  "type": "module",
+  "scripts": {
+    "runner:build": "node scripts/build.mjs",
+    "runner:test": "vitest run",
+    "runner:test:watch": "vitest",
+    "runner:typecheck": "tsc --noEmit -p tsconfig.json",
+    "runner:lint": "oxlint --config oxlint.config.mts .",
+    "runner:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "runner:format": "oxfmt --config oxfmt.config.mts --write \"server/\" \"scripts/\" \"tests/\"",
+    "runner:format:check": "oxfmt --config oxfmt.config.mts --check \"server/\" \"scripts/\" \"tests/\"",
+    "test": "npm run runner:test"
+  },
+  "dependencies": {
+    "@piwitests/editor": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
