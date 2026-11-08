@@ -143,6 +143,9 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/run-target.ts`, `src/run-target-view.ts`: a run target of one team instance (**Run on my machine**) as a host
   serves it, the desktop app's server on its `/api/desktop/run-target` routes, and what its window shows.
+- `src/run-target-routes.ts`, `src/run-target-http.ts`: those routes, framework-neutral, and on a bare `node:http` host.
+- `src/host-guard.ts`: who may call a host of the shell's routes (the access token, a browser's request, the launch
+  nonce), over the request shape every host builds.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
 - `build.mjs`: writes the five files of `dist/`.

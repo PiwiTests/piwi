@@ -37,7 +37,8 @@ shell and are feature-equivalent.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`
   fails until they match.
 - **Everything binds `127.0.0.1`, behind the desktop token.** Every `/api` and `/mcp` request must present the
-  per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`,
+  per-install access token (`PIWI_DESKTOP_TOKEN`), enforced by `apps/application/server/middleware/desktop-guard.ts`
+  with `@piwitests/editor/host-guard`,
   so only the app and the tools given the token (the reporter, the `piwi` commands), not other local processes or
   browser pages, can reach the bundled API. Any new desktop-only route must stay behind that guard.
 - **Three routes are open without the token, and each one needs the same care** (`isOpenDesktopRoute` in

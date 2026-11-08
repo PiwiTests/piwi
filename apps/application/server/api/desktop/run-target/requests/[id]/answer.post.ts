@@ -1,6 +1,5 @@
-import { requireAuth } from '../../../../../utils/auth';
-import { apiError } from '../../../../../utils/api-error';
-import { answerRunRequest, isRequestId } from '@piwitests/editor/run-target';
+import { runTargetRoute } from '../../../../../utils/run-target-route';
+
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
@@ -11,16 +10,4 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  await requireAuth(event);
-  const id = getRouterParam(event, 'id');
-  if (!isRequestId(id)) throw apiError({ statusCode: 400, message: 'Invalid request id' });
-  const body = ((await readBody(event).catch(() => null)) ?? {}) as { decision?: unknown; command?: unknown };
-  if (body.decision !== 'run' && body.decision !== 'not-now') {
-    throw apiError({ statusCode: 400, message: 'The decision is run or not-now' });
-  }
-  const answered = await answerRunRequest(id, body.decision, typeof body.command === 'string' ? body.command : null);
-  if (!answered.ok) throw apiError({ statusCode: answered.statusCode, message: answered.message });
-  return { launch: answered.launch };
-});
+export default eventHandler((event) => runTargetRoute(event, 'answer'));

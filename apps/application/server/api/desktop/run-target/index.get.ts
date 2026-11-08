@@ -1,6 +1,5 @@
-import { requireAuth } from '../../../utils/auth';
-import { apiError } from '../../../utils/api-error';
-import { runTargetConnection, waitingRunRequests } from '@piwitests/editor/run-target';
+import { runTargetRoute } from '../../../utils/run-target-route';
+
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
@@ -11,9 +10,4 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  await requireAuth(event);
-  setResponseHeader(event, 'cache-control', 'no-store');
-  return { connection: runTargetConnection(), requests: waitingRunRequests() };
-});
+export default eventHandler((event) => runTargetRoute(event, 'status'));

@@ -1,7 +1,5 @@
-import { requireAuth } from '../../../utils/auth';
-import { apiError } from '../../../utils/api-error';
-import { isBrowserRequest } from '../../../utils/desktop-access';
-import { disconnectRunTarget } from '@piwitests/editor/run-target';
+import { runTargetRoute } from '../../../utils/run-target-route';
+
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
@@ -12,11 +10,4 @@ defineRouteMeta({
   },
 });
 
-export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  await requireAuth(event);
-  if (isBrowserRequest(event)) throw apiError({ statusCode: 403, message: 'The desktop shell alone calls this route' });
-  setResponseHeader(event, 'cache-control', 'no-store');
-  disconnectRunTarget();
-  return { ok: true };
-});
+export default eventHandler((event) => runTargetRoute(event, 'forgetKey'));

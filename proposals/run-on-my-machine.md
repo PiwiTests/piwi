@@ -58,9 +58,12 @@ takes and no page offers yet), **Create issue** on a requested run's progress (D
 (D14's `piwiInteractive.client`); the Linux keychain is built but not yet tried on a Linux desktop. PR 4 is split in
 three after its spike (posted on #1163): 4a, the run target outside the dashboard's server, 4b, Piwi Runner, 4c, its
 releases. PR 4a is built: the desktop app's side of a request (the host it runs, the requests it holds, the device
-flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`,
-which the app's routes import, and its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the
-app's environment, as the request host does. The feature page and
+flow, what the shell starts) and the window's view of it are `@piwitests/editor/run-target` and `run-target-view`;
+its device flow follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` from the app's environment, as the request host
+does. Its routes are framework-neutral handlers (`run-target-routes`), with the body checks and the refusal of a
+browser on the shell-only ones, and one guard (`host-guard`: the access token, a browser's request, the launch
+nonce) that the app's guard calls; the app's routes are one-line adapters, and one contract test drives the
+handlers through a bare `node:http` host (`run-target-http`), which Piwi Runner's host builds on. The feature page and
 the [`ROADMAP.md`](../ROADMAP.md) entry (Exploring) are written. The instance's side of PR 2 is done. The maintainer
 settled on 2026-11-06: the desktop app and Piwi Runner take run requests, the desktop app first (D7); IDE windows are
 left to runs-from-the-dashboard (D7); every run is confirmed in the target (D2); a request carries resolved tests and is

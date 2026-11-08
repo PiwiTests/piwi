@@ -1,33 +1,33 @@
 import { randomBytes } from 'node:crypto';
-import { getCookie, getRequestHeader, setResponseHeader, type H3Event } from 'h3';
+import { getRequestHeader, setResponseHeader, type H3Event } from 'h3';
 import {
   DESKTOP_CHALLENGE_HEADER,
   DESKTOP_PROOF_HEADER,
   desktopTokenProof,
   isDesktopChallenge,
 } from '@piwitests/core/desktop-proof';
+import {
+  cookiesOf,
+  headersOf,
+  isBrowserRequest as isHostBrowserRequest,
+  LAUNCH_NONCE_HEADER,
+  launchNonce,
+  presentsToken,
+  type HostRequest,
+} from '@piwitests/editor/host-guard';
 import { DESKTOP_PICKS_PATH } from '#shared/desktop-runs';
 import { timingSafeEqualStr } from './timing-safe';
 import { bearerToken } from './bearer';
 import { isLoopbackRequest } from './assistant/turn-token';
 
 /**
- * Whether the request presents the desktop access token `token`, as any of:
- *   - the `piwi_token` cookie the app window obtains via `/__piwi/session`
- *     (rides along on SSR-internal fetches and EventSource streams),
- *   - an `Authorization: Bearer <token>` header (the Playwright reporter, whose
- *     `pd_`-prefixed token goes through its API-key path),
- *   - an `X-API-Key` header (the `piwi` commands: `flake`, `probe`, `select`,
- *     which send their API key there), or
- *   - an `x-piwi-token` header.
+ * Whether the request presents the desktop access token `token` (`presentsToken` of `@piwitests/editor/host-guard`,
+ * which every host of the shell's routes decides with): the `piwi_token` cookie the app window obtains via
+ * `/__piwi/session`, an `x-piwi-token` header, an `Authorization: Bearer` header (the Playwright reporter) or an
+ * `X-API-Key` header (the `piwi` commands).
  */
 export function presentsDesktopToken(event: H3Event, token: string): boolean {
-  const presented =
-    getCookie(event, 'piwi_token') ||
-    getRequestHeader(event, 'x-piwi-token') ||
-    bearerToken(event) ||
-    getRequestHeader(event, 'x-api-key');
-  return !!presented && timingSafeEqualStr(presented, token);
+  return presentsToken(hostRequestOf(event), token);
 }
 
 let picksToken: string | null = null;
@@ -67,17 +67,14 @@ export function isOpenDesktopRoute(method: string, path: string): boolean {
 }
 
 /** The response header that answers the desktop shell's readiness probe with the launch nonce. */
-export const DESKTOP_LAUNCH_NONCE_HEADER = 'X-Piwi-Desktop-Nonce';
+export const DESKTOP_LAUNCH_NONCE_HEADER = LAUNCH_NONCE_HEADER;
 
 /**
- * The per-launch nonce the desktop shell hands its sidecar in
- * `PIWI_DESKTOP_LAUNCH_NONCE`, or null outside the desktop app. `/api/health`
- * echoes it so the shell loads its session bootstrap only from the server it
- * spawned, never from another process that took the port.
+ * The per-launch nonce the desktop shell hands its sidecar in `PIWI_DESKTOP_LAUNCH_NONCE`, or null outside the
+ * desktop app (`launchNonce` of `@piwitests/editor/host-guard`). `/api/health` echoes it so the shell loads its
+ * session bootstrap only from the server it spawned, never from another process that took the port.
  */
-export function desktopLaunchNonce(env: Record<string, string | undefined> = process.env): string | null {
-  return env.PIWI_DESKTOP_LAUNCH_NONCE || null;
-}
+export const desktopLaunchNonce = launchNonce;
 
 /**
  * Answers Piwi Picker's challenge on `/api/health` with the proof that this
@@ -98,10 +95,15 @@ export async function answerDesktopChallenge(
 
 /**
  * Whether a browser sent the request: it carries `Origin` or a `Sec-Fetch-*` header, which a browser sets itself on a
- * page's or an extension's request, and which the desktop shell's own requests never carry.
+ * page's or an extension's request, and which the desktop shell's own requests never carry (`isBrowserRequest` of
+ * `@piwitests/editor/host-guard`).
  */
 export function isBrowserRequest(event: H3Event): boolean {
-  return ['origin', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest'].some(
-    (name) => !!getRequestHeader(event, name),
-  );
+  return isHostBrowserRequest({ headers: headersOf(event.node.req.headers) });
+}
+
+/** What the shared guard reads of a request: its headers and cookies. */
+function hostRequestOf(event: H3Event): HostRequest {
+  const headers = headersOf(event.node.req.headers);
+  return { headers, cookies: cookiesOf(headers.cookie) };
 }
