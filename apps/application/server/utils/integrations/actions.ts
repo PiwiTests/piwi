@@ -23,11 +23,11 @@
  * runs: one whose project is bound to another connection, or to none, is
  * skipped.
  */
-import { and, eq, inArray, isNotNull, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, lte, ne, or } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
-import { attachKey, isOutcomeUnknownError, isSubmissionKey } from '#shared/integrations/action-keys';
+import { attachKey, integrationKindOf, isOutcomeUnknownError, isSubmissionKey } from '#shared/integrations/action-keys';
 import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
 import type { IssueLocale } from '#shared/integrations/messages';
@@ -39,6 +39,7 @@ import type { IssueTracker } from './types';
 import { createTracker } from './connections';
 import { boundConnectionId } from './bound-connection';
 import { JiraError } from './jira/client';
+import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import {
   descriptionDigest,
@@ -343,7 +344,7 @@ export class RequiredFieldsError extends Error {
 /** Whether an attempt's error is a refusal that retrying cannot change. */
 export function isFinalRefusal(err: unknown): boolean {
   if (err instanceof RequiredFieldsError) return true;
-  return err instanceof JiraError && FINAL_REFUSAL_STATUSES.has(err.status);
+  return err instanceof IntegrationHttpError && FINAL_REFUSAL_STATUSES.has(err.status);
 }
 
 /** The per-field errors an attempt's error carries, keyed by field id. */
@@ -355,10 +356,27 @@ function errorFields(err: unknown): Record<string, string> | undefined {
   return undefined;
 }
 
-/** Retry-after seconds carried on a 429, in milliseconds, or null. */
+/** How long the provider asked to wait before the next call, in milliseconds, or null. */
 function retryAfterMs(err: unknown): number | null {
-  if (err instanceof JiraError && err.retryAfterSeconds != null) return err.retryAfterSeconds * 1000;
-  return null;
+  return err instanceof IntegrationHttpError ? (err.retryAfterMs ?? null) : null;
+}
+
+/**
+ * Hold a connection's other pending actions until `until`, after the provider rate limited one of them: the sweep
+ * claims none of them before then. A click still tries its own action at once.
+ */
+async function pauseConnection(db: DbClient, connectionId: number, until: Date, exceptId: number): Promise<void> {
+  await db
+    .update(integrationActions)
+    .set({ scheduledFor: until })
+    .where(
+      and(
+        eq(integrationActions.connectionId, connectionId),
+        eq(integrationActions.status, 'pending'),
+        ne(integrationActions.id, exceptId),
+        or(isNull(integrationActions.scheduledFor), lt(integrationActions.scheduledFor, until)),
+      ),
+    );
 }
 
 /** What Piwi just wrote, read back from the tracker; null when the tracker cannot say. */
@@ -684,6 +702,8 @@ export function outcomeUnknownMessage(title: string): string {
 
 /** Why an action whose project is bound to another connection, or to none, was not run. */
 const NOT_BOUND = 'the project is not bound to this connection';
+/** Why an action whose connection has no usable credentials was not run. */
+const NO_CREDENTIALS = 'connection has no usable credentials';
 
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
@@ -698,23 +718,27 @@ export type ActionOutcome =
     };
 
 /**
- * Run one action once, after the caller has claimed its row. Marks the row
- * terminal on success or skip; on failure bumps attempts and reschedules with
- * backoff (honoring a 429 `Retry-After`) until the cap turns it `failed`.
- * Returns the outcome for the caller.
+ * Run one action once, after the caller has claimed its row. The action's integration kind names the binding it must
+ * go through and the client that runs it. Marks the row terminal on success or skip; on failure bumps attempts and
+ * reschedules with backoff (honoring a `Retry-After`) until the cap turns it `failed`. A 429 also holds the
+ * connection's other pending actions for as long. Returns the outcome for the caller.
  */
 export async function runAction(db: DbClient, action: IntegrationAction): Promise<ActionOutcome> {
   const now = new Date();
   const attempts = action.attempts + 1;
-
-  // An action writes only through the connection its project is bound to.
-  if ((await boundConnectionId(db, action.projectId)) !== action.connectionId) {
+  const skip = async (reason: string): Promise<ActionOutcome> => {
     await db
       .update(integrationActions)
-      .set({ status: 'skipped', error: NOT_BOUND, attempts, finishedAt: now })
+      .set({ status: 'skipped', error: reason, attempts, finishedAt: now })
       .where(eq(integrationActions.id, action.id));
-    return { status: 'skipped', reason: NOT_BOUND };
-  }
+    return { status: 'skipped', reason };
+  };
+
+  const kind = integrationKindOf(action.kind);
+  if (!kind) return skip(`unsupported action kind '${action.kind}'`);
+
+  // An action writes only through the connection its project's binding for its kind names.
+  if ((await boundConnectionId(db, action.projectId, kind)) !== action.connectionId) return skip(NOT_BOUND);
 
   if (action.kind === 'create-issue' && createOutcomeUnknown(action.result)) {
     const payload = action.payload as CreateIssueActionPayload;
@@ -726,94 +750,108 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
     return { status: 'failed', error, final: true };
   }
 
-  const tracker = await createTracker(db, action.connectionId);
-  if (!tracker) {
-    await db
-      .update(integrationActions)
-      .set({ status: 'skipped', error: 'connection has no usable credentials', attempts, finishedAt: now })
-      .where(eq(integrationActions.id, action.id));
-    return { status: 'skipped', reason: 'connection has no usable credentials' };
-  }
-
-  try {
-    if (action.kind === 'create-issue') {
-      const result = await applyCreateIssue(db, tracker, { ...action, attempts });
-      return { status: 'done', result };
-    }
-    if (action.kind === 'comment') {
-      await applyComment(tracker, action);
-      await db
-        .update(integrationActions)
-        .set({ status: 'done', error: null, attempts, finishedAt: now })
-        .where(eq(integrationActions.id, action.id));
-      return { status: 'done' };
-    }
-    if (action.kind === 'update-issue') {
-      const update = await applyUpdateIssue(db, tracker, action);
-      if ('skipped' in update) {
-        await db
-          .update(integrationActions)
-          .set({ status: 'skipped', error: update.skipped, attempts, finishedAt: now })
-          .where(eq(integrationActions.id, action.id));
-        return { status: 'skipped', reason: update.skipped };
+  switch (kind) {
+    case 'tracker': {
+      const tracker = await createTracker(db, action.connectionId);
+      if (!tracker) return skip(NO_CREDENTIALS);
+      try {
+        return await applyTrackerAction(db, tracker, action, attempts, now);
+      } catch (err) {
+        return failAttempt(db, action, attempts, now, err);
       }
-      await db
-        .update(integrationActions)
-        .set({ status: 'done', error: null, result: update as never, attempts, finishedAt: now })
-        .where(eq(integrationActions.id, action.id));
-      return { status: 'done', result: update };
     }
-    if (action.kind === 'attach') {
-      await applyAttach(tracker, action);
-      await db
-        .update(integrationActions)
-        .set({ status: 'done', error: null, attempts, finishedAt: now })
-        .where(eq(integrationActions.id, action.id));
-      return { status: 'done' };
-    }
-    if (action.kind === 'transition') {
-      await applyTransition(tracker, action);
-      await db
-        .update(integrationActions)
-        .set({ status: 'done', error: null, attempts, finishedAt: now })
-        .where(eq(integrationActions.id, action.id));
-      return { status: 'done' };
-    }
-    await db
-      .update(integrationActions)
-      .set({ status: 'skipped', error: `unsupported action kind '${action.kind}'`, attempts, finishedAt: now })
-      .where(eq(integrationActions.id, action.id));
-    return { status: 'skipped', reason: `unsupported action kind '${action.kind}'` };
-  } catch (err) {
-    let message = err instanceof Error ? err.message : String(err);
-    const final = isFinalRefusal(err);
-    const next = final
-      ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
-      : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
-    // A last attempt that may have created the issue says so, rather than its error.
-    const unknown = next.status === 'failed' && action.kind === 'create-issue' && (await holdsMarker(db, action.id));
-    if (unknown) message = outcomeUnknownMessage((action.payload as CreateIssueActionPayload).title);
-    await db
-      .update(integrationActions)
-      .set({
-        status: next.status,
-        attempts,
-        error: message,
-        scheduledFor: next.scheduledFor,
-        finishedAt: next.status === 'failed' ? now : null,
-        ...(unknown ? { result: null } : {}),
-      })
-      .where(eq(integrationActions.id, action.id));
-    console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
-    const fieldErrors = errorFields(err);
-    return {
-      status: 'failed',
-      error: message,
-      final,
-      retrying: next.status !== 'failed',
-      ...(fieldErrors ? { fieldErrors } : {}),
-    };
+    case 'test-management':
+    case 'wiki':
+      return skip(`unsupported action kind '${action.kind}'`);
   }
+}
+
+/** Run a tracker action through its tracker client, recording a success or a skip. */
+async function applyTrackerAction(
+  db: DbClient,
+  tracker: IssueTracker,
+  action: IntegrationAction,
+  attempts: number,
+  now: Date,
+): Promise<ActionOutcome> {
+  const finish = async (status: 'done' | 'skipped', set: Record<string, unknown> = {}): Promise<void> => {
+    await db
+      .update(integrationActions)
+      .set({ status, error: null, attempts, finishedAt: now, ...set })
+      .where(eq(integrationActions.id, action.id));
+  };
+  if (action.kind === 'create-issue') {
+    const result = await applyCreateIssue(db, tracker, { ...action, attempts });
+    return { status: 'done', result };
+  }
+  if (action.kind === 'comment') {
+    await applyComment(tracker, action);
+    await finish('done');
+    return { status: 'done' };
+  }
+  if (action.kind === 'update-issue') {
+    const update = await applyUpdateIssue(db, tracker, action);
+    if ('skipped' in update) {
+      await finish('skipped', { error: update.skipped });
+      return { status: 'skipped', reason: update.skipped };
+    }
+    await finish('done', { result: update as never });
+    return { status: 'done', result: update };
+  }
+  if (action.kind === 'attach') {
+    await applyAttach(tracker, action);
+    await finish('done');
+    return { status: 'done' };
+  }
+  if (action.kind === 'transition') {
+    await applyTransition(tracker, action);
+    await finish('done');
+    return { status: 'done' };
+  }
+  const reason = `unsupported action kind '${action.kind}'`;
+  await finish('skipped', { error: reason });
+  return { status: 'skipped', reason };
+}
+
+/** Record a failed attempt: a final refusal fails at once, anything else is retried with backoff until the cap. */
+async function failAttempt(
+  db: DbClient,
+  action: IntegrationAction,
+  attempts: number,
+  now: Date,
+  err: unknown,
+): Promise<ActionOutcome> {
+  let message = err instanceof Error ? err.message : String(err);
+  const final = isFinalRefusal(err);
+  const next = final
+    ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
+    : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
+  // A last attempt that may have created the issue says so, rather than its error.
+  const unknown = next.status === 'failed' && action.kind === 'create-issue' && (await holdsMarker(db, action.id));
+  if (unknown) message = outcomeUnknownMessage((action.payload as CreateIssueActionPayload).title);
+  await db
+    .update(integrationActions)
+    .set({
+      status: next.status,
+      attempts,
+      error: message,
+      scheduledFor: next.scheduledFor,
+      finishedAt: next.status === 'failed' ? now : null,
+      ...(unknown ? { result: null } : {}),
+    })
+    .where(eq(integrationActions.id, action.id));
+  if (err instanceof IntegrationHttpError && err.status === 429 && next.status === 'pending' && next.scheduledFor) {
+    await pauseConnection(db, action.connectionId, next.scheduledFor, action.id);
+  }
+  console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
+  const fieldErrors = errorFields(err);
+  return {
+    status: 'failed',
+    error: message,
+    final,
+    retrying: next.status !== 'failed',
+    ...(fieldErrors ? { fieldErrors } : {}),
+  };
 }
 
 /**

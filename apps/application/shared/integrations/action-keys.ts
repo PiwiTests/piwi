@@ -1,9 +1,29 @@
 /**
- * The dedupe keys for every integration outbox action. A key is the identity of
- * a write: a second click, a re-emitted event or a re-run enqueues the same key
- * and is a no-op. Pure and centralized so the callers and the tests agree on the
- * exact string.
+ * The integration outbox's action kinds and their dedupe keys. A key is the
+ * identity of a write: a second click, a re-emitted event or a re-run enqueues
+ * the same key and is a no-op. Pure and centralized so the callers and the tests
+ * agree on the exact string.
  */
+import type { IntegrationKind } from './registry';
+
+/**
+ * The integration kind each outbox action belongs to. The outbox checks the project's binding for that kind and
+ * builds that kind's client; an action kind missing here is never run.
+ */
+export const ACTION_INTEGRATION_KINDS = {
+  'create-issue': 'tracker',
+  comment: 'tracker',
+  'update-issue': 'tracker',
+  attach: 'tracker',
+  transition: 'tracker',
+} as const satisfies Record<string, IntegrationKind>;
+
+/** The integration kind of an outbox action, or null for an action kind the outbox does not run. */
+export function integrationKindOf(actionKind: string): IntegrationKind | null {
+  return Object.prototype.hasOwnProperty.call(ACTION_INTEGRATION_KINDS, actionKind)
+    ? ACTION_INTEGRATION_KINDS[actionKind as keyof typeof ACTION_INTEGRATION_KINDS]
+    : null;
+}
 
 /**
  * One create-issue per (entity, connection) — a second click never files twice.

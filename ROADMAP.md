@@ -181,6 +181,9 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   Confluence with in-place page updates, and the next trackers on the same provider layer: GitHub Issues and GitLab
   Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of
   [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
+- **Test management sync** — send each finished CI run's results to a test management tool as one test run, results
+  only and from Piwi to the tool, every result linking back to its evidence: Zephyr Scale Cloud first, a test mapped
+  to its test cases by Playwright tags. Design record in [proposals/zephyr-sync.md](proposals/zephyr-sync.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
   branch-class gate policies, cross-branch fix verification and retention by branch class. Tier 3 of
   [proposals/first-class-branches.md](proposals/first-class-branches.md).

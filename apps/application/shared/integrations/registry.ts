@@ -5,15 +5,33 @@
  * it loads unchanged in the app, the demo and plain Node.
  */
 
-/** Whether a provider files tickets (tracker) or publishes pages (wiki). */
-export type IntegrationKind = 'tracker' | 'wiki';
+/**
+ * What a provider is for: it files tickets (tracker), receives test results (test management) or publishes pages
+ * (wiki). Each kind has its own client factory and its own per-project binding.
+ */
+export type IntegrationKind = 'tracker' | 'test-management' | 'wiki';
+
+/** One host a `region` provider can be reached on. */
+export interface ProviderRegion {
+  id: string;
+  label: string;
+  baseUrl: string;
+}
+
+/**
+ * How a provider is reached: at an address the administrator types (`url`, a Jira site), or on one of the hosts the
+ * provider runs (`region`), whose base URL the server derives so no typed host reaches the outbound client.
+ */
+export type ProviderEndpoint = { kind: 'url' } | { kind: 'region'; regions: readonly ProviderRegion[] };
 
 /** A field the connect form collects into the connection's credential blob. */
 export interface CredentialField {
   /** Key inside the encrypted credentials JSON. */
   key: string;
   label: string;
-  type: 'text' | 'password';
+  type: 'text' | 'password' | 'select';
+  /** The choices of a `select` field. */
+  options?: readonly { value: string; label: string }[];
   /** Redacted on read and never returned by any endpoint. */
   secret?: boolean;
   required?: boolean;
@@ -26,6 +44,8 @@ export interface IntegrationProviderMeta {
   label: string;
   /** Icon name for the provider (Nuxt UI icon syntax). */
   icon: string;
+  /** How the connection reaches the provider. */
+  endpoint: ProviderEndpoint;
   /** What the provider's client can do. */
   capabilities: readonly string[];
   /** The credential inputs the connect form generates, beyond name and base URL. */
@@ -39,6 +59,7 @@ export const INTEGRATION_PROVIDERS = {
     kind: 'tracker',
     label: 'Jira',
     icon: 'i-simple-icons-jira',
+    endpoint: { kind: 'url' },
     capabilities: ['create', 'update', 'comment', 'transition', 'search', 'attach', 'assignable-users', 'webhook'],
     credentialFields: [
       {
@@ -94,4 +115,27 @@ export function nonSecretCredentials(
     if (typeof value === 'string' && value !== '') out[field.key] = value;
   }
   return out;
+}
+
+/**
+ * The base URL a new or edited connection is stored with: the typed address for a `url` provider, the chosen region's
+ * host for a `region` provider. An error message when the input does not name one.
+ */
+export function connectionBaseUrl(
+  provider: string,
+  input: { baseUrl?: string | null; region?: string | null },
+): { baseUrl: string } | { error: string } {
+  if (!isIntegrationProvider(provider)) return { error: 'Unknown provider' };
+  const endpoint = INTEGRATION_PROVIDERS[provider].endpoint as ProviderEndpoint;
+  if (endpoint.kind === 'region') {
+    const region = endpoint.regions.find((r) => r.id === input.region);
+    return region ? { baseUrl: region.baseUrl } : { error: 'Choose one of the provider’s regions' };
+  }
+  if (!input.baseUrl) return { error: 'Enter the address of the site' };
+  try {
+    new URL(input.baseUrl);
+  } catch {
+    return { error: 'Must be a valid URL' };
+  }
+  return { baseUrl: input.baseUrl };
 }
