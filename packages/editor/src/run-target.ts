@@ -1,9 +1,10 @@
 /**
  * A run target of one team instance (**Run on my machine**), as the desktop app's bundled server serves it on its
- * `/api/desktop/run-target` routes. It runs the request host (`@piwitests/editor/request-host`) with the key the shell keeps in the OS keychain, claims
- * each request offered, checks it against the folder linked to its project on this machine and asks the person in the
- * window. After **Run**, the shell takes the request token and the command from here (`launchOf`), starts the run and
- * reports it started and ended; a stop from the dashboard goes to the shell on its notification stream.
+ * `/api/desktop/run-target` routes. It runs the request host (`./request-host`) with the key the shell keeps in the OS
+ * keychain, claims each request offered, checks it against the folder linked to its project on this machine and asks
+ * the person in the window. After **Run**, the shell takes the request token and the command from here (`launchOf`),
+ * starts the run and reports it started and ended; a stop from the dashboard goes to the shell on its notification
+ * stream.
  *
  * Nothing is stored: the key and the folders come from the shell after each start (`useKeptKey`), the requests live
  * in memory while they are asked about or run. The window never reads the key nor a request token.
@@ -572,6 +573,7 @@ export async function requestedRunFailed(id: string, detail: string): Promise<vo
 /** For tests: forget everything. */
 export function resetDesktopRunTarget(): void {
   disconnectRunTarget();
+  appVersion = '0.0.0';
   state.links = new Map();
   windowListeners.clear();
   shellListeners.clear();

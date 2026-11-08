@@ -7,7 +7,7 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
-import { readEventStream, RequestHost, RequestHostError } from '../src/request-host';
+import { postDeviceFlow, readEventStream, RequestHost, RequestHostError } from '../src/request-host';
 
 const KEY = `pd_${'a'.repeat(64)}`;
 
@@ -108,6 +108,34 @@ function host(instance: string, overrides: Partial<ConstructorParameters<typeof 
   cleanups.push(() => made.close());
   return { made, heard, statuses };
 }
+
+describe('postDeviceFlow', () => {
+  test('posts JSON with no key to the device flow path, and reads a non-JSON answer as empty', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const answers = [
+      new Response(JSON.stringify({ deviceCode: 'd', userCode: 'u' }), { status: 200 }),
+      new Response('<html>', { status: 502 }),
+    ];
+    const fetchImpl = (async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, init });
+      return answers.shift()!;
+    }) as typeof fetch;
+    expect(
+      await postDeviceFlow('https://piwi.example.com', '/api/extension/connect', { target: 'desktop' }, fetchImpl),
+    ).toEqual({ status: 200, answer: { deviceCode: 'd', userCode: 'u' } });
+    expect(
+      await postDeviceFlow('https://piwi.example.com', '/api/extension/connect/token', { deviceCode: 'd' }, fetchImpl),
+    ).toEqual({ status: 502, answer: {} });
+    expect(calls.map((c) => c.url)).toEqual([
+      'https://piwi.example.com/api/extension/connect',
+      'https://piwi.example.com/api/extension/connect/token',
+    ]);
+    const headers = calls[0]!.init.headers as Record<string, string>;
+    expect(calls[0]!.init).toMatchObject({ method: 'POST', body: JSON.stringify({ target: 'desktop' }) });
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain('authorization');
+  });
+});
 
 describe('readEventStream', () => {
   test('reads the data of each event, across chunks, and skips comments', async () => {
