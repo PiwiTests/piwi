@@ -25,10 +25,11 @@
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
 //     everything else in the file is preserved as parsed.
 //
-// `heal_configured_clients` runs at startup and rewrites an entry of the bridge
-// shape that no longer matches what this app would write today (the app moved).
-// An entry of an older shape, a URL with the token in a header, is rewritten when
-// the user connects the client again.
+// `heal_configured_clients` runs at startup and rewrites two kinds of entry under
+// `piwi-desktop`: one of the bridge shape that no longer matches what this app
+// would write today (the app moved), and one in exactly the shape older builds
+// wrote, a loopback `/mcp` URL with this app's own token as a bearer header. Both
+// keep the backup. Any other entry, including one the user edited, is left alone.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -444,21 +445,68 @@ fn set_entry(app: &AppHandle, id: &str, connect: bool) -> Result<McpClientStatus
     Ok(status_of(app, id))
 }
 
-/// Rewrite the entry of every already-configured client that runs this app in bridge mode and no longer matches
-/// what this app would write (the app moved). An entry of another shape is left for the user to connect again.
-/// Quietly skips anything unreadable or manual.
+/// The entry older builds wrote for client `id` at `url`: the loopback URL and this app's token as a bearer header.
+fn old_url_entry_for(id: &str, url: &str, token: &str) -> Value {
+    let headers = json!({ "Authorization": format!("Bearer {token}") });
+    match id {
+        "cursor" => json!({ "url": url, "headers": headers }),
+        "opencode" => json!({ "type": "remote", "url": url, "headers": headers }),
+        "windsurf" => json!({ "serverUrl": url, "headers": headers }),
+        "gemini-cli" => json!({ "httpUrl": url, "headers": headers }),
+        // Claude Code and VS Code share the `type: http` shape.
+        _ => json!({ "type": "http", "url": url, "headers": headers }),
+    }
+}
+
+/// Whether `value` is exactly the entry older builds wrote for client `id` with this app's `token`: a loopback
+/// `/mcp` URL, whatever port the app had then, the token as the only header, and no other field. An entry the user
+/// edited, or one with another token, does not match.
+fn is_old_url_entry(id: &str, value: &Value, token: &str) -> bool {
+    let key = match id {
+        "windsurf" => "serverUrl",
+        "gemini-cli" => "httpUrl",
+        _ => "url",
+    };
+    let Some(url) = value.get(key).and_then(|v| v.as_str()) else {
+        return false;
+    };
+    let port = url
+        .strip_prefix("http://127.0.0.1:")
+        .and_then(|rest| rest.strip_suffix("/mcp"));
+    port.is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        && !token.is_empty()
+        && *value == old_url_entry_for(id, url, token)
+}
+
+/// Rewrite the `piwi-desktop` entry of client `id` in the config at `path` when it is ours to heal: a bridge entry
+/// that no longer matches what this app writes, or exactly the entry older builds wrote (see `is_old_url_entry`).
+/// Writes through `write_config`, which keeps the backup. Returns whether it rewrote; false for anything unreadable,
+/// manual, absent or of another shape.
+fn heal_client_file(id: &str, path: &PathBuf, token: &str) -> bool {
+    let Ok(Some(doc)) = read_config(path) else {
+        return false;
+    };
+    let Some(ours) = doc.get(container_key(id)).and_then(|servers| servers.get(PIWI_ENTRY_KEY)) else {
+        return false;
+    };
+    let expected = entry_for(id);
+    let drifted = is_bridge_entry(ours) && *ours != expected;
+    if !drifted && !is_old_url_entry(id, ours, token) {
+        return false;
+    }
+    let merged = merge_piwi_entry(doc, container_key(id), Some(expected));
+    write_config(path, &merged).is_ok()
+}
+
+/// Heal every already-configured client whose `piwi-desktop` entry is ours to rewrite (see `heal_client_file`). An
+/// entry of another shape is left for the user to connect again. Quietly skips anything unreadable or manual.
 pub fn heal_configured_clients(app: &AppHandle) {
+    let Some(info) = app.try_state::<ServerInfo>() else {
+        return;
+    };
     for id in CLIENT_IDS {
-        let Some((config_path, _)) = paths_of(app, id) else {
-            continue;
-        };
-        let current = read_config(&config_path).ok().flatten();
-        let ours = current
-            .as_ref()
-            .and_then(|doc| doc.get(container_key(id)))
-            .and_then(|servers| servers.get(PIWI_ENTRY_KEY));
-        if ours.is_some_and(is_bridge_entry) && status_of(app, id).status == "stale" {
-            let _ = set_entry(app, id, true);
+        if let Some((config_path, _)) = paths_of(app, id) {
+            heal_client_file(id, &config_path, &info.token);
         }
     }
 }
@@ -691,7 +739,7 @@ mod tests {
     /// The entry carries no port and no token, so it stays correct whatever port the app lands on — while an entry
     /// of the older shape, a URL with the token in a header, reads as stale.
     #[test]
-    fn a_url_entry_with_the_token_is_stale_and_not_ours_to_heal() {
+    fn a_url_entry_with_the_token_reads_as_stale() {
         for id in CLIENT_IDS {
             let expected = entry_for(id);
             let container = container_key(id);
@@ -726,6 +774,90 @@ mod tests {
         );
         assert!(!merged.to_string().contains("pd_old"));
         assert_eq!(merged["mcpServers"]["other"], json!({ "command": "npx" }));
+    }
+
+    const TOKEN: &str = "pd_0123456789abcdef0123456789abcdef";
+
+    /// A config file holding `entry` under `piwi-desktop` next to another server, in the shape client `id` reads.
+    fn config_with(dir: &TempDir, id: &str, entry: Value) -> (PathBuf, String) {
+        let path = dir.join(&format!("{id}.json"));
+        let doc = json!({ container_key(id): { "piwi-desktop": entry, "other": { "command": "npx" } } });
+        let text = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+        std::fs::write(&path, &text).unwrap();
+        (path, text)
+    }
+
+    fn backup_of(path: &Path) -> PathBuf {
+        path.with_extension("piwi-backup.json")
+    }
+
+    /// The entry older builds wrote, whatever port the app had then, is replaced by the bridge command at startup,
+    /// the previous file kept as a backup and everything else in it preserved.
+    #[test]
+    fn the_entry_older_builds_wrote_is_rewritten_with_a_backup() {
+        let dir = TempDir::new("heal-old");
+        for id in CLIENT_IDS {
+            for port in [3000, 51234] {
+                let url = format!("http://127.0.0.1:{port}/mcp");
+                let (path, before) = config_with(&dir, id, old_url_entry_for(id, &url, TOKEN));
+                assert!(heal_client_file(id, &path, TOKEN), "{id} on {port} was not healed");
+                let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                assert_eq!(doc[container_key(id)]["piwi-desktop"], entry_for(id), "{id}");
+                assert_eq!(doc[container_key(id)]["other"], json!({ "command": "npx" }), "{id}");
+                assert!(!doc.to_string().contains(TOKEN), "{id} kept the token");
+                assert_eq!(std::fs::read_to_string(backup_of(&path)).unwrap(), before, "{id} backup");
+                let _ = std::fs::remove_file(backup_of(&path));
+            }
+        }
+    }
+
+    /// An entry that is not exactly the older shape with this app's token is not ours to rewrite: another token,
+    /// a remote host, an edited header or an added field leaves the file as it was, with no backup written.
+    #[test]
+    fn an_entry_that_is_not_exactly_the_older_shape_is_left_alone() {
+        let dir = TempDir::new("heal-foreign");
+        for id in CLIENT_IDS {
+            let mut edits: Vec<Value> = Vec::new();
+            let local = "http://127.0.0.1:3000/mcp".to_string();
+            edits.push(old_url_entry_for(id, &local, "pd_someone_elses_token"));
+            edits.push(old_url_entry_for(id, "https://piwi.example.com/mcp", TOKEN));
+            edits.push(old_url_entry_for(id, "http://localhost:3000/mcp", TOKEN));
+            edits.push(old_url_entry_for(id, "http://127.0.0.1:3000/mcp/extra", TOKEN));
+            edits.push(old_url_entry_for(id, "http://127.0.0.1:/mcp", TOKEN));
+            let mut with_header = old_url_entry_for(id, &local, TOKEN);
+            with_header["headers"]["X-Team"] = json!("blue");
+            edits.push(with_header);
+            let mut with_field = old_url_entry_for(id, &local, TOKEN);
+            with_field["timeout"] = json!(30);
+            edits.push(with_field);
+            edits.push(json!({ "command": "npx", "args": ["-y", "some-server"] }));
+            for (i, entry) in edits.into_iter().enumerate() {
+                let (path, before) = config_with(&dir, id, entry);
+                assert!(!heal_client_file(id, &path, TOKEN), "{id} edit {i} was rewritten");
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "{id} edit {i}");
+                assert!(!backup_of(&path).exists(), "{id} edit {i} wrote a backup");
+            }
+        }
+    }
+
+    /// A bridge entry for an app that moved is rewritten; the current one, and a file with no entry, are not touched.
+    #[test]
+    fn a_bridge_entry_is_healed_only_when_it_drifted() {
+        let dir = TempDir::new("heal-bridge");
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", "/old/place/piwi-desktop"));
+        assert!(heal_client_file("cursor", &path, TOKEN));
+        let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(doc["mcpServers"]["piwi-desktop"], entry_for("cursor"));
+
+        let (path, before) = config_with(&dir, "windsurf", entry_for("windsurf"));
+        assert!(!heal_client_file("windsurf", &path, TOKEN));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(!backup_of(&path).exists());
+
+        let none = dir.join("none.json");
+        std::fs::write(&none, "{ \"mcpServers\": {} }").unwrap();
+        assert!(!heal_client_file("cursor", &none, TOKEN));
+        assert!(!heal_client_file("cursor", &dir.join("missing.json"), TOKEN));
     }
 
     #[test]

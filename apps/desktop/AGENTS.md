@@ -106,9 +106,11 @@ shell and are feature-equivalent.
 
 - **`piwi-desktop mcp-stdio` is a published entry point.** The one-click setup of every MCP client (`mcp_clients.rs`)
   writes that command into the client's config on the user's machine, in the shape the client reads, with no URL and
-  no token; a client that takes only a URL would need its own answer. Claude Desktop takes only stdio servers. An
-  entry of the older shape (a URL with the token in a header) reads as stale and is replaced when the user connects
-  the client again; the startup heal rewrites only entries that already run the bridge. Renaming the argument
+  no token; a client that takes only a URL would need its own answer. Claude Desktop takes only stdio servers. The
+  startup heal (`heal_configured_clients`) rewrites an entry that runs the bridge from another path, and an entry
+  that is exactly the older shape (loopback `/mcp` URL, this app's token as the only header; `is_old_url_entry`),
+  keeping the backup; any other entry, an edited one included, reads as stale and is replaced only when the user
+  connects the client again. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
   JSON-RPC on stdin/stdout. It sends the token only through `connect_proving_token` and only to `127.0.0.1`
   (`mcp_stdio.rs`).
