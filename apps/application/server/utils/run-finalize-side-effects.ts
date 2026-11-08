@@ -7,7 +7,7 @@ import { autoDiagnoseRun } from './ai-diagnosis';
 import { clustersToAnnounce, emitIncidentNotification, emitRunNotifications } from './notifications/run-notifications';
 import { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { syncAutoMarkersForRun, syncEnvironmentMarkersForRun } from '#shared/handlers/markers';
 import { classifyRunFlakyTests } from '#shared/handlers/flaky-classify';
 import { INCIDENT_RUN_METADATA_KEY, isEligibleRun, isIncidentRun } from '#shared/run-eligibility';
 import { recordRunHealth } from '#shared/handlers/run-health';
@@ -95,7 +95,10 @@ export async function runFinalizeSideEffects(
       .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   }
   matchCiRerunRun(db, id).catch((e) => console.error('[ci-rerun] matchCiRerunRun failed', e));
-  syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
+  syncAutoMarkersForRun(db, id)
+    .catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e))
+    .then(() => syncEnvironmentMarkersForRun(db, id))
+    .catch((e) => console.error('[markers] syncEnvironmentMarkersForRun failed', e));
   if (isEligibleRun(current, 'flakiness')) {
     classifyRunFlakyTests(db, run.projectId, id).catch((e) =>
       console.error('[flaky-classify] classifyRunFlakyTests failed', e),

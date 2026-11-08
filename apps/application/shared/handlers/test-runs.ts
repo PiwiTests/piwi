@@ -36,6 +36,7 @@ import { keepRun, releaseRun } from './run-keep';
 import { notLabRun } from './probes';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
+import { loadRunEnvironments } from './environment-snapshots';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
 import { workerKey } from '#shared/worker-lane';
@@ -367,6 +368,7 @@ export async function getTestRun(
     hasResources:
       (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     project: projectPublic,
+    environments: await loadRunEnvironments(db, id),
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,

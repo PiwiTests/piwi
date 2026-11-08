@@ -75,12 +75,14 @@ import {
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
 import {
+  flakeContextOptions,
   flakeResultLine,
   flakeRoleForTest,
   installFlakeConditions,
   isFlakeMode,
   labModeConflict,
   loadFlakePlan,
+  markFlakeContext,
   pageBrowserName,
   recordFlakeResult,
   unappliedReports,
@@ -206,6 +208,7 @@ import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
+import { attachBrowserEnvironment, readBrowserEnvironment } from './browser-environment.js';
 import {
   codeReachRoots,
   pageMapFetcher,
@@ -3377,7 +3380,11 @@ function patchBrowser(browser: Browser): void {
 
   const originalNewContext = browser.newContext.bind(browser);
   browser.newContext = async (...args: Parameters<Browser['newContext']>): Promise<BrowserContext> => {
-    const context = await originalNewContext(...args);
+    // A flake-lab arm's time zone and locale, for every context its target test creates.
+    const flake = currentSink?.flake;
+    const emulation = flake?.role === 'target' ? flakeContextOptions(flake.plan) : null;
+    const context = await originalNewContext(...(emulation ? ([{ ...args[0], ...emulation }] as const) : args));
+    if (emulation) markFlakeContext(context);
     instrumentContext(context);
     await armStops([context]);
     return context;
@@ -3496,6 +3503,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   }
   // A page read live, unless its failure was held: its evidence is what it was as the hold began.
   const live = pageReadable && sink.frozenAt === null;
+
+  await attachBrowserEnvironment(testInfo);
 
   // The stops the pause bar showed.
   if (sink.stops.length > 0) {
@@ -4004,8 +4013,17 @@ export const piwiFixtures: Fixtures<
   // Safety net for the standard `page` fixture, in case its page is created
   // through an internal path the browser patch doesn't see. Idempotent, so it
   // never double-wraps a page the browser patch already instrumented.
-  page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
+  page: async (
+    { page, timezoneId, locale, colorScheme }: PlaywrightTestArgs & PlaywrightTestOptions,
+    use: UseFn<Page>,
+    testInfo: TestInfo,
+  ) => {
     instrumentPage(page);
+    // The page is still blank: what the browser reports of itself, once per worker and project, from a test that
+    // runs with the project's own options.
+    if (currentSink?.flake?.role !== 'target') {
+      await readBrowserEnvironment(page, testInfo, { timezoneId, locale, colorScheme });
+    }
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);

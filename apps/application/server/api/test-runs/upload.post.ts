@@ -44,6 +44,7 @@ import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 import { storableRunErrors } from '../../utils/storable-values';
 import { publicRunUrl } from '#shared/run-url';
@@ -328,6 +329,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       const run = await batchShardRun(db, project.id, instanceId!, testRunData);
       testRun = { id: run.id, projectId: run.projectId };
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+      await saveEnvironmentSnapshots(db, run.id, testRunData.environments);
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
       // Create a new test run (standard batch upload). Like `/submit`, it replaces the instance's run still in flight:
@@ -379,6 +381,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
         status: resultTestRun.status,
       };
       if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
+      await saveEnvironmentSnapshots(db, resultTestRun.id, testRunData.environments);
       await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
     }
 

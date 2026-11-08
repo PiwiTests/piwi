@@ -16,6 +16,7 @@ import type {
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { RunEnvironments } from '#shared/environment-snapshots';
 import type { TestStop } from '@piwitests/core/wire';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -584,6 +585,8 @@ export interface TestRunDetails {
   setupSteps?: SetupStepEvent[] | null;
   /** The errors Playwright reported outside any test: a global setup that threw, a spec that did not load. */
   runErrors?: WireRunError[] | null;
+  /** Where the run executed: each shard's runner, each project's browser, each server under test. */
+  environments?: RunEnvironments;
   environment?: string | null;
   label?: string | null;
   playwrightVersion?: string | null;

@@ -44,6 +44,26 @@ export default defineNuxtConfig({ nitro: { modules: ['@piwitests/instrumentation
 
 The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started (a route handler matched, so neither a 404 nor a public asset), which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
 
+## Server environment
+
+Wherever capture is on, the plugin also serves `GET /__piwi/environment`: the runtime facts of the server process, so a failure that depends on the server's clock, time zone or locale can be told from one in the code. It answers JSON with these fields and no others (never another environment variable, a file path or a connection string):
+
+| Field | Source |
+| --- | --- |
+| `v` | `1` |
+| `runtime` | `process.version`, as `Node.js v24.3.0` |
+| `os`, `arch` | `os.platform()` and `os.release()`, `os.arch()` |
+| `timeZone`, `locale` | `Intl.DateTimeFormat().resolvedOptions()` |
+| `utcOffsetMinutes` | The local zone's offset from UTC now, in minutes |
+| `globalization` | The ICU version and its locale data, `full` or `small`: `icu 76.1 full` |
+| `environmentName` | `NODE_ENV` |
+| `appVersion` | Always `null` |
+| `hostname` | `os.hostname()` |
+| `instance` | A random id of the process, the one the coverage endpoints name |
+| `startedAt`, `now` | When the process started (ISO date) and the server's clock (epoch ms) |
+
+It is served under the same rule as the route manifest: never turn capture on for a public production server, where this endpoint would describe the host to anyone who asks.
+
 ## Server coverage
 
 A **coverage build** records, per Playwright test, the server files, functions and lines the test ran, even when the

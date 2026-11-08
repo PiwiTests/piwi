@@ -1,5 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  clockOffset,
+  ENVIRONMENT_STRING_MAX,
+  SERVER_ENVIRONMENT_PATH,
+  type ServerEnvironmentResponse,
+  type WireServerEnvironment,
+} from '@piwitests/core/wire';
 import { backendRequest } from '../transport/backend-request.js';
 
 /**
@@ -190,4 +197,84 @@ export async function fetchOriginManifest(
 async function fetchManifestAt(manifestUrl: string, fetchImpl: FetchLike): Promise<ReporterManifest | null> {
   const res = await fetchImpl(manifestUrl, { signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS) });
   return res.ok ? parseManifestJson(await res.text()) : null;
+}
+
+/** Largest environment answer read from a server, in bytes. */
+const MAX_ENVIRONMENT_BYTES = 64 * 1024;
+
+function cutField(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > ENVIRONMENT_STRING_MAX ? trimmed.slice(0, ENVIRONMENT_STRING_MAX) : trimmed;
+}
+
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** The fields of a server's environment answer, read one by one; null when it is not one. */
+export function parseServerEnvironment(text: string): ServerEnvironmentResponse | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const o = parsed as Record<string, unknown>;
+  if (o.v !== 1) return null;
+  return {
+    v: 1,
+    runtime: cutField(o.runtime),
+    os: cutField(o.os),
+    arch: cutField(o.arch),
+    timeZone: cutField(o.timeZone),
+    utcOffsetMinutes: finiteOrNull(o.utcOffsetMinutes),
+    locale: cutField(o.locale),
+    globalization: cutField(o.globalization),
+    environmentName: cutField(o.environmentName),
+    appVersion: cutField(o.appVersion),
+    hostname: cutField(o.hostname),
+    instance: cutField(o.instance),
+    startedAt: cutField(o.startedAt),
+    now: finiteOrNull(o.now),
+  };
+}
+
+/**
+ * Read an instrumented server's environment at the root of `origin` (`/__piwi/environment`), with the server's clock
+ * offset measured around the request. Null when the server does not answer one: an older package answers 404, an
+ * uninstrumented server something else. Never throws.
+ */
+export async function fetchEnvironment(
+  origin: string,
+  fetchImpl: FetchLike = backendManifestFetch(false),
+  clock: () => number = Date.now,
+): Promise<WireServerEnvironment | null> {
+  try {
+    const sentAt = clock();
+    const res = await fetchImpl(new URL(SERVER_ENVIRONMENT_PATH, origin).toString(), {
+      signal: AbortSignal.timeout(INSTRUMENTATION_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const receivedAt = clock();
+    if (text.length > MAX_ENVIRONMENT_BYTES) return null;
+    const answer = parseServerEnvironment(text);
+    if (!answer) return null;
+    const { v: _v, now, ...fields } = answer;
+    const offset = now != null ? clockOffset(sentAt, receivedAt, now) : null;
+    return {
+      ...fields,
+      kind: 'server',
+      v: 1,
+      origin: origin.slice(0, ENVIRONMENT_STRING_MAX),
+      fetchedAt: receivedAt,
+      clockOffsetMs: offset?.clockOffsetMs ?? null,
+      clockOffsetErrorMs: offset?.clockOffsetErrorMs ?? null,
+    };
+  } catch {
+    return null;
+  }
 }

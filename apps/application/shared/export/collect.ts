@@ -14,6 +14,7 @@ import { classifyEvidenceFile, contentTypeForPath } from '#shared/file-classify'
 import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '#shared/utils/test-counts';
 import { stripAnsi } from '#shared/error-fingerprint';
 import type { ExportAsset, ExportBundle, ExportCase, ExportRunGroup, ExportRunTest } from './types';
+import { withoutPrivateFields } from '#shared/environment-snapshots';
 
 export interface CollectOptions {
   /** Member cases carrying full evidence; the rest are listed only. */
@@ -201,6 +202,8 @@ function exportRunDetail(run: Record<string, any>, interruptedTests: number): Re
     interruptedTests,
     shardTotal: run.shardTotal ?? null,
     playwrightVersion: run.playwrightVersion ?? null,
+    // Where the run executed, without host names: an export leaves the instance.
+    environments: run.environments ? withoutPrivateFields(run.environments) : null,
     metadata: {
       scm: { commit: scm.commit, commitMessage: scm.commitMessage, author: scm.author, branch: scm.branch },
       ci: {

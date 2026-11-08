@@ -230,8 +230,39 @@ import { parseImpactChanges, resolveImpact } from '../selection-impact';
 import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
+import { loadRunEnvironments } from '#shared/handlers/environment-snapshots';
+import { BROWSER_FIELDS, RUNNER_FIELDS, SERVER_FIELDS, type EnvironmentField } from '#shared/environment-snapshots';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
+
+/**
+ * The run's environment snapshots for `get_run`, compared fields only: each shard's runner, each project's browser,
+ * each server under test with its clock offset and whether it restarted. Null when the run recorded none.
+ */
+async function mcpRunEnvironments(db: DbClient, runId: number) {
+  const env = await loadRunEnvironments(db, runId);
+  if (!env.runner.length && !env.browser.length && !env.server.length) return null;
+  const compact = (snapshot: object, fields: readonly EnvironmentField[], extra: Record<string, unknown> = {}) =>
+    dropNulls({
+      ...extra,
+      ...Object.fromEntries(
+        fields
+          .filter((f) => !f.informational)
+          .map((f) => [f.key, (snapshot as Record<string, unknown>)[f.key] ?? null]),
+      ),
+    });
+  return dropNulls({
+    runner: env.runner.map((r) => compact(r, RUNNER_FIELDS, { shard: r.shardIndex ?? null })),
+    browser: env.browser.map((b) => compact(b, BROWSER_FIELDS, { project: b.project, shard: b.shardIndex ?? null })),
+    server: env.server.map((s) =>
+      compact(s, SERVER_FIELDS, {
+        origin: s.origin,
+        clockOffsetMs: s.clockOffsetMs ?? null,
+        restarted: s.restarted || null,
+      }),
+    ),
+  });
+}
 
 /** The most characters of each stream an execution wrote that `get_test_run_case` returns: its first and last lines. */
 const MCP_OUTPUT_CHARS = 8000;
@@ -780,6 +811,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           column: e.location?.column ?? null,
         }),
       ),
+      environments: await mcpRunEnvironments(db, run.id),
       cases: paged.items,
       nextCursor: paged.nextCursor,
       filter: statusFilter,

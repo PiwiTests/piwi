@@ -14,6 +14,7 @@ import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { answeredRunUrl } from '../support/run-url.js';
 import { formatDuration } from '../flake/lab.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
+import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
 /**
  * Largest `/events` request body the dashboard accepts (`MAX_EVENT_BATCH_BYTES`
@@ -48,6 +49,8 @@ interface RunStart {
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
   plannedTotal?: number;
+  /** The runner's environment snapshot, sent as the stream opens. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 /**
@@ -228,6 +231,7 @@ export class StreamManager {
     isFullRun?: boolean,
     filterDetails?: FilterDetails | null,
     plannedTotal?: number,
+    environments?: WireEnvironmentSnapshot[],
   ): void {
     this.startedAt = Date.now();
     this._startPromise = this._doStart({
@@ -240,6 +244,7 @@ export class StreamManager {
       isFullRun,
       filterDetails,
       plannedTotal,
+      environments,
     });
   }
 
@@ -309,6 +314,7 @@ export class StreamManager {
             shardTotal,
             isFullRun: run.isFullRun,
             filterDetails: run.filterDetails,
+            ...(run.environments?.length ? { environments: run.environments } : {}),
           },
           this._auth,
           undefined,
@@ -339,6 +345,7 @@ export class StreamManager {
         isFullRun: run.isFullRun,
         filterDetails: run.filterDetails,
         totalTests: run.plannedTotal ?? 0,
+        ...(run.environments?.length ? { environments: run.environments } : {}),
       },
       this._auth,
     );

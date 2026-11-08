@@ -1,15 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { parseFlakePlan, type FlakeCondition } from '@piwitests/core/flake-plan';
-import { installFlakeConditions } from '../src/internal/flake/mode.js';
+import { flakeContextOptions, installFlakeConditions, markFlakeContext } from '../src/internal/flake/mode.js';
 import { installProbeInterception } from '../src/internal/probe/interception.js';
 import { startServer, type FakeServer } from './_helpers.js';
 
 /**
  * Flake conditions against a real Chromium and a local fixture server: each
  * route condition acts on its own route only, the ordinal `match` counts
- * requests after the first navigation, and the CPU rate reaches the page
- * through a DevTools session.
+ * requests after the first navigation, the CPU rate reaches the page through
+ * a DevTools session, and the page of a context created with the arm sees its
+ * time zone and locale.
  */
 
 let server: FakeServer;
@@ -161,6 +162,30 @@ describe('flake conditions in Chromium', () => {
     expect(installed.reports()).toEqual([{ kind: 'cpu', outcome: 'applied' }]);
     expect(throttled).toBeGreaterThan(baseline * 2);
     await page.close();
+  });
+
+  it('sets the time zone and locale of a context created with the arm, and skips them elsewhere', async () => {
+    const plan = planWith({ kind: 'timezone', timeZone: 'Asia/Tokyo' }, { kind: 'locale', locale: 'fr-FR' });
+    const context = await browser.newContext({ ...flakeContextOptions(plan) });
+    markFlakeContext(context);
+    const page = await context.newPage();
+    const installed = await installFlakeConditions(page, plan);
+    await page.goto(`${server.url}/`);
+    const seen = await page.evaluate(() => ({
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      language: navigator.language,
+    }));
+    expect(seen).toEqual({ timeZone: 'Asia/Tokyo', language: 'fr-FR' });
+    expect(installed.reports()).toEqual([
+      { kind: 'timezone', outcome: 'applied' },
+      { kind: 'locale', outcome: 'applied' },
+    ]);
+    await context.close();
+
+    const other = await browser.newPage();
+    const skipped = await installFlakeConditions(other, plan);
+    expect(skipped.reports().map((r) => r.outcome)).toEqual(['skipped', 'skipped']);
+    await other.close();
   });
 
   it('emulates network conditions through a DevTools session', async () => {

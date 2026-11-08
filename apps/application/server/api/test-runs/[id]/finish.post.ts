@@ -19,6 +19,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import { storableRunErrors } from '../../../utils/storable-values';
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
@@ -146,6 +147,7 @@ export default eventHandler(async (event) => {
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
   const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
@@ -340,6 +342,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
   // each write theirs, and none overwrites another's.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   await db
     .update(testRuns)

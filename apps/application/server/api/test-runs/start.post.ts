@@ -17,6 +17,7 @@ import { findActiveShardedRun } from '../../utils/sharded-runs';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { publicRunUrl } from '#shared/run-url';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 
 defineRouteMeta({
   openAPI: {
@@ -105,6 +106,7 @@ export default eventHandler(async (event) => {
             .where(eq(testRuns.id, existingShardedRun.id));
         }
         await applyReporterKeep(db, existingShardedRun.id, body.keep);
+        await saveEnvironmentSnapshots(db, existingShardedRun.id, body.environments);
 
         return {
           success: true,
@@ -164,6 +166,7 @@ export default eventHandler(async (event) => {
       }
 
       await applyReporterKeep(db, testRun.id, body.keep);
+      await saveEnvironmentSnapshots(db, testRun.id, body.environments);
       await pinProjectRepository(db, project.id, metadata);
       runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
       runEventBus.cacheRunState(testRun.id, {
@@ -228,6 +231,7 @@ export default eventHandler(async (event) => {
     // A requested run is never kept: retention and its requester remove it.
     if (grant) await spendRequestToken(db, grant, testRun.id);
     else await applyReporterKeep(db, testRun.id, body.keep);
+    await saveEnvironmentSnapshots(db, testRun.id, body.environments);
     // A private run pins nothing of the project's.
     if (!grant) await pinProjectRepository(db, project.id, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });

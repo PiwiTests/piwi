@@ -7,13 +7,15 @@
  *
  * Route conditions (`delay`, `fail`) go through the interception shared with
  * probe mode; `cpu` and `network` open a Chrome DevTools Protocol session, so
- * they apply in Chromium only and are reported skipped elsewhere; `alongside`,
+ * they apply in Chromium only and are reported skipped elsewhere; `timezone`
+ * and `locale` set the `timezoneId` and `locale` of every browser context the
+ * target test creates (the `context` fixture's included); `alongside`,
  * `after` and `project` are applied by the command line's Playwright arguments
  * and only reported here.
  */
 
 import * as fs from 'node:fs';
-import type { Page } from '@playwright/test';
+import type { BrowserContext, BrowserContextOptions, Page } from '@playwright/test';
 import {
   COMMAND_CONDITION_KINDS,
   FLAKE_LAB_RUN_METADATA_KEY,
@@ -162,6 +164,28 @@ export function cdpCommandFor(condition: FlakeCondition): { method: string; para
   return null;
 }
 
+/** The context options an arm's `timezone` and `locale` conditions set, or null when it has neither. */
+export function flakeContextOptions(plan: FlakePlan): Pick<BrowserContextOptions, 'timezoneId' | 'locale'> | null {
+  const options: Pick<BrowserContextOptions, 'timezoneId' | 'locale'> = {};
+  for (const c of plan.arm.conditions) {
+    if (c.kind === 'timezone') options.timezoneId = c.timeZone;
+    else if (c.kind === 'locale') options.locale = c.locale;
+  }
+  return Object.keys(options).length > 0 ? options : null;
+}
+
+/** The contexts created with the arm's {@link flakeContextOptions}. */
+const FLAKE_CONTEXTS = new WeakSet<BrowserContext>();
+
+/** Note a context created with the arm's {@link flakeContextOptions}. */
+export function markFlakeContext(context: BrowserContext): void {
+  FLAKE_CONTEXTS.add(context);
+}
+
+function isContextCondition(condition: FlakeCondition): boolean {
+  return condition.kind === 'timezone' || condition.kind === 'locale';
+}
+
 /** The route action a `delay` or `fail` condition performs. */
 function conditionRouteAction(condition: FlakeCondition): RouteAction | null {
   if (condition.kind === 'delay') return { kind: 'delay', ms: condition.ms };
@@ -178,12 +202,13 @@ export interface FlakeConditions {
 
 /**
  * Reports for an attempt whose page never opened: a route condition matched no
- * request, and a CDP condition had no page to apply to.
+ * request, and a CDP or context condition had no page to apply to.
  */
 export function unappliedReports(plan: FlakePlan): FlakeConditionReport[] {
   return plan.arm.conditions.map((c): FlakeConditionReport => {
     if (COMMAND_CONDITION_KINDS.includes(c.kind)) return { kind: c.kind, outcome: 'by-command' };
-    if (cdpCommandFor(c)) return { kind: c.kind, outcome: 'skipped', note: 'the attempt opened no page' };
+    if (cdpCommandFor(c) || isContextCondition(c))
+      return { kind: c.kind, outcome: 'skipped', note: 'the attempt opened no page' };
     return { kind: c.kind, outcome: 'not-matched' };
   });
 }
@@ -192,7 +217,10 @@ export function unappliedReports(plan: FlakePlan): FlakeConditionReport[] {
  * Apply an arm's conditions to a page before it navigates: one interception
  * rule per route condition, and one CDP command per `cpu` or `network`
  * condition. A CDP condition on a browser other than Chromium, or one whose
- * session cannot open, is reported skipped rather than failing the attempt.
+ * session cannot open, is reported skipped rather than failing the attempt. A
+ * `timezone` or `locale` condition is applied when the page's context was
+ * created with it ({@link markFlakeContext}), and skipped otherwise: a context
+ * opened before the test, or reused across tests.
  *
  * The interception is installed in every arm, the control and an arm without
  * route conditions included: routing turns off the page's HTTP cache and sends
@@ -223,6 +251,14 @@ export async function installFlakeConditions(page: Page, plan: FlakePlan): Promi
     });
   });
   await installRouteRules(page, rules);
+
+  const fromArm = FLAKE_CONTEXTS.has(page.context());
+  conditions.forEach((condition, i) => {
+    if (!isContextCondition(condition)) return;
+    reports[i] = fromArm
+      ? { kind: condition.kind, outcome: 'applied' }
+      : { kind: condition.kind, outcome: 'skipped', note: "the page's context was not created by the test" };
+  });
 
   const cdp = conditions.map((c, i) => ({ i, command: cdpCommandFor(c) })).filter((c) => c.command);
   if (cdp.length > 0) {

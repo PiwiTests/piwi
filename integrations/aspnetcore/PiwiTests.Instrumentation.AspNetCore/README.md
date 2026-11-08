@@ -195,6 +195,27 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
 - **Left out.** Static files (`MapStaticAssets`), fallbacks (`MapFallback*`) and routes that are a lone catch-all, endpoints marked `ExcludeFromDescription()` (the OpenAPI document among them), link-generation-only endpoints, the framework's own paths (`/_framework`, `/_blazor`, `/_content`), and the connection endpoint next to a negotiate endpoint. To keep one of your endpoints out, mark it `ExcludeFromDescription()`; it then leaves the OpenAPI document too.
 - **Limit.** Up to 5000 routes and 5000 pages, the most the dashboard accepts in one upload.
 
+## Server environment
+
+Wherever the middleware is active, it also serves `GET /__piwi/environment`: the runtime facts of the server process, so a failure that depends on the server's clock, time zone or culture can be told from one in the code. It answers JSON with these fields and no others (never another environment variable, a file path or a connection string):
+
+| Field | Source |
+| --- | --- |
+| `v` | `1` |
+| `runtime` | `RuntimeInformation.FrameworkDescription` |
+| `os`, `arch` | `RuntimeInformation.OSDescription`, `RuntimeInformation.ProcessArchitecture` |
+| `timeZone` | `TimeZoneInfo.Local.Id`, followed by its IANA id for a Windows zone: `Romance Standard Time (Europe/Paris)` |
+| `utcOffsetMinutes` | The local zone's offset from UTC now, in minutes |
+| `locale` | `CultureInfo.CurrentCulture`, then `CurrentUICulture` when it differs (`fr-FR / en-US`); `invariant` for the invariant culture |
+| `globalization` | `invariant`, `icu` or `nls` |
+| `environmentName` | `IHostEnvironment.EnvironmentName` |
+| `appVersion` | The entry assembly's informational version |
+| `hostname` | `Environment.MachineName` |
+| `instance` | A random id of the process, the one the coverage endpoints name |
+| `startedAt`, `now` | When the process started (ISO 8601, UTC) and the server's clock (epoch ms) |
+
+It is served under the same rule as the route manifest: never enable the middleware on a public production server, where this endpoint would describe the host to anyone who asks.
+
 ## Server coverage
 
 In a coverage build, the middleware also records which code each request executes, so the Piwi reporter can tell, per test, which server files, functions and lines ran. The recorder comes from [`PiwiTests.Instrumentation.Coverage`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Coverage), which this package depends on.

@@ -55,6 +55,10 @@ What the package does to a user's run, process by process.
 
 **In each test worker** (the capture fixtures)
 
+- The browser's environment: once per worker and project, the `page` fixture reads the still-blank page through
+  `internalCall` (time zone, locale, languages, formatting, media preferences, `browser.version()`) and the test's
+  capture attaches it as `piwi-environment` (`internal/capture/browser-environment.ts`). Off with
+  `PIWI_COLLECT_ENVIRONMENT_INFO=false`.
 - The `__piwiProbeElement` page global, seeded via `addInitScript`
   (`internal/capture/capture-fixtures.ts`), so a capture ships a stub call rather than
   the probe's source. The probe reads an action's element once the action succeeds.
@@ -491,6 +495,13 @@ What the package does to a user's run, process by process.
 
 **In the reporter process**
 
+- The run's environment snapshots (`internal/collect/run-environments.ts`): the runner's, read in `onBegin` from `os`,
+  `Intl`, `/etc/os-release`, `/.dockerenv` and a closed list of variables (`TZ`, `LANG`, `LC_ALL`, `LC_TIME`, the CI
+  image's) (`internal/collect/environment.ts`); each project's browser, from its first `piwi-environment` attachment;
+  and each instrumented server, a `GET /__piwi/environment` on each origin whose responses carried an instrumentation
+  header, as a test first reaches it, then again as the run's last test ends (before Playwright stops a `webServer`),
+  which says whether it restarted.
+  The runner's rides on `/start` and `/begin`, all of them on `/finish`, `/submit` and `/upload`.
 - The run sampler reads `/proc`, the cgroup filesystem or `ps` on an unref'd timer
   (`internal/collect/process-sampler.ts`).
 - While the dashboard says someone watches the run, another unref'd timer posts what the

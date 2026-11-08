@@ -1,13 +1,17 @@
 /**
- * Environment diff — compare a failing execution's run/browser environment
- * against the same test's most recent passing execution. All from data already
- * stored (test_runs columns/metadata + test_runs_cases.browser); no extra
- * collection. Used by the REST endpoint, the AI diagnosis section, and the
+ * Environment diff — compare a failing execution's environment against the same
+ * test's most recent passing execution: the run's columns and metadata, the
+ * declared browser settings (test_runs_cases.browser) and the run's environment
+ * snapshots (the runner of the execution's shard, the browser of its shard and
+ * project, the servers under test). Used by the REST endpoint, the AI diagnosis section, and the
  * demo router (browser-safe: drizzle queries only).
  */
 import { and, eq, desc } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
 import { buildEnvironmentSnapshot, computeEnvironmentDiff, type EnvironmentDiffEntry } from '#shared/environment-diff';
+import { loadRunsSnapshots } from '#shared/handlers/environment-snapshots';
+import { CLOCK_OFFSET_WARN_MS, comparableSnapshots, runnerOfShard } from '#shared/environment-snapshots';
+import type { WireEnvironmentSnapshot, WireServerEnvironment } from '#shared/types';
 import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
 import { resolveRunBranch } from './run-branch';
 import type { BrowserConfig } from '#shared/types';
@@ -36,6 +40,8 @@ export interface EnvironmentDiffResult {
   baselineNote?: string | null;
   /** Changed keys only; empty array means "environment identical to last pass". */
   entries?: EnvironmentDiffEntry[];
+  /** What the failing run's servers under test tell on their own: a restart, a clock off from the runner's. */
+  serverNotes?: string[];
 }
 
 interface RunMetadataLens {
@@ -79,9 +85,39 @@ function scopeOf(row: ExecutionEnvironmentRow) {
   return { environment: row.runEnvironment ?? null, branch: row.runBranch ?? resolveRunBranch(row.runMetadata) };
 }
 
-function toSnapshot(row: ExecutionEnvironmentRow) {
+/** The snapshots of the execution's place: its shard's runner, its shard's and project's browser, the servers. */
+function executionSnapshots(row: ExecutionEnvironmentRow, snapshots: readonly WireEnvironmentSnapshot[]) {
+  const shard = row.shardIndex ?? null;
+  const project = (row.browser as BrowserConfig | null)?.projectName ?? null;
+  const runner = runnerOfShard(comparableSnapshots(snapshots), shard);
+  const browsers = snapshots.filter((s) => s.kind === 'browser');
+  const browser =
+    browsers.find((s) => s.project === project && (s.shardIndex ?? null) === shard) ??
+    browsers.find((s) => s.project === project) ??
+    null;
+  const servers = snapshots.filter((s): s is WireServerEnvironment => s.kind === 'server');
+  return { runner: runner ?? null, observedBrowser: browser, servers };
+}
+
+/** The lines a run's servers under test add on their own: a restart during the run, a clock off from the runner's. */
+export function serverEnvironmentNotes(servers: readonly WireServerEnvironment[]): string[] {
+  const notes: string[] = [];
+  for (const server of servers) {
+    if (server.restarted) notes.push(`Server ${server.origin} restarted during the failing run.`);
+    if (server.clockOffsetMs != null && Math.abs(server.clockOffsetMs) > CLOCK_OFFSET_WARN_MS) {
+      const error = server.clockOffsetErrorMs != null ? ` (± ${server.clockOffsetErrorMs} ms)` : '';
+      notes.push(
+        `Server ${server.origin}'s clock is ${server.clockOffsetMs} ms off the runner's${error}: token expiry and "created just now" checks can fail.`,
+      );
+    }
+  }
+  return notes;
+}
+
+function toSnapshot(row: ExecutionEnvironmentRow, snapshots: readonly WireEnvironmentSnapshot[]) {
   const meta = (row.runMetadata as RunMetadataLens | null) ?? null;
   return buildEnvironmentSnapshot({
+    ...executionSnapshots(row, snapshots),
     playwrightVersion: row.playwrightVersion,
     reporterVersion: row.reporterVersion,
     environment: row.runEnvironment,
@@ -122,9 +158,12 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
   if (!baseline) return { status: 'no-baseline' };
 
   const baselineNote = baselineEnvironmentNote(failingScope, scopeOf(baseline));
-  const entries = computeEnvironmentDiff(toSnapshot(failing), toSnapshot(baseline)).filter(
-    (entry) => !(baselineNote && entry.key === 'environment'),
-  );
+  const snapshots = await loadRunsSnapshots(db, [failing.runId, baseline.runId]);
+  const failingSnapshots = snapshots.get(failing.runId) ?? [];
+  const entries = computeEnvironmentDiff(
+    toSnapshot(failing, failingSnapshots),
+    toSnapshot(baseline, snapshots.get(baseline.runId) ?? []),
+  ).filter((entry) => !(baselineNote && entry.key === 'environment'));
 
   return {
     status: 'ok',
@@ -136,5 +175,6 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
     },
     baselineNote,
     entries,
+    serverNotes: serverEnvironmentNotes(executionSnapshots(failing, failingSnapshots).servers),
   };
 }

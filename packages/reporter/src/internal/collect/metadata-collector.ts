@@ -267,6 +267,7 @@ export class MetadataCollector {
           if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
           if (use.serviceWorkers) config.serviceWorkers = use.serviceWorkers;
           if (use.userAgent) config.userAgent = use.userAgent;
+          if (typeof use.headless === 'boolean') config.headless = use.headless;
           return config;
         }
         suite = suite.parent;
