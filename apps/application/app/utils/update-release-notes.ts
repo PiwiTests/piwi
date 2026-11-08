@@ -3,6 +3,8 @@
  * (`desktop_get_release_notes`), and the summary the update card shows of them.
  */
 import { splitEntryScope, type ChangelogRelease } from '#shared/changelog';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { inlineMarkdownHtml } from './markdown-inline';
 
 /** One release between the installed and the offered version, as the shell sends it. */
 export interface DesktopReleaseNote {
@@ -29,6 +31,21 @@ export const RELEASES_PAGE_URL = 'https://github.com/PiwiTests/piwi/releases';
 /** The GitHub comparison of two versions' tags. */
 export function compareUrl(installed: string, offered: string): string {
   return `https://github.com/PiwiTests/piwi/compare/v${installed}...v${offered}`;
+}
+
+/** A release page link, or the releases page when the shell's URL is not an http(s) one. */
+export function releasePageUrl(note: DesktopReleaseNote): string {
+  return safeHttpUrl(note.url) ?? RELEASES_PAGE_URL;
+}
+
+const NO_ENTITIES = { known: new Set<string>(), baseURL: '/' };
+
+/**
+ * A line of release notes as safe HTML: escaped first, then its code, bold and
+ * http(s) links, each link in the sentence's color.
+ */
+export function releaseNoteHtml(markdown: string): string {
+  return inlineMarkdownHtml(markdown, NO_ENTITIES);
 }
 
 /** A breaking change, with the version that made it. */

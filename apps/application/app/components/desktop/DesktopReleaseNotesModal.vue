@@ -4,7 +4,7 @@
  * update on offer, read from the GitHub release of each version in between.
  * Breaking changes of every release come first, then one fold per release,
  * the newest open. Release bodies are external content: they are parsed with
- * `parseReleaseNotes` and each entry renders through `inlineMarkdownHtml`.
+ * `parseReleaseNotes` and each entry renders through `releaseNoteHtml`.
  */
 import { CHANGELOG_ENTRY_KINDS, parseReleaseNotes, type ChangelogEntryKind } from '#shared/changelog';
 
@@ -39,8 +39,8 @@ const releases = computed(() =>
       title: KIND_LABELS[kind],
       entries: parsed.entries[kind].map((text) => ({ text })),
     }));
-    const empty = !parsed.intro && CHANGELOG_ENTRY_KINDS.every((kind) => !parsed.entries[kind].length);
-    return { note, parsed, sections, empty };
+    const onlyBreaking = !parsed.intro && !sections.length;
+    return { note, parsed, sections, onlyBreaking, pageUrl: releasePageUrl(note) };
   }),
 );
 
@@ -129,18 +129,22 @@ function install() {
           <template #body="{ item }">
             <div class="space-y-3" :data-release="item.value">
               <p class="text-xs text-muted">
-                <ULink :to="item.release.note.url" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
+                <ULink :to="item.release.pageUrl" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
                   >Release page</ULink
                 >
               </p>
-              <p v-if="item.release.empty" class="text-sm text-highlighted leading-relaxed">
-                No notes for this release.
+              <p v-if="item.release.onlyBreaking" class="text-sm text-highlighted leading-relaxed">
+                {{
+                  item.release.parsed.entries.breaking.length
+                    ? 'Its breaking changes are listed above.'
+                    : 'No notes for this release.'
+                }}
               </p>
-              <!-- eslint-disable-next-line vue/no-v-html -- inlineMarkdownHtml escapes before it adds its tags -->
+              <!-- eslint-disable-next-line vue/no-v-html -- releaseNoteHtml escapes before it adds its tags -->
               <p
                 v-if="item.release.parsed.intro"
                 class="text-sm text-highlighted leading-relaxed"
-                v-html="inlineMarkdownHtml(item.release.parsed.intro)"
+                v-html="releaseNoteHtml(item.release.parsed.intro)"
               />
               <template v-for="section in item.release.sections" :key="section.kind">
                 <!-- Bug fixes fold behind their count. -->

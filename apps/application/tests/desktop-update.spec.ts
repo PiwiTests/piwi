@@ -24,8 +24,11 @@ interface FakeBridgeOptions {
   /** What the startup check already found — `desktop_get_update_settings`'s `pending`. */
   pending?: boolean;
   notifyOnStartup?: boolean;
-  /** What `desktop_get_release_notes` answers: three releases (the default) or an error. */
-  notes?: 'ok' | 'error';
+  /**
+   * What `desktop_get_release_notes` answers: three releases (the default), an error, an error the first time only,
+   * or the notes of another version than the one offered.
+   */
+  notes?: 'ok' | 'error' | 'error-once' | 'other-version';
 }
 
 /** The releases between v96.0.0 and v99.0.0: a raw one with a breaking change, a polished one, one without notes. */
@@ -120,6 +123,10 @@ async function installFakeBridge(
                 return state === 'available' ? found : { state, version: null, date: null };
               case 'desktop_get_release_notes':
                 if (opts.notes === 'error') throw 'GitHub limits anonymous requests; try again later';
+                if (opts.notes === 'error-once' && invocations.filter((c) => c === cmd).length === 1) {
+                  throw 'error sending request';
+                }
+                if (opts.notes === 'other-version') return { ...releaseNotes, offered: '100.0.0' };
                 return releaseNotes;
               case 'desktop_install_update':
                 // Resolves after a beat so the progress event lands mid-install.
@@ -271,6 +278,25 @@ test.describe('Desktop update card', () => {
     );
     await page.getByRole('button', { name: 'Install update' }).click();
     await expect(page.getByRole('button', { name: 'Restart now' })).toBeVisible();
+  });
+
+  test('reads the release notes again on Try again after a failure', async ({ page }) => {
+    await installFakeBridge(page, 'available', { pending: true, notes: 'error-once' });
+    await page.goto('/settings/about');
+    await waitForHydration(page);
+
+    await expect(page.getByText("What's new is unavailable: error sending request.")).toBeVisible();
+    await page.getByRole('button', { name: 'try again' }).click();
+    await expect(page.getByTestId('release-notes-summary')).toContainText('3 releases since v96.0.0');
+  });
+
+  test('refuses release notes the shell read for another version', async ({ page }) => {
+    await installFakeBridge(page, 'available', { pending: true, notes: 'other-version' });
+    await page.goto('/settings/about');
+    await waitForHydration(page);
+
+    await expect(page.getByText('the notes found are for v100.0.0')).toBeVisible();
+    await expect(page.getByTestId('release-notes-summary')).toHaveCount(0);
   });
 
   test('reads no release notes without an update on offer', async ({ page }) => {

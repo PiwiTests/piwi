@@ -1,6 +1,11 @@
 import { describe, test, expect } from 'vitest';
 import { parseReleaseNotes } from '#shared/changelog';
-import { compareUrl, summarizeReleaseNotes } from '../../app/utils/update-release-notes';
+import {
+  compareUrl,
+  releaseNoteHtml,
+  releasePageUrl,
+  summarizeReleaseNotes,
+} from '../../app/utils/update-release-notes';
 
 const release = (version: string, body: string) =>
   parseReleaseNotes({ version, date: null, url: `https://github.com/PiwiTests/piwi/releases/tag/v${version}`, body });
@@ -61,4 +66,27 @@ describe('summarizeReleaseNotes', () => {
 
 test('compareUrl compares the two version tags', () => {
   expect(compareUrl('0.64.0', '0.67.0')).toBe('https://github.com/PiwiTests/piwi/compare/v0.64.0...v0.67.0');
+});
+
+describe('releaseNoteHtml', () => {
+  test("escapes HTML and draws links in the sentence's color", () => {
+    const html = releaseNoteHtml('<img src=x onerror=alert(1)> see [the docs](https://piwitests.dev)');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+    expect(html).toContain('href="https://piwitests.dev"');
+    expect(html).toContain('decoration-dotted');
+    expect(html).not.toContain('text-primary');
+  });
+
+  test('leaves a script link as text', () => {
+    expect(releaseNoteHtml('[x](javascript:alert(1))')).not.toContain('<a');
+  });
+});
+
+test('releasePageUrl keeps an http(s) release page, else points at the releases page', () => {
+  const note = { version: '1.0.0', date: null, body: '' };
+  expect(releasePageUrl({ ...note, url: 'https://github.com/PiwiTests/piwi/releases/tag/v1.0.0' })).toBe(
+    'https://github.com/PiwiTests/piwi/releases/tag/v1.0.0',
+  );
+  expect(releasePageUrl({ ...note, url: 'javascript:alert(1)' })).toBe('https://github.com/PiwiTests/piwi/releases');
 });

@@ -143,7 +143,9 @@ async function loadNotes(version: string) {
   notesError.value = null;
   try {
     const answer = await core.invoke<DesktopReleaseNotes>('desktop_get_release_notes');
-    if (notesFor === version) notes.value = answer;
+    if (notesFor !== version) return;
+    if (answer.offered === version) notes.value = answer;
+    else notesError.value = `the notes found are for v${answer.offered}; check for updates again`;
   } catch (error) {
     if (notesFor === version) {
       notes.value = null;
@@ -152,6 +154,14 @@ async function loadNotes(version: string) {
   } finally {
     if (notesFor === version) notesLoading.value = false;
   }
+}
+
+/** Ask the shell again after a failure. */
+function retryNotes() {
+  const version = status.value?.state === 'available' ? status.value.version : null;
+  if (!version) return;
+  notesFor = null;
+  void loadNotes(version);
 }
 
 watch(
@@ -232,6 +242,8 @@ const progressPercent = computed(() => {
               <ULink :to="RELEASES_PAGE_URL" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
                 >Read the release notes on GitHub</ULink
               >
+              or
+              <button type="button" :class="PROSE_LINK" @click="retryNotes">try again</button>.
             </p>
             <template v-else-if="notes && notesSummary">
               <p class="text-xs text-muted" data-testid="release-notes-summary">
@@ -244,12 +256,12 @@ const progressPercent = computed(() => {
                 </template>
               </p>
               <ul v-if="notesSummary.preview.length" class="space-y-0.5">
-                <!-- eslint-disable-next-line vue/no-v-html -- inlineMarkdownHtml escapes before it adds its tags -->
+                <!-- eslint-disable-next-line vue/no-v-html -- releaseNoteHtml escapes before it adds its tags -->
                 <li
                   v-for="(line, i) in notesSummary.preview"
                   :key="i"
                   class="text-sm text-highlighted leading-relaxed line-clamp-3 before:content-['•'] before:mr-2 before:text-muted"
-                  v-html="inlineMarkdownHtml(line)"
+                  v-html="releaseNoteHtml(line)"
                 />
               </ul>
               <UButton
