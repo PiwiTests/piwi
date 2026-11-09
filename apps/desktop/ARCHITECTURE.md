@@ -21,7 +21,8 @@ need the detail behind one of them.
 - **Connect.** It removes an entry only when the entry holds this app's token or is the bridge
   (`is_local_piwi_entry`), so a self-hosted Piwi on `localhost` with another key stays.
 - **The file.** The first backup is kept as it is (`<name>.piwi-backup.json`, created new, owner-only); a backup of an
-  older entry holds no token. The order of the keys survives (`serde_json` `preserve_order`; remove with
+  older entry holds no token, and a backup an older build left is rewritten without the token and owner-only when its
+  entry is rewritten (`scrub_backup`). The order of the keys survives (`serde_json` `preserve_order`; remove with
   `shift_remove`), as do the mode and the symlink of the file. A file that does not parse, or starts with a byte-order
   mark, is not rewritten and reads as manual. The file is compared with what was read right before the rename
   (`write_keeping_mode_checked`), so a change in between is not overwritten.

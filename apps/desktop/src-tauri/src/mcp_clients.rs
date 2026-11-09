@@ -19,7 +19,8 @@
 //   - only strict JSON is ever rewritten — a file that does not parse (JSONC
 //     with comments, trailing commas) is reported as `manual` and left alone;
 //   - the previous content is copied to `<name>.piwi-backup.json` (the file's
-//     extension replaced) before a write;
+//     extension replaced) before a write, and a backup an older build left is
+//     rewritten without this app's token, owner-only;
 //   - the file is replaced through a temporary copy, keeping its permissions
 //     (owner-only for a new file);
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
@@ -518,15 +519,32 @@ fn keep_backup(path: &Path, current: &str, token: &str) -> std::io::Result<()> {
     crate::private_fs::create_private_new(&backup_path(path), body.as_bytes()).map(|_| ())
 }
 
+/// Take this app's `token` out of a backup an older build left next to `path`, and make it owner-only. Older builds
+/// copied the whole file, at the file's own mode, on every write. Anything else in the backup stays. A backup that
+/// does not hold the token, or is not a plain file, is not touched.
+fn scrub_backup(path: &Path, token: &str) {
+    let backup = backup_path(path);
+    if token.is_empty() || !std::fs::symlink_metadata(&backup).is_ok_and(|meta| meta.is_file()) {
+        return;
+    }
+    let Ok(text) = std::fs::read_to_string(&backup) else {
+        return;
+    };
+    if text.contains(token) {
+        let _ = crate::private_fs::write_private(&backup, text.replace(token, "").as_bytes());
+    }
+}
+
 /// Write `doc` over the config at `path`. With `expected`, only if the file still holds that text just before it is
 /// replaced; the result says whether it was written. The previous content is backed up first (`keep_backup`), so
-/// nothing is backed up for a write that does not happen.
+/// nothing is backed up for a write that does not happen. After a write, a backup an older build left is scrubbed of
+/// the token (`scrub_backup`).
 fn write_config(path: &Path, doc: &Value, token: &str, expected: Option<&str>) -> Result<bool, String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let body = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())? + "\n";
-    crate::private_fs::write_keeping_mode_checked(path, body.as_bytes(), || {
+    let written = crate::private_fs::write_keeping_mode_checked(path, body.as_bytes(), || {
         let current = match std::fs::read_to_string(path) {
             Ok(current) => Some(current),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -542,7 +560,11 @@ fn write_config(path: &Path, doc: &Value, token: &str, expected: Option<&str>) -
         }
         Ok(true)
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if written {
+        scrub_backup(path, token);
+    }
+    Ok(written)
 }
 
 fn set_entry(app: &AppHandle, id: &str, connect: bool) -> Result<McpClientStatus, String> {
@@ -1297,6 +1319,50 @@ mod tests {
         let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         write_config(&path, &merge_piwi_entry(doc, "mcpServers", None, TOKEN), TOKEN, None).unwrap();
         assert_eq!(std::fs::read_to_string(backup_of(&path)).unwrap(), first);
+    }
+
+    /// A backup an older build left (the whole file, at the file's own mode) holds no token once its entry is
+    /// rewritten, and is owner-only; the rest of it stays. A backup without the token is not rewritten.
+    #[test]
+    fn a_backup_from_an_older_build_loses_the_token_when_its_entry_is_rewritten() {
+        let dir = TempDir::new("backup-scrub");
+        let url = "http://127.0.0.1:3000/mcp";
+        let (path, before) = config_with(&dir, "cursor", old_url_entry_for("cursor", url, TOKEN));
+        std::fs::write(backup_of(&path), &before).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(backup_of(&path), std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        assert!(heal_client_file("cursor", &path, TOKEN, &here()));
+
+        let backup = std::fs::read_to_string(backup_of(&path)).unwrap();
+        assert!(!backup.contains(TOKEN));
+        assert_eq!(backup, before.replace(TOKEN, ""));
+        let doc: Value = serde_json::from_str(&backup).unwrap();
+        assert_eq!(doc["mcpServers"]["piwi-desktop"]["url"], url);
+        assert_eq!(doc["mcpServers"]["other"], json!({ "command": "npx" }));
+        assert!(!std::fs::read_to_string(&path).unwrap().contains(TOKEN));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(backup_of(&path)).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_backup_without_the_token_keeps_its_mode_and_content() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = TempDir::new("backup-scrub-clean");
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", &moved_from()));
+        std::fs::write(backup_of(&path), "{\"kept\": true}\n").unwrap();
+        std::fs::set_permissions(backup_of(&path), std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(heal_client_file("cursor", &path, TOKEN, &here()));
+        assert_eq!(std::fs::read_to_string(backup_of(&path)).unwrap(), "{\"kept\": true}\n");
+        assert_eq!(std::fs::metadata(backup_of(&path)).unwrap().permissions().mode() & 0o777, 0o644);
     }
 
     #[cfg(unix)]
