@@ -7,7 +7,7 @@
 // the splash with its status set.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
@@ -59,11 +59,11 @@ impl Session {
 
     /// The status line the splash shows; written again whenever the splash loads.
     pub(crate) fn set_status(&self, text: Option<&'static str>) {
-        *self.status.lock().unwrap() = text;
+        *self.status.lock().unwrap_or_else(PoisonError::into_inner) = text;
     }
 
     pub(crate) fn status(&self) -> Option<&'static str> {
-        *self.status.lock().unwrap()
+        *self.status.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The number of sidecar exits so far: a proof belongs to the generation read once the session counts the exits.
@@ -71,9 +71,15 @@ impl Session {
         self.restarts.load(Ordering::SeqCst)
     }
 
+    /// The turn, taken even after a panic under it poisoned the lock: it guards no data, only the order of a check and
+    /// a store, and a supervisor that panicked on it would never restart the sidecar.
+    fn lock_turn(&self) -> MutexGuard<'_, ()> {
+        self.turn.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// The sidecar exited: the session is no longer live. Returns the number of this exit.
     fn exited(&self) -> u64 {
-        let _turn = self.turn.lock().unwrap();
+        let _turn = self.lock_turn();
         self.live.store(false, Ordering::SeqCst);
         self.restarts.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -81,7 +87,7 @@ impl Session {
     /// The supervisor gave up: the session is no longer live, and a proof read before this stands no more. Returns
     /// whether a session was opened.
     fn gave_up(&self) -> bool {
-        let _turn = self.turn.lock().unwrap();
+        let _turn = self.lock_turn();
         self.live.store(false, Ordering::SeqCst);
         self.restarts.fetch_add(1, Ordering::SeqCst);
         self.opened.load(Ordering::SeqCst)
@@ -90,7 +96,7 @@ impl Session {
     /// Mark the session live if `holds` says the proof stands, in one turn with the exits and the give-up: one that
     /// lands first makes the proof stale, one that lands after clears the flag. `holds` must not wait on the session.
     fn go_live_if(&self, holds: &ProofHolds) -> bool {
-        let _turn = self.turn.lock().unwrap();
+        let _turn = self.lock_turn();
         let stands = holds();
         if stands {
             self.set_status(None);
@@ -607,6 +613,29 @@ mod tests {
         windows.run_main_thread();
         assert!(windows.told.borrow().is_empty());
         assert!(asked.load(Ordering::SeqCst) < SESSION_CODE_TRIES);
+    }
+
+    /// A panic under the turn (a `holds` that panics) poisons its lock; the exit and the give-up still run, so the
+    /// supervisor still restarts the sidecar.
+    #[test]
+    fn a_poisoned_turn_still_lets_the_exit_and_the_give_up_run() {
+        let session = Arc::new(Session::new(None, None));
+        session.mark_opened();
+        let panicking: ProofHolds = Arc::new(|| panic!("holds panicked"));
+        let poisoned = {
+            let session = session.clone();
+            std::thread::spawn(move || session.go_live_if(&panicking)).join()
+        };
+        assert!(poisoned.is_err());
+        assert!(session.turn.is_poisoned());
+
+        assert_eq!(session.exited(), 1);
+        assert!(!session.is_live());
+        assert!(session.go_live_if(&always()));
+        assert!(session.is_live());
+        assert!(session.gave_up());
+        assert!(!session.is_live());
+        assert_eq!(session.generation(), 2);
     }
 
     /// The startup path asks the same way: a code that fails once comes on the next ask; one that never comes ends
