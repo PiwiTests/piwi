@@ -23,7 +23,7 @@ use tauri_plugin_window_state::StateFlags;
 use crate::mcp_clients::ServerInfo;
 use crate::{
     app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications,
-    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs,
+    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
     random_hex_32, reapply_splash_status, run_app_menu_action, show_splash_status, shut_down, supervise_server,
     LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
@@ -221,11 +221,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
                 })
                 .on_page_load(|webview, payload| {
                     if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {

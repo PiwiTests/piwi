@@ -972,6 +972,13 @@ fn main_window_may_navigate(
     }
 }
 
+/// The port of the sidecar the dashboard window may navigate to: none while its session is not live, so history
+/// and a page's reload cannot return to the sidecar's origin without a proof.
+pub(crate) fn live_sidecar_port(app: &AppHandle) -> Option<u16> {
+    let port = app.try_state::<mcp_clients::ServerInfo>().map(|s| s.port);
+    app.try_state::<session::Session>().and_then(|session| session.sidecar_port(port))
+}
+
 /// The IPC grants of the dashboard (`runtime-capabilities/remote.json`), scoped
 /// to the exact origin of the sidecar this launch spawned.
 fn remote_capability(port: u16) -> String {
@@ -1311,6 +1318,7 @@ fn supervise_server(
                     &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
+                session::server_gave_up(&app, &server);
                 give_up_server(&app);
                 break;
             }
@@ -1333,6 +1341,7 @@ fn supervise_server(
                     session::server_restarted(&app, server.clone(), restart, shutting_down.clone());
                 }
                 None => {
+                    session::server_gave_up(&app, &server);
                     give_up_server(&app);
                     break;
                 }
@@ -1911,7 +1920,7 @@ static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
 #[tauri::command]
 async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
@@ -1973,7 +1982,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
     if !is_output_window_name(&name) {
         return Err("invalid output window name".into());
     }
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     let url = tauri::Url::parse(&format!(
         "{}/desktop/run-output?name={name}",
         sidecar_origin(port)
@@ -2954,11 +2963,7 @@ pub fn run() {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<mcp_clients::ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
                 })
                 // A new page in the dashboard window leaves no one to feed the
                 // run output windows: they close.

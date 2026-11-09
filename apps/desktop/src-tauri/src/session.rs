@@ -18,6 +18,7 @@ use crate::{bootstrap_url, health_ok, main_window_may_navigate, show_splash_stat
 pub(crate) struct Session {
     splash: Option<tauri::Url>,
     opened: AtomicBool,
+    live: AtomicBool,
     restarts: AtomicU64,
     status: Mutex<Option<&'static str>>,
 }
@@ -28,6 +29,7 @@ impl Session {
         Self {
             splash: window_url.filter(|url| is_splash_page(url, dev_url)),
             opened: AtomicBool::new(false),
+            live: AtomicBool::new(false),
             restarts: AtomicU64::new(0),
             status: Mutex::new(None),
         }
@@ -36,6 +38,17 @@ impl Session {
     /// The window loads the sidecar's session from here on.
     pub(crate) fn mark_opened(&self) {
         self.opened.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the window may be on the sidecar's origin: set only once a proof held for the load of its session,
+    /// cleared when the sidecar exits or the supervisor gives up.
+    pub(crate) fn is_live(&self) -> bool {
+        self.live.load(Ordering::SeqCst)
+    }
+
+    /// The port a navigation of the dashboard window may reach the sidecar on: none while the session is not live.
+    pub(crate) fn sidecar_port(&self, port: Option<u16>) -> Option<u16> {
+        port.filter(|_| self.is_live())
     }
 
     /// The status line the splash shows; written again whenever the splash loads.
@@ -50,6 +63,18 @@ impl Session {
     /// The number of sidecar exits so far: a proof belongs to the generation read once the session counts the exits.
     pub(crate) fn generation(&self) -> u64 {
         self.restarts.load(Ordering::SeqCst)
+    }
+
+    /// The sidecar exited: the session is no longer live. Returns the number of this exit.
+    fn exited(&self) -> u64 {
+        self.live.store(false, Ordering::SeqCst);
+        self.restarts.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// The supervisor gave up: the session is no longer live. Returns whether a session was opened.
+    fn gave_up(&self) -> bool {
+        self.live.store(false, Ordering::SeqCst);
+        self.opened.load(Ordering::SeqCst)
     }
 
     /// Whether no sidecar exit came after `generation` was read.
@@ -68,6 +93,18 @@ pub(crate) fn when_proof_holds(holds: &ProofHolds, then: impl FnOnce()) {
     if holds() {
         then();
     }
+}
+
+/// Begin the session `then` loads, only if `holds` still says the proof stands: the window may be on the sidecar's
+/// origin from here until the session ends.
+fn begin_session(session: Option<&Session>, holds: &ProofHolds, then: impl FnOnce()) {
+    when_proof_holds(holds, || {
+        if let Some(session) = session {
+            session.set_status(None);
+            session.live.store(true, Ordering::SeqCst);
+        }
+        then();
+    });
 }
 
 /// The generation a proof is held to (see `proof_holds` and `await_first_proof`); 0 without a session.
@@ -130,10 +167,8 @@ impl SessionWindows for AppHandle {
     fn load_session(&self, bootstrap_url: String, holds: ProofHolds) {
         let handle = self.clone();
         let _ = self.run_on_main_thread(move || {
-            when_proof_holds(&holds, || {
-                if let Some(session) = handle.try_state::<Session>() {
-                    session.set_status(None);
-                }
+            let session = handle.try_state::<Session>();
+            begin_session(session.as_deref(), &holds, || {
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.eval(&format!("window.location.replace('{bootstrap_url}')"));
                 }
@@ -227,11 +262,27 @@ pub(crate) fn server_stopped(app: &AppHandle, server: &ServerSession) -> u64 {
     let Some(session) = app.try_state::<Session>() else {
         return 0;
     };
-    let restart = session.restarts.fetch_add(1, Ordering::SeqCst) + 1;
+    let restart = session.exited();
     if session.opened.load(Ordering::SeqCst) {
         app.leave_server(server.texts.restarting);
     }
     restart
+}
+
+/// The supervisor gives up on the sidecar: windows on its origin leave it, once a session was opened, and the splash
+/// says the server stopped.
+pub(crate) fn server_gave_up(app: &AppHandle, server: &ServerSession) {
+    let opened = app.try_state::<Session>().is_some_and(|session| session.gave_up());
+    stopped_for_good(app, opened, server.texts.stopped);
+}
+
+/// Every window on the sidecar's origin leaves it when a session was opened, and the splash says `text` with the
+/// window up.
+fn stopped_for_good<W: SessionWindows>(windows: &W, opened: bool, text: &'static str) {
+    if opened {
+        windows.leave_server(text);
+    }
+    windows.show_splash(text, true);
 }
 
 /// The sidecar started again: once it proves the token, the window loads a new session. A restart that comes
@@ -296,7 +347,7 @@ mod tests {
 
     use super::*;
     use crate::tests::read_request_from;
-    use crate::proof_of;
+    use crate::{main_window_may_navigate, proof_of};
 
     const PACE: ProofPace = ProofPace {
         slow_after: Duration::from_millis(20),
@@ -517,6 +568,78 @@ mod tests {
         assert!(!proved);
         windows.run_main_thread();
         assert!(windows.told.borrow().is_empty());
+    }
+
+    /// After the supervisor gives up, whether a crash loop ended it or a respawn that returned nothing, every window
+    /// on the sidecar's origin has left it and the stopped splash is up.
+    #[test]
+    fn giving_up_leaves_the_sidecar_origin_and_reveals_the_stopped_splash() {
+        let windows = Recorder::default();
+        stopped_for_good(&windows, true, "stopped");
+        assert_eq!(*windows.told.borrow(), vec!["leave: stopped".to_string(), "splash: stopped (revealed)".to_string()]);
+    }
+
+    #[test]
+    fn giving_up_before_any_session_only_says_the_server_stopped() {
+        let windows = Recorder::default();
+        stopped_for_good(&windows, false, "stopped");
+        assert_eq!(*windows.told.borrow(), vec!["splash: stopped (revealed)".to_string()]);
+    }
+
+    /// The dashboard window reaches the sidecar's origin only while a proof held for the session it loaded.
+    #[test]
+    fn the_window_may_reach_the_sidecar_only_while_the_session_is_live() {
+        let url = |s: &str| tauri::Url::parse(s).unwrap();
+        let page = url("http://127.0.0.1:3000/projects/1");
+        let may = |session: &Session| main_window_may_navigate(&page, session.sidecar_port(Some(3000)), None);
+        let session = Session::new(None, None);
+        assert!(!may(&session));
+
+        let holds: ProofHolds = Arc::new(|| true);
+        let mut loaded = false;
+        begin_session(Some(&session), &holds, || loaded = true);
+        assert!(loaded);
+        assert!(may(&session));
+        // The app's own pages stay reachable whatever the state.
+        assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), session.sidecar_port(Some(3000)), None));
+
+        session.exited();
+        assert!(!may(&session));
+        assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), session.sidecar_port(Some(3000)), None));
+    }
+
+    /// A proof that no longer stands when the load runs leaves the session not live.
+    #[test]
+    fn a_stale_proof_does_not_make_the_session_live() {
+        let session = Session::new(None, None);
+        let holds: ProofHolds = Arc::new(|| false);
+        let mut loaded = false;
+        begin_session(Some(&session), &holds, || loaded = true);
+        assert!(!loaded);
+        assert!(!session.is_live());
+        assert_eq!(session.sidecar_port(Some(3000)), None);
+    }
+
+    #[test]
+    fn a_sidecar_exit_ends_the_live_session() {
+        let session = Session::new(None, None);
+        begin_session(Some(&session), &always(), || {});
+        assert!(session.is_live());
+        let generation = session.generation();
+        assert_eq!(session.exited(), 1);
+        assert!(!session.is_live());
+        assert!(!session.unchanged_since(generation));
+    }
+
+    #[test]
+    fn giving_up_ends_the_live_session_and_says_whether_one_was_opened() {
+        let session = Session::new(None, None);
+        assert!(!session.gave_up());
+        session.mark_opened();
+        begin_session(Some(&session), &always(), || {});
+        assert!(session.is_live());
+        assert!(session.gave_up());
+        assert!(!session.is_live());
     }
 
     #[test]
