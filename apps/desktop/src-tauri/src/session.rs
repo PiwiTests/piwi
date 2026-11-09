@@ -472,9 +472,9 @@ mod tests {
     /// the load that follows is held to the generation read once that proof passed.
     #[test]
     fn a_sidecar_that_exited_before_its_first_proof_still_gets_the_session() {
+        // The port stays bound, so no parallel test can take it while the first sidecar is gone.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        drop(listener);
         let session = Arc::new(Session::new(None, None));
         let waiting = {
             let session = session.clone();
@@ -493,8 +493,7 @@ mod tests {
         // The first sidecar exits before any proof; the restarted one proves the token on the same port.
         std::thread::sleep(Duration::from_millis(30));
         session.restarts.fetch_add(1, Ordering::SeqCst);
-        let restarted = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
-        std::thread::spawn(move || answer_proofs(restarted, "pd_token", true));
+        std::thread::spawn(move || answer_proofs(listener, "pd_token", true));
         let at = waiting.join().unwrap().expect("the restarted sidecar proved the token");
         assert_eq!(at, 1);
         assert!(session.opened.load(Ordering::SeqCst));
