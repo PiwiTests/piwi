@@ -21,6 +21,10 @@ pub(crate) struct Session {
     opened: AtomicBool,
     live: AtomicBool,
     restarts: AtomicU64,
+    /// Held while `restarts` and `live` change together: a proof's check and the store of `live` that follows it
+    /// (`begin_session`), and the bump and clear of an exit or a give-up. A clear can never fall between a check
+    /// and the store it guards.
+    turn: Mutex<()>,
     status: Mutex<Option<&'static str>>,
 }
 
@@ -32,6 +36,7 @@ impl Session {
             opened: AtomicBool::new(false),
             live: AtomicBool::new(false),
             restarts: AtomicU64::new(0),
+            turn: Mutex::new(()),
             status: Mutex::new(None),
         }
     }
@@ -68,14 +73,30 @@ impl Session {
 
     /// The sidecar exited: the session is no longer live. Returns the number of this exit.
     fn exited(&self) -> u64 {
+        let _turn = self.turn.lock().unwrap();
         self.live.store(false, Ordering::SeqCst);
         self.restarts.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    /// The supervisor gave up: the session is no longer live. Returns whether a session was opened.
+    /// The supervisor gave up: the session is no longer live, and a proof read before this stands no more. Returns
+    /// whether a session was opened.
     fn gave_up(&self) -> bool {
+        let _turn = self.turn.lock().unwrap();
         self.live.store(false, Ordering::SeqCst);
+        self.restarts.fetch_add(1, Ordering::SeqCst);
         self.opened.load(Ordering::SeqCst)
+    }
+
+    /// Mark the session live if `holds` says the proof stands, in one turn with the exits and the give-up: one that
+    /// lands first makes the proof stale, one that lands after clears the flag. `holds` must not wait on the session.
+    fn go_live_if(&self, holds: &ProofHolds) -> bool {
+        let _turn = self.turn.lock().unwrap();
+        let stands = holds();
+        if stands {
+            self.set_status(None);
+            self.live.store(true, Ordering::SeqCst);
+        }
+        stands
     }
 
     /// Whether no sidecar exit came after `generation` was read.
@@ -84,28 +105,21 @@ impl Session {
     }
 }
 
-/// Whether a proof still stands, asked on the thread that navigates the window: false once the sidecar exited after
-/// the proof's generation was read, the supervisor gave up, or the app is quitting.
+/// Whether a proof still stands, asked on the thread that navigates the window (it must not wait on the session):
+/// false once the sidecar exited after the proof's generation was read, the supervisor gave up, or the app is
+/// quitting.
 pub(crate) type ProofHolds = Arc<dyn Fn() -> bool + Send + Sync>;
 
-/// Run `then` only if `holds` still says the proof stands: the check the thread that navigates makes just before it
-/// does.
-pub(crate) fn when_proof_holds(holds: &ProofHolds, then: impl FnOnce()) {
-    if holds() {
+/// Begin the session `then` loads, only if `holds` still says the proof stands when the thread that navigates runs it:
+/// the window may be on the sidecar's origin from here until the session ends.
+fn begin_session(session: Option<&Session>, holds: &ProofHolds, then: impl FnOnce()) {
+    let begun = match session {
+        Some(session) => session.go_live_if(holds),
+        None => holds(),
+    };
+    if begun {
         then();
     }
-}
-
-/// Begin the session `then` loads, only if `holds` still says the proof stands: the window may be on the sidecar's
-/// origin from here until the session ends.
-fn begin_session(session: Option<&Session>, holds: &ProofHolds, then: impl FnOnce()) {
-    when_proof_holds(holds, || {
-        if let Some(session) = session {
-            session.set_status(None);
-            session.live.store(true, Ordering::SeqCst);
-        }
-        then();
-    });
 }
 
 /// The generation a proof is held to (see `proof_holds` and `await_first_proof`); 0 without a session.
@@ -404,7 +418,9 @@ mod tests {
     impl Recorder {
         fn run_main_thread(&self) {
             for (url, holds) in self.loads.borrow_mut().drain(..) {
-                when_proof_holds(&holds, || self.told.borrow_mut().push(format!("session: {url}")));
+                if holds() {
+                    self.told.borrow_mut().push(format!("session: {url}"));
+                }
             }
         }
     }
@@ -712,6 +728,64 @@ mod tests {
         assert!(session.is_live());
         assert!(session.gave_up());
         assert!(!session.is_live());
+    }
+
+    /// An exit or a give-up that lands between the proof's check and the store of `live` must leave the session not
+    /// live: the check and the store are one turn, so the clear waits for it and runs after.
+    #[test]
+    fn an_exit_or_give_up_between_the_check_and_the_store_leaves_the_session_not_live() {
+        for give_up in [false, true] {
+            let session = Arc::new(Session::new(None, None));
+            session.mark_opened();
+            let generation = session.generation();
+            let (checking, clear) = std::sync::mpsc::channel::<()>();
+            let ends = {
+                let session = session.clone();
+                std::thread::spawn(move || {
+                    clear.recv().unwrap();
+                    if give_up {
+                        session.gave_up();
+                    } else {
+                        session.exited();
+                    }
+                })
+            };
+            let holds: ProofHolds = {
+                let session = session.clone();
+                Arc::new(move || {
+                    let stands = session.unchanged_since(generation);
+                    // The end of the sidecar starts now and has time to land before the store, if nothing holds it.
+                    checking.send(()).unwrap();
+                    std::thread::sleep(Duration::from_millis(100));
+                    stands
+                })
+            };
+            begin_session(Some(&session), &holds, || {});
+            ends.join().unwrap();
+            assert!(!session.is_live(), "give_up: {give_up}");
+        }
+    }
+
+    /// A load queued on the main thread before the final give-up runs after it: the give-up makes its proof stale, so
+    /// it neither loads nor sets the flag.
+    #[test]
+    fn a_load_queued_before_the_final_give_up_never_sets_live() {
+        let session = Arc::new(Session::new(None, None));
+        session.mark_opened();
+        let generation = session.generation();
+        let holds: ProofHolds = {
+            let session = session.clone();
+            Arc::new(move || session.unchanged_since(generation))
+        };
+        begin_session(Some(&session), &holds, || {});
+        assert!(session.is_live());
+        assert!(session.gave_up());
+        assert!(!session.is_live());
+        let mut loaded = false;
+        begin_session(Some(&session), &holds, || loaded = true);
+        assert!(!loaded);
+        assert!(!session.is_live());
+        assert_eq!(session.sidecar_port(Some(3000)), None);
     }
 
     #[test]

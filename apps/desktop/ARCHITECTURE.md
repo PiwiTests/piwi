@@ -30,7 +30,9 @@ need the detail behind one of them.
 
 `session.rs` holds the generation of the sidecar and whether the session is live. The live flag is set only after the
 sidecar proved the token for the current generation (`load_session`), and cleared when the sidecar exits or the
-supervisor gives up. While it is clear, the navigation plugin refuses the sidecar origin for the main window, and the
+supervisor gives up. Both the exit and the give-up bump the generation, and the check of the proof and the store of the
+flag run under the same lock as the bump and the clear (`Session::go_live_if`), so a clear never falls between a check
+and the store it guards. The give-up is marked before the session ends. While it is clear, the navigation plugin refuses the sidecar origin for the main window, and the
 open commands refuse it for the auxiliary and output windows. A give-up shows the stopped splash.
 
 The window signs in with a session code, never the token. After the proof, the shell asks the server for a code

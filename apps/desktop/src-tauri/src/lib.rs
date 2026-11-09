@@ -1320,8 +1320,9 @@ fn supervise_server(
                     &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
-                session::server_gave_up(&app, &server);
+                // The give-up is marked before the session ends, so a proof read earlier no longer stands when it does.
                 give_up_server(&app);
+                session::server_gave_up(&app, &server);
                 break;
             }
 
@@ -1343,8 +1344,8 @@ fn supervise_server(
                     session::server_restarted(&app, server.clone(), restart, shutting_down.clone());
                 }
                 None => {
-                    session::server_gave_up(&app, &server);
                     give_up_server(&app);
+                    session::server_gave_up(&app, &server);
                     break;
                 }
             }
