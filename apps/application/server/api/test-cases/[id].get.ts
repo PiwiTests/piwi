@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Get test case detail (stable identity)',
     description:
-      'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links.',
+      'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links. The stats count runs, one result per run, Playwright project and `--repeat-each` repetition read from its final attempt; `passRate` is the passed runs over the runs that passed or failed, in percent, null when none did. The recent executions include the caller’s own requested runs (`runOrigin` `request`, run on their machine), which count in none of the stats.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -14,9 +14,9 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test case ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveCaseProjectId, 'Test case');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveCaseProjectId, 'Test case');
 
-  const result = (await getTestCase(db, id)) as any;
+  const result = (await getTestCase(db, id, user.id)) as any;
   if (!result) {
     throw apiError({
       statusCode: 404,

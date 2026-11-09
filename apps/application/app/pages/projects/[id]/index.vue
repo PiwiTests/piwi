@@ -2,6 +2,7 @@
 import type { TableColumn } from '@nuxt/ui';
 import type { SortingState } from '@tanstack/vue-table';
 import type {
+  ProjectWithStats,
   ProjectWithTestRuns,
   TestRunSummary,
   PerformanceTrendPoint,
@@ -12,19 +13,44 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
+import { ranToItsEnd } from '#shared/project-health';
+import { passRatePercent } from '#shared/utils/pass-rate';
+import { compareOrder } from '~/utils/run-compare';
+import { refetchKeeping } from '~/utils/refetch-keeping';
+import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
+import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
 const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
+// === FILTERS (persisted per project) ===
+const filters = useProjectFilters(projectId);
+
+// === RUN SCOPE ===
+// The filters as the run scope every tab that reads run history follows: the
+// header and the runs table and chart, which the project's own request reads
+// within it, and the catalog, the failures, the Flake Lab and the performance
+// tab on the server.
+const runScope = computed<ProjectRunScope>(() => ({
+  environments: filters.value.environments,
+  branches: filters.value.branches,
+  allBranches: !!filters.value.allBranches,
+  fullRunsOnly: filters.value.fullRunsOnly,
+}));
+const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
+
 // === MAIN PROJECT DATA ===
-const {
-  data: project,
-  error: projectError,
-  refresh,
-} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+// Its newest runs within the scope (`testRuns`), and the newest runs of any scope (`unscopedRuns`).
+const { data: project, error: projectError } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, {
+  query: runScopeQuery,
+});
 if (projectError.value) showPageLoadError(projectError.value, 'project');
+// Every later read of the project keeps the one the page shows when it fails.
+const refresh = refetchKeeping(project, () =>
+  $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery.value }),
+);
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
@@ -33,7 +59,7 @@ const toast = useToast();
 
 const { can } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
-// Gaps tab and the Timeline's add-marker control.
+// Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
 // *Export*: this project as a quality report over the last 30 days, the project page's own window.
@@ -52,6 +78,8 @@ const canImport = computed(() => can('storage:manage'));
 const canScheduleReport = computed(() => can('report:write', projectId));
 
 const showDeleteProjectModal = ref(false);
+/** The project list the sidebar and the projects page show (`useFetch` key `projects`). */
+const { data: projectList } = useNuxtData<ProjectWithStats[]>('projects');
 const deleteProjectConfirmInput = ref('');
 const deleteProjectConfirmValid = computed(() => deleteProjectConfirmInput.value === project.value?.name);
 const {
@@ -66,7 +94,8 @@ async function handleDeleteProject() {
   try {
     await deleteProject();
     toast.add({ title: 'Project deleted', color: 'success' });
-    await refreshNuxtData();
+    // The sidebar's project list drops it at once, with nothing to read.
+    if (projectList.value) projectList.value = projectList.value.filter((p) => p.id !== Number(projectId));
     await router.push('/');
   } catch (error: unknown) {
     const message =
@@ -74,9 +103,6 @@ async function handleDeleteProject() {
     toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
   }
 }
-
-// === FILTERS (persisted per project) ===
-const filters = useProjectFilters(projectId);
 
 // === DRILL-DOWN FROM ANALYTICS ===
 // A number on a dashboard links here with its scope: the filters and branch
@@ -114,40 +140,40 @@ const defaultBranch = computed(
 );
 const drillText = computed(() => drill.value?.period?.label ?? null);
 
+/** A run as the filters read it: a run of a list, or of `unscopedRuns`. */
+interface ScopedRun {
+  startTime: string | Date;
+  environment?: string | null;
+  branch?: string | null;
+  isFullRun?: boolean;
+  metadata?: { scm?: { branch?: string | null } } | null;
+}
+
 // A run's branch reads the scalar column, falling back to the SCM metadata for
 // runs reported before the branch column existed.
 function runBranch(run: { branch?: string | null; metadata?: { scm?: { branch?: string | null } } | null }) {
   return run.branch ?? run.metadata?.scm?.branch ?? null;
 }
 
+/** The newest runs of any scope: what the filters offer, and the runs they hide. */
+const recentRuns = computed<ScopedRun[]>(() => project.value?.unscopedRuns ?? project.value?.testRuns ?? []);
+
 const availableEnvironments = computed(() => {
   const envs = new Set<string>();
-  for (const run of project.value?.testRuns || []) if (run.environment) envs.add(run.environment);
+  for (const run of recentRuns.value) if (run.environment) envs.add(run.environment);
   return [...envs].sort();
 });
 
 const availableBranches = computed(() => {
   const branches = new Set<string>();
-  for (const run of project.value?.testRuns || []) {
+  for (const run of recentRuns.value) {
     const b = runBranch(run);
     if (b) branches.add(b);
   }
   return [...branches].sort();
 });
 
-// === RUN SCOPE ===
-// The filters as the run scope every tab that reads run history follows: the
-// header, the runs table and chart here, and the catalog, the failures, the
-// Flake Lab and the performance tab on the server.
-const runScope = computed<ProjectRunScope>(() => ({
-  environments: filters.value.environments,
-  branches: filters.value.branches,
-  allBranches: !!filters.value.allBranches,
-  fullRunsOnly: filters.value.fullRunsOnly,
-}));
-const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
-
-function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): boolean {
+function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boolean {
   return runInProjectScope(
     { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun },
     scope,
@@ -156,14 +182,15 @@ function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): 
 }
 
 /** The drill-down period from Analytics, which narrows the runs table and chart only. */
-function inDrillPeriod(run: TestRunSummary): boolean {
+function inDrillPeriod(run: Pick<ScopedRun, 'startTime'>): boolean {
   const period = drill.value?.period;
   if (!period) return true;
   const t = new Date(run.startTime).getTime();
   return t >= period.from && t < period.to;
 }
 
-const scopedRuns = computed(() => (project.value?.testRuns ?? []).filter((run) => inScope(run)));
+// The server lists the newest runs within the scope.
+const scopedRuns = computed(() => project.value?.testRuns ?? []);
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
 
 function resetFilters(): void {
@@ -193,13 +220,25 @@ const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filt
 
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
-// draws them all.
+// draws them all. The sort reads every run before the page is cut, and the
+// table and the mobile cards show the same page.
 const RUNS_PAGE_SIZE = 25;
 const runsPage = useViewState('runs:page', () => 1);
 const runsSorting = useViewState<SortingState>('runs:sorting', () => []);
+/** What each sortable column of the runs table sorts by. */
+const RUN_SORT_VALUES: Record<string, (run: TestRunSummary) => SortValue> = {
+  id: (run) => run.id,
+  status: (run) => run.status,
+  startTime: (run) => new Date(run.startTime).getTime(),
+  environment: (run) => run.environment,
+  duration: (run) => run.duration,
+};
+const sortedRuns = computed(() => sortRows(tableRuns.value, runsSorting.value, RUN_SORT_VALUES));
 const pagedRuns = computed(() =>
-  tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+  sortedRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
 );
+// A new sort starts from its first page.
+watch(runsSorting, () => (runsPage.value = 1), { deep: true });
 // A narrower filter (or a deleted run) can leave the page past the last one.
 watch(tableRuns, (rows) => {
   const last = Math.max(1, Math.ceil(rows.length / RUNS_PAGE_SIZE));
@@ -210,7 +249,7 @@ watch(tableRuns, (rows) => {
 // reading hides — both are on by default, so without a note those runs look
 // missing.
 const hiddenRuns = computed(() => {
-  const runs = (keptOnly.value ? keptRunsData.value?.items : project.value?.testRuns) ?? [];
+  const runs: ScopedRun[] = (keptOnly.value ? keptRunsData.value?.items : recentRuns.value) ?? [];
   const scope = runScope.value;
   const withPartialRuns = { ...scope, fullRunsOnly: false };
   const withAllBranches = { ...scope, allBranches: true };
@@ -264,17 +303,20 @@ const PASS_RATE_RUNS = 20;
 const newestFirst = (a: TestRunSummary, b: TestRunSummary) =>
   new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
 
-const latestRun = computed(() => [...scopedRuns.value].sort(newestFirst)[0] ?? null);
+// A run in progress, interrupted or cancelled has no outcome: the latest run is the newest one that ran to its end,
+// else the newest of any status, and the pass rate reads the runs that ran to their end only.
+const endedRuns = computed(() => scopedRuns.value.filter((run) => ranToItsEnd(run.status)).sort(newestFirst));
+const latestRun = computed(() => endedRuns.value[0] ?? [...scopedRuns.value].sort(newestFirst)[0] ?? null);
 
-const passRateRuns = computed(() => [...scopedRuns.value].sort(newestFirst).slice(0, PASS_RATE_RUNS));
+const passRateRuns = computed(() => endedRuns.value.slice(0, PASS_RATE_RUNS));
 const passRate = computed(() => {
   let passed = 0;
-  let total = 0;
+  let failed = 0;
   for (const r of passRateRuns.value) {
     passed += r.passedTests;
-    total += r.totalTests;
+    failed += r.failedTests;
   }
-  return total > 0 ? Math.round((passed / total) * 100) : null;
+  return passRatePercent({ passed, failed });
 });
 
 const {
@@ -336,15 +378,23 @@ const headerFailures = computed(() =>
 const testCasesTotal = ref<number | null>(null);
 
 function refreshFailureCounts() {
-  refreshClustersCount();
-  refreshFlakyCount();
-  refreshQuarantineCount();
+  return Promise.all([refreshClustersCount(), refreshFlakyCount(), refreshQuarantineCount()]);
 }
 
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
+// A read asked from outside the page (the assistant, once a proposal is applied): the project, its kept runs, its
+// failure counts and its capability states; the open failures list adds its own.
+usePageReload(() =>
+  Promise.all([
+    refresh(),
+    refreshKeptRuns(),
+    refreshFailureCounts(),
+    refreshNuxtData(`capabilities-project-${projectId}`),
+  ]),
+);
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'coverage', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Other ?tab= values (and the redirecting sub-routes) land on the tab that holds them.
@@ -357,6 +407,7 @@ const TAB_ALIASES: Record<string, TabValue> = {
   'failure-clusters': 'failures',
   'flaky-tests': 'failures',
   quarantine: 'failures',
+  gaps: 'coverage',
   'ai-steps': 'performance',
   members: 'settings',
 };
@@ -397,16 +448,16 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
-// The Gaps and Flake Lab tabs follow the `test-map` and `flake-lab`
-// capabilities: a project that declined one loses its tab, and a stale
-// `?tab=` link to it falls back to Runs.
-const TAB_CAPABILITY: Partial<Record<TabValue, Parameters<typeof projCapHidden>[0]>> = {
-  gaps: 'test-map',
-  'flake-lab': 'flake-lab',
+// The Flake Lab tab follows the `flake-lab` capability, and the Coverage tab
+// the `test-map` and `coverage` ones (it shows while either is on): a project
+// that declined them loses the tab, and a stale `?tab=` link to it falls back to Runs.
+const TAB_CAPABILITIES: Partial<Record<TabValue, Array<Parameters<typeof projCapHidden>[0]>>> = {
+  coverage: ['test-map', 'coverage'],
+  'flake-lab': ['flake-lab'],
 };
 const tabHidden = (tab: TabValue) => {
-  const capability = TAB_CAPABILITY[tab];
-  return capability ? projCapHidden(capability) : false;
+  const capabilities = TAB_CAPABILITIES[tab];
+  return capabilities ? capabilities.every((capability) => projCapHidden(capability)) : false;
 };
 watch(
   () => tabHidden(activeTab.value),
@@ -436,8 +487,11 @@ watch(
 );
 
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
-// A tab's own keys leave with it: the Settings section, the Gaps tab's graph node.
-const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = { settings: ['section'], gaps: ['node'] };
+// A tab's own keys leave with it: the Settings section, the Coverage tab's view and the keys of its views.
+const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = {
+  settings: ['section'],
+  coverage: ['view', ...Object.values(COVERAGE_VIEW_KEYS).flat()],
+};
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
   const patch: Record<string, string | undefined> = { tab };
@@ -480,7 +534,7 @@ const tabItems = computed(() =>
       value: 'failures' as const,
     },
     { label: 'Flake Lab', icon: 'i-lucide-snowflake', value: 'flake-lab' as const },
-    { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
+    { label: 'Coverage', icon: 'i-lucide-radar', value: 'coverage' as const },
     { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
     { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
   ].filter((item) => !tabHidden(item.value)),
@@ -561,13 +615,13 @@ async function onRunsDeleted(runIds: number[]) {
   await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
-// Compare opens the newer run's Changes tab with the older run as its baseline.
+// Compare opens the newer run's Changes tab (by start time, `compareOrder`) with the older run as its baseline.
 function compareSelectedRuns() {
   if (selectedRunIds.value.length !== 2) return;
-  const [a, b] = selectedRunIds.value as [number, number];
-  const newer = Math.max(a, b);
-  const older = Math.min(a, b);
-  navigateTo(`/test-runs/${newer}?tab=changes&baseline=${older}`);
+  const [a, b] = selectedRunIds.value.map((id) => tableRuns.value.find((run) => run.id === id));
+  if (!a || !b) return;
+  const { newer, older } = compareOrder(a, b);
+  navigateTo(`/test-runs/${newer.id}?tab=changes&baseline=${older.id}`);
 }
 
 function scopeTooltip(run: TestRunSummary): string {
@@ -829,11 +883,6 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
   });
-  items.push({
-    label: 'Coverage',
-    icon: 'i-lucide-scan-line',
-    onSelect: () => navigateTo(`/projects/${projectId}/coverage`),
-  });
   if (!projCapHidden('bug-reports'))
     items.push({
       label: 'Bug reports',
@@ -929,7 +978,7 @@ const moreMenuItems = computed(() => {
           :latest-run="latestRun"
           :pass-rate="passRate"
           :pass-rate-runs="passRateRuns.length"
-          :has-runs="(project?.testRuns?.length ?? 0) > 0"
+          :has-runs="recentRuns.length > 0"
           :failures="headerFailures"
           @open="openHeaderTarget"
         />
@@ -1076,6 +1125,7 @@ const moreMenuItems = computed(() => {
               <UTable
                 v-if="tableRuns.length > 0"
                 v-model:sorting="runsSorting"
+                :sorting-options="{ manualSorting: true }"
                 :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
@@ -1193,6 +1243,7 @@ const moreMenuItems = computed(() => {
                       :fixme="row.original.fixmeTests ?? 0"
                       :flaky="row.original.flakyTests"
                       :did-not-run="row.original.didNotRunTests ?? 0"
+                      :interrupted="row.original.interruptedTests ?? 0"
                       :total="row.original.totalTests"
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
@@ -1233,15 +1284,12 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
-            <div
-              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
-              class="text-center py-8 text-gray-500"
-            >
+            <div v-if="tableRuns.length === 0 && recentRuns.length > 0" class="text-center py-8 text-gray-500">
               {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
-              v-else-if="!project?.testRuns || project.testRuns.length === 0"
+              v-else-if="recentRuns.length === 0"
               icon="i-lucide-rocket"
               text="No test runs yet for this project."
             >
@@ -1270,21 +1318,7 @@ const moreMenuItems = computed(() => {
 
         <!-- FAILURES TAB -->
         <div v-if="activeTab === 'failures'" class="space-y-4" data-tour="project-failures-tab">
-          <div class="flex">
-            <div class="inline-flex rounded-lg border border-default p-0.5 bg-elevated/40">
-              <button
-                v-for="seg in failureSegments"
-                :key="seg.key"
-                type="button"
-                class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
-                :class="failureSegment === seg.key ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-highlighted'"
-                :aria-pressed="failureSegment === seg.key"
-                @click="failureSegment = seg.key"
-              >
-                {{ seg.label }} <span class="tabular-nums text-muted">({{ seg.count }})</span>
-              </button>
-            </div>
-          </div>
+          <SegmentedSwitch v-model="failureSegment" :items="failureSegments" />
 
           <template v-if="failureSegment === 'clusters'">
             <ClusterMergeSuggestions
@@ -1330,9 +1364,9 @@ const moreMenuItems = computed(() => {
           <FlakeLabPanel :project-id="Number(projectId)" :scope="runScope" :project-name="project?.name" />
         </div>
 
-        <!-- GAPS TAB -->
-        <div v-if="activeTab === 'gaps'" data-tour="project-gaps-tab">
-          <GapsPanel :project-id="Number(projectId)" />
+        <!-- COVERAGE TAB -->
+        <div v-if="activeTab === 'coverage'" data-tour="project-coverage-tab">
+          <ProjectCoverageTab :project-id="Number(projectId)" :scope="runScope" />
         </div>
 
         <!-- PERFORMANCE TAB -->

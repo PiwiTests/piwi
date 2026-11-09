@@ -91,13 +91,14 @@ Playwright run creates the project.
 For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
 coverage of the commit's complete Playwright runs (never a partial, probe or flake-lab run; a run narrowed only by
 `--project`, or cut short by `--max-failures`, still counts as complete). The totals are recomputed seconds after each upload or run; read them with the
-[API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
+[API](https://piwitests.dev/demo/settings/api) or the MCP `get_coverage_summary` tool.
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
-  the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
-  version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
-- **Undetermined lines.** The browser suite records functions, not lines: an unrun line whose innermost function it
-  ran is undetermined, shown beside the ratio, never counted as run.
+  the same lines: the span table's, from [server coverage](./server-coverage) or
+  [browser lines](./code-reach#what-it-records), when a run recorded them for that version of the file; otherwise the
+  reports' own. A line a tool marks outside them is ignored.
+- **Undetermined lines.** At `coverage.browser: 'functions'`, the browser suite records functions, not lines: an unrun
+  line whose innermost function it ran is undetermined, shown beside the ratio, never counted as run.
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only (what the Playwright suite alone
   protects), both, none, or undetermined.
@@ -108,10 +109,11 @@ coverage of the commit's complete Playwright runs (never a partial, probe or fla
   the commit's branch then on the default branch, file by file where the file's version is unchanged.
 - **A run whose backend restarted** still joins `e2e`, adding only lines that ran; alone, it marks `e2e` incomplete.
 
-The project's **Coverage** page shows the commit whose coverage arrived last, and a run's header links its commit's.
+The **Code** view of the project's **Coverage** tab shows the commit whose coverage arrived last, and a run's header
+links its commit's.
 
 <figure>
-  <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
+  <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage in the Code view">
   <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
 </figure>
 
@@ -130,11 +132,14 @@ not count.
 
 ## Find what is not covered
 
-Every bar on the coverage page splits lines by class, as a file's marks do. **Files** is a foldable tree, each
-folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
+Every bar in the Code view splits lines by class, as a file's marks do. **Files** is a foldable tree, each
+folder and file with its bar and its open [scenario gaps](./scenario-gaps), sortable by lines not run; beside it, the selected folder's suites and least-covered
 files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
-the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps).
+the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps), each with its
+**Accept**, **Snooze**, **Covered by** and **Dismiss**. The functions no suite ran, the error paths no suite ran in code that ran, and the
+functions only one test runs are gaps of their own ([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
+default branch when they pick none or several.
 
 <figure>
   <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">
@@ -163,7 +168,7 @@ one counting an incomplete `e2e` says so.
 
 ## Export
 
-The coverage page's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
+The Code view's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
 IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0, an undetermined line included:
 Piwi keeps no hit counts and no branches.
 
@@ -173,13 +178,13 @@ A project's coverage scope decides which files count: include and exclude patter
 the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
 build output (`bin/`, `obj/`, `dist/`, `.next/`, `.nuxt/`, `.output/`, `.svelte-kit/`) and generated sources; a folder
 pattern matches at any depth. Set it in the project's **Settings › Coverage**, or with the
-[API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload sends only the files in scope, and the commit's
+[API](https://piwitests.dev/demo/settings/api) (`coverageScope`). The upload sends only the files in scope, and the commit's
 inventory: its tracked files in scope and their blob ids.
 
 ## Areas
 
 Name the parts of the code in the same settings (`coverageAreas` in the API): `front: apps/web/`, `back: src/Api/`. A
-file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
+file belongs to the first area whose patterns match it, and every suite splits the same way: the Code view gives
 each area its totals and each suite's share, the coverage trend a line per area, and the pull-request comment the
 changed lines per area. A change recounts the commits that keep their reports; a removed area
 leaves the trend.

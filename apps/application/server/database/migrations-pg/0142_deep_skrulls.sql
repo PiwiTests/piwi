@@ -1,0 +1,1 @@
+ALTER TABLE "gate_evaluations" ADD COLUMN "warnings" jsonb;

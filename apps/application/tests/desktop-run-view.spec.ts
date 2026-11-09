@@ -31,6 +31,8 @@ declare global {
     __hub: { send(event: unknown): void; open(): number };
     /** The native notifications the page asked the shell for, as `title | body`. */
     __notes: string[];
+    /** What the page asked the shell to run its tests with, last. */
+    __runArgs?: { originRef?: string };
   }
 }
 
@@ -61,6 +63,7 @@ async function installBridge(page: Page) {
                   playwrightCli: '/home/dev/acme/node_modules/@playwright/test/cli.js',
                 };
               case 'desktop_run_local_tests':
+                window.__runArgs = args;
                 return 41;
               default:
                 return null;
@@ -149,6 +152,9 @@ function session(worker: Record<string, unknown>, ended = false) {
 }
 
 const RUNNING = { worker: 0, parallelIndex: 0, state: 'running', test: TEST, stop: null, pausing: false, intents: [] };
+
+/** A running worker whose reporter shows its lane while the test runs (`watch`). */
+const WATCHABLE = { ...RUNNING, intents: ['mock', 'view', 'input', 'pick-at', 'watch'] };
 
 function stopped(since: string, extra: Record<string, unknown> = {}) {
   return {
@@ -294,6 +300,29 @@ test.describe('Desktop run live view', () => {
         action: 'pause',
         since: null,
       });
+    // The Pause waits for the call the test runs: the call, how long it has run, and End the test, which gives it up.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Never' })",
+      uri: SPEC_URI,
+      line: 3,
+      since: new Date(Date.now() - 12_000).toISOString(),
+      endable: true,
+    };
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session({ ...RUNNING, pausing: true, waiting, intents: ['give-up'] }),
+    );
+    await expect(worker.getByText("Pausing: waits in Click getByRole('button', { name: 'Never' })")).toBeVisible();
+    await expect(worker.getByTestId('desktop-waited')).toHaveText(/^for 1\d s$/);
+    const endTest = worker.getByRole('button', { name: 'End the test' });
+    await expect(endTest).toHaveAttribute('title', /the call it waits in is given up/);
+    // The focus Pause had never goes to End the test, which a key pressed again would answer.
+    await expect(endTest).not.toBeFocused();
+    await expect(worker.locator('code', { hasText: "Click getByRole('button', { name: 'Never' })" })).toBeVisible();
+    await endTest.click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ ref: REF, worker: 0, action: 'give-up', since: null });
     await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
     await expect(worker.getByText("Click getByRole('button', { name: 'Pay' })")).toBeVisible();
@@ -616,5 +645,391 @@ test.describe('Desktop run live view', () => {
     await expect(
       tray(page).locator('[data-shot="desktop-run-worker"]').getByText('Running', { exact: true }),
     ).toBeVisible();
+  });
+
+  test('watches a running worker’s page, through a stop and between tests, and offers no Watch to an older reporter', async ({
+    page,
+  }) => {
+    const image = await jpeg(page);
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const watch = worker.getByRole('button', { name: 'Watch', exact: true });
+    await expect(watch).toHaveAttribute('aria-pressed', 'false');
+    await expect(worker.getByTestId('desktop-watch-needs-update')).toHaveCount(0);
+
+    // Watch: the window watches the worker's lane, and its frames show the running test's page.
+    await watch.click();
+    await expect(watch).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'watch'))
+      .toEqual([expect.objectContaining({ ref: REF, lane: 0, on: true, viewer: VIEWER })]);
+    await expect(lane.getByText('Starting the live view…')).toBeVisible();
+    const frame = (since: string | null, test = 't1') =>
+      page.evaluate((event) => window.__hub.send(event), {
+        type: 'lane-frame',
+        ref: REF,
+        lane: 0,
+        worker: 0,
+        test,
+        since,
+        width: 640,
+        height: 400,
+        data: image,
+      });
+    await frame(null);
+    const live = lane.getByRole('img', { name: 'The page, live', exact: true });
+    await expect(live).toBeVisible();
+    await expect(live).not.toHaveAttribute('data-stale');
+    await expect(lane.getByText('Live', { exact: true })).toBeVisible();
+
+    // A stop: the lane's frame of the stopped page comes, and the stop takes the clicks on it through the lane, with no
+    // view of its own; Watch live is not offered, the lane shows the stop.
+    const atStop = { ...stopped('s1', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents };
+    await page.evaluate((event) => window.__hub.send(event), session(atStop));
+    await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
+    await expect(lane.getByText('Taking an image of the page…')).toBeVisible();
+    await frame('s1');
+    const view = lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
+    await expect(view).toBeVisible();
+    await expect(worker.getByRole('button')).toHaveText([
+      'Watch',
+      'Pick on the image',
+      'Resume',
+      'Step',
+      'Finish',
+      'Mock a request',
+    ]);
+    await view.click({ position: { x: 20, y: 20 } });
+    await expect.poll(() => commands.find((c) => c.type === 'input')).toMatchObject({ since: 's1', worker: 0 });
+    await worker.getByRole('button', { name: 'Pick on the image' }).click();
+    await view.click({ position: { x: 100, y: 50 } });
+    await expect.poll(() => commands.find((c) => c.type === 'pick-at')).toMatchObject({ since: 's1' });
+
+    // Resumed: the last image stays, dimmed and marked as running, until the next frame.
+    await worker.getByRole('button', { name: 'Resume' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ action: 'resume', since: 's1' });
+    await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+    const lastShown = lane.getByRole('img', { name: 'The page as it last showed' });
+    await expect(lastShown).toBeVisible();
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    await expect(lane.getByText('Running…', { exact: true })).toBeVisible();
+    await frame(null);
+    await expect(live).toBeVisible();
+    await expect(live).not.toHaveAttribute('data-stale');
+
+    // Between two tests, and as the next one starts, the image stays as it last showed until that test's frame.
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, state: 'between', test: null }));
+    await expect(worker.getByText('Between tests')).toBeVisible();
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    const next = { ...TEST, id: 't2', title: ['checkout', 'refunds'] };
+    await page.evaluate((event) => window.__hub.send(event), session({ ...WATCHABLE, test: next }));
+    await expect(worker.getByText('checkout › refunds')).toBeVisible();
+    await expect(lastShown).toBeVisible();
+    await frame(null, 't2');
+    await expect(live).toBeVisible();
+    // The lane's frames were the window's view of the stop: it asked for no view of its own.
+    expect(commands.filter((c) => c.type === 'view')).toEqual([]);
+
+    // Turned off: the hub hears it, and the image goes.
+    await watch.click();
+    await expect(watch).toHaveAttribute('aria-pressed', 'false');
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'watch').at(-1))
+      .toMatchObject({ ref: REF, lane: 0, on: false });
+    await expect(lane.getByRole('img')).toHaveCount(0);
+
+    // A worker whose reporter shows a stopped test alone offers no Watch, and says what would.
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect(watch).toHaveCount(0);
+    await expect(worker.getByTestId('desktop-watch-needs-update')).toHaveText(
+      'Update the reporter to watch a running test.',
+    );
+  });
+
+  test('keeps the keyboard on the worker and the image honest as its lane stops, hides, refuses and leaves a test', async ({
+    page,
+  }) => {
+    const image = await jpeg(page);
+    await installBridge(page);
+    let refuse = false;
+    const commands = await playHub(page, (command) =>
+      command.type === 'watch' && command.on && refuse
+        ? { ok: false, message: 'This run has no worker 1 to watch.' }
+        : {},
+    );
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const send = (event: unknown) => page.evaluate((e) => window.__hub.send(e), event);
+    await send(session(WATCHABLE));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const watch = worker.getByRole('button', { name: 'Watch', exact: true });
+    const watchLive = worker.getByRole('button', { name: 'Watch live' });
+    const live = lane.getByRole('img', { name: 'The page, live', exact: true });
+    const lastShown = lane.getByRole('img', { name: 'The page as it last showed' });
+    const intents = ['mock', 'view', 'input', 'pick-at'];
+    const atStop = (since: string, test: typeof TEST | null = TEST) =>
+      session({ ...stopped(since, { intents }), intents: WATCHABLE.intents, test });
+    const frame = (since: string | null) =>
+      send({
+        type: 'lane-frame',
+        ref: REF,
+        lane: 0,
+        worker: 0,
+        test: 't1',
+        since,
+        width: 640,
+        height: 400,
+        data: image,
+      });
+    const lastWatch = () => commands.filter((c) => c.type === 'watch').at(-1);
+    const setHidden = (hidden: boolean) =>
+      page.evaluate((on) => {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => on });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, hidden);
+
+    // Watch has the keyboard as the running test stops: Watch live, in its place at the stop, takes it.
+    await watch.focus();
+    await send(atStop('s1'));
+    await expect(watchLive).toBeFocused();
+
+    // Watched, the running test's page shows live.
+    await send(session(WATCHABLE));
+    await watch.click();
+    await expect.poll(lastWatch).toMatchObject({ ref: REF, lane: 0, on: true });
+    await frame(null);
+    await expect(live).toBeVisible();
+
+    // The window hidden, then shown again: the image is the page as it last showed until a frame of the lane comes.
+    await setHidden(true);
+    await expect.poll(lastWatch).toMatchObject({ on: false });
+    await setHidden(false);
+    await expect.poll(lastWatch).toMatchObject({ on: true });
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    await expect(lane.getByText('Running…', { exact: true })).toBeVisible();
+    await frame(null);
+    await expect(live).not.toHaveAttribute('data-stale');
+
+    // Why the lane sends no frame stays, the image dimmed, though a frame was on its way as it came.
+    await page.evaluate(
+      ({ ref, data }) => {
+        const at = { type: 'lane-frame', ref, lane: 0, worker: 0, test: 't1', since: null };
+        window.__hub.send({ ...at, width: 640, height: 400, data });
+        window.__hub.send({ ...at, refused: 'Each image of the page is too long.' });
+      },
+      { ref: REF, data: image },
+    );
+    const tooLong = lane.getByText('Each image of the page is too long.');
+    await expect(tooLong).toBeVisible();
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    await expect(tooLong).toBeVisible();
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    await frame(null);
+    await expect(live).toBeVisible();
+    await expect(tooLong).toHaveCount(0);
+
+    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with Watch live.
+    await send(atStop('s2', null));
+    await expect(watchLive).toBeVisible();
+    await expect(lane).toHaveCount(0);
+
+    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to Watch live, which stays off.
+    await send(session(WATCHABLE));
+    await send(atStop('s3'));
+    await frame('s3');
+    await expect(lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' })).toBeVisible();
+    await watch.focus();
+    await page.keyboard.press('Enter');
+    await expect(watchLive).toBeFocused();
+    await expect(watchLive).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(lastWatch).toMatchObject({ on: false });
+
+    // A lane the hub would not show says why, while the test runs and at its next stop, where Watch live is offered.
+    refuse = true;
+    await send(session(WATCHABLE));
+    await watch.click();
+    await expect(lane.getByText('This run has no worker 1 to watch.')).toBeVisible();
+    await expect(watch).toHaveAttribute('aria-pressed', 'false');
+    await send(atStop('s4'));
+    await expect(worker.getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
+    await expect(watchLive).toBeVisible();
+  });
+
+  test('pauses a running test from its row on the run’s page, and shows its page live at the stop', async ({
+    page,
+    request,
+  }) => {
+    await installBridge(page);
+    // The first pause meets a test that has just stopped.
+    let stoppedAlready = true;
+    let refuseWatch = false;
+    const commands = await playHub(page, (command) => {
+      if (command.type === 'watch' && command.on && refuseWatch) {
+        return { ok: false, message: 'This run has no worker 1 to watch.' };
+      }
+      if (command.type !== 'runControl' || !stoppedAlready) return {};
+      stoppedAlready = false;
+      return { ok: false, message: 'The test is stopped already.' };
+    });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // A run another window of the app started runs the same test on the same worker: no row of this run is its.
+    const elsewhere = session(RUNNING);
+    elsewhere.session.ref = 'desktop-77';
+    await page.evaluate((event) => window.__hub.send(event), elsewhere);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+
+    // The run reports to this app with the reference the app gave it, and its test begins on worker 0.
+    await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toMatch(/^desktop:/);
+    const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+    const start = await retryPost(request, '/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_VIEW,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+      },
+    });
+    expect(start.ok()).toBeTruthy();
+    const live = (await start.json()) as { runId: number; streamToken: string };
+    try {
+      const begun = await retryPost(request, `/api/test-runs/${live.runId}/events`, {
+        data: {
+          streamToken: live.streamToken,
+          testCases: [
+            {
+              type: 'begin',
+              title: 'pays',
+              location: 'tests/checkout.spec.ts:3:1',
+              workerIndex: 0,
+              startedAt: Date.now(),
+              browser: { projectName: 'chromium' },
+            },
+          ],
+        },
+      });
+      expect(begun.ok()).toBeTruthy();
+      await tray(page)
+        .getByRole('link', { name: `Live in Piwi — Run #${live.runId}` })
+        .click({ timeout: 15_000 });
+      await expect(page).toHaveURL(new RegExp(`/test-runs/${live.runId}$`));
+
+      // Its running row: Pause and watch pauses that worker of this run before its next call. The test stopped at a
+      // page.pause() as the pause went: the hub says so, and that stop, which comes next, is watched live.
+      const watch = page.getByRole('button', { name: 'Pause and watch' });
+      // Its reporter shows a stopped test alone: no Watch, and Pause and watch says what would.
+      await expect(watch).toHaveAttribute(
+        'title',
+        'Stop the test before its next call that acts on or checks the page, and watch its page live in Local runs. ' +
+          'Update the reporter to watch a running test.',
+      );
+      await expect(watch).toHaveAccessibleName('Pause and watch: checkout › pays');
+      await expect(page.getByTestId('desktop-watch-lane')).toHaveCount(0);
+      await watch.click();
+      // The toast, and its copy for screen readers.
+      await expect(page.getByText('The test is stopped already.').first()).toBeVisible();
+      await page.evaluate((event) => window.__hub.send(event), session(stopped('s0', { reason: 'page-pause' })));
+      await expect(tray(page).getByText('Stopped at page.pause()')).toBeVisible();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+
+      // It goes on, and the next pause reaches it.
+      await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+      await watch.click();
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'runControl'))
+        .toEqual([
+          expect.objectContaining({ ref: REF, worker: 0, action: 'pause', since: null }),
+          expect.objectContaining({ ref: REF, worker: 0, action: 'pause', since: null }),
+        ]);
+      await page.evaluate((event) => window.__hub.send(event), session({ ...RUNNING, pausing: true }));
+      await expect(page.getByRole('button', { name: 'Pausing…' })).toHaveAttribute('aria-disabled', 'true');
+      await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
+      await expect(tray(page).getByText('Paused', { exact: true })).toBeVisible();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+
+      // The row says where the test stopped. Closed, the tray ends the view; Show its page opens it on the worker,
+      // the focus there, and Watch live, left on, watches the stop again.
+      await expect(page.getByTestId('desktop-stopped')).toContainText(
+        /Paused\s*·\s*Click getByRole\('button', \{ name: 'Pay' \}\)\s*·\s*tests\/checkout\.spec\.ts:5/,
+      );
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await expect(tray(page)).toHaveCount(0);
+      await page.getByRole('button', { name: 'Show its page' }).click();
+      await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'view').map((c) => [c.ref, c.since, c.on]))
+        .toEqual([
+          [REF, 's0', true],
+          [REF, 's0', false],
+          [REF, 's1', true],
+          [REF, 's1', false],
+          [REF, 's1', true],
+        ]);
+
+      // A reporter that shows the lane while the test runs, whose lane the hub would not show: Pause and watch shows the
+      // stop live all the same, and the tray says why the lane does not show.
+      refuseWatch = true;
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+      await page.getByRole('button', { name: 'Pause and watch: checkout › pays', exact: true }).click();
+      await page.evaluate(
+        (event) => window.__hub.send(event),
+        session({ ...stopped('s2', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents }),
+      );
+      await expect(tray(page).getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'view').at(-1))
+        .toMatchObject({ ref: REF, since: 's2', on: true });
+      refuseWatch = false;
+
+      // Watch, on the row, opens the tray on the worker with its lane watched.
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+      const watchLane = page.getByRole('button', { name: 'Watch: checkout › pays', exact: true });
+      await expect(watchLane).toHaveAttribute(
+        'title',
+        'Open Local runs on this test, where its page shows as it runs, and at each stop',
+      );
+      await watchLane.click();
+      await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
+      await expect(tray(page).getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'watch').at(-1))
+        .toMatchObject({ ref: REF, lane: 0, on: true, viewer: VIEWER });
+
+      // A test that never stops says why, in place of Pause and watch.
+      const never = "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
+      await page.evaluate(
+        (event) => window.__hub.send(event),
+        session({ ...RUNNING, test: { ...TEST, cannotPause: never } }),
+      );
+      await expect(page.getByTestId('desktop-cannot-pause')).toHaveText(`This test never stops: ${never}`);
+      await expect(page.getByRole('button', { name: 'Pause and watch' })).toHaveCount(0);
+    } finally {
+      await request.post(`/api/test-runs/${live.runId}/finish`, {
+        data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
+      });
+    }
   });
 });

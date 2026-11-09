@@ -50,11 +50,23 @@ describe('settings registry integrity', () => {
 });
 
 describe('buildSettingsNavSections', () => {
-  test('an admin on the web sees every page', () => {
+  test('an admin on the web sees every page but the desktop-only ones', () => {
     // Set comparison, not sequence: grouping deliberately reorders relative to
     // the registry's declaration order (storage sits with Instance, tags with
     // Analysis). The order that matters is asserted by the group-order test.
-    expect(paths(WEB_ADMIN).sort()).toEqual(SETTINGS_PAGES.map((p) => p.to).sort());
+    expect(paths(WEB_ADMIN).sort()).toEqual(
+      SETTINGS_PAGES.filter((p) => !p.desktopOnly)
+        .map((p) => p.to)
+        .sort(),
+    );
+  });
+
+  test('the desktop-only pages show in the desktop build alone, first', () => {
+    const desktopOnly = SETTINGS_PAGES.filter((p) => p.desktopOnly).map((p) => p.to);
+    expect(desktopOnly).toEqual(['/settings/desktop']);
+    expect(paths(WEB_ADMIN)).not.toContain('/settings/desktop');
+    // The first page `/settings` opens on in the desktop build.
+    expect(paths(DESKTOP)[0]).toBe('/settings/desktop');
   });
 
   test('a non-admin sees no page needing an instance permission', () => {

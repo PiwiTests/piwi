@@ -44,19 +44,20 @@ the application itself did not cope with the fault, whatever the tests saw.
 Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code behind a node changes,
 whether it was part of an earlier escaped failure and the priority of the tests that reach it, and, for a changed file,
 how long it has been changing. The score and its factors show on every gap, and
-[which gaps get which factors](/reference/gap-detectors#exposure) varies: a gap on a page or a control ranks by
-priority and its detector alone. Counts are per class, never a coverage percentage: a percentage over an observed
+[which gaps get which factors](/reference/gap-detectors#exposure) varies. Counts are per class, never a coverage percentage: a percentage over an observed
 surface looks complete exactly when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
-open [bug reports](/features/bug-reports).
+open [bug reports](/features/bug-reports), and code no suite runs, error paths no suite runs, or code only one test runs.
 
-## The Gaps tab
+## The Coverage tab
 
-The project's **Gaps** tab lists gaps and findings by feature, ranked, each with its class, score factors and
-evidence: the top 200 of the status picked, so a large map is read one status or one feature at a time.
+The project's **Coverage** tab has three views. **Gaps** lists gaps and findings by feature, ranked, each with its
+class, score factors and evidence: the top 200 of the status picked, so a large map is read one status or one feature
+at a time. A gap on a file, a handler or a route names the files behind it with the lines the suites ran. **Code** is
+the [combined coverage](/features/combined-coverage) of a commit.
 
-The tab opens on the **feature map**: one circle per feature (from the
+**Map** opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its
 worst open gap, and linked to the features it shares nodes with. A feature also groups what its tests miss nearby,
 such as the controls on its pages, and a **hub** most tests reach links no features
@@ -108,8 +109,7 @@ week after their acceptance: the tests not yet written.
 
 Every verdict is also a labeled example that counts
 [for or against its detector](/reference/gap-detectors#precision). A detector below 60% precision on a project with twenty or more verdicts **mutes itself**
-there: its rows leave the pull-request comment, the Gaps digest, the feature map and graph, its gaps sort last in the Gaps
-tab and in the MCP tools, and the Gaps tab and **Settings → About** say so.
+there ([what muting changes](/reference/gap-detectors#precision)).
 
 The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)

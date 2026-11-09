@@ -9,14 +9,18 @@
  * Each run shows its workers live, as the bundled server, the hub of the runs
  * the shell starts, tells them (`useDesktopRunHub`): the test each one runs
  * and, at a stop, the page, the controls and the code a stop can make, to copy
- * (`DesktopRunCopyList`). The window holds the hub's stream only while a run
- * of the tray runs or the hub still has a live run: while it does, a headless
- * stop waits for the window, so the tray opens on every stop it hears, and a
- * notification says so of a failure or a `page.pause()` when the window is in
- * the background. A running run's **Hold failures** switch, off by default
- * and on from the start for a reproduction, makes a failure no pause bar shows
- * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
- * run repeating its tests or in UI mode) holds none, and its switch says why.
+ * (`DesktopRunCopyList`). The window holds the hub's stream from a plugin
+ * (`desktop-run-hub.client.ts`), which opens the tray on every stop it hears;
+ * here, the stop's run expands, its worker scrolls into view, and the live
+ * region reads it out. A worker's **Watch** shows its page as its test runs,
+ * and at each stop (`DesktopRunLaneView`). The tray also
+ * opens on the worker the run page's **Show its page** names (`showWorker`),
+ * its run expanded and the focus on that worker. A running run's **Hold
+ * failures** switch, off by default and on from the start for a reproduction,
+ * makes a failure no pause bar shows wait at its line (`show`, said by the
+ * plugin from the store's `holds`); a run nobody attends (a Flake Lab, a
+ * bisect, a run repeating its tests or in UI mode) holds none, and its switch
+ * says why.
  *
  * A run's output can move to a separate window of the app
  * (`DesktopRunOutputWindow`), which stays open when the tray closes, and
@@ -24,7 +28,6 @@
  * window loads another page.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { isUnattendedDesktopRun } from '#shared/desktop-runs';
 import {
   flakeLabOutcome,
   localRunCompareTo,
@@ -33,16 +36,15 @@ import {
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
 import {
-  desktopHoldRefusal,
-  desktopHoldsByDefault,
-  desktopRunName,
+  desktopRunHoldRefusal,
+  desktopRunHolds,
   desktopRunOf,
-  desktopStopPlace,
-  desktopWorkerTest,
+  desktopStopSaid,
+  desktopWorkerKey,
 } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, activeCount } = store;
+const { runs, trayOpen, shownWorker, activeCount, holds, trayMounts } = store;
 const toast = useToast();
 
 const available = ref(false);
@@ -64,15 +66,8 @@ function sessionsOf(run: LocalRun): HubSession[] {
   return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
-/** The hub's live runs no run of the tray names: another window of the app started them. */
+/** The hub's live runs no run of the tray names: another window started them, or this one before a reload. */
 const otherSessions = computed(() => liveSessions.value.filter((session) => !runOf(session)));
-
-// The stream, only while it has something to show: a run of the tray runs, or the hub still has a live one.
-watch(
-  () => available.value && (activeCount.value > 0 || liveSessions.value.length > 0),
-  (on) => hub.want(on),
-  { immediate: true },
-);
 
 /** What the live region reads out: a test stopped, what a command answered. */
 const announcement = ref('');
@@ -84,39 +79,29 @@ function announce(text: string) {
 }
 
 /**
- * Every stop the window hears is shown: the tray opens on its run, and the live region reads it out. A failure and a
- * `page.pause()` are also said by the system while the window is in the background; a step, a pause or a line run to,
- * which the person's own controls asked for here or in Piwi Picker, is not.
+ * Every stop the window hears is shown: the plugin opens the tray, its run expands, its worker scrolls into view, and
+ * the live region reads it out.
  */
-function heardStop(session: HubSession, worker: HubWorker) {
+async function heardStop(session: HubSession, worker: HubWorker) {
   const stop = worker.stop;
   if (!stop) return;
-  trayOpen.value = true;
   const run = runOf(session);
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
-  const test = desktopWorkerTest(worker) ?? desktopRunName(session);
-  const place = desktopStopPlace(stop, session.root);
-  const said = stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
-  announce(said);
-  if (stop.reason !== 'failure' && stop.reason !== 'page-pause') return;
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  if (!document.hidden && document.hasFocus()) return;
-  try {
-    new Notification(stop.reason === 'failure' ? 'A test failed and waits' : 'A test waits at page.pause()', {
-      body: said,
-    });
-  } catch {
-    // Notifications unavailable in this webview — the tray still shows the stop.
-  }
+  announce(desktopStopSaid(session, worker, stop));
+  await nextTick();
+  document
+    .querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(session.ref, worker.worker)}"]`)
+    ?.scrollIntoView({ block: 'nearest' });
 }
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
-  stopListening = hub.onStop(heardStop);
+  trayMounts.value++;
+  stopListening = hub.onStop((session, worker) => void heardStop(session, worker));
 });
 onBeforeUnmount(() => {
+  trayMounts.value--;
   stopListening?.();
-  hub.want(false);
 });
 
 // This component is mounted once in the layout, which makes it the natural
@@ -134,6 +119,18 @@ function isExpanded(run: LocalRun): boolean {
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
+
+// A worker the window was asked to show (the run page's Show its page): its run expands, and the focus moves to the
+// worker once it is drawn.
+watch(shownWorker, async (shown) => {
+  if (!shown) return;
+  shownWorker.value = null;
+  const session = hub.state.sessions[shown.ref];
+  const run = session ? runOf(session) : undefined;
+  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  await nextTick();
+  document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
+});
 
 /** The runs whose output shows in a separate window instead of the tray. */
 const separateByKey = ref<Record<number, boolean>>({});
@@ -159,40 +156,18 @@ function separateClosed(run: LocalRun, opened: boolean) {
   }
 }
 
-/** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
-const holdByKey = ref<Record<number, boolean>>({});
-
 /** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
 function holdRefusal(run: LocalRun): string | null {
-  const refused = desktopHoldRefusal(run);
-  if (refused) return refused;
-  return sessionsOf(run).some((session) => isUnattendedDesktopRun(session.ref))
-    ? 'Nobody attends a run of this kind: it goes on past each failure.'
-    : null;
+  return desktopRunHoldRefusal(run, liveSessions.value);
 }
 
 function holdsFailures(run: LocalRun): boolean {
-  return !holdRefusal(run) && (holdByKey.value[run.key] ?? desktopHoldsByDefault(run));
+  return desktopRunHolds(run, holds.value[run.key], liveSessions.value);
 }
 
 function setHold(run: LocalRun, on: boolean) {
-  holdByKey.value = { ...holdByKey.value, [run.key]: on };
+  holds.value = { ...holds.value, [run.key]: on };
 }
-
-/**
- * The runs the window shows live, so a failure no pause bar shows is held in them: the running ones whose Hold failures
- * is on, by each step's name as the step starts, before its workers connect, so a failure right after they do waits
- * too. Opening or closing the tray, or a run's part of it, changes nothing.
- */
-const shownRefs = computed(() => {
-  const held = runs.value.filter((run) => run.status === 'running' && holdsFailures(run));
-  return [...new Set(held.flatMap((run) => run.hubRefs))].sort();
-});
-watch(
-  () => shownRefs.value.join(' '),
-  () => hub.show(shownRefs.value),
-  { immediate: true },
-);
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
@@ -307,7 +282,7 @@ function runDetail(run: LocalRun): string {
               Stop
             </UButton>
             <UTooltip
-              v-else-if="run.kind !== 'flake' || run.flake"
+              v-else-if="(run.kind !== 'flake' || run.flake) && run.kind !== 'request'"
               :text="`Run again: ${localRunTitle(run)}, with the same options`"
             >
               <UButton

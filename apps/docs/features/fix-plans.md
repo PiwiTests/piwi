@@ -15,7 +15,7 @@ A **fix plan** gathers everything Piwi knows about a failure cluster into one an
 The same plan is reachable three ways:
 
 - **On the cluster page** — the recommended action leads as the **Next** line, and the section it points at sits right under the situation block as its own card, above the **Affected tests** selector and the evidence; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
-- **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
+- **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/settings/api)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
 The plan also names one Playwright command for the affected tests, by file and title in the projects they failed in, so a moved line still matches; the bisect and every re-run use the same tests, and Piwi records the fix once they pass.
@@ -63,6 +63,8 @@ git bisect reset
 
 The bisect needs two commits, the failing run's and the **last green** run's, which the reporter records from git (`collectScmInfo`, on by default): when either is missing, or the two are the same commit, the section says so in one line instead of showing a script. The recipe is always there.
 
+The application under test has to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or bisect exercises test changes only.
+
 In the [desktop app](/features/desktop#reproducing-a-failure-and-finding-the-breaking-commit) the same section can do the work for you: **Reproduce here** runs the recipe against the linked folder in a throwaway `git worktree` (your checkout is never touched), and **Find the breaking commit here** drives the whole bisect with live progress, then records the first bad commit on the cluster. For a failure on a team instance, your [editor](/features/editor-failures#ci-failures-in-the-problems-panel) passes the bisect to the desktop app and shares the first bad commit back with its own key; an agent records one with the `set_cluster_bisect` [MCP tool](/reference/mcp-tools).
 
 ## Fixed before
@@ -71,7 +73,7 @@ An open cluster often isn't new — the same failure, or one close to it, was fi
 
 A match is scored deterministically first — the same fingerprint family (error kind, masked message, masked locator), the same failing locator, the same spec file or test — and then, when an [embedding model](/guide/ai-provider#model-roles) is configured, by semantic similarity of the stored cluster vectors. The top three matches are shown, each with **when** it was resolved, the **commit** that fixed it (linked when the repository host is known), **how long** it stayed open, the triage note, the earlier diagnosis and its thumbs feedback (a diagnosis rated unhelpful shows only the thumbs-down, never its text), and one short reason it matched ("same error and locator", "same spec, similar message (0.91)"); the Markdown export and the MCP tool also name its owner. Nothing matches → the section renders nothing, no empty-state noise.
 
-**Apply the same triage** copies the earlier cluster's triage note onto the open one, prefixed `Same as cluster #N:` so the history reads as an intentional reuse. It never changes the open cluster's status — a new cluster is never marked resolved just because an old one was. The same top match is fed to the AI diagnosis as a *Previously fixed similar failure* clue, so the model can reuse a known fix rather than re-derive it.
+**Apply the same triage** adds the earlier cluster's triage note below the open one's, prefixed `Same as cluster #N:` so the history reads as an intentional reuse; the lines already in the note stay, those Piwi added since the page loaded included. It never changes the open cluster's status — a new cluster is never marked resolved just because an old one was. The same top match is fed to the AI diagnosis as a *Previously fixed similar failure* clue, so the model can reuse a known fix rather than re-derive it.
 
 ## Related
 

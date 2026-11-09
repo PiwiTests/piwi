@@ -31,8 +31,9 @@ import {
 } from '../../server/database/schema';
 import { getExecutionsCoverage, getFileCoverage, getFileVersions } from '../../server/utils/coverage';
 import { asRuntime } from '../../server/utils/code-reach';
+import { storedIdentityForms } from '../../server/utils/storable-values';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { notLabRun } from '../run-eligibility';
+import { isVisibleRun, notLabRun } from '../run-eligibility';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import {
   EXPLANATION_MIN_SIDE,
@@ -166,13 +167,18 @@ function factsOf(row: ExecutionRow): ExecutionFacts {
   };
 }
 
-async function loadExecution(db: DrizzleDB, executionId: number): Promise<ExecutionFacts | null> {
+/** An execution of a run `viewerId` sees (`isVisibleRun`), or null. */
+async function loadExecution(
+  db: DrizzleDB,
+  executionId: number,
+  viewerId: number | null,
+): Promise<ExecutionFacts | null> {
   const [row] = await db
-    .select(EXECUTION_COLUMNS)
+    .select({ ...EXECUTION_COLUMNS, run: { origin: testRuns.origin, requesterId: testRuns.requesterId } })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.id, executionId));
-  return row ? factsOf(row as ExecutionRow) : null;
+  return row && isVisibleRun(row.run, viewerId) ? factsOf(row as ExecutionRow) : null;
 }
 
 // ── Divergence ───────────────────────────────────────────────────────────────
@@ -188,8 +194,9 @@ async function loadExecution(db: DrizzleDB, executionId: number): Promise<Execut
 export async function getCoverageDivergence(
   db: DrizzleDB,
   executionId: number,
+  viewerId: number | null = null,
 ): Promise<CoverageDivergenceAnswer | null> {
-  const execution = await loadExecution(db, executionId);
+  const execution = await loadExecution(db, executionId, viewerId);
   if (!execution) return null;
   if (!isFailedStatus(execution.status)) return unavailableDivergence(executionId, 'not-failing');
   if (execution.coveragePayloadId == null) return unavailableDivergence(executionId, 'no-coverage');
@@ -740,6 +747,7 @@ export async function getCoverageReach(
   db: DrizzleDB,
   testCaseId: number,
   input: { file: string; lines: LineRange[]; executionId?: number | null },
+  viewerId: number | null = null,
 ): Promise<CoverageReachAnswer | null> {
   const [test] = await db
     .select({ id: testCases.id, projectId: testCases.projectId })
@@ -748,7 +756,7 @@ export async function getCoverageReach(
   if (!test) return null;
   let execution: ExecutionFacts | null;
   if (input.executionId != null) {
-    execution = await loadExecution(db, input.executionId);
+    execution = await loadExecution(db, input.executionId, viewerId);
     if (!execution || execution.testCaseId !== testCaseId) {
       throw new CoverageInsightInputError(`Execution ${input.executionId} is not an execution of test ${testCaseId}`);
     }
@@ -806,18 +814,22 @@ export async function getCoverageReach(
   return answer;
 }
 
-/** A test of a project named by its spec file (a path or a suffix of one) and its title. */
+/**
+ * A test of a project named by its spec file (a path or a suffix of one) and its title. Without its describe path, a
+ * long file or title may be stored whole or shortened (`storedIdentityForms`): either matches.
+ */
 export async function resolveTestByTitle(
   db: DrizzleDB,
   projectId: number,
   testFile: string,
   testTitle: string,
 ): Promise<number | null> {
+  const [files, titles] = await Promise.all([storedIdentityForms(testFile), storedIdentityForms(testTitle)]);
   const rows = await db
     .select({ id: testCases.id, filePath: testCases.filePath, suitePath: testCases.suitePath })
     .from(testCases)
-    .where(and(eq(testCases.projectId, projectId), eq(testCases.title, testTitle)));
-  const matches = rows.filter((r) => sameFilePath(r.filePath, testFile));
+    .where(and(eq(testCases.projectId, projectId), inArray(testCases.title, titles)));
+  const matches = rows.filter((r) => files.some((file) => sameFilePath(r.filePath, file)));
   if (matches.length > 1) {
     const listed = matches
       .slice(0, 5)

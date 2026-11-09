@@ -86,6 +86,12 @@ export async function headCommit(repoRoot: string): Promise<string | null> {
   return (await git(repoRoot, ['rev-parse', 'HEAD']))?.trim() || null;
 }
 
+/** Whether the work tree around `repoRoot` has a change git would commit or an untracked file; false outside one. */
+export async function hasUncommittedChanges(repoRoot: string): Promise<boolean> {
+  const out = await git(repoRoot, ['status', '--porcelain']);
+  return !!out && out.split('\n').some((line) => line.trim() !== '');
+}
+
 /**
  * The files git writes when `HEAD` moves, by a checkout or a commit: `HEAD` and `logs/HEAD` of the repository around
  * `repoRoot`, where git keeps them (those of a worktree or a submodule lie in the main repository's `.git`). Empty

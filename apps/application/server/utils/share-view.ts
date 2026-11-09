@@ -1,7 +1,7 @@
 /**
  * The anonymous side of share links: the checks every `/share/<token>` view
- * runs (the flag, the rate limit, the token), and the quality report a report
- * or a live dashboard link opens. A report link reads its snapshot's stored
+ * runs (the flag, the rate limit, the token, the minter's access), and the
+ * quality report a report or a live dashboard link opens. A report link reads its snapshot's stored
  * bundle; a live dashboard link collects the dashboard at every view with the
  * project access of the person who minted it, so the link dies with that
  * access, with the dashboard, or with its own expiry or revocation.
@@ -9,10 +9,16 @@
 import { eq } from 'drizzle-orm';
 import { readBody, type H3Event } from 'h3';
 import { z } from 'zod';
-import { users, type ShareLink } from '../database/schema';
+import { reportSnapshots, users, type ShareLink } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from './rate-limit';
-import { resolveShareLinkMaxTtlDays, resolveShareToken, shareLinksEnabled, type MintedShareLink } from './share-links';
+import {
+  resolveShareLinkMaxTtlDays,
+  resolveShareToken,
+  shareLinksEnabled,
+  type MintedShareLink,
+  type ResolvedShareLink,
+} from './share-links';
 import { publicBaseUrl } from './public-base-url';
 import { getUserAccessCached, isAuthEnabled } from './auth';
 import { TtlCache } from './ttl-cache';
@@ -23,8 +29,9 @@ import {
   loadDashboardDefinition,
   type DashboardActor,
 } from '#shared/handlers/dashboards';
-import { loadSnapshotForDelivery } from '#shared/handlers/reports';
+import { canReadSnapshot, loadSnapshotForDelivery } from '#shared/handlers/reports';
 import { dashboardScope } from '#shared/analytics/dashboards';
+import { parseRouteId } from '#shared/route-id';
 import { collectReportBundle } from '#shared/reports/collect';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import type { ReportBundle } from '#shared/reports/types';
@@ -55,7 +62,8 @@ export type OpenedShareLink = { db: DbClient; link: ShareLink } | { gone: string
 /**
  * Run the checks of a share view and resolve its token. A revoked or expired
  * link answers a short HTML page when `gonePage` is set (the holder once had
- * the real link), else a bare 404, like an unknown token. An `image` request
+ * the real link), else a bare 404, like an unknown token. A link whose minter
+ * can no longer read what it opens answers like an unknown token. An `image` request
  * is limited per link and may be cached for a few minutes (see
  * `IMAGE_LINK_LIMIT`); a page is limited per address and never cached.
  */
@@ -76,7 +84,8 @@ export async function openShareLink(
 
   const token = String(getRouterParam(event, 'token') ?? '');
   const db = await getDatabase();
-  const resolved = await resolveShareToken(db, token);
+  let resolved: ResolvedShareLink = await resolveShareToken(db, token);
+  if (resolved.state === 'live' && !(await minterCanRead(db, resolved.link))) resolved = { state: 'missing' };
   if (opts.image && resolved.state !== 'live') {
     // Only a miss counts against the address, so an image proxy's misses never block its valid links.
     if (!checkRateLimit(addressKey, LOOKUP_LIMIT, LOOKUP_WINDOW_MS)) throw rateLimitedError(event, [addressKey]);
@@ -106,6 +115,28 @@ export function setShareDocumentHeaders(event: H3Event, contentType: string, len
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
   setResponseHeader(event, 'Referrer-Policy', 'no-referrer');
   setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-modals');
+}
+
+/**
+ * Whether the person who minted a link can still read what it opens: the
+ * project of an execution or a cluster, every project of a report snapshot. A
+ * live dashboard link checks its minter as it collects (`minterAccess`). With
+ * authentication off every link passes, as every viewer reads every project;
+ * so does a link nobody minted (one Piwi files with an issue on its own).
+ */
+export async function minterCanRead(db: DbClient, link: ShareLink): Promise<boolean> {
+  if (!isAuthEnabled() || link.entityKind === 'dashboard' || link.createdBy == null) return true;
+  const [user] = await db.select().from(users).where(eq(users.id, link.createdBy));
+  if (!user) return false;
+  const readable = projectScopeFor(await getUserAccessCached(db, user), 'project:read');
+  if (link.entityKind === 'report') {
+    const [snapshot] = await db
+      .select({ projectIds: reportSnapshots.projectIds })
+      .from(reportSnapshots)
+      .where(eq(reportSnapshots.id, link.entityId));
+    return !!snapshot && canReadSnapshot(snapshot.projectIds, readable);
+  }
+  return link.projectId != null && (readable === 'all' || readable.has(link.projectId));
 }
 
 /**
@@ -227,12 +258,12 @@ export function requireShareLinksEnabled(): void {
 
 /** The saved dashboard id of a `dashboards/[id]/share-links` route; a built-in key is refused. */
 export function savedDashboardId(event: H3Event): number {
-  const raw = String(getRouterParam(event, 'id') ?? '');
-  if (!/^\d+$/.test(raw)) {
+  const id = parseRouteId(getRouterParam(event, 'id'));
+  if (id === null) {
     throw apiError({
       statusCode: 400,
       message: 'Only a saved dashboard has live dashboard links. Duplicate a built-in dashboard to share it.',
     });
   }
-  return Number(raw);
+  return id;
 }

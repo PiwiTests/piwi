@@ -46,6 +46,12 @@ export function useSettingsEnvState() {
     'auto-heal': false,
     integrations: false,
     ai: false,
+    desktop: false,
+    connect: false,
+    capabilities: false,
+    mcp: false,
+    api: false,
+    'companion-tools': false,
     about: false,
   });
 

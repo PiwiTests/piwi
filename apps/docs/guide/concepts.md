@@ -49,6 +49,13 @@ Two things commonly surprise people:
 - **A run can be watched while it happens.** With streaming enabled (the default), the run row appears
   when the suite starts and fills in test by test, so a failure is browsable before CI finishes.
 
+A **requested run** is one a person asked for from the dashboard and ran on their own machine: only they see it,
+and it stays out of everything the team sees. See [Run on my machine](/features/run-on-my-machine).
+
+A run **ran to its end** when it passed, failed or hit Playwright's global timeout. A project's health (Home's
+Project health table and stat strip, the project header) reads only such runs: a run still in progress, interrupted
+or cancelled shows in every list and in the trend bars with its status, and in none of those figures.
+
 ### Test case
 
 The **identity of a test across time**, keyed by project + file path (relative to the folder holding your
@@ -59,6 +66,10 @@ A test case is browser-independent: `login.spec.ts › signs in` is one test cas
 Chromium, Firefox, or all five projects in your matrix.
 
 This is the object at `/test-cases/:id` — pass rate, duration trend, and the list of every execution.
+
+On a test's own pages (its page and Trend tab, the project's Tests tab, selections and spec health), a **run** of the
+test is one result per run, Playwright project and `--repeat-each` repetition: its final attempt. A retry is never a
+run of its own, and a test that failed, then passed on its retry, is one flaky run.
 
 ### Execution
 
@@ -71,12 +82,51 @@ So is each `--repeat-each` repetition, which Playwright runs as a test of its ow
 repetition once, as Playwright's summary does, and a test failed in a run when one of its repetitions
 failed, whatever the others did.
 
+A test is **flaky** in a run when its last attempt passed after an earlier attempt failed or timed out. A
+retry alone does not make it flaky. When one test of a `describe.serial` group fails, Playwright retries the
+whole group: the tests that passed before and a `test.fail()` test that failed as expected pass again, and a
+test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
+passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
+
+Every view reads a result the same way: the run page and the run list, a test's history, status and Trend tab, the
+catalog, the analytics, the notifications, the exports and the MCP tools. Piwi stores the verdict with each result's
+last attempt as it ingests it, and gives the results and the flaky counts of runs stored by an earlier version theirs
+when it upgrades.
+
+A test is **interrupted** when the run's interruption (Ctrl+C, a crashed worker) cut it short. It counts in no
+outcome: neither passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the
+notifications draw it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.
+
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
 this is what they mean; when they say *test case*, they mean the identity above it.
 
 The distinction matters in practice: "this test is flaky" is a statement about a **test case**, and
 "here is the stack trace" is a statement about one **execution**.
+
+### Pass rate
+
+**The passed results over the results that passed or failed.** A timed-out result counts as failed. A skipped,
+did-not-run or interrupted result is in neither term, so a suite that skips tests by design, or a run stopped
+halfway, is rated on the tests that ran to an outcome. A flaky result, passed on a retry, counts as passed. With no
+passed or failed result there is no pass rate: the dashboard shows a dash, never 0% or 100%.
+
+Every pass rate follows this one rule: a run's, a project's, Home's, a test's, the
+[test pass rate metric](/reference/metrics) of Analytics and the quality reports, and a share link's README badge.
+
+### Flaky rate
+
+**A test's flaky runs over its runs that passed or failed**, the results the [pass rate](#pass-rate) divides by. A
+flaky run passed on a retry, so it is one of the passed runs; a skipped, did-not-run or interrupted run is in neither
+term. With no passed or failed run there is no flaky rate: the dashboard shows a dash.
+
+A file's or a spec directory's flaky rate divides its tests' runs the same way: the Trend tab of a test, the file
+headers of the project's Tests tab and the Spec health widget all follow this rule.
+
+Other numbers about flakiness divide differently and are not a flaky rate: the [flakiness score](#flakiness-score), a
+run's share of flaky tests (the `flakiness.spike` notification), and Flake Lab's **flaky N%**, shown beside a flaky
+test in an editor and on Home. That one is the share of the test's recent runs that passed or failed (those the
+flaky ranking reads) in which it failed or passed on a retry.
 
 ### Baseline (last green run)
 
@@ -110,10 +160,11 @@ repository's default branch read from the SCM provider, else `main`. The **base 
 pull-request run is the branch the CI provider says the pull request targets (`GITHUB_BASE_REF` and its
 equivalents), or `PIWI_BASE_BRANCH` when you set it — see [Branches](/features/branches).
 
-Two derived flags are stored per execution:
+Two derived flags are stored on the last attempt of each test in a run (of each repetition with
+`--repeat-each`), never on an earlier attempt of a retried test:
 
 - **New regression** — passed in the baseline, fails now.
-- **New flaky** — didn't retry in the baseline, passed on retry now.
+- **New flaky** — passed in the baseline with no failed attempt, flaky now.
 
 ### Environment
 
@@ -161,15 +212,31 @@ A public repository's CODEOWNERS is read without a token; a private one needs an
 ### Error fingerprint & failure cluster
 
 When an execution fails, Piwi hashes a normalized form of its error — error type, message with the
-volatile parts masked out (timeouts, numbers, UUIDs, URLs, expected/received values), and the locator
-with its dynamic arguments masked. That hash is the **error fingerprint**.
+volatile parts masked out, and the locator with its dynamic arguments masked. That hash is the
+**error fingerprint**. The masks take out what changes from one occurrence to the next:
+
+- timeouts and other numbers, UUIDs, hashes, and ids glued to an underscore (`order_5f3a9c1e2b`);
+- URLs, emails and timestamps (`2026-05-01T10:30:00Z`);
+- the folders of a path under a home folder, a CI workspace or a Windows drive
+  (`/home/runner/work/shop/fixtures/user.json` reads `<PATH>/user.json`), and the random end of a temporary
+  folder's name (`playwright_chromiumdev_profile-Xo8n2p`);
+- an assertion's expected and received values, and the list of elements a strict-mode violation prints;
+- dynamic locator options, such as the `{ name: '…' }` of a table row.
 
 Every failed execution sharing a fingerprint joins one **failure cluster**. Fifty red tests caused by
 one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
 a note.
 
-Fingerprints deliberately **ignore the failing stack frame**, so the same root cause reached from six
-different spec files stays one cluster. Full detail:
+Two clusters can also merge into one ([semantic merging](/features/ai-diagnosis#semantic-merging-optional)). A merge
+never buries a live failure: the survivor ends open when either cluster was open and not snoozed, takes the other's
+assignee when it has none and its note, and keeps its fix attempts, tracker history and dismissed pairs.
+
+Fingerprints **ignore the failing stack frame** when the error says what failed, so the same root cause
+reached from six different spec files, through a shared helper or page object, stays one cluster. A
+**generic** error says nothing of its own: it names no locator, and its message is an `expect(…)` matcher
+whose values are all masked, a test timeout, or a bare `TypeError` or `ReferenceError` line. Unrelated
+tests fail with the same generic error, so its fingerprint also hashes the file of its failing stack frame:
+the spec file, or the helper it failed in. Full detail:
 [Failure clustering & AI diagnosis](/features/ai-diagnosis).
 
 ### Story
@@ -205,8 +272,18 @@ Where a **failure cluster** stands, said in one sentence with one verb next to a
 failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
 still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
 *snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
-they disagree the state line offers the one action that closes the gap, unless the Next line already offers it. See
-[Failure clusters](/features/failure-clusters#the-state-line).
+they disagree the state line offers the one action that closes the gap, unless the Next line already offers it.
+*Not seen for N runs* counts the runs since the last failure that could have shown it: finished runs on its branch or
+the default branch (no lab run, bisect step, reproduction or environment incident) that ran its tests and did not fail
+with it. A test skipped, not run or interrupted is one a run did not run, and a run of the whole suite that ran to its
+end counts even when a test of the cluster no longer exists; one stopped early (interrupted, cancelled, timed out or
+cut short by `maxFailures`) counts only when it ran the cluster's tests. The failure of a cluster whose ticket is Done stopped once such a run came after its last
+failure. A fix is verified in the Playwright projects the cluster's tests last failed in: a run that left such a
+project out but still lists it in its config (another CI job runs it) says nothing, and a project the run's config no
+longer lists (removed or renamed) does not count, and a test that last failed only in such projects is answered by a
+pass in any project. A CI whose jobs each load a different project list (one config file per job, or a list built from
+an environment variable) makes another job's project look removed, so a cluster that failed there is recorded fixed by
+any job where its tests pass: give the jobs one list and select each job's projects with `--project`. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score
 
@@ -214,7 +291,8 @@ A test case's **composite score** from two signals — retry passes (weighted 60
 across runs (40%), shown next to its overall failure rate — plus a **root-cause class** (timing, network, assertion,
 environment, order, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
 computed over its execution history, which is why a test needs a few runs of history before it can be
-called flaky. See [Flaky tests](/features/flaky-tests).
+called flaky. Only the runs where the test passed or failed count: a skipped, did-not-run or interrupted result is
+neither a run nor a flip, so a test that never passed is never flaky. See [Flaky tests](/features/flaky-tests).
 
 ### Flake experiment
 
@@ -318,9 +396,10 @@ Two answers to "what do the tests miss", each with its own number. **Coverage** 
 functions ran, as a ratio over the lines that can run; the lines no test or suite ran are **lines not run**. The
 **Test Map** measures the application: which routes, pages and controls the tests reach and would notice breaking;
 what they miss becomes a [scenario gap](#scenario-gap), a test to write, ranked by exposure and never a percentage.
-They meet at the file: a file's [coverage page](/features/combined-coverage) lists the file's nodes in the Test Map
-with their open gaps and opens the [Gaps tab](/features/scenario-gaps) on one, and the Gaps tab's graph links a file or
-a route handler to its coverage. Neither fails a build.
+They meet on a project's [Coverage tab](/features/scenario-gaps#the-coverage-tab), whose views hold the gaps, the map
+and the code, and at the file: a file's [coverage page](/features/code-reach#which-tests-run-a-file) lists the file's
+nodes in the Test Map with their open gaps and opens the Map view on one, and the Map view's graph links a file or a
+route handler to its coverage. Neither fails a build.
 
 ### Uncovered change
 
@@ -425,7 +504,7 @@ is not in it. Off by default: turn it on with `capturePageInventory`.
 
 How complete a project's Test Map is, per input: the page inventory, the pages of locator calls, route handlers,
 probes, the declared surface, change history and the function catalog, each against what it could hold, with the
-detectors it wakes. A detector stays silent without its input, so a quiet Gaps tab can mean a map that cannot see; the
+detectors it wakes. A detector stays silent without its input, so a quiet Gaps view can mean a map that cannot see; the
 panel under the gap list names the step behind each input that is short. See
 [Scenario gaps & the Test Map](/features/scenario-gaps#map-health).
 

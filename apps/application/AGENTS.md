@@ -43,6 +43,13 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   without a folder prefix (`pathPrefix: false` in `nuxt.config.ts`), so two components of the same name collide.
 - **Import `shared/` as `#shared/...`** from `app/`, `server/` and the demo, never with a relative path or
   `~~/shared/...`. `shared/` holds the types, constants and pure helpers the app, the server and the demo share.
+- **Code both this app and Piwi Runner's window use lives in the `@piwitests/run-ui` layer** (`packages/run-ui/`,
+  extended in `nuxt.config.ts`): the team run request confirmation and connection (`DesktopTeamRunRequestModal`,
+  `DesktopTeamInstance`, `useDesktopTeamRequests`, the `desktop-team-requests.client.ts` plugin), the host's event
+  stream (`subscribeDesktopEvents`), `CodeBlock`, `useCopy`, the Tauri bridge (`useTauri.ts`), `errorMessage`,
+  `copyPreview` and the syntax highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules
+  that a vitest file loads without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`,
+  `@piwitests/run-ui/text`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
   or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
   there: `packages/core/tests/boundary.test.ts` fails on a dependency or on an import that is not relative (`node:`, a
@@ -72,6 +79,14 @@ the offline export are written once in `shared/` and differ only in the port eac
 - **The app runs with no variable set.** The one thing it refuses without configuration is storing a secret (an AI key,
   an SCM token, a webhook secret): without `PIWI_SECRET_KEY`, the key of their AES-256-GCM encryption, the save answers
   409 (`server/utils/crypto.ts`).
+- **Every pass rate is one rule: passed results over the results that passed or failed**, null with neither (a run's,
+  a test's, analytics', a report's, MCP's): `passRate` / `passRatePercent` (`shared/utils/pass-rate.ts`) in memory,
+  `passRateSql` and its counts (`shared/utils/pass-rate-sql.ts`) in a query. A test's or a file's flaky rate divides
+  its flaky results by the same results: `flakyRate`, beside `passRate`. `tests/unit/pass-rate-rule.test.ts`.
+- **A page, a message or a tool names a worker by its lane, from 1 in each shard** (`Worker 2`, `worker: 2` in an MCP
+  tool): Playwright's `parallelIndex`, stored as `test_runs_cases.parallel_index` and read through
+  `#shared/worker-lane` (`workerNumber`, `shownWorkerNumber`, `compareWorkers`). `workerIndex`, the worker process,
+  names one only for a result without a lane, from an older reporter (`tests/unit/worker-lane.test.ts`).
 - **The demo mirrors every feature.** A new database column, API response field or visible UI change updates the seed
   generator, the demo handlers (`app/demo/api/`), the simulator, the docs and, when a tour stop shows the screen, the
   tour; then run `npm run app:seed:demo`. The five places and their checks:
@@ -98,11 +113,13 @@ the offline export are written once in `shared/` and differ only in the port eac
 - **Component**: a Vue file in the matching `app/components/` subfolder, with a name unique in the app; follow the reuse
   and responsive rules of [`app/AGENTS.md`](app/AGENTS.md).
 - **Unit test**: `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads its
-  URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell.
-  One that needs a migrated SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`),
-  which replay the schema `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of
-  the migrations themselves.
-- **E2E test**: `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts`.
+  URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell,
+  and `tests/unit/postgres-test-files.test.ts` fails on any other file that reads the URL. One that needs a migrated
+  SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`), which replay the schema
+  `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of the migrations themselves.
+- **E2E test**: `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts` and
+  used as `PROJECT.<KEY>`. The cleanup deletes every registered name on the server the suite targets, so
+  `tests/unit/test-project-names.test.ts` fails on an entry no test uses and on the reporter's default project name.
 - **A test that needs an AI model** runs against a mock OpenAI-compatible server, as `tests/ai-diagnosis.spec.ts` does,
   so the main suite spends no tokens. Only `tests/live/` talks to a real service: `playwright.config.ts` ignores it, and
   each of its suites has its own config and script (`app:test:ai:live` and `app:test:assistant:live` need

@@ -3,6 +3,8 @@ import { describeFailureText } from '#shared/describe-failure';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
 import { formatTestSearchValue } from '#shared/test-search';
+import { liveWatchAddress } from '#shared/live-view';
+import { globMatcher } from '@piwitests/core/glob';
 
 /** All notification event keys supported by the subscription system. */
 export const NOTIFICATION_EVENTS = [
@@ -94,8 +96,11 @@ export interface FailureSource {
   snippet: string;
 }
 
-/** A test's outcome in one run: a status key of `STATUS_COLORS`, or null when the run did not report the test. */
-export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | null;
+/**
+ * A test's outcome in one run: a status key of `STATUS_COLORS` (`interrupted` when the run's interruption cut it
+ * short, in no outcome), or null when the run did not report the test.
+ */
+export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | 'interrupted' | null;
 
 /** A single failing test embedded in a run notification for debugging context. */
 export interface TopFailure {
@@ -158,6 +163,8 @@ export interface RunFinishedPayload extends RunScope {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  /** Tests the run's interruption cut short: in no outcome, so in none of the counts above. */
+  interruptedTests?: number;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
@@ -202,6 +209,8 @@ export interface ClusterNewPayload extends RunScope {
   runId: number;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The earlier run the cluster first appeared in, which sent no notification of it; absent when it is `runId`. */
+  firstSeenRunId?: number;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
   /** Distinct owners of the tests that failed into the cluster in this run, resolved as for {@link RunFinishedPayload}. */
@@ -494,7 +503,10 @@ export interface TestStuckPayload extends RunScope {
   browserName?: string;
   /** The `--repeat-each` repetition it is. */
   repeatEachIndex?: number;
+  /** Playwright's `workerIndex`: the worker process, new at every start. */
   workerIndex?: number;
+  /** The worker's lane (Playwright's `parallelIndex`), read from 1 as `worker N`; absent from an older reporter. */
+  parallelIndex?: number;
   shardIndex?: number;
   /** When the attempt began, in epoch milliseconds: one notification per attempt. */
   startedAt: number;
@@ -574,19 +586,34 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notif
   'test.stuck',
 ]);
 
+/** The most compiled branch and environment patterns kept, the least recently used dropped first. */
+const MAX_CACHED_NAME_PATTERNS = 500;
+const namePatternMatchers = new Map<string, (name: string) => boolean>();
+
+/** A `*` pattern's matcher, compiled once while it stays among the most recently used. */
+function namePatternMatcher(pattern: string): (name: string) => boolean {
+  let matches = namePatternMatchers.get(pattern);
+  if (matches) {
+    namePatternMatchers.delete(pattern);
+  } else {
+    matches = globMatcher(pattern);
+    if (namePatternMatchers.size >= MAX_CACHED_NAME_PATTERNS) {
+      namePatternMatchers.delete(namePatternMatchers.keys().next().value!);
+    }
+  }
+  namePatternMatchers.set(pattern, matches);
+  return matches;
+}
+
 /**
  * Whether a branch or environment name matches one of the patterns: an exact
- * name, or a pattern where `*` matches any run of characters, `/` included.
+ * name, or a pattern where `*` matches any run of characters but a line
+ * terminator, `/` included. Case matters. Matched by `globMatcher`, in steps
+ * that grow with the pattern's length times the name's, whatever the pattern
+ * holds.
  */
 export function matchesNamePattern(name: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => {
-    if (!pattern.includes('*')) return pattern === name;
-    const source = pattern
-      .split('*')
-      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-      .join('.*');
-    return new RegExp(`^${source}$`).test(name);
-  });
+  return patterns.some((pattern) => (pattern.includes('*') ? namePatternMatcher(pattern)(name) : pattern === name));
 }
 
 /** Whether an event/payload passes a subscription's delivery filters. */
@@ -714,9 +741,12 @@ export function computePerfBaseline(
 /** Dashboard path the notification links to, or null when it has no target. */
 export function notificationTargetPath(event: NotificationEvent, payload: NotificationPayload): string | null {
   if (event === 'test.stuck') {
-    // The run's Tests tab, searched for the stuck test's title: its row is the one left.
+    // The run's Tests tab, searched for the stuck test's title: its row is the one left. With the worker's lane, the
+    // live view of that lane opens beside it, where the project has it on.
     const p = payload as TestStuckPayload;
-    return `/test-runs/${p.runId}?search=${encodeURIComponent(formatTestSearchValue(p.testTitle))}`;
+    const search = `/test-runs/${p.runId}?search=${encodeURIComponent(formatTestSearchValue(p.testTitle))}`;
+    if (typeof p.parallelIndex !== 'number') return search;
+    return `${search}&watch=${liveWatchAddress({ shard: p.shardIndex ?? null, slot: p.parallelIndex })}`;
   }
   if (event === 'diagnosis.completed' && (payload as DiagnosisCompletedPayload).executionId) {
     return `/test-run-cases/${(payload as DiagnosisCompletedPayload).executionId}`;

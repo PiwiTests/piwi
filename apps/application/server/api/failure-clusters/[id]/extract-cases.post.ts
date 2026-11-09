@@ -1,4 +1,5 @@
 import { extractClusterCases } from '#shared/handlers/failure-clusters';
+import { isTriageNoteInput } from '#shared/inbox-queues';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -22,9 +23,12 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'testCaseIds must be a non-empty array' });
   }
 
-  const triageNote: string | undefined = body?.triageNote;
+  const triageNote: unknown = body?.triageNote;
+  if (!isTriageNoteInput(triageNote)) {
+    throw apiError({ statusCode: 400, message: 'triageNote must be a string' });
+  }
 
-  const result = await extractClusterCases(db, id, testCaseIds, triageNote);
+  const result = await extractClusterCases(db, id, testCaseIds, triageNote ?? undefined);
   if (!result) {
     throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
   }

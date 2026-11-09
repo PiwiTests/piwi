@@ -200,7 +200,8 @@ function aggregateCommits(commits: DemoCommit[]): ScmChanges {
     }
   }
   return {
-    commits: commits.map((c) => ({ sha: c.sha, message: c.message })),
+    // Oldest first, as the providers list a range's commits.
+    commits: commits.map((c) => ({ sha: c.sha, message: c.message })).reverse(),
     files: [...byFile.values()],
     patchesOmitted: false,
   };

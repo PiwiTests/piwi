@@ -115,3 +115,16 @@ export function adfPlainText(node: unknown): string {
   const children = Array.isArray(n.content) ? n.content.map(adfPlainText).join('') : '';
   return own + children;
 }
+
+/** Where an ADF tree's links point, in document order. */
+export function adfLinkHrefs(node: unknown): string[] {
+  if (!node || typeof node !== 'object') return [];
+  const n = node as { marks?: unknown; content?: unknown };
+  const own = Array.isArray(n.marks)
+    ? n.marks.flatMap((mark: { type?: unknown; attrs?: { href?: unknown } } | null) =>
+        mark?.type === 'link' && typeof mark.attrs?.href === 'string' ? [mark.attrs.href] : [],
+      )
+    : [];
+  const children = Array.isArray(n.content) ? n.content.flatMap(adfLinkHrefs) : [];
+  return [...own, ...children];
+}

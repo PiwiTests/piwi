@@ -375,6 +375,7 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // No failed count, as an older instance sends it: every run is in the pass rate.
               id: 3,
               title: 'removes a row',
               filePath: 'tests/rows.spec.ts',
@@ -397,6 +398,25 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Fskipped.spec.ts') {
+      // A test skipped on every run, and one with no run.
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              id: 31,
+              title: 'pays',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'skipped',
+              totalRuns: 3,
+              passedRuns: 0,
+              failedRuns: 0,
+            },
+            { id: 32, title: 'refunds', filePath: 'tests/skipped.spec.ts', status: 'passed', totalRuns: 0 },
+          ],
+        }),
+      );
+    }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Funread.spec.ts') {
       // One test of one title, two of another, in describe blocks the spec builds at run time.
       return res.end(
@@ -414,12 +434,14 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // Two skipped runs, in no pass rate.
               id: 1,
               title: 'pays',
               filePath: 'tests/checkout.spec.ts',
               status: 'passed',
-              totalRuns: 50,
+              totalRuns: 52,
               passedRuns: 48,
+              failedRuns: 2,
             },
           ],
         }),
@@ -1236,6 +1258,22 @@ describe('the Piwi language server', () => {
       }),
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/described.spec.ts') } });
+  });
+
+  test('gives no pass rate to a test with no passed or failed run', async () => {
+    const skipped = [
+      "import { test } from '@playwright/test';",
+      "test('pays', async () => {});",
+      "test('refunds', async () => {});",
+      '',
+    ].join('\n');
+    await open('tests/skipped.spec.ts', skipped);
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/skipped.spec.ts') })) as FileSummary;
+    expect(spec.lines.map((l) => [l.line, l.title])).toEqual([
+      [1, 'no pass rate (no passed or failed run) · skipped'],
+      [2, 'no pass rate (no passed or failed run)'],
+    ]);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
   });
 
   test('advises on the timeout of the only case of a title when its describe blocks do not read', async () => {
@@ -2581,13 +2619,32 @@ describe('runs as they happen', () => {
     expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
     expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
 
-    // It passes on its second attempt: flaky.
+    // It passes again on a retry of its serial group: the instance says no attempt failed, so it passed.
     pushRunEvent(60, 'test-completed', {
       title: 'pays',
       filePath: 'tests/checkout.spec.ts',
       testCaseId: 1,
       status: 'passed',
       retries: 1,
+      passedAfterFailure: false,
+      browser: 'chromium',
+    });
+    await waitFor(() =>
+      statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'passed' ? true : undefined,
+    );
+
+    // It passes on its third attempt, after a failed one, as an older instance's attempt history tells: flaky.
+    pushRunEvent(60, 'test-completed', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+      retries: 2,
+      attempts: [
+        { retry: 0, status: 'passed' },
+        { retry: 1, status: 'failed' },
+        { retry: 2, status: 'passed' },
+      ],
       browser: 'chromium',
     });
     await waitFor(() =>
@@ -3674,6 +3731,13 @@ describe('the configs of one repository reading one project', () => {
     fs.rmSync(repo, { recursive: true, force: true });
   });
 
+  /** The failures once both configs read their latest run, which each reads after its locator index. */
+  const readFailures = () =>
+    waitFor(async () => {
+      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+      return failures.tree.length === 2 && failures.tree.every((n) => n.children.length > 0) ? failures : undefined;
+    });
+
   test('download its locator index once, and show each failure once, from the config of its spec', async () => {
     const status = await waitFor(async () => {
       const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
@@ -3681,7 +3745,7 @@ describe('the configs of one repository reading one project', () => {
     });
     expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
     expect(downloads).toBe(1);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     const shown = failures.items.filter((f) => f.title === 'removes a row');
     expect(shown.map((f) => [f.root, f.uri])).toEqual([
       [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
@@ -3695,7 +3759,7 @@ describe('the configs of one repository reading one project', () => {
       [repo, path.basename(repo)],
       [admin, 'admin'],
     ]);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     expect(failures.tree.map((n) => [n.key, n.kind, n.label, n.description, n.root])).toEqual([
       [`context:${repo}`, 'context', path.basename(repo), 'Acme Mugs · 1 failing', repo],
       [`context:${admin}`, 'context', 'admin', 'Acme Mugs · 0 failing', admin],

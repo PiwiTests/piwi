@@ -202,6 +202,12 @@ describe('computeClusterState — one row per kind', () => {
     expect(s.sentence).toContain('All 2 tests are quarantined');
     expect(s.action).toBe('release');
   });
+
+  test('quarantined: a cluster of one test says so in the singular', () => {
+    const s = computeClusterState(cluster({ affectedTests: 1, quarantinedTests: 1 }), PROJECT);
+    expect(s.kind).toBe('quarantined');
+    expect(s.sentence).toBe('Its only test is quarantined; the cluster stays open until the test is released.');
+  });
 });
 
 describe('computeClusterState — precedence', () => {

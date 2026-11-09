@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel (server/database/schema.ts) picks the PostgreSQL schema at
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
@@ -102,27 +103,29 @@ beforeAll(async () => {
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
   const insertedCases = await db
     .insert(schema.testRunsCases)
-    .values([
-      {
-        testRunId: failingRunId,
-        testCaseId: 1,
-        status: 'failed',
-        duration: 120_000,
-        wastedTimeMs: 60_000,
-        browserName: 'chromium',
-        isNewRegression: 1,
-      },
-      {
-        testRunId: failingRunId,
-        testCaseId: 1,
-        status: 'passed',
-        duration: 30_000,
-        retries: 1,
-        wastedTimeMs: 0,
-        browserName: 'webkit',
-        isNewFlaky: 1,
-      },
-    ])
+    .values(
+      withStoredVerdicts([
+        {
+          testRunId: failingRunId,
+          testCaseId: 1,
+          status: 'failed',
+          duration: 120_000,
+          wastedTimeMs: 60_000,
+          browserName: 'chromium',
+          isNewRegression: 1,
+        },
+        {
+          testRunId: failingRunId,
+          testCaseId: 1,
+          status: 'passed',
+          duration: 30_000,
+          retries: 1,
+          wastedTimeMs: 0,
+          browserName: 'webkit',
+          isNewFlaky: 1,
+        },
+      ]),
+    )
     .returning({ id: schema.testRunsCases.id });
 
   // Network requests captured on those executions — one slow shared endpoint.
@@ -580,17 +583,23 @@ describe('branch policy and test filters', () => {
     const onMain = await run(1, 3, { branch: 'main' });
     await run(1, 2);
     const onFeature = await run(1, 1, { branch: 'feature/x', status: 'failed', passedTests: 0, failedTests: 2 });
-    await fdb.insert(schema.testRunsCases).values([
-      { testRunId: onMain, testCaseId: 10, status: 'passed', duration: 1_000, browserName: 'chromium' },
-      { testRunId: onMain, testCaseId: 11, status: 'passed', duration: 1_000, browserName: 'webkit' },
-      { testRunId: onFeature, testCaseId: 10, status: 'failed', duration: 2_000, browserName: 'chromium' },
-      { testRunId: onFeature, testCaseId: 11, status: 'failed', duration: 2_000, browserName: 'webkit' },
-    ]);
+    await fdb.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: onMain, testCaseId: 10, status: 'passed', duration: 1_000, browserName: 'chromium' },
+        { testRunId: onMain, testCaseId: 11, status: 'passed', duration: 1_000, browserName: 'webkit' },
+        { testRunId: onFeature, testCaseId: 10, status: 'failed', duration: 2_000, browserName: 'chromium' },
+        { testRunId: onFeature, testCaseId: 11, status: 'failed', duration: 2_000, browserName: 'webkit' },
+      ]),
+    );
     // Project 2 reports no branch: its runs count under the default-branch policy.
     const adminRun = await run(2, 2);
     await fdb
       .insert(schema.testRunsCases)
-      .values([{ testRunId: adminRun, testCaseId: 20, status: 'passed', duration: 500, browserName: 'chromium' }]);
+      .values(
+        withStoredVerdicts([
+          { testRunId: adminRun, testCaseId: 20, status: 'passed', duration: 500, browserName: 'chromium' },
+        ]),
+      );
     await backfillDailyRollups(fdb as any);
   });
 
@@ -627,6 +636,55 @@ describe('branch policy and test filters', () => {
     const { getAnalyticsContext } = await import('../../shared/handlers/analytics/common');
     const ctx = await getAnalyticsContext(fdb as any, scope);
     expect(ctx.notes.join(' ')).toMatch(/admin has no selection "checkout"/);
+  });
+
+  test('a test filter reads the same executions whether its query names the tests or not', async () => {
+    const { getAnalyticsContext, fetchContextRuns, fetchFilteredExecutions } =
+      await import('../../shared/handlers/analytics/common');
+    const ctx = await getAnalyticsContext(fdb as any, parseAnalyticsScope({ days: '30', allBranches: 'true' }));
+    const runs = await fetchContextRuns(fdb as any, ctx, ctx.period.from.getTime(), ctx.now);
+    const read = async (byProject: Array<[number, number[]]>) =>
+      (
+        await fetchFilteredExecutions(
+          fdb as any,
+          {
+            ...ctx,
+            testFilter: { testCaseIds: new Map(byProject.map(([p, tests]) => [p, new Set(tests)])), browsers: null },
+          },
+          runs,
+        )
+      )
+        .map((e) => `${e.testCaseId}@${runs.find((r) => r.id === e.testRunId)!.projectId}`)
+        .sort();
+    // One query reads the runs of both projects: it names the filtered tests of each.
+    const named = await read([
+      [1, [10]],
+      [2, [20]],
+    ]);
+    // `pays` ran on main and on the feature branch, `logs in` once in the admin project.
+    expect(named).toEqual(['10@1', '10@1', '20@2']);
+    // Past 500 tests the query names none of them, and the rows are kept in memory alone.
+    const many = Array.from({ length: 600 }, (_, i) => 1000 + i);
+    expect(
+      await read([
+        [1, [10, ...many]],
+        [2, [20]],
+      ]),
+    ).toEqual(named);
+    // A project the filter leaves out reads nothing, even when its test ids are those of another project.
+    expect(await read([[1, [10, 20]]])).toEqual(['10@1', '10@1']);
+    expect(await read([[1, []]])).toEqual([]);
+  });
+
+  test('a stored scope past the file glob limits reads its first 100 globs of at most 500 characters', async () => {
+    const { getAnalyticsContext } = await import('../../shared/handlers/analytics/common');
+    const base = parseAnalyticsScope({ days: '30', allBranches: 'true' });
+    const testsOf = async (files: string[]) =>
+      (await getAnalyticsContext(fdb as any, { ...base, tests: { files } })).testFilter?.testCaseIds?.get(1);
+    // The 101st glob is not read.
+    expect(await testsOf([...Array.from({ length: 100 }, () => 'none.spec.ts'), 'pay.spec.ts'])).toEqual(new Set());
+    // Nor a glob over 500 characters: with no glob left, the scope filters no file.
+    expect(await testsOf([`pay.spec.ts${'*'.repeat(490)}`])).toEqual(new Set([10, 11]));
   });
 
   test('a browser filter narrows the executions', async () => {

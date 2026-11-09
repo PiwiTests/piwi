@@ -1,36 +1,49 @@
-import { sql, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
-import { updateRunMetadata } from '../../../utils/run-metadata';
-import {
-  finalizeShardedRun,
-  longestDuration,
-  publishShardProgress,
-  withShardDurations,
-} from '../../../utils/sharded-runs';
+import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
+import { recordShardEnd, shardSpan, withShardDurations } from '../../../utils/shard-spans';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
+import { storableRunErrors } from '../../../utils/storable-values';
+import { requireRouteId } from '../../../utils/project-access';
+import { requireStreamingRun } from '../../../utils/stream-auth';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed. A run that does not exist answers 404, and one that is neither running nor interrupted 409, before the body is read.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'X-Piwi-Run-Token',
+        in: 'header',
+        required: false,
+        description:
+          'The stream token of the body, checked before the body is read. A run of reporter 0.65.0 or later needs it: 401 without it, 403 for one that is not the run’s.',
+        schema: { type: 'string' },
+      },
+    ],
     requestBody: {
       content: {
         'application/json': {
@@ -39,12 +52,35 @@ defineRouteMeta({
             properties: {
               streamToken: { type: 'string' },
               status: { type: 'string' },
+              startTime: { type: 'string', format: 'date-time' },
               duration: { type: 'number' },
               durations: { type: 'array', items: { type: 'number' } },
               hasPendingUploads: { type: 'boolean' },
               flakyTests: { type: 'integer' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              runErrors: {
+                type: 'array',
+                description:
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw): the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden. A shard adds its own to the run’s.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    stack: { type: 'string', nullable: true },
+                    location: {
+                      type: 'object',
+                      nullable: true,
+                      properties: {
+                        file: { type: 'string' },
+                        line: { type: 'integer' },
+                        column: { type: 'integer' },
+                      },
+                    },
+                  },
+                  required: ['message'],
+                },
+              },
             },
             required: ['streamToken'],
           },
@@ -55,14 +91,9 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
+  const db = await getDatabase();
+  await requireStreamingRun(db, id, 'finish', getRequestHeader(event, RUN_TOKEN_HEADER));
 
   const body = await readBody(event);
 
@@ -73,8 +104,6 @@ export default eventHandler(async (event) => {
       message: 'Missing stream token',
     });
   }
-
-  const db = await getDatabase();
 
   // Verify the run exists and the stream token matches
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
@@ -92,8 +121,8 @@ export default eventHandler(async (event) => {
   const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
 
+  if (isSharded) return finishShard(db, id, body);
   const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
-  if (isSharded) return finishShard(db, id, body, duration);
 
   await applyReporterKeep(db, id, body.keep);
 
@@ -112,15 +141,32 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Calculate flaky tests count (default to 0 if not provided)
-  const flakyTests = body.flakyTests ?? 0;
+  // Flaky results, from the attempts the run streamed: one passed after an earlier attempt failed.
+  const { flakyTests } = await computeRunCountsFromRows(db, id);
 
   const hasPendingUploads = body.hasPendingUploads === true;
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
+  const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
+
+  // One /finish settles the run. A request the reporter sends again while this
+  // one runs finds the run settled, changes nothing and answers its status.
+  const settleRun = async (updateData: Record<string, unknown>): Promise<boolean> => {
+    const [settled] = await db
+      .update(testRuns)
+      .set(updateData)
+      .where(and(eq(testRuns.id, id), inArray(testRuns.status, ['running', 'interrupted'])))
+      .returning({ id: testRuns.id });
+    return settled !== undefined;
+  };
+  const settledAnswer = async () => {
+    const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: current?.status ?? status };
+  };
 
   // Fold timed-out into failed for both the DB write and the live SSE events.
   // Preserve the "use body value when provided, else keep existing DB value"
@@ -135,8 +181,14 @@ export default eventHandler(async (event) => {
   const reportedMetadata = body.metadata
     ? keepIncidentMetadata(
         testRun.metadata,
-        carryExternalIdDuplicates(
-          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        carryRequestOrigin(
+          carryTagsTruncated(
+            carryExternalIdDuplicates(
+              carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+              testRun.metadata,
+            ),
+            testRun.metadata,
+          ),
           testRun.metadata,
         ),
       )
@@ -144,12 +196,13 @@ export default eventHandler(async (event) => {
 
   if (hasPendingUploads) {
     // The reported status waits in the metadata, where it survives a restart,
-    // until the report upload or the stale-run sweep settles the run.
+    // until the report upload or the stale-run sweep settles the run. The run
+    // keeps its stream token until then, which a batch delivery its reporter
+    // falls back to names it with (`cancelReplacedRun`).
     const pendingMetadata = withPendingStatus(body.metadata ? reportedMetadata : testRun.metadata, status);
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
-      streamToken: null,
       // The stale-run sweep measures the wait for the report upload from here.
       updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
@@ -157,7 +210,7 @@ export default eventHandler(async (event) => {
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
-      ...(body.flakyTests !== undefined && { flakyTests }),
+      flakyTests,
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       metadata: pendingMetadata,
@@ -168,11 +221,12 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.clearRunState(id);
 
@@ -201,7 +255,7 @@ export default eventHandler(async (event) => {
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
-      ...(body.flakyTests !== undefined && { flakyTests }),
+      flakyTests,
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {
@@ -214,11 +268,12 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.publish(id, {
       type: 'run-finished',
@@ -249,29 +304,41 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     runId: id,
+    runUrl: publicRunUrl(id),
     status: hasPendingUploads ? 'finalizing' : status,
   };
 });
 
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
- * run's shard tokens in the same write that records its test durations, so a
- * replayed `/finish` finds it gone and changes nothing. The run's test counters
- * are not touched: every case (synthesized didnotrun ones included) arrives as
- * a streamed event, which the events endpoint already counted. Only flakyTests
- * adds up here, since the events tally has no flaky notion. The run settles
- * once every shard finished.
+ * run's shard tokens in the same write that records its test durations, its
+ * span, its suite setup steps and its errors outside any test, and sets the
+ * run's start and duration from its shards' spans (`recordShardEnd`), so a
+ * replayed `/finish` finds the token gone and changes nothing. The run's test
+ * counters are not touched: every case (synthesized didnotrun ones included)
+ * arrives as a streamed event, which the events endpoint already counted. Only
+ * flakyTests adds up here, since the events tally has no flaky notion. The run
+ * settles once every shard finished.
  */
-async function finishShard(db: DbClient, id: number, body: Record<string, any>, duration: number) {
-  const recorded = await updateRunMetadata(db, id, (metadata) => {
-    const remaining = withoutShardToken(metadata, body.streamToken);
-    return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
-  });
+async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
+  const span = shardSpan(body, Date.now());
+  const recorded = await recordShardEnd(
+    db,
+    id,
+    span,
+    (metadata) => {
+      const remaining = withoutShardToken(metadata, body.streamToken);
+      return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+    },
+    {},
+    Array.isArray(body.setupSteps) ? body.setupSteps : [],
+    storableRunErrors(body.runErrors) ?? [],
+  );
   runEventBus.removeShardToken(id, body.streamToken);
 
   if (!recorded) {
     const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
-    return { success: true, runId: id, status: current?.status ?? 'running' };
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: current?.status ?? 'running' };
   }
 
   await applyReporterKeep(db, id, body.keep);
@@ -279,6 +346,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>, 
   // each write theirs, and none overwrites another's.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   await db
     .update(testRuns)
@@ -286,7 +354,6 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>, 
       updatedAt: new Date(),
       flakyTests: sql`${testRuns.flakyTests} + ${body.flakyTests ?? 0}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-      duration: longestDuration(duration),
       // The first shard to report a branch names the run's branch.
       branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
@@ -297,5 +364,5 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>, 
   const finalStatus = await finalizeShardedRun(db, id, 'run-finished');
   if (!finalStatus) await publishShardProgress(db, id);
 
-  return { success: true, runId: id, status: finalStatus ?? 'running' };
+  return { success: true, runId: id, runUrl: publicRunUrl(id), status: finalStatus ?? 'running' };
 }

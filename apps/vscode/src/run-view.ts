@@ -4,22 +4,26 @@
  * **Pause** while a run is live and **Stop** while one this window started is, **Resume**, **Step**, **Run to cursor**,
  * **Finish** and **End the test** while a worker is stopped, in the status bar beside the run's progress, in the
  * palette and with keys that apply only then (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context
- * keys; End the test has no key). A stop opens its file at its line, marked as the execution point (an arrow in the
- * gutter and the line's background), with a CodeLens above it saying what is about to run, or how the test failed, and
- * offering the controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a
- * region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context
- * keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a
- * webview beside the editor, where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The
- * code a stop makes (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a
- * test is stopped, the end of the cursor's line in its file says how many elements the locator there matches on the
- * stopped page (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
- * (`piwi/setRunBreakpoints`), and to the service as they stand, which a run a terminal starts takes
- * (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
- * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. A
- * stop's browser is shared with Playwright's own tools only when asked, each time, after a warning (`piwi/stopBind`).
- * **Share live** shares a run on the team instance its reporter reports to (`piwi/shareRun`), after a warning the first
- * time in this window, and **Stop sharing** ends it; the status bar says how a shared run stands and offers it to a run
- * that can be shared. The pure half is `run-control.ts`.
+ * keys; End the test has no key). A stop opens its file at its line, taking the focus only as the first stop shown or
+ * one of the worker slot the person is on, else beside the editor in use (`StopsShown`), marked as the execution point
+ * (an arrow in the gutter and the line's background), with a CodeLens above it saying what is about to run, or how the
+ * test failed, and offering the controls and the code actions its worker takes there (Pick a locator, Record here,
+ * Assert, Assert a region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the
+ * `piwi.runCan…` context keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image
+ * of its page in a webview beside the editor, which keeps the stop it shows while that stop is held, and where a click
+ * picks the element under it (`piwi/pickAt`) when its worker takes it, unless the worker panel ("Piwi: worker N",
+ * `worker-panel.ts`) watches that worker's slot: **Watch a worker** and **Pause and watch** open it on a worker whose
+ * reporter shows its running test, as does the run's progress in the status bar. The code a stop makes
+ * (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a test is stopped,
+ * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
+ * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change (`piwi/setRunBreakpoints`), and
+ * to the service as they stand, which a run a terminal starts takes (`piwi/setBreakpoints`). A run's lines are those of
+ * the documents as they stood when it started: the edits since (`EditLog`) bring a stop to the line it stands on now,
+ * and a breakpoint or the cursor's line back to the run's. A stop's browser is shared with Playwright's own tools only
+ * when asked, each time, after a warning (`piwi/stopBind`). **Share live** shares a run on the team instance its
+ * reporter reports to (`piwi/shareRun`), after a warning the first time in this window, and **Stop sharing** ends it;
+ * the status bar says how a shared run stands and offers it to a run that can be shared. The pure half is
+ * `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -67,7 +71,11 @@ import {
   EditLog,
   RUN_COMMANDS,
   SHARE_WARNING,
+  RESUMED_KEY_MS,
   STOP_ACTIONS,
+  StopsShown,
+  actsOnPage,
+  asideColumn,
   breakpointUpdates,
   canEnd,
   canShare,
@@ -78,6 +86,7 @@ import {
   lineEditOf,
   linesAbove,
   liveItem,
+  progressItem,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -100,6 +109,9 @@ import {
   stopsFor,
   stopsOf,
   targetStop,
+  endChoice,
+  watchTargetsFor,
+  watchableWorkers,
   writtenLines,
   type CaretShown,
   type PausedPageView,
@@ -109,6 +121,7 @@ import {
   type ShownStop,
 } from './run-control';
 import { placesOf } from './breakpoints';
+import { createWorkerPanel } from './worker-panel';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
@@ -121,11 +134,8 @@ export interface RunControlOptions {
 /** How long a run started here is waited for, its edits kept, before its first worker connects. */
 const STARTING_MS = 120_000;
 
-/**
- * How long `F5` stays Piwi's after a stop is answered: it does nothing until the next stop, rather than start a debug
- * session.
- */
-const RESUMED_KEY_MS = 2_000;
+/** How long a stop's file is waited for as it opens, before the next stop's turn. */
+const OPEN_MS = 5_000;
 
 export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
@@ -145,6 +155,10 @@ export interface RunControl extends vscode.Disposable {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
+  workerView(): PausedPageView | null;
+  /** A message of the worker panel's script, as it posts it, which the integration suite sends. */
+  workerMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
@@ -162,8 +176,10 @@ const ITEM_ORDER = [
   RUN_COMMANDS.code,
   RUN_COMMANDS.pause,
   'pausing',
+  'give-up',
   RUN_COMMANDS.stop,
   'live',
+  'progress',
 ];
 
 /** The commands the lens's and the hover's links run. */
@@ -196,8 +212,9 @@ export function registerRunControl(
   const edits = new EditLog();
   /** A stop was answered moments ago: `F5` waits for the next one (`piwi.runResumed`). */
   let resumed: ReturnType<typeof setTimeout> | null = null;
-  /** The stops whose file was opened at their line: each is revealed once. */
-  const revealed = new Set<string>();
+  /** What the editor shows of the stops, each once; their files open one after the other (`revealing`). */
+  const stopsShown = new StopsShown();
+  let revealing: Promise<void> = Promise.resolve();
   /** The lines drawn as an execution point, by file. */
   const drawn = new Map<string, number[]>();
   const lensesChanged = new vscode.EventEmitter<void>();
@@ -211,6 +228,14 @@ export function registerRunControl(
     gutterIconSize: 'contain',
   });
   let panel: vscode.WebviewPanel | null = null;
+  /**
+   * The person acted on a stop: a code action, or a press, a key, text, the wheel or a pick on its page
+   * (`StopsShown.acted`). A wait it ended shows the stops again.
+   */
+  const acted = (stop: ShownStop) => {
+    if (stopsShown.acted(stop)) changed();
+  };
+  const workerPanel = createWorkerPanel(context, lc, { acted, changed: () => changed() });
   let page: PausedPageView | null = null;
   /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
@@ -277,21 +302,35 @@ export function registerRunControl(
   };
 
   /** The context keys of the menus and keys, and the status bar items, for the sessions kept. */
+  /** Draws the controls again each second while a pausing test waits in a call, for how long it has. */
+  let ticking: ReturnType<typeof setInterval> | null = null;
+
   const drawControls = () => {
     const state = controlState(sessions);
+    if (state.waiting?.waiting.since && !ticking) ticking = setInterval(drawControls, 1000);
+    if (!state.waiting?.waiting.since && ticking) {
+      clearInterval(ticking);
+      ticking = null;
+    }
     void vscode.commands.executeCommand('setContext', 'piwi.runActive', state.active);
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
     void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
+    void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
     const live = liveItem(sessions);
-    for (const control of [...controlItems(state), ...(live ? [{ ...live, key: 'live' }] : [])]) {
-      const key = 'key' in control ? control.key : (control.command ?? 'pausing');
+    const progress = progressItem(sessions);
+    for (const control of [
+      ...controlItems(state),
+      ...(live ? [{ ...live, key: 'live' }] : []),
+      ...(progress ? [{ ...progress, key: 'progress' }] : []),
+    ]) {
+      const key = control.key ?? control.command ?? 'pausing';
       shown.add(key);
       const i = item(key);
       i.text = control.text;
@@ -347,11 +386,51 @@ export function registerRunControl(
     lensesChanged.fire();
   };
 
-  /** Open a stop's file at its line, once per stop. */
-  const reveal = async (stop: ShownStop) => {
+  /**
+   * Show a stop's file at its line, with the focus when `focus` asks for it and its wait is not over (`late`); whether
+   * it took the focus, once it shows. Never over a panel in sight (the paused page view, the worker panel). With the
+   * focus, as a debugger does: where the file shows already, else in the active group. Without it, the editor in use is
+   * left alone: a file that shows already keeps its selection, the stop drawn there, and another opens in a group that
+   * is neither the active one nor a panel's (`asideColumn`).
+   */
+  const reveal = async (stop: ShownStop, focus: boolean, late: () => boolean): Promise<boolean> => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(stop.stop.uri));
+    const focused = focus && !late();
+    const showing = vscode.window.visibleTextEditors.find((e) => e.document === document);
+    if (showing && !focused) return false;
     const at = document.validatePosition(new vscode.Position(stop.stop.line, stop.stop.character ?? 0));
-    await vscode.window.showTextDocument(document, { selection: new vscode.Range(at, at), preview: false });
+    const panels = [panel?.visible ? panel.viewColumn : undefined, workerPanel.column()].filter(
+      (c): c is vscode.ViewColumn => c !== undefined,
+    );
+    const onPanel = panels.includes(vscode.window.tabGroups.activeTabGroup.viewColumn);
+    await vscode.window.showTextDocument(document, {
+      selection: new vscode.Range(at, at),
+      preview: false,
+      preserveFocus: !focused,
+      viewColumn:
+        showing?.viewColumn ?? (focused && !onPanel ? undefined : asideColumn(vscode.window.tabGroups.all, panels)),
+    });
+    return focused;
+  };
+
+  /**
+   * Open a stop's file in its turn, unless it went on meanwhile, with the focus as `StopsShown` decides then. The next
+   * stop's turn comes once the file shows, or after `OPEN_MS`: a file that shows later takes no focus, and counts as
+   * open once it shows.
+   */
+  const openStop = async (heard: ShownStop) => {
+    const stop = stops().find((s) => stopKey(s) === stopKey(heard));
+    if (!stop) return;
+    const started = Date.now();
+    const shown = reveal(stop, stopsShown.focusFor(stop), () => Date.now() - started >= OPEN_MS)
+      .then((focused) => stopsShown.opened(stop, focused))
+      .catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waited = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, OPEN_MS);
+    });
+    await Promise.race([shown, waited]);
+    clearTimeout(timer);
   };
 
   const showPage = (view: PausedPageView) => {
@@ -409,6 +488,7 @@ export function registerRunControl(
     const events =
       m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
+    if (m.type === 'input' && pageShows && actsOnPage(events)) acted(pageShows);
     const answer = await lc
       .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...watchingPage, events, release: m.type === 'release' })
       .catch(() => null);
@@ -431,6 +511,7 @@ export function registerRunControl(
     stopPageView();
     pageStop = key;
     pageShows = stop;
+    stopsShown.view(stop);
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         'piwi.pausedPage',
@@ -456,8 +537,9 @@ export function registerRunControl(
         page = null;
         pageStop = null;
         pageShows = null;
+        stopsShown.view(null);
       });
-    } else {
+    } else if (!panel.visible) {
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
     const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
@@ -512,6 +594,7 @@ export function registerRunControl(
     const point = pagePoint(click, view.image);
     if (!point) return;
     showPage({ ...view, note: 'Picking the element under the click…' });
+    acted(stop);
     const params: PickAtParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, ...point };
     const answer = await lc.sendRequest<PickAtResult>(PICK_AT_REQUEST, params).catch(() => null);
     if (page?.pick?.shown !== click.shown) return;
@@ -539,21 +622,31 @@ export function registerRunControl(
     });
   };
 
+  /** The stops shown once the paused page view stops waiting for a slot's next stop (`StopsShown.waitsUntil`). */
+  let waking: ReturnType<typeof setTimeout> | null = null;
+  const wakeWhenWaited = () => {
+    if (waking) clearTimeout(waking);
+    const until = stopsShown.waitsUntil();
+    waking = until === null ? null : setTimeout(changed, Math.max(0, until - Date.now()));
+  };
+
+  /**
+   * The stops changed, or the paused page view's wait is over: each new stop opens its file at its line in its turn
+   * (`openStop`), and the view opens the page `StopsShown` gives, else says its stop went on. The worker panel in sight
+   * shows the stops of the slot it watches.
+   */
   const changed = () => {
     const now = stops();
     const keys = new Set(now.map(stopKey));
-    for (const key of revealed) if (!keys.has(key)) revealed.delete(key);
     drawControls();
     drawStops();
     caretMoved();
-    for (const stop of now) {
-      const key = stopKey(stop);
-      if (revealed.has(key)) continue;
-      revealed.add(key);
-      void reveal(stop).catch(() => undefined);
-      if (!stop.stop.bar) void openPage(stop);
-    }
-    if (panel && pageStop && !keys.has(pageStop)) {
+    const show = stopsShown.changed(sessions, now, { watched: (s) => workerPanel.watches(s.ref, s.slot) });
+    wakeWhenWaited();
+    for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
+    workerPanel.changed(sessions, now);
+    if (show.page) void openPage(show.page);
+    else if (panel && pageStop && !keys.has(pageStop)) {
       stopPageView();
       pageStop = null;
       pageShows = null;
@@ -563,12 +656,14 @@ export function registerRunControl(
   };
 
   /**
-   * The stop a control acts on: the command's own (`went-on` when that stop ended), else the one at the caret's line,
-   * else the one chosen; among those `offers` keeps, when it keeps any.
+   * The stop a command acts on: its own (`went-on` when that stop ended), else the one `StopsShown.choose` gives for the
+   * caret (for a `control` in the moments after an answer, one of the slot answered or none), else the one chosen;
+   * among those `offers` keeps, when it keeps any.
    */
   const chooseStop = async (
     arg: unknown,
     offers?: (stop: ShownStop) => boolean,
+    control = false,
   ): Promise<ShownStop | 'went-on' | null> => {
     const all = stops();
     const target = runTargetArg(arg);
@@ -577,7 +672,8 @@ export function registerRunControl(
     const caret = editor ? { uri: editor.document.uri.toString(), line: editor.selection.active.line } : null;
     const offering = offers ? all.filter(offers) : all;
     const candidates = stopsFor(offering.length ? offering : all, caret);
-    if (candidates.length < 2) return candidates[0] ?? null;
+    const chosen = stopsShown.choose(candidates, caret, control);
+    if (chosen !== 'ask') return chosen;
     const picked = await vscode.window.showQuickPick(
       candidates.map((s) => ({ ...stopPick(s), s })),
       { placeHolder: 'Which stopped test?' },
@@ -585,11 +681,12 @@ export function registerRunControl(
     return picked?.s ?? null;
   };
 
+  /** Send a control, saying why it was not taken; the run's answer, null when the service did not answer. */
   const control = async (params: RunControlParams) => {
     const answer = await lc.sendRequest<RunControlResult>(RUN_CONTROL_REQUEST, params).catch(() => null);
     if (!answer) say('the editor service did not answer.');
     else if (!answer.ok) say(answer.message);
-    return answer?.ok === true;
+    return answer;
   };
 
   /** `F5` stays Piwi's for a moment after a stop was answered (`piwi.runResumed`). */
@@ -611,7 +708,7 @@ export function registerRunControl(
     arg: unknown,
     placeOf?: (stop: ShownStop) => RunPlace | string,
   ) => {
-    const stop = await chooseStop(arg, action === 'end' ? canEnd : undefined);
+    const stop = await chooseStop(arg, action === 'end' ? canEnd : undefined, true);
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) {
       // A key pressed again after an answer, before the next stop: nothing to do.
@@ -621,7 +718,36 @@ export function registerRunControl(
     const place = placeOf?.(stop);
     if (typeof place === 'string') return say(place);
     const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
-    if (await control(place ? { ...params, place } : params)) answered();
+    const token = stopsShown.answered(stop, action);
+    wakeWhenWaited();
+    const answer = await control(place ? { ...params, place } : params);
+    if (answer && !answer.ok) {
+      if (stopsShown.refused(token)) changed();
+      return;
+    }
+    // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
+    stopsShown.taken(token);
+    if (answer) answered();
+  };
+
+  /**
+   * End the test: at a stop (the command's, the caret's or the one chosen), else, while no stop can end and the
+   * command names none, where a Pause waits for the call a test runs (`give-up`): the command's worker, the only one,
+   * or the one chosen.
+   */
+  const endTest = async (arg: unknown) => {
+    const waiting = endChoice(sessions, stops().some(canEnd), runTargetArg(arg));
+    if (waiting === 'stop' || !waiting.length) return answerStop('end', arg);
+    const chosen =
+      waiting.length === 1
+        ? waiting[0]
+        : await vscode.window
+            .showQuickPick(
+              waiting.map((w) => ({ label: w.waiting.title, description: `worker ${w.worker}`, w })),
+              { placeHolder: 'End which waiting test?' },
+            )
+            .then((picked) => picked?.w);
+    if (chosen) await control({ ref: chosen.ref, worker: chosen.worker, action: 'give-up' });
   };
 
   /**
@@ -633,6 +759,7 @@ export function registerRunControl(
     const stop = await chooseStop(arg, (s) => stopActions(s).some((a) => a.action === action));
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) return say('no test is stopped.');
+    acted(stop);
     const params: StopActionParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, action };
     if (action === 'mock') {
       const listed = await lc
@@ -856,6 +983,32 @@ export function registerRunControl(
     return picked?.ref ?? null;
   };
 
+  /**
+   * Watch a worker's test in the worker panel: the command's worker, the only one that can be watched, or the one
+   * chosen; `pause` pauses it there too (Pause and watch).
+   */
+  const watchWorker = async (arg: unknown, pause: boolean) => {
+    const targets = watchTargetsFor(watchableWorkers(sessions, pause), runTargetArg(arg));
+    if (!targets.length) {
+      say(
+        pause
+          ? 'no running test can be paused and watched.'
+          : 'no running test can be watched: its reporter shows a stopped test alone, or no test runs.',
+      );
+      return;
+    }
+    const chosen =
+      targets.length === 1
+        ? targets[0]
+        : await vscode.window.showQuickPick(targets, {
+            placeHolder: pause ? 'Pause and watch which worker?' : 'Watch which worker?',
+          });
+    if (!chosen) return;
+    const answer = await workerPanel.open(chosen.ref, chosen.lane);
+    if (!answer.ok) say(answer.message);
+    else if (pause) await control({ ref: chosen.ref, worker: chosen.worker, action: 'pause' });
+  };
+
   const disposables: vscode.Disposable[] = [
     {
       dispose: () => {
@@ -937,7 +1090,7 @@ export function registerRunControl(
       }
       if (!options.terminate(ref)) say('the run was not started in this window: stop it in its terminal.');
     }),
-    vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => answerStop('end', arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => endTest(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.resume, (arg?: unknown) => answerStop('resume', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.step, (arg?: unknown) => answerStop('step', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.finish, (arg?: unknown) => answerStop('finish', arg)),
@@ -964,14 +1117,19 @@ export function registerRunControl(
       vscode.commands.registerCommand(a.command, (arg?: unknown) => startAction(a.action, arg)),
     ),
     vscode.commands.registerCommand(RUN_COMMANDS.code, (arg?: unknown) => chooseAction(arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.watch, (arg?: unknown) => watchWorker(arg, false)),
+    vscode.commands.registerCommand(RUN_COMMANDS.pauseAndWatch, (arg?: unknown) => watchWorker(arg, true)),
+    workerPanel,
     vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());
+        if (ticking) clearInterval(ticking);
         panel?.dispose();
         if (resumed) clearTimeout(resumed);
+        if (waking) clearTimeout(waking);
         starting.forEach((timer) => clearTimeout(timer));
       },
     },
@@ -1012,6 +1170,8 @@ export function registerRunControl(
     sessions: () => [...sessions.values()],
     executionPoints: (uri) => drawn.get(uri) ?? [],
     pausedPage: () => (panel ? page : null),
+    workerView: () => workerPanel.view(),
+    workerMessage: (message) => workerPanel.message(message),
     pickOnPage,
     write,
     caretCount: () => caretShown,

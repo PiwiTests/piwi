@@ -6,13 +6,12 @@ import type { MaybeRefOrGetter } from 'vue';
  * (through the next-step line) and `ClusterStateLine` (its reconcile action)
  * share it, so the wording and the request live once.
  *
- * `currentNote` is opt-in: pass it to carry the existing triage note through the
- * PATCH (the status endpoint rewrites the note, so an omitted note clears it);
- * leave it out where the caller intentionally sends none.
+ * A status change sends no note: the server keeps the note as it is stored,
+ * with the lines Piwi added since the page loaded.
  */
 export function useClusterTriage(
   clusterId: MaybeRefOrGetter<number | null | undefined>,
-  opts?: { currentNote?: () => string | null | undefined; onSaved?: () => void | Promise<void> },
+  opts?: { onSaved?: () => void | Promise<void> },
 ) {
   const toast = useToast();
 
@@ -20,10 +19,7 @@ export function useClusterTriage(
     const id = toValue(clusterId);
     if (id == null) return;
     try {
-      await $fetch(`/api/failure-clusters/${id}/status`, {
-        method: 'PATCH',
-        body: { status, triageNote: opts?.currentNote ? (opts.currentNote() ?? null) : undefined },
-      });
+      await $fetch(`/api/failure-clusters/${id}/status`, { method: 'PATCH', body: { status } });
       toast.add({
         title: status === 'resolved' ? 'Cluster marked resolved' : 'Cluster reopened',
         color: 'success',

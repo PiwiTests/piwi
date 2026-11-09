@@ -30,10 +30,10 @@
  * Note: the reporter package (`reporter/src/internal/config/env.ts`) has its
  * own `PIWI_ENV_KEYS` map for the vars it reads in CI — those overlap with the
  * ingestion vars here but are owned by the reporter, not this registry. So are
- * `PIWI_ORIGIN` and `PIWI_ORIGIN_REF`, which a launcher sets on the Playwright
- * process to stamp the run's origin: the app reads them only as the run's
- * `piwiOrigin` metadata (`shared/run-eligibility.ts`), and the test metadata
- * reference documents them.
+ * `PIWI_ORIGIN`, `PIWI_ORIGIN_REF` and `PIWI_RUN_REF`, which a launcher sets on
+ * the Playwright process to stamp the run's origin and name: the app reads them
+ * only as the run's `piwiOrigin` and `piwiRunRef` metadata
+ * (`shared/run-eligibility.ts`), and the test metadata reference documents them.
  */
 
 import {
@@ -260,12 +260,25 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
 export const PIWI_ENV_VARS = {
   // ── General ──────────────────────────────────────────────────────────────
   PIWI_SITE_URL: {
-    description: 'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails.',
+    description:
+      'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails, and the run links the reporter prints and writes to its output.',
     category: 'general',
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
+      "When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, `localhost`, a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a name other than `localhost`, and list other names, a container's name included, in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)). A write from a page served over plain HTTP, whose browser sends no `Sec-Fetch-Site`, is then accepted only from the address the request names, the host and port of this URL or a name `PIWI_ALLOWED_HOSTS` lists. A reverse proxy in front must forward the `Host` header the browser sent (nginx `proxy_set_header Host $http_host;`, Apache `ProxyPreserveHost On`), since the host check reads that header alone.",
+  },
+  PIWI_ALLOWED_HOSTS: {
+    description:
+      'Comma-separated host names the dashboard also answers with authentication off, beside its local addresses (an IP address, `localhost`, a name under `.localhost`) and the host of PIWI_SITE_URL: a container name another container reaches it by (`piwi`), `host.docker.internal` for a reporter in a container, a Kubernetes service name, a LAN name. An entry starting with a dot (`.example.lan`) allows that domain and every name under it.',
+    category: 'general',
+    type: 'list',
+    example: 'host.docker.internal,.example.lan',
+    since: '0.65.0',
+    relevantWhen: { PIWI_AUTH_ENABLED: 'false' },
+    docs: 'operate/authentication#disabling-authentication',
+    notes:
+      "Names are compared lowercased, without the port. With authentication off, a page at one of these names may also write when its browser sends no `Sec-Fetch-Site` (a page served over plain HTTP). The single entry `*` answers every host, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator. It never lets a page at another host write.",
   },
   PIWI_SECRET_KEY: {
     description:
@@ -317,14 +330,6 @@ export const PIWI_ENV_VARS = {
     runtimeOnly: true,
     since: '0.16.0',
   },
-  PIWI_DESKTOP_LAUNCH_NONCE: {
-    description:
-      'Random value the desktop (Tauri) app gives its local server at each launch; `/api/health` echoes it so the app only loads its session from the server it started. Set automatically by the desktop shell — not user-configurable. Absent on the server build.',
-    category: 'desktop',
-    secret: true,
-    runtimeOnly: true,
-    since: '0.55.1',
-  },
 
   // ── Database ─────────────────────────────────────────────────────────────
   PIWI_DATABASE_PATH: {
@@ -362,7 +367,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions, the agents' write log and run requests that ended or expired follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',
@@ -463,12 +468,13 @@ export const PIWI_ENV_VARS = {
     default: 'false',
   },
   PIWI_AUTH_SECRET: {
-    description: 'Secret used to sign/encrypt session cookies. Required when PIWI_AUTH_ENABLED is true.',
+    description:
+      'Secret used to sign/encrypt session cookies, at least 32 characters. Required when PIWI_AUTH_ENABLED is true.',
     category: 'auth',
     secret: true,
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
-    notes: 'The server refuses to start when auth is enabled and this is unset.',
+    notes: 'The server refuses to start when auth is enabled and this is unset or shorter than 32 characters.',
   },
   PIWI_SETUP_TOKEN: {
     description:
@@ -497,7 +503,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SHARE_LINK_MAX_TTL_DAYS: {
     description:
-      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry.',
+      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry, which work until they are revoked or their creator loses access to what they open.',
     category: 'auth',
     type: 'number',
     default: '30',
@@ -513,6 +519,7 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     default: 'false',
     since: '0.26.0',
+    notes: 'While it is unset, the server logs a warning the first time a request carries X-Forwarded-For.',
   },
 
   // ── OAuth ────────────────────────────────────────────────────────────────
@@ -1047,13 +1054,23 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_IMPORT_MAX_BYTES: {
     description:
-      'Max size of a single multipart upload (report upload or blob-report import), in bytes. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it.',
+      'Max size of a single multipart upload, in bytes: one report or the files of one test, which the reporter sends in a request of their own, or a blob-report import. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it. An import reads its archive whole, so it takes archives under 2 GiB whatever this allows.',
     category: 'ingest',
     type: 'number',
     default: String(500 * 1024 * 1024),
     min: 1024 * 1024,
     max: 5 * 1024 * 1024 * 1024,
     since: '0.19.0',
+  },
+  PIWI_SUBMIT_MAX_BYTES: {
+    description:
+      "Max size of a run's results sent as one JSON document, in bytes: the reporter's batch submit and the results it sends ahead of a run's files. A larger body is refused (413) before it is read. The server reads and parses the document in memory, so this bounds what one delivery costs it.",
+    category: 'ingest',
+    type: 'number',
+    default: String(256 * 1024 * 1024),
+    min: 1024 * 1024,
+    max: 512 * 1024 * 1024,
+    since: '0.65.0',
   },
   // ── Offline export limits ───────────────────────────────────────────────
   PIWI_EXPORT_MAX_INLINE_BYTES: {
@@ -1304,6 +1321,40 @@ export const PIWI_ENV_VARS = {
     example: 'gitlab.example.com',
     since: '0.43.0',
     docs: 'guide/source-control#which-repository',
+  },
+  PIWI_CI_SERVER_URL: {
+    description:
+      "Base URL of the instance's CI server (e.g. https://jenkins.example.com/), where a project's CI re-run goes when it dispatches through a CI server and sets no base URL of its own. The instance token is sent only to URLs under it, so a path confines it (https://jenkins.example.com/job/qa/ sends it only to the jobs of the qa folder). It goes only with a preset's request, never a Custom one.",
+    category: 'integrations',
+    type: 'url',
+    example: 'https://jenkins.example.com/',
+    since: '0.67.0',
+    docs: 'features/ci-rerun',
+  },
+  PIWI_CI_SERVER_USER: {
+    description:
+      'User name the instance CI server token belongs to, paired with it as an HTTP Basic credential (Jenkins).',
+    category: 'integrations',
+    example: 'piwi-bot',
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_TOKEN: {
+    description:
+      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
+    category: 'integrations',
+    secret: true,
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_HOSTS: {
+    description:
+      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
+    category: 'integrations',
+    type: 'list',
+    example: 'jenkins.internal:8080',
+    since: '0.67.0',
+    docs: 'features/ci-rerun',
   },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',

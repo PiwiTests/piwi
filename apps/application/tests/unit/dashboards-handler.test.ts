@@ -87,6 +87,19 @@ describe('dashboard definitions', () => {
     expect(() => defs.parseDashboardDefinition(definition([], { period: { kind: 'forever' } }))).toThrow(/period/);
   });
 
+  test('refuse file globs past the limits of a selection, in the scope or a widget override', () => {
+    const files = Array.from({ length: 101 }, (_, i) => `tests/${i}.spec.ts`);
+    expect(() => defs.parseDashboardDefinition(definition([], { tests: { files } }))).toThrow(
+      'Dashboard: tests.files must hold at most 100 globs',
+    );
+    const long = { tests: { files: [`tests/${'*'.repeat(495)}`] } };
+    expect(() => defs.parseDashboardDefinition(definition([{ ...metricWidget('m'), scope: long }]))).toThrow(
+      /tests\.files: a glob must be at most 500 characters/,
+    );
+    const within = defs.parseDashboardDefinition(definition([], { tests: { files: files.slice(0, 100) } }));
+    expect(within.scope.tests?.files).toHaveLength(100);
+  });
+
   test('keep only the keys a widget override sets', () => {
     const parsed = defs.parseDashboardDefinition(
       definition([{ ...metricWidget('week'), scope: { period: { kind: 'rolling', days: 7 }, browsers: ['webkit'] } }]),
@@ -331,6 +344,18 @@ describe('saved dashboards', () => {
     expect(await dashboards.getInstanceDefaultDashboard(db as any)).toBe('executive');
     await dashboards.setInstanceDefaultDashboard(db as any, null);
     expect(await dashboards.getInstanceDefaultDashboard(db as any)).toBeNull();
+  });
+
+  test('a saved dashboard is read by its id written plainly, as a route reads one', async () => {
+    const d = await dashboards.createDashboard(db as any, { name: 'Plain', visibility: 'shared' }, admin);
+    expect((await dashboards.getDashboard(db as any, String(d.id), admin, 'all')).name).toBe('Plain');
+    for (const ref of [`0${d.id}`, `${d.id}abc`, '99999999999999999999']) {
+      await expect(dashboards.getDashboard(db as any, ref, admin, 'all')).rejects.toMatchObject({ statusCode: 404 });
+    }
+    await expect(dashboards.setInstanceDefaultDashboard(db as any, '99999999999999999999')).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Unknown dashboard',
+    });
   });
 
   test('a shared dashboard nobody opened for 90 days is unused', async () => {

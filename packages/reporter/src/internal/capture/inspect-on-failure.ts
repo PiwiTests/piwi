@@ -1,4 +1,5 @@
 import type { TestInfo } from '@playwright/test';
+import { detectCi } from '../support/ci.js';
 
 /**
  * Shared gate for Piwi's failure-time overlay. Both `inspectOnFailure`
@@ -17,8 +18,8 @@ import type { TestInfo } from '@playwright/test';
 export interface InspectionGate {
   /** Raw `PIWI_INSPECT_ON_FAIL` env value — only the string `'true'` enables. */
   enabled: string | undefined;
-  /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
-  ci: string | undefined;
+  /** Whether the run is a CI job, as `detectCi` reads the environment. */
+  ci: boolean;
   /** `testInfo.status` at teardown. */
   status: string | undefined;
   /** `testInfo.expectedStatus` — an expected failure (test.fail()) never pauses. */
@@ -31,15 +32,10 @@ export interface InspectionGate {
   retries: number;
 }
 
-/** True when this raw `CI` env value counts as "running under CI". */
-export function isCi(ci: string | undefined): boolean {
-  return ci !== undefined && ci !== '' && ci !== 'false';
-}
-
 /** Decide whether the failing page should be handed to the Inspector. */
 export function shouldInspectOnFailure(gate: InspectionGate): boolean {
   if (gate.enabled !== 'true') return false;
-  if (isCi(gate.ci)) return false;
+  if (gate.ci) return false;
   if (gate.headless !== false) return false;
   if (gate.status !== 'failed' && gate.status !== 'timedOut') return false;
   if (gate.status === gate.expectedStatus) return false;
@@ -58,7 +54,7 @@ export function environmentalSkipReason(gate: InspectionGate): string | null {
   if (gate.enabled !== 'true') return null;
   if (gate.status !== 'failed' && gate.status !== 'timedOut') return null;
   if (gate.status === gate.expectedStatus) return null;
-  if (isCi(gate.ci)) return 'running under CI — this is a headed, local-only feature';
+  if (gate.ci) return 'running under CI — this is a headed, local-only feature';
   if (gate.headless !== false) {
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   }
@@ -78,7 +74,7 @@ export function inspectionGateFromTestInfo(
   const use = (testInfo.project?.use ?? {}) as { headless?: unknown };
   return {
     enabled,
-    ci: process.env.CI,
+    ci: detectCi(process.env),
     status: testInfo.status,
     expectedStatus: testInfo.expectedStatus,
     headless: use.headless,

@@ -1,13 +1,21 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { applyOptionsToEnv, normalizeBoolEnv, originEnv, resolveOptions, usedDotEnv } from '../src/internal/config/env.js';
+import {
+  applyOptionsToEnv,
+  ignoredEnvValues,
+  normalizeBoolEnv,
+  originEnv,
+  resolveOptions,
+  usedDotEnv,
+} from '../src/internal/config/env.js';
 import { wrapConfig } from '../src/public/config-wrapper.js';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath } from '../src/internal/support/setup-file.js';
+import { getReporterVersion } from '../src/internal/support/reporter-version.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import { startServer, jsonRes, fakeConfig, fakeSuite, type FakeServer } from './_helpers.js';
 
@@ -172,6 +180,42 @@ describe('resolveOptions', () => {
     process.env.PIWI_SUBMIT_TIMEOUT = '60000';
     expect(resolveOptions({}).submitTimeout).toBe(60000);
     expect(resolveOptions({ submitTimeout: 5000 }).submitTimeout).toBe(5000);
+  });
+
+  it('keeps the default of a number variable it cannot read, PIWI_SUBMIT_TIMEOUT=15m included, and names it', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '15m';
+    expect(resolveOptions({}).submitTimeout).toBe(15 * 60 * 1000);
+    expect(ignoredEnvValues()).toEqual([{ name: 'PIWI_SUBMIT_TIMEOUT', value: '15m', fallback: 15 * 60 * 1000 }]);
+
+    process.env.PIWI_SUBMIT_TIMEOUT = '-1';
+    process.env.PIWI_STREAMING_BATCH_SIZE = 'twenty';
+    const opts = resolveOptions({});
+    expect(opts.submitTimeout).toBe(15 * 60 * 1000);
+    expect(opts.streamingBatchSize).toBe(20);
+
+    process.env.PIWI_SUBMIT_TIMEOUT = ' 60000 ';
+    delete process.env.PIWI_STREAMING_BATCH_SIZE;
+    expect(resolveOptions({}).submitTimeout).toBe(60000);
+    expect(ignoredEnvValues()).toEqual([]);
+  });
+
+  it('warns once the run begins about a number variable it could not read', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '15m';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const reporter = new PiwiDashboardReporter({
+        serverUrl: 'http://127.0.0.1:1',
+        projectName: 'piwi-env-warning',
+        streaming: false,
+        captureResources: false,
+      });
+      reporter.onBegin(fakeConfig(), fakeSuite());
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        '[Piwi Dashboard] PIWI_SUBMIT_TIMEOUT=15m is not a number of 0 or more, so the default (900000) applies.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('PIWI_VERBOSE env wins over user option (preserved quirk)', () => {
@@ -428,6 +472,9 @@ describe("the config folder's .env", () => {
     // The reporter begins the run the global setup registered, under the same project.
     expect(request('/api/test-runs/7/begin')?.headers.authorization).toBe('Bearer pd_dotenv');
     expect(JSON.parse(request('/api/test-runs/7/begin')!.body).setupToken).toBe('setup-tok');
+    // The setup token goes in the run token header too: the dashboard asks for it by the version `/setup` names.
+    expect(request('/api/test-runs/7/begin')?.headers['x-piwi-run-token']).toBe('setup-tok');
+    expect(JSON.parse(request('/api/test-runs/setup')!.body).reporterVersion).toBe(getReporterVersion());
   });
 });
 

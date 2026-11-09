@@ -1,4 +1,5 @@
 import type { S3Client } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
 import type { StorageAdapter, S3Config } from './types';
 
 /** The AWS SDK's S3 module, and the client this adapter's config built with it. */
@@ -55,22 +56,55 @@ export class S3StorageAdapter implements StorageAdapter {
 
   async readFile(path: string): Promise<Buffer> {
     try {
+      return await this.getObjectBytes(path);
+    } catch (error) {
+      console.error(`Failed to read file from S3: ${path}`, error);
+      throw error;
+    }
+  }
+
+  async readFileIfExists(path: string): Promise<Buffer | null> {
+    try {
+      return await this.getObjectBytes(path);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      if (isMissingObject(error)) return null;
+      console.error(`Failed to read file from S3: ${path}`, error);
+      throw error;
+    }
+  }
+
+  /** The whole object at `path`, read into memory. */
+  private async getObjectBytes(path: string): Promise<Buffer> {
+    const { s3, s3Client } = await this.sdk();
+    const command = new s3.GetObjectCommand({
+      Bucket: this.config.bucket,
+      Key: path,
+    });
+
+    const response = await s3Client.send(command);
+
+    // Convert stream to buffer
+    const chunks: Buffer[] = [];
+    // Response.Body is a readable stream from AWS SDK
+    const body = response.Body as AsyncIterable<Uint8Array>;
+    for await (const chunk of body) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  async readStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
+    try {
       const { s3, s3Client } = await this.sdk();
       const command = new s3.GetObjectCommand({
         Bucket: this.config.bucket,
         Key: path,
+        ...(range && { Range: `bytes=${range.start}-${range.end}` }),
       });
-
       const response = await s3Client.send(command);
-
-      // Convert stream to buffer
-      const chunks: Buffer[] = [];
-      // Response.Body is a readable stream from AWS SDK
-      const body = response.Body as AsyncIterable<Uint8Array>;
-      for await (const chunk of body) {
-        chunks.push(Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks);
+      // In Node the body is a readable stream of the object's bytes.
+      return response.Body as Readable;
     } catch (error) {
       console.error(`Failed to read file from S3: ${path}`, error);
       throw error;
@@ -93,9 +127,7 @@ export class S3StorageAdapter implements StorageAdapter {
       return head.ContentLength ?? 0;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-        return null;
-      }
+      if (isMissingObject(error)) return null;
       console.error(`Failed to read file metadata from S3: ${path}`, error);
       throw error;
     }
@@ -148,7 +180,14 @@ export class S3StorageAdapter implements StorageAdapter {
               Objects: listResult.Contents.map((obj) => ({ Key: obj.Key })),
             },
           });
-          await s3Client.send(deleteCommand);
+          // DeleteObjects answers 200 when keys could not be deleted: their errors are in the body.
+          const { Errors: errors = [] } = await s3Client.send(deleteCommand);
+          if (errors.length > 0) {
+            const [first] = errors;
+            throw new Error(
+              `${errors.length} object(s) could not be deleted, first ${first!.Key}: ${first!.Code} ${first!.Message ?? ''}`.trim(),
+            );
+          }
         }
 
         continuationToken = listResult.IsTruncated ? listResult.NextContinuationToken : undefined;
@@ -158,4 +197,10 @@ export class S3StorageAdapter implements StorageAdapter {
       throw error;
     }
   }
+}
+
+/** Whether an S3 call failed because no object is stored at the key: a GET's `NoSuchKey`, a HEAD's `NotFound`, or any 404. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isMissingObject(error: any): boolean {
+  return error?.name === 'NoSuchKey' || error?.name === 'NotFound' || error?.$metadata?.httpStatusCode === 404;
 }

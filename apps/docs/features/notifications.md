@@ -18,7 +18,8 @@ dashboard.
 2. A **subscription** links a channel to the events you care about, for every project or one, with filters and a
    delivery mode.
 3. When an event fires, Piwi matches the active subscriptions and writes each delivery to an outbox, which a scheduled
-   task sends with retries. A browser channel is delivered at once to every open dashboard tab.
+   task sends with retries. It drops a delivery whose subscription was muted or turned off since, or whose recipient
+   can no longer open its project. A browser channel is delivered at once to every open dashboard tab.
 
 ## Where it is
 
@@ -43,7 +44,8 @@ When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
-fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+fires no run event and no new-cluster, fixed, regressed, flakiness or performance event
+([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 
@@ -53,7 +55,7 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
-- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them.
+- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them. On Windows and Linux, a click on one opens what it is about (on Windows, while the toast shows).
 
 Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
 notifications**.
@@ -110,7 +112,7 @@ When the lookup fails (a private repository without a token, a host that exposes
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL.
 
 ## Subscriptions
 
@@ -127,15 +129,16 @@ empty list matches every run. The filters apply to every event that comes from a
 
 ### Through the API
 
-The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
+The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/settings/api)) adds:
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
   `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
   test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
-  (a 0–1 rate) and `perfRegressionPct`.
-- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
-  **one combined message** per email, Slack or Teams channel.
+  (a 0–1 rate) and `perfRegressionPct`. Lists hold up to 100 values of at most 256 characters; branch and environment
+  patterns, up to 200 characters and 10 `*` each, 2,000 together.
+- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
+  held until then and sent as **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration

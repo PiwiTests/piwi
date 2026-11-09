@@ -117,6 +117,22 @@ describe('sanitizeMetadata', () => {
     expect(sanitizeMetadata({ piwiOrigin: { kind: 'nightly' }, scm: {} })).toEqual({ scm: {} });
   });
 
+  test("keeps the launcher's name for the run only when it reads as a ref", () => {
+    expect(sanitizeMetadata({ piwiRunRef: ' desktop-7 ' })).toEqual({ piwiRunRef: 'desktop-7' });
+    expect(sanitizeMetadata({ piwiRunRef: 'a b', scm: {} })).toEqual({ scm: {} });
+    expect(sanitizeMetadata({ piwiRunRef: { name: 'desktop-7' } })).toEqual({});
+  });
+
+  test('keeps the hub that steers the run as { client, ref } only when it names the run there', () => {
+    const kept = sanitizeMetadata({ piwiInteractive: { ref: 'terminal-41-17', client: ' WebStorm ', extra: 1 } });
+    expect(JSON.stringify(kept)).toBe('{"piwiInteractive":{"client":"WebStorm","ref":"terminal-41-17"}}');
+    expect(sanitizeMetadata({ piwiInteractive: { client: 7, ref: 'ed-1' } })).toEqual({
+      piwiInteractive: { client: null, ref: 'ed-1' },
+    });
+    expect(sanitizeMetadata({ piwiInteractive: { client: 'editor', ref: 'a/b' }, scm: {} })).toEqual({ scm: {} });
+    expect(sanitizeMetadata({ piwiInteractive: true })).toEqual({});
+  });
+
   test('returns null for empty input', () => {
     expect(sanitizeMetadata(null)).toBeNull();
   });

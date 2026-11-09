@@ -10,14 +10,15 @@ An API key is a long-lived token tied to one user account, and the recommended w
 Playwright reporter and scripts once [authentication](./authentication) is on. A key carries its owner's access: their
 [instance role](./authentication#roles) and the [project roles](./project-access) they hold, directly or through
 their groups. A key for a Member with the Uploader role on one project can read that project and upload to it, and
-nothing else.
+nothing else. The key a connected run target receives (the desktop app) is the one exception: it holds
+`run:receive` alone, and serves only that app's routes.
 
 For CI, create a dedicated account: a **Member** with the **Uploader** role on the projects CI reports to (on All
 projects if CI should create projects from a new project name), and a key for it. A leaked CI key then cannot triage,
 delete or change anything.
 
 With authentication on, every endpoint needs a session cookie or an API key whose owner holds the permission the
-endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are the
+endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/settings/api)). The exceptions are the
 health and version endpoints, the sign-in flows themselves, and live-run streaming, which uses per-run stream tokens.
 
 ## Security properties
@@ -30,6 +31,21 @@ health and version endpoints, the sign-in flows themselves, and live-run streami
 - Keys are sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` headers.
 - Keys can be given an optional expiry date.
 
+## What a key cannot do
+
+A key acts for its owner everywhere except on the account's own credentials. These take a signed-in session, and a
+request with a key gets a 403:
+
+- creating an API key, for any account;
+- allowing a [browser extension](/features/extension-connection), an
+  [editor](/features/editor-connection) or an [MCP client](/features/mcp) to connect, which creates a key or a
+  connection for the account;
+- changing the account's password or its own email address, and disconnecting its OAuth provider.
+
+A key therefore cannot create keys or change its own account's credentials, nor move the account's password reset to
+another address. An administrator's key still manages the other users, their email addresses included, and creates
+accounts with a password, so it is as powerful as the administrator's password: keep it with the same care.
+
 ## Creating an API key
 
 Every signed-in user manages their own keys under **Settings → Account → API keys**. An administrator can also manage
@@ -40,9 +56,10 @@ dedicated CI account.
 2. Click **Generate key**, and copy the key **immediately**: it will never be shown again.
 3. Store it as a CI secret (e.g. `PIWI_API_KEY`).
 
-Connecting the [browser extension](/features/extension-connection) creates a key the same way, once you click
-**Allow** on the page it opens: it is named after the browser ("Piwi Picker in Chrome on Windows") and listed with the
-others.
+Connecting the [browser extension](/features/extension-connection), an editor or the desktop app creates a key too,
+once you click **Allow** on the page it opens: it is named after the app ("Piwi Picker in Chrome on Windows") and
+listed under **Settings → Account → [Connected apps](/features/run-on-my-machine#connected-apps)**, not with these
+keys.
 
 <figure>
   <img src="/screenshots/user-api-keys.png" alt="A user's API keys dialog: one key named GitHub Actions CI with its prefix, creation date and Never used, a revoke button, and Create API key">
@@ -56,8 +73,9 @@ Click the trash icon next to the key, in the same place you created it. The key 
 ## Using the API key in the reporter
 
 The reporter reads the key from `PIWI_API_KEY`, in the environment or in the `.env` beside the Playwright config
-(`init --api-key` writes it), so the config needs no change: store the key as a CI secret under that name. To read it from
-another variable, pass it in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
+(`init --api-key` writes it there, unless git tracks that file or cannot say whether it does, or the file is a link),
+so the config needs no change: store the key as a CI secret under that name. To read it from another variable, pass it
+in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
 
 ```typescript
 // playwright.config.ts

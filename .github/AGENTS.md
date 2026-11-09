@@ -25,7 +25,12 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   `agent-run.test.ts`.
 - **Least privilege.** `permissions: contents: read` at the top of every workflow, anything more on the job that needs
   it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
-  the run. `id-token: write` only where a step uses it (npm provenance).
+  the run. `id-token: write` only where a step uses it (npm provenance, Visual Studio Marketplace Trusted Publishing).
+- **A pull request from a fork runs `ci.yml` with a read-only token.** A comment that must reach those pull requests
+  goes in an artifact, posted by a `workflow_run` workflow (`perf-comment.yml`, which finds `ci.yml` by its `name`)
+  that checks out nothing, interpolates no artifact or head field into a script, and posts only on an open pull
+  request whose head is the measured commit. The coverage comments of `app-unit` and `reporter` post from `ci.yml`,
+  so they reach same-repository pull requests only.
 - **Publish only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or `main`
   for the `edge` image. Anywhere else the workflow builds and packs, so a pull request can run it.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
@@ -34,7 +39,15 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   JetBrains `signPlugin`, the Tauri updater key) runs on a tag only. The publishing jobs of a tag run in the `release`
   environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose protection rules
   and secrets are set in the repository settings.
-- **`.github/` is owned by its maintainer** (`CODEOWNERS`): a change here needs their review.
+- **The Visual Studio Marketplace trusts `release.yml` in the `release` environment.** `reusable-publish-vscode.yml`
+  publishes with `vsce publish --oidc` and no token, so renaming either workflow file or the environment means updating
+  the publisher's Trusted Publishing policy. Every run of `release.yml` can mint an OIDC token: the policy's
+  environment, which deploys from `v*` tags only, is what keeps a pull request's run from publishing.
+- **`.github/` and `commitlint.config.js` are owned by their maintainer** (`CODEOWNERS`): a change to either needs
+  their review. The `commitlint` and `title` checks read the rules from the pull request's own `commitlint.config.js`.
+- **The `title` job installs what `commitlint.config.js` loads, from `package-lock.json`.** A package the config names
+  (an `extends`, a parser preset, a plugin, a formatter) goes in `PACKAGES` of `scripts/commitlint-title.mjs`, which
+  fails on a name it does not list.
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
   does not redirect when the repository is renamed.
@@ -61,7 +74,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   (`release.yml` cancels its pull-request runs only, never a tag's). A reusable workflow has none: there
   `github.workflow` is the caller's name, so its group would collide with the caller's and cancel the run.
 - **Artifacts expire.** An explicit `retention-days` on every artifact: 1 day for the ones jobs hand to each other, 3
-  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days.
+  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days, and for `ci.yml`'s blob
+  reports, 7 for the packages a maintainer uploads to a store by hand when its publish fails (the packages and
+  installers of the `reusable-publish-*.yml`) and for the E2E reports, 14 for the perf and nightly results.
 - **Comments state the rule** the workflow follows, as everywhere in the repository (see the root `AGENTS.md`).
 
 ## Checking a change
@@ -73,5 +88,6 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   exercises it. A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request:
   every target builds and packs, and nothing is published.
 - **The other workflows never run on a pull request** (`docs.yml`, `edge.yml`, `release-please.yml`,
-  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`): actionlint is the only check a
-  change to them gets before it merges.
+  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`, and `perf-comment.yml`, which
+  runs from the default branch only): actionlint is the only check a change to them gets before it merges, with
+  `perf-suite.test.ts` for `perf-comment.yml`'s marker and the workflow name it follows.

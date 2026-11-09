@@ -33,6 +33,7 @@ const FILES = [
   'app/components/test-case/TestCaseNetworkRequests.vue',
   'app/components/test-case/TraceNetworkList.vue',
   'app/components/test-case/TestCasePerformancePanel.vue',
+  'app/components/test-case/TestOutputCard.vue',
   'app/components/test-case/ExecutionCoverageSection.vue',
   'app/components/test-case/CoverageFileSource.vue',
   'app/components/test-case/CoverageDivergencePart.vue',

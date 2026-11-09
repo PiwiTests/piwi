@@ -53,6 +53,8 @@ export const projects = pgTable(
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
     scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
+    /** Per-project CI server token, encrypted with the base URL it may be sent under (`{ url, token }`). */
+    ciServerToken: text('ci_server_token'),
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
     openApiUrl: text('openapi_url'), // Declared-surface OpenAPI document URL; fetched server-side into graph route nodes with origin 'openapi'
@@ -72,6 +74,7 @@ export const projects = pgTable(
     liveView: boolean('live_view').notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
     liveViewMasks: jsonb('live_view_masks'), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
+    tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -115,14 +118,17 @@ export const testRuns = pgTable(
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
     commit: text('commit_sha'), // The run's commit, `runCommit(metadata)` (metadata.scm.commit), written with every metadata write; null when the run names none
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    runErrors: jsonb('run_errors'), // WireRunError[]: errors Playwright reported outside any test (global setup, a spec that did not load, a worker's teardown), at most 20; null when none
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
+    liveViewKeyDigests: jsonb('live_view_key_digests').$type<string[]>(), // SHA-256 digests of the run's live view keys, one per shard that set it up, never a key: an instance started again takes a running worker's key back by them
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run
     importHash: text('import_hash'), // SHA-256 of the imported archive; null for reported runs. Makes re-importing a no-op.
     keptAt: timestamp('kept_at', { mode: 'date' }), // Set = kept forever: retention never deletes the run
     keptBy: integer('kept_by').references(() => users.id, { onDelete: 'set null' }), // User who kept the run; null for reporter/marker keeps or with auth off
+    requesterId: integer('requester_id').references(() => users.id, { onDelete: 'set null' }), // The person who asked for a requested run (origin `request`), from its request token, never from the reporter; such a run is seen by them alone, and by nobody once null
     keepSource: text('keep_source'), // 'user' | 'reporter' | 'marker' — who asked for the keep; null when not kept
     keepReason: text('keep_reason'), // Optional free-text reason shown next to the keep
     serverCoverageGaps: jsonb('server_coverage_gaps'), // Array<{ origin, reason: 'restarted' | 'unreachable', at? }>: why part of the run's server coverage is missing; null when whole
@@ -143,6 +149,7 @@ export const testRuns = pgTable(
     importHashIdx: uniqueIndex('idx_test_runs_import_hash').on(table.projectId, table.importHash),
     projectKeptIdx: index('idx_test_runs_project_kept').on(table.projectId, table.keptAt),
     keptByIdx: index('idx_test_runs_kept_by').on(table.keptBy),
+    requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
   }),
 );
@@ -240,7 +247,7 @@ export const quarantinedTests = pgTable(
       .references(() => testCases.id, { onDelete: 'cascade' }),
     reason: text('reason'),
     source: text('source').notNull().default('manual'), // 'manual' | 'proposed'
-    /** Run id at quarantine time — passes are counted from after this run. */
+    /** The project's newest run at quarantine time; the release streak reads the runs that start after `created_at`. */
     quarantinedAtRunId: integer('quarantined_at_run_id'),
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -273,7 +280,7 @@ export const failureClusters = pgTable(
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
     sampleError: text('sample_error'), // one error, its secrets hidden (`hiddenErrorText`), kept for display; refreshed to a better exemplar as the cluster recurs
-    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, its secrets hidden in a way that leaves its fingerprint the same; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
+    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, the text its fingerprint was computed from; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),
@@ -302,6 +309,9 @@ export const failureClusters = pgTable(
     snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // hidden from queues until this instant; null when not snoozed
     snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
     assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
+    // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
+    // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
+    announcedAt: timestamp('announced_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -328,6 +338,7 @@ export const failureClusterAliases = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
+    fingerprintSample: text('fingerprint_sample'), // the error `fingerprint` was computed from (see schema.sqlite.ts)
     clusterId: integer('cluster_id')
       .notNull()
       .references(() => failureClusters.id, { onDelete: 'cascade' }),
@@ -534,6 +545,8 @@ export const testRunsCases = pgTable(
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
     retries: integer('retries').default(0),
     repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
+    finalAttempt: boolean('final_attempt').notNull().default(true), // false once a later attempt of its run, test, project and repetition is stored (`settleFinalAttempts`): the row then decides nothing
+    passedAfterFailure: boolean('passed_after_failure').notNull().default(false), // the verdict of a final attempt (`final_attempt`): its result passed after an earlier attempt failed or timed out (`isFlakyExecution`), set as it is stored (`fillAttemptHistories`) and cleared once a later attempt supersedes it (`settleFinalAttempts`)
     attempts: jsonb('attempts'), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
@@ -564,6 +577,8 @@ export const testRunsCases = pgTable(
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
+    stdoutPayloadId: integer('stdout_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stdout, bounded and with its secrets hidden
+    stderrPayloadId: integer('stderr_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stderr, bounded and with its secrets hidden
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -571,13 +586,14 @@ export const testRunsCases = pgTable(
     locks: jsonb('locks'), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: jsonb('test_meta'), // { owner?, priority?, feature?, link? } from `piwi:` annotations
     workerIndex: integer('worker_index'), // Worker process index (Playwright's workerIndex, new after each worker restart; parallelIndex only when workerIndex is absent)
+    parallelIndex: integer('parallel_index'), // The worker's lane (Playwright's parallelIndex, kept by a worker restarted in the same slot); null from an older reporter
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: bigint('started_at', { mode: 'number' }), // Unix timestamp in ms when the test started (exceeds 32-bit int range)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
-    didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
+    didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'dependency-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
     expectedStatus: text('expected_status'), // Playwright's expectedStatus: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
-    blockedBy: text('blocked_by'), // For a 'previous-failure' cascade, the location (file:line:col) of the failing test that blocked it
+    blockedBy: text('blocked_by'), // For a 'previous-failure' or 'dependency-failure' case, the location (file:line:col) of the failing test that blocked it
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -590,12 +606,13 @@ export const testRunsCases = pgTable(
     // per-case recency sorts used by history/flakiness queries.
     testCaseCreatedIdx: index('idx_test_runs_cases_case_created').on(table.testCaseId, table.createdAt),
     failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId),
+    // An execution without a project (`browser_name` NULL) is unique too: the index reads it as ''.
     runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(
       table.testRunId,
       table.testCaseId,
       table.repeatEachIndex,
       table.retries,
-      table.browserName,
+      sql`COALESCE(${table.browserName}, '')`,
     ),
     // Partial indexes back the payload-GC reachability probes; populated on
     // failures only, so the hot insert path pays almost nothing for them.
@@ -623,6 +640,12 @@ export const testRunsCases = pgTable(
     coveragePayloadIdx: index('idx_trc_coverage_payload')
       .on(table.coveragePayloadId)
       .where(sql`coverage_payload_id IS NOT NULL`),
+    stdoutPayloadIdx: index('idx_trc_stdout_payload')
+      .on(table.stdoutPayloadId)
+      .where(sql`stdout_payload_id IS NOT NULL`),
+    stderrPayloadIdx: index('idx_trc_stderr_payload')
+      .on(table.stderrPayloadId)
+      .where(sql`stderr_payload_id IS NOT NULL`),
     // Partial indexes over the few rows the capability probes and the run list
     // look for, so finding one, or proving there is none, never reads every
     // execution. A query uses one only when it repeats the condition with
@@ -630,9 +653,9 @@ export const testRunsCases = pgTable(
     passedAriaIdx: index('idx_trc_passed_aria')
       .on(table.testRunId)
       .where(sql`status = 'passed' AND (aria_snapshot_payload_id IS NOT NULL OR aria_snapshot IS NOT NULL)`),
-    passedRetryIdx: index('idx_trc_passed_retry')
+    passedAfterFailureIdx: index('idx_trc_passed_after_failure')
       .on(table.testRunId)
-      .where(sql`status = 'passed' AND retries > 0`),
+      .where(sql`passed_after_failure = true`),
     skippedIdx: index('idx_trc_skipped')
       .on(table.testRunId)
       .where(sql`status = 'skipped'`),
@@ -1287,6 +1310,7 @@ export const users = pgTable(
     email: text('email'), // Email address (nullable; OAuth callback can populate it)
     emailVerified: intBoolean('email_verified').notNull().default(INT_BOOLEAN_FALSE),
     avatarUrl: text('avatar_url'), // Avatar from OAuth provider
+    avatarKey: text('avatar_key'), // Storage key of the picture the user uploaded; wins over avatarUrl
     oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
     oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
     // Incremented to revoke all of a user's existing sessions (password change/reset, role change, unlink).
@@ -1713,6 +1737,11 @@ export const apiKeys = pgTable(
     name: text('name').notNull(), // Human-readable label, e.g. "CI pipeline"
     keyHash: text('key_hash').notNull().unique(), // SHA-256 hash of the full key
     keyPrefix: text('key_prefix').notNull(), // First 8 chars after "pd_" prefix – shown in UI
+    // Which client the device flow connected ('picker' | 'editor' | 'desktop' | 'runner'); null for a key made in
+    // Settings → Account.
+    clientKind: text('client_kind'),
+    // The only permissions the key holds (a target key holds ['run:receive']); null carries its owner's access.
+    permissions: jsonb('permissions'),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1735,6 +1764,7 @@ export const extensionDeviceCodes = pgTable(
     deviceCodeHash: text('device_code_hash').notNull(),
     userCodeHash: text('user_code_hash').notNull(),
     clientName: text('client_name').notNull(), // "Piwi Picker in Chrome on Windows"
+    clientKind: text('client_kind'), // 'picker' | 'editor' | 'desktop' | 'runner'; null when not known
     status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // the key the token call created
@@ -2028,6 +2058,7 @@ export const scenarioGaps = pgTable(
       .$defaultFn(() => new Date()),
     closedAt: timestamp('closed_at', { mode: 'date' }),
     closedByRunId: integer('closed_by_run_id'),
+    closeReason: text('close_reason'), // why a closed gap closed: 'reached', 'reached-in-pull-request', 'covered-by', 'not-detected', …; null while open
   },
   (table) => ({
     detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),
@@ -2245,6 +2276,7 @@ export const gateEvaluations = pgTable(
     passed: boolean('passed').notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
     violations: jsonb('violations').notNull(), // GateViolation[]
+    warnings: jsonb('warnings'), // string[]: the warn-only rules that warned, such as uncovered changes
     clusterIds: jsonb('cluster_ids'), // number[]: the clusters of the run's new regressions, read for an escape
     source: text('source').notNull(), // 'cli' | 'api'
     evaluatedAt: timestamp('evaluated_at', { mode: 'date' })
@@ -2597,11 +2629,14 @@ export const flakeArms = pgTable(
 );
 
 // A resource finding across runs: one per project and identity (its verdict,
-// kind, scope and where it was opened, line included;
-// shared/resource-fingerprint.mjs), with the runs it first and last showed in.
-// An edit above the line moves it to a new identity, which it takes on with its
-// history. It is fixed once five full runs of the default branch, with the
-// capture fixtures on, came without it, and reopened when it shows again.
+// kind, scope and the line or fixture that opened it;
+// shared/resource-fingerprint.mjs), with the run it first showed in and the
+// last full run of the default branch that showed it (until one did, that
+// first run). An edit above the line
+// moves it to a new identity, which it takes on with its history once a full
+// run of the default branch shows it there. It is fixed once five full runs of
+// the default branch that could have shown it came without it, and reopened
+// when such a run shows it again. Any other run only adds its showing.
 export const resourceFindings = pgTable(
   'resource_findings',
   {
@@ -2610,9 +2645,9 @@ export const resourceFindings = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
-    verdict: text('verdict').notNull(), // 'leaked' | 'idle' | 'piling' | 'handle' | 'probable'
+    verdict: text('verdict').notNull(), // 'leaked' | 'lingering' | 'idle' | 'piling' | 'handle' | 'probable'
     kind: text('kind').notNull(), // 'browser' | 'context' | 'page' | 'request' | 'handle'
-    place: text('place').notNull(), // where it was opened, as the latest run named it, with its line
+    place: text('place').notNull(), // where it was opened, as the latest showing that placed it named it, with its line
     site: text('site'), // the `file:line` that opened it, when known
     // Run ids are not foreign keys: findings outlive the runs retention deletes.
     firstSeenRunId: integer('first_seen_run_id').notNull(),
@@ -2687,6 +2722,29 @@ export const testRunResourceReports = pgTable(
   },
   (t) => ({
     runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
+  }),
+);
+
+// Where a run executed, one row per run, kind and scope (`shared/handlers/environment-snapshots.ts`): the runner of
+// each shard (scope: the shard number, '' when not sharded), each browser (`<shard>|<project>`), each server under
+// test (its origin). A later delivery replaces the row whole.
+export const testRunEnvironmentSnapshots = pgTable(
+  'test_run_environment_snapshots',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'runner' | 'browser' | 'server'
+    scope: text('scope').notNull().default(''),
+    snapshot: jsonb('snapshot').notNull(), // rebuilt field by field on ingest
+    digest: text('digest').notNull(), // fnv1a32 of the compared fields
+    capturedAt: timestamp('captured_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    runKindScopeIdx: uniqueIndex('idx_test_run_environment_snapshots_run_kind_scope').on(t.runId, t.kind, t.scope),
   }),
 );
 
@@ -2814,5 +2872,101 @@ export const assistantNudgeDismissals = pgTable(
     sharedIdx: uniqueIndex('idx_assistant_nudge_dismissals_shared')
       .on(t.nudgeId)
       .where(sql`owner_id IS NULL`),
+  }),
+);
+
+// The projects a user starred: they lead that user's sidebar and Home. A star
+// changes order only, never what the user may read. With authentication off
+// there is no user to keep one on, and the browser keeps the stars instead.
+export const projectStars = pgTable(
+  'project_stars',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userProjectIdx: uniqueIndex('idx_project_stars_user_project').on(t.userId, t.projectId),
+    projectIdx: index('idx_project_stars_project').on(t.projectId),
+  }),
+);
+
+// A program on a person's machine that takes run requests: the desktop app or Piwi Runner. One row per target key,
+// created when the device flow connects it, and deleted with the key when the person revokes it. It says which
+// projects it has a folder for, never the folder.
+export const runTargets = pgTable(
+  'run_targets',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    apiKeyId: integer('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'desktop' | 'runner'
+    deviceName: text('device_name').notNull(), // "Piwi Desktop on LAPTOP-42 (macOS)", the key's name
+    platform: text('platform'),
+    version: text('version'),
+    projectIds: jsonb('project_ids'), // number[]: the projects it has a folder for
+    lastSeenAt: timestamp('last_seen_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    apiKeyIdx: uniqueIndex('idx_run_targets_api_key').on(t.apiKeyId),
+    userIdx: index('idx_run_targets_user').on(t.userId),
+  }),
+);
+
+// A run request: tests the instance resolved and options from a closed list, for one of the requester's targets
+// (`@piwitests/core/run-request`). A target claims it once; unclaimed, it expires. Its id is the run's ref.
+export const runRequests = pgTable(
+  'run_requests',
+  {
+    id: text('id').primaryKey(), // 32 hex digits
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    requesterId: integer('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    kind: text('kind').notNull(), // RunRequestKind
+    tests: jsonb('tests').notNull(), // RunRequestTest[]
+    options: jsonb('options').notNull(), // RunRequestOptions
+    source: jsonb('source').notNull(), // RunRequestSource
+    state: text('state').notNull().default('waiting'), // RunRequestState
+    outcome: text('outcome'), // RunRequestOutcome, once ended
+    detail: text('detail'), // the words of a failed check, or of an error
+    runId: integer('run_id'), // the run its request token started; no foreign key, so a run's delete never waits on its request
+    requestTokenDigest: text('run_token_digest'), // the digest of the request token **Run** returned, null before
+    requestTokenExpiresAt: timestamp('run_token_expires_at', { mode: 'date' }), // when the request token stops starting a run
+    stopRequestedAt: timestamp('stop_requested_at', { mode: 'date' }),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    claimedAt: timestamp('claimed_at', { mode: 'date' }),
+    answeredAt: timestamp('answered_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    requesterIdx: index('idx_run_requests_requester').on(t.requesterId, t.createdAt),
+    targetIdx: index('idx_run_requests_target').on(t.targetId),
+    projectIdx: index('idx_run_requests_project').on(t.projectId),
+    stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
+    runIdx: index('idx_run_requests_run').on(t.runId),
+    requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
   }),
 );

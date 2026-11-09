@@ -115,14 +115,14 @@ const hookRects = computed<SectionRect[]>(() => {
  */
 const testRect = computed(() => {
   const { x, y, width, item } = props;
-  if (!item.retried) return { x, y, width, height: barHeight, style: timelineStatusFill(item.status, item.retries) };
+  if (!item.retried) return { x, y, width, height: barHeight, style: timelineStatusFill(item.status, item.flaky) };
   const inset = Math.min(0.75, width / 4);
   return {
     x: x + inset,
     y: y + 0.75,
     width: width - inset * 2,
     height: barHeight - 1.5,
-    style: timelineRetriedAttemptStyle(item.status, item.retries),
+    style: timelineRetriedAttemptStyle(item.status, item.flaky),
   };
 });
 

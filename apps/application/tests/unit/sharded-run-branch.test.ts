@@ -27,6 +27,7 @@ vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: RouteEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: RouteEvent, name: string) => event.params?.[name]);
+vi.stubGlobal('getRequestHeader', () => undefined);
 vi.stubGlobal('apiError', apiError);
 
 type Route = (event: RouteEvent) => Promise<Record<string, any>>;

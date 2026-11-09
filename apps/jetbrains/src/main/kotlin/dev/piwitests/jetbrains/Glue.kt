@@ -1384,9 +1384,10 @@ object Glue {
     }
 
     /**
-     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and
-     * whether its run was started in a terminal (`RunSession.terminal`), and of those by the IDE's own test runner
-     * (`RunSession.runner`).
+     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, whether
+     * its run was started in a terminal (`RunSession.terminal`), and of those by the IDE's own test runner
+     * (`RunSession.runner`), and its slot (`RunWorker.parallelIndex`, which the worker Playwright starts in its place
+     * after a failure keeps).
      */
     data class ShownStop(
         val ref: String,
@@ -1396,6 +1397,7 @@ object Glue {
         val takes: List<String> = emptyList(),
         val terminal: Boolean = false,
         val runner: Boolean = false,
+        val slot: Int = worker,
     )
 
     /** Every stopped worker of the sessions, in their order. */
@@ -1410,6 +1412,7 @@ object Glue {
                     w.takes.orEmpty(),
                     session.terminal,
                     session.terminal && session.runner,
+                    w.parallelIndex,
                 )
             }
         }
@@ -1417,6 +1420,246 @@ object Glue {
 
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
+
+    /** What tells a worker's slot from another: its run and its slot. */
+    private fun slotKey(ref: String, slot: Int): String = "$ref\u0000$slot"
+
+    private fun slotKey(stop: ShownStop): String = slotKey(stop.ref, stop.slot)
+
+    /** How long the Paused Page tab and the focus wait for the next stop of a slot stepped or run to the caret. */
+    const val RESERVED_MILLIS = 10_000L
+
+    /**
+     * How long after a control from the IDE answered a stop, until another stop of that slot opens or no worker of the
+     * run holds the slot, a run action acts on no other slot's stop.
+     */
+    const val RESUMED_MILLIS = 2_000L
+
+    /**
+     * What a change of the stops shows: the stops new to the IDE, in order, each opening its file at its line in its
+     * turn (`StopsShown.focusFor`, `StopsShown.opened`), and the stop whose page the Paused Page tab opens (null leaves
+     * the tab as it is).
+     */
+    data class StopsChange(val open: List<ShownStop>, val page: ShownStop?)
+
+    /** The stop an action naming none acts on (`StopsShown.choose`): one, none, or the one the person chooses. */
+    sealed interface StopChoice {
+        data class One(val stop: ShownStop) : StopChoice
+
+        data object Ask : StopChoice
+
+        data object None : StopChoice
+    }
+
+    /**
+     * Whether input sent to a stop's page is the person acting on it: a press, a click, a key, text or the wheel; a
+     * pointer moving, or a button or key let go, is not.
+     */
+    fun actsOnPage(events: List<PageInput>): Boolean =
+        events.any { it.type == "text" || it.type == "wheel" || (it.action != "move" && it.action != "up") }
+
+    /**
+     * Whether a new page selects the Paused Page tab: unless the Worker tab is in sight, selected in a tool window that
+     * shows.
+     */
+    fun selectsPausedPage(workerTabSelected: Boolean, windowVisible: Boolean): Boolean = !(workerTabSelected && windowVisible)
+
+    /** What a control from the IDE records: the slot the person is on, a wait for a slot's next stop, the answer. */
+    private enum class Recorded { FOLLOWED, RESERVED, ANSWER }
+
+    /** A slot stepped or run to the caret, by `slotKey`, the stop stepped, by `stopKey`, and until when it waits. */
+    private class Reserved(val slot: String, val key: String, val until: Long)
+
+    /** A slot a control answered, by `slotKey`, the stop answered, by `stopKey`, and when. */
+    private class Answer(val slot: String, val key: String, val at: Long)
+
+    /** What an answer replaced, with when each changed, and when what it set changed, for a refusal to undo. */
+    private class Answered(val was: HashMap<Recorded, Any?>, val wasStamps: HashMap<Recorded, Int>, val stamps: Map<Recorded, Int>)
+
+    /**
+     * What the IDE shows of the stops as they change, each stop once, and which stop a run action acts on.
+     *
+     * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only as a stop of
+     *   the slot the person is on, or while no other stop held had its file opened or left closed (`opened`, a tab
+     *   closed since included). The slot the person is on is the one whose stop last took the focus, or that they last
+     *   acted on: a control from the IDE (`answered`), a code action, or a press, a key, text, the wheel or a pick on
+     *   the Paused Page (`acted`, `actsOnPage`). Watching a slot in the Worker tab does not make it theirs.
+     * - After a Step or a Run to Caret from the IDE, until another stop of that slot opens, `RESERVED_MILLIS` at most
+     *   and while a worker of the run holds the slot, no stop of another slot takes the focus, and the Paused Page tab,
+     *   once its own stop of that slot went on, waits for it (`waitsUntil`, when the IDE asks again). An answer the run
+     *   refuses undoes what it recorded that nothing changed since (`refused`).
+     * - The Paused Page tab keeps the stop it shows (`view`) while that stop is held, a stop of the slot the Worker tab
+     *   watches included; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A
+     *   tab that is closed opens the first new such stop.
+     */
+    class StopsShown {
+        /** The stops heard, those whose file opened or was left closed, and those the person was shown, by `stopKey`. */
+        private val heard = HashSet<String>()
+        private val files = HashSet<String>()
+        private val seen = HashSet<String>()
+        private var held: Set<String> = emptySet()
+
+        /** The stop the Paused Page tab shows, or showed last; null while it is closed. */
+        private var viewed: ShownStop? = null
+
+        /**
+         * What the controls and the person's acts recorded, each stamped as it changes: the slot the person is on
+         * (`followed`, by `slotKey`), the slot stepped or run to the caret whose next stop the focus and the tab wait
+         * for (`reserved`), and the slot a control answered last, until another of its stops opens (`answer`).
+         */
+        private val recorded = HashMap<Recorded, Any?>()
+        private val stamps = HashMap<Recorded, Int>()
+        private var changes = 0
+
+        /** The answers sent and not settled, by token. */
+        private val answers = LinkedHashMap<Int, Answered>()
+
+        private var followed: String?
+            get() = recorded[Recorded.FOLLOWED] as String?
+            set(value) = record(Recorded.FOLLOWED, value)
+
+        private var reserved: Reserved?
+            get() = recorded[Recorded.RESERVED] as Reserved?
+            set(value) = record(Recorded.RESERVED, value)
+
+        private var answer: Answer?
+            get() = recorded[Recorded.ANSWER] as Answer?
+            set(value) = record(Recorded.ANSWER, value)
+
+        private fun record(field: Recorded, value: Any?) {
+            recorded[field] = value
+            stamps[field] = ++changes
+        }
+
+        /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
+        fun changed(
+            sessions: Map<String, RunSession>,
+            stops: List<ShownStop>,
+            now: Long = System.currentTimeMillis(),
+        ): StopsChange {
+            val slots = sessions.values.flatMap { s -> s.workers.orEmpty().map { slotKey(s.ref ?: "", it.parallelIndex) } }.toSet()
+            if (reserved?.let { it.until <= now || it.slot !in slots } == true) reserved = null
+            if (answer?.let { it.slot !in slots } == true) answer = null
+            held = stops.map(::stopKey).toSet()
+            heard.retainAll(held)
+            files.retainAll(held)
+            seen.retainAll(held)
+            val open = stops.filter { stopKey(it) !in heard }
+            open.forEach { heard.add(stopKey(it)) }
+            val shown = viewed ?: return StopsChange(open, open.firstOrNull { !it.stop.bar })
+            if (stopKey(shown) in held) return StopsChange(open, null)
+            val waited = reserved?.takeIf { it.slot == slotKey(shown) }
+            if (waited != null) {
+                val next = stops.firstOrNull { slotKey(it) == waited.slot && stopKey(it) != waited.key } ?: return StopsChange(open, null)
+                if (!next.stop.bar) return StopsChange(open, next)
+            }
+            return StopsChange(open, open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar })
+        }
+
+        /** The Paused Page tab shows `stop`'s page; null once it is closed. */
+        fun view(stop: ShownStop?) {
+            viewed = stop
+        }
+
+        /** When the tab stops waiting for a slot's next stop, for `changed` to run then; null while it waits for none. */
+        fun waitsUntil(): Long? = reserved?.until
+
+        /** Whether `stop`'s file, opening now, takes the focus. */
+        fun focusFor(stop: ShownStop, now: Long = System.currentTimeMillis()): Boolean {
+            val slot = slotKey(stop)
+            if (reserved?.let { it.until > now && it.slot != slot } == true) return false
+            return slot == followed || files.all { it == stopKey(stop) }
+        }
+
+        /**
+         * `stop`'s file opened, or was left closed while an editor is in use, with the focus or without it, in sight
+         * (`shown`) or not. Another stop of the slot waited for ends the wait, as does a stop of another slot that took
+         * the focus; another stop of the slot answered ends the moments after the answer.
+         */
+        fun opened(stop: ShownStop, focus: Boolean, shown: Boolean = true) {
+            val key = stopKey(stop)
+            if (key !in held) return
+            files.add(key)
+            if (shown) seen.add(key)
+            if (reserved?.let { it.key != key && (focus || it.slot == slotKey(stop)) } == true) reserved = null
+            if (answer?.let { it.key != key && it.slot == slotKey(stop) } == true) answer = null
+            if (focus) followed = slotKey(stop)
+        }
+
+        /**
+         * A control from the IDE answers `stop` (`action`), as it is sent: the person is on its slot, and after a Step
+         * or a Run to Caret the focus and the tab wait for its next stop. The token to settle the answer with
+         * (`refused`, `taken`).
+         */
+        fun answered(stop: ShownStop, action: String, now: Long = System.currentTimeMillis()): Int {
+            val slot = slotKey(stop)
+            val was = HashMap(recorded)
+            val wasStamps = HashMap(stamps)
+            followed = slot
+            answer = Answer(slot, stopKey(stop), now)
+            reserved = if (action == "step" || action == "run-to") Reserved(slot, stopKey(stop), now + RESERVED_MILLIS) else null
+            val token = ++changes
+            answers[token] = Answered(was, wasStamps, HashMap(stamps))
+            return token
+        }
+
+        /**
+         * The run refused the answer `token` names (`ok: false`): of what it recorded, what nothing changed since goes
+         * back to what it was, and what a later answer replaced is what that one puts back if refused. Whether anything
+         * went back.
+         */
+        fun refused(token: Int): Boolean {
+            val refused = answers.remove(token) ?: return false
+            var undone = false
+            for (field in Recorded.entries) {
+                if (stamps[field] == refused.stamps[field]) {
+                    recorded[field] = refused.was[field]
+                    stamps[field] = refused.wasStamps[field] ?: 0
+                    undone = true
+                    continue
+                }
+                for (later in answers.values) {
+                    if (later.wasStamps[field] != refused.stamps[field]) continue
+                    later.was[field] = refused.was[field]
+                    later.wasStamps[field] = refused.wasStamps[field] ?: 0
+                }
+            }
+            return undone
+        }
+
+        /** The run took the answer `token` names, or its answer is unknown: what it recorded stays. */
+        fun taken(token: Int) {
+            answers.remove(token)
+        }
+
+        /**
+         * The person acted on `stop` (a code action, or a press, a key, text, the wheel or a pick on its page): they
+         * are on its slot, and a wait for another slot's next stop ends. Whether it ended one.
+         */
+        fun acted(stop: ShownStop): Boolean {
+            followed = slotKey(stop)
+            if (reserved?.let { it.slot != slotKey(stop) } != true) return false
+            reserved = null
+            return true
+        }
+
+        /**
+         * The stop an action naming none acts on among `candidates` (those `stopsFor` gives for the caret at `line` of
+         * `uri`). For a control (`control`) within `RESUMED_MILLIS` of an answer, until another stop of that slot
+         * opens, only a stop of that slot, whatever the caret says. Else the one at the caret's line, else the only one
+         * when the person was shown its file or its page, else the person chooses among them.
+         */
+        fun choose(candidates: List<ShownStop>, uri: String?, line: Int?, control: Boolean, now: Long = System.currentTimeMillis()): StopChoice {
+            val answered = answer?.takeIf { control && now - it.at < RESUMED_MILLIS }
+            if (answered != null) return candidates.firstOrNull { slotKey(it) == answered.slot }?.let { StopChoice.One(it) } ?: StopChoice.None
+            val here = if (line == null) emptyList() else candidates.filter { stopIsAt(it, uri, line) }
+            if (here.isNotEmpty()) return if (here.size == 1) StopChoice.One(here.single()) else StopChoice.Ask
+            if (candidates.isEmpty()) return StopChoice.None
+            val only = candidates.singleOrNull() ?: return StopChoice.Ask
+            val shown = stopKey(only) in seen || viewed?.let { stopKey(it) } == stopKey(only)
+            return if (shown) StopChoice.One(only) else StopChoice.Ask
+        }
+    }
 
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
@@ -1474,6 +1717,64 @@ object Glue {
             "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can " +
             "open the run there can watch, and on an instance with authentication off, anyone who can reach it. " +
             "Nothing is stored, and Stop Sharing ends it within seconds."
+    }
+
+    /**
+     * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
+     * of how many they hold, and how many failed; null while no run says.
+     */
+    fun runProgressText(sessions: Map<String, RunSession>): String? {
+        val told = sessions.values.mapNotNull { it.progress }
+        if (told.isEmpty()) return null
+        val failed = told.sumOf { it.failed }
+        return "Piwi: ${told.sumOf { it.done }} of ${told.sumOf { it.total }}" + if (failed > 0) " · $failed failed" else ""
+    }
+
+    /** A worker a Worker tab can watch while its test runs: its run, its worker and slot (`lane`), and its words. */
+    data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
+
+    /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
+    fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /**
+     * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
+     * their order; `pausable` keeps those a Pause can stop now (Pause and Watch).
+     */
+    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> =
+        sessions.values.flatMap { session ->
+            session.workers.orEmpty()
+                .filter { it.watchable && (!pausable || (it.state != "stopped" && !it.pausing && it.test?.cannotPause == null)) }
+                .map { w ->
+                    val title = w.test?.title.orEmpty().joinToString(" › ")
+                    val doing = when {
+                        w.test == null -> "between tests"
+                        w.state == "stopped" -> "stopped in $title"
+                        else -> "running $title"
+                    }
+                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $doing")
+                }
+        }
+
+    /** What a Worker tab says of its slot: the worker there now, its stop, and the caption above the image. */
+    data class LaneShown(val worker: RunWorker?, val stop: ShownStop?, val caption: String)
+
+    /**
+     * What the Worker tab watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
+     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`.
+     */
+    fun laneShown(session: RunSession?, lane: Int, stops: List<ShownStop>): LaneShown {
+        val name = workerName(lane)
+        if (session == null || session.ended) return LaneShown(null, null, "$name · the run ended.")
+        val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == lane }
+            ?: return LaneShown(null, null, "$name · starting…")
+        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests")
+        val title = test.title.orEmpty().joinToString(" › ")
+        val stop = stops.firstOrNull { it.ref == session.ref && it.worker == worker.worker }
+        if (stop == null && worker.pausing && worker.waiting != null) {
+            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title")
+        }
+        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
+        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
     }
 
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
@@ -1544,6 +1845,10 @@ object Glue {
         val endable: Boolean = false,
         /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
         val liveViewers: Int? = null,
+        /** A worker's reporter shows its page while its test runs: Watch a Worker's Test. */
+        val watchable: Boolean = false,
+        /** The call a pausing worker's test waits in (the first such worker's): End the Test ends it there. */
+        val waiting: RunWaiting? = null,
     ) {
         val liveShared: Boolean get() = liveViewers != null
     }
@@ -1560,7 +1865,19 @@ object Glue {
             stoppable = sessions.values.any { !it.terminal },
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
+            watchable = workers.any { it.watchable },
+            waiting = workers.firstOrNull { it.pausing && it.waiting != null }?.waiting,
         )
+    }
+
+    /** A pausing worker whose test waits in a call: its run, its worker, and the call. */
+    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting)
+
+    /** The pausing workers whose test waits in a call, in their order. */
+    fun waitingWorkers(sessions: Map<String, RunSession>): List<WaitingWorker> = sessions.values.flatMap { session ->
+        session.workers.orEmpty().mapNotNull { w ->
+            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it) }
+        }
     }
 
     /**
@@ -1572,10 +1889,18 @@ object Glue {
         return when {
             stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
             stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
+            controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
             controls.pausing -> "Piwi: pausing…$shared"
             else -> null
         }
     }
+
+    /** The longest call the status bar names before it cuts it, in characters. */
+    private const val STATUS_CALL_MAX = 60
+
+    /** A call's title as the status bar names it: cut past `STATUS_CALL_MAX` characters, with an ellipsis. */
+    private fun clipped(title: String): String =
+        if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
     /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
     fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }

@@ -126,6 +126,7 @@ shows its share of functions. A file opens on its source when the dashboard has 
 | `slow-endpoint.spec.ts` | An 800 ms call and two calls to `/api/users/{id}` |
 | `backend-logs.spec.ts` | The warning and error `/api/report` logs, and the unhandled exception of `/api/failing`, read from `X-Piwi-Logs` |
 | `route-manifest.spec.ts` | `/__piwi/manifest` declares every page and the API |
+| `server-environment.spec.ts` | `/__piwi/environment` describes the server process |
 | `server-spans.spec.ts` | `X-Piwi-Trace` names the request on its root span |
 | `server-coverage.spec.ts` | Placing an order returns `X-Piwi-Coverage` |
 | `server-probes.spec.ts` | A signed `X-Piwi-Probe` fails `/api/items` inside the backend, and the home page shows the error |
@@ -278,6 +279,7 @@ backend provides, and the specs for the others are skipped.
 |---|---|:---:|:---:|
 | `X-Piwi-Logs` | On every response: the Warning, Error and Critical entries the request logged, as gzip-compressed, Base64-encoded JSON (`[]` when none) | ✓ | ✓ |
 | `GET /__piwi/manifest` | The routes it declares, every page above among them | ✓ | the routes it has answered since it started |
+| `GET /__piwi/environment` | The server process's runtime, OS, time zone, locale, instance id and start time | ✓ | ✓ |
 | `X-Piwi-Probe` → `X-Piwi-Trace` | Applies a fault signed with `PIWI_PROBE_SECRET` (the sample's is `piwi-sample-probe-secret`, in `backends.ts`) when `PIWI_SERVER_PROBES=true`, and names it on the response's root span (`piwi.probe.applied`) | ✓ | ✓ |
 | `X-Piwi-Trace` | The server's spans on every response | | ✓ |
 | `X-Piwi-Coverage`, `POST /__piwi/coverage/collect`, `GET /__piwi/coverage/run` | In a coverage build: the id of each request's coverage, and the coverage of the ids a test received | ✓ | |

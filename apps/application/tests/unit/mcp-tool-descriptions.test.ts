@@ -19,7 +19,7 @@ describe('MCP tool descriptions', () => {
     expect(summary).toMatch(/\.$/);
     expect(summary, 'a second sentence').not.toMatch(/[.?!]\s+[A-Z`]/);
     expect(summary.length).toBeLessThanOrEqual(170);
-    // The `/mcp` page renders the summary as the row's muted line, inside its toggle button.
+    // Settings → MCP server renders the summary as the row's muted line, inside its toggle button.
     expect(summary).not.toMatch(/\]\(/);
     expect(summary).not.toContain('**');
   });
@@ -70,7 +70,10 @@ describe('toolParameters', () => {
 
   test('names an array by its item type and a union by its members', () => {
     const include = toolParameters(byName('get_test_run_case')).find((p) => p.name === 'include')!;
-    expect(include).toMatchObject({ type: 'string[]', values: ['steps', 'console', 'webVitals', 'aria', 'source'] });
+    expect(include).toMatchObject({
+      type: 'string[]',
+      values: ['steps', 'console', 'webVitals', 'aria', 'source', 'output'],
+    });
     const receiver = toolParameters(byName('create_test_function')).find((p) => p.name === 'receiver')!;
     expect(receiver.type).toBe('string or null');
   });

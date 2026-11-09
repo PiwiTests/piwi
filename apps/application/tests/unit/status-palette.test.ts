@@ -13,10 +13,16 @@ describe('statusPaletteKey', () => {
     expect(statusPaletteKey('didnotrun')).toBe('didnotrun');
   });
 
-  test('counts timed-out and interrupted as failed', () => {
+  test('counts timed-out as failed', () => {
     expect(statusPaletteKey('timedout')).toBe('failed');
     expect(statusPaletteKey('timedOut')).toBe('failed');
-    expect(statusPaletteKey('interrupted')).toBe('failed');
+  });
+
+  test('draws interrupted in its own neutral entry, in no outcome', () => {
+    expect(statusPaletteKey('interrupted')).toBe('interrupted');
+    expect(statusPalette('interrupted')).toBe(STATUS_PALETTE.interrupted);
+    expect(statusPalette('interrupted')).not.toBe(STATUS_PALETTE.failed);
+    expect(statusChipLabel('interrupted')).toBe('Interrupted');
   });
 
   test('gives the three in-flight statuses one entry', () => {
@@ -25,11 +31,11 @@ describe('statusPaletteKey', () => {
     expect(statusPaletteKey('finalizing')).toBe('running');
   });
 
-  test('reads a pass that needed a retry as flaky', () => {
-    expect(statusPaletteKey('passed', 1)).toBe('flaky');
-    expect(statusPaletteKey('passed', 0)).toBe('passed');
+  test('reads a pass after a failed attempt (its verdict) as flaky', () => {
+    expect(statusPaletteKey('passed', true)).toBe('flaky');
+    expect(statusPaletteKey('passed', false)).toBe('passed');
     expect(statusPaletteKey('passed', null)).toBe('passed');
-    expect(statusPaletteKey('failed', 2)).toBe('failed');
+    expect(statusPaletteKey('failed', true)).toBe('failed');
   });
 
   test('falls back to the neutral skipped entry', () => {
@@ -45,7 +51,13 @@ describe('STATUS_PALETTE', () => {
       expect(entry.color).toBe(`var(--color-status-${key})`);
       expect(entry.bg).toBe(`bg-status-${key}`);
       expect(entry.ring).toBe(`ring-status-${key}`);
+      expect(entry.edge).toBe(`border-l-status-${key}`);
     }
+  });
+
+  test('edges an interrupted run in its own slate, apart from the skipped grey', () => {
+    expect(statusPalette('interrupted').edge).toBe('border-l-status-interrupted');
+    expect(statusPalette('interrupted').edge).not.toBe(STATUS_PALETTE.skipped.edge);
   });
 
   test('every entry has a row tint, light and dark', () => {
@@ -61,24 +73,24 @@ describe('STATUS_PALETTE', () => {
 
   test('statusPalette returns the entry for a raw status', () => {
     expect(statusPalette('timedout')).toBe(STATUS_PALETTE.failed);
-    expect(statusPalette('passed', 1)).toBe(STATUS_PALETTE.flaky);
+    expect(statusPalette('passed', true)).toBe(STATUS_PALETTE.flaky);
   });
 });
 
 describe('formatExecutionStatus', () => {
-  test('names a pass that needed a retry', () => {
-    expect(formatExecutionStatus('passed', 2)).toBe('passed on retry');
-    expect(formatExecutionStatus('passed', 0)).toBe('passed');
+  test('names a pass after a failed attempt', () => {
+    expect(formatExecutionStatus('passed', true)).toBe('passed on retry');
+    expect(formatExecutionStatus('passed', false)).toBe('passed');
     expect(formatExecutionStatus('timedout')).toBe('timed out');
   });
 });
 
 describe('statusChipLabel', () => {
   test('reads the execution status in sentence case', () => {
-    expect(statusChipLabel('passed', 1)).toBe('Passed on retry');
+    expect(statusChipLabel('passed', true)).toBe('Passed on retry');
     expect(statusChipLabel('passed')).toBe('Passed');
     expect(statusChipLabel('didnotrun')).toBe("Didn't run");
     expect(statusChipLabel('timedOut')).toBe('Timed out');
-    expect(statusChipLabel('failed', 1)).toBe('Failed');
+    expect(statusChipLabel('failed', true)).toBe('Failed');
   });
 });

@@ -10,7 +10,15 @@
  * cannot paint one outcome three ways.
  */
 
-export type StatusColorKey = 'passed' | 'failed' | 'flaky' | 'skipped' | 'fixme' | 'didnotrun' | 'running';
+export type StatusColorKey =
+  | 'passed'
+  | 'failed'
+  | 'flaky'
+  | 'skipped'
+  | 'fixme'
+  | 'didnotrun'
+  | 'running'
+  | 'interrupted';
 
 export interface StatusColor {
   /** Tailwind palette entry the `--color-status-*` token points at. */
@@ -33,6 +41,7 @@ export const STATUS_COLORS: Record<StatusColorKey, StatusColor> = {
   fixme: { token: 'zinc-600', fill: '#52525b', text: '#3f3f46', textDark: '#d4d4d8', print: '#27272a' },
   didnotrun: { token: 'amber-500', fill: '#f59e0b', text: '#b45309', textDark: '#fbbf24', print: '#92400e' },
   running: { token: 'blue-500', fill: '#3b82f6', text: '#1d4ed8', textDark: '#60a5fa', print: '#1e40af' },
+  interrupted: { token: 'slate-500', fill: '#64748b', text: '#475569', textDark: '#94a3b8', print: '#334155' },
 };
 
 /** Lowest percentage that reads as good. */

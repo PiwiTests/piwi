@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, lt, or, gte, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, or, gte, type SQL } from 'drizzle-orm';
 import { quarantinedTests, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
+import { flakyResultSql } from '../test-case-aggregates';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsFlakyDebt } from '../../analytics/types';
 import {
@@ -14,7 +15,7 @@ import { groupRows, loadScalarRows } from './scalar-rows';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-/** The executions that passed only on a retry in `[fromMs, toMs)`: one per test and run. */
+/** The executions that passed after an earlier attempt failed in `[fromMs, toMs)`: one per test and run. */
 async function loadFlakyExecutions(
   db: DrizzleDB,
   ctx: AnalyticsContext,
@@ -22,11 +23,7 @@ async function loadFlakyExecutions(
   toMs: number,
 ): Promise<Array<{ projectId: number; testCaseId: number; startTime: Date }>> {
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return [];
-  const conditions: SQL[] = [
-    ...contextRunConditions(ctx, fromMs, toMs),
-    eq(testRunsCases.status, 'passed'),
-    sql`${testRunsCases.retries} > 0`,
-  ];
+  const conditions: SQL[] = [...contextRunConditions(ctx, fromMs, toMs), flakyResultSql()];
   if (ctx.testFilter?.browsers) conditions.push(inArray(testRunsCases.browserName, ctx.testFilter.browsers));
   const rows: Array<{ projectId: number; testCaseId: number; startTime: Date }> = await db
     .select({ projectId: testRuns.projectId, testCaseId: testRunsCases.testCaseId, startTime: testRuns.startTime })

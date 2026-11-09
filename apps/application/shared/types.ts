@@ -19,14 +19,26 @@ import type {
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
+  WireRunError,
   WireRunProfile,
   WorkerHealth,
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
 // re-export them so `#shared/types` consumers keep importing them from here.
 export type {
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
   BrowserConfig,
   FilterDetails,
   SuiteConfigEntry,
@@ -46,7 +58,9 @@ export type {
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
+  WireRunError,
   WireRunProfile,
   WorkerHealth,
 };
@@ -108,6 +122,11 @@ export interface TestCasePayload {
   ariaSnapshot?: unknown;
   ariaSnapshotJson?: unknown;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: BrowserConfig | null;
@@ -134,12 +153,19 @@ export interface TestCasePayload {
   testSource?: string | null;
   /** In-project call-stack frames (innermost first): the failing line + its callers. */
   testSourceFrames?: TestSourceFrame[] | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stderr?: string | null;
 }
 
 // ── Submit (JSON) payload ─────────────────────────────────────────────────────
@@ -175,17 +201,32 @@ export interface TestRunSubmitPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter. */
   resourceReport?: WireResourceReport | null;
+  /** Suite-level hook/fixture steps (beforeAll/afterAll) for the run timeline, as `/finish` takes them. */
+  setupSteps?: TestRunFinishPayload['setupSteps'];
+  /** The errors Playwright reported outside any test, as `/finish` takes them. */
+  runErrors?: WireRunError[];
+  /** Where the run executed: the runner, each project's browser, each server under test (`environment-snapshots`). */
+  environments?: WireEnvironmentSnapshot[];
   /**
    * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
    * repeating a key the project already took answers with the run it went to and stores nothing.
    */
   deliveryKey?: string;
+  /**
+   * The run the reporter streamed before it fell back to this batch delivery, with that run's stream token: the
+   * delivery cancels it while it has not settled, a `finalizing` one too (`cancelReplacedRun`).
+   */
+  replacesRun?: { runId: number; streamToken: string };
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────
 
 export interface StreamEventPayload {
-  type: 'begin' | 'complete' | 'step-begin' | 'step-end';
+  type: 'begin' | 'complete' | 'step-begin' | 'step-end' | 'test-stopped' | 'test-resumed';
+  /** On a `test-stopped` event: the stop the attempt stands at (`TestStop`, `@piwitests/core/wire`). */
+  stop?: unknown;
+  /** On a `test-resumed` event: how long the attempt has stood stopped in all, in ms. */
+  pausedMs?: number | null;
   title: string;
   location: string;
   status?: string;
@@ -194,6 +235,8 @@ export interface StreamEventPayload {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /** On a `begin` event: the retries the test is allowed. */
+  maxRetries?: number | null;
   /**
    * Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to, each its own test result.
    * Absent from older reporters, read as 0.
@@ -202,6 +245,11 @@ export interface StreamEventPayload {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
@@ -246,12 +294,19 @@ export interface StreamEventPayload {
   testSource?: string | null;
   /** In-project call-stack frames (innermost first): the failing line + its callers. */
   testSourceFrames?: TestSourceFrame[] | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stderr?: string | null;
 }
 
 // ── Finish payload ────────────────────────────────────────────────────────────
@@ -259,6 +314,8 @@ export interface StreamEventPayload {
 export interface TestRunFinishPayload {
   streamToken: string | null;
   status: string;
+  /** When the reporter's run started: a shard's span in a sharded run starts there. */
+  startTime?: string;
   duration: number;
   totalTests: number;
   passedTests: number;
@@ -293,6 +350,13 @@ export interface TestRunFinishPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter (per shard). */
   resourceReport?: WireResourceReport | null;
+  /**
+   * The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker's
+   * teardown), read through `sanitizeRunErrors`; a sharded run adds each shard's to the others'.
+   */
+  runErrors?: WireRunError[];
+  /** Where the shard executed: its runner, each project's browser, each server under test. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -313,6 +377,8 @@ export interface TestRunStartPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** The runner's environment snapshot, sent by `/start` and `/begin`. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Declared surface manifest (Test Map) ──────────────────────────────────────

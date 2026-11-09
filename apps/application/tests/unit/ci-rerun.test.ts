@@ -20,17 +20,17 @@ describe('resolveCiRerunSettings', () => {
     const resolved = resolveCiRerunSettings({
       enabled: true,
       github: { workflow: 'e2e.yml', ref: '', inputName: 'args' },
-      gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+      gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
     });
     expect(resolved.github).toBeUndefined();
-    expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PW_ARGS' });
+    expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PIWI_RERUN_ARGS' });
   });
 });
 
 describe('hasRerunTarget', () => {
   const settings = resolveCiRerunSettings({
     enabled: true,
-    gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+    gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
   });
 
   test('true only when enabled and a target exists for the provider', () => {
@@ -126,5 +126,37 @@ describe('buildRetryArgs', () => {
   test('normalizes Windows separators', () => {
     const args = buildRetryArgs([{ filePath: 'tests\\win.spec.ts', title: 'w', line: 5, projectName: null }]);
     expect(args).toBe('"tests/win.spec.ts:5"');
+  });
+});
+
+describe('resolveCiRerunSettings with a CI server', () => {
+  test('keeps the dispatch target and a resolved Jenkins target', () => {
+    const resolved = resolveCiRerunSettings({
+      enabled: true,
+      via: 'ci-server',
+      ciServer: { preset: 'jenkins', baseUrl: ' https://jenkins.example.com ', rerun: { job: ' polaris/e2e ' } },
+    } as never);
+    expect(resolved).toEqual({
+      enabled: true,
+      via: 'ci-server',
+      ciServer: {
+        preset: 'jenkins',
+        baseUrl: 'https://jenkins.example.com/',
+        rerun: { job: 'polaris/e2e', argsParameter: 'PIWI_RERUN_ARGS', dispatchParameter: 'PIWI_ORIGIN_REF' },
+      },
+    });
+  });
+
+  test('stores no `via` for the repository default, and drops a target that cannot dispatch', () => {
+    expect(resolveCiRerunSettings({ enabled: true, via: 'repository' })).toEqual({ enabled: true });
+    expect(
+      resolveCiRerunSettings({ enabled: true, via: 'ci-server', ciServer: { preset: 'jenkins', rerun: {} } } as never),
+    ).toEqual({ enabled: true, via: 'ci-server' });
+    expect(
+      resolveCiRerunSettings({
+        enabled: true,
+        ciServer: { preset: 'jenkins', baseUrl: 'https://user:pw@jenkins.example.com/', rerun: { job: 'e2e' } },
+      } as never).ciServer?.baseUrl,
+    ).toBeUndefined();
   });
 });

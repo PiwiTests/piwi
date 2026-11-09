@@ -381,7 +381,7 @@ describe('report_fix_attempt', () => {
     });
     const [other] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'failed', failureClusterId: 2 })
+      .values({ testRunId: 1, testCaseId: 1, repeatEachIndex: 1, status: 'failed', failureClusterId: 2 })
       .returning({ id: schema.testRunsCases.id });
     const recorded = (await tool('record_diagnosis')(
       db as never,
@@ -526,20 +526,46 @@ describe('the write log', () => {
       await logMcpToolCall(db as never, maintainer, 'set_cluster_status', { clusterId: 1, status: 'resolved' }, 'ok'),
     ).toBe(1);
     expect(await logMcpToolCall(db as never, maintainer, 'get_cluster', { clusterId: 1 }, 'ok')).toBe(0);
-    expect(await logMcpToolCall(db as never, maintainer, 'triage_cluster', { clusterIds: [1, 1, 5] }, 'ok')).toBe(2);
+    const triaged = { action: 'status', requested: 3, updated: 1, skippedIds: [5] };
+    expect(
+      await logMcpToolCall(db as never, maintainer, 'triage_cluster', { clusterIds: [1, 1, 5] }, 'ok', null, triaged),
+    ).toBe(1);
     await logMcpToolCall(db as never, maintainer, 'triage_gap', { projectId: 1, gapId: 4 }, 'error', 'gap not found');
 
     const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
     expect(rows.map((r) => [r.tool, r.subjectType, r.subjectId, r.projectId, r.apiKeyId, r.result])).toEqual([
       ['set_cluster_status', 'cluster', 1, 1, 7, 'ok'],
       ['triage_cluster', 'cluster', 1, 1, 7, 'ok'],
-      ['triage_cluster', 'cluster', 5, null, 7, 'ok'],
       ['triage_gap', 'gap', 4, 1, 7, 'error'],
     ]);
-    expect(rows[3]!.error).toBe('gap not found');
+    expect(rows[2]!.error).toBe('gap not found');
 
     const activity = await getClusterActivity(db as never, 1);
     expect(activity.map((a) => a.text)).toEqual(['An agent triaged the cluster', 'An agent changed the status']);
+  });
+
+  test('logs a cluster triage on the clusters it applied to, never on one it skipped', async () => {
+    await db.insert(schema.projects).values({ id: 9, name: 'private' });
+    await db.insert(schema.failureClusters).values({
+      id: 9,
+      projectId: 9,
+      fingerprint: 'fp-private',
+      signature: 'Error: private',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+    });
+    const args = { clusterIds: [1, 9], action: 'status', status: 'resolved' };
+    const output = await tool('triage_cluster')(db as never, args, maintainer);
+    expect(output).toMatchObject({ updated: 1, skippedIds: [9] });
+    await logMcpToolCall(db as never, maintainer, 'triage_cluster', args, 'ok', null, output);
+    await logMcpToolCall(db as never, maintainer, 'triage_cluster', args, 'error', 'clusterIds must be …');
+
+    const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
+    expect(rows.map((r) => [r.subjectType, r.subjectId, r.result])).toEqual([
+      ['cluster', 1, 'ok'],
+      [null, null, 'error'],
+    ]);
+    expect(await getClusterActivity(db as never, 9)).toEqual([]);
   });
 
   test('logs a call about a failure on the execution and its project', async () => {

@@ -50,14 +50,14 @@ export const DEMO_ASSISTANT_QUESTIONS = [
     id: 'run-in-ci',
     answer: 'ci',
     question: 'How do I run this suite in CI?',
-    pages: ['/', '/projects', '/setup'],
+    pages: ['/', '/projects', '/settings/connect'],
     sample: '/',
   },
   {
     id: 'set-up-sharding',
     answer: 'ci',
     question: 'How do I set up sharding?',
-    pages: ['/projects/[id]', '/setup'],
+    pages: ['/projects/[id]', '/settings/connect'],
     sample: '/projects/5',
   },
   {

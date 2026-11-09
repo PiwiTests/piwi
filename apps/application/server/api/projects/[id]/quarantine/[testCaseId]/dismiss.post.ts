@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Dismiss a quarantine proposal or a proposed release',
     description:
-      'Turns down what Piwi proposed for a test: `quarantine` while the test is one of the `candidates` of `GET /api/projects/:id/quarantine`, or `release` while its quarantine entry has `releaseProposed`. Records the proposal’s `rejected` hand-back outcome (kind `quarantine-proposal`) with the optional `reason`; dismissing the same proposal again records nothing more. Nothing else changes: the test stays out of, or in, quarantine, and the proposal stays listed, marked `dismissed` or `releaseDismissed`. A candidate dismissed counts again once a newer run arrives. Answers 404 when the test is not in the project or has no such proposal.',
+      'Turns down what Piwi proposed for a test: `quarantine` while the test is one of the `candidates` of `GET /api/projects/:id/quarantine`, or `release` while its quarantine entry has `releaseProposed`. Records the proposal’s `rejected` hand-back outcome (kind `quarantine-proposal`) with the optional `reason`; dismissing the same proposal again records nothing more. Nothing else changes: the test stays out of, or in, quarantine, and the proposal stays listed, marked `dismissed` or `releaseDismissed`. A candidate dismissed counts again once a newer run of those the candidates read arrives (a finished run on the default branch, or on none, that is no lab, bisect or reproduction run). Answers 404 when the test is not in the project or has no such proposal.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'testCaseId', in: 'path', required: true, schema: { type: 'integer' } },

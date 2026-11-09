@@ -7,7 +7,7 @@
  * settings preview and by the demo's preview, so all decide on the same facts
  * through `#shared/integrations/automation`.
  */
-import { and, desc, eq, gt, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { failureClusters, integrationActions, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import {
   describeAutoCreateDecision,
@@ -23,6 +23,7 @@ import { isCurrentlySnoozed } from '../inbox-queues';
 import { describeCluster } from '../describe-cluster';
 import { clusterIssueFilings, clusterKnownIssues, clusterReopenings, knownIssueTracks } from './known-issues';
 import type { DrizzleDB } from './db';
+import { flakyResultSql } from './test-case-aggregates';
 
 /** Failing (cluster, run) rows read per call, newest first: well past what a threshold needs. */
 const FAILURE_ROWS_LIMIT = 5000;
@@ -119,19 +120,12 @@ export async function gatherAutoCreateFacts(
           .select({ id: testCases.id, tags: testCases.tags, owner: testCases.owner, filePath: testCases.filePath })
           .from(testCases)
           .where(inArray(testCases.id, testIds)),
-        // The latest pass on a retry of each test, in a run flakiness reads.
+        // The latest pass after a failed attempt of each test, in a run flakiness reads.
         db
           .select({ testCaseId: testRunsCases.testCaseId, runId: sql<number>`max(${testRunsCases.testRunId})` })
           .from(testRunsCases)
           .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-          .where(
-            and(
-              inArray(testRunsCases.testCaseId, testIds),
-              eq(testRunsCases.status, 'passed'),
-              gt(testRunsCases.retries, 0),
-              eligibleRunSql('flakiness'),
-            ),
-          )
+          .where(and(inArray(testRunsCases.testCaseId, testIds), flakyResultSql(), eligibleRunSql('flakiness')))
           .groupBy(testRunsCases.testCaseId),
       ])
     : [[], []];

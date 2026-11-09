@@ -23,6 +23,7 @@ const SECTION_IDS = [
   'coverage',
   'targets',
   'issue-tracker',
+  'tag-keys',
   'browser-extension',
   'local-folder',
 ] as const;
@@ -94,6 +95,13 @@ const sections = computed<Section[]>(() => [
     id: 'issue-tracker',
     label: 'Issue tracker',
     icon: 'i-lucide-ticket',
+    group: 'integrations',
+    visible: canManage.value,
+  },
+  {
+    id: 'tag-keys',
+    label: 'Keys in test tags',
+    icon: 'i-lucide-tags',
     group: 'integrations',
     visible: canManage.value,
   },
@@ -269,6 +277,13 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         v-else-if="active === 'issue-tracker'"
         :project-id="project.id"
         data-tour="project-settings-issue-tracker"
+      />
+
+      <ProjectTagKeysSettings
+        v-else-if="active === 'tag-keys'"
+        :project="project"
+        data-tour="project-settings-tag-keys"
+        @saved="emit('saved')"
       />
 
       <ProjectUrlPatternsForm

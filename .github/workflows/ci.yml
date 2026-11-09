@@ -5,6 +5,7 @@ name: CI
 # version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on
 # Linux; main runs every backend and every system, and the JetBrains Plugin Verifier on every IDE. The extension,
 # VS Code and desktop suites and the container image check run on pull requests only.
+# perf-comment.yml follows this workflow by its name (`workflows: [CI]`).
 on:
   pull_request:
   push:
@@ -57,6 +58,7 @@ jobs:
       vscode: ${{ steps.filter.outputs.vscode == 'true' || steps.filter.outputs.ci == 'true' }}
       jetbrains: ${{ steps.filter.outputs.jetbrains == 'true' || steps.filter.outputs.ci == 'true' }}
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
+      runner: ${{ steps.filter.outputs.runner == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
       guides: ${{ steps.filter.outputs.guides == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -96,8 +98,10 @@ jobs:
               - 'apps/application/**'
               - 'apps/docs/**'
               - 'packages/core/**'
+              - 'packages/editor/**'
               - 'packages/picker-dom/**'
               - 'packages/reporter/**'
+              - 'packages/run-ui/**'
               - 'packages/server/**'
               - 'integrations/nitro/**'
               - 'scripts/package-smoke.mjs'
@@ -110,6 +114,7 @@ jobs:
               - 'apps/application/**'
               - 'apps/docs/**'
               - 'apps/extension/**'
+              - 'apps/runner/**'
               - 'apps/vscode/**'
               - 'apps/showcase/**'
               - 'packages/**'
@@ -149,6 +154,15 @@ jobs:
             desktop:
               - 'apps/desktop/**'
               - 'Dockerfile'
+            # Piwi Runner's host and window, the layer the window shares with the dashboard, and the editor service's
+            # run target the host serves.
+            runner:
+              - 'apps/runner/**'
+              - 'packages/run-ui/**'
+              - 'packages/editor/**'
+              - 'packages/core/**'
+              - 'package.json'
+              - 'package-lock.json'
             # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
@@ -323,6 +337,8 @@ jobs:
           npm run core:format:check -w packages/core
           npm run picker-dom:format:check -w packages/picker-dom
           npm run editor:format:check -w packages/editor
+          npm run run-ui:format:check -w packages/run-ui
+          npm run runner:format:check -w apps/runner
           npm run reporter:format:check -w packages/reporter
           npm run showcase:format:check --prefix apps/showcase
 
@@ -333,6 +349,8 @@ jobs:
           npm run core:lint -w packages/core
           npm run picker-dom:lint -w packages/picker-dom
           npm run editor:lint -w packages/editor
+          npm run run-ui:lint -w packages/run-ui
+          npm run runner:lint -w apps/runner
           npm run vscode:lint -w apps/vscode
           npm run extension:lint -w apps/extension
           npm run showcase:lint --prefix apps/showcase
@@ -346,12 +364,18 @@ jobs:
         working-directory: apps/application
         run: npm run app:typecheck
 
+      # Only the dashboard's install prepares its `.nuxt`; the Runner's window typecheck reads its own.
+      - name: Prepare the Runner window
+        run: npm run runner:prepare -w apps/runner
+
       - name: Typecheck the packages
         run: |
           npm run reporter:typecheck -w packages/reporter
           npm run core:typecheck -w packages/core
           npm run picker-dom:typecheck -w packages/picker-dom
           npm run editor:typecheck -w packages/editor
+          npm run run-ui:typecheck -w packages/run-ui
+          npm run runner:typecheck -w apps/runner
           npm run vscode:typecheck -w apps/vscode
           npm run extension:typecheck -w apps/extension
 
@@ -391,6 +415,13 @@ jobs:
 
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
+
+      # The reference pages the docs build writes from the app's registries (gitignored): docs-drift.test.ts checks the
+      # MCP tools and the in-app links against them, and fails under CI on a missing one. The generators run on the
+      # root install.
+      - name: Generate the docs reference pages
+        working-directory: apps/docs
+        run: npm run docs:gen
 
       # Vitest's default worker count, one fewer than the cores: the main process serves the workers' imports.
       - name: Test
@@ -443,6 +474,12 @@ jobs:
       - name: Test the AI steps (integration, drives a real browser)
         working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
+
+      # The capture fixtures in a real Playwright run, checked by tests/integration/verify-reporter.ts: what they
+      # attach, that capturing adds no step of its own, and what the resource ledger finds a worker left open.
+      - name: Test the capture fixtures (integration, drives a real browser)
+        working-directory: packages/reporter
+        run: npm run reporter:test:integration
 
       - name: Report coverage on the PR
         if: github.event_name == 'pull_request'
@@ -539,6 +576,46 @@ jobs:
         working-directory: apps/showcase
         run: npm run showcase:test
 
+  # Piwi Runner: the shared layer's tests (it loads under the dashboard's server rendering and the window's single-page
+  # build), the host's and the window's tests, and both builds. The shell's Rust tests run in the desktop job.
+  runner:
+    name: Piwi Runner
+    needs: changes
+    if: needs.changes.outputs.runner == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Test the shared layer
+        working-directory: packages/run-ui
+        run: npm run run-ui:test
+
+      # The window's tsconfig extends the `.nuxt` that `nuxt prepare` writes; the install prepares the dashboard's.
+      - name: Prepare the Runner window
+        working-directory: apps/runner
+        run: npm run runner:prepare
+
+      - name: Test the host and the window
+        working-directory: apps/runner
+        run: npm run runner:test
+
+      - name: Build the host
+        working-directory: apps/runner
+        run: npm run runner:build
+
+      - name: Build the window
+        working-directory: apps/runner
+        run: npm run runner:window
+
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -632,7 +709,8 @@ jobs:
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
       # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
-      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      # postgres cell, the one a pull request and main both run. Each file works in a database, schema or table of its own,
+      # named after its process, and drops it.
       - name: Run the PostgreSQL unit tests
         if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
         working-directory: apps/application
@@ -786,7 +864,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.x'
 
@@ -981,22 +1059,20 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
 
-  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request.
+  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
+  # perf-comment.yml once this run completes.
   perf:
     name: Performance
     needs: [changes, build, perf-base]
     if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-perf.yml
-    permissions:
-      contents: read
-      pull-requests: write
 
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, runner, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

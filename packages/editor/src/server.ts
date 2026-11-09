@@ -49,6 +49,7 @@ import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
+import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -162,7 +163,7 @@ import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
-import { ClientPageView } from './client-page-view.js';
+import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
@@ -266,6 +267,9 @@ import {
   type Notice,
   type PausedPageParams,
   type PageViewParams,
+  type LaneViewParams,
+  LANE_VIEW_REQUEST,
+  LANE_FRAME_NOTIFICATION,
   type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
@@ -410,6 +414,12 @@ export interface ServerOptions {
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
+  /**
+   * The editors' discovery folder the hub names its peers from (`readLiveHubs`), and how often it reads it while a
+   * connection is subscribed; `editorsDir()` and `PEERS_MS` by default.
+   */
+  editorsDir?: string;
+  hubPeersMs?: number;
   /** How long an agent follows a run after its last call on it; `FOLLOW_IDLE_S` by default. */
   agentFollowIdleMs?: number;
 }
@@ -660,7 +670,7 @@ export function commandFolder(context: PiwiContext): string {
 }
 
 /**
- * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
+ * The Flake Lab lines above a flaky test: its flaky N% and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
  * context reads. With `desktop`, while the desktop app runs beside a team
@@ -1738,9 +1748,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   /** The runs the service built, as their workers tell them on the run channel. */
   let clientPageView: ClientPageView | null = null;
+  let clientLaneView: ClientLaneView | null = null;
   const runSessions = new RunSessions({
     notify: (session) => {
       clientPageView?.changed();
+      clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
@@ -1776,6 +1788,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
   clientPageView = new ClientPageView(runSessions, (frame) =>
     connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  );
+  clientLaneView = new ClientLaneView(runSessions, (frame) =>
+    connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
@@ -2257,6 +2272,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         onAttach: recordRequested,
         onCheck: (handoff) => stopActions.check(handoff),
         onRun: (socket, attach) => runSessions.attach(socket, attach),
+        onRunMain: (socket, begin) => runSessions.attachMain(socket, begin),
       }),
       RunHub.open({
         sessions: runSessions,
@@ -2272,6 +2288,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
         forwarded: () => hubForwarded,
+        peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        peersMs: options.hubPeersMs,
         keepaliveMs: options.hubKeepaliveMs,
         helloMs: options.hubHelloMs,
       }),
@@ -2858,8 +2876,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       )) {
         if (!found) continue;
         const i = call.line;
-        const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
+        // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
+        const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
+        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
         const status = fixed
           ? ` · ${fixedLabel(context, fixed)}`
           : found.status && found.status !== 'passed'
@@ -2888,7 +2908,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',
@@ -3007,7 +3027,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         uncoveredOf(params.uri).catch(() => null),
         null,
       );
-      return uncovered ? { file: { line: 0, title: `Uncovered changes: ${uncovered.label}` }, lines: [] } : empty;
+      if (!uncovered) return empty;
+      const target = coverageTarget(params.uri);
+      const gaps =
+        target?.context.client && target.context.project
+          ? {
+              title: 'Open its gap in the dashboard',
+              command: 'piwi.openInDashboard' as const,
+              arguments: [target.context.client.gapsOfFileUrl(target.context.project.id, target.repoRelative)],
+            }
+          : undefined;
+      return {
+        file: { line: 0, title: `Uncovered changes: ${uncovered.label}`, ...(gaps ? { command: gaps } : {}) },
+        lines: [],
+      };
     }
     const pageLine: SummaryLine = {
       line: 0,
@@ -3693,7 +3726,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       : Promise.resolve({ ok: false, message: 'This client does not show stopped pages.' }),
   );
   connection.onRequest(PAGE_INPUT_REQUEST, (params: PageInputParams): Promise<RunControlResult> =>
-    clientPageView!.input(params),
+    !clientPageView!.takes(params) && clientLaneView!.takes(params)
+      ? clientLaneView!.input(params)
+      : clientPageView!.input(params),
+  );
+  connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
+    answersStops
+      ? clientLaneView!.watch(params)
+      : Promise.resolve({ ok: false, message: 'This client does not show running tests.' }),
   );
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
@@ -3848,6 +3888,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const open = !!recordChannel || !!runHub;
     shutDown = true;
     clientPageView?.dispose();
+    clientLaneView?.dispose();
     recordChannel?.close();
     recordChannel = null;
     runHub?.close();

@@ -16,6 +16,8 @@ interface GroupStats {
   skipped: number;
   didnotrun: number;
   running: number;
+  /** Cut short by the run's interruption, in no outcome. */
+  interrupted?: number;
 }
 
 /** A labelled figure on the right of a group header (spec-health numbers). */
@@ -69,14 +71,14 @@ const metricToneClass: Record<NonNullable<GroupMetric['tone']>, string> = {
 
 const emit = defineEmits<{ toggle: [] }>();
 
-const STAT_KEYS = ['failed', 'passed', 'skipped', 'didnotrun', 'running'] as const;
+const STAT_KEYS = ['failed', 'passed', 'skipped', 'didnotrun', 'interrupted', 'running'] as const;
 
 const visibleStats = computed(() => {
   const s = props.stats;
   if (!s) return [];
-  return STAT_KEYS.filter((key) => s[key] > 0).map((key) => ({
+  return STAT_KEYS.filter((key) => (s[key] ?? 0) > 0).map((key) => ({
     key,
-    count: s[key],
+    count: s[key] ?? 0,
     label: formatStatusLabel(key),
   }));
 });

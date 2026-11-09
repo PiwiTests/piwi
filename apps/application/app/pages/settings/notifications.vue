@@ -22,7 +22,7 @@ function sendTestNotification() {
     new Notification('Piwi Dashboard', { body: 'Test notification: alerts from your projects appear like this.' });
     toast.add({ title: 'Test notification sent', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Test failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Test failed', description: errorMessage(e), color: 'error' });
   }
 }
 
@@ -68,7 +68,7 @@ async function sendTestEmail() {
       toast.add({ title: 'Send failed', description: res.error || 'Unknown error', color: 'error' });
     }
   } catch (e) {
-    toast.add({ title: 'Send failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Send failed', description: errorMessage(e), color: 'error' });
   } finally {
     testingSmtp.value = false;
   }
@@ -105,7 +105,7 @@ async function deleteChannel(id: number) {
     await refreshChannels();
     toast.add({ title: 'Channel deleted', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to delete channel', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed to delete channel', description: errorMessage(e), color: 'error' });
   }
 }
 
@@ -122,7 +122,7 @@ async function testChannel(id: number) {
       toast.add({ title: 'Test failed', description: [res.error, res.hint].filter(Boolean).join(' '), color: 'error' });
     }
   } catch (e) {
-    toast.add({ title: 'Test failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Test failed', description: errorMessage(e), color: 'error' });
   } finally {
     testingChannel.value = null;
   }
@@ -164,7 +164,7 @@ async function deleteSub(id: number) {
   } catch (e) {
     toast.add({
       title: 'Failed to remove subscription',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   }
@@ -182,7 +182,7 @@ async function toggleMute(sub: Subscription) {
   } catch (e) {
     toast.add({
       title: 'Failed to update subscription',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   }

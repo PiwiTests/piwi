@@ -20,7 +20,13 @@ import {
 } from '@piwitests/core/editor-send';
 import { lineReader, parseHandoffToTest, type HandoffToTest } from '@piwitests/core/ide-recorder';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
-import { RUN_TAKES, type HubToRun, type KeptResponse, type RunTake } from '@piwitests/core/run-channel';
+import {
+  RUN_TAKES,
+  type HubToRun,
+  type KeptResponse,
+  type RunMainToHub,
+  type RunTake,
+} from '@piwitests/core/run-channel';
 import { liveHubsOf, type HubKeptRequest, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
 import type { ViewInput } from '@piwitests/core/run-view';
 import {
@@ -332,6 +338,83 @@ export async function startRun(
   const worker = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, takes);
   worker.begin(title);
   return { ref, worker, channel };
+}
+
+/**
+ * The run `ref`'s own process on its run channel, as its reporter connects from its `onBegin`: it says the run holds
+ * `total` tests in one worker, then sends what it is given (`run-progress`, `run-end`).
+ */
+export function runMain(
+  editor: Editor,
+  channel: Channel,
+  ref: string,
+  total: number,
+): { send(message: RunMainToHub): void; socket: Socket } {
+  const socket = connect(channel.path);
+  const send = (message: RunMainToHub) => void socket.write(`${JSON.stringify(message)}\n`);
+  send({
+    type: 'run-begin',
+    token: channel.token,
+    ref,
+    cwd: editor.dir,
+    pid: process.pid,
+    playwright: '1.64.1',
+    reporter: '0.68.0',
+    total,
+    workers: 1,
+    shard: null,
+  });
+  return { send, socket };
+}
+
+/**
+ * A run the editor built, with one worker on its run channel whose reporter shows its lane while it runs
+ * (`view-lane` among its `features`) and takes every intent and query, running its test `title`.
+ */
+export async function startLaneRun(
+  editor: Editor,
+  title = 'pays',
+): Promise<{ ref: string; worker: FakeWorker; channel: Channel }> {
+  const { ref, channel } = await editor.svc.command();
+  const worker = laneWorker(editor, channel, ref, 0);
+  worker.begin(title);
+  return { ref, worker, channel };
+}
+
+/**
+ * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for, Playwright's worker
+ * `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
+ */
+export function laneWorker(editor: Editor, channel: Channel, ref: string, workerIndex: number): FakeWorker {
+  const worker = new FakeWorker(channel.path, editor.dir);
+  worker.send({
+    type: 'run-attach',
+    token: channel.token,
+    ref,
+    cwd: editor.dir,
+    workerIndex,
+    parallelIndex: 0,
+    pid: process.pid,
+    playwright: '1.64.1',
+    reporter: '0.67.0',
+    takes: [...RUN_TAKES],
+    holds: ['failure'],
+    features: ['view-lane', 'give-up'],
+  });
+  return worker;
+}
+
+/** The worker's reporter starts (`on`) or stops its lane view, as asked. */
+export function answerLane(worker: FakeWorker, on = true): Promise<Extract<HubToRun, { type: 'request' }>> {
+  return answerNext(worker, 'view-lane', { ok: true, message: on ? 'The live view is on.' : 'The live view is off.' });
+}
+
+/**
+ * A frame of the worker's lane: the JPEG `data`, of a page of `VIEWPORT`, while its test `title` (as `FakeWorker.begin`
+ * names it) runs, or at the stop `stop`.
+ */
+export function sendLaneFrame(worker: FakeWorker, title: string, stop: number | null, data: string): void {
+  worker.send({ type: 'lane-frame', test: `id-${title}`, stop, ...VIEWPORT, data });
 }
 
 /** The error a failed checkout test stopped at, as its reporter names it: the error's first lines, as plain text. */

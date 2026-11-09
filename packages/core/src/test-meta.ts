@@ -60,20 +60,204 @@ function cleanString(value: unknown, maxChars: number): string | undefined {
  * declared), blanks dropped, duplicates removed, declaration order preserved.
  */
 export function normalizeTestTags(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
+  return normalizeTestTagsWithDropped(raw).tags;
+}
+
+/**
+ * `normalizeTestTags`, with the number of distinct tags past the first `MAX_TEST_TAGS` that were left out
+ * (`dropped`). Blank and duplicate entries are not counted.
+ */
+export function normalizeTestTagsWithDropped(raw: unknown): { tags: string[]; dropped: number } {
+  if (!Array.isArray(raw)) return { tags: [], dropped: 0 };
   const seen = new Set<string>();
-  const out: string[] = [];
+  const tags: string[] = [];
+  let dropped = 0;
 
   for (const entry of raw) {
     if (typeof entry !== 'string') continue;
     const tag = entry.trim().replace(/^@+/, '').trim().slice(0, MAX_TEST_TAG_CHARS);
     if (!tag || seen.has(tag)) continue;
     seen.add(tag);
-    out.push(tag);
-    if (out.length >= MAX_TEST_TAGS) break;
+    if (tags.length < MAX_TEST_TAGS) tags.push(tag);
+    else dropped++;
   }
 
-  return out;
+  return { tags, dropped };
+}
+
+/** A test that declared more than `MAX_TEST_TAGS` tags, and how many of them were left out. */
+export interface TagsTruncatedTest {
+  filePath: string;
+  /** Describe-block titles, outermost first. */
+  suitePath?: string[];
+  title: string;
+  line?: number | null;
+  dropped: number;
+}
+
+/**
+ * The tests of a run whose tags were cut at `MAX_TEST_TAGS`, recorded in its `metadata.tagsTruncated`: how many
+ * tests (by file, describe path and title) and up to `MAX_TAGS_TRUNCATED_EXAMPLES` of them.
+ */
+export interface TagsTruncated {
+  /**
+   * How many tests lost tags. Merging reports of the same tests past {@link MAX_TAGS_TRUNCATED_EXAMPLES} tests can
+   * count one twice, so this can be above the distinct tests; the `examples` kept are always distinct. Display it
+   * through {@link tagsTruncatedCount}.
+   */
+  tests: number;
+  examples: TagsTruncatedTest[];
+}
+
+export const MAX_TAGS_TRUNCATED_EXAMPLES = 20;
+
+/**
+ * The number of tests to show for a report: `tests` when the examples list every one of them, otherwise the number
+ * of examples with `atLeast` set, since `tests` can count a test twice past {@link MAX_TAGS_TRUNCATED_EXAMPLES}.
+ */
+export function tagsTruncatedCount(report: TagsTruncated): { count: number; atLeast: boolean } {
+  if (report.tests <= report.examples.length) return { count: report.tests, atLeast: false };
+  return { count: report.examples.length, atLeast: true };
+}
+
+/** {@link tagsTruncatedCount} as words: `1 test`, `5 tests`, `at least 20 tests`. */
+export function formatTagsTruncatedTests(report: TagsTruncated): string {
+  const { count, atLeast } = tagsTruncatedCount(report);
+  const tests = count === 1 ? '1 test' : `${count} tests`;
+  return atLeast ? `at least ${tests}` : tests;
+}
+
+/** The longest `filePath`, `title` and `suitePath` entry kept in a {@link TagsTruncatedTest}; a longer one is cut. */
+export const MAX_TAGS_TRUNCATED_TEXT_CHARS = 500;
+/** The most `suitePath` entries kept in a {@link TagsTruncatedTest}; the first ones are kept. */
+export const MAX_TAGS_TRUNCATED_SUITE_DEPTH = 32;
+
+/**
+ * A {@link TagsTruncatedTest} with every text and the describe path cut to their limits, and `line` kept when it is a
+ * positive safe integer.
+ */
+function cutTruncatedTest(
+  filePath: string,
+  suitePath: string[] | null | undefined,
+  title: string,
+  line: unknown,
+  dropped: number,
+): TagsTruncatedTest {
+  const test: TagsTruncatedTest = {
+    filePath: filePath.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS),
+    title: title.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS),
+    dropped,
+  };
+  if (suitePath?.length) {
+    test.suitePath = suitePath
+      .slice(0, MAX_TAGS_TRUNCATED_SUITE_DEPTH)
+      .map((entry) => entry.slice(0, MAX_TAGS_TRUNCATED_TEXT_CHARS));
+  }
+  if (typeof line === 'number' && Number.isSafeInteger(line) && line > 0) test.line = line;
+  return test;
+}
+
+function truncatedTestKey(test: { filePath: string; suitePath?: string[]; title: string }): string {
+  return `${test.filePath}\u0000${(test.suitePath ?? []).join('\u001f')}\u0000${test.title}`;
+}
+
+function readTruncatedTest(raw: unknown): TagsTruncatedTest | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { filePath, suitePath, title, line, dropped } = raw as Record<string, unknown>;
+  if (typeof filePath !== 'string' || typeof title !== 'string') return null;
+  if (!Number.isSafeInteger(dropped) || (dropped as number) < 1) return null;
+  const path =
+    Array.isArray(suitePath) && suitePath.length > 0 && suitePath.every((s) => typeof s === 'string')
+      ? (suitePath as string[])
+      : undefined;
+  return cutTruncatedTest(filePath, path, title, line, dropped as number);
+}
+
+/**
+ * Read a stored or sent `metadata.tagsTruncated`, or null when it holds no test. Takes `unknown`: malformed examples
+ * are dropped, the examples are capped, and the count is never below the examples kept. Each example's `filePath`,
+ * `title` and `suitePath` entries are cut to {@link MAX_TAGS_TRUNCATED_TEXT_CHARS}, its `suitePath` to
+ * {@link MAX_TAGS_TRUNCATED_SUITE_DEPTH} entries, and its `line` is kept only as a positive safe integer.
+ */
+export function readTagsTruncated(raw: unknown): TagsTruncated | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { tests, examples } = raw as Record<string, unknown>;
+  const byKey = new Map<string, TagsTruncatedTest>();
+  if (Array.isArray(examples)) {
+    for (const entry of examples) {
+      if (byKey.size >= MAX_TAGS_TRUNCATED_EXAMPLES) break;
+      const test = readTruncatedTest(entry);
+      if (test && !byKey.has(truncatedTestKey(test))) byKey.set(truncatedTestKey(test), test);
+    }
+  }
+  const count = Number.isSafeInteger(tests) && (tests as number) > 0 ? (tests as number) : 0;
+  const total = Math.max(count, byKey.size);
+  return total > 0 ? { tests: total, examples: [...byKey.values()] } : null;
+}
+
+/**
+ * The tests whose tags `normalizeTestTags` cuts, from their raw tags: one entry per file, describe path and title
+ * (a test that runs in several Playwright projects counts once), or null when no test lost a tag. Examples are cut
+ * the way {@link readTagsTruncated} cuts them, so a collected report and its read form name a test by the same key.
+ */
+export function collectTagsTruncated(
+  tests: Iterable<{
+    filePath: string;
+    suitePath?: string[] | null;
+    title: string;
+    line?: number | null;
+    tags?: unknown;
+  }>,
+): TagsTruncated | null {
+  const byKey = new Map<string, TagsTruncatedTest>();
+  for (const test of tests) {
+    const { dropped } = normalizeTestTagsWithDropped(test.tags);
+    if (dropped === 0) continue;
+    const found = cutTruncatedTest(test.filePath, test.suitePath, test.title, test.line, dropped);
+    const key = truncatedTestKey(found);
+    const known = byKey.get(key);
+    if (!known || known.dropped < dropped) byKey.set(key, found);
+  }
+  if (byKey.size === 0) return null;
+  return { tests: byKey.size, examples: [...byKey.values()].slice(0, MAX_TAGS_TRUNCATED_EXAMPLES) };
+}
+
+function unionExamples(
+  a: TagsTruncatedTest[],
+  b: TagsTruncatedTest[],
+): { examples: TagsTruncatedTest[]; shared: number } {
+  const byKey = new Map(a.map((test) => [truncatedTestKey(test), test]));
+  let shared = 0;
+  for (const test of b) {
+    const key = truncatedTestKey(test);
+    if (byKey.has(key)) shared++;
+    else if (byKey.size < MAX_TAGS_TRUNCATED_EXAMPLES) byKey.set(key, test);
+  }
+  return { examples: [...byKey.values()], shared };
+}
+
+/**
+ * Merge two reports of the same tests (a reporter sending its run's metadata again): the larger count wins, so a
+ * report sent twice counts once.
+ */
+export function keepTagsTruncated(stored: unknown, next: unknown): TagsTruncated | null {
+  const a = readTagsTruncated(stored);
+  const b = readTagsTruncated(next);
+  if (!a || !b) return a ?? b;
+  const { examples } = unionExamples(a.examples, b.examples);
+  return { tests: Math.max(a.tests, b.tests, examples.length), examples };
+}
+
+/**
+ * Merge two reports of other tests (another shard, another batch): the counts add up, less the tests both list
+ * among their examples.
+ */
+export function addTagsTruncated(stored: unknown, next: unknown): TagsTruncated | null {
+  const a = readTagsTruncated(stored);
+  const b = readTagsTruncated(next);
+  if (!a || !b) return a ?? b;
+  const { examples, shared } = unionExamples(a.examples, b.examples);
+  return { tests: Math.max(a.tests + b.tests - shared, examples.length), examples };
 }
 
 /**

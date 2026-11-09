@@ -54,46 +54,61 @@ These seven platforms get rich per-provider fields. The **run label** that ties 
 
 Whatever the collectors, every run records what launched it as `piwiOrigin`, so analyses that compare runs can leave
 out the ones that say nothing about the branch's current state. The reporter records `ci` when it detects a CI provider
-and `local` otherwise. A launcher names itself through two environment variables on the Playwright process:
+and `local` otherwise. A launcher names itself through these environment variables on the Playwright process:
 
 | Variable | Value |
 |---|---|
 | `PIWI_ORIGIN` | `ci`, `ci-rerun`, `local`, `desktop`, `editor`, `preflight`, `bug`, `flake-lab`, `probe`, `bisect` or `reproduce` |
 | `PIWI_ORIGIN_REF` | Optional: what the run was launched for, such as a dispatch, a cluster or a bug report id (letters, digits and `._:/#@-`, up to 200 characters) |
+| `PIWI_RUN_REF` | Optional, with `PIWI_ORIGIN`: the launcher's name for the run itself, recorded as `piwiRunRef` (same characters as `PIWI_ORIGIN_REF`) |
 
 Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `bisect` with the cluster id), the
 editors (`editor`, with a ref of their own on each test run, which they find the run by), `piwi preflight --run`
-(`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab and probes. A
-[re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as `ci-rerun` once
-Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
+(`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab and probes. The desktop app also names each
+run it starts with `PIWI_RUN_REF`, so two runs started for the same cluster each find their own Piwi run. Every run
+outside CI records a `piwiRunRef`, with `@piwitests/reporter` 0.68.0 or later: the one given, else an editor's
+`PIWI_ORIGIN_REF`, else one of its own, `local-<pid>-<time>`. A
+[re-run dispatched from the dashboard](/features/ci-rerun) is recorded as `ci-rerun` once
+Piwi recognizes it, an imported report as `import`, and a run a person asked for from the dashboard as `request`,
+by the server from the request token that started it: a `request` the reporter sends is dropped. You rarely set them
+yourself.
+
+A run whose workers connect to an editor or the desktop app, which steer it at their breakpoints (a run either of them
+started, or one [started in a terminal](/features/terminal-runs) that follows an editor), also records
+`piwiInteractive`: the editor's name (else the `PIWI_ORIGIN` its launcher set) as `client`, and the run's name there
+as `ref`.
 
 What each origin feeds:
 
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
 - **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They stay out of baselines, fix
-  verification, flaky scores, selections, change coverage, the stored locators and test metadata, and the bug-report
-  lifecycle, and have no outbound effect: no [notification](/features/notifications#events), no
+  verification, flaky scores, selections, change coverage, the stored locators and test metadata, the bug-report
+  lifecycle and a failure cluster's occurrences (its count, its last seen run, the wake of a snooze), and have no
+  outbound effect: no [notification](/features/notifications#events), no
   [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
   [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with four exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
-  none. An `editor` run, or a `local` or `desktop` run of part of the suite, fires no run, new-cluster, flakiness or
+  none. An `editor` run's failures join their clusters without counting as occurrences. An `editor` run, or a `local`
+  or `desktop` run of part of the suite, fires no run, new-cluster, fixed, regressed, flakiness or
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
-  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
+  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own. No local run, and
+  no `piwi bug` run, sends [`test.stuck`](/features/stuck-tests#the-notification), complete or not.
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
 ### Playwright configuration
 
-The reporter also records browser project configs, worker count, the global timeout, and parallel settings.
+The reporter also records browser project configs, worker count, the global timeout, and parallel settings. A sharded
+run keeps the configuration of the shard that began it, and each shard's own worker count under `shards`.
 
 ### Browser configuration per test case
 
-The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName`, `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
+The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName` (a `devices` preset's `defaultBrowserType` when the project sets none), `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
 
-In the dashboard UI, every row of a run's Tests tab shows the browser icon, and `browser:chromium` in its [search](/reference/test-search) narrows the list to one project.
+In the dashboard UI, every row of a run's Tests tab shows the browser icon (from the channel, else the engine, else the project name), and `browser:<project name>` in its [search](/reference/test-search) narrows the list to one project.
 
 ### Suite hierarchy (describe blocks)
 
@@ -123,6 +138,42 @@ next run that reports the test.
 
 Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
 leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+
+#### Tag limit
+
+Piwi keeps at most 20 tags per test, each cut to 60 characters, in the order Playwright lists them; duplicates count
+once. A test that declares more keeps its first 20 and loses the rest. The reporter warns about it once as the run
+begins, naming the tests (20 at most), and records them on the run: the run page shows "Tags cut at 20 on N tests",
+with the tests in its Details. When more than 20 tests lost tags, the page shows "at least 20 tests", the number it
+lists, since merging a run's reports (shards, or a payload sent in batches) can count a test twice. The dashboard does
+the same for a run sent without the reporter, or imported from a blob report.
+
+Which tags are cut depends on Playwright's order. Playwright 1.64.1 builds `TestCase.tags` from the config's `tag`
+first, then each `describe` from the outermost in (the @-words of its title, then its `tag` option), then the @-words
+of the test title, and the test's own `tag` option last. So a tag in the test's `tag` option is the first to go. To
+keep the tags that matter:
+
+- keep config and `describe` tags few;
+- put the tags that matter in the test title (`test('checkout @SHOP-T123', …)`), which comes before the `tag` option;
+- for the one identifier that matters most, use an [external test ID](#external-test-ids) instead of a tag.
+
+#### Keys in test tags
+
+A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it covers (`SHOP-T123`). Two patterns, under
+**Project → Settings → Integrations → Keys in test tags**, tell Piwi which tags are which:
+
+- **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`.
+- **Test case key**: a tag naming a test case, such as `^SHOP-T[0-9]+$`.
+
+A pattern is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor
+it with `^` and `$` and use letters, digits, character classes and quantifiers only, with no groups or `|`:
+`^SHOP-T[0-9]+$` matches `SHOP-T123` and not `SHOP-1234`. A pattern that breaks that rule, does not compile, or matches
+an empty tag (and so every tag) is refused. Leave a field empty to turn it off; both are off by default, and neither
+needs a tracker connection. Saving needs the same role as the rest of the project's settings.
+
+When both patterns are on, the section lists the tags of the project's last complete run (the whole suite, finished;
+partial, lab and private runs are skipped) that both patterns match, each with a test that carries it. Piwi would read
+such a tag as an issue and as a test case, so anchor the patterns until the list is empty. It lists 20 tags at most.
 
 ### Test locks
 
@@ -260,18 +311,84 @@ Together with the test's duration history this drives the **Timeout opportunitie
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
 - **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
-- **`didnotrun`** — a test that never actually executed. This covers two cases:
+- **`didnotrun`** — a test that never actually executed. This covers three cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
-  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+  - a test of a project whose **[project dependency](https://playwright.dev/docs/test-projects#dependencies) failed**, such as the tests that need a `setup` project's login (Playwright runs none of them);
+  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these or the previous case — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+
+  A test declared skipped (`test.skip()`, `test.fixme()`, a skipped `describe`) is `skipped` even when the run stopped before reaching it.
 
 Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can say _why_ a test never ran rather than just that it didn't:
 
 - `previous-failure` — skipped because an earlier test (or hook) in its serial group failed, or because a `beforeAll` hook failed, which skips the rest of its group in any mode. The reporter also records **`blockedBy`**, the location of the failing test that blocked it — so the did-not-run case links to its cause, names the hook when the failure happened in one, and the failing test lists the downstream tests it stopped from running.
+- `dependency-failure` — not run because a test failed in a project its project depends on (`dependencies`), directly or through another project. `blockedBy` holds the location of that failing test, as for `previous-failure`.
 - `global-timeout` — the run's `globalTimeout` elapsed before the test could start.
 - `max-failures` — the run reached its configured `maxFailures` budget.
 - `interrupted` — the run was otherwise cut short (a worker crash or a cancellation).
 
 The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
+
+### Test errors
+
+The reporter sends a failed test's errors as one text, with the call log Playwright writes. What may be a secret in it
+is written `<hidden>`:
+
+- the text a fill or a typing typed, and the value of a credential header a request's log writes;
+- the values an assertion quotes of a password field, or of a field whose locator names a secret (`Mot de passe`);
+- a credential's shape wherever it stands, colored or not: a JWT, a bearer token, a service's key such as `sk_live_…`,
+  `ghp_…` or `AKIA…`, a key or a token Piwi issues such as `pd_…`.
+
+Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. The dashboard hides
+them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
+[failure cluster](/features/failure-clusters) it did. An error stored before the dashboard hid a credential's shape
+has it hidden at the first start of the version that does, its failure cluster kept.
+
+### Errors outside the tests
+
+The reporter keeps the errors Playwright reports beside the tests (its `onError`), each with its message, the frames of
+its stack and the place it was thrown, named relative to the Playwright config's folder:
+
+- a global setup or global teardown that threw;
+- a spec file that did not load: a syntax error, an import that failed, a `test()` call where none is allowed. `No
+  tests found` and a web server that did not start come the same way, before any test runs, and the run then has none;
+- a worker fixture whose teardown threw, with the tests the worker ran;
+- the failure budget (`maxFailures`) that stopped the run.
+
+The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
+be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
+value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
+and the MCP `get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
+the same way.
+
+### Test output
+
+The reporter keeps what each attempt wrote to stdout and stderr (`TestResult.stdout` and `stderr`): the test's
+`console.log` lines and what the code it ran printed, text or bytes read as UTF-8. Each stream has what may be a
+secret hidden, as above, colored or not, and the value it gives a name like a credential's (`password: '…'`,
+`API_KEY=…`), and past about 64 KB keeps its first and last lines, cut at a line break, with a line saying how many
+lines and characters were cut between them. The dashboard stores each stream once per project however many
+executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
+[offline export](/features/offline-export) and through the MCP `get_test_run_case` tool. An
+[imported blob report](/guide/importing-runs) keeps each attempt's output the same way.
+
+### Worker lanes
+
+The reporter sends each attempt's worker twice: Playwright's `workerIndex`, the worker process, which is new every time
+Playwright starts one (after a failed test, or for a test that needs another project or other worker options), and
+its `parallelIndex`, the lane the process runs in, which the process started in its place keeps. The dashboard names a
+worker by its lane, from 1 in each shard: **Worker 2** on the run's Timeline, in the Tests list's **Worker** sort, on
+the execution page, in its [offline export](/features/offline-export) and in a `test.stuck`
+[notification](/reference/notification-events), and `worker: 2` in the MCP `get_run` and `get_test_run_case` tools.
+A [blob report you import](/guide/importing-runs) keeps both. A run from a reporter that sends no lane names a worker
+by its process, and its Timeline works the lanes out from when each process ran; the MCP tools then give its
+`workerIndex` in place of `worker`.
+
+### Hooks
+
+Playwright 1.59 and later give every hook step to a test: a `beforeAll` or `afterAll` hook and the setup of a worker
+fixture are steps of the test they ran for. The run's timeline draws them inside that test's bar, as its setup and
+teardown sections, never on a lane of their own. A worker fixture that throws as its worker shuts down, after its last
+test, is one of the [errors outside the tests](#errors-outside-the-tests).
 
 ## With custom metadata
 

@@ -1,3 +1,4 @@
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
@@ -12,7 +13,8 @@ import {
   type PauseBarArg,
   type PauseChoice,
 } from '@piwitests/picker-dom';
-import { isCi } from './inspect-on-failure.js';
+import { detectCi } from '../support/ci.js';
+import { pauseBarShows } from './page-view.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
@@ -189,8 +191,8 @@ export function placeLine(place: Place, cwd: string = process.cwd()): string {
 
 /** Everything the pause gate reads, as plain values. */
 export interface PauseGate {
-  /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
-  ci: string | undefined;
+  /** Whether the run is a CI job, as `detectCi` reads the environment. */
+  ci: boolean;
   /**
    * The test's `headless` fixture, which `test.use`, `launchOptions.headless` and `--headed` set, else
    * `testInfo.project.use.headless`: must be explicitly `false` (headed).
@@ -212,7 +214,7 @@ export function pauseGateFromTestInfo(testInfo: TestInfo, headless?: unknown): P
   // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
   const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
   return {
-    ci: process.env.CI,
+    ci: detectCi(process.env),
     headless: headless !== undefined ? headless : use.headless,
     pwdebug: process.env.PWDEBUG,
     debug,
@@ -231,7 +233,7 @@ export function mayPause(gate: PauseGate): boolean {
 
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
-  if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';
+  if (gate.ci) return 'running under CI — breakpoints pause local runs only';
   if (gate.headless !== false && !gate.channel)
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))
@@ -888,7 +890,8 @@ export function highlightAtStop(page: Page, locator: Locator, what: 'call' | 'co
  * ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and the
  * recording then end at once, whether the bar or an intent started them, leaving nothing of theirs in the page. The bar
  * and the highlight are gone once it returns, unless the page stops answering (a highlight its frame draws later
- * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. Every page call
+ * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. The page's live
+ * views paint the bar over from the moment it is drawn until it is known to be down (`pauseBarShows`). Every page call
  * it makes must run inside an internal call.
  */
 export async function pauseHere(
@@ -902,15 +905,19 @@ export async function pauseHere(
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
   let highlight: StopHighlight | null = null;
+  /** Tells the page's live views that the bar drawn last came down. */
+  let barDown: (() => void) | null = null;
   try {
     if (point.target) {
       highlight = point.target.highlight();
       await within(highlight.shown, HIGHLIGHT_MS);
     }
+    // The bar and the terminal name the call without the text it types.
+    const call = hideSecretsInText(hideTypedText(point.call));
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
       attempt: point.attempt,
-      action: point.call,
+      action: call,
       locator: null,
       record: !!onRecord,
       ...(point.failure ? { failure: true } : {}),
@@ -920,7 +927,7 @@ export async function pauseHere(
       point.failure
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
             `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
-        : `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
+        : `[piwi] Paused at ${callSiteLine(point.location)} before ${call}` +
             `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''}, Finish` +
             `${point.end ? ' or End the test' : ''} in the browser (Esc resumes).`,
     );
@@ -930,13 +937,16 @@ export async function pauseHere(
     for (;;) {
       try {
         if (ended?.aborted) return 'resume';
-        await unlessEnded(page.evaluate(showPauseBar, arg), ended);
+        const drawn = page.evaluate(showPauseBar, arg);
+        barDown = pauseBarShows(page, drawn);
+        await unlessEnded(drawn, ended);
         const answered = page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }).then(() => null);
         const intent = await unlessEnded(intents ? Promise.race([answered, intents.wait()]) : answered, ended);
         intents?.answered();
         if (ended?.aborted) return 'resume';
         const taken = (await unlessEnded(page.evaluate(takePauseState), ended)) as PauseChoice | null | undefined;
         if (ended?.aborted) return 'resume';
+        barDown();
         const choice = taken ?? intent ?? null;
         // An intent's pick or recording runs in the test's window: it comes to the front first.
         const raised = intent && choice === intent ? page.bringToFront().catch(() => undefined) : null;
@@ -962,6 +972,8 @@ export async function pauseHere(
         const picked = await pickLocator(page, probe, null, ended).catch(() => null);
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
+        // The document the bar was drawn in is gone, or the page broke.
+        barDown?.();
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
         await unlessEnded(
           page.waitForLoadState('domcontentloaded').catch(() => undefined),
@@ -979,5 +991,6 @@ export async function pauseHere(
       ended?.aborted ? within(page.evaluate(takePauseState), TAKE_DOWN_MS).catch(() => undefined) : undefined,
       highlight?.hide(),
     ]);
+    barDown?.();
   }
 }

@@ -12,7 +12,7 @@ import { stat, readFile } from 'node:fs/promises';
 import { isAbsolute, basename } from 'node:path';
 import { requireAuth } from '../../utils/auth';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
-import { resolveMaxUploadBytes } from '../../utils/upload-limits';
+import { resolveMaxImportBytes } from '../../utils/upload-limits';
 import { importArchive } from '../../utils/import-archive';
 import { formatBytes } from '#shared/utils/format-bytes';
 
@@ -73,7 +73,7 @@ export default eventHandler(async (event) => {
   if (!info.isFile()) {
     throw apiError({ statusCode: 400, message: 'Not a file' });
   }
-  const maxUploadBytes = resolveMaxUploadBytes();
+  const maxUploadBytes = resolveMaxImportBytes();
   if (info.size > maxUploadBytes) {
     throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });
   }

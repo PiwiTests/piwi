@@ -1,0 +1,49 @@
+import { describe, test, expect, beforeAll } from 'vitest';
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+
+// The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
+// so clear it before the modules under test load.
+delete process.env.PIWI_DATABASE_URL;
+const { getTestCase } = await import('../../shared/handlers/test-cases');
+const { getProjectTestCases } = await import('../../shared/handlers/projects');
+
+let db: ReturnType<typeof drizzle<typeof schema>>;
+
+/** Each execution of the test, one per run: the outcome its header counts. */
+const STATUSES = ['passed', 'failed', 'timedout', 'timedOut', 'interrupted', 'skipped'];
+
+beforeAll(async () => {
+  db = drizzle(createClient({ url: ':memory:' }), { schema });
+  await migrateToLatest(db);
+  await db.insert(schema.projects).values({ id: 1, name: 'shop' });
+  await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'cart.spec.ts', title: 'adds to cart' });
+  await db.insert(schema.testRuns).values(
+    STATUSES.map((_, i) => ({
+      id: i + 1,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(Date.now() - i * 60_000),
+    })),
+  );
+  await db
+    .insert(schema.testRunsCases)
+    .values(STATUSES.map((status, i) => ({ testRunId: i + 1, testCaseId: 1, status, duration: 1000 })));
+});
+
+describe('the test page header', () => {
+  test('counts a timed-out execution as failed, as the catalog counts it', async () => {
+    const testCase = await getTestCase(db as never, 1);
+    expect(testCase).toMatchObject({ totalRuns: 6, passedRuns: 1, failedRuns: 3, timedOutRuns: 2, skippedRuns: 1 });
+
+    const { items } = await getProjectTestCases(db as never, 1);
+    expect(items[0]!.failedRuns).toBe(testCase!.failedRuns);
+  });
+
+  test('rates the passed runs over the runs that passed or failed, the interrupted one in neither', async () => {
+    const testCase = await getTestCase(db as never, 1);
+    expect(testCase!.passRate).toBe(25);
+  });
+});

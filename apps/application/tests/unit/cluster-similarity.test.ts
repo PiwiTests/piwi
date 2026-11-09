@@ -83,4 +83,31 @@ describe('buildEmbedText', () => {
       'sig only',
     );
   });
+
+  test('the input version names the text embedded, the masks of maskVolatile included', () => {
+    // A change to this text bumps EMBEDDING_INPUT_VERSION, so the stored vectors are embedded again.
+    const text = buildEmbedText({
+      errorType: 'strict-mode',
+      signature: "strict mode violation: getByRole('row') resolved to <N> elements",
+      selector: "getByRole('row')",
+      sampleError: [
+        "Error: strict mode violation: getByRole('row') resolved to 2 elements:",
+        '    1) <tr>Mug</tr>',
+        '    2) <tr>Cup</tr>',
+        'Order order_5f3a9c1e2b created at 2024-05-01T10:30:00.000Z',
+        'Profile /home/runner/work/app/tmp/playwright_chromiumdev_profile-Xo8n2p',
+      ].join('\n'),
+    });
+    expect({ version: EMBEDDING_INPUT_VERSION, text }).toEqual({
+      version: 3,
+      text: [
+        'strict-mode',
+        "strict mode violation: getByRole('row') resolved to <N> elements",
+        "getByRole('row')",
+        "Error: strict mode violation: getByRole('row') resolved to <N> elements:",
+        'Order order_<ID> created at <TIMESTAMP>',
+        'Profile <PATH>/playwright_chromiumdev_profile-<TMP>',
+      ].join('\n'),
+    });
+  });
 });

@@ -46,7 +46,7 @@ const openGaps = computed(() => (data.value?.byClass ?? []).reduce((sum, c) => s
         <ul class="divide-y divide-default">
           <li v-for="f in data.byFeature" :key="`${f.projectId}:${f.feature}`" class="py-1.5 flex gap-2 min-w-0">
             <NuxtLink
-              :to="`/projects/${f.projectId}?tab=gaps`"
+              :to="`/projects/${f.projectId}?tab=coverage`"
               class="text-sm text-highlighted truncate underline decoration-dotted underline-offset-2 hover:decoration-solid"
             >
               {{ f.feature }}

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { DemoEventMessage } from '../../app/demo/run-events';
+import type { RefetchResult } from '../../app/utils/refetch-keeping';
 
 /**
  * A run page opened while its run initializes refetches the run once it starts, so the page goes live without a
@@ -64,6 +65,7 @@ function stubBrowser(demoMode = false) {
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { demoMode } }));
   vi.stubGlobal('useNuxtApp', () => nuxtApp);
+  vi.stubGlobal('useRenderedAt', () => ({ value: 0 }));
   vi.stubGlobal('window', { addEventListener: () => {} });
   vi.stubGlobal('document', {
     get visibilityState() {
@@ -81,6 +83,7 @@ function runPage(status: string) {
     status: () => run.status,
     refresh: async () => {
       run.refetches++;
+      return 'answered' as const;
     },
   };
 }
@@ -174,6 +177,95 @@ describe('useRunStart', () => {
     const live = runPage('running');
     useRunStart(9, live.status, live.refresh);
     expect(live.run.refetches).toBe(0);
+  });
+
+  test('reads the run again after a read that failed, while it initializes and the page is open', async () => {
+    vi.useFakeTimers();
+    try {
+      stubBrowser();
+      const { useRunStart, RUN_START_RETRY_MS } = await composables();
+      const run = {
+        status: 'initializing',
+        refetches: 0,
+        answers: ['failed', 'failed', 'answered'] as RefetchResult[],
+      };
+      const refresh = async (): Promise<RefetchResult> => run.answers[run.refetches++] ?? 'answered';
+      useRunStart(7, () => run.status, refresh);
+      FakeSource.all[0]!.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.refetches).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(run.refetches).toBe(2);
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(run.refetches).toBe(3);
+      // The third read answered: nothing more is read.
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS * 3);
+      expect(run.refetches).toBe(3);
+
+      // A run read as started is not read again, and a page that left reads nothing.
+      const started = { status: 'initializing', refetches: 0 };
+      useRunStart(
+        8,
+        () => started.status,
+        async () => {
+          started.refetches++;
+          return 'failed' as const;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started.refetches).toBe(1);
+      started.status = 'running';
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(started.refetches).toBe(1);
+
+      const leaving = { refetches: 0 };
+      useRunStart(
+        9,
+        () => 'initializing',
+        async () => {
+          leaving.refetches++;
+          return 'failed' as const;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      for (const unmount of unmounts) unmount();
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS * 2);
+      expect(leaving.refetches).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('does not read the run again after a read that failed for good: the run is gone, or the viewer cannot read it', async () => {
+    vi.useFakeTimers();
+    try {
+      stubBrowser();
+      const { useRunStart, RUN_START_RETRY_MS } = await composables();
+      const reads: Record<string, number> = {};
+      for (const [id, failure] of [
+        [7, 'gone'],
+        [8, 'signed-out'],
+        [9, 'forbidden'],
+      ] as const) {
+        reads[failure] = 0;
+        useRunStart(
+          id,
+          () => 'initializing',
+          async () => {
+            reads[failure]!++;
+            return failure;
+          },
+        );
+      }
+      FakeSource.all[0]!.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toEqual({ gone: 1, 'signed-out': 1, forbidden: 1 });
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS * 3);
+      expect(reads).toEqual({ gone: 1, 'signed-out': 1, forbidden: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('stops refetching when the page leaves, and closes the stream when nothing listens', async () => {

@@ -1,6 +1,5 @@
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import type { ContextSection, DiagnosisContextCoverage } from '~~/types/api';
-import { errorMessage } from '~/utils';
 
 /** How often a diagnosis running elsewhere (another tab, a policy) is read again. */
 const RUNNING_POLL_MS = 4_000;

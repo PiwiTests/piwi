@@ -17,7 +17,7 @@ agents and, for a failure, the AI diagnosis.
 
 The insights read the coverage your runs already record: set up [server coverage](./server-coverage) with
 `coverage: { server: 'lines' }` in the reporter options, or `PIWI_COVERAGE_SERVER=lines`. Line answers need the
-`lines` granularity; `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
+`lines` granularity (`coverage.browser: 'lines'` in the browser); `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
 answers, and `files` gives file answers. A run without coverage changes nothing, so a nightly job with coverage on is
 enough for the comparisons across runs.
 
@@ -121,7 +121,7 @@ checks its target lines this way until they run.
 ## For agents
 
 Three read-only MCP tools, listed with the rest on [MCP tools](/reference/mcp-tools), carry these answers. They
-belong to the `core` module and depend on the **Coverage** capability: declining it for the instance on the Setup page
+belong to the `core` module and depend on the **Coverage** capability: declining it for the instance in **Settings → Capabilities**
 drops them.
 For a project with no coverage, each answers one sentence saying how to turn it on.
 
@@ -132,7 +132,7 @@ For a project with no coverage, each answers one sentence saying how to turn it 
   that explains them.
 - `get_coverage_loss`: what quarantining, skipping or deleting tests would leave uncovered.
 
-The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/docs) (`/docs` on your
+The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/settings/api) (`/settings/api` on your
 instance).
 
 ## Limits

@@ -86,22 +86,21 @@ fn is_picks_address(value: &str) -> bool {
 /// channel (`PIWI_RUN_CHANNEL`), which each worker keeps a connection to, the
 /// run's name there (`PIWI_RUN_REF`, marked when nobody attends the run), and
 /// the address its tests' picks go to (`PIWI_EDITOR_SEND`, the server's, which
-/// shows them in the window to copy), when the server named one. None when the
-/// server named no channel, or something that is not one: the run then goes as
-/// without a hub.
+/// shows them in the window to copy), when the server named one. The run's name
+/// alone when the server named no channel, or something that is not one: the
+/// run then goes as without a hub, and the reporter still records the name
+/// (`piwiRunRef`), by which the window finds the Piwi run it produced.
 pub(crate) fn hub_env(
     channel: Option<&str>,
     picks: Option<&str>,
     id: u32,
     attended: bool,
 ) -> Vec<(&'static str, String)> {
+    let name = ("PIWI_RUN_REF", run_ref(id, attended));
     let Some(value) = channel.filter(|value| is_run_channel(value)) else {
-        return Vec::new();
+        return vec![name];
     };
-    let mut env = vec![
-        ("PIWI_RUN_CHANNEL", value.to_string()),
-        ("PIWI_RUN_REF", run_ref(id, attended)),
-    ];
+    let mut env = vec![("PIWI_RUN_CHANNEL", value.to_string()), name];
     if let Some(address) = picks.filter(|value| is_picks_address(value)) {
         env.push(("PIWI_EDITOR_SEND", address.to_string()));
     }
@@ -143,8 +142,11 @@ mod tests {
                 ("PIWI_EDITOR_SEND", picks.clone()),
             ]
         );
-        // Without a channel, no hub and no picks.
-        assert!(hub_env(None, Some(&picks), 2, true).is_empty());
+        // Without a channel, no hub and no picks: the run's name alone.
+        assert_eq!(
+            hub_env(None, Some(&picks), 2, true),
+            vec![("PIWI_RUN_REF", "desktop-2".to_string())]
+        );
         for bad in [
             String::new(),
             format!("https://127.0.0.1:4318/api/desktop/runs/picks#{TOKEN}"),
@@ -215,7 +217,8 @@ mod tests {
 
     #[test]
     fn names_no_hub_without_a_channel_or_with_something_else() {
-        assert!(hub_env(None, None, 3, true).is_empty());
+        let name_alone = vec![("PIWI_RUN_REF", "desktop-3".to_string())];
+        assert_eq!(hub_env(None, None, 3, true), name_alone);
         for bad in [
             String::new(),
             "/tmp/channel.sock".to_string(),
@@ -226,8 +229,9 @@ mod tests {
             format!("/tmp/chan\0nel.sock#{TOKEN}"),
             format!("/tmp/channel.sock#{}", "a".repeat(257)),
         ] {
-            assert!(
-                hub_env(Some(&bad), None, 3, true).is_empty(),
+            assert_eq!(
+                hub_env(Some(&bad), None, 3, true),
+                name_alone,
                 "{bad:?} names no channel"
             );
         }

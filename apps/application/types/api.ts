@@ -12,9 +12,12 @@ import type {
   TestSourceFrame,
   TestStepEventHook,
   WireExecutionResources,
+  WireRunError,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { RunEnvironments } from '#shared/environment-snapshots';
+import type { TestStop } from '@piwitests/core/wire';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
@@ -281,6 +284,8 @@ export interface ProjectWithStats {
     /** `test.fixme()` skips — a subset of `skippedTests`. */
     fixmeTests?: number;
     didNotRunTests: number;
+    /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+    interruptedTests?: number;
     flakyTests: number;
     totalTests: number;
     reports?: ReportInfo[];
@@ -305,7 +310,17 @@ export interface ProjectOverviewRun {
   flakyTests: number;
   totalTests: number;
   startTime: string | Date;
+  duration?: number | null;
   environment?: string | null;
+}
+
+/** A run of a project with the fields its run scope reads: what the project page's filters offer and hide. */
+export interface ProjectUnscopedRun {
+  id: number;
+  startTime: string | Date;
+  environment: string | null;
+  branch: string | null;
+  isFullRun: boolean;
 }
 
 /**
@@ -317,6 +332,7 @@ export interface ProjectOverview {
   label: string | null;
   tags: TagInfo[];
   totalFullRuns: number;
+  /** The newest of `recentRuns` that ran to its end (passed, failed or timed out); null without one. */
   latestFullRun: {
     id: number;
     status: string;
@@ -382,7 +398,10 @@ export interface OpenFailureCluster {
    * CI: work in progress, which the team's inbox leaves out unless asked.
    */
   seenOnlyLocally: boolean;
-  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  /**
+   * Set when the cluster first appeared in a run flagged as an environment
+   * incident and has not failed since in a run that counts and is no incident.
+   */
   incidentRun: InboxIncidentRun | null;
 }
 
@@ -406,10 +425,19 @@ export interface ProjectWithTestRuns {
   tags?: TagInfo[];
   createdAt: Date;
   updatedAt: Date;
+  /** The most recent runs, within the run scope the request named. */
   testRuns: TestRunSummary[];
+  /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
+  unscopedRuns?: ProjectUnscopedRun[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
+  /** Whether a CI server token is stored for the project. */
+  hasCiServerToken?: boolean;
+  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
+  ciServerTokenUrl?: string | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
@@ -438,6 +466,8 @@ export interface ProjectWithTestRuns {
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
+  /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
+  tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -454,6 +484,12 @@ export interface ProjectDetails {
   description?: string | null;
   diagnosisInstructions?: string | null;
   hasScmToken: boolean;
+  /** Whether a CI server token is stored for the project. */
+  hasCiServerToken?: boolean;
+  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
+  ciServerTokenUrl?: string | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
@@ -472,6 +508,8 @@ export interface ProjectDetails {
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
+  /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
+  tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
@@ -500,6 +538,8 @@ export interface TestRunSummary {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
@@ -543,10 +583,16 @@ export interface TestRunDetails {
   isFullRun?: boolean;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
+  /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */
+  machineRuns?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: SetupStepEvent[] | null;
+  /** The errors Playwright reported outside any test: a global setup that threw, a spec that did not load. */
+  runErrors?: WireRunError[] | null;
+  /** Where the run executed: each shard's runner, each project's browser, each server under test. */
+  environments?: RunEnvironments;
   environment?: string | null;
   label?: string | null;
   playwrightVersion?: string | null;
@@ -560,6 +606,10 @@ export interface TestRunDetails {
   serverCoverageGaps?: unknown;
   /** Display name of the person who kept the run, when one did and still exists. */
   keptByName?: string | null;
+  /** What launched the run (`runOrigin`): `request` for a requested run, seen by its requester alone. */
+  origin?: string;
+  /** The person who asked for a requested run; null for every other run. */
+  requesterId?: number | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -603,6 +653,8 @@ export interface TestRunForChart {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   totalTests: number;
   duration?: number | null;
@@ -992,6 +1044,8 @@ export interface TestCaseResult {
   testSourceFrames?: TestSourceFrame[] | null;
   failureClusterId?: number | null;
   retries?: number | null;
+  /** On a live run's running attempt: the retries the test is allowed, for "Retry 1 of 2". */
+  maxRetries?: number | null;
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition this execution belongs to, 0 without repeats. */
   repeatEachIndex?: number;
   /** Per-attempt outcomes, oldest first. */
@@ -1009,7 +1063,10 @@ export interface TestCaseResult {
   aiUsage?: { entries: string[]; intents?: AiStepIntent[] } | null;
   consoleLogs?: ConsoleEntry[] | null;
   ariaSnapshot?: string | null;
+  /** Playwright's `workerIndex`: the worker process, new at every start. */
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), shown from 1 as `Worker N`; null from an older reporter. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number;
   browser?: {
@@ -1025,14 +1082,21 @@ export interface TestCaseResult {
   didNotRunReason?: DidNotRunReason | null;
   /** Playwright's expected status: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
   /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
   stuck?: StuckAttempt | null;
+  /** Where a running test of a run outside CI stands stopped, as its reporter told it (`test-stopped`); null once it went on. */
+  liveStop?: TestStop | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */
-export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted';
+export type DidNotRunReason =
+  | 'previous-failure'
+  | 'dependency-failure'
+  | 'global-timeout'
+  | 'max-failures'
+  | 'interrupted';
 
 /** A lightweight reference to another execution in the same run (cause ↔ effect linking). */
 export interface BlockedCaseRef {
@@ -1058,6 +1122,9 @@ export interface FailureGroupCase {
   filePath: string;
   retries: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`); null from an older reporter. */
+  parallelIndex: number | null;
+  shardIndex: number | null;
   passedOnRetry: boolean;
 }
 
@@ -1078,6 +1145,7 @@ export interface FailureGroup {
   firstSeenAt: string | null;
   occurrences: number;
   flaky: boolean;
+  /** All of the group's tests, two or more, failed on one worker (a lane in its shard), in a run that used several. */
   workerCorrelated: boolean;
   cases: FailureGroupCase[];
   diagnosis: DiagnosisCompact | null;
@@ -1139,6 +1207,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   firstSeenAt: string | Date | null;
   occurrences: number;
   affectedTests: number;
+  /** How many of those tests are quarantined, beyond the listed `affectedTestCases` too. */
+  quarantinedTests: number;
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   /** The execution in the last-seen run — the cluster's latest occurrence, or null when none loads. */
@@ -1220,10 +1290,13 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
 
 /**
  * Test case with statistics - one item of GET /api/projects/[id]/test-cases.
- * `failedRuns` includes timed-out runs; `status` is the derived category the
+ * Its counts are of runs: one result per run, Playwright project and
+ * `--repeat-each` repetition, read from its final attempt. `failedRuns`
+ * includes timed-out runs; `status` is the derived category the
  * status filter operates on (flaky wins over the last run's status, timeouts
  * count as failed, `never-run` when the case has no executions). `passRate`
- * is over executed runs only (0..1), null when nothing executed.
+ * is the passed runs over the runs that passed or failed (0..1), null when
+ * none did.
  */
 export interface TestCaseWithStats {
   id: number;
@@ -1250,6 +1323,8 @@ export interface TestCaseWithStats {
   /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
   fixmeRuns?: number;
   didNotRunRuns: number;
+  /** Runs the run's interruption cut short: in no outcome and no pass rate. */
+  interruptedRuns?: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
   passRate: number | null;
@@ -1283,7 +1358,12 @@ export interface AuthUser {
   username: string;
   role: InstanceRole;
   name?: string | null;
+  email?: string | null;
   avatarUrl?: string | null;
+  /** The `v` of the user's profile picture address: its uploaded picture's, else its provider's; null with neither. */
+  avatarVersion?: string | null;
+  /** Whether the user uploaded a picture, which an upload replaces and Remove deletes. */
+  avatarUploaded?: boolean;
   /** The instance role and the project roles held, own and through groups; `can()` in `#shared/permissions` reads it. */
   access: AccessSummary;
 }
@@ -1312,6 +1392,34 @@ export interface ApiKeySummary {
   expiresAt?: Date | null;
   /** The connection of an MCP client that signed in through OAuth: there is no key value to use. */
   oauth: boolean;
+  /** Set for a key the device flow made, which **Connected apps** lists. */
+  clientKind?: string | null;
+}
+
+/** An app connected through the device flow, from GET /api/users/[id]/connected-apps. */
+export interface ConnectedApp {
+  /** Its key's id: revoking the key disconnects the app. */
+  id: number;
+  name: string;
+  kind: 'picker' | 'editor' | 'desktop' | 'runner';
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  /**
+   * For an app that runs tests: `id`, what a run request names it by, its device, the projects it has a folder for and
+   * may still take requests on, when it was last seen, and whether its stream is open now.
+   */
+  target: {
+    id: number;
+    platform: string | null;
+    version: string | null;
+    projectIds: number[];
+    lastSeenAt: Date | null;
+    online: boolean;
+  } | null;
+}
+
+export interface ConnectedAppsResponse {
+  items: ConnectedApp[];
 }
 
 /**
@@ -1452,8 +1560,14 @@ export interface TestCaseHistoryPoint {
   duration: number | null;
   error: string | null;
   retries: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
   /** Per-attempt outcomes, oldest first. */
   attempts?: AttemptOutcome[] | null;
+  /** The Playwright project of the attempt. */
+  browserName?: string | null;
+  /** The `--repeat-each` repetition of the attempt. */
+  repeatEachIndex?: number | null;
   startTime: string | Date;
   runStatus: string;
 }
@@ -1540,6 +1654,12 @@ export interface DiagnosisContextCoverage {
     patchedFilesCount: number;
     patchesOmitted: boolean;
     patchesTruncated: boolean;
+    /** true when the host listed only the range's first changed files. */
+    filesTruncated?: boolean;
+    /** How many files the range changed in all, when the host says and listed fewer. */
+    totalChangedFiles?: number | null;
+    /** true when the host listed only the range's newest commits. */
+    commitsTruncated?: boolean;
     /** What established the baseline commit: project-wide green run, per-test last-pass, or manual override. */
     baselineKind?: 'run-green' | 'test-green' | 'manual';
     /** Error message when the SCM diff fetch failed. */
@@ -1647,6 +1767,8 @@ export interface CommitListItem {
  */
 export interface ScmChangedFile {
   filename: string;
+  /** The file's path before a rename, where the host gives it. */
+  previousFilename?: string;
   status: string;
   additions: number;
   deletions: number;
@@ -1662,6 +1784,12 @@ export interface ScmChanges {
   commits: { sha: string; message: string }[];
   files: ScmChangedFile[];
   patchesOmitted?: boolean;
+  /** true when the host listed only the first changed files. */
+  filesTruncated?: boolean;
+  /** How many files changed in all, when the host says and listed fewer. */
+  totalChangedFiles?: number;
+  /** true when the host listed only the newest commits. */
+  commitsTruncated?: boolean;
 }
 
 /**

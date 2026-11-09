@@ -1,12 +1,12 @@
 import { computed, reactive } from 'vue';
 import {
   DEMO_SCENARIOS,
-  DEMO_SIMULATOR_INSTANCE_ID,
   DEMO_PROJECT_ID,
   runSimulation,
   type DemoScenario,
   type SimulationController,
 } from '~/demo/simulator';
+import { holdSimulatorPage } from '~/demo/simulator-instance';
 
 /**
  * Shared state for the demo run simulator (see app/demo/simulator.ts).
@@ -39,6 +39,11 @@ const state = reactive<DemoSimulatorState>({
 let controller: SimulationController | null = null;
 let staleRunsCancelled = false;
 
+/** A simulated run's page, on the tab its scenario is about. */
+function runPath(runId: number, scenario: DemoScenario | null): string {
+  return scenario?.tab ? `/test-runs/${runId}?tab=${scenario.tab}` : `/test-runs/${runId}`;
+}
+
 export function useDemoSimulator() {
   const toast = useToast();
   // Simulated runs are uploads to the demo's e2e-checkout project, so they take
@@ -48,17 +53,14 @@ export function useDemoSimulator() {
   const canSimulate = computed(() => can('run:submit', DEMO_PROJECT_ID));
 
   /**
-   * Cancel runs orphaned by a page reload mid-simulation (their reporter
-   * loop died with the page, so they would stay 'running' forever).
+   * Cancel runs orphaned by a closed or reloaded page (their reporter loop died with the page, so they would stay
+   * 'running' forever). A run another open tab is streaming is left alone.
    */
   async function cancelStaleRuns(): Promise<void> {
     if (staleRunsCancelled) return;
     staleRunsCancelled = true;
     try {
-      await $fetch('/api/demo/cancel-stale-runs', {
-        method: 'POST',
-        body: { instanceId: DEMO_SIMULATOR_INSTANCE_ID },
-      });
+      await $fetch('/api/demo/cancel-stale-runs', { method: 'POST' });
     } catch {
       // Non-critical cleanup — ignore
     }
@@ -87,9 +89,12 @@ export function useDemoSimulator() {
     state.completed = 0;
     state.failed = 0;
     state.total = 0;
-    controller = { stopped: false };
+    const ctl: SimulationController = { stopped: false };
+    controller = ctl;
 
     try {
+      // Other tabs see this page's runs as live only while it holds its lock.
+      await holdSimulatorPage();
       const { runId, status } = await runSimulation(
         scenario,
         {
@@ -97,7 +102,7 @@ export function useDemoSimulator() {
             state.runId = runId;
             state.projectId = projectId;
             // Bring the visitor to the run page so they watch it arrive live
-            navigateTo(`/test-runs/${runId}`);
+            navigateTo(runPath(runId, scenario));
           },
           onProgress: (completed, failed, total) => {
             state.completed = completed;
@@ -105,14 +110,30 @@ export function useDemoSimulator() {
             state.total = total;
           },
         },
-        controller,
+        ctl,
       );
 
+      // A run stopped from the banner says nothing of what its scenario shows.
+      const result = ctl.stopped ? undefined : scenario.result;
+      const link = result?.link;
       toast.add({
         title: `Simulated run #${runId} ${status}`,
-        description: 'Sent by an emulated Piwi reporter, straight into the in-browser database.',
+        description: result?.text ?? 'Sent by an emulated Piwi reporter, straight into the in-browser database.',
         color: status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'warning',
         icon: scenario.icon,
+        // The page that shows the result is looked up when the visitor asks for it, so the toast never waits on it.
+        actions: link
+          ? [
+              {
+                label: link.label,
+                color: 'neutral',
+                variant: 'outline',
+                onClick: async () => {
+                  await navigateTo(await link.to(runId));
+                },
+              },
+            ]
+          : undefined,
       });
     } catch (error) {
       console.error('[Demo simulator] simulation failed', error);
@@ -131,5 +152,5 @@ export function useDemoSimulator() {
     }
   }
 
-  return { state, scenarios: DEMO_SCENARIOS, canSimulate, start, stop, cancelStaleRuns };
+  return { state, scenarios: DEMO_SCENARIOS, canSimulate, start, stop, cancelStaleRuns, runPath };
 }

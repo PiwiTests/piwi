@@ -238,7 +238,7 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
   if (isHealBranch(branch, settings.branchPrefix)) return skip('run is on a heal branch');
 
   const provider = await createScmProvider(repositoryUrl, db, run.projectId);
-  if (!provider) return skip(`unsupported SCM host for ${repositoryUrl}`);
+  if (!provider?.provider) return skip(`unsupported SCM host for ${repositoryUrl}`);
 
   const rows: HealCandidateRow[] = (
     await db

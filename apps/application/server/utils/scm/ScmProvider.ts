@@ -4,6 +4,7 @@ import {
   parseCodeowners,
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
+import { fnv1a32 } from '@piwitests/core/hash';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
@@ -29,6 +30,8 @@ import { commitUrl, compareUrl, fileUrl, type ScmProviderName } from '#shared/sc
 
 export interface ChangedFile {
   filename: string;
+  /** The file's path before a rename, where the host gives it. */
+  previousFilename?: string;
   status: string;
   additions: number;
   deletions: number;
@@ -66,8 +69,10 @@ export interface ScmCommitAuthor {
 export interface ScmChanges {
   commits: ScmCommit[];
   files: ChangedFile[];
-  /** true when the raw diff was skipped because it exceeded the size cap */
+  /** true when the host sent no patches: the raw diff exceeded the size cap or could not be read */
   patchesOmitted?: boolean;
+  /** true when the host listed only the range's newest commits */
+  commitsTruncated?: boolean;
   /** true when the changed-file list was capped at {@link MAX_SCM_FILES_TOTAL} */
   filesTruncated?: boolean;
   /** total changed files the provider reported, when it exposes a count past the cap */
@@ -90,6 +95,8 @@ export const MAX_SCM_FILES = 30;
  * where the provider exposes a count, so the comment can say "and N more".
  */
 export const MAX_SCM_FILES_TOTAL = 300;
+/** The most items GitHub, GitLab and Bitbucket list in one page. */
+export const HOST_MAX_PAGE_SIZE = 100;
 export const MAX_PATCH_PER_FILE = 100_000;
 export const MAX_RAW_DIFF_BYTES = 200_000;
 /** Cap on a single file's content fetched via fetchFileAtRef. */
@@ -116,21 +123,13 @@ export function truncatePatch(patch: string): string {
   return `${patch.slice(0, MAX_PATCH_PER_FILE)}\n${PATCH_TRUNCATED_NOTE}`;
 }
 
-/** FNV-1a 32-bit hash → 8 hex chars. Stable, dependency-free, good enough to namespace cache keys by token. */
-export function shortHash(input: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
 /** An open pull request / merge request the run's branch belongs to. */
 export interface ScmPullRequest {
   /** Number on GitHub / Bitbucket, `iid` on GitLab. */
   number: number;
   url: string;
+  /** The branch it merges into, when the host said. */
+  baseBranch?: string | null;
 }
 
 /** Normalized lifecycle state of an issue or pull/merge request. */
@@ -163,6 +162,8 @@ export interface ScmCommitStatus {
   description: string;
   targetUrl: string;
   context: string;
+  /** The branch the run reported; Bitbucket shows a status on a pull request only with its source branch. */
+  ref?: string | null;
 }
 
 /** One file to create/update in a commit. */
@@ -184,7 +185,8 @@ export interface CreatePullRequestInput {
 }
 
 export abstract class ScmProvider {
-  abstract readonly provider: ScmProviderName;
+  /** The Git host, or null for a repository on a host Piwi has no client for (a local clone's only). */
+  abstract readonly provider: ScmProviderName | null;
   /** Canonical web URL of the repository (no trailing slash), for building links. */
   abstract readonly webUrl: string;
   protected readonly token: string | null;
@@ -197,7 +199,7 @@ export abstract class ScmProvider {
 
   constructor(token: string | null) {
     this.token = token;
-    this.keyPrefix = token ? shortHash(token) : 'anon';
+    this.keyPrefix = token ? fnv1a32(token) : 'anon';
   }
 
   protected makeHeaders(): Record<string, string> {
@@ -232,6 +234,13 @@ export abstract class ScmProvider {
    * and the files changed between the two.
    */
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
+  /**
+   * The files one commit changed against its first parent, at most
+   * {@link MAX_SCM_FILES_TOTAL} (flagged `filesTruncated` past it), and the
+   * commit itself as the only entry of `commits` when the host gives its
+   * message. Null for an invalid ref or a commit the host cannot diff; a host
+   * that answers with an error message may throw it instead.
+   */
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
   /**
    * The author (name + email) a commit records, or null when the commit cannot
@@ -337,22 +346,22 @@ export abstract class ScmProvider {
 
   /** The head commit SHA of a branch, or null when the branch does not exist. */
   async getBranchHead(_branch: string): Promise<string | null> {
-    throw new Error(`${this.provider} does not support reading a branch head`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support reading a branch head`);
   }
 
   /** Create a branch at `fromSha`. Throws on failure. */
   async createBranch(_name: string, _fromSha: string): Promise<void> {
-    throw new Error(`${this.provider} does not support creating branches`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support creating branches`);
   }
 
   /** Commit `files` onto `branch` as one commit; returns the new commit SHA. Throws on failure. */
   async commitFiles(_branch: string, _message: string, _files: ScmFileEdit[]): Promise<string> {
-    throw new Error(`${this.provider} does not support committing files`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support committing files`);
   }
 
   /** Open a pull/merge request; returns its number + URL. Throws on failure. */
   async createPullRequest(_input: CreatePullRequestInput): Promise<ScmPullRequest> {
-    throw new Error(`${this.provider} does not support opening pull requests`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support opening pull requests`);
   }
 
   // ── CI re-run (workflow / pipeline dispatch) ───────────────────────────────
@@ -374,7 +383,7 @@ export abstract class ScmProvider {
     _playwrightArgs: string,
     _request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    throw new Error(`${this.provider} does not support CI re-run`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support CI re-run`);
   }
 
   /**

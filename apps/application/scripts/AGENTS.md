@@ -36,9 +36,10 @@ every scene option.
 - **A scene targets a `data-shot="…"` attribute**, placed on the container the image is about
   (`of: '[data-shot="flaky-table"]'`), never an XPath or nth-child path. Add one when a scene needs it, named for the
   content.
-- **The harness's server runs as a configured instance** (`SCENE_SERVER_ENV`): `PIWI_SITE_URL` set, and the caller's
-  `PIWI_JIRA_*` cleared so no screenshot shows a real Jira site or account. A Jira scene connects its own dead-port
-  connection (`prepareJiraSceneConnection`) and answers the tracker's pickers in the page (`routeJiraScreen`).
+- **The harness's server runs as a configured instance** (`SCENE_SERVER_ENV`): `PIWI_SITE_URL` set, share links on
+  (`PIWI_SHARE_LINKS_ENABLED`), and the caller's `PIWI_JIRA_*` cleared so no screenshot shows a real Jira site or
+  account. A Jira scene connects its own dead-port connection (`prepareJiraSceneConnection`) and answers the tracker's
+  pickers in the page (`routeJiraScreen`).
 - **A capture waits on `settle()`** (fonts, network, nothing still loading), never on a timeout. A capture taller than
   the viewport fails with the viewport to use: give the scene that viewport, never a cropped image.
 - **`--freeze-now <iso>` pins the browser clock** so relative timestamps stop moving and two runs produce
@@ -58,11 +59,11 @@ the script's header and the `run-app` skill.
 
 A change to what a page loads or renders is measured with the performance suite (`scripts/perf/`, `npm run app:perf`).
 It runs two production builds against one large dataset and compares the server render, the full load in Chromium,
-the API calls and the SQL each request runs, for the projects list, every project tab, the test-run page, and a failed
+the API calls and the SQL each request runs, for the projects list, every project tab, the test-run page, a failed
 execution's page carrying the whole history and a large Playwright 1.63 trace (`scripts/perf/lib/trace.mjs`, uploaded
-through the real import). CI runs it on every pull request against the base commit, on two machines (`--shard k/n`,
-joined by `report.mjs`), and posts the comparison as a comment. Every option is in the header of
-`scripts/perf/run.mjs`. Locally:
+through the real import), and the Overview analytics dashboard with and without a test filter. CI runs it on every
+pull request against the base commit, on two machines (`--shard k/n`, joined by `report.mjs`), and posts the comparison
+as a comment. Every option is in the header of `scripts/perf/run.mjs`. Locally:
 
 ```bash
 npm run app:build                                     # the build to measure, in .output

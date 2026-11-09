@@ -1,5 +1,6 @@
 ---
 title: Cut the time it costs
+titleTemplate: "Slow Playwright suite: :title | Piwi"
 description: "Find where your suite's CI time goes, from waits and timeouts to flaky retries and slow endpoints, and what to cut first."
 lang: en-US
 ---
@@ -103,7 +104,7 @@ just not aggregated across the suite.
 **Ask your agent.** Over the [MCP server](/features/mcp), `get_slow_tests` returns the ranked slowest tests,
 `get_performance_trend` the duration history, and `get_run_insights` the worker imbalance of one run.
 
-**Script it.** The same numbers are on the REST API: see the [API docs](https://piwitests.dev/demo/docs).
+**Script it.** The same numbers are on the REST API: see the [API docs](https://piwitests.dev/demo/settings/api).
 
 **Watch it drift.** Rather than auditing periodically, subscribe to the `perf.regression`
 [notification](/features/notifications) event and let it tell you when a duration trend breaks.

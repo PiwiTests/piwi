@@ -201,6 +201,12 @@ function openRunStep(input: NextStepInput): Omit<NextStep, 'source'> {
         "it runs again once its group's failure is fixed.",
         openRun('Open the failures', 'failure-groups'),
       );
+    case 'dependency-failure':
+      return step(
+        "Open the run's failures",
+        'it runs again once the project it depends on passes.',
+        openRun('Open the failures', 'failure-groups'),
+      );
     case 'global-timeout':
       return step(
         'See what made the run slow',

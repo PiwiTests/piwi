@@ -1,10 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
-import { validateAccountToken, consumeAccountToken } from '../../utils/account-tokens';
+import { claimAccountToken, releaseAccountToken } from '../../utils/account-tokens';
 import { hashPassword, revokeUserSessions } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
-import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError, releaseRateLimit } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Reset password using token',
     description:
-      'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions. A token sent to an address the account no longer holds is refused (400).',
+      'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions. Returns the username of the account, for the sign-in form. A token sent to an address the account no longer holds is refused (400).',
     security: [],
   },
 });
@@ -37,24 +37,27 @@ export default eventHandler(async (event) => {
   const { token, password } = parsed.data;
   const db = await getDatabase();
 
-  // Accept both 'reset' and 'invite' tokens
-  let validated = await validateAccountToken(db, token, 'reset');
-  if (!validated) validated = await validateAccountToken(db, token, 'invite');
+  // A reset or an invite token, used up before the slow hashing: a second request with it finds it used.
+  const validated = await claimAccountToken(db, token, ['reset', 'invite']);
   if (!validated) {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
-  const hashedPassword = await hashPassword(password);
+  // A hash refused or failed (the server busy, 503) sets nothing: the token stays usable, and the request gives
+  // back its rate-limit slot.
+  const hashedPassword = await hashPassword(event, password).catch(async (error: unknown) => {
+    releaseRateLimit(rateKey);
+    await releaseAccountToken(db, validated.tokenId);
+    throw error;
+  });
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
   // The write matches the address again: one changed since the validation sets nothing.
   const updated = await db
     .update(users)
     .set({ password: hashedPassword, updatedAt: new Date(), ...extraFields })
     .where(and(eq(users.id, validated.userId), eq(users.email, validated.email)))
-    .returning({ id: users.id });
+    .returning({ id: users.id, username: users.username });
   if (!updated.length) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
-
-  await consumeAccountToken(db, validated.tokenId);
 
   // Revoke every existing session for this account so a stolen session cannot
   // outlive the reset, then clear the current cookie for good measure.
@@ -62,5 +65,5 @@ export default eventHandler(async (event) => {
   await clearUserSession(event).catch(() => {});
 
   console.info('[auth/reset-password] Password reset for user %d', validated.userId);
-  return { success: true };
+  return { success: true, username: updated[0]!.username };
 });

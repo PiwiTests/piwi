@@ -44,13 +44,13 @@ describe('finishedRunTabIndicator', () => {
     });
   });
 
-  test('interrupted and failed runs show the failed color', () => {
+  test('a failed run shows the failed color, an interrupted one the neutral color of no outcome', () => {
     expect(finishedRunTabIndicator('failed')).toEqual({
       indicator: { status: 'failed', fraction: null, label: 'Run failed' },
       durationMs: FAIL_FLASH_MS,
     });
     expect(finishedRunTabIndicator('interrupted')?.indicator).toEqual({
-      status: 'failed',
+      status: 'interrupted',
       fraction: null,
       label: 'Run interrupted',
     });

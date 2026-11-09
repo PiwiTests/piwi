@@ -177,6 +177,7 @@ async function requestPermission() {
     class="mb-4 space-y-4 rounded-lg border border-default p-3 sm:p-4"
     data-shot="channel-form"
     data-tour="notification-channel-form"
+    method="post"
     @submit.prevent="save"
   >
     <h4 class="text-sm font-semibold text-highlighted">New channel</h4>

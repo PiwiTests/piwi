@@ -27,16 +27,28 @@ without it.
 | **Control nobody exercises**<br>`control-nobody-exercises` | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | 0.3 plus 0.1 per page, at most 0.8 | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited**<br>`reachable-unvisited` | blind-spot | a page other pages link to that no test navigates to | the page inventory | 0.4 plus 0.1 per linking page, at most 0.8 | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
+| **Fixed without a regression test**<br>`fixed-without-test` | blind-spot | a [bug report](/features/bug-reports) closed in the last 180 days while no test names it | Piwi Picker sending reports | 0.7 | `Bug report #2 was fixed without a regression test: Gift card balance shown twice` |
 | **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
+| **New error path**<br>`new-error-path` | blind-spot | at pull-request time, an error status (400 to 599) the change makes a route's handler answer with or throw, which no run of the route answered with, this one included | an SCM token and a pull request | 0.55 | `Adds 422 to POST /api/orders · never observed` |
+| **New control**<br>`new-control` | blind-spot | at pull-request time, a button, field, select or switch the change adds to a page file, on a page a test reaches, named by its static label, placeholder, name or text | an SCM token and a pull request | 0.5 | `Adds button "Apply promo" on /checkout` |
+| **Intent without a test**<br>`intent-without-test` | blind-spot | at pull-request time, a pull request whose title's words (half of them at least) no test's title, describe path, tags or feature holds | an SCM token and a pull request | 0.4 | `feat: apply a promo discount · no test title, tag or feature matches` |
 | **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
 | **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node went unseen through the default branch's last 30 complete runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
+| **Incidental catch**<br>`incidental-catch` | fragile | a failure cluster whose recorded fix changed one to three files, no test file among them, that none of the tests it failed is about by name or reaches | [source control](/guide/source-control) | 0.45 | `src/pricing/rounding.ts is caught only incidentally` |
 | **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed (a delay never counts) | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
 | **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
 | **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
+| **Code nobody executes**<br>`code-not-executed` | blind-spot | the functions of a file no suite ran in the default branch's newest [combined coverage](/features/combined-coverage), or a file recorded by line none of whose lines ran; the 30 files with the most, one gap each | a coverage report or run coverage | 0.4 plus 0.3 times the share of its functions not run; 0.6 for a whole file | `Functions at lines 12–20, 22–30 · no suite ran them at 9a8b7c6` |
+| **Single covering function**<br>`single-covering-function` | fragile | the functions of a file exactly one test runs in the tests' latest coverage on the default branch, quarantined tests left out, or that only quarantined tests run; the 30 files with the most, one gap each | per-test [code reach](/features/code-reach) | 0.5 | `Only checkout pays runs the functions at lines 7–9` |
+| **Error path never executed**<br>`error-path-not-executed` | blind-spot | a `catch` block, a `throw`, or a statement answering with an error status (`TypedResults.NotFound()`, `res.status(409)`) that no suite ran, inside a function that ran (inside a file that ran, when the coverage records it by line): the code-level form of *Success only*. The 30 files that ran with the most lines not run, read at the commit's version | a coverage report or run coverage, and the [source control](/guide/source-control) connection to read the files | 0.7 | `Line 59 · return TypedResults.NotFound(); · its function ran, this never did` |
 | **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has decided | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled**<br>`not-handled` | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | 1 unhandled, 0.5 degraded | `A server probe made POST /api/orders fail; the application did not handle it` |
+
+*Error path never executed* scans brace-syntax source (TypeScript, JavaScript, C#, Java): a comment line is skipped,
+and a brace inside a string can end a `catch` block early. It runs on **Recompute** and the nightly sweep, which read
+the files through the source control connection; a file the provider cannot serve keeps its gap as it was.
 
 *Passed with errors* leaves out a console line from another origin's script and the browser's own *Failed to load
 resource* line. A response no server sent, such as one the test's route handler fulfilled, is no 5xx of the
@@ -79,12 +91,12 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 |---|---|---|
 | **Churn** | commits touching the files: on a pull request, among the base branch's newest twelve in the last 90 days | 12 commits |
 | **Age** | on a pull request, the days since the oldest of those commits; older weighs more, since escaped defects concentrate there. The 90-day scan stops it near 0.25 | one year |
-| **Escape history** | whether a file was part of a failure cluster's fixing commit | yes, else 0.1 |
+| **Escape history** | whether a file was part of a failure cluster's fixing commit, or a bug report from the last 180 days names the gap's page (the page holding its control) | yes, else 0.1 |
 | **Priority** | the highest [`piwi:priority`](/reference/test-metadata#ownership-metadata-piwi-annotations) of the tests reaching the node: critical 1, high 0.7, medium 0.4, low 0.2 | critical |
 
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
 files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
-handler files behind it, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
+handler files behind it, and a gap on a file's code from that file, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
 its last green run, so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
 files in the diff that ended on a fixing commit, which holds every change since the last green run. Age needs each
 file's history, so it stays at 0.1 there. The other detectors
@@ -102,7 +114,26 @@ Each verdict on a gap counts for or against its detector, on that project:
 - **Neither**: dismissed as *not worth testing*, or with no reason, and never accepted.
 
 A detector's precision is its share of verdicts *for*. Below 60%, on a project with twenty or more verdicts, the
-detector [mutes itself](/features/scenario-gaps#triage) there.
+detector [mutes itself](/features/scenario-gaps#triage) there: its rows leave the pull-request comment, the Gaps digest,
+the feature map and graph, its gaps sort last in the Gaps view and in the MCP tools, and the Gaps view and
+**Settings → About** say so.
+
+### Close reasons and acted on
+
+A closed gap keeps why it closed, shown after its status in the Gaps view:
+
+| Reason | Closed when |
+|---|---|
+| Acted on in its pull request | A run of the pull request that raised it answered it: reached its changed file, answered with its new status, or a test names its intent |
+| A test reached it | A test reached its changed file, outside the pull request that raised it |
+| No longer detected | Its detector no longer raises it |
+| Covered by a test | Someone closed it with **Covered by** |
+| Merged into another gap | Its subject merged into another one's |
+| Detector retired | Its detector no longer runs |
+| Out of the coverage scope, file deleted, not observable | The [change coverage](/features/uncovered-changes) read of its file |
+
+Beside each detector's precision, Settings › About counts the gaps it raised on a pull request and how many that pull
+request acted on. No one triages that number: it says how often a gap led to a test before the change merged.
 
 ## Features
 
@@ -146,6 +177,6 @@ The graph stays proportional to the application's surface, not its data volume:
 
 ## Related
 
-- [Scenario gaps & the Test Map](/features/scenario-gaps): the Gaps tab and triage
+- [Scenario gaps & the Test Map](/features/scenario-gaps): the Coverage tab and triage
 - [Probes](/features/probes): the source of the false-comfort and resilience classes
 - [Core concepts](/guide/concepts#test-map): the Test Map vocabulary

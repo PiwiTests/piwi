@@ -2,7 +2,10 @@ import { describe, test, expect } from 'vitest';
 import { buildPerfettoTrace } from '../../shared/perfetto/build';
 import type { PerfettoRunInput, TraceEvent } from '../../shared/perfetto/types';
 
-/** A run across two shards, each with one worker, one execution failing. */
+/**
+ * A run across two shards, each with one worker, one execution failing: shard 1's on lane 0, shard 2's on lane 1 in
+ * the worker process Playwright started there after an earlier failure.
+ */
 function sampleRun(): PerfettoRunInput {
   const t0 = 1_000_000_000_000;
   return {
@@ -24,6 +27,7 @@ function sampleRun(): PerfettoRunInput {
         location: 'tests/cart.spec.ts:12:3',
         status: 'passed',
         workerIndex: 0,
+        parallelIndex: 0,
         shardIndex: 1,
         startedAt: t0,
         duration: 2000,
@@ -57,7 +61,8 @@ function sampleRun(): PerfettoRunInput {
         filePath: 'tests/checkout.spec.ts',
         location: 'tests/checkout.spec.ts:20:3',
         status: 'failed',
-        workerIndex: 0,
+        workerIndex: 3,
+        parallelIndex: 1,
         shardIndex: 2,
         startedAt: t0 + 100,
         duration: 1500,
@@ -108,18 +113,62 @@ describe('buildPerfettoTrace', () => {
     expect(trace.metadata.project).toBe('Checkout');
   });
 
-  test('maps shards to processes and workers to threads', () => {
+  test('maps shards to processes and workers to threads named by their lane from 1', () => {
     const { traceEvents } = buildPerfettoTrace(sampleRun(), { scope: 'run' });
     const processNames = byName(traceEvents, 'process_name');
     expect(processNames.map((e) => (e.args as { name: string }).name).sort()).toEqual(['Shard 1', 'Shard 2']);
     // Each shard is its own process id (its 1-based shard index).
     const cart = traceEvents.find((e) => e.name === 'adds an item to the cart')!;
     const checkout = traceEvents.find((e) => e.name === 'checks out')!;
-    expect(cart.pid).toBe(1);
-    expect(checkout.pid).toBe(2);
-    expect(byName(traceEvents, 'thread_name').every((e) => (e.args as { name: string }).name === 'Worker 0')).toBe(
-      true,
-    );
+    expect([cart.pid, cart.tid]).toEqual([1, 1]);
+    expect([checkout.pid, checkout.tid]).toEqual([2, 2]);
+    expect(byName(traceEvents, 'thread_name').map((e) => [e.pid, e.tid, (e.args as { name: string }).name])).toEqual([
+      [1, 1, 'Worker 1'],
+      [2, 2, 'Worker 2'],
+    ]);
+    expect(checkout.args).toMatchObject({ worker: 2, workerIndex: 3, shardIndex: 2 });
+  });
+
+  test('keeps a worker Playwright started again in its lane on one thread', () => {
+    const input: PerfettoRunInput = {
+      run: { id: 3, startTime: 0 },
+      executions: [
+        { executionId: 1, title: 'fails', status: 'failed', workerIndex: 0, parallelIndex: 0, startedAt: 0 },
+        { executionId: 2, title: 'passes', status: 'passed', workerIndex: 2, parallelIndex: 0, startedAt: 10 },
+        { executionId: 3, title: 'beside', status: 'passed', workerIndex: 1, parallelIndex: 1, startedAt: 0 },
+      ],
+    };
+    const { traceEvents } = buildPerfettoTrace(input, { scope: 'run' });
+    expect(['fails', 'passes', 'beside'].map((name) => traceEvents.find((e) => e.name === name)!.tid)).toEqual([
+      1, 1, 2,
+    ]);
+    expect(byName(traceEvents, 'thread_name').map((e) => (e.args as { name: string }).name)).toEqual([
+      'Worker 1',
+      'Worker 2',
+    ]);
+  });
+
+  test('names the worker of a result without a lane by its worker process', () => {
+    const input: PerfettoRunInput = {
+      run: { id: 4, startTime: 0 },
+      executions: [{ executionId: 1, title: 'older reporter', status: 'passed', workerIndex: 3, startedAt: 0 }],
+    };
+    const { traceEvents } = buildPerfettoTrace(input, { scope: 'run' });
+    expect(traceEvents.find((e) => e.name === 'older reporter')!.tid).toBe(3);
+    expect(byName(traceEvents, 'thread_name').map((e) => (e.args as { name: string }).name)).toEqual(['Worker 3']);
+  });
+
+  test('keeps a test that never ran on a thread of its own, apart from every worker', () => {
+    const input: PerfettoRunInput = {
+      run: { id: 5, startTime: 0 },
+      executions: [
+        { executionId: 1, title: 'ran', status: 'passed', workerIndex: 0, parallelIndex: 0, startedAt: 0 },
+        { executionId: 2, title: 'never ran', status: 'skipped', workerIndex: -1, startedAt: 0 },
+      ],
+    };
+    const { traceEvents } = buildPerfettoTrace(input, { scope: 'run' });
+    expect(traceEvents.find((e) => e.name === 'ran')!.tid).toBe(1);
+    expect(traceEvents.find((e) => e.name === 'never ran')!.tid).toBe(-1);
   });
 
   test('emits a complete slice per execution with rich args', () => {
@@ -145,7 +194,7 @@ describe('buildPerfettoTrace', () => {
     expect((nav.args as { params?: unknown }).params).toEqual({ url: 'https://shop.test/cart' });
     // The step sits on its execution's thread and process.
     expect(nav.pid).toBe(1);
-    expect(nav.tid).toBe(0);
+    expect(nav.tid).toBe(1);
   });
 
   test('marks a failing step and emits the moment of failure', () => {
@@ -167,11 +216,11 @@ describe('buildPerfettoTrace', () => {
     ]);
   });
 
-  test('places suite-level setup steps on the worker lane', () => {
+  test('places suite-level setup steps on the thread of their worker process', () => {
     const { traceEvents } = buildPerfettoTrace(sampleRun(), { scope: 'run' });
     const setup = traceEvents.find((e) => e.name.startsWith('[setup]'))!;
     expect(setup.name).toBe('[setup] beforeAll');
-    expect(setup.tid).toBe(0);
+    expect([setup.pid, setup.tid]).toEqual([1, 1]);
     expect(setup.ph).toBe('X');
   });
 

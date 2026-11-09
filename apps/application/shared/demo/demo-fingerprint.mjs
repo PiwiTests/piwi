@@ -13,7 +13,7 @@
  * `shared/error-fingerprint.ts`; mirror its value.
  */
 
-const FINGERPRINT_VERSION = 4;
+const FINGERPRINT_VERSION = 5;
 
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte to strip ANSI color codes
 const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g');
@@ -22,6 +22,17 @@ const LONG_HEX_RE = /\b[0-9a-f]{8,}\b/gi;
 const SHORT_HEX_RE = /\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{6,7}\b/gi;
 const URL_RE = /\bhttps?:\/\/[^\s'"`)]+/gi;
 const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
+const STRICT_MODE_ELEMENTS_RE = /(resolved to \d+ elements?:)(?:\n[ \t]*(?:\d+\) [^\n]*|\.\.\.))+/g;
+const ISO_TIMESTAMP_RE = /\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?/g;
+const ABSOLUTE_PATH_RE =
+  /(^|[^\w.~-])(?:\/(?:home|Users|root|__w|builds|github\/workspace|(?:private\/)?var\/folders)\/|[A-Za-z]:[\\/])(?:[^\s'"`()<>,;]*[\\/])?/gm;
+const TEMP_SUFFIX_RE = /([\\/][^\\/\s'"`()<>,;]*?[-_])(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}(?![\w.-])/g;
+const UNDERSCORE_TOKEN_RE = /_([A-Za-z0-9]{8,})/g;
+const MATCHER_LINE_RE =
+  /^(?:Error: )?expect(?:\.soft|\.poll)?\(\w+\)(?:\.not)?\.to\w+\(\w*\)(?: failed)?(?: \/\/ .*)?$/;
+const MASKED_VALUE_LINE_RE = /^(?:(?:Expected|Received)[^:]*: <VALUE>|Timeout: <N>ms)$/;
+const TEST_TIMEOUT_RE = /^Test timeout of <N>ms exceeded\b/;
+const BARE_ERROR_RE = /^(?:TypeError|ReferenceError): /;
 const SELECTOR_OPTION_RE =
   /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
 const SELECTOR_FN_RE =
@@ -60,13 +71,27 @@ export function extractMessageHead(text) {
   return lines.slice(0, 5).join('\n');
 }
 
+/** @param {string} whole @param {string} token */
+function maskUnderscoreId(whole, token) {
+  return /\d/.test(token) && /[A-Za-z]/.test(token) && !/^[A-Za-z]+\d+$/.test(token) ? '_<ID>' : whole;
+}
+
+/** @param {string} text */
+export function maskPaths(text) {
+  return text.replace(ABSOLUTE_PATH_RE, '$1<PATH>/').replace(TEMP_SUFFIX_RE, '$1<TMP>');
+}
+
 /** @param {string} text */
 export function maskVolatile(text) {
-  return text
+  const structured = text
+    .replace(STRICT_MODE_ELEMENTS_RE, '$1')
     .replace(/^(\s*(?:Received|Expected)[^:\n]*:).*$/gm, '$1 <VALUE>')
     .replace(URL_RE, '<URL>')
     .replace(EMAIL_RE, '<EMAIL>')
+    .replace(ISO_TIMESTAMP_RE, '<TIMESTAMP>');
+  return maskPaths(structured)
     .replace(UUID_RE, '<UUID>')
+    .replace(UNDERSCORE_TOKEN_RE, maskUnderscoreId)
     .replace(LONG_HEX_RE, '<HASH>')
     .replace(SHORT_HEX_RE, '<HASH>')
     .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
@@ -104,7 +129,7 @@ export function extractSelector(text) {
 
 /** @param {string} text @returns {string | null} */
 export function extractTopFrameFile(text) {
-  const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):\d+:\d+\)?\s*$/gm;
+  const frameRe = /^[ \t]+at (?:.*? \()?([^()\s][^()\n]*?):(\d+):(\d+)\)?[ \t]*$/gm;
   let m;
   while ((m = frameRe.exec(text)) !== null) {
     const file = m[1].replace(/\\/g, '/');
@@ -134,17 +159,27 @@ export function extractErrorSignature(rawError) {
   return { errorType, signature, normalizedMessage, selector, topFrameFile };
 }
 
+/** @param {{ normalizedMessage: string, selector: string | null }} sig */
+export function isGenericFailure(sig) {
+  if (sig.selector) return false;
+  const [head = '', ...rest] = sig.normalizedMessage.split('\n');
+  if (TEST_TIMEOUT_RE.test(head)) return true;
+  if (BARE_ERROR_RE.test(head)) return rest.length === 0;
+  return MATCHER_LINE_RE.test(head) && rest.every((line) => MASKED_VALUE_LINE_RE.test(line));
+}
+
 /**
  * @param {string} rawError
  * @returns {Promise<{ fingerprint: string, errorType: string, signature: string, normalizedMessage: string, selector: string | null, topFrameFile: string | null }>}
  */
 export async function computeDemoFingerprint(rawError) {
   const sig = extractErrorSignature(rawError);
-  const input = [
+  const key = [
     `v${FINGERPRINT_VERSION}`,
     sig.errorType,
     sig.normalizedMessage,
     sig.selector ? maskSelector(sig.selector) : '',
-  ].join('\u0000');
-  return { ...sig, fingerprint: await sha256Hex(input) };
+  ];
+  if (isGenericFailure(sig)) key.push(sig.topFrameFile ? maskPaths(sig.topFrameFile) : '');
+  return { ...sig, fingerprint: await sha256Hex(key.join('\u0000')) };
 }

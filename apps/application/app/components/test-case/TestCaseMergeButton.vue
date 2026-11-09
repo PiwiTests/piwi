@@ -5,7 +5,6 @@
  * Piwi did not match, for example one renamed before it declared an external ID. Project managers only; refused for
  * two tests that ran in the same run.
  */
-import { errorMessage } from '~/utils';
 import { testLabel } from '#shared/utils/test-label';
 
 const props = defineProps<{

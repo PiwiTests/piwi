@@ -1,10 +1,18 @@
 import { execSync } from 'node:child_process';
 import type { StdioOptions } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
 import { errorMessage } from '../support/errors.js';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
-import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
+import {
+  isRunOriginKind,
+  parseRunOriginRef,
+  RUN_ORIGIN_METADATA_KEY,
+  RUN_REF_METADATA_KEY,
+  type RunOrigin,
+} from '@piwitests/core/wire';
+import { RUN_REF_ENV } from '@piwitests/core/run-channel';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { configDirFromConfig } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
@@ -137,6 +145,26 @@ export function resolveRunOrigin(env: Env, warn?: (message: string) => void): Ru
   return ref === undefined ? { kind } : { kind, ref };
 }
 
+/**
+ * The run's own name (`piwiRunRef`): the one it was given (`PIWI_RUN_REF`, by its launcher or, for a terminal run,
+ * `followEditor`; for a run an editor started, its `PIWI_ORIGIN_REF`) when it is a valid ref, else, outside CI, one
+ * of its own (`own`). A CI run no launcher started has none: its number names it.
+ */
+export function resolveRunRef(env: Env, own: () => string = ownRunRef): string | undefined {
+  const kind = env[PIWI_ORIGIN_ENV.kind]?.trim();
+  const launched = !!kind && isRunOriginKind(kind);
+  if (!launched && detectCi(env)) return undefined;
+  const given =
+    parseRunOriginRef(env[RUN_REF_ENV]) ??
+    (kind === 'editor' ? parseRunOriginRef(env[PIWI_ORIGIN_ENV.ref]) : undefined);
+  return given ?? (launched ? undefined : own());
+}
+
+/** A name for a run nothing named: `local-<pid>-<time>`. */
+function ownRunRef(): string {
+  return `local-${process.pid}-${Date.now()}`;
+}
+
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
 function normalizeRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
@@ -161,6 +189,8 @@ export class MetadataCollector {
       workingDir: configDirFromConfig(config),
       [RUN_ORIGIN_METADATA_KEY]: resolveRunOrigin(process.env, (message) => this.logger.warn(message)),
     };
+    const runRef = resolveRunRef(process.env);
+    if (runRef) metadata[RUN_REF_METADATA_KEY] = runRef;
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
     if (options.relatedIssue) metadata.relatedIssue = options.relatedIssue;
@@ -188,7 +218,11 @@ export class MetadataCollector {
         const first = all[0];
         if (first?.parent) {
           const proj = (first.parent as any).project();
-          if (proj?.metadata) metadata.playwrightProject = proj.metadata;
+          // A project without metadata of its own shares the config's (Playwright's git commit and diff included),
+          // which `playwrightConfig` already carries.
+          if (proj?.metadata && !isDeepStrictEqual(proj.metadata, config.metadata)) {
+            metadata.playwrightProject = proj.metadata;
+          }
         }
       }
     }
@@ -207,7 +241,9 @@ export class MetadataCollector {
         if (project) {
           const use = project.use ?? {};
           const config: Record<string, any> = { projectName: project.name };
-          if (use.browserName) config.browserName = use.browserName;
+          // A `devices` preset names the engine as `defaultBrowserType`, which Playwright's `browserName` defaults to.
+          const browserName = use.browserName ?? use.defaultBrowserType;
+          if (browserName) config.browserName = browserName;
           if (use.channel) config.channel = use.channel;
           if (use.viewport) config.viewport = { width: use.viewport.width, height: use.viewport.height };
           if (use.deviceScaleFactor != null) config.deviceScaleFactor = use.deviceScaleFactor;
@@ -231,6 +267,7 @@ export class MetadataCollector {
           if (use.javaScriptEnabled === false) config.javaScriptEnabled = false;
           if (use.serviceWorkers) config.serviceWorkers = use.serviceWorkers;
           if (use.userAgent) config.userAgent = use.userAgent;
+          if (typeof use.headless === 'boolean') config.headless = use.headless;
           return config;
         }
         suite = suite.parent;

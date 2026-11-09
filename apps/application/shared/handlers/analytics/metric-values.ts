@@ -7,9 +7,10 @@
  * read the outcome counts (`handbacks.ts`).
  */
 
-import { and, countDistinct, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, countDistinct, eq, gte, inArray, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { failureClusters, quarantinedTests, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
+import { flakyResultSql } from '../test-case-aggregates';
 import { getMetric, METRICS, type MetricDef, type MetricId } from '../../analytics/metrics';
 import { costOfMinutes, type CiCost } from '../../ci-cost';
 import type { AnalyticsMetricValue, AnalyticsSeriesPoint } from '../../analytics/types';
@@ -34,10 +35,11 @@ import {
   loadHandbackCounts,
 } from './handbacks';
 import { median } from '../../utils/stats';
+import { passRatePercent } from '../../utils/pass-rate';
 
 /** The metrics summed from the scalar rows. */
 const ROLLUP_VALUE: Partial<Record<MetricId, (t: RollupTotals, cost: CiCost | null) => number | null>> = {
-  'test-pass-rate': (t) => roundRate(t.passedTests, t.totalTests),
+  'test-pass-rate': (t) => passRatePercent({ passed: t.passedTests, failed: t.failedTests }, 1),
   'run-success-rate': (t) => roundRate(t.passedRuns, t.runs),
   runs: (t) => t.runs,
   'suite-size': (t) => (t.runs > 0 ? t.maxTotalTests : null),
@@ -203,7 +205,7 @@ export function clusterValue(id: MetricId, clusters: ClusterRow[], fromMs: numbe
   }
 }
 
-/** Distinct tests that passed only on a retry in the period, honoring the test filter. */
+/** Distinct tests that passed after an earlier attempt failed in the period, honoring the test filter. */
 async function countFlakyTests(db: DrizzleDB, ctx: AnalyticsContext, fromMs: number, toMs: number) {
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return 0;
   if (ctx.testFilter) {
@@ -212,7 +214,7 @@ async function countFlakyTests(db: DrizzleDB, ctx: AnalyticsContext, fromMs: num
     const projectOf = new Map(runs.map((r) => [r.id, r.projectId]));
     const flaky = new Set<string>();
     for (const e of executions) {
-      if (e.status === 'passed' && (e.retries ?? 0) > 0) flaky.add(`${projectOf.get(e.testRunId)}:${e.testCaseId}`);
+      if (e.passedAfterFailure) flaky.add(`${projectOf.get(e.testRunId)}:${e.testCaseId}`);
     }
     return flaky.size;
   }
@@ -220,13 +222,7 @@ async function countFlakyTests(db: DrizzleDB, ctx: AnalyticsContext, fromMs: num
     .select({ n: countDistinct(testRunsCases.testCaseId) })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(
-      and(
-        ...contextRunConditions(ctx, fromMs, toMs),
-        eq(testRunsCases.status, 'passed'),
-        sql`${testRunsCases.retries} > 0`,
-      ),
-    );
+    .where(and(...contextRunConditions(ctx, fromMs, toMs), flakyResultSql()));
   return Number(row?.n ?? 0);
 }
 

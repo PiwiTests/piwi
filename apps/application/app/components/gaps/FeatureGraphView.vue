@@ -17,7 +17,6 @@ import type { FileCoverage } from '~~/server/utils/coverage';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { compareBySeverity, gapClassBadgeColor, gapClassFill, graphEdgeStroke } from '~/utils/gap-classes';
 import { coverageFileRoute } from '~/utils/coverage-view';
-import { errorMessage } from '~/utils';
 
 interface GraphNode {
   kind: string;

@@ -19,8 +19,9 @@ things:
 Share links are **off by default**. Set `PIWI_SHARE_LINKS_ENABLED=true` to allow them — see the
 [configuration reference](/reference/configuration#authentication).
 
-The [live demo](https://piwitests.dev/demo/) runs without a server, so it has no share links and hides the **Share**
-button.
+The **Share** button, the *Live dashboard links* menu item and the switches that add a link to a scheduled report or
+an issue show only while share links are enabled. The [desktop app](./desktop) never shows them, since its server has
+no public address, and neither does the [live demo](https://piwitests.dev/demo/), which runs without a server.
 
 ## Creating a link
 
@@ -28,7 +29,8 @@ On an execution page, a failure-cluster page or a report snapshot page, open **S
 **Download**); on a saved dashboard, open *Live dashboard links* in the dashboard's menu:
 
 1. Pick an expiry. The dialog offers lifetimes up to `PIWI_SHARE_LINK_MAX_TTL_DAYS` (30 days unless configured;
-   setting it to `0` lifts the cap and allows links with no expiry).
+   setting it to `0` lifts the cap and allows links with no expiry, which work until they are revoked or their
+   creator loses access to what they open).
 2. **Copy the link immediately — it is shown only once.** The server stores a hash of the token, not the token, so
    there is no way to display the URL again later. Mint a new link instead.
 
@@ -50,7 +52,7 @@ Two consequences of "live" worth knowing:
   export file instead.
 - **Revocation is immediate.** A revoked link stops resolving on the next request. Turning the feature off entirely
   (`PIWI_SHARE_LINKS_ENABLED` unset) dead-ends every outstanding link at once without deleting anything, so the
-  variable doubles as a kill switch.
+  variable doubles as a kill switch. While it is off, the **Share** dialogs and their lists of links are hidden too.
 
 ## Report share links
 
@@ -80,7 +82,7 @@ none; duplicate one first.
 
 A report link and a live dashboard link each carry two images, shown when the link is minted:
 
-- `/share/<token>/badge.svg`: a badge such as "tests on default branch · 97.8% · 7 d", the test pass rate on the
+- `/share/<token>/badge.svg`: a badge such as "tests on default branch · 97.8% · 7 d", the test [pass rate](/guide/concepts#pass-rate) on the
   pass-rate color scale, for a README or a wiki page. The dialog copies it as Markdown.
 - `/share/<token>/chart.png`: the report's trend. A scheduled report's Slack message draws it as an image, since
   Slack needs a public address to show one.
@@ -92,10 +94,20 @@ the reader's address, since such a proxy fetches for many readers.
 ## Security properties
 
 - The token is a 256-bit random secret (`psl_` + 64 hex characters) — unguessable at any request rate. The server
-  stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix.
-- Everything a link serves is data its creator could already see: minting requires access to the execution, the
-  cluster, every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing
-  member's read access, never an escalation.
+  stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix. What Piwi
+  records of an issue that carries a link keeps its URL with the token redacted.
+- Everything a link serves is data its creator can see: minting requires access to the execution, the cluster,
+  every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing member's read
+  access, never an escalation.
+- A link works only while its creator can still read what it opens: the project of the execution or the cluster,
+  or every project of the snapshot (a live dashboard link follows its creator's access as
+  [described above](#live-dashboard-links)). Once they lose that access, the link answers 404 like an unknown link,
+  and works again if the access comes back. Deleting their account revokes their links. With authentication off,
+  every link works.
+- An execution, cluster or report link with no creator is tied to no account, and works until it is revoked or
+  expires: one Piwi created itself, in an issue an [automation rule](./issue-automation) filed, one created while
+  authentication was off, and one whose creator was deleted before v0.65.0. An administrator revokes it in the
+  **Share** dialog of what it opens, which lists every link to it, whoever created it.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,
   so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. The
   page is never cached; the two images may be, for five minutes.

@@ -134,4 +134,25 @@ export const GAP_TITLE_SAMPLES: Array<[detector: string, english: string, french
     'La route POST /api/orders renvoie désormais un 409 qu’aucun test ne couvre',
   ],
   ['new-control', 'New control checkout.coupon on /checkout', 'Nouveau contrôle checkout.coupon sur /checkout'],
+  ['code-not-executed', 'No suite runs src/legacy/export.ts', 'Aucune suite n’exécute src/legacy/export.ts'],
+  [
+    'code-not-executed',
+    '2 of 5 functions of src/cart.ts no suite runs',
+    '2 des 5 fonctions de src/cart.ts ne sont exécutées par aucune suite',
+  ],
+  [
+    'error-path-not-executed',
+    '2 error paths of api/Users/UsersEndpoints.cs never run',
+    '2 chemins d’erreur de api/Users/UsersEndpoints.cs n’ont jamais été exécutés',
+  ],
+  [
+    'single-covering-function',
+    '3 functions of src/cart.ts run under one test only',
+    '3 fonctions de src/cart.ts ne s’exécutent que sous un seul test',
+  ],
+  [
+    'fixed-without-test',
+    'Bug report #7 was fixed without a regression test: Coupon applied twice',
+    `Le rapport de bug n°${NBSP}7 a été corrigé sans test de non-régression${NBSP}: Coupon applied twice`,
+  ],
 ];

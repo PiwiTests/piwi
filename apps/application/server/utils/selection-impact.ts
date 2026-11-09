@@ -29,7 +29,8 @@
  * (`#shared/line-impact`); a test the coverage cannot rule out stays, at file
  * level. A test file, failure frames and route reach are never narrowed.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { notPrivateExecution } from '#shared/run-eligibility';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
@@ -86,7 +87,7 @@ async function loadSourceReach(db: DrizzleDB, projectId: number): Promise<Map<nu
       })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(eq(testCases.projectId, projectId)),
+      .where(and(eq(testCases.projectId, projectId), notPrivateExecution(testRunsCases.testRunId))),
   );
 
   const rows: any[] = await db

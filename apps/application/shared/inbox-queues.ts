@@ -7,6 +7,25 @@
 
 import type { FailureClueStrength } from './failure-clues';
 
+/** A failure cluster's triage statuses. */
+export const CLUSTER_STATUSES = ['open', 'resolved', 'ignored'] as const;
+
+export type ClusterStatus = (typeof CLUSTER_STATUSES)[number];
+
+export function isClusterStatus(value: unknown): value is ClusterStatus {
+  return typeof value === 'string' && (CLUSTER_STATUSES as readonly string[]).includes(value);
+}
+
+/** A triage note as a request may send it: a string, or null to clear it; anything else is refused. */
+export function isTriageNoteInput(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+/** A line a request appends to a triage note: a string that is not blank; anything else is refused. */
+export function isTriageLineInput(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === 'string' && value.trim() !== '');
+}
+
 /** The inbox queues, in display order. `all` is the default. */
 export const INBOX_QUEUES = [
   'all',
@@ -103,6 +122,17 @@ export interface UserIdentity {
   name?: string | null;
   username?: string | null;
   email?: string | null;
+}
+
+/**
+ * The identity "Mine" matches for a signed-in user, the same in the dashboard
+ * and over MCP: their name, username and email. None without a user
+ * (authentication off).
+ */
+export function inboxIdentity(
+  user: { name?: string | null; username?: string | null; email?: string | null } | null | undefined,
+): UserIdentity | null {
+  return user ? { name: user.name ?? null, username: user.username ?? null, email: user.email ?? null } : null;
 }
 
 function norm(value: string | null | undefined): string {
@@ -204,6 +234,42 @@ export function clusterInQueue(
     case 'merge-suggestions':
       return cluster.mergeSuggestionPending === true;
   }
+}
+
+/**
+ * Whether a row shows the "snoozed, back" badge: the cluster came back from an
+ * "until it recurs" snooze, and is new since the viewer last looked, the queue
+ * it returned to. Once they have seen it in a later visit, the badge is gone.
+ */
+export function showsSnoozedBack(cluster: InboxClusterLike, lastVisitMs: number | null): boolean {
+  return isSnoozedBack(cluster) && isNewSince(cluster, lastVisitMs);
+}
+
+/**
+ * The cluster the inbox's keyboard focus moves to: the next (`1`) or previous
+ * (`-1`) row of `ids` from the focused cluster, or the first row when none is
+ * focused or it left the list. Held by cluster id, so a list that reloads and
+ * reorders under it keeps the focus on the same cluster.
+ */
+export function moveInboxFocus(ids: readonly number[], focusedId: number | null, step: 1 | -1): number | null {
+  const at = focusedId == null ? -1 : ids.indexOf(focusedId);
+  if (at < 0) return ids[0] ?? null;
+  return ids[Math.min(ids.length - 1, Math.max(0, at + step))] ?? null;
+}
+
+/**
+ * The cluster the inbox's focus rests on once its rows change: the same one
+ * while it is listed, wherever it moved; else, when it left (resolved, ignored,
+ * snoozed), the row now in its place.
+ */
+export function keepInboxFocus(
+  ids: readonly number[],
+  previousIds: readonly number[],
+  focusedId: number | null,
+): number | null {
+  if (focusedId == null || ids.includes(focusedId)) return focusedId;
+  const at = previousIds.indexOf(focusedId);
+  return at < 0 ? null : (ids[Math.min(at, ids.length - 1)] ?? null);
 }
 
 /** The environment-incident run a cluster first appeared in. */

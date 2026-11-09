@@ -15,6 +15,7 @@ const { normalizeGitUrl, repositoryUrlFromRemote, sameRepository } = await impor
 const { isRepositoryPinnedInScope, pinProjectRepository, projectRepositoryFor, readProjectRepositoryUrl } =
   await import('../../server/utils/scm/project-repository');
 const { createScmProvider } = await import('../../server/utils/scm');
+const { BitbucketProvider } = await import('../../server/utils/scm/BitbucketProvider');
 const { INVALID_REPOSITORY_URL, updateProject } = await import('../../shared/handlers/projects');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/run-eligibility');
 const { createUnfurlProvider } = await import('../../server/utils/unfurl');
@@ -57,6 +58,18 @@ describe('a repository URL as a project pins it', () => {
     }
   });
 
+  test('reads a Git host’s SSH alias as the host itself', () => {
+    expect(normalizeGitUrl('git@ssh.bitbucket.org:acme/shop.git')).toBe('https://bitbucket.org/acme/shop');
+    expect(normalizeGitUrl('ssh://git@altssh.bitbucket.org:443/acme/shop.git')).toBe('https://bitbucket.org/acme/shop');
+    expect(normalizeGitUrl('ssh://git@ssh.github.com:443/acme/shop.git')).toBe('https://github.com/acme/shop');
+    expect(normalizeGitUrl('https://ssh.github.com:443/acme/shop')).toBe('https://github.com/acme/shop');
+    expect(repositoryUrlFromRemote('git@ssh.bitbucket.org:acme/shop.git')).toBe('https://bitbucket.org/acme/shop');
+    expect(sameRepository('git@ssh.bitbucket.org:acme/shop.git', 'https://bitbucket.org/acme/shop')).toBe(true);
+    expect(sameRepository('git@altssh.bitbucket.org:acme/shop.git', 'git@bitbucket.org:acme/shop.git')).toBe(true);
+    // Another host of the same domain is another host.
+    expect(sameRepository('git@git.bitbucket.org:acme/shop.git', 'https://bitbucket.org/acme/shop')).toBe(false);
+  });
+
   test('tells the same repository apart from another, whatever the form', () => {
     expect(sameRepository('git@github.com:Acme/Shop.git', 'https://github.com/acme/shop')).toBe(true);
     expect(sameRepository('https://github.com/acme/shop', 'https://github.com/acme/payments-private')).toBe(false);
@@ -94,6 +107,20 @@ describe('the pinned repository', () => {
     expect(await createScmProvider('git@github.com:acme/shop.git', db as never, 1)).not.toBeNull();
     // A project with no pinned repository reads none.
     expect(await createScmProvider('https://github.com/acme/shop', db as never, 2)).toBeNull();
+  });
+
+  test('a run that records a Git host’s SSH alias reads the repository pinned on the host, and pins the host', async () => {
+    await pinProjectRepository(db as never, 2, { scm: { remoteUrl: 'git@ssh.bitbucket.org:acme/api.git' } });
+    expect(await readProjectRepositoryUrl(db as never, 2)).toBe('https://bitbucket.org/acme/api');
+    expect(await projectRepositoryFor(db as never, 2, 'git@altssh.bitbucket.org:acme/api.git')).toBe(
+      'https://bitbucket.org/acme/api',
+    );
+    expect(await createScmProvider('git@ssh.bitbucket.org:acme/api.git', db as never, 2)).toBeInstanceOf(
+      BitbucketProvider,
+    );
+    expect(await projectRepositoryFor(db as never, 1, 'ssh://git@ssh.github.com:443/acme/shop.git')).toBe(
+      'https://github.com/acme/shop',
+    );
   });
 
   test('a link reads a repository with the instance token only when a readable project pins it', async () => {

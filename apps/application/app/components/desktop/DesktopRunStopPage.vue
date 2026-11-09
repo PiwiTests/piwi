@@ -1,25 +1,22 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: the page of a stopped worker of a run the shell started, in the Local runs tray. Its image,
- * asked once per stop; **Watch live**, where the stop takes it, which shows the stop's frames in the image's place and
- * stays on for the worker's next stops until it is turned off; the pointer, the wheel and the keys on the live view go
- * to the page where the stop takes the window's input (Tab leaves the view unless a click took the keyboard, Escape
- * gives it back); **Pick on the image**, or a Shift+click on the image or the view, names the element under the
- * pointer. The input and the points come from the Runs window's own logic (`view-input.ts`, `pagePoint`). A frame is
- * drawn into the one image element as it comes and is kept nowhere else; the view ends with the stop, as the window
- * hides, and when it is turned off.
+ * Desktop shell only: the page of a stopped worker of a run the shell started, in the Local runs tray, while its lane
+ * is not watched (`DesktopRunLaneView` shows it then). Its image, asked once per stop; **Watch live**, where the stop
+ * takes it, which shows the stop's frames in the image's place (`DesktopRunLiveImage`, where the pointer, the wheel and
+ * the keys go to the page when the stop takes the window's input) and stays on for the worker's next stops until it is
+ * turned off (the run page's **Pause and watch** turns it on too, through `useDesktopRunHub`); **Pick on the image**,
+ * or a Shift+click on the image or the view, names the element under the pointer. The view ends with the stop, as the
+ * window hides, and when it is turned off. Why the hub would not show the worker's lane shows under the image.
  */
 import type { HubAction, HubImage, HubStop } from '@piwitests/core/run-hub';
-import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
-import { pagePoint } from '../../../../extension/src/shared/runs';
-import {
-  ViewInputBatcher,
-  keyOnView,
-  pastedText,
-  type ViewModifier,
-} from '../../../../extension/src/shared/view-input';
+import { isViewFrameData } from '@piwitests/core/run-view';
 import type { DesktopFrame, DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopStopError, isDesktopRunImage } from '~/utils/desktop-run-view';
+import {
+  desktopImagePoint,
+  desktopStopError,
+  isDesktopRunImage,
+  type DesktopLiveImageHandle,
+} from '~/utils/desktop-run-view';
 
 const props = defineProps<{
   runRef: string;
@@ -29,6 +26,8 @@ const props = defineProps<{
   takes: readonly HubAction[];
   /** A command for this worker is on its way: a pick waits for it. */
   busy: boolean;
+  /** Why the hub would not show the worker's lane (**Watch**), when it would not. */
+  laneRefused?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -39,10 +38,6 @@ const emit = defineEmits<{
 }>();
 
 const hub = useDesktopRunHub();
-
-/** The buttons that go to the page: the middle one stays the window's, as it opens what it clicks in a new tab. */
-const BUTTONS: Record<number, ViewButton> = { 0: 'left', 2: 'right' };
-const MAC = import.meta.client && /Mac|iPhone|iPad/.test(navigator.platform);
 
 // ── The image of the stop ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -72,30 +67,28 @@ const stillShown = computed(() => (still.value?.since === props.stop.since ? sti
 // ── The live view ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const canView = computed(() => props.takes.includes('view'));
-/** Watch live, as the person left it, kept by the worker: on, each next stop of the worker is watched too. */
+/** Watch live, as the person left it for the worker, kept by the window: on, each next stop of the worker is watched. */
 const watchLive = defineModel<boolean>('watchLive', { default: false });
 const view = ref<{
   since: string;
   status: 'starting' | 'on' | 'ended' | 'refused';
   note: string;
-  viewport: { width: number; height: number } | null;
   /** Why the view sends no frame now: the page is too heavy for it. */
   heavy: string;
 }>();
-const liveImg = ref<HTMLImageElement | null>(null);
+const liveImage = useTemplateRef<DesktopLiveImageHandle>('liveImage');
 let unlisten: (() => void) | null = null;
-/** A frame waiting while the one before decodes: the latest alone. */
-let nextFrame: Extract<DesktopFrame, { data: string }> | null = null;
-let decoding = false;
-const visible = ref(true);
+const visible = ref(import.meta.client ? !document.hidden : true);
 
 const live = computed(() => view.value?.since === props.stop.since && ['starting', 'on'].includes(view.value.status));
-const framed = computed(() => live.value && !!view.value?.viewport);
+const framed = computed(() => live.value && !!liveImage.value?.viewport);
 
 function startView(): void {
   endView(false);
   const since = props.stop.since;
-  view.value = { since, status: 'starting', note: '', viewport: null, heavy: '' };
+  view.value = { since, status: 'starting', note: '', heavy: '' };
+  // A view of another stop shows none of its frames.
+  liveImage.value?.clear();
   unlisten = hub.onFrame(props.runRef, props.worker, since, (frame) => heardFrame(since, frame));
   void hub.command({ type: 'view', ref: props.runRef, worker: props.worker, since, on: true }).then((answer) => {
     if (view.value?.since !== since || !live.value) return;
@@ -114,38 +107,14 @@ function heardFrame(since: string, frame: DesktopFrame): void {
     return;
   }
   if (!isViewFrameData(frame.data)) return;
-  nextFrame = frame;
-  if (!decoding) void drawFrames(since);
-}
-
-async function drawFrames(since: string): Promise<void> {
-  decoding = true;
-  while (nextFrame && view.value?.since === since) {
-    const frame = nextFrame;
-    nextFrame = null;
-    const src = `data:image/jpeg;base64,${frame.data}`;
-    // Decoded aside first: the view shows the frame before until this one is whole.
-    const decoded = new Image();
-    decoded.src = src;
-    try {
-      await decoded.decode();
-    } catch {
-      continue;
-    }
-    if (view.value?.since !== since || !live.value) break;
-    view.value.viewport = { width: frame.width, height: frame.height };
-    view.value.heavy = '';
-    await nextTick();
-    if (liveImg.value) liveImg.value.src = src;
-  }
-  decoding = false;
+  liveImage.value?.draw(frame, () => {
+    if (view.value?.since === since) view.value.heavy = '';
+  });
 }
 
 function stopListening(): void {
   unlisten?.();
   unlisten = null;
-  nextFrame = null;
-  stopInput();
 }
 
 /** The view ends; the hub hears it (`tell`) while it was on. */
@@ -168,160 +137,25 @@ function toggleLive(): void {
   }
 }
 
-// ── The input on the view ─────────────────────────────────────────────────────────────────────────────────────────
-
-const inputOn = computed(() => framed.value && view.value?.status === 'on' && props.takes.includes('input'));
-let input: ViewInputBatcher | null = null;
-/** A click into the view took the keyboard, Tab included, until Escape gives it back. */
-let captured = false;
-const liveButton = ref<{ $el: HTMLElement } | null>(null);
-
-function stopInput(): void {
-  input?.dispose();
-  input = null;
-  captured = false;
-}
-
-watch(
-  inputOn,
-  (on) => {
-    if (!on) return stopInput();
-    const since = props.stop.since;
-    input ??= new ViewInputBatcher({
-      clickCounts: props.takes.includes('input-clicks'),
-      send: async (events: ViewInput[]) => {
-        if (view.value?.since !== since) return false;
-        const answer = await hub.command({ type: 'input', ref: props.runRef, worker: props.worker, since, events });
-        if (!answer.ok && view.value?.since === since) emit('said', answer, {});
-        return answer.ok;
-      },
-    });
-  },
-  { immediate: true },
+/** Where the clicks and keys on the view go, while the view is on and the stop takes them. */
+const inputTarget = computed(() =>
+  view.value?.status === 'on' && live.value && props.takes.includes('input')
+    ? {
+        ref: props.runRef,
+        worker: props.worker,
+        since: props.stop.since,
+        clickCounts: props.takes.includes('input-clicks'),
+      }
+    : null,
 );
-
-function modifiersOf(event: MouseEvent): ViewModifier[] {
-  const held: ViewModifier[] = [];
-  if (event.ctrlKey) held.push('Control');
-  if (event.altKey) held.push('Alt');
-  if (event.metaKey) held.push('Meta');
-  return held;
-}
-
-/** Where a pointer event is on an image, in CSS pixels of the viewport it shows. */
-function pointOn(img: HTMLImageElement, event: MouseEvent, viewport: { width: number; height: number }) {
-  const rect = img.getBoundingClientRect();
-  return pagePoint(
-    { x: event.clientX - rect.left - img.clientLeft, y: event.clientY - rect.top - img.clientTop },
-    { width: img.clientWidth, height: img.clientHeight },
-    viewport,
-  );
-}
-
-let pointed: { x: number; y: number } | null = null;
-const at = (event: MouseEvent) =>
-  liveImg.value && view.value?.viewport ? pointOn(liveImg.value, event, view.value.viewport) : null;
-
-function onLivePointerDown(event: PointerEvent): void {
-  if (event.shiftKey || picking.value) {
-    event.preventDefault();
-    if (liveImg.value && view.value?.viewport) void pickOn(liveImg.value, event, view.value.viewport);
-    return;
-  }
-  pointed = at(event);
-  if (!input || !BUTTONS[event.button] || !pointed) return;
-  liveImg.value?.focus({ preventScroll: true });
-  captured = true;
-  liveImg.value?.setPointerCapture?.(event.pointerId);
-}
-
-function onLiveMouseDown(event: MouseEvent): void {
-  if (!input) return;
-  event.preventDefault();
-  const button = BUTTONS[event.button];
-  const point = pointed ?? at(event);
-  if (button && point) input.down(button, point.x, point.y, { count: event.detail, modifiers: modifiersOf(event) });
-}
-
-function onLivePointerMove(event: PointerEvent): void {
-  pointed = at(event);
-  if (input && pointed) input.move(pointed.x, pointed.y);
-}
-
-function onLivePointerUp(event: PointerEvent): void {
-  pointed = at(event);
-}
-
-function onLiveBlur(): void {
-  captured = false;
-}
-
-function onLiveMouseUp(event: MouseEvent): void {
-  const button = BUTTONS[event.button];
-  const point = pointed ?? at(event);
-  if (input && button && point) input.up(button, point.x, point.y, { count: event.detail });
-}
-
-function onLivePointerCancel(event: PointerEvent): void {
-  const point = at(event);
-  if (input && point) input.cancel(point.x, point.y);
-}
-
-function onLiveWheel(event: WheelEvent): void {
-  const point = at(event);
-  // The wheel scrolls the page once the view has the focus; until then it scrolls the tray.
-  if (!input || !point || document.activeElement !== liveImg.value) return;
-  event.preventDefault();
-  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (view.value?.viewport?.height ?? 600) : 1;
-  input.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale);
-}
-
-function onLiveKeyDown(event: KeyboardEvent): void {
-  if (!input) return;
-  const decided = keyOnView(
-    {
-      key: event.key,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
-      altGraph: event.getModifierState?.('AltGraph') ?? false,
-      isComposing: event.isComposing,
-    },
-    { mac: MAC, captured },
-  );
-  if (decided === 'leave') {
-    // The keyboard back to the tray, on Watch live; Pick on the image, waiting, stops too.
-    event.preventDefault();
-    event.stopPropagation();
-    captured = false;
-    picking.value = false;
-    liveButton.value?.$el?.focus();
-    return;
-  }
-  if (decided === 'window' || decided === 'none') return;
-  // A key sent to the page is the page's alone: the dashboard behind the tray never sees it (its shortcuts, the inbox's
-  // keys).
-  event.preventDefault();
-  event.stopPropagation();
-  input.key(decided.send);
-}
-
-function onLivePaste(event: ClipboardEvent): void {
-  const text = event.clipboardData?.getData('text/plain') ?? '';
-  if (!input || !text) return;
-  event.preventDefault();
-  event.stopPropagation();
-  for (const typed of pastedText(text)) input.key(typed);
-}
+const liveButton = ref<{ $el: HTMLElement } | null>(null);
 
 // ── Pick on the image ─────────────────────────────────────────────────────────────────────────────────────────────
 
 const picking = ref(false);
 const pickable = computed(() => props.takes.includes('pick-at') && (framed.value || !!stillShown.value?.viewport));
 
-async function pickOn(img: HTMLImageElement, event: MouseEvent, viewport: { width: number; height: number }) {
-  const point = pointOn(img, event, viewport);
+async function pickAt(point: { x: number; y: number } | null): Promise<void> {
   if (!point || !props.takes.includes('pick-at') || props.busy) return;
   picking.value = false;
   emit('picking', true);
@@ -340,7 +174,7 @@ function onStillPointerDown(event: PointerEvent): void {
   const kept = stillShown.value;
   if (!(event.shiftKey || picking.value) || !kept?.viewport) return;
   event.preventDefault();
-  void pickOn(event.currentTarget as HTMLImageElement, event, kept.viewport);
+  void pickAt(desktopImagePoint(event.currentTarget as HTMLImageElement, event, kept.viewport));
 }
 
 function onEscape(event: KeyboardEvent): void {
@@ -408,6 +242,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       <UButton
         v-if="canView"
         ref="liveButton"
+        data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
@@ -432,51 +267,33 @@ const note = computed((): { icon?: string; text: string } | null => {
         Pick on the image
       </UButton>
     </div>
-    <div v-if="framed || stillShown?.src" class="relative">
-      <img
-        v-if="framed"
-        ref="liveImg"
-        :alt="inputOn ? 'The page, live: clicks and keys go to it' : 'The page, live'"
-        :tabindex="inputOn ? 0 : undefined"
-        draggable="false"
-        class="block w-full rounded-md border border-default focus-visible:outline-2 focus-visible:outline-primary select-none"
-        :class="picking ? 'cursor-crosshair' : inputOn ? 'cursor-default' : ''"
-        @pointerdown="onLivePointerDown"
-        @mousedown="onLiveMouseDown"
-        @pointermove="onLivePointerMove"
-        @pointerup="onLivePointerUp"
-        @mouseup="onLiveMouseUp"
-        @pointercancel="onLivePointerCancel"
-        @contextmenu="inputOn && $event.preventDefault()"
-        @wheel="onLiveWheel"
-        @keydown="onLiveKeyDown"
-        @paste="onLivePaste"
-        @blur="onLiveBlur"
-      />
-      <img
-        v-else-if="stillShown?.src"
-        :src="stillShown.src"
-        :alt="imageAlt"
-        draggable="false"
-        class="block w-full rounded-md border border-default select-none"
-        :class="picking ? 'cursor-crosshair' : ''"
-        @pointerdown="onStillPointerDown"
-      />
-      <span
-        v-if="framed"
-        aria-hidden="true"
-        class="pointer-events-none absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-default/90 px-1.5 py-0.5 text-xs text-highlighted"
-      >
-        <span class="size-1.5 rounded-full bg-error" />
-        Live
-      </span>
-    </div>
+    <DesktopRunLiveImage
+      v-if="live"
+      ref="liveImage"
+      v-model:picking="picking"
+      :alt="inputTarget ? 'The page, live: clicks and keys go to it' : 'The page, live'"
+      :input="inputTarget"
+      mark="Live"
+      @pick="pickAt"
+      @said="emit('said', $event, {})"
+      @leave="liveButton?.$el?.focus()"
+    />
+    <img
+      v-if="!framed && stillShown?.src"
+      :src="stillShown.src"
+      :alt="imageAlt"
+      draggable="false"
+      class="block w-full rounded-md border border-default select-none"
+      :class="picking ? 'cursor-crosshair' : ''"
+      @pointerdown="onStillPointerDown"
+    />
     <p v-if="note" class="flex items-center gap-1.5 text-xs text-muted">
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" />
       {{ note.text }}
     </p>
-    <p v-if="inputOn" class="text-xs text-muted">
-      Clicks and keys on the view go to the page. Escape gives the keyboard back; Tab leaves unless a click took it.
+    <p v-if="laneRefused" class="flex items-center gap-1.5 text-xs text-muted" data-testid="desktop-lane-refused">
+      <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0" />
+      {{ laneRefused }}
     </p>
   </figure>
 </template>

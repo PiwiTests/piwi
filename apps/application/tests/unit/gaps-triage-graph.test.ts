@@ -169,6 +169,12 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
     expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
   });
 
+  test('listScenarioGaps reads one gap by its id, whatever its status', async () => {
+    const id = await seedGap({ status: 'dismissed' });
+    expect((await listScenarioGaps(db, 1, { gapId: id, status: 'all' })).map((g) => g.id)).toEqual([id]);
+    expect(await listScenarioGaps(db, 1, { gapId: id + 1, status: 'all' })).toEqual([]);
+  });
+
   test('listScenarioGaps reopens an expired snooze before listing', async () => {
     await seedGap({ status: 'snoozed', snoozedUntil: new Date(Date.now() - 1000) });
     const open = await listScenarioGaps(db, 1, {}); // defaults to open only

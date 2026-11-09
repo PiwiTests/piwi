@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FormData, HttpClient } from '../src/internal/transport/http-client.js';
+import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -76,15 +76,80 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
-    it('resolves to {} when the response body is not JSON', async () => {
+    it("carries the server's own word on a refusal, on one bounded line", async () => {
+      const refusal =
+        'With authentication off, this dashboard answers only on its local addresses.\nAdd the name you use.';
+      const answers: Record<string, (res: http.ServerResponse) => void> = {
+        '/plain': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(refusal);
+        },
+        '/json': (res) =>
+          jsonRes(res, 403, { statusCode: 403, statusMessage: 'Forbidden', message: 'No access to this project' }),
+        '/status-message': (res) => jsonRes(res, 403, { statusMessage: 'Forbidden' }),
+        '/long': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('x'.repeat(2000));
+        },
+        '/html': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h1>403 Forbidden</h1></body></html>');
+        },
+      };
+      const { server, url } = await startServer((req, res) => answers[req.url]!(res));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postJSON('/plain', {}, null)).rejects.toThrow(
+          'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses. Add the name you use.',
+        );
+        await expect(client.putJSON('/json', {}, null)).rejects.toThrow(
+          'Request failed with status 403: No access to this project',
+        );
+        await expect(client.postJSON('/status-message', {}, null)).rejects.toThrow(
+          'Request failed with status 403: Forbidden',
+        );
+        const long = await client.postJSON('/long', {}, null).catch((error: Error) => error.message);
+        expect(long).toBe(`Request failed with status 403: ${'x'.repeat(499)}…`);
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/plain', form, null)).rejects.toThrow(/status 403: With authentication off/);
+        const html = await client.postJSON('/html', {}, null).catch((error: Error) => error.message);
+        expect(html).toBe('Request failed with status 403');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('reads a character the answer splits across two chunks', async () => {
+      const body = Buffer.from(JSON.stringify({ title: 'café ✓' }));
+      const cut = body.indexOf(Buffer.from('é')) + 1;
       const { server, url } = await startServer((_req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('not json');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write(body.subarray(0, cut));
+        setTimeout(() => res.end(body.subarray(cut)), 30);
       });
       try {
         const client = new HttpClient(url, new Logger(false));
-        const out = await client.postJSON('/api/x', {}, null);
-        expect(out).toEqual({});
+        await expect(client.postJSON('/api/x', {}, null)).resolves.toEqual({ title: 'café ✓' });
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('rejects a 2xx answer that is not JSON, naming its content type', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><title>Sign in</title>');
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postJSON('/api/x', {}, null)).rejects.toThrow(
+          'The answer to /api/x is not JSON (text/html; charset=utf-8)',
+        );
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/api/upload', form, null)).rejects.toThrow(/not JSON \(text\/html/);
+        await expect(client.putJSON('/api/put', {}, null)).rejects.toThrow(/not JSON \(text\/html/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -97,6 +162,34 @@ describe('HttpClient (against fake http.Server)', () => {
         await client.postJSON('/api/x', {}, 'pd_secret123');
         expect(requests[0].headers['authorization']).toBe('Bearer pd_secret123');
         expect(requests[0].headers['cookie']).toBe(undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('applies a request token as Bearer header (pdq_ prefix)', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const token = `pdq_${'b'.repeat(64)}`;
+        await client.postJSON('/api/x', {}, token);
+        expect(requests[0].headers['authorization']).toBe(`Bearer ${token}`);
+        expect(requests[0].headers['cookie']).toBe(undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('sends a run token in its header beside the body, and none without one', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await client.postJSON('/api/x', { streamToken: 'tok' }, null, undefined, { headers: runTokenHeaders('tok') });
+        await client.postJSON('/api/x', {}, null, undefined, { headers: runTokenHeaders(null) });
+        expect(requests[0].headers['x-piwi-run-token']).toBe('tok');
+        expect(requests[0].headers['content-type']).toBe('application/json');
+        expect(JSON.parse(requests[0].body)).toEqual({ streamToken: 'tok' });
+        expect(requests[1].headers['x-piwi-run-token']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -217,6 +310,24 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('postJSON of a run', () => {
+    it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        setTimeout(() => jsonRes(res, 200, { runId: 7 }), 300);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 100, 2000);
+        await expect(client.postJSON('/api/results', {}, null, undefined, { upload: true })).resolves.toEqual({
+          runId: 7,
+        });
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
   describe('postFormData', () => {
     it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
       const { server, url } = await startServer((_req, res) => {
@@ -228,6 +339,33 @@ describe('HttpClient (against fake http.Server)', () => {
         form.append('field', 'value');
         await expect(client.postFormData('/api/upload', form, null)).resolves.toEqual({ runId: 7 });
         await expect(client.postJSON('/api/submit', {}, null)).rejects.toThrow(/timed out after 100ms/);
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+
+    it('ends an upload when its signal aborts, in flight or before it starts', async () => {
+      const { server, url, requests } = await startServer(() => {
+        // never respond
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const controller = new AbortController();
+        const form = new FormData();
+        form.append('field', 'value');
+        const pending = client.postFormData('/api/upload', form, null, controller.signal);
+        await expect.poll(() => requests.length).toBe(1);
+        controller.abort(new Error('no time left'));
+        await expect(pending).rejects.toThrow('no time left');
+
+        const later = new FormData();
+        later.append('field', 'value');
+        await expect(client.postFormData('/api/upload', later, null, controller.signal)).rejects.toThrow(
+          'no time left',
+        );
+        expect(requests).toHaveLength(1);
       } finally {
         (server as any).closeAllConnections?.();
         server.close();
@@ -296,6 +434,22 @@ describe('HttpClient (against fake http.Server)', () => {
         (server as any).closeAllConnections?.();
         server.close();
         await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
+  describe('serverUrl', () => {
+    it('sends nothing to an address that is not a whole http:// or https:// URL', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { ok: true }));
+      try {
+        const request = (serverUrl: string) =>
+          new HttpClient(serverUrl, new Logger(false)).postJSON('/api/x', {}, null);
+        await expect(request(url.replace('http:', 'ftp:'))).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('localhost:3000')).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('piwi.example.com')).rejects.toThrow('"piwi.example.com" is not a URL');
+        expect(requests).toHaveLength(0);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
       }
     });
   });

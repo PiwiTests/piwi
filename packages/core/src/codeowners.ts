@@ -128,19 +128,44 @@ function segmentMatches(pattern: string, segment: string): boolean {
   return p === pattern.length;
 }
 
+/** What a regular expression's `.` never takes: the line terminators. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/** `clean[j]`: the path's segments from j on hold no line terminator, so a `.*` of the expression crosses them. */
+function cleanTails(parts: string[]): Uint8Array {
+  const clean = new Uint8Array(parts.length + 1);
+  clean[parts.length] = 1;
+  for (let j = parts.length - 1; j >= 0; j--) clean[j] = clean[j + 1] && !LINE_TERMINATOR.test(parts[j]!) ? 1 : 0;
+  return clean;
+}
+
 /**
  * The paths {@link pathPatternToRegExp} matches, matched segment by segment
  * without a regular expression: the steps grow with the pattern's segments
- * times the path's, whatever wildcards the pattern holds.
+ * times the path's, whatever wildcards the pattern holds. Where the expression
+ * reads `.*` (what sits above or beneath a matched segment, a last `**`), no
+ * line terminator is taken; `*` and `?` take one, as `[^/]` does.
  */
 export function pathPatternMatcher(pattern: string): (path: string) => boolean {
   const { segments, floating } = patternParts(pattern);
   if (floating) {
     const only = segments[0]!;
-    return (path) => path.split('/').some((part) => segmentMatches(only, part));
+    // `**` alone is the expression's `.*`: any path with no line terminator.
+    if (only === '**') return (path) => !LINE_TERMINATOR.test(path);
+    return (path) => {
+      const parts = path.split('/');
+      const clean = cleanTails(parts);
+      for (let j = 0; j < parts.length; j++) {
+        if (segmentMatches(only, parts[j]!) && clean[j + 1]) return true;
+        // Every later match sits beneath this segment, which a `.*` must cross.
+        if (LINE_TERMINATOR.test(parts[j]!)) return false;
+      }
+      return false;
+    };
   }
   return (path) => {
     const parts = path.split('/');
+    const clean = cleanTails(parts);
     // `at[j]`: the pattern's segments read so far match the path up to the `/` before its segment j.
     let at = new Uint8Array(parts.length);
     at[0] = 1;
@@ -149,7 +174,7 @@ export function pathPatternMatcher(pattern: string): (path: string) => boolean {
       const isLast = i === segments.length - 1;
       if (segment === '**') {
         // Last, it takes the rest; before, it skips zero or more non-empty segments.
-        if (isLast) return at.includes(1);
+        if (isLast) return at.some((reached, j) => reached === 1 && clean[j] === 1);
         for (let j = 1; j < parts.length; j++) if (at[j - 1] && parts[j - 1] !== '') at[j] = 1;
         continue;
       }
@@ -157,7 +182,7 @@ export function pathPatternMatcher(pattern: string): (path: string) => boolean {
       for (let j = 0; j < parts.length; j++) {
         if (!at[j] || !segmentMatches(segment, parts[j]!)) continue;
         // The last segment owns what sits beneath it.
-        if (isLast) return true;
+        if (isLast && clean[j + 1]) return true;
         if (j + 1 < parts.length) next[j + 1] = 1;
       }
       at = next;
@@ -166,13 +191,13 @@ export function pathPatternMatcher(pattern: string): (path: string) => boolean {
   };
 }
 
-/** Rules with their compiled matchers, so a file list is matched in one pass. */
+/** Rules with their compiled matchers ({@link pathPatternMatcher}), so a file list is matched in one pass. */
 export interface CompiledCodeowners {
-  rules: Array<CodeownersRule & { regex: RegExp }>;
+  rules: Array<CodeownersRule & { matches: (path: string) => boolean }>;
 }
 
 export function compileCodeowners(rules: CodeownersRule[]): CompiledCodeowners {
-  return { rules: rules.map((rule) => ({ ...rule, regex: pathPatternToRegExp(rule.pattern) })) };
+  return { rules: rules.map((rule) => ({ ...rule, matches: pathPatternMatcher(rule.pattern) })) };
 }
 
 /**
@@ -184,7 +209,7 @@ export function ownersForPath(compiled: CompiledCodeowners, filePath: string): s
   const normalized = filePath.replace(/^\.?\//, '');
   for (let i = compiled.rules.length - 1; i >= 0; i--) {
     const rule = compiled.rules[i]!;
-    if (rule.regex.test(normalized)) return rule.owners;
+    if (rule.matches(normalized)) return rule.owners;
   }
   return [];
 }

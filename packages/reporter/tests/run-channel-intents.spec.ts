@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * Pick a locator and Record here started from outside the page, as Piwi Picker starts them through the editor's hub:
@@ -352,7 +352,8 @@ module.exports = defineConfig({
       breakpoints('ends.spec.cjs', ENDS_SPEC(server.url)),
     ].join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

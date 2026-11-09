@@ -2,10 +2,12 @@ import { h } from 'vue';
 import { UIcon } from '#components';
 import type { Column } from '@tanstack/vue-table';
 import type { CommitListItem } from '~~/types/api';
+import type { BrowserConfig } from '#shared/types';
 import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDuration } from 'date-fns';
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
 import { foldText } from '#shared/utils/fold-text';
+import { passRatePercent } from '#shared/utils/pass-rate';
 import { activeLocalePrefs } from './locale-format';
 import { statusPalette, statusPaletteKey } from './status-palette';
 
@@ -164,9 +166,12 @@ export function prettyDateFormat(
   return formatAbsolute(date, { locale: prefs.locale, timeZone: prefs.timeZone, dateOnly: options.dateOnly });
 }
 
+/** How long ago `date` was ("5 minutes ago"), or `'N/A'` for empty or invalid input. */
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {
   if (!date) return 'N/A';
-  return formatDistanceToNow(new Date(date), { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return 'N/A';
+  return formatDistanceToNow(value, { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
 }
 
 /** CI time a flaky test wasted, in minutes: seconds under a minute, so a small cost never reads as zero. */
@@ -234,7 +239,17 @@ export function reportIcon(type: string): string {
 }
 
 /**
- * Map a browser project name to a recognizable icon.
+ * The name a browser's icon and color are picked from: its channel (`chrome`, `msedge`), else its engine
+ * (`chromium`, `firefox`, `webkit`), else its Playwright project name when neither is recorded.
+ */
+export function browserIconName(
+  browser: Pick<BrowserConfig, 'projectName' | 'browserName' | 'channel'> | null | undefined,
+): string | null {
+  return browser?.channel || browser?.browserName || browser?.projectName || null;
+}
+
+/**
+ * Map a browser name to a recognizable icon.
  */
 export function getBrowserIcon(browserName?: string | null): string {
   if (!browserName) return 'i-lucide-globe';
@@ -258,7 +273,8 @@ export function getBrowserHexColor(browserName?: string | null): string {
 
 /**
  * Badge color for a test or run status, on the same hues as the test outcome
- * palette (`status-palette.ts`): timed-out and interrupted read as failed.
+ * palette (`status-palette.ts`): timed-out reads as failed, interrupted as
+ * neutral.
  */
 export function getStatusColor(status: string): BadgeColor {
   switch (statusPaletteKey(status)) {
@@ -292,8 +308,9 @@ export function getStatusIcon(status: string): string {
       return 'i-lucide-check-circle-2';
     case 'failed':
     case 'timedout':
-    case 'interrupted':
       return 'i-lucide-x-circle';
+    case 'interrupted':
+      return 'i-lucide-circle-pause';
     case 'flaky':
       return 'i-lucide-shuffle';
     case 'didnotrun':
@@ -330,14 +347,14 @@ export function formatStatusLabel(status: string): string {
   return status;
 }
 
-/** Status label for one execution: a pass that needed a retry reads "passed on retry". */
-export function formatExecutionStatus(status: string, retries?: number | null): string {
-  return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
+/** Status label for one execution: a pass after a failed attempt (`flaky`, its verdict) reads "passed on retry". */
+export function formatExecutionStatus(status: string, flaky?: boolean | null): string {
+  return statusPaletteKey(status, flaky) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
 /** The status chip's label: the execution's status in sentence case ("Passed on retry", "Didn't run"). */
-export function statusChipLabel(status: string, retries?: number | null): string {
-  const label = formatExecutionStatus(status, retries);
+export function statusChipLabel(status: string, flaky?: boolean | null): string {
+  const label = formatExecutionStatus(status, flaky);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -367,6 +384,8 @@ export function formatDidNotRunReason(reason?: string | null): string {
   switch (reason) {
     case 'previous-failure':
       return 'Blocked by an earlier failure';
+    case 'dependency-failure':
+      return 'Blocked by a failed project dependency';
     case 'global-timeout':
       return 'Global timeout reached';
     case 'max-failures':
@@ -551,18 +570,6 @@ export function getTraceViewerUrl(filePath: string, baseURL: string = '/', stati
   const filePrefix = staticAsset ? '' : 'api/files/';
   const traceUrl = `${base}/${filePrefix}${getFileApiPath(filePath)}`;
   return `${base}/trace-viewer/?trace=${encodeURIComponent(traceUrl)}`;
-}
-
-/**
- * Extract a human-readable message from an unknown error, unwrapping the
- * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws.
- */
-export function errorMessage(err: unknown, fallback = 'Unknown error'): string {
-  if (err && typeof err === 'object') {
-    const e = err as { data?: { message?: string }; message?: string };
-    return e.data?.message ?? e.message ?? fallback;
-  }
-  return fallback;
 }
 
 /**
@@ -849,18 +856,12 @@ export function renderAnsi(text: string, { onDark = false }: { onDark?: boolean 
   return parts.join('');
 }
 
-export function copyPreview(text: string | null | undefined, max = 120): string {
-  if (!text) return '';
-  const singleLine = text.replace(/\n/g, ' · ');
-  return singleLine.length <= max ? singleLine : singleLine.slice(0, max) + '…';
-}
-
 /** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites (`flaky` is registered in nuxt.config.ts). */
 export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info' | 'flaky';
 
-/** Pass rate (0–100) for a single run, guarding against divide-by-zero. */
-export function passRate(run: { passedTests: number; totalTests: number }): number {
-  return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
+/** A run's pass rate in whole percent (`passRatePercent`): null when none of its tests passed or failed. */
+export function runPassRate(run: { passedTests: number; failedTests: number }): number | null {
+  return passRatePercent({ passed: run.passedTests, failed: run.failedTests });
 }
 
 /** Badge color for an HTTP method (network request rows). */

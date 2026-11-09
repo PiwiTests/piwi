@@ -1,17 +1,18 @@
+import { isVisibleRun } from '#shared/run-eligibility';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
-import { holdsProjectPermission, requireProjectPermission } from '../../../utils/project-access';
+import { holdsProjectPermission, requireProjectPermission, requireRouteId } from '../../../utils/project-access';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } from '@piwitests/core/gate';
 import { parseTagFilter } from '#shared/utils/tag-filter';
+import { attemptKey } from '#shared/utils/test-counts';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { readChangeCoverage } from '../../../utils/scm/change-coverage';
-import { patchCoverageWarning } from '#shared/patch-coverage';
-import { runFindingsNovelty } from '#shared/handlers/resource-findings';
-import { isLeak } from '#shared/resource-fingerprint.mjs';
+import { patchCoverageWarning, uncoveredChangesWarning } from '#shared/patch-coverage';
+import { runLeakFacts } from '#shared/handlers/resource-findings';
 import { readRunIncident } from '#shared/run-incident';
 import {
   GATE_CLIENT_HEADER,
@@ -19,13 +20,14 @@ import {
   postGateCommitStatus,
   recordGateEvaluation,
 } from '../../../utils/gate-evaluations';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report is a violation. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch). A leak rule on a run that sent no resource report, or of a project that declined the `resources` capability, is a violation: its leaks are not measured. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -71,13 +73,12 @@ function optionalCount(value: unknown): number | undefined {
 }
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
+  const id = requireRouteId(event, 'id', 'test run ID');
 
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const db = await getDatabase();
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
+  if (!run || !isVisibleRun(run, user.id)) throw apiError({ statusCode: 404, message: 'Test run not found' });
 
   await requireProjectPermission(event, run.projectId);
 
@@ -123,6 +124,7 @@ export default eventHandler(async (event) => {
     .select({
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       tags: testRunsCases.tags,
@@ -138,16 +140,14 @@ export default eventHandler(async (event) => {
   // attempt passed, so a flaky-but-recovered test does not trip a required tag
   // — `maxNewFlaky` is the rule for that, and conflating the two would make
   // `requireTags` impossible to satisfy on any suite with retries enabled. Each
-  // `--repeat-each` repetition retries on its own: a failed repetition stays
-  // failed whatever the others did.
-  const repetitionKey = (row: { testCaseId: number; repeatEachIndex: number }) =>
-    `${row.testCaseId}\x00${row.repeatEachIndex}`;
+  // Playwright project and each `--repeat-each` repetition retries on its own
+  // (`attemptKey`): a failure in one stays failed whatever the others did.
   const passedRepetitions = new Set<string>();
   for (const row of caseRows) {
-    if (row.status === 'passed') passedRepetitions.add(repetitionKey(row));
+    if (row.status === 'passed') passedRepetitions.add(attemptKey(row));
   }
   const failedForGood = (row: (typeof caseRows)[number]) =>
-    FAIL_STATUSES.includes(row.status) && !passedRepetitions.has(repetitionKey(row));
+    FAIL_STATUSES.includes(row.status) && !passedRepetitions.has(attemptKey(row));
 
   // A quarantined test still ran and still reported — it is only excluded from
   // the verdict. Counting it would defeat the point; hiding that it failed
@@ -228,28 +228,12 @@ export default eventHandler(async (event) => {
     .from(failureClusters)
     .where(and(eq(failureClusters.firstSeenRunId, id), eq(failureClusters.projectId, run.projectId)));
 
-  const siteUrl = (process.env.PIWI_SITE_URL || '').replace(/\/$/, '');
-
-  let resourceFacts: GateFacts['resources'];
-  if (policy.maxLeaks != null || policy.maxNewLeaks != null) {
-    const novelty = await runFindingsNovelty(db, id);
-    const leaks = (novelty?.findings ?? []).filter((f) => isLeak(f.finding));
-    const toLeak = (f: (typeof leaks)[number]) => ({
-      where: f.finding.where,
-      site: f.finding.site ?? null,
-      tests: f.finding.tests,
-    });
-    resourceFacts = {
-      reported: novelty !== null,
-      leaks: leaks.map(toLeak),
-      newLeaks: leaks.filter((f) => f.isNew).map(toLeak),
-      baseBranch: novelty?.baseBranch ?? null,
-    };
-  }
+  const resourceFacts: GateFacts['resources'] =
+    policy.maxLeaks != null || policy.maxNewLeaks != null ? await runLeakFacts(db, id) : undefined;
 
   const facts: GateFacts = {
     runId: id,
-    runUrl: siteUrl ? `${siteUrl}/test-runs/${id}` : `/test-runs/${id}`,
+    runUrl: publicRunUrl(id),
     projectName: project?.label || project?.name || 'unknown',
     status: run.status,
     totalTests: run.totalTests,
@@ -285,10 +269,12 @@ export default eventHandler(async (event) => {
       warnings.push('Uncovered changes could not be counted: this run has no source control diff — warn-only.');
     } else {
       if (maxUncoveredChanges != null && coverage.uncoveredFiles > maxUncoveredChanges) {
-        const n = coverage.uncoveredFiles;
         warnings.push(
-          `${n} uncovered ${n === 1 ? 'change' : 'changes'} (threshold ${maxUncoveredChanges}): ` +
-            `changed ${n === 1 ? 'file' : 'files'} no test reached — warn-only.`,
+          uncoveredChangesWarning(
+            coverage.files.filter((f) => f.reach === 'unreached').map((f) => f.filePath),
+            coverage.uncoveredFiles,
+            maxUncoveredChanges,
+          ),
         );
       }
       if (minPatchCoverage != null) {
@@ -317,6 +303,7 @@ export default eventHandler(async (event) => {
       runMetadata: run.metadata,
       policy: { ...policy, maxUncoveredChanges, minPatchCoverage },
       result,
+      warnings,
       source: gateSource(getRequestHeader(event, GATE_CLIENT_HEADER)),
       clusterIds,
     });

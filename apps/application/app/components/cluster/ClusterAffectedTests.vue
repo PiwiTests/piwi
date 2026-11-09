@@ -9,7 +9,6 @@
  * extract endpoint) and *Quarantine*.
  */
 import type { TestCaseResult } from '~~/types/api';
-import { errorMessage } from '~/utils';
 
 interface AffectedCase {
   testCaseId: number;

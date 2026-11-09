@@ -1,5 +1,6 @@
 ---
 title: Triage a run gone red
+titleTemplate: "Many Playwright tests failed: :title | Piwi"
 description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---
@@ -28,8 +29,10 @@ grouped](/features/failure-clusters#how-failures-are-grouped) explains what the 
 Before treating any cluster as a product bug, check the two flags on the run's failure groups. They come
 from `get_failure_groups` over MCP or from the REST API; the dashboard doesn't show them.
 
-- **Worker correlated** — two or more of the cluster's failures, all on one worker, in a run that used
-  several: you're looking at a misbehaving worker, not forty broken tests.
+- **Worker correlated** — two or more of the cluster's failures, all on one worker (one lane of one shard,
+  whichever processes Playwright started in it), in a run that used several: you're looking at a misbehaving
+  worker, or state a worker-scoped fixture holds, not forty broken tests. An account picked by `parallelIndex` is
+  shared by that lane in every shard, which the flag doesn't join.
 - **Flaky** — a test in the cluster passed on retry in this run: part of the cluster is noise riding on a
   bad run.
 
@@ -72,7 +75,7 @@ by cluster with the worker correlation included, and `get_test_case_context` pul
 single failure — steps, console, network, SCM diff. No install; the server is part of the dashboard.
 
 **From a script.** The same grouping is available over the REST API if you'd rather post a summary into
-your own channel — see the [API docs](https://piwitests.dev/demo/docs).
+your own channel — see the [API docs](https://piwitests.dev/demo/settings/api).
 
 **Before anyone opens anything.** Subscribe to the `cluster.new` [notification](/features/notifications) event
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,

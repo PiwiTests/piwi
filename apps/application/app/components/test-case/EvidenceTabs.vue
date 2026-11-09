@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
- * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
+ * Locators, Network, Console, Output, State, Performance — each wrapping the evidence captured for
  * an execution. A tab that lists items shows their count as plain text, an
  * empty tab is dimmed and still opens to state why it is empty, and the open
  * tab is marked in neutral tones: the primary color belongs to the page's
@@ -103,6 +103,10 @@ const consoleLogs = computed<{ type: string; text: string; timestamp?: number; l
   () => props.testCase?.consoleLogs ?? [],
 );
 const ariaSnapshot = computed<string | null>(() => props.testCase?.ariaSnapshot ?? null);
+// What the test wrote to stdout and stderr, as the reporter kept it.
+const stdout = computed<string | null>(() => props.testCase?.stdout ?? null);
+const stderr = computed<string | null>(() => props.testCase?.stderr ?? null);
+const hasOutput = computed(() => Boolean(stdout.value || stderr.value));
 const pageState = computed(() => props.testCase?.pageState ?? null);
 const attachments = computed(() => props.testCase?.attachments ?? []);
 const testSourceFrames = computed(() => props.testCase?.testSourceFrames ?? null);
@@ -230,6 +234,7 @@ const tabs = computed<TabDef[]>(() =>
         hasData: consoleLogs.value.length > 0,
         count: consoleLogs.value.length || null,
       },
+      { value: 'output', label: 'Output', icon: 'i-lucide-square-terminal', hasData: hasOutput.value, count: null },
       { value: 'state', label: 'State', icon: 'i-lucide-database', hasData: stateHasData.value, count: null },
       {
         value: 'performance',
@@ -242,9 +247,9 @@ const tabs = computed<TabDef[]>(() =>
   ).filter(
     (tab) =>
       tabShown(tab.value) &&
-      // Locators and Attempts only exist when there is something to list: a
-      // single attempt has nothing to compare.
-      ((tab.value !== 'locators' && tab.value !== 'attempts') || tab.hasData),
+      // Locators, Attempts and Output only exist when there is something to
+      // show: a single attempt has nothing to compare.
+      ((tab.value !== 'locators' && tab.value !== 'attempts' && tab.value !== 'output') || tab.hasData),
   ),
 );
 
@@ -274,9 +279,8 @@ const hasNoEvidence = computed(
 const showFixturesFooter = computed(() => fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
-  // A pass that needed a retry leads with what differed between its attempts.
-  const retries = Number(props.testCase?.retries ?? 0);
-  if (status.value === 'passed' && retries > 0 && hasMultipleAttempts.value) return 'attempts';
+  // A pass after a failed attempt leads with what differed between its attempts.
+  if (status.value === 'passed' && props.testCase?.passedAfterFailure && hasMultipleAttempts.value) return 'attempts';
   // A passing execution has no failure to lead with — open on the Timeline.
   if (!hasError.value) return 'timeline';
 
@@ -357,9 +361,15 @@ const videos = computed(() =>
       name: att.name || att.path.split('/').pop() || att.path,
     })),
 );
+// Only a failed execution has a page at the failure, or a failing action to diff the page across.
+const executionFailed = computed(() => status.value !== 'passed' && status.value !== 'skipped');
 const screenExtraViews = computed(() => [
   { value: 'visual-diff', label: 'Visual diff', shown: visualDiffAvailable.value },
-  { value: 'page-diff', label: 'Page diff', shown: pageDiffAvailable.value || traceDiffAvailable.value },
+  {
+    value: 'page-diff',
+    label: 'Page diff',
+    shown: pageDiffAvailable.value || (executionFailed.value && traceDiffAvailable.value),
+  },
   { value: 'video', label: 'Video', shown: videos.value.length > 0 },
 ]);
 
@@ -620,6 +630,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             :aria-derived="ariaDerived"
             :extra-views="screenExtraViews"
             :error="testCase?.error ?? null"
+            :failed="executionFailed"
             :subject="imageSubject"
           >
             <template #visual-diff>
@@ -635,6 +646,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             <template #page-diff>
               <div class="space-y-4">
                 <TracePageDiffCard
+                  v-if="executionFailed"
                   embedded
                   :test-runs-case-id="testRunsCaseId"
                   @available="traceDiffAvailable = $event"
@@ -727,6 +739,11 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         </SectionCard>
       </div>
 
+      <!-- ── Output ───────────────────────────────────────────────── -->
+      <div v-else-if="activeTab === 'output'" class="scroll-mt-4" data-tour="evidence-output">
+        <TestOutputCard :stdout="stdout" :stderr="stderr" />
+      </div>
+
       <!-- ── State ────────────────────────────────────────────────── -->
       <div v-else-if="activeTab === 'state'" class="space-y-4" data-tour="evidence-state">
         <div ref="pageStateWrap" class="scroll-mt-4">
@@ -777,7 +794,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <p class="leading-relaxed">
         Network, console, state and performance are not captured for this project.
         <template v-if="canDecide">
-          <NuxtLink to="/setup" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
+          <NuxtLink to="/settings/connect" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
           <span aria-hidden="true"> · </span>
           <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('decline-fixtures', 'project')">
             Not for this project

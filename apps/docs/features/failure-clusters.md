@@ -16,14 +16,14 @@ into a **failure inbox**: the problems you still owe a decision.
 Failed executions sharing an **error fingerprint** join one cluster, so twenty stack traces read as
 *"20 failures, 3 root causes"*. Clustering is always on.
 
-- The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
-  emails, an assertion's *expected* and *received* values, and dynamic locator options such as the
-  `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
-  role) still tells different failures apart.
-- It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
-  cause reached from several spec files stays one cluster.
+- The fingerprint **masks volatile fragments** of the error ([the list](/guide/concepts#error-fingerprint-failure-cluster)):
+  numbers, ids, timestamps, machine paths, an assertion's *expected* and *received* values, a table row's
+  `{ name: '…' }`. The locator target itself (the test id, the role) still tells different failures apart.
+- It is **call-site agnostic** when the error says what failed: one root cause reached from several spec files
+  stays one cluster. A **generic** error (a bare `toBe`, a test timeout, a `TypeError`) is told apart by the file
+  it failed in.
 - The fingerprint is computed from the error the cluster was created from, so an improved normalization
-  regroups clusters in place and keeps their triage, notes and diagnoses.
+  regroups clusters in place and keeps their triage, notes, diagnoses and merges.
 - A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
   `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
   app is broken" versus "worker 3 is misbehaving".
@@ -57,7 +57,7 @@ The inbox has queues, each with a live count, shareable in the URL as `?queue=`.
 | **All open** | Every open, non-snoozed cluster. |
 | **New** | Clusters first seen, or seen again, since your previous browser session (kept per browser). |
 | **Mine** | Clusters whose assignee, or `piwi:owner` annotation, is you. |
-| **Needs ticket** | Untracked default-branch clusters older than 2 days, by default; see [issue tracking](./issue-tracking). |
+| **Needs ticket** | Untracked default-branch clusters older than the binding's age (2 days by default); see [issue tracking](./issue-tracking). |
 | **Regressions** | Clusters that regressed on the default branch and are still failing there. |
 | **Fix didn't hold** | Clusters whose fix landed then regressed. |
 | **Quarantine ready** | Quarantined clusters whose tests stopped failing. |
@@ -77,7 +77,7 @@ to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracki
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
 cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. An **assignee** overrides it, and the **Mine** queue
-matches either against the signed-in user (by name or email).
+matches either against the signed-in user (by name, username or email).
 
 ## The cluster page
 
@@ -106,11 +106,12 @@ the rest fold into [**More ways to fix**](./fix-plans#more-ways-to-fix).
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
 *still failing*, *not seen for N runs*, *fixed and verified, still open*, *fixed, but the diagnosed patch still
 applies*, *stopped failing*, *regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests
-quarantined*. When an open cluster stopped failing, or its ticket is Done and the latest finished run no longer fails
-it, the page offers **one action**, *Mark resolved*, which a fix whose patch still applies keeps in the **Next** menu;
-a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. Beside it, **Triage** sets the status (open /
-resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. A status change keeps the
-triage note and the lines Piwi added.
+quarantined*. When an open cluster stopped failing, or its ticket is Done and the failure
+[stopped](/guide/concepts#cluster-state), the page offers **one action**, *Mark resolved*, which a fix whose patch
+still applies keeps in the **Next** menu; a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*.
+Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and
+[snoozes](#snoozing) the cluster. A status change keeps the triage note and the lines Piwi added, a note edit the
+status.
 
 ### Occurrences over time
 
@@ -128,26 +129,26 @@ long the cluster was open. Three verdicts:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering them all can close
-the cluster, so `--grep` over exactly the affected tests is enough.
+**A fix needs every affected test to pass** in the Playwright projects it last failed in
+([still configured](/guide/concepts#cluster-state)) that the run ran (a `--grep`
+over the affected tests is enough) in a run that could carry one: started after the last failing run, at another commit
+(a pass at the failing commit, such as a CI retry, is flake evidence, and the state line says so), on the branch the
+cluster last failed on or the default branch, so a green pull-request branch leaves a cluster failing on `main` open.
 
-**The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
-proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
-which is flake evidence, not a fix*. **The branch must match**: only a run on the branch the cluster last failed on, or
-on the default branch, records a fix, so a green pull-request or heal branch leaves a cluster that fails on `main`
-open.
+**A regression needs a run started after the fix landed**, failing on the fix's branch or the default branch.
 
 The verdict moves the status only on strong evidence: *Diagnosis verified* sets an **open** cluster **resolved**, and
-*Regressed* sets a **resolved** one back to **open**, each adding a line to the triage note. *Stopped failing* alone
-changes nothing, and an *ignored* cluster is never touched. The [notifications](./notifications) `cluster.fixed` and
-`cluster.regressed` follow the verdict, and with [pull-request feedback](./pr-feedback) on, the comment gains a
-**Fixed by this change** section, even with *only comment on failures* set.
+*Regressed* sets a **resolved** one back to **open**, as does a new failure after a person resolved a cluster with no fix
+on record; each adds a line to the triage note. *Stopped failing* alone changes nothing, and an *ignored* cluster is
+never touched. The [notifications](./notifications) `cluster.fixed` and `cluster.regressed` follow the verdict, and
+with [pull-request feedback](./pr-feedback) on, the comment gains a **Fixed by this change** section, even with *only
+comment on failures* set.
 
 ## Snoozing
 
 **Snoozing** hides a cluster from every inbox queue without touching its status. **1 day** and
-**1 week** return it then; **Until it recurs** returns it to the **New** queue, with a **snoozed,
-back** badge, when a new run fails it again.
+**1 week** return it then; **Until it recurs** returns it to the **New** queue when a new run fails
+it again, with a **snoozed, back** badge until your next visit.
 
 ## From an AI agent
 

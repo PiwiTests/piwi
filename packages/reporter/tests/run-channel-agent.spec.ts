@@ -15,7 +15,7 @@ import {
   type RunToHub,
   type SnapshotAnswer,
 } from '@piwitests/core/run-channel';
-import { startServer, type FakeServer } from './_helpers.js';
+import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * What an agent asks of a stopped page, in a real Playwright run through the built package: a fake editor service on
@@ -255,7 +255,8 @@ exports.expect = expect;
     PIWI_ORIGIN_REF: REF,
     PIWI_PAUSE_AT: `tests/agent.spec.cjs:${line}`,
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_EDITOR_SEND']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_EDITOR_SEND']) delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

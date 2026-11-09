@@ -15,17 +15,16 @@
  * only. `?branch=` reads another branch than the default one. On a project
  * that records no coverage the page says so in one sentence.
  *
- * Without `?file=`, the page is the project's combined coverage at a commit
- * (`?commit=`, else the one whose coverage arrived last on `?branch=`),
- * broken down by `?folder=` (`GET /api/projects/:id/coverage-summary`). The file view adds,
- * at the commit, which suites ran the file's lines; with `?marks=suites`, or
- * for a file no test recorded, each line is marked by the kinds of suite that
- * ran it, read from the commit's combined coverage alone. The previous and
- * next range of lines not run (no test, or no suite, ran them) are one click
- * away. Every link
- * between the overview and a file keeps the pinned commit, the branch and
- * the area. The notes on the commit's suites (one carried, one incomplete,
- * only the commit's totals kept) sit above the file.
+ * The page adds, at the commit's combined coverage (`?commit=`, else the one
+ * whose coverage arrived last on `?branch=`; `GET /api/projects/:id/coverage-summary`),
+ * which suites ran the file's lines; with `?marks=suites`, or for a file no
+ * test recorded, each line is marked by the kinds of suite that ran it, read
+ * from the commit's combined coverage alone. The previous and next range of
+ * lines not run (no test, or no suite, ran them) are one click away. Every
+ * link back to the overview, the Coverage tab's Code view, keeps the pinned
+ * commit, the branch and the area; the address without `?file=` redirects
+ * there. The notes on the commit's suites (one carried, one incomplete, only
+ * the commit's totals kept) sit above the file.
  */
 import { countLines, decodeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { coveragePercent } from '#shared/coverage-combine';
@@ -45,6 +44,7 @@ import {
   testsOnLines,
 } from '~/utils/file-coverage';
 import { lineRangesText } from '~/utils/suspect-lines';
+import { coverageTabLink } from '~/utils/coverage-tab';
 import {
   coverageLink,
   enclosingFunction,
@@ -77,40 +77,44 @@ const fileName = computed(() => file.value.split('/').pop() || 'Coverage');
 const commit = computed(() =>
   typeof route.query.commit === 'string' && route.query.commit ? route.query.commit : undefined,
 );
-const folder = computed(() => (typeof route.query.folder === 'string' ? route.query.folder : undefined));
 const area = computed(() => (typeof route.query.area === 'string' && route.query.area ? route.query.area : undefined));
 
-// The combined coverage at the commit: the page's subject without a file, the suites of each line with one.
-const {
-  data: summary,
-  status: summaryStatus,
-  error: summaryError,
-} = useFetch<CoverageSummary>(`/api/projects/${projectId}/coverage-summary`, {
-  server: false,
-  lazy: true,
-  query: computed(() => ({
-    commit: commit.value,
-    branch: branch.value,
-    folder: file.value ? undefined : folder.value,
-    file: file.value || undefined,
-    area: file.value ? undefined : area.value,
-  })),
+// The overview is the Coverage tab's Code view: the address without a file leads there, its query kept.
+function codeView() {
+  const query = Object.fromEntries(
+    Object.entries(route.query).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+  return coverageTabLink(projectId, 'code', query);
+}
+if (!file.value) await navigateTo(codeView(), { replace: true, redirectCode: 301 });
+watch(file, (path) => {
+  if (!path) void navigateTo(codeView(), { replace: true });
 });
+
+// The combined coverage at the commit: the suites of each line of the file.
+const { data: summary, status: summaryStatus } = useFetch<CoverageSummary>(
+  `/api/projects/${projectId}/coverage-summary`,
+  {
+    server: false,
+    lazy: true,
+    query: computed(() => ({
+      commit: commit.value,
+      branch: branch.value,
+      file: file.value || undefined,
+    })),
+  },
+);
 const summaryLoading = computed(() => summaryStatus.value === 'idle' || summaryStatus.value === 'pending');
-/** The overview's first read: a later one, for another folder or area, keeps the overview and its tree in place. */
-const summaryFirstLoading = computed(() => summaryLoading.value && !summary.value);
 /** What the links back to the overview keep: the commit when the page pins one, the branch and the area. */
 const linkContext = computed<CoverageLinkContext>(() => ({
   commit: commit.value ? (summary.value?.commit ?? commit.value) : null,
   branch: branch.value,
   area: area.value,
 }));
-/** No combined coverage at all: the summary answered 404. */
-const noCombined = computed(() => summaryError.value?.statusCode === 404);
 
 useHead(
   computed(() => ({
-    title: `${file.value ? `Coverage of ${fileName.value}` : 'Coverage'} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
+    title: `Coverage of ${fileName.value} — ${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard`,
   })),
 );
 
@@ -369,8 +373,8 @@ const nearestSentence = computed(() => {
               { label: 'Home', icon: 'i-lucide-house', to: '/' },
               { label: 'Projects', to: '/projects' },
               { label: project?.label || project?.name || 'Project', to: `/projects/${projectId}` },
-              file ? { label: 'Coverage', to: coverageLink(projectId, linkContext) } : { label: 'Coverage' },
-              ...(file ? [{ label: fileName }] : []),
+              { label: 'Coverage', to: coverageLink(projectId, linkContext) },
+              { label: fileName },
             ]"
           />
         </template>
@@ -378,16 +382,7 @@ const nearestSentence = computed(() => {
     </template>
 
     <template #body>
-      <div v-if="!file" class="space-y-4 max-sm:px-4">
-        <LoadingState v-if="summaryFirstLoading" text="Combining the suites’ coverage…" />
-        <EmptyState
-          v-else-if="noCombined"
-          text="No combined coverage yet: upload a suite’s coverage report with piwi coverage upload, or record run coverage with the reporter."
-        />
-        <ErrorState v-else-if="summaryError || !summary" text="The combined coverage could not be read." />
-        <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" :aria-busy="summaryLoading" />
-      </div>
-      <div v-else class="space-y-4 max-sm:px-4" data-shot="coverage-file">
+      <div class="space-y-4 max-sm:px-4" data-shot="coverage-file">
         <LoadingState v-if="loading" text="Reading the file’s coverage…" />
         <EmptyState v-else-if="!coverageActive && !combinedFile" text="This project records no coverage." />
         <ErrorState v-else-if="error && !combinedFile" text="The coverage of this file could not be read." />

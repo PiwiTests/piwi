@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Per-detector precision across projects',
     description:
-      "For every visible project, each detector's precision from triage verdicts and whether it has muted itself. Drives the admin stats view of the scenario-gap learning loop.",
+      "For every visible project, each detector's precision from triage verdicts, whether it has muted itself, and how many of the gaps it raised on a pull request were acted on there. Drives the admin stats view of the scenario-gap learning loop.",
     parameters: [],
     'x-required-permission': 'project:read',
   },

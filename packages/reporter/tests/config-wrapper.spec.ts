@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { wrapConfig, setPlaywrightVersionReader } from '../src/public/config-wrapper.js';
+import { wrapConfig } from '../src/public/config-wrapper.js';
 import { PIWI_DEFAULTED_CAPTURE_ENV } from '../src/internal/config/env.js';
 
 describe('wrapConfig', () => {
@@ -67,6 +67,14 @@ describe('wrapConfig', () => {
     expect((config.globalSetup as string[])[2]).toBe('./tests/bootstrap');
   });
 
+  it('chains its global setup and adds its reporter once in a config wrapped twice', () => {
+    const once = wrapConfig<PlaywrightTestConfig>({ globalSetup: './tests/globalSetup', reporter: 'list' });
+    const twice = wrapConfig<PlaywrightTestConfig>(once);
+    expect(twice.globalSetup).toEqual(once.globalSetup);
+    expect((twice.globalSetup as string[]).length).toBe(2);
+    expect(twice.reporter).toEqual(once.reporter);
+  });
+
   it('injects piwi reporter when no reporter is set', () => {
     const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests' });
     expect(Array.isArray(config.reporter)).toBeTruthy();
@@ -96,6 +104,11 @@ describe('wrapConfig', () => {
     expect((config.reporter as any[]).length).toBe(1);
   });
 
+  it("adds Piwi's reporter beside a reporter whose path holds 'piwi'", () => {
+    const config = wrapConfig<PlaywrightTestConfig>({ reporter: [['./reporters/piwi-slack.ts']] });
+    expect((config.reporter as any[]).map((r) => r[0])).toEqual(['./reporters/piwi-slack.ts', '@piwitests/reporter']);
+  });
+
   it('passes piwiOptions to the injected reporter entry', () => {
     const config = wrapConfig<PlaywrightTestConfig>(
       { testDir: './tests' },
@@ -108,13 +121,8 @@ describe('wrapConfig', () => {
   });
 });
 
-// A Playwright older than 1.63 rejects the `trace.snapshots` object, so the
-// default stays the plain string there; pin the version so these tests don't
-// depend on whichever Playwright the workspace has installed.
-describe('wrapConfig capture defaults (Playwright < 1.63)', () => {
-  beforeEach(() => setPlaywrightVersionReader(() => '1.61.1'));
+describe('wrapConfig capture defaults', () => {
   afterEach(() => {
-    setPlaywrightVersionReader(null);
     delete process.env.PIWI_DEFAULT_CAPTURE;
     delete process.env[PIWI_DEFAULTED_CAPTURE_ENV];
   });
@@ -122,12 +130,11 @@ describe('wrapConfig capture defaults (Playwright < 1.63)', () => {
   it('defaults screenshot and trace on the top-level use when both are unset', () => {
     const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests', use: { headless: true } });
     expect(config.use?.screenshot).toBe('only-on-failure');
+    // The plain mode string: Playwright records DOM snapshots and no ARIA snapshots.
     expect(config.use?.trace).toBe('retain-on-failure');
     // The original use option is preserved.
     expect(config.use?.headless).toBe(true);
-    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe(
-      "screenshot: 'only-on-failure', trace: 'retain-on-failure'",
-    );
+    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe("screenshot: 'only-on-failure', trace: 'retain-on-failure'");
   });
 
   it('defaults trace but keeps an explicit screenshot (only fills the unset one)', () => {
@@ -142,6 +149,14 @@ describe('wrapConfig capture defaults (Playwright < 1.63)', () => {
     expect(config.use?.screenshot).toBe('off');
     expect(config.use?.trace).toBe('off');
     expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBeUndefined();
+  });
+
+  it('keeps a trace that records ARIA snapshots as the config sets it', () => {
+    const trace = { mode: 'retain-on-failure', snapshots: { dom: true, aria: true } } as const;
+    const config = wrapConfig<PlaywrightTestConfig>({ use: { trace } });
+    expect(config.use?.trace).toBe(trace);
+    expect(config.use?.screenshot).toBe('only-on-failure');
+    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe("screenshot: 'only-on-failure'");
   });
 
   it('applies defaults even when the config has no use block', () => {
@@ -176,56 +191,5 @@ describe('wrapConfig capture defaults (Playwright < 1.63)', () => {
     // An explicit option overrides the env var.
     const on = wrapConfig<PlaywrightTestConfig>({ use: { headless: true } }, { defaultCapture: true });
     expect(on.use?.trace).toBe('retain-on-failure');
-  });
-});
-
-describe('wrapConfig capture defaults (Playwright 1.63+)', () => {
-  afterEach(() => {
-    setPlaywrightVersionReader(null);
-    delete process.env[PIWI_DEFAULTED_CAPTURE_ENV];
-  });
-
-  it('defaults trace to the snapshots object with dom + aria when unset', () => {
-    setPlaywrightVersionReader(() => '1.63.0');
-    const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests', use: { headless: true } });
-    expect(config.use?.screenshot).toBe('only-on-failure');
-    const trace = config.use?.trace as { mode: string; snapshots: Record<string, unknown> };
-    expect(trace).toEqual({
-      mode: 'retain-on-failure',
-      snapshots: { dom: true, aria: true },
-    });
-    // Screen snapshots stay opt-in — never defaulted on.
-    expect(trace.snapshots.screen).toBeUndefined();
-    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe(
-      "screenshot: 'only-on-failure', trace: 'retain-on-failure' with dom and aria snapshots",
-    );
-  });
-
-  it('leaves an explicit trace untouched on 1.63', () => {
-    setPlaywrightVersionReader(() => '1.63.0');
-    const config = wrapConfig<PlaywrightTestConfig>({ use: { trace: 'on' } });
-    expect(config.use?.trace).toBe('on');
-    expect(process.env[PIWI_DEFAULTED_CAPTURE_ENV]).toBe("screenshot: 'only-on-failure'");
-  });
-
-  it('keeps the plain string just below the gate (1.62)', () => {
-    setPlaywrightVersionReader(() => '1.62.5');
-    const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests' });
-    expect(config.use?.trace).toBe('retain-on-failure');
-  });
-
-  it('treats an unreadable Playwright version as pre-1.63', () => {
-    setPlaywrightVersionReader(() => undefined);
-    const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests' });
-    expect(config.use?.trace).toBe('retain-on-failure');
-  });
-
-  it('turns aria snapshots on for a later major', () => {
-    setPlaywrightVersionReader(() => '2.0.0');
-    const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests' });
-    expect(config.use?.trace).toEqual({
-      mode: 'retain-on-failure',
-      snapshots: { dom: true, aria: true },
-    });
   });
 });

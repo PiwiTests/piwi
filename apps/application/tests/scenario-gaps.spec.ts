@@ -70,7 +70,7 @@ test.describe('Scenario gaps tab', () => {
   test('lists gaps and opens the feature-graph view', async ({ page, request }) => {
     const id = await gapIdForRoute(request, ROUTE.graph);
     expect(id).not.toBeNull();
-    await page.goto(`/projects/${projectId}?tab=gaps`);
+    await page.goto(`/projects/${projectId}?tab=coverage`);
     await waitForHydration(page);
 
     await expect(page.locator('[data-shot="gaps-panel"]')).toBeVisible();
@@ -80,6 +80,7 @@ test.describe('Scenario gaps tab', () => {
     // Open the graph view from the gap's graph button: the ego picture draws the
     // route in the middle and the reaching test beside it, over the inspector list.
     await gap.getByRole('button', { name: 'View', exact: false }).click();
+    await expect(page).toHaveURL(/[?&]view=map&node=route/);
     const graph = page.locator('[data-shot="feature-graph"]');
     await expect(graph.locator('svg').first()).toBeVisible();
     await expect(graph.locator('[data-shot="node-inspector"]')).toContainText(ROUTE.graph);
@@ -88,7 +89,7 @@ test.describe('Scenario gaps tab', () => {
   test('accepting a gap removes it from the open list', async ({ page, request }) => {
     const id = await gapIdForRoute(request, ROUTE.accept);
     expect(id).not.toBeNull();
-    await page.goto(`/projects/${projectId}?tab=gaps`);
+    await page.goto(`/projects/${projectId}?tab=coverage`);
     await waitForHydration(page);
 
     const gap = page.locator(`[data-shot="gap-${id}"]`);
@@ -100,7 +101,7 @@ test.describe('Scenario gaps tab', () => {
   test('snoozing a gap removes it from the open list', async ({ page, request }) => {
     const id = await gapIdForRoute(request, ROUTE.snooze);
     expect(id).not.toBeNull();
-    await page.goto(`/projects/${projectId}?tab=gaps`);
+    await page.goto(`/projects/${projectId}?tab=coverage`);
     await waitForHydration(page);
 
     const gap = page.locator(`[data-shot="gap-${id}"]`);

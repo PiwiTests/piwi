@@ -7,11 +7,14 @@ import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources }
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import type { LiveRowNote } from '~/utils/live-row-note';
-import { summarizeRunCases } from '#shared/utils/test-counts';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
+import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
+import { compareWorkers } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
-import { buildRetryCommand, retryCaseOf, type RetryCase } from '~/utils/retry-command';
+import { buildRetryCommand, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -39,6 +42,10 @@ const props = defineProps<{
   /** Planned suite size — the "N / total completed" denominator while live, so
    *  it counts toward the whole run, not just the tests seen so far. */
   total?: number | null;
+  /** When the run began, while it waits for its first test: the empty list says what it is doing. */
+  waitingSince?: string | Date | null;
+  /** Whether the page hears the run's events, so no test began that it would show. */
+  hearsRun?: boolean;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
@@ -47,6 +54,8 @@ const props = defineProps<{
   liveWorkers?: Record<string, LiveWorkerState> | null;
   /** What the run's running rows say where Watch would be: it is not shared live, or where its pages show. */
   liveNote?: LiveRowNote | null;
+  /** The live runs the desktop app started that report to this run: each running row of theirs offers Pause and watch. */
+  desktopSessions?: HubSession[] | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -82,15 +91,16 @@ function workerKeyOf(tc: TestCaseResult): string | null {
 }
 
 /**
- * The execution each worker in the live view runs now: its running row that began last. A row of the test before,
- * whose end has not streamed in yet, is not it.
+ * The execution each worker runs now, in the run's live view or in a run the desktop app started: its running row that
+ * began last. A row of the test before, whose end has not streamed in yet, is not it, nor an earlier repetition of the
+ * same test (`--repeat-each`).
  */
 const currentExecutionOf = computed(() => {
   const current = new Map<string, TestCaseResult>();
-  if (!props.liveWorkers) return current;
+  if (!props.liveWorkers && !props.desktopSessions?.length) return current;
   for (const tc of props.testCases) {
     const key = workerKeyOf(tc);
-    if (!key || !props.liveWorkers[key]) continue;
+    if (!key) continue;
     const seen = current.get(key);
     if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
   }
@@ -106,6 +116,14 @@ function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
   const worker = key ? props.liveWorkers?.[key] : null;
   if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
+}
+
+/** The row's worker in a run the desktop app started, when the row is the test that worker runs now. */
+function desktopWorkerOf(tc: TestCaseResult): DesktopRowWorker | null {
+  const key = workerKeyOf(tc);
+  if (!key || !props.desktopSessions?.length) return null;
+  if (currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
+  return desktopRowWorker(props.desktopSessions, tc);
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -186,8 +204,8 @@ function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
   // Passed and passed on retry are disjoint here, like skipped and fixme, so
   // each chip and bar segment lands on exactly the rows it counts.
-  if (filter === 'passed') return tc.status === 'passed' && (tc.retries ?? 0) === 0;
-  if (filter === 'flaky') return tc.status === 'passed' && (tc.retries ?? 0) > 0;
+  if (filter === 'passed') return tc.status === 'passed' && !isFlakyExecution(tc);
+  if (filter === 'flaky') return isFlakyExecution(tc);
   if (filter === 'fixme') return isFixmeSkip(tc);
   if (filter === 'skipped') return tc.status === 'skipped' && !isFixmeSkip(tc);
   return tc.status === filter;
@@ -219,14 +237,15 @@ const { raw: storedGroup, set: setGroup } = useGroupByCookie('run-tests', [
   'lock',
   'none',
 ]);
+// A run red when the page opens shows its tests by cluster, one green then flat, for the whole page view, a tab
+// switch included, whatever fails or retries meanwhile. A saved choice always wins.
+const openedGroup = useViewState<GroupBy>('run-tests:opened-group', () => (failedCount.value > 0 ? 'cluster' : 'none'));
 const groupBy = computed<GroupBy>({
-  // A red run opens on the cluster grouping; a green run has no clusters, so it
-  // opens flat. A saved choice always wins.
   get: () => {
     const stored = storedGroup.value as GroupBy | null;
     // A saved "lock" choice is meaningless on a run with no locks — fall back.
-    if (stored === 'lock' && !hasAnyLocks.value) return failedCount.value > 0 ? 'cluster' : 'none';
-    return stored ?? (failedCount.value > 0 ? 'cluster' : 'none');
+    if (stored === 'lock' && !hasAnyLocks.value) return openedGroup.value;
+    return stored ?? openedGroup.value;
   },
   set: (v) => setGroup(v),
 });
@@ -299,8 +318,6 @@ function sortValue(tc: TestCaseResult, key: SortKey): string | number {
       return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
     case 'duration':
       return tc.duration ?? 0;
-    case 'workerIndex':
-      return tc.workerIndex ?? -1;
     case 'retries':
       return tc.retries ?? 0;
     case 'wastedTimeMs':
@@ -323,6 +340,8 @@ const compareCases = computed<(a: TestCaseResult, b: TestCaseResult) => number>(
       return (a, b) => (compareFileOrder(positionOf(a), positionOf(b)) || runOrder(a, b)) * dir;
     case 'failures':
       return (a, b) => failureFirstCompare(a.status, b.status) || runOrder(a, b);
+    case 'workerIndex':
+      return (a, b) => compareWorkers(a, b) * dir || runOrder(a, b);
     default:
       return (a, b) => {
         const va = sortValue(a, key);
@@ -384,7 +403,14 @@ interface GroupHeaderItem {
   icon?: string;
   triageStatus?: string | null;
   clusterId?: number | null;
-  stats?: { passed: number; failed: number; skipped: number; didnotrun: number; running: number } | null;
+  stats?: {
+    passed: number;
+    failed: number;
+    skipped: number;
+    didnotrun: number;
+    interrupted: number;
+    running: number;
+  } | null;
   filePath?: string | null;
   /** Nesting depth for the File + Describe grouping (0 = file). */
   depth?: number;
@@ -402,7 +428,14 @@ type Row = GroupHeaderItem | TestItem;
 
 function computeStats(cases: TestCaseResult[]) {
   const s = summarizeRunCases(cases);
-  return { passed: s.passed, failed: s.failed, skipped: s.skipped, didnotrun: s.didNotRun, running: s.running };
+  return {
+    passed: s.passed,
+    failed: s.failed,
+    skipped: s.skipped,
+    didnotrun: s.didNotRun,
+    interrupted: s.interrupted,
+    running: s.running,
+  };
 }
 
 /** The remainder buckets (non-failing) shown as their own groups; the quiet
@@ -413,6 +446,7 @@ const REMAINDER_BUCKETS: Array<{ key: string; label: string; match: (tc: TestCas
   { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' && !isFixmeSkip(tc) },
   { key: 'fixme', label: 'Fixme', match: isFixmeSkip },
   { key: 'didnotrun', label: "Didn't run", match: (tc) => tc.status === 'didnotrun' },
+  { key: 'interrupted', label: 'Interrupted', match: (tc) => tc.status === 'interrupted' },
 ];
 
 const rows = computed<Row[]>(() => {
@@ -632,10 +666,18 @@ const selectedRetryCases = computed(() => {
 const selectedTestsLabel = computed(
   () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
+const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
+/** The Playwright projects the selected tests ran in, the ones the command can name. */
+const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
+const selectionCommand = computed(() =>
+  buildRetryCommand(selectedRetryCases.value, {
+    mode: retryMode.value,
+    options: retryOptionsFor(selectedProjects.value),
+  }),
+);
 const { copy: copySelection } = useCopy();
 function copySelectionCommand() {
-  const command = buildRetryCommand(selectedRetryCases.value);
-  if (command) copySelection(command, { toast: 'Retry command copied' });
+  if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
 }
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),
@@ -762,10 +804,12 @@ watch(
     if (!live) userScrolledAway.value = false;
   },
 );
+// While the run is live and the list reads in run order, it follows the newest row, unless the reader scrolled away.
 watch(
   () => rows.value.length,
   () => {
-    if (!props.isLive || userScrolledAway.value) return;
+    if (!props.isLive || userScrolledAway.value || groupBy.value !== 'none') return;
+    if (sortKey.value !== 'run' || sortDir.value !== 'asc') return;
     nextTick(() => scrollerRef.value?.scrollToBottom());
   },
 );
@@ -850,17 +894,21 @@ defineExpose({ scrollToCase });
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
         />
-        <UButton
-          v-else
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-clipboard"
-          :title="buildRetryCommand(selectedRetryCases)"
-          @click="copySelectionCommand"
-        >
-          Copy retry command
-        </UButton>
+        <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-clipboard"
+            :title="selectionCommand"
+            @click="copySelectionCommand"
+          >
+            Copy retry command
+          </UButton>
+          <template #content>
+            <RetryCommandOptions :projects="selectedProjects" />
+          </template>
+        </UPopover>
         <CoverageLossPopover
           v-if="canQuarantine"
           :project-id="projectKey ?? 0"
@@ -997,6 +1045,8 @@ defineExpose({ scrollToCase });
                       liveResourcesOf(item.tc) !== null,
                       liveWorkerOf(item.tc)?.paused?.call.title,
                       liveWorkerOf(item.tc) !== null,
+                      desktopWorkerOf(item.tc)?.worker.stop?.title,
+                      desktopWorkerOf(item.tc) !== null,
                       item.tc.status === 'running' ? liveNote : null,
                       showSuitePath,
                       item.tc.suitePath,
@@ -1032,6 +1082,7 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
                 :live-worker="liveWorkerOf(item.tc)"
+                :desktop-worker="desktopWorkerOf(item.tc)"
                 :live-note="item.tc.status === 'running' ? liveNote : null"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
@@ -1054,6 +1105,12 @@ defineExpose({ scrollToCase });
         </template>
       </ClientOnly>
     </div>
+
+    <RunBeforeFirstTest
+      v-else-if="testCases.length === 0 && waitingSince"
+      :since="waitingSince"
+      :run="{ initializing: !isLive, heard: hearsRun === true, total }"
+    />
 
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 

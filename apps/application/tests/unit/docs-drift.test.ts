@@ -27,7 +27,18 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
+// CI generates them before the unit tests, so there a missing page fails.
 const GENERATED_PAGES = new Set<string>(Object.keys(GENERATED_DOCS_PAGES));
+
+/** Whether the generated page at `path` is missing, which fails under CI. */
+function generatedPageMissing(path: string | undefined): boolean {
+  if (path && existsSync(path)) return false;
+  expect(
+    process.env.CI,
+    `${path ?? 'a generated docs page'} is missing: run npm run docs:gen in apps/docs`,
+  ).toBeFalsy();
+  return true;
+}
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
 // A fence may be indented, inside a list item.
@@ -129,7 +140,7 @@ describe('documented counts', () => {
       ).toContain(module);
     }
     const page = join(repoRoot, 'apps/docs/reference/mcp-tools.md');
-    if (!existsSync(page)) return;
+    if (generatedPageMissing(page)) return;
     const contents = readFileSync(page, 'utf8');
     for (const { name } of MCP_TOOL_DEFS) {
       expect(contents, `apps/docs/reference/mcp-tools.md has no entry for \`${name}\``).toContain(`id="${name}"`);
@@ -188,7 +199,7 @@ describe('docs pages the app deep-links into', () => {
   test.each(targets)('%s resolves to a page and heading', (target) => {
     const [page, anchor] = target.split('#');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);
-    if (GENERATED_PAGES.has(page!) && !existsSync(path)) return;
+    if (GENERATED_PAGES.has(page!) && generatedPageMissing(path)) return;
 
     expect(existsSync(path), `no apps/docs/${page}.md`).toBe(true);
     if (!anchor) return;
@@ -351,7 +362,7 @@ describe('no endpoint paths in prose', () => {
       .filter((path) => !ALLOWED.has(path) && isPiwiEndpoint(path));
     expect(
       paths,
-      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
+      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/settings/api) instead (apps/docs/AGENTS.md, "The API reference")`,
     ).toEqual([]);
   });
 });
@@ -428,6 +439,15 @@ describe('hand-written reference pages match the code', () => {
     for (const key of searchKeys) {
       expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
     }
+    // The desktop app's Ctrl shortcuts, `DESKTOP_SHORTCUTS`.
+    const desktopKeys = [
+      ...read('apps/application/app/utils/desktop-shortcuts.ts').matchAll(/^ {2}'?([^':\s]+)'?: '\w+',$/gm),
+    ].map((m) => m[1]!.toUpperCase());
+    expect(desktopKeys.length, 'no keys found in DESKTOP_SHORTCUTS').toBeGreaterThan(0);
+    const desktop = sectionOf(page, 'Desktop app');
+    for (const key of desktopKeys) {
+      expect(desktop, `${page} does not list the desktop shortcut Ctrl + ${key}`).toContain(`\`Ctrl\` + \`${key}\``);
+    }
     // The assistant: Ctrl+I anywhere, and the keys its question field's keydown handler takes.
     expect(read('apps/application/app/components/assistant/AssistantPanel.vue')).toContain('meta_i:');
     expect(anywhere, `${page} does not list the Ctrl + I assistant shortcut`).toContain('`Ctrl` + `I`');
@@ -461,6 +481,7 @@ describe('hand-written reference pages match the code', () => {
     gate: '`gate`',
     'quality-report': '`report`',
     select: '{#select-run}',
+    rerun: '`rerun`',
     probe: '`probe`',
     flake: '`flake`',
     ai: '`ai`',
@@ -609,7 +630,7 @@ describe('docs site structure', () => {
     const [route, anchor] = link.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '/index');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);
-    if (GENERATED_PAGES.has(page) && !existsSync(path)) return;
+    if (GENERATED_PAGES.has(page) && generatedPageMissing(path)) return;
 
     expect(existsSync(path), `the sidebar links ${link}, and there is no apps/docs/${page}.md`).toBe(true);
     if (anchor) {
@@ -650,7 +671,7 @@ describe('docs site structure', () => {
     const [route, anchor] = url!.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '') || 'index';
     const path = [`${page}.md`, `${page}/index.md`].map((file) => join(repoRoot, 'apps/docs', file)).find(existsSync);
-    if (GENERATED_PAGES.has(page) && !path) return;
+    if (GENERATED_PAGES.has(page) && generatedPageMissing(path)) return;
 
     expect(path, `${surface} links ${url}, and the docs have no such page`).toBeDefined();
     if (!anchor) return;
@@ -810,7 +831,7 @@ describe('demo examples', () => {
     const handLinks = docsPages.flatMap((page) =>
       [...read(page).matchAll(/piwitests\.dev\/demo\/([^)\s"'`>]*)/g)]
         .map((m) => m[1]!)
-        .filter((path) => path !== '' && path !== 'docs')
+        .filter((path) => path !== '' && path !== 'settings/api')
         .map((path) => `${page}: /demo/${path}`),
     );
     expect(handLinks).toEqual([]);

@@ -304,6 +304,13 @@ describe('reconstruction and storage errors', () => {
 
     await expect(rebuild(blob.path)).rejects.toThrow('503 Slow Down');
   });
+
+  test('a manifest that exists but cannot be read fails the rebuild instead of serving the slim trace', async () => {
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+    failingReads.add(blob.path.replace(/\.zip$/, '.manifest.json'));
+
+    await expect(rebuild(blob.path)).rejects.toThrow('503 Slow Down');
+  });
 });
 
 describe('screenshots and frames beyond one chunk', () => {

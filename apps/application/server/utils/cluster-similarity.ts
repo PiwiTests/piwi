@@ -8,11 +8,12 @@
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 
 /**
- * Bump when `buildEmbedText` changes what it feeds the embedder. The version is
- * part of the stored model tag, so vectors built from an older recipe are
- * treated as stale and re-embedded instead of being compared against fresh ones.
+ * Bump when `buildEmbedText` changes what it feeds the embedder, a change to
+ * `maskVolatile` or `condenseErrorText` included. The version is part of the
+ * stored model tag, so vectors built from an older recipe are treated as stale
+ * and re-embedded instead of being compared against fresh ones.
  */
-export const EMBEDDING_INPUT_VERSION = 2;
+export const EMBEDDING_INPUT_VERSION = 3;
 
 /**
  * Value stored in `failure_clusters.embedding_model`: the model id plus the

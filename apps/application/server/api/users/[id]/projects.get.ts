@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { getUserProjectRoles } from '#shared/handlers/project-access';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -16,8 +17,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   await requireAuth(event);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
+  const id = requireRouteId(event, 'id', 'user ID');
 
   const roles = await getUserProjectRoles(await getDatabase(), id);
   if (!roles) throw apiError({ statusCode: 404, message: 'User not found' });

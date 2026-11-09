@@ -9,7 +9,7 @@
   clusterMergeSuggestions,
   projectIntegrations,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, inArray, or, isNull, lte, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, inArray, notInArray, or, isNull, lte, type SQL } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 import { splitSuitePath } from '../utils/suites';
@@ -17,7 +17,7 @@ import { splitSuitePath } from '../utils/suites';
 import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { ClusterLatestHeadline, OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
-import { splitFailureCluster } from './failure-cluster-ops';
+import { appendedTriageNote, splitFailureCluster } from './failure-cluster-ops';
 import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
@@ -27,19 +27,31 @@ import {
   addQuarantine,
   releaseQuarantine,
 } from './quarantine';
-import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
+import {
+  clusterClue,
+  computeSnooze,
+  DEFAULT_NEEDS_TICKET_AFTER_DAYS,
+  isClusterStatus,
+  isTriageLineInput,
+  isTriageNoteInput,
+  type SnoozeOption,
+} from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { caseHeadline } from '#shared/failure-verdict';
-import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
+import { computeClusterState, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
 import {
   CI_RUN_ORIGINS,
+  eligibleRunSql,
+  incidentRunSql,
   LOCAL_RUN_ORIGINS,
+  notPrivateRun,
   runOriginIn,
   UNFINISHED_RUN_STATUSES,
   type RunOriginKind,
 } from '#shared/run-eligibility';
+import { projectDefaultBranch, resolveStoredDefaultBranches } from '../../server/utils/scm/stored-default-branch';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -154,7 +166,188 @@ export async function getHealingStepFacts(
 
 type ProjectScope = 'all' | Set<number>;
 
-const VALID_STATUSES = ['open', 'resolved', 'ignored'];
+/** The most recent runs the state line reads to find those that could have shown a cluster's failure. */
+const STATE_LINE_RUNS_SCANNED = 200;
+
+/** The most runs the state line counts a failure as not seen for. */
+const STATE_LINE_RUNS = 50;
+
+/** Statuses of an execution that never ran its test, or stopped it before its end. */
+const NOT_RUN_STATUSES = ['skipped', 'didnotrun', 'interrupted'];
+
+/** Statuses of a run that ran to its end: not stopped, cancelled or cut by the global timeout. */
+const RAN_TO_END_RUN_STATUSES = ['passed', 'failed'];
+
+/** The run error Playwright reports when `maxFailures` stops a run, as a `LIKE` pattern. */
+const MAX_FAILURES_STOP_PATTERN = '%Testing stopped early after % maximum allowed failures%';
+
+/**
+ * The runs of `runs` that reported every test of the whole suite: a run of the
+ * whole suite that ran to its end, and that `maxFailures` did not stop (no run
+ * error saying so, no execution it did not run for that reason).
+ */
+async function wholeSuiteReportedRunIds(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; isFullRun: number; status: string; didNotRunTests: number }>,
+): Promise<Set<number>> {
+  const ended = runs.filter((run) => run.isFullRun && RAN_TO_END_RUN_STATUSES.includes(run.status));
+  if (ended.length === 0) return new Set();
+  const stoppedByError = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(
+      and(
+        inArray(
+          testRuns.id,
+          ended.map((run) => run.id),
+        ),
+        sql`cast(${testRuns.runErrors} as text) like ${MAX_FAILURES_STOP_PATTERN}`,
+      ),
+    );
+  const withUnrun = ended.filter((run) => run.didNotRunTests > 0).map((run) => run.id);
+  const stoppedByCount = withUnrun.length
+    ? await db
+        .selectDistinct({ id: testRunsCases.testRunId })
+        .from(testRunsCases)
+        .where(and(inArray(testRunsCases.testRunId, withUnrun), eq(testRunsCases.didNotRunReason, 'max-failures')))
+    : [];
+  const stopped = new Set([...stoppedByError, ...stoppedByCount].map((row) => row.id));
+  return new Set(ended.map((run) => run.id).filter((id) => !stopped.has(id)));
+}
+
+/**
+ * The runs the cluster state counts, newest first: the run the cluster was last
+ * seen in, and the runs since that could have shown its failure and did not.
+ * Such a run is eligible for fix verification (no lab run, bisect step,
+ * reproduction or environment incident), finished, on the branch the cluster
+ * last failed on or the default branch, holds no execution of the cluster, and
+ * ran every test of the cluster it holds: one it holds only as skipped, not
+ * run or interrupted did not run. A partial run must also hold every test the
+ * cluster covers; a run of the whole suite that reported every test need not,
+ * since a test it does not hold no longer exists, but it must hold an
+ * execution of some test. A run stopped before its end (interrupted,
+ * cancelled, timed out, or by `maxFailures`) is held to the partial run's
+ * rule. Any other run did not skip the failure. Only the runs since the last
+ * one it was seen in are read: the state counts those.
+ */
+async function clusterStateRunIds(
+  db: DrizzleDB,
+  cluster: { id: number; projectId: number; lastSeenRunId: number },
+  lastSeenBranch: string | null,
+  affectedTests: number,
+): Promise<number[]> {
+  const runs = await db
+    .select({
+      id: testRuns.id,
+      branch: testRuns.branch,
+      isFullRun: testRuns.isFullRun,
+      status: testRuns.status,
+      didNotRunTests: testRuns.didNotRunTests,
+    })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, cluster.projectId),
+        or(
+          eq(testRuns.id, cluster.lastSeenRunId),
+          and(eligibleRunSql('fix-verification'), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
+        ),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(STATE_LINE_RUNS_SCANNED);
+  const seenAt = runs.findIndex((run) => run.id === cluster.lastSeenRunId);
+  const since = seenAt < 0 ? runs : runs.slice(0, seenAt);
+  const defaultBranch = since.length ? await projectDefaultBranch(db, cluster.projectId) : null;
+  const failedBranch = lastSeenBranch?.trim() || null;
+  const onBranch = since.filter((run) => {
+    const branch = run.branch?.trim() || null;
+    return branch === failedBranch || (branch != null && branch === defaultBranch);
+  });
+  const ids = onBranch.map((run) => run.id);
+  const notRun = sql.join(
+    NOT_RUN_STATUSES.map((status) => sql`${status}`),
+    sql`, `,
+  );
+  // Per run, the cluster's tests it holds, those it ran, and its executions of the cluster.
+  const held = ids.length
+    ? await db
+        .select({
+          runId: testRunsCases.testRunId,
+          tests: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
+          ran: sql<number>`count(distinct case when ${testRunsCases.status} not in (${notRun}) then ${testRunsCases.testCaseId} end)`,
+          occurred: sql<number>`sum(case when ${testRunsCases.failureClusterId} = ${cluster.id} then 1 else 0 end)`,
+        })
+        .from(testRunsCases)
+        .where(
+          and(
+            inArray(testRunsCases.testRunId, ids),
+            inArray(
+              testRunsCases.testCaseId,
+              db
+                .select({ testCaseId: testRunsCases.testCaseId })
+                .from(testRunsCases)
+                .where(eq(testRunsCases.failureClusterId, cluster.id)),
+            ),
+          ),
+        )
+        .groupBy(testRunsCases.testRunId)
+    : [];
+  const heldByRun = new Map(held.map((row) => [row.runId, row]));
+  const wholeSuite = await wholeSuiteReportedRunIds(db, onBranch);
+  // A run of the whole suite holding none of the cluster's tests counts only when it recorded an execution at all.
+  const bare = onBranch.filter((run) => wholeSuite.has(run.id) && !heldByRun.has(run.id)).map((run) => run.id);
+  const recorded = new Set(
+    bare.length
+      ? (
+          await db
+            .select({ id: testRuns.id })
+            .from(testRuns)
+            .where(
+              and(
+                inArray(testRuns.id, bare),
+                sql`exists (select 1 from ${testRunsCases} where ${testRunsCases.testRunId} = ${testRuns.id})`,
+              ),
+            )
+        ).map((run) => run.id)
+      : [],
+  );
+  const skipped = onBranch
+    .filter((run) => {
+      const row = heldByRun.get(run.id);
+      if (!row) return recorded.has(run.id);
+      if (Number(row.occurred) > 0) return false;
+      const ran = Number(row.ran);
+      return ran >= Math.max(1, affectedTests) || (wholeSuite.has(run.id) && ran === Number(row.tests));
+    })
+    .map((run) => run.id);
+  return [...skipped, ...(seenAt < 0 ? [] : [cluster.lastSeenRunId])].slice(0, STATE_LINE_RUNS);
+}
+
+/** Whether a cluster's failure goes on, from its state runs: no run since its last occurrence could have shown it. */
+function goesOnFromStateRuns(stateRunIds: readonly number[], lastSeenRunId: number): boolean {
+  return !stateRunIds.some((id) => id !== lastSeenRunId);
+}
+
+/**
+ * Whether a cluster's failure goes on: no run since the last one it was seen in could have shown it and did not, by
+ * the frame of its state line (`clusterStateRunIds`). The execution page reads it as the cluster page does.
+ */
+export async function clusterFailureGoesOn(
+  db: DrizzleDB,
+  cluster: { id: number; projectId: number; lastSeenRunId: number },
+): Promise<boolean> {
+  const [[lastRun], [countRow]] = await Promise.all([
+    db.select({ branch: testRuns.branch }).from(testRuns).where(eq(testRuns.id, cluster.lastSeenRunId)),
+    db
+      .select({ affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.failureClusterId, cluster.id)),
+  ]);
+  const affectedTests = Number(countRow?.affectedTests ?? 0);
+  const stateRunIds = await clusterStateRunIds(db, cluster, lastRun?.branch ?? null, affectedTests);
+  return goesOnFromStateRuns(stateRunIds, cluster.lastSeenRunId);
+}
 
 /** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
 export const CLUSTER_DETAIL_TESTS_LIMIT = 50;
@@ -214,7 +407,7 @@ export async function getFailureCluster(
         .where(eq(testRunsCases.failureClusterId, clusterId)),
 
       db
-        .select({ status: testRuns.status, startTime: testRuns.startTime })
+        .select({ status: testRuns.status, startTime: testRuns.startTime, branch: testRuns.branch })
         .from(testRuns)
         .where(eq(testRuns.id, cluster.lastSeenRunId)),
 
@@ -271,15 +464,15 @@ export async function getFailureCluster(
     ? { name: annotationOwner, source: 'annotation' as const }
     : (null as { name: string; source: 'annotation' | 'codeowners' } | null);
 
-  // The project's recent runs, newest first — the frame for both the occurrence
-  // sparkline (last 20) and the "still failing / quiet" decision.
-  const projectRuns = await db
-    .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
+  // The project's 20 most recent runs, newest first: the frame of the occurrence
+  // sparkline. Whether the failure goes on and the "still failing / quiet"
+  // decision read their own runs (`clusterStateRunIds`).
+  const seriesRuns: Array<{ id: number; startedAt: Date }> = await db
+    .select({ id: testRuns.id, startedAt: testRuns.startTime })
     .from(testRuns)
-    .where(eq(testRuns.projectId, cluster.projectId))
+    .where(and(eq(testRuns.projectId, cluster.projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(50);
-  const seriesRuns = projectRuns.slice(0, 20);
+    .limit(20);
   const seriesRunIds = seriesRuns.map((r) => r.id);
   const occurrenceRows =
     seriesRunIds.length > 0
@@ -297,14 +490,16 @@ export async function getFailureCluster(
 
   const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
-  // Whether the failure goes on in the project's latest finished run, and the Done
-  // ticket to reconcile once it stopped: the rules the execution page follows too.
-  const latestFinishedRun =
-    projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status)) ?? null;
-  const goesOn = failureGoesOn(
-    lastRun ? { id: cluster.lastSeenRunId, startTime: lastRun.startTime } : null,
-    latestFinishedRun ? { id: latestFinishedRun.id, startTime: latestFinishedRun.startedAt } : null,
+  // The runs since the last occurrence that could have shown the failure (the state line's frame); from them, whether
+  // the failure goes on and the Done ticket to reconcile once it stopped: the rules the execution page follows too
+  // (`clusterFailureGoesOn`).
+  const stateRunIds = await clusterStateRunIds(
+    db,
+    cluster,
+    lastRun?.branch ?? null,
+    Number(countRow?.affectedTests ?? 0),
   );
+  const goesOn = goesOnFromStateRuns(stateRunIds, cluster.lastSeenRunId);
   const ticketDoneKey = ticketReconcileKey(
     {
       status: cluster.status ?? 'open',
@@ -339,7 +534,7 @@ export async function getFailureCluster(
       knownIssue: reconcileKnownIssue,
       diagnosedPatchApplies: patchFacts.patchAppliesAtFix,
     },
-    { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
+    { runIdsNewestFirst: stateRunIds, failureGoesOn: goesOn, now: opts.now },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
@@ -356,8 +551,7 @@ export async function getFailureCluster(
         .select({
           error: testRunsCases.error,
           steps: testRunsCases.steps,
-          status: testRunsCases.status,
-          retries: testRunsCases.retries,
+          passedAfterFailure: testRunsCases.passedAfterFailure,
         })
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
@@ -372,10 +566,10 @@ export async function getFailureCluster(
         ),
       }).kind;
     }
-    // The latest occurrence passed on a retry, or its test's history both fails and
+    // The latest occurrence passed after a failed attempt, or its test's history both fails and
     // passes: the Flake Lab may hold the next step.
     const testCaseId = latestOccurrence.testCaseId;
-    const retryPassed = execRow?.status === 'passed' && (execRow.retries ?? 0) > 0;
+    const retryPassed = Boolean(execRow?.passedAfterFailure);
     if (
       testCaseId != null &&
       (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&
@@ -415,6 +609,7 @@ export async function getFailureCluster(
     ...cluster,
     latestHeadline: clusterLatestHeadline(cluster, latestExec),
     affectedTests: Number(countRow?.affectedTests ?? 0),
+    quarantinedTests: quarantinedCount,
     lastSeenRunStatus: lastRun?.status ?? null,
     lastSeenAt: lastRun?.startTime ?? null,
     firstSeenAt: firstSeenRun?.startTime ?? null,
@@ -482,11 +677,25 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
 }
 
 /**
- * Set a cluster's triage status. The triage note is kept unless one is given:
- * a string replaces it (empty clears it), `null` clears it.
+ * Set a cluster's triage status, its note, or both. The status is kept unless
+ * one is given, and so is the note: a string replaces it (empty clears it),
+ * `null` clears it, and `appendLine` joins it below the note as it is stored
+ * when the update runs (`appendedTriageNote`). Null for an invalid status or
+ * note, a note given both ways, or a missing cluster.
  */
-export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
-  if (!status || !VALID_STATUSES.includes(status)) {
+export async function patchClusterStatus(
+  db: DrizzleDB,
+  clusterId: number,
+  status: string | undefined,
+  triageNote?: string | null,
+  appendLine?: string,
+) {
+  if (
+    (status !== undefined && !isClusterStatus(status)) ||
+    !isTriageNoteInput(triageNote) ||
+    !isTriageLineInput(appendLine) ||
+    (triageNote !== undefined && appendLine !== undefined)
+  ) {
     return null;
   }
 
@@ -496,10 +705,15 @@ export async function patchClusterStatus(db: DrizzleDB, clusterId: number, statu
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
 
-  const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
+  const note =
+    appendLine !== undefined
+      ? { triageNote: appendedTriageNote(appendLine) }
+      : triageNote === undefined
+        ? {}
+        : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
-    .set({ status, ...note, updatedAt: new Date() })
+    .set({ ...(status === undefined ? {} : { status }), ...note, updatedAt: new Date() })
     .where(eq(failureClusters.id, clusterId));
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
@@ -641,7 +855,7 @@ export async function bulkTriageClusters(
 
   let set: Record<string, unknown>;
   if (patch.action === 'status') {
-    if (!VALID_STATUSES.includes(patch.status)) return null;
+    if (!isClusterStatus(patch.status)) return null;
     set = { status: patch.status, updatedAt: new Date() };
   } else if (patch.action === 'assign') {
     const value = typeof patch.assignee === 'string' && patch.assignee.trim() ? patch.assignee.trim() : null;
@@ -705,14 +919,11 @@ export async function extractClusterCases(
   if (!split) return null;
 
   if (split.clusterId != null) {
-    const [source] = await db
-      .select({ triageNote: failureClusters.triageNote })
-      .from(failureClusters)
-      .where(eq(failureClusters.id, clusterId));
+    // Appended to the note as stored, so an edit made meanwhile is kept.
     const line = `Moved ${split.testCount} test${split.testCount === 1 ? '' : 's'} to cluster #${split.clusterId}.`;
     await db
       .update(failureClusters)
-      .set({ triageNote: source?.triageNote ? `${source.triageNote}\n${line}` : line, updatedAt: new Date() })
+      .set({ triageNote: appendedTriageNote(line), updatedAt: new Date() })
       .where(eq(failureClusters.id, clusterId));
   }
 
@@ -923,6 +1134,9 @@ export async function getOpenFailureClusters(
 
   const localOnlyIds = new Set(localOnlyRows.map((r: { id: number }) => r.id));
   const projectById = new Map(projectRows.map((p: any) => [p.id, p]));
+  // Each project's default branch, as the project pages resolve it with no network call.
+  const defaultBranches = await resolveStoredDefaultBranches(db, projectRows);
+
   const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
   const runById = new Map(
     seenRuns.map((r: any) => [
@@ -930,6 +1144,26 @@ export async function getOpenFailureClusters(
       { status: r.status, startTime: r.startTime, branch: r.branch, incident: readRunIncident(r.metadata) },
     ]),
   );
+
+  // The clusters an environment incident opened that failed again in a run that
+  // counts and is no incident: each is a failure of its own from then on.
+  const openedByIncident = clusters
+    .filter((c) => (runById.get(c.firstSeenRunId) as { incident?: unknown } | undefined)?.incident)
+    .map((c) => c.id);
+  const recurredRows: Array<{ clusterId: number | null }> = openedByIncident.length
+    ? await db
+        .selectDistinct({ clusterId: testRunsCases.failureClusterId })
+        .from(testRunsCases)
+        .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+        .where(
+          and(
+            inArray(testRunsCases.failureClusterId, openedByIncident),
+            eligibleRunSql('cluster-occurrences'),
+            sql`NOT ${incidentRunSql(testRuns.metadata)}`,
+          ),
+        )
+    : [];
+  const recurredAfterIncident = new Set(recurredRows.map((r) => r.clusterId));
 
   // Keep the most-affected test per cluster for the name fallback and owner, and
   // collect every affected test-case id per cluster for the quarantine lookup.
@@ -1001,7 +1235,7 @@ export async function getOpenFailureClusters(
       const ready = new Set<number>();
       for (const entry of entries) {
         active.add(entry.testCaseId);
-        if (entry.releaseProposed) ready.add(entry.testCaseId);
+        if (entry.releaseProposed && !entry.releaseDismissed) ready.add(entry.testCaseId);
       }
       quarantineByProject.set(projectId, { active, ready });
     }),
@@ -1017,9 +1251,11 @@ export async function getOpenFailureClusters(
 
     // A regression still failing on the default branch: last seen there, and it
     // began as a regression (passed in baseline) on that same branch.
-    const effectiveDefault = project?.defaultBranch ?? 'main';
+    const effectiveDefault = defaultBranches.get(c.projectId);
     const regressionOnDefault =
-      run?.branch === effectiveDefault && !!regressionBranchesByCluster.get(c.id)?.has(effectiveDefault);
+      effectiveDefault != null &&
+      run?.branch === effectiveDefault &&
+      !!regressionBranchesByCluster.get(c.id)?.has(effectiveDefault);
 
     // Quarantine readiness: a quarantined member test is ready to release when its
     // streak has cleared the threshold, or the cluster's fix has verified as held
@@ -1056,7 +1292,7 @@ export async function getOpenFailureClusters(
       topClue: clusterClue(c),
       fixVerification: c.fixVerification ?? null,
       regressionOnDefault,
-      onDefaultBranch: run?.branch === effectiveDefault,
+      onDefaultBranch: effectiveDefault != null && run?.branch === effectiveDefault,
       hasKnownIssue: hasKnownIssueByCluster.has(c.id),
       needsTicketAfterDays: needsTicketDaysByProject.get(c.projectId) ?? DEFAULT_NEEDS_TICKET_AFTER_DAYS,
       quarantinedCount,
@@ -1065,14 +1301,15 @@ export async function getOpenFailureClusters(
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
       seenOnlyLocally: localOnlyIds.has(c.id),
-      incidentRun: firstRun?.incident
-        ? {
-            runId: c.firstSeenRunId,
-            reason: firstRun.incident.reason,
-            host: firstRun.incident.host,
-            startedAt: firstRun.startTime ?? null,
-          }
-        : null,
+      incidentRun:
+        firstRun?.incident && !recurredAfterIncident.has(c.id)
+          ? {
+              runId: c.firstSeenRunId,
+              reason: firstRun.incident.reason,
+              host: firstRun.incident.host,
+              startedAt: firstRun.startTime ?? null,
+            }
+          : null,
     };
   });
 }

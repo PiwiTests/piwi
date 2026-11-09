@@ -56,7 +56,7 @@ import {
 } from '../src/internal/capture/capture-fixtures.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
-import { jsonRes, startServer } from './_helpers.js';
+import { jsonRes, startServer, withoutCi } from './_helpers.js';
 
 const PROBE = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
 /** The capture fixtures' own folder: a frame there is this package's, never the test's. */
@@ -157,33 +157,50 @@ describe('stopCallSite', () => {
 });
 
 describe('the pause gate', () => {
+  it('reads CI as detectCi does: a provider that sets no CI counts, CI=0 or false does not', () => {
+    const saved = { ...process.env };
+    const ciWith = (env: Record<string, string>) => {
+      Object.assign(withoutCi(process.env), env);
+      return pauseGateFromTestInfo({ project: { use: { headless: false } } } as never).ci;
+    };
+    try {
+      expect(ciWith({ JENKINS_URL: 'https://jenkins.example' })).toBe(true);
+      expect(ciWith({ GITHUB_ACTIONS: 'true' })).toBe(true);
+      expect(ciWith({ CI: '1' })).toBe(true);
+      expect(ciWith({ CI: '0' })).toBe(false);
+      expect(ciWith({ CI: 'false' })).toBe(false);
+      expect(ciWith({})).toBe(false);
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('pauses a headed local run only, outside Playwright’s Inspector', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'false', headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'true', headless: false })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: undefined })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: false })).toBeNull();
+    expect(pauseSkipReason({ ci: true, headless: false })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: undefined })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
     for (const pwdebug of ['', '0', 'false', 'console']) {
-      expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug })).toBeNull();
+      expect(pauseSkipReason({ ci: false, headless: false, pwdebug })).toBeNull();
     }
   });
 
   it('pauses a headless run too while the run connection to the editor is open, never under CI or a debugger', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: undefined, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: false })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: '1', headless: true, channel: true })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: undefined, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: true, channel: false })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: true, headless: true, channel: true })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
   });
 
   it('never pauses under --debug, --debug=cli included, which sets no PWDEBUG', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'cli' })).toBe(
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'cli' })).toBe(
       "Playwright's debugger runs the test (--debug=cli) — run without --debug",
     );
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: undefined })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
+    expect(pauseSkipReason({ ci: false, headless: false, debug: undefined })).toBeNull();
     const testInfo = {
       project: { use: { headless: false } },
       _configInternal: { configCLIOverrides: { debug: 'cli' } },
@@ -985,7 +1002,7 @@ describe('breakpoints in the capture fixtures', () => {
   const env = { ...process.env };
   let log: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
-    delete process.env.CI;
+    withoutCi(process.env);
     delete process.env.PWDEBUG;
     delete process.env.PIWI_RECORD_CHANNEL;
     resetPauseLogs();

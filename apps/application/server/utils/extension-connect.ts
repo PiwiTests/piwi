@@ -1,14 +1,15 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
-import { apiKeys, extensionDeviceCodes, users, type ExtensionDeviceCode } from '../database/schema';
+import { apiKeys, extensionDeviceCodes, runTargets, users, type ExtensionDeviceCode } from '../database/schema';
 import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 import { hashToken } from './token-hash';
 import { cleanClientLabel } from './client-label';
 
 /**
- * Connecting the browser extension, or the VS Code extension and JetBrains
- * plugin: an RFC 8628 device authorization grant. The client starts a
+ * Connecting the browser extension, the VS Code extension and JetBrains
+ * plugin, or a run target (the desktop app, Piwi Runner): an RFC 8628 device
+ * authorization grant. The client starts a
  * request, the user allows it on a signed-in page of this instance, and the
  * client's next poll receives an API key created
  * for that user at that moment. Both codes are stored hashed; the key's
@@ -68,22 +69,57 @@ const clientWord = (value: unknown, fallback: string) => cleanClientLabel(value,
 
 const EDITOR_CLIENT_PREFIX = 'Piwi in ';
 
+/** What connects: Piwi Picker, an editor's extension, or a run target. */
+export type ConnectClientKind = 'picker' | 'editor' | 'desktop' | 'runner';
+
+/** The clients that take run requests: their key holds `run:receive` alone. */
+export const RUN_TARGET_KINDS: ReadonlySet<ConnectClientKind> = new Set(['desktop', 'runner']);
+
+/** The only permissions the key of a run target holds. */
+export const RUN_TARGET_KEY_PERMISSIONS = ['run:receive'] as const;
+
+export interface ConnectClient {
+  browser?: unknown;
+  editor?: unknown;
+  /** `desktop` or `runner`: a run target, named by its `device`. */
+  target?: unknown;
+  device?: unknown;
+  os?: unknown;
+}
+
+/** Which kind of client a start body describes. */
+export function connectClientKindOf(client: ConnectClient): ConnectClientKind {
+  if (client.target === 'desktop' || client.target === 'runner') return client.target;
+  return client.editor !== undefined && client.editor !== null ? 'editor' : 'picker';
+}
+
 /**
- * "Piwi Picker in Chrome on Windows", or "Piwi in WebStorm on macOS" when an
- * editor connects: the name the verification page shows and the created key carries.
+ * "Piwi Picker in Chrome on Windows", "Piwi in WebStorm on macOS" when an
+ * editor connects, or "Piwi Desktop on LAPTOP-42 (macOS)" for a run target:
+ * the name the verification page shows and the created key carries.
  */
-export function extensionClientName(client: { browser?: unknown; editor?: unknown; os?: unknown }): string {
+export function extensionClientName(client: ConnectClient): string {
   const os = clientWord(client.os, '');
-  const on = os ? ` on ${os}` : '';
-  if (client.editor !== undefined && client.editor !== null) {
-    return `${EDITOR_CLIENT_PREFIX}${clientWord(client.editor, 'an editor')}${on}`;
+  const kind = connectClientKindOf(client);
+  if (RUN_TARGET_KINDS.has(kind)) {
+    const app = kind === 'desktop' ? 'Piwi Desktop' : 'Piwi Runner';
+    return `${app} on ${clientWord(client.device, 'a computer')}${os ? ` (${os})` : ''}`;
   }
+  const on = os ? ` on ${os}` : '';
+  if (kind === 'editor') return `${EDITOR_CLIENT_PREFIX}${clientWord(client.editor, 'an editor')}${on}`;
   return `Piwi Picker in ${clientWord(client.browser, 'a browser')}${on}`;
 }
 
-/** Whether a request comes from Piwi Picker or from an editor, for the verification page's wording. */
+/** Whether a request comes from Piwi Picker or from an editor, read from its name, for a row with no stored kind. */
 export function connectClientKind(clientName: string): 'picker' | 'editor' {
   return clientName.startsWith(EDITOR_CLIENT_PREFIX) ? 'editor' : 'picker';
+}
+
+function storedClientKind(row: Pick<ExtensionDeviceCode, 'clientKind' | 'clientName'>): ConnectClientKind {
+  const kind = row.clientKind;
+  return kind === 'picker' || kind === 'editor' || kind === 'desktop' || kind === 'runner'
+    ? kind
+    : connectClientKind(row.clientName);
 }
 
 export interface StartedConnect {
@@ -96,7 +132,7 @@ export interface StartedConnect {
 /** Starts a connect request and deletes the ones expired for more than a day. */
 export async function startDeviceConnect(
   db: DbClient,
-  client: { browser?: unknown; editor?: unknown; os?: unknown },
+  client: ConnectClient,
   now = new Date(),
 ): Promise<StartedConnect> {
   await db
@@ -112,6 +148,7 @@ export async function startDeviceConnect(
         deviceCodeHash: hashToken(deviceCode),
         userCodeHash: hashToken(normalizeUserCode(userCode)!),
         clientName: extensionClientName(client),
+        clientKind: connectClientKindOf(client),
         status: 'pending',
         intervalSeconds: DEFAULT_POLL_INTERVAL_SECONDS,
         expiresAt: new Date(now.getTime() + DEVICE_CODE_TTL_MS),
@@ -142,8 +179,8 @@ async function findByUserCode(db: DbClient, userCode: unknown): Promise<Extensio
 export interface ConnectRequestView {
   userCode: string;
   clientName: string;
-  /** Who asked: Piwi Picker, or the Piwi extension of an editor. */
-  clientKind: 'picker' | 'editor';
+  /** Who asked: Piwi Picker, the Piwi extension of an editor, or a run target. */
+  clientKind: ConnectClientKind;
   createdAt: string;
   expiresAt: string;
   /** `expired` once past its expiry without being collected; `consumed` once the extension received its key. */
@@ -163,29 +200,40 @@ export async function describeConnectRequest(
   return {
     userCode: formatUserCode(normalizeUserCode(userCode)!),
     clientName: row.clientName,
-    clientKind: connectClientKind(row.clientName),
+    clientKind: storedClientKind(row),
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     status: expired ? 'expired' : status,
   };
 }
 
-export type ConnectDecisionResult = 'approved' | 'denied' | 'not-found' | 'expired' | 'already-decided';
+export type ConnectDecisionResult =
+  | 'approved'
+  | 'denied'
+  | 'not-found'
+  | 'expired'
+  | 'already-decided'
+  | 'target-not-allowed';
 
 /**
  * Records the signed-in user's answer. `userId` is null when authentication is
  * off: the request is then allowed without an account, and the extension gets
- * an empty key.
+ * an empty key. A run target is allowed only when `mayConnectTarget` (the user
+ * holds `run:receive` and the instance turned run requests on), and never
+ * without an account.
  */
 export async function decideDeviceConnect(
   db: DbClient,
-  opts: { userCode: unknown; userId: number | null; allow: boolean },
+  opts: { userCode: unknown; userId: number | null; allow: boolean; mayConnectTarget?: boolean },
   now = new Date(),
 ): Promise<ConnectDecisionResult> {
   const row = await findByUserCode(db, opts.userCode);
   if (!row) return 'not-found';
   if (row.status !== 'pending') return 'already-decided';
   if (row.expiresAt.getTime() <= now.getTime()) return 'expired';
+  if (opts.allow && RUN_TARGET_KINDS.has(storedClientKind(row)) && (opts.userId == null || !opts.mayConnectTarget)) {
+    return 'target-not-allowed';
+  }
   const status = opts.allow ? 'approved' : 'denied';
   const updated = await db
     .update(extensionDeviceCodes)
@@ -240,7 +288,10 @@ export async function pollDeviceConnect(
     .returning({ id: extensionDeviceCodes.id });
   if (claimed.length === 0) return { status: 'expired' };
 
-  if (row.userId == null) return { status: 'approved', apiKey: '', user: null };
+  const kind = storedClientKind(row);
+  const target = RUN_TARGET_KINDS.has(kind);
+  // A run target is never connected without an account to own its key.
+  if (row.userId == null) return target ? { status: 'denied' } : { status: 'approved', apiKey: '', user: null };
 
   const [owner] = await db
     .select({ name: users.name, username: users.username })
@@ -250,8 +301,32 @@ export async function pollDeviceConnect(
   const { plaintext, hash, prefix } = generateApiKey();
   const [key] = await db
     .insert(apiKeys)
-    .values({ userId: row.userId, name: row.clientName, keyHash: hash, keyPrefix: prefix, createdAt: now })
+    .values({
+      userId: row.userId,
+      name: row.clientName,
+      keyHash: hash,
+      keyPrefix: prefix,
+      clientKind: kind,
+      permissions: target ? [...RUN_TARGET_KEY_PERMISSIONS] : null,
+      createdAt: now,
+    })
     .returning({ id: apiKeys.id });
+  if (target) {
+    // A target key without its target serves nothing, so the key goes if its target cannot be stored.
+    try {
+      await db.insert(runTargets).values({
+        userId: row.userId,
+        apiKeyId: key!.id,
+        kind,
+        deviceName: row.clientName,
+        lastSeenAt: now,
+        createdAt: now,
+      });
+    } catch (error) {
+      await db.delete(apiKeys).where(eq(apiKeys.id, key!.id));
+      throw error;
+    }
+  }
   await db.update(extensionDeviceCodes).set({ apiKeyId: key!.id }).where(eq(extensionDeviceCodes.id, row.id));
   return { status: 'approved', apiKey: plaintext, user: { name: owner.name || owner.username } };
 }

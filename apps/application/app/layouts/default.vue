@@ -3,10 +3,12 @@ import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMen
 import type { ProjectWithStats } from '~~/types/api';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
+import { starredFirst } from '~/utils/project-stars';
 
 const route = useRoute();
 const toast = useToast();
 const config = useRuntimeConfig();
+const localRuns = useDesktopLocalRuns();
 
 const open = ref(false);
 const searchTerm = ref('');
@@ -88,14 +90,27 @@ const { data: projects, refresh: refreshProjects } = await useFetch('/api/projec
 });
 
 useRunStream(refreshProjects);
+
+// The viewer's starred projects lead the sidebar and the palette's projects.
+const starredProjects = useStarredProjects();
+await starredProjects.load();
+// A sign-in in this tab, or another user's, reads that user's stars.
+const { authState } = useAuth();
+watch(
+  () => authState.value.user?.id,
+  () => starredProjects.load(),
+);
+
 useNotificationStream();
 
 // Register global "go to" keyboard chords (g h / g p / g a / g s). This is the only
 // caller of useDashboard(); without it the shortcuts never register.
 useDashboard();
 
-const { canSeeAdmin } = useAuth();
 const { isHidden: capHidden, state: capState } = await useInstanceCapabilities();
+// The settings pages this viewer may open, for the command palette: Setup, the
+// MCP server and the API reference live there, off the sidebar.
+const settingsNav = await useSettingsNav();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -121,13 +136,16 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
     return labelA.localeCompare(labelB);
   });
 
-  // Split into active and others, by the latest run of any kind: the status filter picks the status, not the activity
+  // Starred projects first, then the rest split into active and others, by the latest run of any kind:
+  // the status filter picks the status, not the activity
+  const isStarred = (p: ProjectWithStats) => starredProjects.isStarred(p.id);
   const isActiveProject = (p: ProjectWithStats) => {
     const lastRunAt = p.lastRunAt ?? p.latestRun?.startTime;
     return !!lastRunAt && new Date(lastRunAt).getTime() > activeThreshold;
   };
-  const active = sorted.filter(isActiveProject);
-  const others = sorted.filter((p) => !isActiveProject(p));
+  const starred = sorted.filter(isStarred);
+  const active = sorted.filter((p) => !isStarred(p) && isActiveProject(p));
+  const others = sorted.filter((p) => !isStarred(p) && !isActiveProject(p));
 
   function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
@@ -145,7 +163,8 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 
     return {
       label: displayLabel,
-      icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-circle',
+      // A starred project's star takes the empty circle's place; a running one shows the spinner.
+      icon: isRunning ? 'i-lucide-loader-circle' : isStarred(project) ? 'i-lucide-star' : 'i-lucide-circle',
       ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
@@ -162,6 +181,14 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   }
 
   const items: NavigationMenuItem[] = [];
+
+  if (starred.length > 0) {
+    items.push({
+      label: `Starred (${starred.length})`,
+      type: 'label',
+    });
+    items.push(...starred.map(buildProjectItem));
+  }
 
   if (active.length > 0) {
     items.push({
@@ -217,44 +244,6 @@ const links = computed(() => {
       target: '_blank',
     },
   ];
-  // The MCP server link follows the `mcp` capability: a declined instance drops
-  // it from the sidebar and the command palette alike.
-  if (!capHidden('mcp')) {
-    bottomLinks.unshift({
-      label: 'MCP server',
-      icon: 'i-lucide-bot',
-      to: '/mcp',
-      'data-tour': 'nav-mcp',
-      onSelect: () => {
-        open.value = false;
-      },
-    });
-  }
-  // Setup is admin-only: it configures how results reach this instance and, in
-  // the desktop build, exposes the local access token. Hiding the link also
-  // removes it from the command palette, which is built from these same items.
-  if (canSeeAdmin.value) {
-    bottomLinks.unshift({
-      label: 'Setup',
-      icon: 'i-lucide-rocket',
-      to: '/setup',
-      'data-tour': 'nav-setup',
-      onSelect: () => {
-        open.value = false;
-      },
-    });
-  }
-  bottomLinks.unshift({
-    label: 'API Docs',
-    icon: 'i-lucide-book-open',
-    to: '/docs',
-    'data-tour': 'nav-api-docs',
-    // `/docs` is a normal Nuxt page in every mode — it renders the API reference
-    // in-app from the generated OpenAPI spec, so ordinary client navigation works.
-    onSelect: () => {
-      open.value = false;
-    },
-  });
   return [
     [
       {
@@ -350,6 +339,19 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       label: 'Go to',
       items: links.value.flat().map((item) => toCommandPaletteItem(item)),
     },
+    {
+      id: 'settings',
+      label: 'Settings',
+      items: settingsNav.value.flat().map((item) => ({
+        id: `settings-${item.to}`,
+        label: item.label as string,
+        icon: item.icon,
+        to: item.to,
+        onSelect: () => {
+          open.value = false;
+        },
+      })),
+    },
     ...authoredGuides.paletteGroups(),
     {
       id: 'code',
@@ -405,7 +407,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       id: 'search-projects',
       label: 'Projects',
       ignoreFilter: true,
-      items: searchResults.value.projects.map((p) => ({
+      items: starredFirst(searchResults.value.projects, starredProjects.starred.value, (p) => p.id).map((p) => ({
         id: `project-${p.id}`,
         label: p.label || p.name,
         description: p.label && p.label !== p.name ? p.name : undefined,
@@ -617,6 +619,9 @@ onMounted(async () => {
 
     <!-- Desktop shell: Piwi Picker asks to pair, waiting for the developer's Allow -->
     <DesktopPickerPairingModal />
+
+    <!-- Desktop shell: a team instance asks to run tests here, waiting for the person's Run -->
+    <DesktopTeamRunRequestModal @start="localRuns.startTeamRequest" />
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />

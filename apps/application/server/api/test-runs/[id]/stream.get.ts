@@ -1,5 +1,6 @@
-import { testRuns, testCases, testRunsCases, projects } from '../../../database/schema';
+import { testRuns, projects } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
+import { runFinishedEventData, storedCaseEventData } from '../../../utils/run-stream-catch-up';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
 import { liveViewRelay } from '../../../utils/live-view';
@@ -12,7 +13,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds).',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`) and the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -61,15 +62,7 @@ export default eventHandler(async (event) => {
     if (!isActive) {
       const finishedData = {
         type: 'run-finished',
-        data: {
-          status: testRun.status,
-          duration: testRun.duration,
-          totalTests: testRun.totalTests,
-          passedTests: testRun.passedTests,
-          failedTests: testRun.failedTests,
-          skippedTests: testRun.skippedTests,
-          didNotRunTests: testRun.didNotRunTests,
-        },
+        data: runFinishedEventData(testRun),
         seq: 1,
         timestamp: Date.now(),
       };
@@ -87,7 +80,10 @@ export default eventHandler(async (event) => {
     }
     // Whether the project's live view is on and the run holds a key, then the workers in its view now and their stops:
     // the live events that follow change them.
-    const viewState: LiveViewRunState = { keyed: liveViewRelay.holdsKey(id), enabled: project?.liveView === true };
+    const viewState: LiveViewRunState = {
+      keyed: liveViewRelay.holdsKey(id, { digests: testRun.liveViewKeyDigests, createdAt: testRun.createdAt }),
+      enabled: project?.liveView === true,
+    };
     const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
     for (const worker of liveViewRelay.workersOf(id)) {
@@ -98,59 +94,8 @@ export default eventHandler(async (event) => {
     // Also send existing test cases for catch-up (error omitted — large field, not shown in stream view)
     (async () => {
       try {
-        const existingCases = await db
-          .select({
-            id: testRunsCases.id,
-            testCaseId: testRunsCases.testCaseId,
-            title: testCases.title,
-            externalId: testCases.externalId,
-            displayTitle: testCases.displayTitle,
-            status: testRunsCases.status,
-            duration: testRunsCases.duration,
-            filePath: testCases.filePath,
-            suitePath: testCases.suitePath,
-            line: testRunsCases.line,
-            column: testRunsCases.column,
-            workerIndex: testRunsCases.workerIndex,
-            shardIndex: testRunsCases.shardIndex,
-            browser: testRunsCases.browser,
-            retries: testRunsCases.retries,
-            repeatEachIndex: testRunsCases.repeatEachIndex,
-            didNotRunReason: testRunsCases.didNotRunReason,
-            expectedStatus: testRunsCases.expectedStatus,
-            blockedBy: testRunsCases.blockedBy,
-          })
-          .from(testRunsCases)
-          .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-          .where(eq(testRunsCases.testRunId, id));
-
-        for (const tc of existingCases) {
-          const location = tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath;
-          const suitePath = tc.suitePath ? tc.suitePath.split('\x1f') : null;
-          const caseEvent = {
-            type: 'test-completed',
-            data: {
-              title: tc.title,
-              externalId: tc.externalId ?? null,
-              displayTitle: tc.displayTitle ?? null,
-              filePath: tc.filePath,
-              suitePath,
-              status: tc.status,
-              duration: tc.duration,
-              location,
-              workerIndex: tc.workerIndex ?? null,
-              browser: tc.browser ?? null,
-              retries: tc.retries ?? null,
-              repeatEachIndex: tc.repeatEachIndex,
-              didNotRunReason: tc.didNotRunReason ?? null,
-              expectedStatus: tc.expectedStatus ?? null,
-              blockedBy: tc.blockedBy ?? null,
-              executionId: tc.id,
-              testCaseId: tc.testCaseId,
-            },
-            seq: 0, // Catch-up events have seq 0
-            timestamp: Date.now(),
-          };
+        for (const data of await storedCaseEventData(db, id)) {
+          const caseEvent = { type: 'test-completed', data, seq: 0, timestamp: Date.now() }; // Catch-up events have seq 0
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(caseEvent)}\n\n`));
         }
 
@@ -167,6 +112,11 @@ export default eventHandler(async (event) => {
             timestamp: Date.now(),
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(beginEvent)}\n\n`));
+        }
+        // Then the step each worker is in, after the running cases it belongs to.
+        for (const step of runEventBus.getLiveSteps(id)) {
+          const stepEvent = { type: step.type, data: step.data, seq: 0, timestamp: Date.now() };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stepEvent)}\n\n`));
         }
       } catch {
         // Ignore errors during catch-up

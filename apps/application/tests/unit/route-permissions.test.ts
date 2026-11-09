@@ -36,6 +36,18 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'A schedule spans projects; the handler lets only its owner (or an administrator) delete it.',
   'server/api/reports/schedules/[id]/run.post.ts':
     'A schedule spans projects; the handler lets only its owner (or an administrator) run it, collected with the owner’s project access.',
+  'server/api/run-targets/requests.get.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/answer.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/claim.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/state.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/stream.get.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/self.put.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the projects it names are kept only where its owner holds `run:receive`.',
 };
 
 /**
@@ -227,6 +239,26 @@ describe('route permissions', () => {
       .map(
         (r) =>
           `${r.path}: calls requireProjectPermission without requireAuth before getDatabase — authenticate first, so a caller without credentials gets 401 whether the id exists or not`,
+      );
+    expect(problems).toEqual([]);
+  });
+
+  test('a route that declares a permission authenticates before it reads its body', () => {
+    const READS_BODY =
+      /\b(?:readBody|readRawBody|readMultipartFormData|readFormData|readValidatedBody|getRequestWebStream|readJsonBodyWithin|streamMultipart)(?:<[^()]*>)?\(/;
+    const AUTHENTICATES =
+      /\b(?:requireAuth|requireSessionAuth|requireProjectAccess|requireResolvedProjectAccess|requireMcpAuth|getRequestAccess|requireConnectionAccess|requireRunTarget)\(/;
+    const problems = routes
+      .filter((r) => r.permission)
+      .filter((r) => {
+        const handler = r.src.slice(Math.max(0, r.src.indexOf('eventHandler(')));
+        const body = handler.search(READS_BODY);
+        const auth = handler.search(AUTHENTICATES);
+        return body >= 0 && (auth < 0 || body < auth);
+      })
+      .map(
+        (r) =>
+          `${r.path}: reads its body before it authenticates — authenticate first, so a caller without credentials is refused before any body is read`,
       );
     expect(problems).toEqual([]);
   });

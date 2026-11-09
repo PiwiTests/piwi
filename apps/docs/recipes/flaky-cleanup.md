@@ -1,5 +1,6 @@
 ---
 title: Cut costly flakiness
+titleTemplate: "Flaky Playwright suite: :title | Piwi"
 description: "One afternoon to make an unreliable suite trustworthy: fix the flaky tests that cost the most, one root cause at a time, and quarantine the rest."
 lang: en-US
 ---
@@ -79,7 +80,7 @@ wasted CI minutes and root-cause category, highest score first; `get_test_stabil
 for "what should I fix this sprint?" without opening a browser.
 
 **Script it.** Quarantine is a REST resource, so promoting candidates or releasing ready tests can
-be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
+be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/settings/api).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
 [desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,

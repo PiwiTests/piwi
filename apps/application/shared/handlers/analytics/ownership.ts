@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
+import { flakyResultSql } from '../test-case-aggregates';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsOwnership, AnalyticsOwnershipRow } from '../../analytics/types';
 import { ownershipOptionsSchema } from '../../analytics/registry';
@@ -67,7 +68,7 @@ export async function getAnalyticsOwnership(
         owner: testCases.owner,
         wastedMs: sql<number>`coalesce(sum(${testRunsCases.wastedTimeMs}), 0)`,
         failedMs: sql<number>`coalesce(sum(case when ${testRunsCases.status} in ('failed', 'timedout', 'timedOut') then ${testRunsCases.duration} else 0 end), 0)`,
-        flaky: sql<number>`max(case when ${testRunsCases.status} = 'passed' and ${testRunsCases.retries} > 0 then 1 else 0 end)`,
+        flaky: sql<number>`max(case when ${flakyResultSql()} then 1 else 0 end)`,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))

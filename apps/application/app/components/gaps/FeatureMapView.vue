@@ -10,7 +10,6 @@
  */
 import { gapClassSeverity } from '#shared/gap-classes';
 import { gapClassBadgeColor, gapClassFill } from '~/utils/gap-classes';
-import { errorMessage } from '~/utils';
 
 interface MapFeature {
   key: string;
@@ -61,7 +60,6 @@ async function load() {
   }
 }
 watch(() => props.projectId, load, { immediate: true });
-defineExpose({ reload: load });
 
 /** The most features drawn on the circle; the list below always carries all of them. */
 const MAX_DRAWN = 48;

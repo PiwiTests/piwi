@@ -9,6 +9,7 @@ import {
   type SubscriptionFilters,
 } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { isUniqueViolation } from '../db-errors';
 import { emailDestinationVerified } from './email-verified';
 
 function parseDigestHHMM(digestAt: string | null | undefined): { hour: number; minute: number } | null {
@@ -31,7 +32,9 @@ function nextDigestTime(digestAt: string): Date {
 
 /**
  * For a given event+payload, find matching subscriptions and enqueue delivery rows.
- * Uses INSERT OR IGNORE (via unique dedupeKey) to make it idempotent.
+ * Idempotent through the unique `dedupeKey`: a delivery already queued is left
+ * alone. Any other failed insert is thrown once every other subscription has
+ * its row, so a notification is never dropped in silence.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function matchAndEnqueue(
@@ -50,13 +53,14 @@ export async function matchAndEnqueue(
     );
 
   let enqueued = 0;
+  let insertError: unknown = null;
   const now = new Date();
 
   // Re-check project access at delivery time so a subscription never leaks a
-  // project the subscriber cannot reach, including one the user was removed
-  // from after subscribing.
+  // project its subscriber, or the owner of its personal channel, cannot reach,
+  // including one the user was removed from after subscribing.
   const accessByUser = new Map<number, boolean>();
-  const subscriberCanAccess = async (userId: number): Promise<boolean> => {
+  const userCanAccess = async (userId: number): Promise<boolean> => {
     const cached = accessByUser.get(userId);
     if (cached !== undefined) return cached;
     const [u] = await db.select().from(users).where(eq(users.id, userId));
@@ -67,8 +71,10 @@ export async function matchAndEnqueue(
 
   for (const { sub, channel } of rows) {
     // Global subscriptions (userId null) are admin-managed and span every
-    // project; per-user subscriptions re-check the subscriber's access.
-    if (sub.userId != null && !(await subscriberCanAccess(sub.userId))) continue;
+    // project; per-user subscriptions re-check the subscriber's access, and a
+    // personal channel its owner's.
+    if (sub.userId != null && !(await userCanAccess(sub.userId))) continue;
+    if (channel.userId != null && !(await userCanAccess(channel.userId))) continue;
 
     // Email goes only to an address its owner proved they hold.
     if (!(await emailDestinationVerified(db, channel))) continue;
@@ -99,10 +105,12 @@ export async function matchAndEnqueue(
         createdAt: now,
       });
       enqueued++;
-    } catch {
-      // Unique constraint on dedupeKey → duplicate, skip silently
+    } catch (error) {
+      // The unique dedupe key: this event already has its delivery on this channel.
+      if (!isUniqueViolation(error)) insertError ??= error;
     }
   }
 
+  if (insertError) throw insertError;
   return enqueued;
 }

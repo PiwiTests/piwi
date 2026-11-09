@@ -1,4 +1,4 @@
-import { requireResolvedProjectAccess, resolveLinkProjectId } from '../../utils/project-access';
+import { requireResolvedProjectAccess, requireRouteId, resolveLinkProjectId } from '../../utils/project-access';
 import { deleteLink } from '#shared/handlers/links';
 
 defineRouteMeta({
@@ -12,10 +12,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) {
-    throw apiError({ statusCode: 400, message: 'Invalid link ID' });
-  }
+  const id = requireRouteId(event, 'id', 'link ID');
 
   const { db } = await requireResolvedProjectAccess(event, id, resolveLinkProjectId, 'Link');
 

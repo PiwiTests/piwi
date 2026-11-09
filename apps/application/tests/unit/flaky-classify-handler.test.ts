@@ -6,6 +6,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -40,17 +41,19 @@ async function addAttempt(
   createdAt?: Date,
   testCaseId = 1,
 ): Promise<void> {
-  await db.insert(schema.testRunsCases).values({
-    ...(createdAt ? { createdAt } : {}),
-    testRunId,
-    testCaseId,
-    status,
-    retries,
-    duration: 1_000,
-    error,
-    browserName: project,
-    browser: { projectName: project, browserName: project },
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      ...(createdAt ? { createdAt } : {}),
+      testRunId,
+      testCaseId,
+      status,
+      retries,
+      duration: 1_000,
+      error,
+      browserName: project,
+      browser: { projectName: project, browserName: project },
+    }),
+  );
 }
 
 describe('classifyAndPersistFlakyRootCause', () => {

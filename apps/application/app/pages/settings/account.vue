@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { PROFILE_PICTURE_ACCEPT, PROFILE_PICTURE_MAX_BYTES, PROFILE_PICTURE_TOO_HEAVY } from '#shared/profile-picture';
+import type { ApiResponse } from '~~/types/api';
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
@@ -13,6 +15,8 @@ interface MeUser {
   emailVerified: boolean;
   oauthProvider: string | null;
   hasPassword: boolean;
+  avatarVersion: string | null;
+  avatarUploaded: boolean;
 }
 
 const { data: me, refresh } = await useFetch<{ authenticated: boolean; user: MeUser | null }>('/api/auth/me');
@@ -50,6 +54,57 @@ const changingPassword = ref(false);
 
 // Provider disconnect
 const disconnecting = ref('');
+
+// Profile picture
+const { fetchUser } = useAuth();
+const pictureInput = ref<HTMLInputElement | null>(null);
+const savingPicture = ref(false);
+
+async function uploadPicture(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (file.size > PROFILE_PICTURE_MAX_BYTES) {
+    toast.add({ title: 'Picture too large', description: PROFILE_PICTURE_TOO_HEAVY, color: 'error' });
+    return;
+  }
+  savingPicture.value = true;
+  try {
+    await $fetch<ApiResponse<typeof import('~~/server/api/auth/avatar.put').default>>('/api/auth/avatar', {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    });
+    await Promise.all([refresh(), fetchUser()]);
+    toast.add({ title: 'Profile picture updated', color: 'success' });
+  } catch (e) {
+    toast.add({ title: 'Failed to update profile picture', description: errorMessage(e), color: 'error' });
+  } finally {
+    savingPicture.value = false;
+  }
+}
+
+const isRemovePictureConfirmOpen = ref(false);
+
+async function removePicture() {
+  isRemovePictureConfirmOpen.value = false;
+  if (savingPicture.value) return;
+  savingPicture.value = true;
+  try {
+    const { removed } = await $fetch<ApiResponse<typeof import('~~/server/api/auth/avatar.delete').default>>(
+      '/api/auth/avatar',
+      { method: 'DELETE' },
+    );
+    await Promise.all([refresh(), fetchUser()]);
+    if (removed) toast.add({ title: 'Profile picture removed', color: 'success' });
+    else toast.add({ title: 'Nothing removed: your profile picture had already changed', color: 'neutral' });
+  } catch (e) {
+    toast.add({ title: 'Failed to remove profile picture', description: errorMessage(e), color: 'error' });
+  } finally {
+    savingPicture.value = false;
+  }
+}
 
 watch(
   () => me.value?.user,
@@ -103,7 +158,7 @@ async function saveName() {
   } catch (e) {
     toast.add({
       title: 'Failed to update display name',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
@@ -118,7 +173,7 @@ async function saveEmail() {
     await refresh();
     toast.add({ title: 'Email updated', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to update email', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed to update email', description: errorMessage(e), color: 'error' });
   } finally {
     savingEmail.value = false;
   }
@@ -132,7 +187,7 @@ async function sendVerification() {
   } catch (e) {
     toast.add({
       title: 'Failed to send verification',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
@@ -160,7 +215,7 @@ async function changePassword() {
     confirmPassword.value = '';
     toast.add({ title: 'Password changed', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to change password', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed to change password', description: errorMessage(e), color: 'error' });
   } finally {
     changingPassword.value = false;
   }
@@ -208,6 +263,56 @@ const authEnabled = computed(() => config.public.authEnabled);
     </UAlert>
 
     <template v-else-if="me?.user">
+      <SectionCard
+        icon="i-lucide-image"
+        title="Profile picture"
+        help="account.profile-picture"
+        data-shot="account-profile-picture"
+        data-tour="account-profile-picture"
+      >
+        <div class="flex flex-wrap items-center gap-4">
+          <UserAvatar :account="me.user" :avatar-version="me.user.avatarVersion" size="3xl" />
+          <div class="min-w-0 flex-1 space-y-2">
+            <p class="text-xs text-muted">
+              {{
+                config.public.demoMode
+                  ? 'Uploading a picture is not available in the demo.'
+                  : 'PNG, JPEG or WebP, under 1 MB and at most 1000 × 1000 pixels.'
+              }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-upload"
+                :loading="savingPicture"
+                :disabled="Boolean(config.public.demoMode)"
+                @click="pictureInput?.click()"
+              >
+                Upload picture
+              </UButton>
+              <UButton
+                v-if="me.user.avatarUploaded"
+                color="neutral"
+                variant="ghost"
+                :disabled="savingPicture"
+                @click="isRemovePictureConfirmOpen = true"
+              >
+                Remove picture
+              </UButton>
+            </div>
+            <input
+              ref="pictureInput"
+              type="file"
+              class="hidden"
+              :accept="PROFILE_PICTURE_ACCEPT"
+              aria-label="Profile picture file"
+              @change="uploadPicture"
+            />
+          </div>
+        </div>
+      </SectionCard>
+
       <!-- Display name section -->
       <SectionCard
         icon="i-lucide-user"
@@ -381,6 +486,18 @@ const authEnabled = computed(() => config.public.authEnabled);
         </p>
       </SectionCard>
 
+      <SectionCard
+        icon="i-lucide-plug"
+        title="Connected apps"
+        help="settings.connected-apps"
+        data-shot="account-connected-apps"
+        data-tour="account-connected-apps"
+      >
+        <ConnectedAppsManager :user-id="me.user.id" />
+      </SectionCard>
+
+      <RunRequestsCard />
+
       <!-- API keys section -->
       <SectionCard
         icon="i-lucide-key"
@@ -392,5 +509,24 @@ const authEnabled = computed(() => config.public.authEnabled);
         <ApiKeysManager :user-id="me.user.id" />
       </SectionCard>
     </template>
+
+    <ClientOnly>
+      <UModal
+        :open="isRemovePictureConfirmOpen"
+        title="Remove profile picture"
+        @update:open="isRemovePictureConfirmOpen = $event"
+      >
+        <template #body>
+          <p>
+            Remove the picture you uploaded? It is deleted from this server, so showing it again means uploading it
+            again.
+          </p>
+        </template>
+        <template #footer>
+          <UButton color="neutral" variant="ghost" label="Cancel" @click="isRemovePictureConfirmOpen = false" />
+          <UButton color="error" label="Remove picture" icon="i-lucide-image-off" @click="removePicture" />
+        </template>
+      </UModal>
+    </ClientOnly>
   </div>
 </template>

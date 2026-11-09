@@ -3,7 +3,7 @@ import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '
 import { HUB_CLOSE, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
 import type { HubSocket } from '../../src/background/hub-connection.js';
 import { RunHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
-import type { RunsFrame, RunsView } from '../../src/shared/runs.js';
+import type { RunsFrame, RunsLane, RunsLaneFrame, RunsView } from '../../src/shared/runs.js';
 
 /**
  * The worker's hub client against a stub: the editor's live endpoint as a fetch that answers what a test says (a
@@ -192,10 +192,26 @@ function setup(over: Partial<RunHubsDeps> = {}) {
   };
 }
 
-/** The hub's side of the handshake: open, welcome, answer `subscribe`, then send `sessions`. */
-async function welcome(socket: FakeSocket, sessions: HubSession[] = [], keepaliveMs = 20_000): Promise<void> {
+/**
+ * The hub's side of the handshake: open, welcome (with the `features` it lists, none for a hub that predates them),
+ * answer `subscribe`, then send `sessions`.
+ */
+async function welcome(
+  socket: FakeSocket,
+  sessions: HubSession[] = [],
+  keepaliveMs = 20_000,
+  features?: string[],
+): Promise<void> {
   socket.open();
-  socket.hear({ type: 'welcome', pid: 4242, version: '0.60.0', client: 'Visual Studio Code', roots: [], keepaliveMs });
+  socket.hear({
+    type: 'welcome',
+    pid: 4242,
+    version: '0.60.0',
+    client: 'Visual Studio Code',
+    roots: [],
+    keepaliveMs,
+    ...(features ? { features } : {}),
+  });
   const subscribe = socket.last('subscribe')!;
   socket.hear({ type: 'answer', id: subscribe.id, ok: true, message: `Following ${sessions.length} runs.` });
   for (const s of sessions) socket.hear({ type: 'session', session: s });
@@ -307,12 +323,36 @@ describe('finding the hubs through the pairing', () => {
     expect(fetches).toHaveLength(1);
   });
 
-  it('takes an endpoint that answers 404 with no proof as an editor older than the live endpoint', async () => {
+  it('takes an endpoint that answers 404 with no proof as no editor, and sends it nothing', async () => {
     const { hubs, fetches, prove } = setup();
     prove('none-404');
     await hubs.find();
-    expect(hubs.state().discovery).toBe('outdated');
+    expect(hubs.state().discovery).toBe('not-editor');
     expect(fetches).toEqual([]);
+  });
+
+  it('asks a program that cannot prove it holds the token again a few times in a row, then once a minute', async () => {
+    const { hubs, prove, challenges } = setup();
+    /** Whether a look for the hubs is under way: its proof runs outside the fake timers. */
+    const finding = () => (hubs as unknown as { finding: Promise<void> | null }).finding !== null;
+    hubs.listen(() => {});
+    prove('wrong');
+    await hubs.find();
+    // The backoff asks again at 1, 3, 7 and 15 s, then no more: the minute's look again alone.
+    for (let second = 1; second <= 55; second++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      await until(() => !finding());
+    }
+    expect(challenges).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(5000);
+    await until(() => challenges.length === 6);
+    expect(challenges).toHaveLength(6);
+    // Proven again, it is found.
+    prove('editor');
+    await until(() => !finding());
+    await hubs.find();
+    await until(() => hubs.state().discovery === 'found');
+    expect(hubs.state().discovery).toBe('found');
   });
 
   it('leaves out an entry it cannot read', async () => {
@@ -420,6 +460,16 @@ describe('a hub’s connection', () => {
     // Ten minutes later, it is gone.
     await vi.advanceTimersByTimeAsync(10 * 60_000 + 1);
     expect(hubs.state().runs).toEqual([]);
+  });
+
+  it('shows a run of a ref that runs again as the live one alone, not the one of that ref that ended', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hear({ type: 'session', session: session([], { ended: true }) });
+    expect(hubs.state().runs.map((run) => run.session.ended)).toEqual([true]);
+    sockets[0]!.hear({ type: 'session', session: session([RUNNING]) });
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
   });
 
   it('ignores a message it cannot read, and anything before the welcome', async () => {
@@ -726,9 +776,10 @@ describe('connections that fail', () => {
     await hubs.find();
     await welcome(sockets[0]!, [session([RUNNING])]);
     sockets[0]!.hangUp(1006);
-    expect(hubs.state().runs).toEqual([]);
+    // Its runs stay as last heard while it does not answer.
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
     expect(hubs.state().hubs).toEqual([
-      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false },
+      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false, lanes: false },
     ]);
     expect(fetches).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1000);
@@ -848,6 +899,127 @@ describe('connections that fail', () => {
   });
 });
 
+describe('the hubs of windows opened since', () => {
+  const { token: _token, ...OTHER_PEER } = OTHER_HUB;
+
+  it('are found as a hub names them, the editor asked once for each, and connected', async () => {
+    const { hubs, sockets, fetches, answer } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    expect(fetches).toHaveLength(1);
+    // A hub names one this side knows: nothing to ask.
+    const { token: _own, ...ownPeer } = HUB;
+    sockets[0]!.hear({ type: 'peers', hubs: [ownPeer] });
+    await settle();
+    expect(fetches).toHaveLength(1);
+    // A window opened since: the editor names it with its token.
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await until(() => sockets.length === 2);
+    expect(fetches).toHaveLength(2);
+    expect(sockets.map((socket) => socket.url)).toEqual([HUB.url, OTHER_HUB.url]);
+    // Named again, it is known: nothing more to ask.
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await settle();
+    expect(fetches).toHaveLength(2);
+  });
+
+  it('are asked of the editor once while it does not name them, however often a hub names them', async () => {
+    const { hubs, sockets, fetches } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await until(() => fetches.length === 2);
+    sockets[0]!.hear({ type: 'peers', hubs: [OTHER_PEER] });
+    await settle();
+    expect(fetches).toHaveLength(2);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('are looked for every minute while a Runs window is open, for a hub that names none', async () => {
+    const { hubs, sockets, fetches } = setup();
+    const leave = hubs.listen(() => {});
+    await hubs.find();
+    // A hub whose keepalive is far apart stays connected meanwhile.
+    await welcome(sockets[0]!, [session([RUNNING])], 600_000);
+    await vi.advanceTimersByTimeAsync(59_000);
+    await settle();
+    expect(fetches).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => fetches.length === 2);
+    expect(fetches).toHaveLength(2);
+    expect(sockets).toHaveLength(1);
+    leave();
+    await vi.advanceTimersByTimeAsync(180_000);
+    await settle();
+    expect(fetches).toHaveLength(2);
+  });
+});
+
+describe('a hub whose connection was lost', () => {
+  it('keeps its runs as last heard, the hub not connected, until it tells them again', async () => {
+    const { hubs, sockets } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([STOPPED])]);
+    sockets[0]!.hangUp(1006);
+    expect(hubs.state()).toMatchObject({
+      hubs: [{ id: HUB.url, connected: false }],
+      runs: [{ hub: HUB.url, session: session([STOPPED]) }],
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 2);
+    // Connected again, its runs are those it tells: the test went on meanwhile.
+    await welcome(sockets[1]!, [session([RUNNING])]);
+    expect(hubs.state()).toMatchObject({
+      hubs: [{ id: HUB.url, connected: true }],
+      runs: [{ hub: HUB.url, session: session([RUNNING]) }],
+    });
+  });
+
+  it('takes no command from the run shortcut, and keeps none once its service said it stopped', async () => {
+    const { hubs, sockets, answer } = setup();
+    hubs.listen(() => {});
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    await welcome(sockets[0]!, [session([STOPPED])]);
+    await welcome(sockets[1]!, [session([RUNNING], { ref: 'r2' })]);
+    sockets[0]!.hangUp(1006);
+    expect(hubs.state().runs).toHaveLength(2);
+    // The stopped test of the lost hub is no reason to resume: the shortcut pauses the run that answers.
+    const sent = hubs.shortcut();
+    await vi.advanceTimersByTimeAsync(10);
+    const pause = sockets[1]!.last('runControl')!;
+    expect(pause).toMatchObject({ ref: 'r2', action: 'pause' });
+    sockets[1]!.hear({ type: 'answer', id: pause.id, ok: true, message: 'Pausing.' });
+    expect(await sent).toEqual([{ ok: true, message: 'Pausing.' }]);
+    expect(hubs.answeringRuns().map((run) => run.session.ref)).toEqual(['r2']);
+    // A hub whose service stopped starts again elsewhere: its runs go.
+    sockets[1]!.hangUp(HUB_CLOSE.goingAway);
+    expect(hubs.state().runs.map((run) => run.session.ref)).toEqual(['r1']);
+  });
+
+  it('drops them once the hub refuses its token, or the editor no longer names it', async () => {
+    const { hubs, sockets, answer } = setup();
+    hubs.listen(() => {});
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hangUp(HUB_CLOSE.unauthorized);
+    expect(hubs.state().runs).toEqual([]);
+
+    answer(async () => Response.json({ hubs: [HUB] }));
+    await hubs.find();
+    await welcome(sockets[1]!, [session([RUNNING])]);
+    sockets[1]!.hangUp(1006);
+    expect(hubs.state().runs).toHaveLength(1);
+    answer(async () => Response.json({ hubs: [] }));
+    await hubs.find();
+    expect(hubs.state().runs).toEqual([]);
+  });
+});
+
 describe('the global shortcut', () => {
   it('pauses every run with a worker when no test is stopped', async () => {
     const { hubs, answer, sockets } = setup();
@@ -905,7 +1077,13 @@ describe('a stop’s live view', () => {
 
   function viewer(): RunsViewer & { frames: RunsFrame[]; ended: ReturnType<typeof vi.fn<(view: RunsView) => void>> } {
     const frames: RunsFrame[] = [];
-    return { frames, frame: (frame) => void frames.push(frame), ended: vi.fn<(view: RunsView) => void>() };
+    return {
+      frames,
+      frame: (frame) => void frames.push(frame),
+      ended: vi.fn<(view: RunsView) => void>(),
+      laneFrame: () => {},
+      laneEnded: () => {},
+    };
   }
 
   const frame = (data: string, since = 's7') => ({
@@ -1030,6 +1208,29 @@ describe('a stop’s live view', () => {
     expect([...a.frames, ...b.frames]).toEqual([]);
   });
 
+  it('tells a window that stops watching what the stop takes from it then, and refuses it the actions in the test’s window', async () => {
+    const { hubs, socket } = await watched();
+    const changed = vi.fn();
+    hubs.listen(changed);
+    const [a, b] = [viewer(), viewer()];
+    for (const window of [a, b]) {
+      const on = hubs.command({ ...AT, what: 'view', on: true }, window);
+      answerLast(socket, 'view');
+      await on;
+    }
+    changed.mockClear();
+    await hubs.command({ ...AT, what: 'view', on: false }, a);
+    // The hub hears nothing, the other window still watching: the windows get the state again all the same.
+    expect(changed).toHaveBeenCalled();
+    const intents = (window: RunsViewer) => hubs.state(window).runs[0]!.session.workers[0]!.stop!.intents;
+    expect(intents(a)).toEqual(['mock', 'view', 'pick-at']);
+    const sent = socket.sent.length;
+    expect(await hubs.command({ ...AT, what: 'pick' }, a)).toMatchObject({ failure: 'unwatched' });
+    expect(socket.sent).toHaveLength(sent);
+    void hubs.command({ ...AT, what: 'pick' }, b);
+    expect(socket.last('pick')).toMatchObject({ type: 'pick', ref: 'r1', worker: 1, since: 's7' });
+  });
+
   it('takes a window off a view the hub refused, and tells each window what its stop takes from it', async () => {
     const { hubs, socket } = await watched();
     const [a, b] = [viewer(), viewer()];
@@ -1085,6 +1286,243 @@ describe('a stop’s live view', () => {
     expect(await hubs.command({ ...AT, since: null, what: 'pick-at', x: 1, y: 1 }, viewer())).toMatchObject({
       failure: 'offline',
     });
+    expect(socket.sent).toHaveLength(sent);
+  });
+});
+
+describe('a lane watched while it runs', () => {
+  /** A worker whose reporter shows its lane, running its test, then stopped headless in the same lane. */
+  const LANE_RUNNING: HubWorker = { ...RUNNING, worker: 2, parallelIndex: 1, intents: ['view', 'input', 'watch'] };
+  const LANE_STOPPED: HubWorker = {
+    ...LANE_RUNNING,
+    state: 'stopped',
+    stop: { ...STOPPED.stop!, bar: false, since: 's9', intents: ['view', 'input', 'pick-at'] },
+  };
+  const LANE: RunsLane = { hub: HUB.url, ref: 'r1', lane: 1 };
+
+  function viewer(): RunsViewer & {
+    frames: RunsLaneFrame[];
+    laneEnded: ReturnType<typeof vi.fn<(lane: RunsLane) => void>>;
+  } {
+    const frames: RunsLaneFrame[] = [];
+    return {
+      frames,
+      frame: () => {},
+      ended: () => {},
+      laneFrame: (frame) => void frames.push(frame),
+      laneEnded: vi.fn<(lane: RunsLane) => void>(),
+    };
+  }
+
+  const laneFrame = (data: string, since: string | null = null, lane = 1) => ({
+    type: 'lane-frame',
+    ref: 'r1',
+    lane,
+    worker: 2,
+    test: 't1',
+    since,
+    width: 1280,
+    height: 800,
+    data,
+  });
+
+  async function watched(workers: HubWorker[] = [LANE_RUNNING]) {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session(workers)], 20_000, ['peers', 'lanes']);
+    return { hubs, socket };
+  }
+
+  /** The hub answers the latest command of `type`. */
+  function answerLast(socket: FakeSocket, type: string, answer: Record<string, unknown> = {}): void {
+    const sent = socket.last(type)!;
+    socket.hear({ type: 'answer', id: sent.id, ok: true, message: 'Done.', ...answer });
+  }
+
+  async function watch(hubs: RunHubs, socket: FakeSocket, window: RunsViewer, on = true): Promise<unknown> {
+    const answer = hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on }, window);
+    if (on) answerLast(socket, 'watch', { message: 'The live view is on.' });
+    return answer;
+  }
+
+  it('says which hubs show a lane, as their welcome lists it, while they are away too', async () => {
+    const { hubs, socket } = await watched();
+    expect(hubs.state().hubs).toMatchObject([{ id: HUB.url, lanes: true }]);
+    socket.hangUp(1006);
+    expect(hubs.state().hubs).toMatchObject([{ id: HUB.url, connected: false, lanes: true }]);
+    const { hubs: older, sockets } = setup();
+    await older.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    expect(older.state().hubs).toMatchObject([{ id: HUB.url, lanes: false }]);
+  });
+
+  it('asks the hub to watch a lane as each window does, its frames to the windows that watch it alone, the latest at once to one that comes', async () => {
+    const { hubs, socket } = await watched();
+    const [a, b, c] = [viewer(), viewer(), viewer()];
+    const onA = hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: true }, a);
+    expect(socket.last('watch')).toEqual({ type: 'watch', id: 2, ref: 'r1', lane: 1, on: true });
+    // A frame before the hub's answer goes to the window already.
+    socket.hear(laneFrame('AAAA'));
+    answerLast(socket, 'watch', { message: 'The live view is on.' });
+    expect(await onA).toEqual({ ok: true, message: 'The live view is on.' });
+    expect(await watch(hubs, socket, b)).toEqual({ ok: true, message: 'The live view is on.' });
+    await vi.advanceTimersByTimeAsync(200);
+    socket.hear(laneFrame('BBBB', 's9'));
+    // A frame of another lane goes to nobody, nor does one it cannot read.
+    socket.hear(laneFrame('CCCC', null, 0));
+    socket.hear({ ...laneFrame('DDDD'), test: null });
+    const expected = (data: string, since: string | null = null) => ({
+      hub: HUB.url,
+      ref: 'r1',
+      lane: 1,
+      worker: 2,
+      test: 't1',
+      since,
+      width: 1280,
+      height: 800,
+      data,
+    });
+    expect(a.frames).toEqual([expected('AAAA'), expected('BBBB', 's9')]);
+    expect(b.frames).toEqual([expected('AAAA'), expected('BBBB', 's9')]);
+    expect(c.frames).toEqual([]);
+    expect(socket.sent.filter((m) => m.type === 'watch').map((m) => m.on)).toEqual([true, true]);
+  });
+
+  it('sends each window the latest frame alone, at most ten a second, and why none comes as a frame goes', async () => {
+    const { hubs, socket } = await watched();
+    const a = viewer();
+    await watch(hubs, socket, a);
+    for (let i = 0; i < 30; i++) socket.hear(laneFrame(`AA${String(i).padStart(2, '0')}`));
+    const data = () => a.frames.map((f) => ('data' in f ? f.data : f.refused));
+    expect(data()).toEqual(['AA00']);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(data()).toEqual(['AA00', 'AA29']);
+    await vi.advanceTimersByTimeAsync(200);
+    const refused = 'This test has no page to show.';
+    socket.hear({ type: 'lane-frame', ref: 'r1', lane: 1, worker: 2, test: null, since: null, refused });
+    expect(a.frames[a.frames.length - 1]).toEqual({ ...LANE, worker: 2, test: null, since: null, refused });
+  });
+
+  it('stops watching as the last window stops or closes, and takes input at a stop from a window that watches the lane alone', async () => {
+    const { hubs, socket } = await watched([LANE_STOPPED]);
+    const [a, b] = [viewer(), viewer()];
+    const at = { hub: HUB.url, ref: 'r1', worker: 2, since: 's9' };
+    const events = [{ type: 'text' as const, text: 'a' }];
+    expect(await hubs.command({ ...at, what: 'input', events }, a)).toMatchObject({ failure: 'unwatched' });
+    for (const window of [a, b]) await watch(hubs, socket, window);
+    // The window that watches the lane is a viewer of its stop: its input goes on, and the stop keeps it for it.
+    const played = hubs.command({ ...at, what: 'input', events }, a);
+    expect(socket.last('input')).toEqual({ type: 'input', id: 4, ref: 'r1', worker: 2, since: 's9', events });
+    answerLast(socket, 'input', { message: 'Played 1 event.' });
+    expect(await played).toEqual({ ok: true, message: 'Played 1 event.' });
+    const intents = (window: RunsViewer) => hubs.state(window).runs[0]!.session.workers[0]!.stop!.intents;
+    expect(intents(a)).toEqual(['view', 'input', 'pick-at']);
+    expect(intents(viewer())).toEqual(['view', 'pick-at']);
+
+    const watches = () => socket.sent.filter((m) => m.type === 'watch').map((m) => m.on);
+    expect(await hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: false }, a)).toEqual({
+      ok: true,
+      message: '',
+    });
+    expect(watches()).toEqual([true, true]);
+    expect(await hubs.command({ ...at, what: 'input', events }, a)).toMatchObject({ failure: 'unwatched' });
+    hubs.unwatchAll(b);
+    expect(socket.last('watch')).toEqual({ type: 'watch', id: 5, ref: 'r1', lane: 1, on: false });
+    socket.hear(laneFrame('AAAA'));
+    expect([...a.frames, ...b.frames]).toEqual([]);
+  });
+
+  it('takes a window off a lane the hub refused to watch', async () => {
+    const { hubs, socket } = await watched();
+    const a = viewer();
+    const refused = hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: true }, a);
+    const message = 'Update the reporter to watch a running test: this one shows a stopped test alone.';
+    socket.hear({ type: 'answer', id: socket.last('watch')!.id, ok: false, message });
+    expect(await refused).toEqual({ ok: false, message });
+    socket.hear(laneFrame('AAAA'));
+    expect(a.frames).toEqual([]);
+    hubs.unwatchAll(a);
+    expect(socket.sent.filter((m) => m.type === 'watch').map((m) => m.on)).toEqual([true]);
+  });
+
+  it('forgets a lane whose run ended, asking the hub nothing, and tells each window watching one that the connection was lost', async () => {
+    const { hubs, socket } = await watched();
+    const [a, b] = [viewer(), viewer()];
+    await watch(hubs, socket, a);
+    socket.hear({ type: 'session', session: session([LANE_RUNNING], { ended: true }) });
+    hubs.unwatchAll(a);
+    expect(socket.sent.filter((m) => m.type === 'watch').map((m) => m.on)).toEqual([true]);
+    expect(a.laneEnded).not.toHaveBeenCalled();
+
+    socket.hear({ type: 'session', session: { ...session([LANE_RUNNING]), ref: 'r2' } });
+    const lane = { ...LANE, ref: 'r2' };
+    const on = hubs.command({ ...lane, worker: null, since: null, what: 'watch', on: true }, b);
+    answerLast(socket, 'watch');
+    await on;
+    socket.hangUp(1006);
+    expect(b.laneEnded).toHaveBeenCalledWith(lane);
+  });
+
+  it('tells a window that stops watching what the stop takes from it then, and refuses it the actions in the test’s window', async () => {
+    const stopped: HubWorker = {
+      ...LANE_STOPPED,
+      stop: { ...LANE_STOPPED.stop!, intents: ['pick', 'record', 'view', 'input', 'pick-at'] },
+    };
+    const { hubs, socket } = await watched([stopped]);
+    const changed = vi.fn();
+    hubs.listen(changed);
+    const [a, b] = [viewer(), viewer()];
+    for (const window of [a, b]) await watch(hubs, socket, window);
+    const at = { hub: HUB.url, ref: 'r1', worker: 2, since: 's9' };
+    changed.mockClear();
+    await hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: false }, a);
+    expect(socket.sent.filter((m) => m.type === 'watch').map((m) => m.on)).toEqual([true, true]);
+    expect(changed).toHaveBeenCalled();
+    const intents = (window: RunsViewer) => hubs.state(window).runs[0]!.session.workers[0]!.stop!.intents;
+    expect(intents(a)).toEqual(['view', 'pick-at']);
+    expect(intents(b)).toEqual(['pick', 'record', 'view', 'input', 'pick-at']);
+    const sent = socket.sent.length;
+    expect(await hubs.command({ ...at, what: 'pick' }, a)).toMatchObject({ failure: 'unwatched' });
+    expect(await hubs.command({ ...at, what: 'record' }, viewer())).toMatchObject({ failure: 'unwatched' });
+    expect(socket.sent).toHaveLength(sent);
+    void hubs.command({ ...at, what: 'pick' }, b);
+    expect(socket.last('pick')).toMatchObject({ type: 'pick', ref: 'r1', worker: 2, since: 's9' });
+  });
+
+  it('makes no viewer of a stop outside a test, which no lane shows', async () => {
+    const outside: HubWorker = { ...LANE_STOPPED, test: null };
+    const { hubs, socket } = await watched([outside]);
+    const a = viewer();
+    await watch(hubs, socket, a);
+    const at = { hub: HUB.url, ref: 'r1', worker: 2, since: 's9' };
+    expect(await hubs.command({ ...at, what: 'input', events: [{ type: 'text', text: 'a' }] }, a)).toMatchObject({
+      failure: 'unwatched',
+    });
+    expect(hubs.state(a).runs[0]!.session.workers[0]!.stop!.intents).toEqual(['view', 'pick-at']);
+  });
+
+  it('stops the hub watching a lane for a window whose ask it did not answer in time, with no other window on it', async () => {
+    const { hubs, socket } = await watched();
+    const a = viewer();
+    const on = hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: true }, a);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await on).toMatchObject({ ok: false, failure: 'timeout' });
+    expect(socket.sent.filter((m) => m.type === 'watch').map((m) => m.on)).toEqual([true, false]);
+    socket.hear(laneFrame('AAAA'));
+    expect(a.frames).toEqual([]);
+  });
+
+  it('asks nothing of a lane without the window or the lane', async () => {
+    const { hubs, socket } = await watched();
+    const sent = socket.sent.length;
+    expect(await hubs.command({ ...LANE, worker: null, since: null, what: 'watch', on: true })).toMatchObject({
+      failure: 'offline',
+    });
+    const { lane: _lane, ...noLane } = LANE;
+    expect(
+      await hubs.command({ ...noLane, worker: null, since: null, what: 'watch', on: true }, viewer()),
+    ).toMatchObject({ failure: 'offline' });
     expect(socket.sent).toHaveLength(sent);
   });
 });

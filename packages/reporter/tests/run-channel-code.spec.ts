@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
@@ -109,13 +109,19 @@ test.beforeAll(() => selectors.register('tag', () => ({
   query: (root, name) => root.querySelector(name),
   queryAll: (root, name) => Array.from(root.querySelectorAll(name)),
 })));
-// A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
-// once that frame is shown.
-const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
-  if (!list.getEntriesByName('first-contentful-paint').length) return;
-  observer.disconnect();
-  resolve();
-}).observe({ type: 'paint', buffered: true })));
+// A window just opened has no image to take until it shows a frame: the page waits until it is visible, then for two
+// animation frames, the first drawn and the second begun once the compositor took it. A test that waits for it, and
+// the setup of its window, has \`PAINT_TIMEOUT\`, for a busy display.
+const PAINT_TIMEOUT = 15_000;
+const painted = (page) => page.evaluate(() => new Promise((resolve) => {
+  const frames = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  if (document.visibilityState === 'visible') return frames();
+  document.addEventListener('visibilitychange', function shown() {
+    if (document.visibilityState !== 'visible') return;
+    document.removeEventListener('visibilitychange', shown);
+    frames();
+  });
+}));
 // The highlights a page shows: Playwright's layer, where the test's own are, and Piwi's own.
 const LAYERS = 'x-pw-glass, [data-piwi-stop-highlight]';
 const glassIn = (page) => page.evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
@@ -142,28 +148,31 @@ test('checks an element', async ({ page }) => {
   await page.goto('${base}/a');
   await page.keyboard.press('Tab'); // bp
 });
-test('takes every outline down', async ({ page }) => {
-  await page.goto('${base}/a');
-  await painted(page);
-  const before = await page.screenshot({ caret: 'initial' });
-  await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
-  const glass = await glassIn(page);
-  const after = await page.screenshot({ caret: 'initial' });
-  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
-  test.info().annotations.push({ type: 'styled', description: String(styled) });
-  test.info().annotations.push({ type: 'glass', description: String(glass) });
-});
-test('keeps the test’s own highlight', async ({ page }) => {
-  await page.goto('${base}/a');
-  await page.getByTestId('go').highlight();
-  await painted(page);
-  const before = await page.screenshot({ caret: 'initial' });
-  await page.keyboard.press('Shift'); // bp
-  await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const after = await page.screenshot({ caret: 'initial' });
-  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
-  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+test.describe(() => {
+  test.describe.configure({ timeout: PAINT_TIMEOUT });
+  test('takes every outline down', async ({ page }) => {
+    await page.goto('${base}/a');
+    await painted(page);
+    const before = await page.screenshot({ caret: 'initial' });
+    await expect(page.getByTestId('go')).toBeVisible(); // bp
+    const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
+    const glass = await glassIn(page);
+    const after = await page.screenshot({ caret: 'initial' });
+    test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+    test.info().annotations.push({ type: 'styled', description: String(styled) });
+    test.info().annotations.push({ type: 'glass', description: String(glass) });
+  });
+  test('keeps the test’s own highlight', async ({ page }) => {
+    await page.goto('${base}/a');
+    await page.getByTestId('go').highlight();
+    await painted(page);
+    const before = await page.screenshot({ caret: 'initial' });
+    await page.keyboard.press('Shift'); // bp
+    await expect(page.getByTestId('go')).toBeVisible(); // bp
+    const after = await page.screenshot({ caret: 'initial' });
+    test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+    test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+  });
 });
 test('keeps the test’s own highlight through a new document', async ({ page }) => {
   await page.goto('${base}/a');
@@ -683,7 +692,8 @@ module.exports = defineConfig({
     .flatMap((line, i) => (line.endsWith('// bp') ? [`tests/headed.spec.cjs:${i + 1}`] : []))
     .join(';');
   baseEnv = { ...process.env, PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: REF };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
+  withoutCi(baseEnv);
   const ran = await run(
     {
       ...baseEnv,

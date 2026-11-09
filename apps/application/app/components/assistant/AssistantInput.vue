@@ -130,6 +130,7 @@ defineExpose({ focus, focused });
     data-assistant-input
     data-tour="assistant-input"
     data-shot="assistant-input"
+    method="post"
     @submit.prevent="submit"
   >
     <p

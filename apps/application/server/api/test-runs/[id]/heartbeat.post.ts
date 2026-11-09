@@ -3,6 +3,7 @@ import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import { runEventBus } from '../../../utils/run-events';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -26,11 +27,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const body = await readBody(event);
 
@@ -46,5 +43,5 @@ export default eventHandler(async (event) => {
   // Advance the activity timestamp so the stale-run reaper leaves this run alone.
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
-  return { success: true, watched: runEventBus.isWatched(id) };
+  return { success: true, watched: runEventBus.answerWatched(id, body.streamToken) };
 });

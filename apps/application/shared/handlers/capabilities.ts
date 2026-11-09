@@ -120,6 +120,19 @@ export async function isPassiveCapabilityDeclined(
 }
 
 /**
+ * True when an opt-in capability is on for a project: the instance turned it on and the project did not decline it.
+ * Neither data nor a project's `enabled` turns it on, so two small reads decide it. The server refuses the routes of
+ * such a capability while this is false.
+ */
+export async function isOptInCapabilityOn(db: DrizzleDB, projectId: number, id: CapabilityId): Promise<boolean> {
+  const [instanceDecisions, projectDecisions] = await Promise.all([
+    getInstanceDecisions(db),
+    getProjectDecisions(db, projectId),
+  ]);
+  return instanceDecisions[id] === 'enabled' && projectDecisions[id] !== 'declined';
+}
+
+/**
  * True when a capability is hidden in a project: its resolved state is declined
  * or not applicable, the rule the pages hide its sections by.
  */

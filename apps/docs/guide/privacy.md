@@ -10,9 +10,9 @@ Test results are revealing: they carry your source paths, error messages, screen
 network calls, and sometimes your git history. This page is the inventory of where those bytes go.
 
 The short version: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
-activation call. The server never checks for updates; the desktop app checks once at startup (turn that off in
-**Settings → About**) and when you click **Check for updates** there. Every outbound call the server makes is listed
-below, and all but two are something you switched on. An air-gapped instance works the same.
+activation call. The server never checks for updates; the desktop app checks at startup (optional, in
+**Settings → About**) and on **Check for updates**, then reads the newer releases' notes from GitHub, anonymously.
+Every outbound call the server makes is listed below; all but two are opt-in. An air-gapped instance works the same.
 
 ## What leaves your server
 
@@ -27,11 +27,11 @@ Every outbound connection Piwi can make:
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
 | Slack or your webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
-| Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
+| Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | OAuth exchange and profile picture |
 
 The reporter sends your instance what its options switch on. [Code reach](/features/code-reach) and
 [server coverage](/features/server-coverage), off by default, send repository-relative paths; line numbers and
-blob ids only with `coverage.browser: 'functions'` or `coverage.server: 'functions'` or `'lines'`. `piwi coverage
+blob ids only with `coverage.browser: 'functions'` or `'lines'`, or `coverage.server: 'functions'` or `'lines'`. `piwi coverage
 upload` adds the commit's tracked paths. Source code and hit counts never leave.
 
 Two rows need no setting: anonymous git-host reads for runs that report a public-host remote, and a
@@ -48,8 +48,8 @@ context before it's sent, and cap its size. See
 - **Traces.** The Playwright trace viewer is bundled and served by your own instance at
   `/trace-viewer/`. Opening a trace from Piwi never uploads it anywhere — unlike sending a colleague to
   the hosted `trace.playwright.dev`.
-- **The API reference.** `/docs` is rendered in-app from your instance's own OpenAPI spec, with no
-  third-party CDN, so it works offline.
+- **The API reference.** It is rendered in-app from your instance's own OpenAPI spec, with no third-party CDN, so it
+  works offline.
 - **Screenshots, videos, HTML reports.** Stored on your disk or your S3 bucket, served by your instance.
 - **HTML report execution.** Reports run with scripts enabled inside a CSP sandbox with a unique opaque origin. Piwi
   provides the report with an in-memory Web Storage facade so Playwright's settings UI works; it is discarded with the
@@ -97,8 +97,8 @@ Some data is skipped at the source, so it never exists to leak:
   selection name elements, never values or selected text. A URL fragment's credentials are masked
   (`#access_token=[masked]`).
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
-  network view, and token-shaped strings in URLs and bodies are masked too. The trace file is stored
-  as uploaded, so the trace viewer and a downloaded trace still show them.
+  network view, and token-shaped strings in URLs, bodies and [test errors](/reference/test-metadata#test-errors) are
+  masked too. The trace file is stored as uploaded, so the trace viewer and a downloaded trace still show them.
 - **Backend logs, in production.** The [backend-log integrations](./backend-logs) emit their header only
   in development and test environments by default.
 

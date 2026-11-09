@@ -151,7 +151,7 @@ stops the field from asking.
 
 ## Turning it off
 
-Decline **Assistant** on the Setup page ([Choose what you use](/operate/capabilities#declining-a-capability)) and its
+Decline **Assistant** in **Settings → Capabilities** ([Choose what you use](/operate/capabilities#declining-a-capability)) and its
 routes answer as unavailable for everyone; **Ask Piwi** leaves the sidebar and the command palette. Declining AI turns it off too. [Suggestions](./guides#suggested-on-a-page) that offer a guide stay.
 
 ## Related

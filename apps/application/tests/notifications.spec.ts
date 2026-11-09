@@ -14,6 +14,7 @@ import { test, expect } from './fixtures';
 import { ProjectRole } from '#shared/permissions';
 import { readSseUntil } from './utils/sse';
 import { createMember } from './utils/access';
+import { PROJECT } from '#shared/test-project-names';
 
 // All tests share a single auth-enabled server — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -77,7 +78,7 @@ test.describe.serial('Setup', () => {
       'POST',
       '/api/test-runs/submit',
       {
-        projectName: 'notif-test-project',
+        projectName: PROJECT.NOTIFICATIONS_SERVER,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -496,7 +497,7 @@ test.describe.serial('Browser stream filters', () => {
           'POST',
           '/api/test-runs/submit',
           {
-            projectName: 'notif-test-project',
+            projectName: PROJECT.NOTIFICATIONS_SERVER,
             environment,
             status: 'passed',
             startTime: new Date().toISOString(),

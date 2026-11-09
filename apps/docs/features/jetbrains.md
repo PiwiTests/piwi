@@ -57,8 +57,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   a New Test File…**; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
   started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
-  Caret**, **Finish** and **End Test**; they are also first in the status bar item's menu and under **Tools → Piwi**,
-  with **Pause the Run** and **Stop the Run**. A headless test's page shows in the Piwi tool window's **Paused Page**
+  Caret**, **Finish** and **End Test**; they are also in the status bar item's menu, after each stop to go to, and
+  under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in the Piwi tool window's **Paused Page**
   tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Pair with Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
@@ -82,7 +82,8 @@ The rest is native, and every action is under **Tools → Piwi**:
 
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
 shortcuts of your keymap while they apply: in the default keymap `F9` pauses and resumes, `F8` steps, `Alt+F9` runs
-to the caret and `Shift+F8` finishes. **Settings → Keymap** changes them (search `Piwi`).
+to the caret and `Shift+F8` finishes. Where your keymap gives one to another action too, Piwi's comes first while it
+applies. **Settings → Keymap** changes them (search `Piwi`).
 
 ## Related
 

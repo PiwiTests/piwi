@@ -15,6 +15,7 @@ Coverage has two sides, each opt-in: the browser's, [code reach](/features/code-
 | --- | --- | --- | --- |
 | Browser files | `coverage.browser: 'files'`, or `captureCodeReach: true` | the application files whose functions ran | paths |
 | Browser functions | `coverage.browser: 'functions'` | also the start and end line of each function that ran | paths, line numbers, git blob ids |
+| Browser lines | `coverage.browser: 'lines'` | also the lines that ran, and the run's executable lines | paths, line numbers, git blob ids |
 | Server files | `coverage.server: 'files'`, with a coverage build | the backend files that ran | paths |
 | Server functions | `coverage.server: 'functions'` | also the start and end line of each function that ran | paths, line numbers, git blob ids |
 | Server lines | `coverage.server: 'lines'` | also the executed lines, and the run's executable lines | paths, line numbers, git blob ids |
@@ -58,7 +59,7 @@ every function the page runs; as the test leaves the document, the reporter stop
 resolves it to files. Each of these works on every module of every document, so the cost grows with the modules a page
 loads and with the full page loads a test makes: an application that loads its modules once, then navigates on the
 client, pays far less, as the synthetic pages below show. Files and functions cost about the same: both read the same
-record, functions only keep more of it.
+record, functions only keep more of it. Lines cost more: V8 counts every block a function runs, not only the call.
 
 ## On synthetic pages
 
@@ -68,6 +69,11 @@ Browser files, medians on a 4-core sandbox, headless Chromium, one page per test
   1,220 ms per test, 8% more, and 16% for a worker's first test, where Playwright's `page.coverage` adds 50%.
 - **A light page** (the reporter's capture benchmark, `npm run reporter:bench`): 61 to 103 ms more per test, where
   `page.coverage` adds 176 to 209 ms.
+
+V8's coverage alone, on a script that spends its time in JavaScript (a recursive function, a loop with branches and a
+sort, over 20,000 items, 20 times), medians of 5 runs: 285 ms with no coverage, 287 ms with the function coverage of
+`files` and `functions`, 468 ms with the block coverage of `lines`, 64% more. A page whose time goes to the network,
+the DOM or rendering pays a smaller share.
 
 Server coverage, on a prototype of the coverage package: under 2% of test duration on Microsoft's eShopOnWeb, whose
 CPU goes to the framework; up to 26% more backend CPU on an application written to spend its CPU in business logic, and
@@ -85,7 +91,8 @@ measurable test time either. Per call, the Nitro recorder costs 5 to 13 ns, abou
   the UI tests' time: record lines, unless the reports' size matters more than their detail.
 - **Browser coverage** belongs in a scheduled run on a large application served by a dev server, where it adds 40 to
   50% to the UI tests. Files and functions cost about the same, so a scheduled run may as well record functions. On an
-  application that loads its modules once, it costs little enough to stay on.
+  application that loads its modules once, it costs little enough to stay on. Record lines where the front end's
+  line ratio in the [combined coverage](/features/combined-coverage) is worth the slower scripts.
 
 ## Related
 

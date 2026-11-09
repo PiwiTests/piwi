@@ -21,9 +21,12 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStop,
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
+  WireEnvironmentSnapshot,
 } from '@piwitests/core/wire';
 
 export type {
@@ -39,6 +42,8 @@ export type {
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
+  WireEnvironmentSnapshot,
 };
 
 // ── Per-case wire shape ──────────────────────────────────────────────────────
@@ -58,11 +63,18 @@ export interface WireTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** On a `begin` event: the retries the test is allowed (`TestCase.retries`). */
+  maxRetries?: number;
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to (0 without repeats). */
   repeatEachIndex?: number;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters.
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
@@ -116,12 +128,19 @@ export interface WireTestCase {
   coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 // ── Stream events (discriminated union) ──────────────────────────────────────
@@ -130,9 +149,18 @@ export interface BeginStreamEvent {
   type: 'begin';
   title: string;
   location: string;
+  /** The attempt beginning: 0 for the first, 1 for the first retry. */
+  retries?: number;
+  /** The retries the test is allowed. */
+  maxRetries?: number;
+  tags?: string[] | null;
+  locks?: string[] | null;
+  testMeta?: TestMetadata | null;
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition is starting (0 without repeats). */
   repeatEachIndex?: number;
   workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
   shardIndex: number | null;
   browser?: BrowserConfig | null;
   suitePath?: string[] | null;
@@ -153,6 +181,8 @@ export interface CompleteStreamEvent {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
   shardIndex: number | null;
   startedAt: number | null;
   browser?: BrowserConfig | null;
@@ -192,12 +222,19 @@ export interface CompleteStreamEvent {
   coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 export interface StepBeginStreamEvent {
@@ -210,6 +247,8 @@ export interface StepBeginStreamEvent {
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
+  /** The shard that ran the step's test, 1-based; null in a run that is not sharded. */
+  shardIndex: number | null;
   startedAt: number | null;
 }
 
@@ -225,11 +264,46 @@ export interface StepEndStreamEvent {
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
+  /** The shard that ran the step's test, 1-based; null in a run that is not sharded. */
+  shardIndex: number | null;
   startedAt: number | null;
 }
 
+/** Who a stop event is about: the attempt of a test running now, named as its `begin` named it. */
+interface StoppedTestOf {
+  title: string;
+  location: string;
+  /** The attempt: 0 for the first, 1 for the first retry. */
+  retries: number;
+  repeatEachIndex?: number;
+  workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
+  shardIndex: number | null;
+  /** The test's Playwright project, as its `begin` named it: part of the attempt's identity. */
+  browser?: BrowserConfig | null;
+}
+
+/** A test of a run outside CI stopped (a breakpoint, a step, a Pause, `page.pause()`, a failure held): what and where. */
+export interface TestStoppedStreamEvent extends StoppedTestOf {
+  type: 'test-stopped';
+  stop: TestStop;
+}
+
+/** The stop of a test ended, and how long its attempt has stood stopped in all (`pausedMs`). */
+export interface TestResumedStreamEvent extends StoppedTestOf {
+  type: 'test-resumed';
+  pausedMs: number;
+}
+
 /** Discriminated union of events queued to `StreamManager` and persisted by `StreamBuffer`. */
-export type StreamEvent = BeginStreamEvent | CompleteStreamEvent | StepBeginStreamEvent | StepEndStreamEvent;
+export type StreamEvent =
+  | BeginStreamEvent
+  | CompleteStreamEvent
+  | StepBeginStreamEvent
+  | StepEndStreamEvent
+  | TestStoppedStreamEvent
+  | TestResumedStreamEvent;
 
 // ── Suite-level setup steps (beforeAll/afterAll timeline) ─────────────────────
 

@@ -263,6 +263,17 @@ describe('leak rules', () => {
     expect(evaluateGatePolicy(run, { maxLeaks: 5 }).violations.map((v) => v.rule)).toEqual(['no-resource-report']);
     expect(isEmptyPolicy({ maxNewLeaks: 0 })).toBe(false);
   });
+
+  test('a project that declined the resources capability fails a leak rule as not measured', () => {
+    const run = facts({ resources: { reported: false, declined: true, leaks: [], newLeaks: [], baseBranch: null } });
+    const [violation, ...rest] = evaluateGatePolicy(run, { maxNewLeaks: 0 }).violations;
+    expect(rest).toEqual([]);
+    expect(violation).toEqual({
+      rule: 'resources-declined',
+      message:
+        'the project declined the Resources capability, so its leaks are not measured — turn it on in Settings → Capabilities, or drop the leak rules',
+    });
+  });
 });
 
 describe('an environment incident', () => {

@@ -18,7 +18,7 @@ export default eventHandler(async (event) => {
   const scope = await getProjectScope(db, user as any);
   const result = await listProjects(db, scope);
   const items = result.map((p: any) => {
-    const { scmToken: _scm, ...rest } = p;
+    const { scmToken: _scm, ciServerToken: _ciServerToken, ...rest } = p;
     return rest;
   });
   return { items };

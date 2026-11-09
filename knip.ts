@@ -16,8 +16,9 @@ const config: KnipConfig = {
   ignoreExportsUsedInFile: true,
   // System commands the scripts run: Windows' `tasklist`, ImageMagick's `import` and `Xvfb` for the JetBrains
   // screenshots, `ffprobe`, which the reporter's live view spec reads a video's length with where it is installed, and
-  // the showcase's `ffmpeg` (its take's capture, its cut's encodes) and fontconfig's `fc-match` (the stage's fonts).
-  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe', 'ffmpeg', 'fc-match'],
+  // the showcase's `ffmpeg` (its take's capture, its cut's encodes), fontconfig's `fc-match` (the stage's fonts) and
+  // `mkfifo`, with which the reporter's private-file spec makes a named pipe on POSIX systems.
+  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe', 'ffmpeg', 'fc-match', 'mkfifo'],
   workspaces: {
     '.': {
       // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root. The showcase's
@@ -92,6 +93,17 @@ const config: KnipConfig = {
     'packages/server': {
       // Native modules the published server installs for the bundled Nitro output.
       ignoreDependencies: ['@libsql/client', 'sharp'],
+    },
+    'packages/run-ui': {
+      // The layer's components, composables and utils are auto-imported by the hosts that extend it (the dashboard,
+      // Piwi Runner).
+      entry: ['app/**/*.{ts,vue}'],
+    },
+    'apps/runner': {
+      // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
+      entry: ['server/main.ts', 'app/**/*.{ts,vue}'],
+      // `nuxt typecheck` runs `vue-tsc`.
+      ignoreDependencies: ['vue-tsc'],
     },
     'integrations/nitro': {},
   },

@@ -5,10 +5,11 @@ import { sha256Hex } from '#shared/utils/hash';
 
 /**
  * Content-addressed storage for the large per-execution text payloads (ARIA
- * snapshots, test source snippets, source-frame JSON). Contents are hashed
- * server-side at ingest, stored once per (project, hash), and referenced from
- * `test_runs_cases` by id — so a test failing identically across many runs
- * (or across browsers within one run) stores each payload a single time.
+ * snapshots, test source snippets, source-frame JSON, what a test wrote to
+ * stdout and stderr). Contents are hashed server-side at ingest, stored once
+ * per (project, hash), and referenced from `test_runs_cases` by id — so a test
+ * failing identically across many runs (or across browsers within one run)
+ * stores each payload a single time.
  *
  * A row may still carry a payload in its inline column instead; readers must
  * coalesce via {@link inlineCasePayloads} (payload content wins, inline column
@@ -145,4 +146,19 @@ export async function inlineCasePayloads<T extends CasePayloadRefFields>(db: Dri
     }
   }
   return resolved;
+}
+
+/**
+ * What an execution wrote to stdout and to stderr, from its content-addressed payloads; null for a stream it wrote
+ * nothing to. Read apart from {@link inlineCasePayloads}, so the readers that never show the output never load it.
+ */
+export async function caseOutput(
+  db: DrizzleDB,
+  row: { stdoutPayloadId?: number | null; stderrPayloadId?: number | null },
+): Promise<{ stdout: string | null; stderr: string | null }> {
+  const contents = await resolveCasePayloadContents(db, [row.stdoutPayloadId, row.stderrPayloadId]);
+  return {
+    stdout: row.stdoutPayloadId != null ? (contents.get(row.stdoutPayloadId) ?? null) : null,
+    stderr: row.stderrPayloadId != null ? (contents.get(row.stderrPayloadId) ?? null) : null,
+  };
 }

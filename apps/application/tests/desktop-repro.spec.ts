@@ -117,7 +117,7 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
               }
               case 'desktop_bring_to_front':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
               case 'desktop_set_run_progress':
                 return null;
               default:
@@ -198,7 +198,7 @@ test.describe('Desktop repro request', () => {
     const patches: unknown[] = [];
     await installFakeBridge(page, projectId);
     await routeDesktop(page, patches);
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
 
     const dialog = page.getByRole('dialog', { name: 'Run a bug report with Playwright' });
@@ -244,7 +244,7 @@ test.describe('Desktop repro request', () => {
     const patches: unknown[] = [];
     await installFakeBridge(page, projectId);
     await routeDesktop(page, patches);
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
 
     const dialog = page.getByRole('dialog', { name: 'Run a bug report with Playwright' });
@@ -274,7 +274,7 @@ test.describe('Desktop repro request', () => {
         clusterId: 214,
       },
     });
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
 
     const dialog = page.getByRole('dialog', { name: 'Find the commit that broke a test' });
@@ -371,7 +371,7 @@ test.describe('Desktop repro request', () => {
         },
       },
     });
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
 
     const dialog = page.getByRole('dialog', { name: 'Run Flake Lab on a flaky test' });

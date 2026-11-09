@@ -30,7 +30,8 @@ import {
   type CoverageRuntime,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { subtractLineRanges, unionLineRanges } from './coverage-insights';
+import { subtractLineRanges } from './coverage-combine';
+import { unionLineRanges } from './coverage-insights';
 
 /** Shortest abbreviated blob id compared, as `git diff` abbreviates them by default. */
 const MIN_BLOB_PREFIX = 7;

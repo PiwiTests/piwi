@@ -84,7 +84,7 @@ answers it is the one that served the run's first requests.
   coverage; what the earlier process ran outside a request (startup, background work) is lost, and a test whose
   requests it served but the reporter had not yet collected is marked incomplete. The reporter warns, the run's header
   reads *Coverage incomplete: the backend restarted during the run*, and the run's coverage in the
-  [API](https://piwitests.dev/demo/docs) names the origin and about when it restarted. A backend unreachable at the
+  [API](https://piwitests.dev/demo/settings/api) names the origin and about when it restarted. A backend unreachable at the
   end of the run is flagged the same way, with only the tests' lines kept. The commit's
   [combined coverage](./combined-coverage) notes the run, and its `e2e` suite reads as incomplete unless a complete
   run of the commit counts beside it. A Nitro development server restarts on every rebuild.

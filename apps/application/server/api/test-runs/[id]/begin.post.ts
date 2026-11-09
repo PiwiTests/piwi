@@ -6,8 +6,9 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { pinProjectRepository } from '../../../utils/scm/project-repository';
 import { withInstanceRunLock } from '../../../utils/ingest-locks';
@@ -16,18 +17,35 @@ import {
   knownShardTokens,
   matchesShardToken,
   matchesStreamToken,
+  readShardSetupTokens,
   shardTokenDigest,
   streamTokenDigest,
+  withShardSetupTokens,
   withShardTokens,
 } from '../../../utils/shard-tokens';
+import { requireRouteId } from '../../../utils/project-access';
+import { requireStreamingRun } from '../../../utils/stream-auth';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { publicRunUrl } from '#shared/run-url';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'X-Piwi-Run-Token',
+        in: 'header',
+        required: false,
+        description:
+          'The setup token of the body, checked before the body is read. A run set up by reporter 0.65.0 or later needs it: 401 without it, 403 for one that is not the run’s.',
+        schema: { type: 'string' },
+      },
+    ],
     requestBody: {
       content: {
         'application/json': {
@@ -49,14 +67,9 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
+  const db = await getDatabase();
+  await requireStreamingRun(db, id, 'begin', getRequestHeader(event, RUN_TOKEN_HEADER));
 
   const body = await readBody(event);
 
@@ -68,7 +81,6 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const db = await getDatabase();
   const [instance] = await db
     .select({ projectId: testRuns.projectId, instanceId: testRuns.instanceId })
     .from(testRuns)
@@ -152,9 +164,14 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       reporterVersion: body.reporterVersion || testRun.reporterVersion,
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? testRun.filterDetails,
+      // The stale-run sweep measures the run's quiet time from here.
+      updatedAt: new Date(),
     };
     const reported = (stored: unknown) =>
-      carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored);
+      carryRequestOrigin(
+        carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored),
+        stored,
+      );
 
     let metadata: Record<string, unknown> | null;
     if (isSharded) {
@@ -162,35 +179,54 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       metadata = await updateRunMetadata(
         db,
         id,
-        (stored) => withShardTokens(reported(stored), swapShardToken(id, stored, body.setupToken, streamToken)),
+        (stored) =>
+          withBegunShard(
+            id,
+            withShardTagsTruncated(reported(stored), stored, body.metadata),
+            stored,
+            body.setupToken,
+            streamToken,
+          ),
         running,
       );
     } else {
-      metadata = reported(testRun.metadata);
+      metadata = carryTagsTruncated(reported(testRun.metadata), testRun.metadata);
       await db
         .update(testRuns)
         .set({ ...running, metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
         .where(eq(testRuns.id, id));
     }
 
-    await pinProjectRepository(db, testRun.projectId, metadata);
+    // A private run pins nothing of the project's.
+    if (runOrigin(metadata) !== 'request') await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and
-    // adds its slice of the planned suite to the run's total.
+    // adds its slice of the planned suite to the run's total. What its metadata
+    // tells that the run's does not yet (the commit, the branch) joins the run's.
     const shardTokens = swapShardToken(id, testRun.metadata, body.setupToken, streamToken);
     const cachedState = runEventBus.getRunState(id);
     if (cachedState) runEventBus.cacheRunState(id, { ...cachedState, shardTokens });
 
-    await updateRunMetadata(
+    const metadata = await updateRunMetadata(
       db,
       id,
-      (stored) => withShardTokens(stored, swapShardToken(id, stored, body.setupToken, streamToken)),
+      (stored) =>
+        withBegunShard(
+          id,
+          withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
+          stored,
+          body.setupToken,
+          streamToken,
+        ),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        // The first shard to report a branch names the run's branch.
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         updatedAt: new Date(),
       },
     );
+    if (metadata) await pinProjectRepository(db, testRun.projectId, metadata);
   } else {
     // Run is already running and the caller presented its stream token: hand
     // the same token back so the caller can continue streaming. This can happen
@@ -199,14 +235,18 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: testRun.projectId,
       streamToken: body.setupToken,
     };
   }
 
+  await saveEnvironmentSnapshots(db, id, body.environments);
+
   return {
     success: true,
     runId: testRun.id,
+    runUrl: publicRunUrl(testRun.id),
     projectId: testRun.projectId,
     streamToken,
   };
@@ -222,4 +262,22 @@ function swapShardToken(runId: number, metadata: unknown, setupToken: string, st
   tokens.delete(shardTokenDigest(setupToken));
   tokens.add(shardTokenDigest(streamToken));
   return tokens;
+}
+
+/**
+ * `metadata` with a sharded run's shard tokens once a shard began on `setupToken`, read from the `stored` metadata
+ * (`swapShardToken`), and with the shards still in their global setup, that one left out.
+ */
+function withBegunShard(
+  runId: number,
+  metadata: unknown,
+  stored: unknown,
+  setupToken: string,
+  streamToken: string,
+): Record<string, unknown> {
+  const spent = shardTokenDigest(setupToken);
+  return withShardSetupTokens(
+    withShardTokens(metadata, swapShardToken(runId, stored, setupToken, streamToken)),
+    readShardSetupTokens(stored).filter((digest) => digest !== spent),
+  );
 }

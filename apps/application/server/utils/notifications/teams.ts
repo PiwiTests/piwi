@@ -52,7 +52,7 @@ import {
   type Tone,
 } from '#shared/notifications/message-parts';
 import type { StatusColorKey } from '#shared/status-colors';
-import { languageForPath } from '#shared/highlight';
+import { languageForPath } from '@piwitests/run-ui/highlight';
 import { durationShort } from '#shared/relative-time';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { sparkline } from '#shared/reports/chart';
@@ -130,6 +130,7 @@ const CHART_COLORS: Record<StatusColorKey, string> = {
   fixme: 'neutral',
   didnotrun: 'warning',
   running: 'categoricalBlue',
+  interrupted: 'neutral',
 };
 
 /** The code languages a Teams `CodeBlock` colors, by the name `languageForPath` gives. */

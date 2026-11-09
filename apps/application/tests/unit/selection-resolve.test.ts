@@ -1,8 +1,23 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
+import type { SelectionDefinition, SelectionPredicateGroup } from '../../shared/selection';
+
+// Counts the file globs compiled, the real matcher behind them.
+const glob = vi.hoisted(() => ({ compiled: 0 }));
+vi.mock('@piwitests/core/glob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@piwitests/core/glob')>();
+  return {
+    ...actual,
+    compileGlob: (...args: Parameters<typeof actual.compileGlob>) => {
+      glob.compiled++;
+      return actual.compileGlob(...args);
+    },
+  };
+});
 
 delete process.env.PIWI_DATABASE_URL;
 const {
@@ -14,6 +29,8 @@ const {
   updateSelection,
   deleteSelection,
   SelectionError,
+  loadSelectionCatalog,
+  catalogNeeds,
 } = await import('../../shared/handlers/selections');
 const { addQuarantine } = await import('../../shared/handlers/quarantine');
 
@@ -56,15 +73,17 @@ async function seedExecution(
 ): Promise<void> {
   const runId = ++runSeq;
   await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
-  await db.insert(schema.testRunsCases).values({
-    testRunId: runId,
-    testCaseId,
-    status,
-    duration: opts.duration ?? null,
-    line: opts.line ?? null,
-    retries: opts.retries ?? 0,
-    createdAt: new Date(++clock),
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      testRunId: runId,
+      testCaseId,
+      status,
+      duration: opts.duration ?? null,
+      line: opts.line ?? null,
+      retries: opts.retries ?? 0,
+      createdAt: new Date(++clock),
+    }),
+  );
 }
 
 beforeEach(async () => {
@@ -98,6 +117,30 @@ describe('predicate matching', () => {
       include: [{ priority: ['critical'], files: ['tests/checkout/**'] }],
     });
     expect(r.tests.map((t) => t.testCaseId)).toEqual([crit]);
+  });
+
+  test('file globs ignore case, and answer at once for a glob a regular expression backtracks on', async () => {
+    await seedCase('deep', { filePath: `tests/${'a'.repeat(30)}.spec.ts` });
+    const login = await seedCase('login', { filePath: 'Tests/Login.spec.ts' });
+    const started = performance.now();
+    const r = await resolveSelectionDefinition(db, 1, {
+      include: [{ files: [`tests/${'*a'.repeat(8)}*!`, 'tests/l?gin.spec.ts'] }],
+    });
+    expect(r.tests.map((t) => t.testCaseId)).toEqual([login]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('compiles each file glob once per resolve, whatever the number of tests', async () => {
+    const tests = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => seedCase(`t${i}`, { filePath: `tests/t${i}.spec.ts` })),
+    );
+    glob.compiled = 0;
+    const r = await resolveSelectionDefinition(db, 1, {
+      include: [{ files: ['tests/t1*', 'tests/t2*'] }, { files: ['**/t3.spec.ts'] }],
+      exclude: [{ files: ['tests/t2.*'] }],
+    });
+    expect(r.tests.map((t) => t.testCaseId).sort()).toEqual([tests[1], tests[3]]);
+    expect(glob.compiled).toBe(4);
   });
 
   test('exclude removes matched tests', async () => {
@@ -325,6 +368,114 @@ describe('fail-fast order', () => {
   });
 });
 
+describe('the least catalog a definition needs', () => {
+  test('loads the history aggregates and the fail ranks only for a definition that reads them', () => {
+    expect(catalogNeeds([{ include: [{ lastStatus: ['failed'] }] }])).toEqual({
+      withFailRanks: false,
+      withAggregates: false,
+    });
+    expect(catalogNeeds([{ include: [{ failedInLastRuns: 3 }] }])).toEqual({
+      withFailRanks: true,
+      withAggregates: false,
+    });
+    expect(catalogNeeds([{ include: [{ tags: ['smoke'] }], budget: { rankBy: 'priority' } }])).toEqual({
+      withFailRanks: false,
+      withAggregates: true,
+    });
+    expect(catalogNeeds([{ include: [{ tags: ['smoke'] }] }, { exclude: [{ neverRun: true }] }])).toEqual({
+      withFailRanks: false,
+      withAggregates: true,
+    });
+    expect(catalogNeeds([{ budget: { rankBy: 'recentFailure' } }])).toEqual({
+      withFailRanks: true,
+      withAggregates: true,
+    });
+  });
+
+  /** A project whose tests each answer a different predicate. */
+  async function seedMixedProject() {
+    const solid = await seedCase('solid', { tags: ['smoke'], owner: 'team-a', priority: 'high', feature: 'cart' });
+    await seedExecution(solid, 'passed', { duration: 100, line: 11 });
+    await seedExecution(solid, 'passed', { duration: 100, line: 12 });
+    const flaky = await seedCase('flaky', { suitePath: 'Checkout', filePath: 'tests/checkout.spec.ts' });
+    await seedExecution(flaky, 'failed', { duration: 5000, line: 21 });
+    await seedExecution(flaky, 'passed', { retries: 1, duration: 5000, line: 22 });
+    const broken = await seedCase('broken', { tags: ['auth'] });
+    await seedExecution(broken, 'passed', { duration: 800, line: 31 });
+    await seedExecution(broken, 'failed', { duration: 800, line: 32 });
+    const quarantined = await seedCase('quarantined');
+    await seedExecution(quarantined, 'passed', { duration: 300, line: 41 });
+    await addQuarantine(db, 1, quarantined);
+    const fresh = await seedCase('fresh');
+    return { solid, flaky, broken, quarantined, fresh };
+  }
+
+  test('resolves every predicate to the same tests as the whole catalog', async () => {
+    const t = await seedMixedProject();
+    const examples: Record<keyof SelectionPredicateGroup, SelectionPredicateGroup> = {
+      ids: { ids: [t.solid, t.fresh] },
+      tags: { tags: ['smoke'] },
+      anyTags: { anyTags: ['smoke', 'auth'] },
+      owner: { owner: ['team-a'] },
+      priority: { priority: ['high'] },
+      feature: { feature: ['cart'] },
+      files: { files: ['tests/checkout*'] },
+      suitePath: { suitePath: 'check' },
+      text: { text: 'brok' },
+      quarantined: { quarantined: true },
+      flaky: { flaky: true },
+      minPassRate: { minPassRate: 1 },
+      maxPassRate: { maxPassRate: 0.5 },
+      minAvgDurationMs: { minAvgDurationMs: 1000 },
+      maxAvgDurationMs: { maxAvgDurationMs: 500 },
+      lastStatus: { lastStatus: ['failed'] },
+      failedInLastRuns: { failedInLastRuns: 1 },
+      neverRun: { neverRun: true },
+    };
+    const definitions: SelectionDefinition[] = Object.values(examples).flatMap((group) => [
+      { include: [group] },
+      { exclude: [group] },
+    ]);
+    definitions.push(
+      { budget: { maxTotalDurationMs: 1000 } },
+      { budget: { rankBy: 'slowest' }, limit: 2 },
+      { budget: { rankBy: 'recentFailure' }, limit: 2 },
+    );
+
+    const ids = (r: Awaited<ReturnType<typeof resolveSelectionDefinition>>) => r.tests.map((x) => x.testCaseId);
+    // The whole catalog carries every fact, whatever the definition reads.
+    const wholeCatalog = await loadSelectionCatalog(db, 1, { withFailRanks: true, withAggregates: true });
+    for (const definition of definitions) {
+      const whole = await resolveSelectionDefinition(db, 1, definition, { catalog: wholeCatalog });
+      const catalog = await loadSelectionCatalog(db, 1, catalogNeeds([definition]));
+      const least = await resolveSelectionDefinition(db, 1, definition, { catalog });
+      expect(ids(least), JSON.stringify(definition)).toEqual(ids(whole));
+      // Each example keeps some tests and leaves others out, so a fact the least catalog lacks shows.
+      expect(ids(whole).length, JSON.stringify(definition)).toBeGreaterThan(0);
+      expect(ids(whole).length, JSON.stringify(definition)).toBeLessThan(5);
+    }
+  });
+
+  test('without the aggregates, each test keeps its latest status and line, flakiness, quarantine and fail rank', async () => {
+    await seedMixedProject();
+    const facts = (rows: Awaited<ReturnType<typeof loadSelectionCatalog>>) =>
+      rows
+        .map((r) => ({
+          id: r.id,
+          lastStatus: r.lastStatus,
+          lastLine: r.lastLine,
+          flaky: r.flaky,
+          quarantined: r.quarantined,
+          firstFailRank: r.firstFailRank,
+        }))
+        .sort((a, b) => a.id - b.id);
+    const whole = await loadSelectionCatalog(db, 1, { withFailRanks: true });
+    const least = await loadSelectionCatalog(db, 1, { withFailRanks: true, withAggregates: false });
+    expect(facts(least)).toEqual(facts(whole));
+    expect(new Set(facts(whole).map((r) => r.lastLine)).size).toBe(5);
+  });
+});
+
 describe('hash and materialization', () => {
   test('the resolved hash is stable and order-independent', async () => {
     await seedCase('a', { filePath: 'tests/a.spec.ts' });
@@ -415,6 +566,9 @@ describe('built-ins and CRUD', () => {
     await expect(
       createSelection(db, 1, { key: 'bad', name: 'x', definition: { include: [{ nope: 1 }] } as never }),
     ).rejects.toThrow(/Invalid definition/);
+    await expect(
+      createSelection(db, 1, { key: 'long', name: 'x', definition: { include: [{ files: ['*'.repeat(501)] }] } }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 500 characters/) });
 
     await createSelection(db, 1, { key: 'dup', name: 'x', definition: {} });
     await expect(createSelection(db, 1, { key: 'dup', name: 'y', definition: {} })).rejects.toThrow(/already exists/);

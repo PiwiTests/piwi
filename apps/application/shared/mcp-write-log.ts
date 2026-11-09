@@ -75,12 +75,20 @@ const LINK_ENTITY_SUBJECTS: Record<string, McpCallSubjectType> = {
  * What a write call acted on, read from its arguments: one subject, one per
  * cluster for a call on several clusters, or none when the arguments name
  * nothing the log can point at. A call that creates a cluster also names it,
- * read from its `output`.
+ * read from its `output`. A call on several clusters names those it applied
+ * to: the ones it skipped (out of the caller's reach, or missing), read from
+ * its `output`, are left out, and a call that failed applied to none.
  */
 export function mcpCallSubjects(tool: string, args: Record<string, unknown>, output?: unknown): McpCallSubject[] {
   if (tool === 'triage_cluster' && Array.isArray(args.clusterIds)) {
+    if (output == null) return [];
+    const skippedIds = (output as { skippedIds?: unknown }).skippedIds;
+    const skipped = new Set(Array.isArray(skippedIds) ? skippedIds.map(positiveInt) : []);
     const ids = [...new Set(args.clusterIds.map(positiveInt).filter((id): id is number => id != null))];
-    return ids.slice(0, MAX_SUBJECTS_PER_CALL).map((id) => ({ type: 'cluster', id }));
+    return ids
+      .filter((id) => !skipped.has(id))
+      .slice(0, MAX_SUBJECTS_PER_CALL)
+      .map((id) => ({ type: 'cluster', id }));
   }
   if (tool === 'link_issue' || tool === 'unlink_issue' || tool === 'create_issue') {
     const type = LINK_ENTITY_SUBJECTS[String(args.entityType ?? '')];

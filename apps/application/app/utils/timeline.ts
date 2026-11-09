@@ -26,6 +26,9 @@ export const TIMELINE_LAYOUT = {
   /** Height a worker row's strip adds, and the height of its plot (it starts 2px under the row's last bar). */
   stripHeight: 12,
   stripPlot: 10,
+  /** Height of one tail of an object kept open for nothing, and the space between two stacked under a row. */
+  tailHeight: 4,
+  tailGap: 2,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;
@@ -91,9 +94,9 @@ export function lockColorHex(index: number): string {
   ]!;
 }
 
-/** Bar fill color for a test-case status, from the test outcome palette (a pass after a retry is flaky). */
-export function timelineStatusColor(status: string, retries?: number | null): string {
-  return statusPalette(status, retries).color;
+/** Bar fill color for a test-case status, from the test outcome palette (a pass after a failed attempt is flaky). */
+export function timelineStatusColor(status: string, flaky?: boolean | null): string {
+  return statusPalette(status, flaky).color;
 }
 
 const statusFillStyles = new Map<string, { fill: string }>();
@@ -103,8 +106,8 @@ const statusFillStyles = new Map<string, { fill: string }>();
  * which a `fill` attribute cannot read): one shared object per color, so a bar
  * re-rendered by a zoom patches no style.
  */
-export function timelineStatusFill(status: string, retries?: number | null): { fill: string } {
-  const color = timelineStatusColor(status, retries);
+export function timelineStatusFill(status: string, flaky?: boolean | null): { fill: string } {
+  const color = timelineStatusColor(status, flaky);
   let style = statusFillStyles.get(color);
   if (!style) {
     style = { fill: color };
@@ -123,8 +126,8 @@ const retriedAttemptStyles = new Map<string, RetriedAttemptStyle>();
  * which the next attempt's solid bar gives. One shared object per color, like
  * `timelineStatusFill`.
  */
-export function timelineRetriedAttemptStyle(status: string, retries?: number | null): RetriedAttemptStyle {
-  const color = timelineStatusColor(status, retries);
+export function timelineRetriedAttemptStyle(status: string, flaky?: boolean | null): RetriedAttemptStyle {
+  const color = timelineStatusColor(status, flaky);
   let style = retriedAttemptStyles.get(color);
   if (!style) {
     style = { fill: color, fillOpacity: 0.18, stroke: color, strokeWidth: 1.5 };
@@ -149,10 +152,10 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
-/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`. */
+/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`, `Paused` for a Pause. */
 export function pauseReasonText(reason: string | null | undefined): string {
   if (reason === 'step') return 'Paused after Step';
-  if (reason === 'pause') return 'Paused from the editor';
+  if (reason === 'pause') return 'Paused';
   if (reason === 'run-to') return 'Paused at the line run to';
   if (reason === 'page-pause') return 'Paused at page.pause()';
   return 'Paused at a breakpoint';

@@ -26,7 +26,7 @@ apart.
 
 ## What each role can do
 
-Each row is one permission. The **Permission** column is how the [API docs](https://piwitests.dev/demo/docs) name
+Each row is one permission. The **Permission** column is how the [API docs](https://piwitests.dev/demo/settings/api) name
 each endpoint's requirement (`x-required-permission`), so a script author can tell which role a call needs. In the app,
 **Settings → Roles** shows the same table to every signed-in user.
 
@@ -38,6 +38,8 @@ each endpoint's requirement (`x-required-permission`), so a script author can te
 | Edit a bug report | `bug-report:write` | | ✓ | ✓ | ✓ | |
 | Save and schedule reports | `report:write` | | ✓ | ✓ | ✓ | |
 | Add and edit timeline markers | `marker:write` | | ✓ | ✓ | ✓ | |
+| Run tests on my machine from the dashboard | `run:request` | | ✓ | ✓ | ✓ | |
+| Connect an app that runs my requests | `run:receive` | | ✓ | ✓ | ✓ | |
 | Create share links, share a dashboard | `share:create` | | | ✓ | ✓ | |
 | Triage clusters and gaps | `triage:write` | | | ✓ | ✓ | |
 | Quarantine and release tests | `quarantine:write` | | | ✓ | ✓ | |
@@ -92,7 +94,7 @@ Roles are granted from four places, which all edit the same grants:
 - **Settings → Groups** for who belongs to each group; its roles are set on the grid or in a project's Members.
 
 Scripts read and change the same grants, called role bindings, through the API; see the
-[API docs](https://piwitests.dev/demo/docs).
+[API docs](https://piwitests.dev/demo/settings/api).
 
 ## Permission grid
 
@@ -126,20 +128,8 @@ same 403, that says an administrator or a Project admin of that project can gran
 
 Run the reporter in CI as a Member with the **Uploader** role, through an [API key](./api-keys): it reads the project
 and uploads runs, nothing else. Grant it on All projects when CI should create projects from a new project name, else
-on the projects it reports to.
-
-## Upgrading from the three roles
-
-Earlier versions had three instance-wide roles (Administrator, Reporter, User) and assigned projects to each account.
-The upgrade converts them:
-
-- **Administrator** stays Administrator.
-- **Reporter** becomes a Member with the Maintainer role on the same projects.
-- **User** becomes a Member with the Viewer role on the same projects.
-
-Access to all projects becomes a role on All projects. A Maintainer can do exactly what a Reporter could, and a Viewer
-what a User could, so nobody gains or loses a right. To narrow a CI account that ran as a Reporter, give it Uploader in
-place of Maintainer.
+on the projects it reports to. A CI account that the upgrade from the three roles made a Maintainer narrows the same
+way.
 
 > **Try it in the demo:** the [live demo](https://piwitests.dev/demo/) ships with seeded identities, from an
 > administrator to a viewer. Switch between them with the **Acting as** picker in the demo banner and watch the

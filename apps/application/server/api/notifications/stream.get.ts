@@ -1,6 +1,7 @@
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { getProjectScope } from '../../utils/project-access';
+import { opensEveryProject } from '../../utils/notifications/event-scope';
 import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { getDatabase } from '../../database';
@@ -18,10 +19,16 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Notification event stream',
     description:
-      "Server-sent events stream (text/event-stream) of the signed-in user's browser notifications, filtered to their subscriptions and project scope.",
+      "Server-sent events stream (text/event-stream) of the signed-in user's browser notifications, filtered to their subscriptions and project scope. The stream starts with a comment line once it is subscribed.",
     'x-required-permission': 'project:read',
   },
 });
+
+/**
+ * A comment, which clients skip, sent as soon as the connection is subscribed: the response starts, the stream opens in
+ * the browser, and a later error answer reopens it (`useNotificationStream`).
+ */
+const SUBSCRIBED = ': subscribed\n\n';
 
 /** How often a connection re-checks its caller and reloads their project scope and browser subscriptions. */
 const REFRESH_INTERVAL_MS = 60_000;
@@ -46,15 +53,17 @@ export default eventHandler(async (event) => {
   // boundary to enforce — stream every notification; the client's cookie
   // preferences gate which events raise browser notifications.
   if (!isAuthEnabled()) {
-    return createSSEEndpoint(event, (controller, encoder) =>
-      runEventBus.subscribeNotifications((notificationEvent) => {
+    return createSSEEndpoint(event, (controller, encoder) => {
+      const unsubscribe = runEventBus.subscribeNotifications((notificationEvent) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(notificationEvent)}\n\n`));
         } catch {
           // Stream closed — unsubscribe is handled by SSE helper
         }
-      }),
-    );
+      });
+      controller.enqueue(encoder.encode(SUBSCRIBED));
+      return unsubscribe;
+    });
   }
 
   const db = await getDatabase();
@@ -128,14 +137,8 @@ export default eventHandler(async (event) => {
       const type = notificationEvent.type as string | undefined;
       const projectId = notificationEvent.projectId as number | undefined;
       // Whoever the event is addressed to, it reaches only a caller who can open
-      // every project it is about: every one a quality report covers (a report
-      // about none, like its snapshot, is anyone's), else its own project; any
-      // other event naming no project reaches nobody.
-      const opensEveryProject =
-        type === REPORT_READY_EVENT
-          ? ((notificationEvent.projectIds as number[] | undefined) ?? []).every((id) => scopeAllows(scope, id))
-          : typeof projectId === 'number' && scopeAllows(scope, projectId);
-      if (!opensEveryProject) return;
+      // every project it is about.
+      if (!opensEveryProject(scope, notificationEvent)) return;
 
       // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
       // is delivered to that one user regardless of their subscriptions; every
@@ -155,6 +158,8 @@ export default eventHandler(async (event) => {
         // Stream closed — unsubscribe is handled by SSE helper
       }
     });
+
+    controller.enqueue(encoder.encode(SUBSCRIBED));
 
     function stop() {
       clearInterval(refresh);

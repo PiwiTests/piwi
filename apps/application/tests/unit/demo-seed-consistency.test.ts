@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeErrorFingerprint } from '#shared/error-fingerprint';
 import { resolveHealingForCase } from '~~/server/utils/locator-healing';
+import { embeddingModelTag } from '~~/server/utils/cluster-similarity';
 import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles, getDemoChangesSince, getDemoDefaultRange } from '~~/app/demo/demo-scm';
 import {
@@ -26,9 +27,11 @@ import { WEB_DASHBOARD_PROJECT_ID, webDashboardRequests } from '#shared/demo/dem
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
+import { overlappingTagKeys, validateTagKeyPattern } from '#shared/integrations/tag-keys';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -55,11 +58,11 @@ function q(sql: string): Row[] {
 // tracked public/demo/seed.sql — another test file's beforeAll regenerates
 // concurrently (vitest runs files in parallel) and would otherwise race on
 // the same path, producing a torn read and a SQL parse error.
-function regenerate(outDir: string): string {
+function regenerate(outDir: string, env: NodeJS.ProcessEnv = {}): string {
   execFileSync('node', ['scripts/generate-demo-seed.mjs'], {
     cwd: rootDir,
     stdio: 'ignore',
-    env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
+    env: { ...process.env, ...env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
   });
   return readFileSync(join(outDir, 'seed.sql'), 'utf-8');
 }
@@ -86,9 +89,9 @@ afterAll(() => {
 });
 
 describe('demo seed generation is deterministic', () => {
-  test('regenerating without source changes produces the same content hash', () => {
-    const before = regenerate(tempOutDir());
-    const after = regenerate(tempOutDir());
+  test('regenerating without source changes produces the same content, in any time zone', () => {
+    const before = regenerate(tempOutDir(), { TZ: 'Pacific/Kiritimati' });
+    const after = regenerate(tempOutDir(), { TZ: 'America/Los_Angeles' });
     // Compare content only, excluding the timestamp comment line (see the
     // generator's own hash-stability comment).
     const strip = (s: string) =>
@@ -112,6 +115,13 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
     "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
+    "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to 3 elements:\n    1) <button>Pay</button> aka getByRole('button', { name: 'Pay' })\n    2) <button>Later</button> aka getByTestId('later')\n    ...\n\nCall log:\n  - waiting for getByRole('button')",
+    'Error: booking order_5f3a9c1e2b expired at 2026-05-01T10:30:00.120Z for cus_4QFJrkXyZ8aB2m, field_label12 kept',
+    "Error: ENOENT: no such file or directory, open '/home/runner/work/shop/shop/fixtures/user.json'",
+    "Error: ENOENT: no such file or directory, open 'C:\\Users\\alice\\shop\\fixtures\\user.json'",
+    'Error: browserType.launch: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked',
+    'Test timeout of 30000ms exceeded.\n    at /Users/alice/shop/tests/cart.spec.ts:4:1',
+    "TypeError: Cannot read properties of undefined (reading 'id')\n    at C:\\Users\\alice\\shop\\tests\\orders.spec.ts:20:15",
   ];
 
   for (const [i, err] of corpus.entries()) {
@@ -301,11 +311,27 @@ describe('cluster ↔ case ↔ file coherence', () => {
   });
 
   test('cluster occurrences and first/last run ids are internally consistent', () => {
+    // Occurrences count the executions of the runs whose failures count as occurrences, as the server does.
+    const counting = new Set(
+      q('select id, metadata, is_full_run, status from test_runs')
+        .filter((run) =>
+          isEligibleRun(
+            {
+              metadata: JSON.parse((run.metadata as string) ?? 'null'),
+              isFullRun: run.is_full_run as number,
+              status: run.status as string,
+            },
+            'cluster-occurrences',
+          ),
+        )
+        .map((run) => run.id as number),
+    );
     const clusters = q('select id, occurrences, first_seen_run_id, last_seen_run_id from failure_clusters');
     for (const c of clusters) {
-      const trcCount = q(`select count(*) as n from test_runs_cases where failure_cluster_id = ${c.id as number}`)[0]!
-        .n as number;
-      expect(trcCount, `cluster ${c.id} occurrences`).toBe(c.occurrences);
+      const occurrences = q(`select test_run_id from test_runs_cases where failure_cluster_id = ${c.id as number}`)
+        .map((r) => r.test_run_id as number)
+        .filter((runId) => counting.has(runId)).length;
+      expect(occurrences, `cluster ${c.id} occurrences`).toBe(c.occurrences);
       expect(c.first_seen_run_id, `cluster ${c.id} first_seen_run_id`).not.toBeNull();
       expect(c.last_seen_run_id, `cluster ${c.id} last_seen_run_id`).not.toBeNull();
     }
@@ -527,6 +553,41 @@ describe('evidence rules', () => {
     expect(rows[0]!.n).toBe(0);
   });
 
+  test("every run lists the Playwright projects its executions ran, and only those, as the run's config", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) {
+      const executed = q(
+        `select distinct browser_name from test_runs_cases where test_run_id = ${run.id as number} order by browser_name`,
+      ).map((r) => r.browser_name);
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name?: string }> };
+      } | null;
+      const listed = (metadata?.htmlReport?.projects ?? []).map((p) => p.name);
+      expect([...listed].sort(), `run ${run.id as number}`).toEqual(executed);
+    }
+  });
+
+  test("lists each project with its executions' browser and viewport, as the reporter records the config's", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    for (const run of runs) {
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name: string; use?: { browserName?: string; viewport?: unknown } }> };
+      } | null;
+      for (const project of metadata?.htmlReport?.projects ?? []) {
+        const [execution] = q(
+          `select browser from test_runs_cases where test_run_id = ${run.id as number}
+            and browser_name = '${project.name}' order by id limit 1`,
+        );
+        const browser = JSON.parse(execution!.browser as string) as { browserName: string; viewport: unknown };
+        expect(project.use, `run ${run.id as number}: ${project.name}`).toMatchObject({
+          browserName: browser.browserName,
+          viewport: browser.viewport,
+        });
+      }
+    }
+  });
+
   test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
     const rows = q(`
       select nr.id, nr.test_runs_case_id, nr.method, nr.url, nr.server_logs, trc.failure_cluster_id,
@@ -563,6 +624,25 @@ describe('executions as the reporter stores them', () => {
           and retries = 0 and status in ('failed', 'timedOut') and error is not null`);
       expect(failed.length, `retry pass ${p.id} has its failed attempt`).toBe(1);
     }
+  });
+
+  test("every execution stores whether it is its result's final attempt, as ingest keeps it", () => {
+    const rows = q(`select id, final_attempt, exists (
+        select 1 from test_runs_cases later
+        where later.test_run_id = trc.test_run_id and later.test_case_id = trc.test_case_id
+          and later.repeat_each_index = trc.repeat_each_index
+          and coalesce(later.browser_name, '') = coalesce(trc.browser_name, '')
+          and (later.retries > trc.retries or (later.retries = trc.retries and later.id > trc.id))
+      ) as superseded
+      from test_runs_cases trc`);
+    expect(rows.filter((r) => r.superseded === 1).length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.final_attempt, `trc ${r.id} final_attempt`).toBe(r.superseded === 1 ? 0 : 1);
+  });
+
+  test('only a skipped execution carries a fixme annotation, as Playwright adds it only to a test it skips', () => {
+    const rows = q(`select id from test_runs_cases
+      where status != 'skipped' and test_annotations like '%"type":"fixme"%'`);
+    expect(rows.map((r) => r.id)).toEqual([]);
   });
 
   test('a test that did not run carries no steps, start time, worker or step events', () => {
@@ -723,6 +803,13 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
     expect(healing.reason).toBe('The locator resolved; this is not a locator problem.');
     expect(healing.recommendation).toBeNull();
     expect(healing.failingLocator?.method).toBe('getByRole');
+  });
+});
+
+describe('cluster embeddings', () => {
+  test('the seeded vectors carry the model tag the server writes today', () => {
+    const tags = q(`select distinct embedding_model from failure_clusters where embedding is not null`);
+    expect(tags).toEqual([{ embedding_model: embeddingModelTag('text-embedding-3-small') }]);
   });
 });
 
@@ -896,7 +983,7 @@ function seededExperiments(testCaseId?: number) {
 /** A test's executions, in the shape the retry-pass rule reads. */
 function seededExecutions(testCaseId: number) {
   return q(`
-    select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
+    select trc.test_run_id, trc.status, trc.browser_name, trc.passed_after_failure, tr.start_time
     from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
     where trc.test_case_id = ${testCaseId}
   `).map((r) => ({
@@ -905,6 +992,7 @@ function seededExecutions(testCaseId: number) {
     runStartedAt: new Date(Number(r.start_time) * 1000),
     browserKey: String(r.browser_name ?? ''),
     status: String(r.status),
+    passedAfterFailure: Number(r.passed_after_failure) === 1,
   }));
 }
 
@@ -950,6 +1038,8 @@ const EXPECT_KEYS = new Set([
   'lab',
   'resources',
   'incident',
+  'runErrors',
+  'output',
   'coverageGap',
   'gaps',
   'suspects',
@@ -1026,6 +1116,19 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
     );
     expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.runErrors) {
+    expect(want.run, `${label}: runErrors needs a run`).toBeTruthy();
+    const [row] = q(`select run_errors as errors from test_runs where id = ${want.run!.id}`);
+    const errors = row?.errors ? (JSON.parse(String(row.errors)) as Array<{ message: string }>) : [];
+    expect(errors.length, `${label}: the run holds errors outside its tests`).toBeGreaterThan(0);
+  }
+  if (want.output) {
+    expect(want.execution, `${label}: output needs an execution`).toBeTruthy();
+    const [row] = q(
+      `select stdout_payload_id as stdout, stderr_payload_id as stderr from test_runs_cases where id = ${want.execution!.id}`,
+    );
+    expect(row?.stdout ?? row?.stderr, `${label}: the execution holds what its test wrote`).toBeTruthy();
   }
   if (want.coverageGap) {
     expect(want.run, `${label}: coverageGap needs a run`).toBeTruthy();
@@ -1397,6 +1500,29 @@ describe('environment incidents', () => {
       select count(*) as n from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
       where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
     expect(rows[0]!.n).toBe(0);
+  });
+});
+
+describe('keys in test tags', () => {
+  test('the checkout project stores both patterns, each reads its own seeded tag and no tag matches both', () => {
+    const [project] = q('select tag_keys from projects where id = 1');
+    const patterns = JSON.parse(String(project!.tag_keys)) as { issue: string; testCase: string };
+    expect(validateTagKeyPattern(patterns.issue).ok).toBe(true);
+    expect(validateTagKeyPattern(patterns.testCase).ok).toBe(true);
+
+    const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
+    const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
+    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
+    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123']);
+    expect(
+      tagged.flatMap((row) =>
+        overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the other projects leave them off', () => {
+    expect(q('select id from projects where id <> 1 and tag_keys is not null')).toEqual([]);
   });
 });
 

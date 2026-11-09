@@ -13,10 +13,12 @@ import {
 import {
   categorizeStep,
   collectStepMetrics,
+  extractTestStepEvents,
   flattenSteps,
   hideTypedStepTitle,
   markRecoveredSteps,
 } from '../src/step-analysis';
+import { HIDDEN_VALUE } from '../src/mask';
 import {
   afterAllFailure,
   beforeAllFailure,
@@ -302,6 +304,34 @@ describe('markRecoveredSteps', () => {
     expect(collectStepMetrics([probe(10)], []).steps[0]!.recovered).toBe(true);
     expect(collectStepMetrics([probe(10)]).steps[0]!.recovered).toBeUndefined();
   });
+
+  test('reads a step error and the test error alike when a credential in its first line is hidden', () => {
+    const message = `Error: 401 for ${['pd_', 'a3'.repeat(32)].join('')}`;
+    const steps = flattenSteps([{ ...probe(10), error: { message, location: location(10) } }]);
+    expect(steps[0]!.error!.message).toBe(`Error: 401 for ${HIDDEN_VALUE}`);
+    markRecoveredSteps(steps, [{ message, location: location(10) }]);
+    expect(steps[0]!.recovered).toBeUndefined();
+  });
+});
+
+describe('the error of a hook or a fixture event', () => {
+  test('has a credential in its first line hidden', () => {
+    const key = ['pd_', 'a3'.repeat(32)].join('');
+    const [event] = extractTestStepEvents(
+      [
+        {
+          title: 'Before Hooks',
+          category: 'hook',
+          startTime: new Date(0),
+          duration: 5,
+          error: { message: `\u001b[31mError: seeding failed with \u001b[1m${key}\u001b[22m\u001b[39m\n    at seed` },
+          steps: [],
+        },
+      ],
+      new Date(0),
+    );
+    expect(event!.error).toBe(`Error: seeding failed with ${HIDDEN_VALUE}`);
+  });
 });
 
 describe('failureHookContext', () => {
@@ -351,6 +381,8 @@ describe('isCaptureStep', () => {
   test('recognizes the capture’s attachments and its probes through the reporter bundle', () => {
     expect(isCaptureStep({ title: 'Attach "piwi-locators"' })).toBe(true);
     expect(isCaptureStep({ title: 'Fixture "piwiCapture"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResources"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResourcesOfMine"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Fixture "page"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Attach "screenshot"' })).toBe(false);
     expect(

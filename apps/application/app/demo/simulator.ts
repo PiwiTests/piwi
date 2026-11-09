@@ -26,14 +26,27 @@ import {
   authoredBeforeEachMs,
   storyEvidenceTimes,
   FAILURE_TEARDOWN_MS,
+  incidentNavigationError,
+  incidentUrl,
+  INCIDENT_HOST,
 } from '#shared/demo/failure-stories.mjs';
 import { demoExternalId, demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
-
-export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
+import { demoHtmlReport } from '#shared/demo/demo-run-projects.mjs';
+import { isFlakyResult } from '#shared/status-classify';
+import { parseLocation } from '#shared/parse-location';
+import type { TestRunDetails } from '~~/types/api';
+import { simulatorInstanceId } from './simulator-instance';
+import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
 
 /** Project from the demo seed (scripts/generate-demo-seed.mjs) */
 const DEMO_PROJECT_NAME = 'e2e-checkout';
+
+/**
+ * The Playwright version a simulated run reports unless its scenario names another: the version of the seed's newest
+ * runs, so a simulated run carries on from them, and a newer one is a real upgrade the timeline marks.
+ */
+const PLAYWRIGHT_VERSION = '1.52.0';
 
 /**
  * Id of {@link DEMO_PROJECT_NAME} in the demo seed — the project every scenario
@@ -71,6 +84,12 @@ interface SimAttempt {
    * virtual time every `HANG_TICK_MS` meanwhile, so the demo checks it for a stuck test (`app/demo/api/stuck-tests.ts`).
    */
   hangMs?: number;
+  /**
+   * How long the attempt stands stopped at a breakpoint on its last live step, within its duration, in a run outside CI:
+   * the simulator tells the stop and its end as that run's reporter does (`test-stopped`, `test-resumed`), its
+   * heartbeat telling the time meanwhile, so the stuck check leaves it be.
+   */
+  stopMs?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
   dialogs?: Array<Record<string, unknown>>;
@@ -78,6 +97,9 @@ interface SimAttempt {
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   testSource?: string | null;
   testSourceFrames?: Array<{ file: string; line: number; snippet: string }> | null;
+  /** What the attempt wrote to stdout and stderr, as the reporter keeps it. */
+  stdout?: string | null;
+  stderr?: string | null;
 }
 
 interface SimTest {
@@ -90,11 +112,11 @@ interface SimTest {
   attempts: SimAttempt[];
   steps: SimStep[];
   stepEvents?: Array<Record<string, unknown>> | null;
-  slowestStep: string;
-  slowestStepDuration: number;
+  slowestStep: string | null;
+  slowestStepDuration: number | null;
   wastedTimeMs?: number | null;
   networkRequests: Array<Record<string, unknown>>;
-  webVitals: Record<string, unknown>;
+  webVitals: Record<string, unknown> | null;
   pageState?: Record<string, unknown> | null;
   browser?: Record<string, unknown> | null;
   tags?: string[];
@@ -111,11 +133,36 @@ interface SimTest {
   relativeTimes?: boolean;
 }
 
+/** The groups of the simulator's menu, in its order: each scenario names the one it is listed under. */
+export const DEMO_SCENARIO_GROUPS = [
+  { id: 'results', label: 'Results' },
+  { id: 'causes', label: 'Failure causes' },
+  { id: 'speed', label: 'Speed and resources' },
+  { id: 'setups', label: 'Run setups' },
+] as const;
+
+export type DemoScenarioGroupId = (typeof DEMO_SCENARIO_GROUPS)[number]['id'];
+
+/**
+ * The run page tabs a scenario can open its run on: ones the page lists while the run streams. Resources is listed only
+ * once the finish stored the run's report, so a scenario links to it from its result instead.
+ */
+export type DemoScenarioTab = 'workers';
+
 export interface DemoScenario {
   id: string;
   label: string;
   description: string;
   icon: string;
+  /** The group the simulator's menu lists it under. */
+  group: DemoScenarioGroupId;
+  /** The run page tab the simulator opens the run on, when the scenario is about one: the Tests tab otherwise. */
+  tab?: DemoScenarioTab;
+  /**
+   * What the finished run shows, for the toast that says it finished: one sentence, and the page that shows it when
+   * that is not the run page the visitor is on.
+   */
+  result?: { text: string; link?: { label: string; to: (runId: number) => string | Promise<string> } };
   /** Time compression: virtual milliseconds elapse `speed`× faster on the wall clock */
   speed: number;
   workers: number;
@@ -124,9 +171,11 @@ export interface DemoScenario {
   runLabel?: string;
   /** Interrupt the run after this many completed tests */
   stopAfter?: number;
+  /** Playwright's `maxFailures`: the run stops once this many tests failed, as its failure budget. */
+  maxFailures?: number;
   /** Enable sharding — tests are split across `shardCount` parallel shards */
   shardCount?: number;
-  /** Overrides the default '1.51.0' reported to setup/begin/finish. */
+  /** Overrides `PLAYWRIGHT_VERSION`, reported to setup/begin/finish. */
   playwrightVersion?: string;
   /**
    * Send what each test cost and the run's resource report, as a reporter
@@ -135,6 +184,9 @@ export interface DemoScenario {
    * what it opens.
    */
   resources?: 'leaky' | 'clean';
+  /** The `use.baseURL` of the run's Playwright projects, as the HTML report metadata carries it. */
+  baseURL?: string;
+  /** The run's metadata; the simulation adds the Playwright projects its tests run (`htmlReport`). */
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
 }
@@ -182,11 +234,19 @@ const SUITE_MAP: Record<
   ]),
 );
 
-/** Browser configs for multi-browser scenarios */
+/** The browser profile the seeded runs of the checkout project report for one of its Playwright projects. */
+function seededBrowser(projectName: string): Record<string, unknown> {
+  return { ...CHECKOUT_PROJECT.browsers.find((b) => b.projectName === projectName)! };
+}
+
+/**
+ * Browser configs for multi-browser scenarios: the seeded runs' own profiles, so a simulated execution's environment
+ * differs from their passes only where its scenario changes it, and a WebKit profile shaped like them.
+ */
 const BROWSER_CONFIGS: Record<string, Record<string, unknown>> = {
-  chromium: { projectName: 'Chromium', browserName: 'chromium', channel: null, viewport: { width: 1280, height: 720 } },
-  firefox: { projectName: 'Firefox', browserName: 'firefox', channel: null, viewport: { width: 1280, height: 720 } },
-  webkit: { projectName: 'WebKit', browserName: 'webkit', channel: null, viewport: { width: 1280, height: 720 } },
+  chromium: seededBrowser('Chromium'),
+  firefox: seededBrowser('Firefox'),
+  webkit: { ...seededBrowser('Chromium'), projectName: 'WebKit', browserName: 'webkit' },
 };
 
 /**
@@ -541,7 +601,12 @@ interface BaseTestOptions {
    * story's error: a failure, so it never becomes one of the passes a later stuck check reads.
    */
   stuck?: boolean;
+  /** The PayPal checkout test stands stopped at a breakpoint `BREAKPOINT_STOP_MS`, then goes on and passes. */
+  breakpoint?: boolean;
 }
+
+/** How long the breakpoint scenario's PayPal test stands stopped: past the stuck threshold of its seeded passes. */
+const BREAKPOINT_STOP_MS = 5 * 60_000;
 
 /** How long the stuck scenario's PayPal test waits: past the stuck threshold of its seeded passes. */
 const STUCK_HANG_MS = 6 * 60_000;
@@ -787,6 +852,13 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
             ],
           }
         : {}),
+      ...(opts.breakpoint && t.title === STUCK_TEST_TITLE
+        ? {
+            attempts: [
+              { status: 'passed' as const, duration: duration + BREAKPOINT_STOP_MS, stopMs: BREAKPOINT_STOP_MS },
+            ],
+          }
+        : {}),
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
       pageState: buildPageState(),
@@ -798,6 +870,9 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       externalId: demoExternalId(t.file, i),
       suitePath: suite?.suitePath,
       suiteConfig: suite?.suiteConfig,
+      // The seeded runs' Chromium project, as a reporter always names its test's: each test then compares with its
+      // seeded history, which is kept per browser.
+      browser: BROWSER_CONFIGS.chromium,
     };
   });
 }
@@ -826,13 +901,121 @@ function buildMetadata(opts: {
       commitMessage: opts.commitMessage,
       remoteUrl: 'https://github.com/acme/shop.git',
     },
-    htmlReport: {
-      projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
-    },
     ...(opts.relatedIssue ? { relatedIssue: opts.relatedIssue } : {}),
     ...(opts.customData ? { customData: opts.customData } : {}),
     ...(opts.ciInfo ? { ciInfo: opts.ciInfo } : {}),
   };
+}
+
+/**
+ * The checkout suite's first two tests time out on the Pay button, with the seeded cluster 1's exact errors, steps and
+ * evidence, so they join that cluster rather than splitting into a lookalike.
+ */
+function withPayTimeouts(tests: SimTest[]): SimTest[] {
+  for (const i of [0, 1]) {
+    const failingCase = CLUSTER1_STORY.failingCases[i]!;
+    // The story's own steps once the fixtures are set up: the beforeEach
+    // navigation, the checkout fields, then the Pay click the test timeout
+    // stops, with the story's evidence placed around it. Every time is in
+    // ms from the attempt's start, which workerLoop stamps on.
+    const scale = vary(1000, 0.1) / 1000;
+    const context = vary(75, 0.2);
+    const page = vary(55, 0.2);
+    const placed = authoredFailureSteps(failingCase, { scale, startMs: context + page })!;
+    const payClick = placed.at(-1)!;
+    const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
+    const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
+    const slowest = placed.reduce((a, b) => (a.duration > b.duration ? a : b));
+    tests[i]!.relativeTimes = true;
+    tests[i]!.steps = placed;
+    tests[i]!.slowestStep = slowest.title;
+    tests[i]!.slowestStepDuration = slowest.duration;
+    tests[i]!.stepEvents = buildStoryStepEvents(failedDuration, {
+      context,
+      page,
+      beforeEach: authoredBeforeEachMs(failingCase, { scale }),
+    });
+    tests[i]!.wastedTimeMs = null;
+    tests[i]!.pageState = { ...tests[i]!.pageState, ...CLUSTER1_STORY.evidence.pageInteraction };
+    tests[i]!.attempts = [
+      {
+        status: 'failed',
+        duration: failedDuration,
+        error: failingCase.error,
+        consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, 0, times.console),
+        // The first holder also leaves a confirm dialog open at the failure
+        // moment — it blocks the page until dismissed, so the Pay action
+        // never resolves. Feeds the dialogs lane and the dialog clue.
+        dialogs:
+          i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
+            ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
+            : undefined,
+        testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
+        testSourceFrames: buildSourceFrames(failingCase),
+        stdout: CLUSTER1_STORY.evidence.outputOnFail?.stdout ?? null,
+        stderr: CLUSTER1_STORY.evidence.outputOnFail?.stderr ?? null,
+      },
+    ];
+    // Merge in the story's own themed evidence (a slow quote request, not
+    // a payment failure — the Pay button times out because the quote
+    // never resolves in time, not because payment itself errors). The
+    // quote starts where the story puts it, and the payment authorization
+    // the Pay click would send never goes out.
+    const own = CLUSTER1_STORY.evidence.failingNetwork ?? [];
+    const skipped = [...own, ...(CLUSTER1_STORY.evidence.unreachedNetwork ?? [])];
+    const base = buildNetworkRequests().filter((r) => !skipped.some((o) => o.method === r.method && o.url === r.url));
+    tests[i]!.networkRequests = [
+      ...withStartTimes(base, 0),
+      ...own.map((o, k) => ({ ...o, startTime: times.requests[k]! })),
+    ];
+  }
+  return tests;
+}
+
+/**
+ * The checkout suite while staging refuses every connection: each test fails on its first navigation, with the error
+ * and the refused document request the seeded incident run holds, and nothing the page would have given past it.
+ */
+function stagingDownTests(): SimTest[] {
+  return baseTests().map((test, i) => {
+    const duration = vary(160, 0.3);
+    return {
+      ...test,
+      duration,
+      relativeTimes: true,
+      attempts: [{ status: 'failed' as const, duration, error: incidentNavigationError(CHECKOUT_TESTS[i]!) }],
+      steps: [],
+      stepEvents: null,
+      slowestStep: null,
+      slowestStepDuration: null,
+      wastedTimeMs: null,
+      networkRequests: [
+        {
+          method: 'GET',
+          url: incidentUrl(test.file),
+          status: 0,
+          duration: duration - 20,
+          startTime: 10,
+          resourceType: 'document',
+          failure: 'net::ERR_CONNECTION_REFUSED',
+        },
+      ],
+      webVitals: null,
+      pageState: null,
+    };
+  });
+}
+
+/** The page of a finished run's first failed execution, with `query`; the run's own page when it has none. */
+async function failedExecutionPath(runId: number, query = ''): Promise<string> {
+  try {
+    const run = await $fetch<TestRunDetails>(`/api/test-runs/${runId}`);
+    const failed = run.testCases?.find((c) => c.status === 'failed');
+    if (failed) return `/test-run-cases/${failed.executionId}${query}`;
+  } catch {
+    // The run's page leads there too.
+  }
+  return `/test-runs/${runId}`;
 }
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
@@ -843,6 +1026,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Passing run',
     description: 'All 12 checkout tests pass across 4 parallel workers',
     icon: 'i-lucide-circle-check-big',
+    group: 'results',
     speed: 1.5,
     workers: 4,
     environment: 'staging',
@@ -861,6 +1045,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Run with failures',
     description: 'A recurring timeout cluster plus a brand-new failure',
     icon: 'i-lucide-circle-x',
+    group: 'results',
+    result: {
+      text: 'Two tests timed out on the Pay button and joined its recurring cluster; the strict-mode error opened a new one.',
+      link: { label: 'Open the cluster', to: () => `/failure-clusters/${CLUSTER1_STORY.clusterId}` },
+    },
     speed: 3,
     workers: 4,
     environment: 'production',
@@ -872,68 +1061,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         relatedIssue: 'https://github.com/acme/shop/issues/421',
       }),
     tests: () => {
-      const tests = baseTests();
-      // Two tests hit the timeout cluster already known from previous runs —
-      // same error text as the seeded cluster 1, so this joins it rather than
-      // splitting into a lookalike duplicate.
-      for (const i of [0, 1]) {
-        const failingCase = CLUSTER1_STORY.failingCases[i]!;
-        // The story's own steps once the fixtures are set up: the beforeEach
-        // navigation, the checkout fields, then the Pay click the test timeout
-        // stops, with the story's evidence placed around it. Every time is in
-        // ms from the attempt's start, which workerLoop stamps on.
-        const scale = vary(1000, 0.1) / 1000;
-        const context = vary(75, 0.2);
-        const page = vary(55, 0.2);
-        const placed = authoredFailureSteps(failingCase, { scale, startMs: context + page })!;
-        const payClick = placed.at(-1)!;
-        const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
-        const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
-        const slowest = placed.reduce((a, b) => (a.duration > b.duration ? a : b));
-        tests[i]!.relativeTimes = true;
-        tests[i]!.steps = placed;
-        tests[i]!.slowestStep = slowest.title;
-        tests[i]!.slowestStepDuration = slowest.duration;
-        tests[i]!.stepEvents = buildStoryStepEvents(failedDuration, {
-          context,
-          page,
-          beforeEach: authoredBeforeEachMs(failingCase, { scale }),
-        });
-        tests[i]!.wastedTimeMs = null;
-        tests[i]!.pageState = { ...tests[i]!.pageState, ...CLUSTER1_STORY.evidence.pageInteraction };
-        tests[i]!.attempts = [
-          {
-            status: 'failed',
-            duration: failedDuration,
-            error: failingCase.error,
-            consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, 0, times.console),
-            // The first holder also leaves a confirm dialog open at the failure
-            // moment — it blocks the page until dismissed, so the Pay action
-            // never resolves. Feeds the dialogs lane and the dialog clue.
-            dialogs:
-              i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
-                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
-                : undefined,
-            testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
-            testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
-            testSourceFrames: buildSourceFrames(failingCase),
-          },
-        ];
-        // Merge in the story's own themed evidence (a slow quote request, not
-        // a payment failure — the Pay button times out because the quote
-        // never resolves in time, not because payment itself errors). The
-        // quote starts where the story puts it, and the payment authorization
-        // the Pay click would send never goes out.
-        const own = CLUSTER1_STORY.evidence.failingNetwork ?? [];
-        const skipped = [...own, ...(CLUSTER1_STORY.evidence.unreachedNetwork ?? [])];
-        const base = buildNetworkRequests().filter(
-          (r) => !skipped.some((o) => o.method === r.method && o.url === r.url),
-        );
-        tests[i]!.networkRequests = [
-          ...withStartTimes(base, 0),
-          ...own.map((o, k) => ({ ...o, startTime: times.requests[k]! })),
-        ];
-      }
+      const tests = withPayTimeouts(baseTests());
       // One test fails with a new error signature — a brand-new cluster
       tests[2]!.attempts = [
         {
@@ -941,7 +1069,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           duration: vary(4800),
           error: NEW_STRICT_MODE_ERROR,
           ariaSnapshot: STRICT_MODE_ARIA_SNAPSHOT,
-          testAnnotations: [{ type: 'fixme', description: 'Duplicate test IDs — needs unique data-testid' }],
         },
       ];
       return tests;
@@ -952,6 +1079,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Flaky retries',
     description: 'Two tests fail, then pass on retry — the run stays green',
     icon: 'i-lucide-repeat-2',
+    group: 'results',
+    result: {
+      text: 'Two tests failed, then passed on retry: the run stays green and counts them as flaky.',
+      link: { label: 'Flaky tests', to: () => `/projects/${DEMO_PROJECT_ID}?tab=flaky-tests` },
+    },
     speed: 1.5,
     workers: 4,
     environment: 'staging',
@@ -982,6 +1114,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Performance regression',
     description: 'Everything passes, but ~2× slower with degraded endpoints',
     icon: 'i-lucide-trending-down',
+    group: 'speed',
+    result: {
+      text: 'Every test passed, about twice as slow as before: the run’s Changes tab lists each one that got slower.',
+      link: { label: 'Open Changes', to: (runId) => `/test-runs/${runId}?tab=changes` },
+    },
     speed: 3.5,
     workers: 4,
     environment: 'staging',
@@ -998,6 +1135,10 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Interrupted run',
     description: 'The CI job is killed partway through the suite',
     icon: 'i-lucide-octagon-x',
+    group: 'results',
+    result: {
+      text: 'The job was killed after 7 tests: the tests it was running were interrupted, and the rest did not run.',
+    },
     speed: 1.5,
     workers: 4,
     environment: 'integration',
@@ -1011,10 +1152,32 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     tests: () => baseTests(),
   },
   {
+    id: 'max-failures',
+    label: 'Stopped at max failures',
+    description: 'Two Pay-button timeouts use up the failure budget, so the suite stops early',
+    icon: 'i-lucide-ban',
+    group: 'results',
+    result: {
+      text: 'The run stopped at its budget of 2 failures: the header says so, and the tests it never reached did not run.',
+    },
+    speed: 5,
+    workers: 2,
+    maxFailures: 2,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'feature/payment-form-rework',
+        author: 'Bob Smith',
+        commitMessage: 'feat: validate the payment form before quoting',
+      }),
+    tests: () => withPayTimeouts(baseTests()),
+  },
+  {
     id: 'cross-browser',
     label: 'Cross-browser run',
     description: 'Tests spread across Chromium, Firefox, and WebKit in parallel',
-    icon: 'i-lucide-smartphone',
+    icon: 'i-lucide-globe',
+    group: 'setups',
     speed: 2,
     workers: 3,
     environment: 'staging',
@@ -1037,6 +1200,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Sharded run (2 shards)',
     description: 'Tests split across 2 parallel CI shards that merge into one run, each with its own machine',
     icon: 'i-lucide-layers',
+    group: 'setups',
+    tab: 'workers',
+    result: {
+      text: 'Both shards reported into one run: the Timeline lays out each shard’s workers side by side.',
+    },
     speed: 2.5,
     workers: 3,
     shardCount: 2,
@@ -1052,10 +1220,47 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     tests: () => baseTests({ durationFactor: 0.8 }),
   },
   {
+    id: 'sharded-cross-browser',
+    label: 'Sharded cross-browser run',
+    description: 'Every test in Chromium and Firefox, split across 2 CI shards that each run one browser',
+    icon: 'i-lucide-layers-2',
+    group: 'setups',
+    tab: 'workers',
+    result: {
+      text: 'Each shard ran one browser, and both listed the run’s two projects: against a Chromium-only baseline, the Changes tab shows the browsers that changed.',
+      link: { label: 'Open Changes', to: (runId) => `/test-runs/${runId}?tab=changes` },
+    },
+    speed: 2.5,
+    workers: 4,
+    shardCount: 2,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'main',
+        author: 'Fiona Mehta',
+        commitMessage: 'ci: run the checkout suite in Firefox too',
+        ciInfo: { provider: 'GitHub Actions', runId: '12345702', workflow: 'ci.yml' },
+      }),
+    // Playwright hands each shard a contiguous slice of the run's tests, project by project, so two projects of the
+    // same size give each shard one browser. Interleaved, the round-robin split does the same: shard 1 runs every
+    // Chromium test and shard 2 every Firefox one.
+    tests: () => {
+      const firefox = baseTests({ durationFactor: 0.8 });
+      return baseTests({ durationFactor: 0.8 }).flatMap((t, i) => [
+        t,
+        { ...firefox[i]!, browser: BROWSER_CONFIGS.firefox },
+      ]);
+    },
+  },
+  {
     id: 'wait-heavy',
     label: 'Wait-heavy run',
     description: 'Tests peppered with explicit waitForTimeout sleeps — wasted-time breakdown per test',
-    icon: 'i-lucide-hourglass',
+    icon: 'i-lucide-timer',
+    group: 'speed',
+    result: {
+      text: 'Each test row shows the time its fixed waits wasted: sort the list by Wasted to rank them.',
+    },
     speed: 4,
     workers: 4,
     environment: 'staging',
@@ -1073,6 +1278,10 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description:
       'A PayPal checkout waits on a payment that does not answer: its row turns Stuck? while the other tests go on',
     icon: 'i-lucide-hourglass',
+    group: 'causes',
+    result: {
+      text: 'The PayPal test ran past its usual time, so its row read Stuck? until the payment timed out.',
+    },
     speed: 15,
     workers: 3,
     environment: 'staging',
@@ -1085,10 +1294,44 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     tests: () => baseTests({ stuck: true }),
   },
   {
+    id: 'breakpoint',
+    label: 'Stopped at a breakpoint',
+    description:
+      'A run from VS Code: the PayPal checkout stands at a breakpoint, and its row says where instead of Stuck?',
+    icon: 'i-lucide-circle-pause',
+    group: 'causes',
+    result: {
+      text: 'The PayPal test stood at its breakpoint for five minutes: its row said where, and the stop never counted as stuck.',
+    },
+    speed: 15,
+    workers: 3,
+    environment: 'local',
+    metadata: () => {
+      const { ci: _ci, ...metadata } = buildMetadata({
+        branch: 'feature/paypal-gateway',
+        author: 'Priya Natarajan',
+        commitMessage: 'wip(checkout): debug the PayPal gateway answer',
+      });
+      const ref = `terminal-4242-${Date.now()}`;
+      return {
+        ...metadata,
+        piwiOrigin: { kind: 'editor' },
+        piwiRunRef: ref,
+        piwiInteractive: { client: 'VS Code', ref },
+      };
+    },
+    tests: () => baseTests({ breakpoint: true }),
+  },
+  {
     id: 'healing',
     label: 'Locator healing',
     description: 'A renamed field fails and joins the known cluster — watch the stale-aware recommendation',
     icon: 'i-lucide-wand-sparkles',
+    group: 'causes',
+    result: {
+      text: 'The renamed field joined its known cluster, where healing recommends the locator that survived the rename.',
+      link: { label: 'Open the cluster', to: () => `/failure-clusters/${CLUSTER2_STORY.clusterId}` },
+    },
     speed: 2,
     workers: 4,
     environment: 'staging',
@@ -1112,7 +1355,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           duration: vary(10400, 0.05),
           error: failingCase.error,
           ariaSnapshot: CLUSTER2_STORY.aria ?? undefined,
-          testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER2_STORY.clusterId}` }],
           testSource: buildTestSource(CLUSTER2_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
           testSourceFrames: buildSourceFrames(failingCase),
         },
@@ -1125,6 +1367,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Leaky run',
     description: 'A login fixture leaves a browser context open in every test, and the machine runs short of CPU',
     icon: 'i-lucide-droplets',
+    group: 'speed',
+    result: {
+      text: 'The run’s Resources tab names the fixture that left a browser context open in every test.',
+      link: { label: 'Open Resources', to: (runId) => `/test-runs/${runId}?tab=resources` },
+    },
     speed: 2,
     workers: 4,
     environment: 'staging',
@@ -1142,10 +1389,15 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     label: 'Environment drift',
     description: 'A dark-mode, newer-Playwright run surfaces a visibility bug the light-mode baseline never hit',
     icon: 'i-lucide-moon',
+    group: 'causes',
+    result: {
+      text: 'The failed test’s State tab compares its environment with the light-mode passes: dark color scheme, newer Playwright.',
+      link: { label: 'Open the failure', to: (runId) => failedExecutionPath(runId, '?evidence=state') },
+    },
     speed: 2,
     workers: 4,
     environment: 'production',
-    playwrightVersion: '1.52.0',
+    playwrightVersion: '1.53.0',
     metadata: () =>
       buildMetadata({
         branch: 'main',
@@ -1165,11 +1417,31 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           status: 'failed',
           duration: vary(5200),
           error: ENV_DRIFT_ERROR,
-          testAnnotations: [{ type: 'fixme', description: 'Dark-mode visibility regression — see environment diff' }],
         },
       ];
       return tests;
     },
+  },
+  {
+    id: 'staging-down',
+    label: 'Staging down',
+    description: 'Staging refuses every connection: the run is flagged as an environment incident, not counted',
+    icon: 'i-lucide-server-off',
+    group: 'causes',
+    result: {
+      text: `Every test failed reaching ${INCIDENT_HOST}: the run is an environment incident, kept out of flaky scores, baselines and notifications.`,
+    },
+    speed: 2,
+    workers: 4,
+    environment: 'staging',
+    baseURL: `https://${INCIDENT_HOST}`,
+    metadata: () =>
+      buildMetadata({
+        branch: 'main',
+        author: 'Fiona Mehta',
+        commitMessage: 'chore: rotate the staging TLS certificate',
+      }),
+    tests: () => stagingDownTests(),
   },
 ];
 
@@ -1183,7 +1455,7 @@ export interface SimulationHooks {
 }
 
 export interface SimulationController {
-  /** Request the run to stop after in-flight tests complete (→ 'interrupted') */
+  /** Request the run to stop: the tests in flight end interrupted and the rest never run (→ 'interrupted') */
   stopped: boolean;
 }
 
@@ -1228,9 +1500,10 @@ async function runShardedSimulation(
     };
   });
 
-  // Signal that the shared run is being created
-  const sharedHooks: SimulationHooks = {
-    ...hooks,
+  // Each shard counts its own tests: the run's progress is their sum.
+  const progress = shardedTests.map(() => ({ completed: 0, failed: 0 }));
+  let createdFired = false;
+  const shardHooks = (shard: number): SimulationHooks => ({
     onRunCreated: (runId, projectId) => {
       // Only fire once (first shard to call setup creates the run)
       if (!createdFired) {
@@ -1238,24 +1511,34 @@ async function runShardedSimulation(
         hooks.onRunCreated?.(runId, projectId);
       }
     },
-    onFinished: undefined, // we aggregate below
-  };
-  let createdFired = false;
+    onProgress: (completed, failed) => {
+      progress[shard] = { completed, failed };
+      hooks.onProgress?.(
+        progress.reduce((sum, p) => sum + p.completed, 0),
+        progress.reduce((sum, p) => sum + p.failed, 0),
+        allTests.length,
+      );
+    },
+  });
 
   const results = await Promise.all(
     shardScenarios.map((s, i) =>
-      runSingleSimulation(s as DemoScenario, sharedHooks, ctl, {
+      runSingleSimulation(s as DemoScenario, shardHooks(i), ctl, {
         shardIndex: i + 1,
         shardTotal: shardCount,
         runLabel,
         workerOffset: i * Math.max(1, Math.ceil(scenario.workers / shardCount)),
+        runTests: allTests,
       }),
     ),
   );
 
-  // Aggregate status: failed if any shard failed
-  const anyFailed = results.some((r) => r.status === 'failed');
-  const finalStatus = anyFailed ? 'failed' : 'passed';
+  // Aggregate status: failed if any shard failed, else interrupted if any shard was cut short
+  const finalStatus = results.some((r) => r.status === 'failed')
+    ? 'failed'
+    : results.some((r) => r.status === 'interrupted')
+      ? 'interrupted'
+      : 'passed';
   const runId = results.find((r) => r.runId)?.runId ?? 0;
   hooks.onFinished?.(runId, finalStatus);
   return { runId, status: finalStatus };
@@ -1277,12 +1560,19 @@ async function runSingleSimulation(
   scenario: DemoScenario,
   hooks: SimulationHooks = {},
   ctl: SimulationController = { stopped: false },
-  shardOverride?: { shardIndex: number; shardTotal: number; runLabel: string; workerOffset?: number },
+  shardOverride?: {
+    shardIndex: number;
+    shardTotal: number;
+    runLabel: string;
+    workerOffset?: number;
+    /** Every test of the run, across its shards. */
+    runTests?: SimTest[];
+  },
 ): Promise<{ runId: number; status: string }> {
   const tests = scenario.tests();
   const startTime = new Date();
   const runLabel = shardOverride?.runLabel;
-  const instanceId = runLabel ? `${DEMO_SIMULATOR_INSTANCE_ID}|${runLabel}` : DEMO_SIMULATOR_INSTANCE_ID;
+  const instanceId = runLabel ? `${simulatorInstanceId()}|${runLabel}` : simulatorInstanceId();
 
   const setup = await $fetch<{ runId: number; projectId: number; setupToken: string }>('/api/test-runs/setup', {
     method: 'POST',
@@ -1292,7 +1582,7 @@ async function runSingleSimulation(
       environment: scenario.environment,
       label: scenario.runLabel || null,
       instanceId,
-      playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
+      playwrightVersion: scenario.playwrightVersion ?? PLAYWRIGHT_VERSION,
       reporterVersion: '0.7.0',
       shardIndex: shardOverride?.shardIndex,
       shardTotal: shardOverride?.shardTotal,
@@ -1304,7 +1594,16 @@ async function runSingleSimulation(
   // Let the 'initializing' state be visible for a moment, like a real global setup
   await sleep(INIT_DELAY_MS / scenario.speed);
 
-  const metadata = scenario.metadata();
+  // Each shard lists the same projects, as every shard's reporter reads the
+  // same config: the projects the run's tests run, across its shards.
+  const runTests = shardOverride?.runTests ?? tests;
+  const metadata = {
+    ...scenario.metadata(),
+    htmlReport: demoHtmlReport(
+      runTests.map((t) => t.browser),
+      scenario.baseURL,
+    ),
+  };
   const begin = await $fetch<{ streamToken: string }>(`/api/test-runs/${runId}/begin`, {
     method: 'POST',
     body: {
@@ -1315,10 +1614,12 @@ async function runSingleSimulation(
       // the total is not incremented per row.
       totalTests: tests.length,
       metadata,
-      playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
+      playwrightVersion: scenario.playwrightVersion ?? PLAYWRIGHT_VERSION,
       reporterVersion: '0.7.0',
       shardIndex: shardOverride?.shardIndex,
       shardTotal: shardOverride?.shardTotal,
+      // The runner snapshot rides on `/begin`, as the reporter sends it.
+      environments: [demoCiRunner({ shardIndex: shardOverride?.shardIndex ?? null })],
     },
   });
   const streamToken = begin.streamToken;
@@ -1329,6 +1630,7 @@ async function runSingleSimulation(
   let completed = 0;
   let failedCount = 0;
   let flakyCount = 0;
+  let interruptedCount = 0;
   let queueIndex = 0;
   let virtualEnd = virtualStart;
 
@@ -1399,22 +1701,31 @@ async function runSingleSimulation(
     await $fetch(`/api/test-runs/${runId}/heartbeat`, { method: 'POST', body: { streamToken, at } }).catch(() => {});
   }
 
+  // The run is cut short once the demo stops it, `stopAfter` tests completed or `maxFailures` tests failed: as when
+  // Playwright is interrupted, no test or retry starts any more, and a test in flight ends `interrupted`.
+  const maxFailures = scenario.maxFailures ?? Infinity;
+  const cutShort = () => ctl.stopped || completed >= stopAfter || failedCount >= maxFailures;
+
   // Each simulated worker pulls tests from a shared queue, mirroring how
   // Playwright distributes tests across parallel workers. Timestamps and
   // durations are reported on a virtual clock so the persisted data stays
-  // realistic even though events stream `speed`× faster.
-  async function workerLoop(workerIndex: number): Promise<void> {
+  // realistic even though events stream `speed`× faster. A worker holds its
+  // shard's lane `parallelIndex` from start to end.
+  async function workerLoop(workerIndex: number, parallelIndex: number): Promise<void> {
     let virtualNow = virtualStart + INIT_DELAY_MS;
     // The executions this worker ran so far: in a leaky run each left its page open.
     let ranInWorker = 0;
 
-    while (!ctl.stopped && completed < stopAfter) {
+    while (!cutShort()) {
       const test = tests[queueIndex++];
       if (!test) return;
 
       let finalDuration = test.duration;
+      // The status each attempt of the test ended with.
+      const ended: string[] = [];
 
       for (let attempt = 0; attempt < test.attempts.length; attempt++) {
+        if (attempt > 0 && cutShort()) break;
         const a = test.attempts[attempt]!;
         const attemptDuration = a.duration ?? test.duration;
         const startedAt = virtualNow;
@@ -1424,13 +1735,20 @@ async function runSingleSimulation(
             type: 'begin',
             title: test.title,
             location: test.location,
+            // The attempt beginning, and the retries allowed: 2, or as many as the test plans.
+            retries: attempt,
+            maxRetries: Math.max(2, test.attempts.length - 1),
             repeatEachIndex: 0,
             workerIndex,
+            parallelIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             browser: test.browser ?? null,
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,
+            tags: test.tags,
+            locks: test.locks,
+            testMeta: test.testMeta,
           },
         ]);
 
@@ -1456,39 +1774,71 @@ async function runSingleSimulation(
               {
                 type: 'step-begin',
                 title: s.title,
+                subtitle: s.subtitle ?? null,
                 location: test.location,
                 stepCategory: s.category,
                 parentTitle: test.title,
                 workerIndex,
+                shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);
             await sleep(seg / scenario.speed);
             virtualNow += seg;
             attemptRemaining -= seg;
-            // A hanging attempt waits on its last live step, its heartbeat telling the time.
+            // A hanging attempt waits on its last live step, its heartbeat telling the time; a stopped one stands
+            // stopped there, told as its reporter tells it.
             let hung = 0;
-            if (a.hangMs && s === liveSteps[liveSteps.length - 1]) {
-              while (hung < a.hangMs && !ctl.stopped) {
-                const tick = Math.min(HANG_TICK_MS, a.hangMs - hung);
+            const holdMs = a.hangMs ?? a.stopMs ?? 0;
+            const of = {
+              title: test.title,
+              location: test.location,
+              workerIndex,
+              shardIndex: shardOverride?.shardIndex ?? null,
+              browser: test.browser ?? null,
+            };
+            if (holdMs && s === liveSteps[liveSteps.length - 1]) {
+              if (a.stopMs) {
+                const at = parseLocation(s.location ?? test.location);
+                const stop = {
+                  reason: 'breakpoint',
+                  title: s.subtitle ? `${s.title} ${s.subtitle}` : s.title,
+                  file: at.filePath,
+                  line: at.line,
+                  bar: true,
+                  // The page reads how long it has stood against its own clock.
+                  since: Date.now(),
+                  pausedMs: 0,
+                };
+                await postEvents([{ type: 'test-stopped', ...of, stop }]);
+              }
+              while (hung < holdMs && !ctl.stopped) {
+                const tick = Math.min(HANG_TICK_MS, holdMs - hung);
                 await sleep(tick / scenario.speed);
                 virtualNow += tick;
                 hung += tick;
                 await postHeartbeat(virtualNow);
               }
+              if (a.stopMs) await postEvents([{ type: 'test-resumed', ...of, pausedMs: hung }]);
               attemptRemaining -= hung;
-              if (ctl.stopped) return;
+              // A stop ends the wait, and the attempt with it.
+              if (ctl.stopped) {
+                attemptRemaining = 0;
+                break;
+              }
             }
             await postEvents([
               {
                 type: 'step-end',
                 title: s.title,
+                subtitle: s.subtitle ?? null,
                 location: test.location,
                 status: 'passed',
                 duration: seg + hung,
                 stepCategory: s.category,
                 parentTitle: test.title,
                 workerIndex,
+                shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);
@@ -1510,23 +1860,28 @@ async function runSingleSimulation(
               networkRequests: test.networkRequests,
             };
 
+        // An attempt still running when the run was cut short ends interrupted, after the time it ran.
+        const status = cutShort() ? 'interrupted' : a.status;
+        const ranMs = status === 'interrupted' ? virtualNow - startedAt : attemptDuration;
+        ended.push(status);
+
         await postEvents([
           {
             type: 'complete',
             title: test.title,
             location: test.location,
-            status: a.status,
-            duration: attemptDuration,
+            status,
+            duration: ranMs,
             // The effective per-test timeout the real reporter always sends
             // (Playwright's default unless a test overrides it).
             timeout: 30000,
-            error: a.error ?? null,
+            error: status === 'interrupted' ? null : (a.error ?? null),
             retries: attempt,
             repeatEachIndex: 0,
             attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({
               retry: i,
-              status: att.status,
-              duration: att.duration ?? test.duration,
+              status: ended[i],
+              duration: i === attempt ? ranMs : (att.duration ?? test.duration),
               startedAt: startedAt - (attempt - i) * (test.duration + WORKER_GAP_MS),
             })),
             steps: stamped.steps,
@@ -1543,7 +1898,8 @@ async function runSingleSimulation(
             webVitals: test.webVitals,
             pageState: test.pageState ?? null,
             locatorPages: test.steps?.length ? buildLocatorPages() : null,
-            aiUsage: (await buildAiUsage({ file: test.file, title: test.title })) ?? null,
+            // AI steps run as steps: a test that ran none used none.
+            aiUsage: test.steps.length ? ((await buildAiUsage({ file: test.file, title: test.title })) ?? null) : null,
             tags: test.tags,
             locks: test.locks,
             testMeta: test.testMeta,
@@ -1552,14 +1908,17 @@ async function runSingleSimulation(
             ariaSnapshot: a.ariaSnapshot ?? null,
             testSource: a.testSource ?? null,
             testSourceFrames: a.testSourceFrames ?? null,
+            stdout: a.stdout ?? null,
+            stderr: a.stderr ?? null,
             browser: test.browser ?? null,
             workerIndex,
+            parallelIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,
             testAnnotations: a.testAnnotations ?? null,
-            resources: executionResources(attemptDuration, ranInWorker),
+            resources: executionResources(ranMs, ranInWorker),
           },
         ]);
 
@@ -1569,16 +1928,22 @@ async function runSingleSimulation(
         testsByWorker.set(workerIndex, spans);
         virtualNow += WORKER_GAP_MS;
         virtualEnd = Math.max(virtualEnd, virtualNow);
-        finalDuration = attemptDuration;
+        finalDuration = ranMs;
         postLiveResources();
+        if (status === 'interrupted') break;
       }
 
-      const finalAttempt = test.attempts[test.attempts.length - 1]!;
+      const finalStatus = ended[ended.length - 1]!;
+      if (finalStatus === 'interrupted') {
+        // In no outcome: counted in the run's total only.
+        interruptedCount++;
+        return;
+      }
       completed++;
       durations.push(finalDuration);
-      if (finalAttempt.status === 'failed') {
+      if (finalStatus === 'failed') {
         failedCount++;
-      } else if (test.attempts.length > 1) {
+      } else if (isFlakyResult(finalStatus, ended.slice(0, -1))) {
         flakyCount++;
       }
       virtualEnd = Math.max(virtualEnd, virtualNow);
@@ -1587,19 +1952,21 @@ async function runSingleSimulation(
   }
 
   await Promise.all(
-    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0))),
+    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0), i)),
   );
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
+  // A run cut short by its failure budget, which Playwright reports outside any test and the reporter sends as the
+  // run's error. A run stopped from the banner is a plain interruption, whatever failed before.
+  const stoppedOnFailures = interrupted && !ctl.stopped && failedCount >= maxFailures;
 
   // The real reporter materializes tests that never ran (maxFailures, CI kill)
   // as `didnotrun` complete events so the run page shows what was planned but
   // never executed — mirror that before finishing the run.
   if (interrupted) {
-    // A run cut short after failures stopped on its failure budget; one stopped
-    // for any other reason (a CI kill) is a plain interruption.
-    const unrunReason = failedCount > 0 ? 'max-failures' : 'interrupted';
+    // A run stopped for any other reason than its failure budget (a CI kill, the banner's Stop) is a plain interruption.
+    const unrunReason = stoppedOnFailures ? 'max-failures' : 'interrupted';
     const unrunTests = tests.slice(queueIndex);
     for (const t of unrunTests) {
       await postEvents([
@@ -1632,20 +1999,46 @@ async function runSingleSimulation(
     body: {
       streamToken,
       status,
+      startTime: startTime.toISOString(),
       duration: virtualEnd - virtualStart,
       totalTests: tests.length,
       passedTests: completed - failedCount,
       failedTests: failedCount,
       skippedTests: 0,
-      // Tests that never ran because the run was cut short (interrupted/maxFailures).
-      didNotRunTests: tests.length - completed,
+      // Tests that never ran because the run was cut short (interrupted/maxFailures); the interrupted
+      // ones count in the total only.
+      didNotRunTests: tests.length - completed - interruptedCount,
       flakyTests: flakyCount,
       durations,
+      ...(stoppedOnFailures
+        ? {
+            runErrors: [
+              {
+                message: `\u001b[31mTesting stopped early after ${failedCount} maximum allowed failures.\u001b[39m`,
+                stack: null,
+                location: null,
+              },
+            ],
+          }
+        : {}),
       metadata,
-      playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
+      playwrightVersion: scenario.playwrightVersion ?? PLAYWRIGHT_VERSION,
       reporterVersion: '0.7.0',
       ...(shardOverride ? { shardIndex: shardOverride.shardIndex, shardTotal: shardOverride.shardTotal } : {}),
       ...(scenario.resources ? { resourceReport: resourceReport() } : {}),
+      // Every snapshot rides on `/finish`: the runner again, then each project's browser.
+      environments: [
+        demoCiRunner({ shardIndex: shardOverride?.shardIndex ?? null }),
+        ...[
+          ...new Map(
+            runTests
+              .filter((t) => typeof t.browser?.projectName === 'string')
+              .map((t) => [t.browser!.projectName as string, (t.browser!.browserName as string | undefined) ?? null]),
+          ),
+        ].map(([project, browserName]) =>
+          demoBrowser({ project, browserName, shardIndex: shardOverride?.shardIndex ?? null }),
+        ),
+      ],
     },
   });
 

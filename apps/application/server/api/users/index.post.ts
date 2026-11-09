@@ -17,7 +17,7 @@ defineRouteMeta({
           schema: {
             type: 'object',
             properties: {
-              username: { type: 'string', description: 'At least 3 characters' },
+              username: { type: 'string', description: '3 to 200 characters' },
               password: { type: 'string', description: 'At least 8 characters' },
               name: { type: 'string' },
               email: { type: 'string', format: 'email' },
@@ -47,7 +47,7 @@ export default eventHandler(async (event) => {
 
   try {
     // Without a password, a random one: the user sets their own from the invite email.
-    const hashedPassword = await hashPassword(password ?? randomBytes(32).toString('hex'));
+    const hashedPassword = await hashPassword(event, password ?? randomBytes(32).toString('hex'));
     const user = await createUserAccount(
       await getDatabase(),
       { username, password: hashedPassword, role: requestedInstanceRole(role), name, email, groupIds },

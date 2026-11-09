@@ -9,6 +9,7 @@ import { stripAnsi } from '#shared/error-fingerprint';
 import { errorLines, runSegments, type OutcomeSegment } from '#shared/notifications/message-parts';
 import type { StatusColorKey } from '#shared/status-colors';
 import { testLabel } from '#shared/utils/test-label';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import type { ExportBundle, ExportCase, ExportRun, ExportRunTest } from './types';
 
 /** A label/value pair; `null` values are dropped by the renderers. */
@@ -61,13 +62,14 @@ export function fmtDate(value: unknown): string | null {
 export function caseFacts(exportCase: ExportCase): Fact[] {
   const d = exportCase.detail as Record<string, any>;
   const browser = (d.browser ?? {}) as Record<string, any>;
+  const worker = shownWorkerNumber(d);
 
   return [
     ['Duration', fmtDuration(d.duration)],
     ['Retries', d.retries != null ? String(d.retries) : null],
     ['Started', fmtDate(d.startedAt)],
     ['Browser', browser.projectName ?? browser.browserName ?? null],
-    ['Worker', d.workerIndex != null ? String(d.workerIndex) : null],
+    ['Worker', worker != null ? String(worker) : null],
     ['Shard', d.shardIndex != null ? String(d.shardIndex) : null],
     ['New regression', d.isNewRegression ? 'yes' : null],
     ['Newly flaky', d.isNewFlaky ? 'yes' : null],
@@ -78,15 +80,17 @@ export function caseFacts(exportCase: ExportCase): Fact[] {
 
 /**
  * A test's, a run's or a cluster's status as the outcome color it is drawn in, as the dashboard's `statusPaletteKey`
- * draws it: timed-out and interrupted read as failed, a pass on a retry as flaky, a run in progress as running, an
- * open cluster as failed and a resolved one as passed, and any other status as skipped.
+ * draws it: timed-out reads as failed, interrupted as its neutral own, a pass after a failed attempt (`flaky`, the
+ * execution's stored verdict) as flaky, a run in progress as running, an open cluster as failed and a resolved one as
+ * passed, and any other status as skipped.
  */
-export function statusTone(value: unknown, retries?: number | null): StatusColorKey {
+export function statusTone(value: unknown, flaky?: boolean | null): StatusColorKey {
   const v = String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z]/g, '');
-  if (v === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
-  if (v === 'failed' || v === 'timedout' || v === 'interrupted' || v === 'open') return 'failed';
+  if (v === 'passed') return flaky ? 'flaky' : 'passed';
+  if (v === 'failed' || v === 'timedout' || v === 'open') return 'failed';
+  if (v === 'interrupted') return 'interrupted';
   if (v === 'resolved') return 'passed';
   if (v === 'flaky') return 'flaky';
   if (v === 'fixme') return 'fixme';
@@ -111,7 +115,17 @@ export function runFacts(run: Record<string, any>): Fact[] {
     ['Commit', commit],
     ['CI build', build],
     ['Playwright', run.playwrightVersion ?? null],
+    ['Runner', runnerFact(run.environments?.runner)],
   ];
+}
+
+/** The runner's time zone, locale and OS in one line, every shard's when they differ; null when not recorded. */
+function runnerFact(runners: Array<Record<string, any>> | undefined): string | null {
+  if (!Array.isArray(runners) || runners.length === 0) return null;
+  const lines = [
+    ...new Set(runners.map((r) => [r.timeZone, r.locale, r.os, r.ciImage].filter(Boolean).join(' · ')).filter(Boolean)),
+  ];
+  return lines.length ? lines.join(' / ') : null;
 }
 
 /** How a run's tests ended, by outcome, or null for a run that counted none. */
@@ -127,6 +141,7 @@ export function runTestsByOutcome(
     flakyTests: Number(run.flakyTests ?? 0),
     skippedTests: Number(run.skippedTests ?? 0),
     didNotRunTests: Number(run.didNotRunTests ?? 0),
+    interruptedTests: Number(run.interruptedTests ?? 0),
   });
   return { segments, total };
 }
@@ -382,4 +397,11 @@ export const OMISSION_REASONS: Record<string, string> = {
 /** One console entry as a single line, shared by both renderers and the ZIP log. */
 export function consoleLine(entry: Record<string, any>): string {
   return `[${entry.type ?? 'log'}] ${entry.text ?? ''}`;
+}
+
+/** Each stream an execution's test wrote to, stdout then stderr, as plain text: shared by the renderers and the ZIP. */
+export function outputStreams(detail: Record<string, any>): Array<{ name: 'stdout' | 'stderr'; text: string }> {
+  return (['stdout', 'stderr'] as const).flatMap((name) =>
+    typeof detail[name] === 'string' && detail[name] ? [{ name, text: stripAnsi(detail[name]) }] : [],
+  );
 }

@@ -20,15 +20,15 @@ import {
   getFileApiPath,
   fileApiUrl,
   getTraceViewerUrl,
-  errorMessage,
   filterCommits,
   scmFileStatusMeta,
   parsePatchLines,
   patchLineClass,
   renderAnsi,
-  copyPreview,
   reportIcon,
+  browserIconName,
   getBrowserIcon,
+  runPassRate,
 } from '../../app/utils/index';
 
 describe('formatBytes', () => {
@@ -136,6 +136,11 @@ describe('formatRelativeTime', () => {
   test('renders a past date with an "ago" suffix', () => {
     expect(formatRelativeTime(new Date(Date.now() - 60_000))).toContain('ago');
   });
+
+  test('returns N/A for a value that is no date, rather than throwing', () => {
+    expect(formatRelativeTime('not a date')).toBe('N/A');
+    expect(formatRelativeTime(new Date(Number.NaN))).toBe('N/A');
+  });
 });
 
 describe('getStatusColor', () => {
@@ -150,14 +155,27 @@ describe('getStatusColor', () => {
     expect(getStatusColor('never-run')).toBe('neutral');
   });
 
-  test('reads timed-out and interrupted as failed, like the run counters', () => {
+  test('reads timed-out as failed, like the run counters, and interrupted as neutral, in no outcome', () => {
     expect(getStatusColor('timedout')).toBe('error');
     expect(getStatusColor('timedOut')).toBe('error');
-    expect(getStatusColor('interrupted')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('neutral');
+    expect(getStatusIcon('interrupted')).toBe('i-lucide-circle-pause');
   });
 
   test('falls back to neutral for unknown statuses', () => {
     expect(getStatusColor('whatever')).toBe('neutral');
+  });
+});
+
+describe('runPassRate', () => {
+  test('reads the passed tests of a run over the ones that passed or failed', () => {
+    // 1 passed and 26 did not run: the run stopped, its one decided test passed.
+    expect(runPassRate({ passedTests: 1, failedTests: 0 })).toBe(100);
+    expect(runPassRate({ passedTests: 7, failedTests: 3 })).toBe(70);
+  });
+
+  test('has none when no test passed or failed', () => {
+    expect(runPassRate({ passedTests: 0, failedTests: 0 })).toBeNull();
   });
 });
 
@@ -339,22 +357,6 @@ describe('file path helpers', () => {
   });
 });
 
-describe('errorMessage (fetch error unwrapping)', () => {
-  test('unwraps the { data: { message } } shape', () => {
-    expect(errorMessage({ data: { message: 'Boom' } })).toBe('Boom');
-  });
-
-  test('falls back to the top-level message', () => {
-    expect(errorMessage({ message: 'Plain' })).toBe('Plain');
-  });
-
-  test('returns the fallback for non-object / empty values', () => {
-    expect(errorMessage('a string')).toBe('Unknown error');
-    expect(errorMessage(null)).toBe('Unknown error');
-    expect(errorMessage({}, 'custom fallback')).toBe('custom fallback');
-  });
-});
-
 describe('filterCommits', () => {
   const commits = [
     { sha: 'aaa111bbb', shortSha: 'aaa111b', message: 'Fix login bug', author: 'Alice' },
@@ -442,18 +444,6 @@ describe('renderAnsi', () => {
   });
 });
 
-describe('copyPreview', () => {
-  test('returns empty string for nullish input', () => {
-    expect(copyPreview(null)).toBe('');
-    expect(copyPreview(undefined)).toBe('');
-  });
-
-  test('joins newlines with a middot and truncates past the cap', () => {
-    expect(copyPreview('a\nb')).toBe('a · b');
-    expect(copyPreview('x'.repeat(200), 10)).toBe('xxxxxxxxxx…');
-  });
-});
-
 describe('icon helpers', () => {
   test('reportIcon maps known report types', () => {
     expect(reportIcon('html')).toBe('i-lucide-layout-dashboard');
@@ -466,5 +456,19 @@ describe('icon helpers', () => {
     expect(getBrowserIcon('firefox')).toBe('i-simple-icons-firefoxbrowser');
     expect(getBrowserIcon('webkit')).toBe('i-simple-icons-safari');
     expect(getBrowserIcon(null)).toBe('i-lucide-globe');
+  });
+
+  test('browserIconName reads the channel, then the engine, then the project name', () => {
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium' })).toBe('chromium');
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium', channel: 'msedge' })).toBe('msedge');
+    expect(browserIconName({ projectName: 'webkit' })).toBe('webkit');
+    expect(browserIconName({ projectName: 'Polaris', browserName: null, channel: null })).toBe('Polaris');
+    expect(browserIconName(null)).toBeNull();
+    expect(getBrowserIcon(browserIconName({ projectName: 'Polaris', browserName: 'chromium' }))).toBe(
+      'i-simple-icons-googlechrome',
+    );
+    expect(getBrowserIcon(browserIconName({ projectName: 'Edge', browserName: 'chromium', channel: 'msedge' }))).toBe(
+      'i-simple-icons-microsoftedge',
+    );
   });
 });

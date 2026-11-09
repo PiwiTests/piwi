@@ -89,6 +89,8 @@ test.describe.serial('Quarantine', () => {
       data: { testCaseId: flakyCaseId, reason: 'times out on CI only' },
     });
     expect(res.ok(), `POST quarantine failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+    // The runs submitted from here on start after the quarantine, so its streak reads them.
+    clock = Date.now();
 
     const body = await getQuarantine(request, projectId);
     expect(body.entries).toHaveLength(1);

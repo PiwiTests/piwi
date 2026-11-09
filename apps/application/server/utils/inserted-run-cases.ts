@@ -1,3 +1,8 @@
+import { eq, sql } from 'drizzle-orm';
+import { failureClusters } from '../database/schema';
+import type { DrizzleDB } from '#shared/handlers/db';
+import { MAX_INT32 } from './storable-values';
+
 /** The columns of the `(run, case, repeat, retries, browser)` unique index that a batch row carries. */
 interface RunCaseKey {
   testCaseId: number;
@@ -8,10 +13,10 @@ interface RunCaseKey {
 
 /**
  * A row's `repeat_each_index`: the `--repeat-each` repetition the reporter sent, 0 when it sent none (an older
- * reporter, a run without repeats) or a value that is not a non-negative integer.
+ * reporter, a run without repeats) or a value that is not a non-negative integer its column holds.
  */
 export function resolveRepeatEachIndex(value: unknown): number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_INT32 ? value : 0;
 }
 
 /**
@@ -55,4 +60,34 @@ export function matchInsertedRunCases<T extends RunCaseKey>(
     const rowIndex = indicesByKey.get(keyOf(row))?.shift();
     return rowIndex === undefined ? [] : [{ ...row, rowIndex }];
   });
+}
+
+/**
+ * Take back the failures a batch counted on its failure clusters for the rows the insert did not store: one it skipped
+ * (a batch sent again, a row the batch repeats) or never wrote (the insert failed). A batch counts its failures on
+ * their clusters before its rows are inserted, and only when its run's failures count as occurrences
+ * (`countsOccurrences`, the `cluster-occurrences` use). Each counter moves down by what the batch added for those
+ * rows, so the failures another batch counted meanwhile stay counted.
+ */
+export async function uncountClustersOfSkippedRows(
+  db: DrizzleDB,
+  rows: Array<{ failureClusterId?: number | null }>,
+  inserted: Array<{ rowIndex: number }>,
+  countsOccurrences: boolean,
+): Promise<void> {
+  if (!countsOccurrences) return;
+  const stored = new Set(inserted.map((row) => row.rowIndex));
+  const skipped = new Map<number, number>();
+  rows.forEach((row, index) => {
+    const clusterId = row.failureClusterId;
+    if (clusterId != null && !stored.has(index)) skipped.set(clusterId, (skipped.get(clusterId) ?? 0) + 1);
+  });
+  for (const [clusterId, count] of skipped) {
+    await db
+      .update(failureClusters)
+      .set({
+        occurrences: sql`case when ${failureClusters.occurrences} > ${count} then ${failureClusters.occurrences} - ${count} else 0 end`,
+      })
+      .where(eq(failureClusters.id, clusterId));
+  }
 }

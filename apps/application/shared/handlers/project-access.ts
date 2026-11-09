@@ -42,6 +42,7 @@ import {
   type UserProjectRoles,
   type UserProjectRolesResponse,
   type UserSummary,
+  USERNAME_MAX_LENGTH,
 } from '#shared/project-access';
 import {
   getProjectMembers,
@@ -98,7 +99,7 @@ export const projectAccessUpdateSchema = z.object({
 });
 
 /** A member to set: a user may carry the whole username they were found by. */
-const memberSubjectSchema = subjectSchema.extend({ username: z.string().max(200).optional() });
+const memberSubjectSchema = subjectSchema.extend({ username: z.string().max(USERNAME_MAX_LENGTH).optional() });
 
 export const projectMembersUpdateSchema = z.object({
   entries: z.array(z.object({ subject: memberSubjectSchema, role: projectRoleSchema })),
@@ -110,7 +111,7 @@ export const userProjectRolesSchema = z.object({
 });
 
 export const createUserSchema = z.object({
-  username: z.string().min(3),
+  username: z.string().min(3).max(USERNAME_MAX_LENGTH),
   password: z.string().min(8).optional(),
   // `reporter` and `user` are the roles of earlier versions, accepted for one release and stored as `member`.
   role: z.union([z.enum(InstanceRole), z.enum(['reporter', 'user'])]),
@@ -209,6 +210,7 @@ function toUserListItem(row: UserRow, groupIds: number[]): UserListItem {
     email: row.email,
     emailVerified: row.emailVerified,
     oauthProvider: row.oauthProvider,
+    avatarUploaded: row.avatarKey !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

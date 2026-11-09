@@ -6,6 +6,7 @@
  */
 
 import type { AppManifest, ManifestRoute } from '#shared/types';
+import { declaredPatternLimitError } from '#shared/graph';
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
 
@@ -62,8 +63,9 @@ export function openApiBasePath(spec: unknown): string {
 
 /**
  * Parse an OpenAPI 3.x (or Swagger 2) document into a manifest, each path
- * under the document's base path. Malformed input yields an empty manifest
- * rather than throwing — a broken spec must never break ingest.
+ * under the document's base path. A path past the limits of
+ * {@link declaredPatternLimitError} is left out. Malformed input yields an
+ * empty manifest rather than throwing — a broken spec must never break ingest.
  */
 export function parseOpenApiSpec(spec: unknown): AppManifest {
   const routes: ManifestRoute[] = [];
@@ -71,8 +73,8 @@ export function parseOpenApiSpec(spec: unknown): AppManifest {
   if (!paths || typeof paths !== 'object') return { routes: [] };
   const base = openApiBasePath(spec);
   outer: for (const [path, pathItem] of Object.entries(paths as Record<string, unknown>)) {
-    if (!pathItem || typeof pathItem !== 'object') continue;
     const pattern = `${base}${path}`;
+    if (!pathItem || typeof pathItem !== 'object' || declaredPatternLimitError(pattern)) continue;
     for (const [method, operation] of Object.entries(pathItem as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method.toLowerCase())) continue;
       const responses = (operation as { responses?: unknown } | null)?.responses;

@@ -48,10 +48,21 @@ import {
   authoredBeforeEachMs,
   storyEvidenceTimes,
   storyCoverageFiles,
+  INCIDENT_HOST,
+  incidentUrl,
+  incidentNavigationError,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
+import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
+import { demoBrowser, demoCiRunner, demoParisRunner, demoServer } from '../shared/demo/demo-environments.mjs';
+import {
+  environmentChangeMarkers,
+  environmentDigest,
+  environmentScope,
+  sanitizeEnvironmentSnapshot,
+} from '../shared/environment-snapshots.ts';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 import {
   WEB_DASHBOARD_PROJECT_ID,
@@ -79,8 +90,14 @@ const DEFAULT_DEMO_USER = DEMO_USERS.find((u) => u.id === 1);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Seconds since the epoch of an ISO date or date-time. A date-time with no
+ * offset reads as UTC, as a date alone does, so the seed is the same in every
+ * time zone.
+ */
 function ts(isoDate) {
-  return Math.floor(new Date(isoDate).getTime() / 1000);
+  const utc = /T[^Z+-]*$/.test(isoDate) ? `${isoDate}Z` : isoDate;
+  return Math.floor(new Date(utc).getTime() / 1000);
 }
 
 function q(v) {
@@ -131,7 +148,8 @@ const SCHEMA = journal.entries
 
 // ── Fingerprints (real algorithm mirror) ───────────────────────────────────
 // One fingerprint per story; every per-case error variant of a story MUST hash
-// identically (frames are not part of the hash), or the seed aborts.
+// identically (a frame is part of the hash only for a generic error), or the
+// seed aborts.
 
 const storyFingerprints = new Map();
 for (const story of FAILURE_STORIES) {
@@ -170,6 +188,9 @@ const PROJECTS = [
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
     // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
     external_id_url: 'https://tcm.example.com/case/{id}',
+    // Keys in test tags: the checkout tests carry a story key (SHOP-1234) and a test case key (SHOP-T123). The issue
+    // pattern reads only the story key and the test case pattern only the test case key, so no tag matches both.
+    tag_keys: { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-T[0-9]+$' },
   },
   {
     id: 2,
@@ -178,6 +199,18 @@ const PROJECTS = [
     description: 'Integration tests for REST API endpoints',
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
+    // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
+    // the Source control settings show the CI server form.
+    ci_rerun: {
+      enabled: true,
+      via: 'ci-server',
+      ciServer: {
+        preset: 'jenkins',
+        baseUrl: 'https://jenkins.example.com/',
+        user: 'piwi-bot',
+        rerun: { job: 'api/integration', ref: 'main' },
+      },
+    },
   },
   {
     id: 3,
@@ -373,6 +406,50 @@ const BUG_REPORTS = [
     created_at: BUG_REPORT_TIME,
     updated_at: BUG_REPORT_TIME,
   },
+  // Fixed and closed by hand with no test naming it: the fixed-without-test gap.
+  {
+    id: 2,
+    project_id: 1,
+    title: 'Gift card balance shown twice',
+    note: null,
+    page_key: '/checkout',
+    path: '/checkout',
+    origin: 'https://staging.checkout.example.com',
+    status: 'closed',
+    steps: {
+      v: 1,
+      title: 'Gift card balance shown twice',
+      origin: 'https://staging.checkout.example.com',
+      recordedAt: 0,
+      note: null,
+      steps: [
+        { action: 'goto', target: null, value: '/checkout', redacted: false, pageUrl: '/checkout', timestamp: 1 },
+      ],
+    },
+    evidence: {
+      console: [],
+      consoleDropped: 0,
+      requests: [],
+      requestsDropped: 0,
+      screenshots: [],
+      screenshotNote: 'none was taken',
+      outline: '- main:\n  - heading "Checkout" [level=1]',
+    },
+    context: {
+      origin: 'https://staging.checkout.example.com',
+      pageKey: '/checkout',
+      path: '/checkout',
+      browser: 'Chrome 141',
+      userAgent: null,
+      viewport: { width: 1440, height: 900 },
+      time: 0,
+      extensionVersion: '0.41.0',
+    },
+    language: 'en',
+    closed_at: BUG_REPORT_TIME + 86_400,
+    created_at: BUG_REPORT_TIME - 86_400,
+    updated_at: BUG_REPORT_TIME + 86_400,
+  },
 ];
 const BUG_REPRODUCTIONS = [
   {
@@ -402,6 +479,13 @@ const APP_SETTINGS = [
         diagnosis: { provider: 'demo', model: 'demo-simulated', baseUrl: null, apiKey: null },
       },
     },
+    updated_at: ts('2025-04-20T09:00:00'),
+  },
+  // Run on my machine is off until an administrator turns it on; the demo turns it on, so its simulated desktop app
+  // takes the requests of the run and test pages.
+  {
+    key: 'capabilities',
+    value: { decisions: { 'machine-runs': 'enabled' } },
     updated_at: ts('2025-04-20T09:00:00'),
   },
 ];
@@ -628,6 +712,16 @@ const NETWORK_REQUESTS = [];
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
 
+/** The run metadata naming `ids`' test cases as tests whose tags were cut, as the reporter records them. */
+function demoTagsTruncated(ids) {
+  const examples = ids.map((id, k) => {
+    const { file, title, declLine } = caseById.get(id);
+    const suitePath = (TEST_CASES.find((c) => c.id === id).suite_path || '').split('\x1f').filter(Boolean);
+    return { filePath: file, ...(suitePath.length ? { suitePath } : {}), title, line: declLine, dropped: k + 2 };
+  });
+  return { tests: examples.length, examples };
+}
+
 let runId = 1;
 let trcId = 1;
 let reportId = 1;
@@ -669,6 +763,8 @@ const CHECKOUT_BASE_URLS = {
   integration: ['https://integration.checkout.example.com'],
   development: ['http://localhost:3000', 'http://localhost:5173'],
 };
+/** The `use.baseURL` of each run's Playwright projects, by run id, for the runs that record one. */
+const RUN_BASE_URLS = new Map();
 const RUN_GREPS = {
   1: 'checkout|cart',
   2: 'auth|orders',
@@ -1157,6 +1253,7 @@ for (const proj of DEMO_PROJECTS) {
 
     const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
     const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
+    if (baseUrls) RUN_BASE_URLS.set(runId, baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length]);
     const metadata = {
       ci: {
         provider: 'GitHub Actions',
@@ -1171,15 +1268,6 @@ for (const proj of DEMO_PROJECTS) {
         author: commit.author,
         commitMessage: commit.message,
       },
-      ...(baseUrls
-        ? {
-            htmlReport: {
-              projects: [
-                { name: 'chromium', use: { baseURL: baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length] } },
-              ],
-            },
-          }
-        : {}),
       // One run that came in over the ingest caps through the batch upload,
       // so the run page shows what ingest left out.
       ...(proj.id === 1 && i === 3
@@ -1191,6 +1279,9 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run whose suite declared more tags than a test keeps, so the run
+      // page names the tests whose tags were cut (`metadata.tagsTruncated`).
+      ...(proj.id === 1 && i === 5 ? { tagsTruncated: demoTagsTruncated(caseIds.slice(0, 2)) } : {}),
     };
 
     TEST_RUNS.push({
@@ -1307,14 +1398,12 @@ for (const proj of DEMO_PROJECTS) {
       const evidenceTimes = failure ? storyEvidenceTimes(story, failure.step) : null;
       const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
 
-      // Test annotations — failures link to their cluster, the designated slow
-      // case is always marked slow (so timeout hygiene can surface it as a stale
-      // test.slow() once its durations no longer justify the tripled budget),
-      // and one checkout case carries a smoke marker.
+      // Test annotations — the designated slow case is always marked slow (so
+      // timeout hygiene can surface it as a stale test.slow() once its durations
+      // no longer justify the tripled budget), and one checkout case carries a
+      // smoke marker.
       let testAnnotations = null;
-      if (isFailedCase && story) {
-        testAnnotations = [{ type: 'fixme', description: `Known issue — see cluster ${story.clusterId}` }];
-      } else if (flakyCaseId && caseId === flakyCaseId) {
+      if (flakyCaseId && caseId === flakyCaseId) {
         testAnnotations = [{ type: 'slow' }];
       } else if (proj.id === 1 && j === 0) {
         testAnnotations = [{ type: 'smoke' }];
@@ -2066,6 +2155,30 @@ const RESOURCE_OCCURRENCES = [];
       lanes.set(row.worker_index, lane);
       shards.set(shard, lanes);
     }
+    if (run.shard_total === 2) {
+      // Each shard's span as its end records it (`metadata.shards`): both start with the run, each ends with its
+      // last test, and the last to end ends the run, whose duration runs from the first start to that end.
+      const runStartMs = run.start_time * 1000;
+      const runEndMs = runStartMs + run.duration;
+      const ends = [...shards.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([shard, lanes]) => ({
+          shard,
+          workers: lanes.size,
+          end: Math.max(...[...lanes.values()].flat().map((row) => row.started_at + (row.duration ?? 0))),
+        }));
+      const lastEnd = Math.max(...ends.map((entry) => entry.end));
+      run.metadata.shards = ends.map(({ shard, workers, end }) => {
+        const endMs = end === lastEnd ? runEndMs : Math.min(end, runEndMs);
+        return {
+          shardIndex: shard,
+          startTime: new Date(runStartMs).toISOString(),
+          endTime: new Date(endMs).toISOString(),
+          duration: endMs - runStartMs,
+          workers,
+        };
+      });
+    }
     const parts = [];
     for (const [shard, lanes] of [...shards.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
       let artifactBytes = 0;
@@ -2092,6 +2205,14 @@ const RESOURCE_OCCURRENCES = [];
             worker,
             tests: lane.length,
             spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+            cases: lane.map((row) => {
+              const testCase = TEST_CASES.find((c) => c.id === row.test_case_id);
+              return {
+                title: testCase?.title ?? '',
+                file: testCase?.file_path ?? '',
+                failed: row.status === 'failed' || row.status === 'timedOut',
+              };
+            }),
           })),
         fixtureFile: 'tests/admin/fixtures.ts',
         handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
@@ -2157,13 +2278,84 @@ const RESOURCE_OCCURRENCES = [];
   }
 }
 
+// ── Environment snapshots (post-processing, rng-free) ───────────────────────
+// Where each run executed, as the reporter and the capture fixtures record it
+// (`shared/demo/demo-environments.mjs`): every run's CI runner and each
+// project's page, the newest three runs of each project on a newer runner
+// image, one checkout run on the self-hosted Paris runner, the sharded web
+// run's second shard in another time zone, and the checkout API's clock 3 s
+// ahead on a recent checkout run. The markers the server writes for them are
+// replayed below, once the incident runs are known.
+const TEST_RUN_ENVIRONMENT_SNAPSHOTS = [];
+const ENVIRONMENT_MARKERS = [];
+/** Run id → its snapshots, as the server reads them back. */
+const SNAPSHOTS_BY_RUN = new Map();
+{
+  const byProject = new Map();
+  for (const run of TEST_RUNS) {
+    const list = byProject.get(run.project_id) ?? [];
+    list.push(run);
+    byProject.set(run.project_id, list);
+  }
+  /** Each run's projects, from its executions: name → engine. */
+  const projectsByRun = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const name = row.browser?.projectName;
+    if (!name) continue;
+    const projects = projectsByRun.get(row.test_run_id) ?? new Map();
+    if (!projects.has(name)) projects.set(name, row.browser?.browserName ?? null);
+    projectsByRun.set(row.test_run_id, projects);
+  }
+  const push = (run, snapshot) => {
+    const clean = sanitizeEnvironmentSnapshot(snapshot);
+    TEST_RUN_ENVIRONMENT_SNAPSHOTS.push({
+      id: TEST_RUN_ENVIRONMENT_SNAPSHOTS.length + 1,
+      run_id: run.id,
+      kind: clean.kind,
+      scope: environmentScope(clean),
+      snapshot: clean,
+      digest: environmentDigest(clean),
+      captured_at: run.start_time,
+    });
+    const list = SNAPSHOTS_BY_RUN.get(run.id) ?? [];
+    list.push(clean);
+    SNAPSHOTS_BY_RUN.set(run.id, list);
+  };
+  const browsers = (run, options) => {
+    const projects = [...(projectsByRun.get(run.id) ?? new Map()).entries()].sort((x, y) => x[0].localeCompare(y[0]));
+    for (const [project, browserName] of projects) push(run, demoBrowser({ ...options, project, browserName }));
+  };
+  for (const runs of byProject.values()) {
+    runs.sort((a, b) => b.start_time - a.start_time || b.id - a.id);
+    runs.forEach((run, index) => {
+      const newer = index < 3;
+      const paris = run.project_id === 1 && index === 5;
+      if (run.shard_total === 2) {
+        push(run, demoCiRunner({ shardIndex: 1, newerImage: newer }));
+        push(run, demoCiRunner({ shardIndex: 2, newerImage: newer, timeZone: 'America/New_York', host: 'fv-az207-3' }));
+        browsers(run, { shardIndex: 1, newer });
+        browsers(run, { shardIndex: 2, newer, timeZone: 'America/New_York' });
+      } else if (paris) {
+        push(run, demoParisRunner());
+        browsers(run, { newer, timeZone: 'Europe/Paris', locale: 'fr-FR' });
+      } else {
+        push(run, demoCiRunner({ newerImage: newer }));
+        browsers(run, { newer });
+      }
+      if (run.project_id === 1) {
+        const origin = new URL(DEMO_PROJECTS.find((p) => p.id === 1).baseUrl).origin;
+        push(run, demoServer({ origin, clockOffsetMs: index === 0 ? 3100 : 12 }));
+      }
+    });
+  }
+}
+
 // ── Environment incident (post-processing, rng-free) ────────────────────────
 // One checkout run against staging where the staging host refused every
 // connection: almost every test fails navigating to it, so the run carries the
 // incident flag the server's classifier writes (`metadata.incident`, rule
 // `host-unreachable`) and one auto `incident` marker, and is left out of flaky
 // scores, baselines and regression signals. Its failures join no cluster.
-const INCIDENT_HOST = 'staging.checkout.example.com';
 const INCIDENT_PASSED_CASES = 1;
 const incidentRunIds = new Set();
 const INCIDENT_MARKERS = [];
@@ -2195,14 +2387,10 @@ const INCIDENT_MARKERS = [];
   }
   for (const row of failing) {
     const caseDef = caseById.get(row.test_case_id);
-    const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
-    const url = `https://${INCIDENT_HOST}${path}`;
+    const url = incidentUrl(caseDef.file);
     row.status = 'failed';
     row.duration = 120 + (row.id % 7) * 15;
-    row.error =
-      `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
-      `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
-      `    at ${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`;
+    row.error = incidentNavigationError(caseDef);
     row.attempts = JSON.stringify([{ retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at }]);
     // The page never loaded: no steps past the navigation, no page evidence.
     row.steps = [];
@@ -2241,7 +2429,7 @@ const INCIDENT_MARKERS = [];
   target.failed_tests = failing.length;
   target.passed_tests = executed - failing.length;
   target.label = null;
-  target.metadata.htmlReport = { projects: [{ name: 'chromium', use: { baseURL: `https://${INCIDENT_HOST}` } }] };
+  RUN_BASE_URLS.set(target.id, `https://${INCIDENT_HOST}`);
   const reason =
     `${failing.length} of ${executed} tests failed, ${failing.length} of them navigating or connecting to ` +
     `${INCIDENT_HOST} (connection refused).`;
@@ -2272,24 +2460,89 @@ const INCIDENT_MARKERS = [];
   });
 }
 
+// ── Errors outside the tests (post-processing, rng-free) ────────────────────
+// The newest checkout run its failure budget stopped (`maxFailures`, its last
+// tests did not run): Playwright said so outside any test, and the global
+// teardown, which still ran, threw. The reporter sends both as the run's
+// errors outside any test (`onError`), each as `sanitizeRunErrors` keeps it.
+{
+  const target = TEST_RUNS.filter((r) => r.project_id === 1 && r.status === 'interrupted' && !incidentRunIds.has(r.id))
+    .sort((a, b) => a.id - b.id)
+    .at(0);
+  if (!target) throw new Error('No checkout run stopped by its failure budget can carry errors outside its tests');
+  target.run_errors = JSON.stringify([
+    {
+      message: `\u001b[31mTesting stopped early after ${target.failed_tests} maximum allowed failures.\u001b[39m`,
+      stack: null,
+      location: null,
+    },
+    {
+      message: 'Error: global teardown could not delete the test tenant ci-checkout-7f3a: 409 Conflict (open orders)',
+      stack: [
+        '    at deleteTenant (/home/runner/work/shop/shop/tests/support/tenants.ts:31:11)',
+        '    at async globalTeardown (/home/runner/work/shop/shop/tests/global-teardown.ts:8:3)',
+      ].join('\n'),
+      location: { file: 'tests/support/tenants.ts', line: 31, column: 11 },
+    },
+  ]);
+}
+
+// ── Test output (post-processing, rng-free) ─────────────────────────────────
+// What a story's failing attempt wrote to stdout and stderr, stored through
+// case_payloads as the server stores it, on each execution that still fails
+// with the story's error.
+{
+  const outputPayloadId = (projectId, content, createdAt) => {
+    if (!content) return null;
+    const key = `${projectId}\x00output\x00${content}`;
+    if (!casePayloadIds.has(key)) {
+      const id = CASE_PAYLOADS.length + 1;
+      CASE_PAYLOADS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(content).digest('hex'),
+        content,
+        size: content.length,
+        created_at: createdAt,
+      });
+      casePayloadIds.set(key, id);
+    }
+    return casePayloadIds.get(key);
+  };
+  const runStart = new Map(TEST_RUNS.map((r) => [r.id, r.start_time]));
+  for (const row of TEST_RUNS_CASES) {
+    const entry = storyByCaseId.get(row.test_case_id);
+    const output = entry?.story.evidence.outputOnFail;
+    if (!output || row.status !== 'failed' || row.error !== entry.failingCase.error) continue;
+    const createdAt = runStart.get(row.test_run_id);
+    const stdout = outputPayloadId(entry.story.projectId, output.stdout, createdAt);
+    const stderr = outputPayloadId(entry.story.projectId, output.stderr, createdAt);
+    if (stdout) row.stdout_payload_id = stdout;
+    if (stderr) row.stderr_payload_id = stderr;
+  }
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
-// Mirror the server's computeRegressionSignals: walk each case's final
-// executions (one per run: an earlier attempt of a retried test is not one) in
-// chronological order; a failure right after a pass is a new regression, and a
-// retry-pass right after a clean pass is newly flaky.
+// Mirror the server's computeRegressionSignals: walk each test's final
+// executions in each Playwright project (one per run: an earlier attempt of a
+// retried test is not one) in chronological order; a failure right after a
+// pass is a new regression, and a retry-pass right after a clean pass is newly
+// flaky. A partial run gets its signals but is no one's baseline.
 {
   const retried = new Set(
     TEST_RUNS_CASES.filter((trc) => trc.retries > 0).map((trc) => `${trc.test_run_id}:${trc.test_case_id}`),
   );
-  const byCase = new Map();
+  const partialRunIds = new Set(TEST_RUNS.filter((run) => run.is_full_run === 0).map((run) => run.id));
+  const byTest = new Map();
   for (const trc of TEST_RUNS_CASES) {
     // An environment incident gets no regression signals and is no one's baseline.
     if (incidentRunIds.has(trc.test_run_id)) continue;
     if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
-    if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
-    byCase.get(trc.test_case_id).push(trc);
+    const key = `${trc.test_case_id}:${trc.browser_name}`;
+    if (!byTest.has(key)) byTest.set(key, []);
+    byTest.get(key).push(trc);
   }
-  for (const rows of byCase.values()) {
+  for (const rows of byTest.values()) {
     rows.sort((a, b) => a.started_at - b.started_at);
     let prev = null;
     for (const trc of rows) {
@@ -2300,8 +2553,31 @@ const INCIDENT_MARKERS = [];
           trc.is_new_flaky = 1;
         }
       }
-      prev = trc;
+      if (!partialRunIds.has(trc.test_run_id)) prev = trc;
     }
+  }
+}
+
+// ── Interrupted tests (post-processing, rng-free) ───────────────────────────
+// When a run is interrupted, the test in flight is cut short: Playwright reports
+// it `interrupted`, an outcome of none (neither passed, failed, skipped nor did
+// not run), and the tests after it never run. In each interrupted run the first
+// of its unreached tests becomes that test, so the run page's count bar names
+// the gap it leaves ("1 interrupted") and the history strips draw it neutral.
+{
+  const interruptedRuns = new Map(TEST_RUNS.filter((run) => run.status === 'interrupted').map((run) => [run.id, run]));
+  const firstUnreached = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    if (!interruptedRuns.has(row.test_run_id) || row.status !== 'didnotrun') continue;
+    const known = firstUnreached.get(row.test_run_id);
+    if (!known || row.id < known.id) firstUnreached.set(row.test_run_id, row);
+  }
+  for (const [runId, row] of firstUnreached) {
+    row.status = 'interrupted';
+    row.did_not_run_reason = null;
+    row.blocked_by = null;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'interrupted', duration: 0, startedAt: null }]);
+    interruptedRuns.get(runId).did_not_run_tests -= 1;
   }
 }
 
@@ -2622,7 +2898,7 @@ function buildClusterFix(story, stats) {
 // model+recipe tag and near-parallel vectors, so their cosine clears the memory
 // threshold even though their error text differs. Everything else uses the
 // deterministic fingerprint path with no vector.
-const DEMO_EMBED_TAG = 'text-embedding-3-small#v2';
+const DEMO_EMBED_TAG = 'text-embedding-3-small#v3';
 const DEMO_CLUSTER_EMBEDDINGS = {
   10: [0.91, 0.12, 0.44, 0.21, 0.68, 0.33, 0.52, 0.6],
   9: [0.62, 0.4, 0.52, 0.34, 0.5, 0.48, 0.47, 0.44],
@@ -2652,6 +2928,8 @@ for (const story of FAILURE_STORIES) {
     occurrences: stats.occurrences || 1,
     ...buildClusterFix(story, stats),
     ...(embedding ? { embedding: JSON.stringify(embedding), embedding_model: DEMO_EMBED_TAG } : {}),
+    // Announced by the CI run that first failed into it.
+    announced_at: createdAt,
     created_at: createdAt,
     updated_at: updatedAt,
   });
@@ -2725,21 +3003,41 @@ const MERGE_SUGGESTIONS = [
 ];
 
 // ── Demo quarantine ───────────────────────────────────────────────────────
-// Three entries covering the states the tab exists to distinguish: one that has
-// earned its way out, one part-way through its streak, and one still failing.
-// Without all three the exit ramp looks like a list that only grows.
+// Every entry was quarantined on Apr 20 and keeps the project's newest run of
+// that moment. The runs that started since count toward its release, once per
+// run, which gives the tab the states it exists to tell apart: the search test
+// passed in every one and has earned its way out, the pagination test holds a
+// fix the Flake Lab verified (the experiments below), and the other two are
+// part-way back, the discount code test still flaking. Without them the exit
+// ramp looks like a list that only grows.
 const QUARANTINED_TESTS = [];
 {
-  // Runs after the anchor count toward the streak; 4 seeded passes land the
-  // entry at "4 / 5" — part-way through the exit ramp, not yet ready.
-  const PARTIAL_QUARANTINE_STREAK_RUNS = 4;
-  const quarantineSpec = [
-    { projectId: 1, streakState: 'ready', reason: 'Times out on CI only — see cluster 1' },
-    { projectId: 2, streakState: 'partial', reason: 'Search index warm-up races the assertion' },
-    { projectId: 3, streakState: 'failing', reason: 'Pagination flakes under parallel load' },
-  ];
+  const quarantinedAt = ts('2025-04-20T09:00:00');
+  /** The project's newest run that started before the quarantine. */
+  const newestRunBefore = (projectId) =>
+    TEST_RUNS.filter((run) => run.project_id === projectId && run.start_time < quarantinedAt).reduce(
+      (newest, run) => (newest && newest.start_time >= run.start_time ? newest : run),
+      null,
+    )?.id ?? null;
+  const quarantine = (projectId, testCaseId, reason, source) =>
+    QUARANTINED_TESTS.push({
+      id: QUARANTINED_TESTS.length + 1,
+      project_id: projectId,
+      test_case_id: testCaseId,
+      reason,
+      source,
+      quarantined_at_run_id: newestRunBefore(projectId),
+      created_by: null,
+      created_at: quarantinedAt,
+      released_at: null,
+      released_reason: null,
+    });
 
-  let qId = 1;
+  const quarantineSpec = [
+    { projectId: 1, reason: 'Times out on CI only — see cluster 1', source: 'proposed' },
+    { projectId: 2, reason: 'Search index warm-up races the assertion', source: 'manual' },
+    { projectId: 3, reason: 'Pagination flakes under parallel load', source: 'manual' },
+  ];
   for (const spec of quarantineSpec) {
     const flaky = FLAKY_CASES[spec.projectId];
     if (!flaky) continue;
@@ -2747,54 +3045,23 @@ const QUARANTINED_TESTS = [];
     const caseDef = proj?.cases.find((candidate) => candidate.title === flaky.title);
     if (!caseDef) continue;
     const caseId = caseIdByKey.get(`${spec.projectId}\x00${caseDef.file}\x00${caseDef.title}`);
-    if (!caseId) continue;
-
-    // The streak counts executions on runs after the anchor (id > anchor), and
-    // ids descend as time advances in the seed, so an anchor on the newest run
-    // makes every seeded execution count (release-ready) and an anchor on the
-    // oldest run counts none (still failing). The partial entry anchors a few
-    // runs short of the oldest so only a handful of passes accumulate.
-    const anchorRunId =
-      spec.streakState === 'failing'
-        ? (oldestRunByProject[spec.projectId] ?? null)
-        : spec.streakState === 'partial'
-          ? Number(oldestRunByProject[spec.projectId]) - PARTIAL_QUARANTINE_STREAK_RUNS || null
-          : (newestRunByProject[spec.projectId] ?? null);
-
-    QUARANTINED_TESTS.push({
-      id: qId++,
-      project_id: spec.projectId,
-      test_case_id: caseId,
-      reason: spec.reason,
-      source: spec.streakState === 'ready' ? 'proposed' : 'manual',
-      quarantined_at_run_id: anchorRunId,
-      created_by: null,
-      created_at: ts('2025-04-20T09:00:00'),
-      released_at: null,
-      released_reason: null,
-    });
+    if (caseId) quarantine(spec.projectId, caseId, spec.reason, spec.source);
   }
 
   // A quarantined test whose cluster's fix has verified — the inbox's
   // "Quarantine ready" queue: the failures stopped, so the quarantine is safe to
-  // lift. Anchored at that cluster's newest run so the demo shows it release-ready.
+  // lift.
   {
     const story = FAILURE_STORIES.find((s) => s.clusterId === 10);
     const failing = story?.failingCases?.[0];
     const caseId = story && failing && caseIdByKey.get(`${story.projectId}\x00${story.specFile}\x00${failing.title}`);
     if (caseId) {
-      QUARANTINED_TESTS.push({
-        id: qId++,
-        project_id: story.projectId,
-        test_case_id: caseId,
-        reason: 'Held while the pagination fix was verified; the fix landed and held.',
-        source: 'manual',
-        quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
-        created_by: null,
-        created_at: ts('2025-04-20T09:00:00'),
-        released_at: null,
-        released_reason: null,
-      });
+      quarantine(
+        story.projectId,
+        caseId,
+        'Held while the pagination fix was verified; the fix landed and held.',
+        'manual',
+      );
     }
   }
 }
@@ -3309,6 +3576,44 @@ const GROUPS = DEMO_GROUPS.map((g) => ({
 const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
   g.memberIds.map((userId) => ({ group_id: g.id, user_id: userId, added_by: null, created_at: accessCreatedAt })),
 );
+
+// The default demo identity connected the desktop app, which Connected apps lists as online: the demo's router
+// answers every target as online. The key's hash matches no key anyone holds.
+const CONNECTED_APP_KEYS = [
+  {
+    id: 1,
+    user_id: DEFAULT_DEMO_USER.id,
+    name: 'Piwi Desktop on DEMO-LAPTOP (macOS)',
+    key_hash: 'demo-connected-app-'.padEnd(64, '0'),
+    key_prefix: 'demo0000',
+    client_kind: 'desktop',
+    permissions: ['run:receive'],
+    created_at: ts('2025-04-20T09:00:00'),
+    last_used_at: ts('2025-04-25T08:00:00'),
+  },
+];
+const RUN_TARGETS = [
+  {
+    id: 1,
+    user_id: DEFAULT_DEMO_USER.id,
+    api_key_id: 1,
+    kind: 'desktop',
+    device_name: 'Piwi Desktop on DEMO-LAPTOP (macOS)',
+    platform: 'macos',
+    version: '0.68.0',
+    project_ids: [1],
+    last_seen_at: ts('2025-04-25T08:00:00') * 1000,
+    created_at: ts('2025-04-20T09:00:00') * 1000,
+  },
+];
+
+// The default demo identity starred two projects, so they lead its sidebar and Home's Project health.
+const PROJECT_STARS = [5, 2].map((projectId, i) => ({
+  id: i + 1,
+  user_id: DEFAULT_DEMO_USER.id,
+  project_id: projectId,
+  created_at: accessCreatedAt + i,
+}));
 
 const ROLE_BINDINGS = [];
 let roleBindingId = 1;
@@ -4539,7 +4844,8 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     triage_note: null,
     first_seen_run_id: id,
     last_seen_run_id: id,
-    occurrences: 1,
+    // A run from an editor joins its failures to their clusters without counting them as occurrences.
+    occurrences: 0,
     created_at: startTime,
     updated_at: startTime,
   });
@@ -5232,7 +5538,7 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
-  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, closed_at = closed_at + ${D};`,
   `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
@@ -5247,14 +5553,16 @@ const REBASE_SQL = [
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), commit_seen_at = commit_seen_at + ${D}, computed_at = computed_at + ${D};`,
-  // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
-  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  // fix_landed_at and announced_at are nullable; NULL + delta stays NULL, so no guard is needed.
+  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D}, announced_at = announced_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
+  `UPDATE test_run_environment_snapshots SET captured_at = captured_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
   `UPDATE cluster_merge_suggestions SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE api_keys SET created_at = created_at + ${D}, last_used_at = last_used_at + ${D};`,
   '',
   '-- Millisecond timestamp columns',
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
@@ -5262,6 +5570,8 @@ const REBASE_SQL = [
   `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
+  `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
+  `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
@@ -5819,6 +6129,38 @@ const SCENARIO_GAPS = [
   {
     project_id: 1,
     kind: 'gap',
+    detector: 'fixed-without-test',
+    class: 'blind-spot',
+    key: 'bug:2',
+    title: 'Bug report #2 was fixed without a regression test: Gift card balance shown twice',
+    evidence: ['Closed on /checkout · no test names it — commit its recorded steps as a test (piwi:bug 2).'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/api/cart.ts',
+    title: 'src/api/cart.ts changed but not reached',
+    evidence: [`+12 −2 · no test in run #${gapRun.id} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.6, age: 0.5, escapeHistory: 0.1, priority: 0.5 },
+    ticket: 'PROJ-418',
+    test_run_id: gapRun.id,
+    pr_number: 418,
+    status: 'closed',
+    close_reason: 'acted-on',
+    closed_by_run_id: gapRun.id,
+    closed_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
     detector: 'single-covering-test',
     class: 'fragile',
     key: 'route:POST /api/orders',
@@ -5913,6 +6255,7 @@ const SEEDED_GAP_CONFIDENCE = {
   'declared-never-hit': 0.7,
   'unprobed-dependency': 0.4,
   'changed-unreached': 0.9,
+  'fixed-without-test': 0.7,
   'single-covering-test': 0.5,
   'success-only': 1,
   'not-noticed': 0.8,
@@ -5941,6 +6284,146 @@ for (const gap of SCENARIO_GAPS) {
   PROBES.push(...map.probes);
   SCENARIO_GAPS.push(...map.gaps);
   TEST_FUNCTIONS.push(...map.functions);
+  // A changed file no test reached, among the files the combined coverage holds: the Coverage
+  // tab's Gaps view names its lines run, and the Code view's tree counts it.
+  SCENARIO_GAPS.push({
+    project_id: proj.id,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/composables/usePagination.ts',
+    title: 'src/composables/usePagination.ts changed but not reached',
+    evidence: [`+18 −4 · no test in run #${runIds.at(-1)} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.5, age: 0.3, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.2433,
+    test_run_id: runIds.at(-1),
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  }); // What the coverage detectors raise on this project's combined and per-test coverage.
+  const FLOOR_FACTORS = { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 };
+  const codeGap = (detector, cls, key, title, evidence, score, testCaseId = null, factors = FLOOR_FACTORS) =>
+    SCENARIO_GAPS.push({
+      project_id: proj.id,
+      kind: 'gap',
+      detector,
+      class: cls,
+      key,
+      title,
+      evidence: [evidence],
+      factors,
+      score,
+      test_case_id: testCaseId,
+      test_run_id: runIds.at(-1),
+      status: 'open',
+      created_at: BASE_START_MS,
+      updated_at: BASE_START_MS,
+    });
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/components/UsersTable.vue',
+    '1 of 2 functions of src/components/UsersTable.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/composables/usePagination.ts',
+    '1 of 2 functions of src/composables/usePagination.ts no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/pages/users/index.vue',
+    '1 of 2 functions of src/pages/users/index.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Organizations/OrganizationEndpoints.cs',
+    '1 function of api/Organizations/OrganizationEndpoints.cs runs under one test only',
+    'Only updates the organization name runs the functions at lines 34–67: a second test would make them resilient.',
+    0.05,
+    caseIds.get('updates the organization name'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Preferences/PreferencesEndpoints.cs',
+    '2 functions of api/Preferences/PreferencesEndpoints.cs run under one test only',
+    'Only toggles dark mode runs the functions at lines 24–32, 34–63: a second test would make them resilient.',
+    0.05,
+    caseIds.get('toggles dark mode'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Users/UsersEndpoints.cs',
+    '1 function of api/Users/UsersEndpoints.cs runs under one test only',
+    'Only invites a user by email runs the functions at lines 45–65: a second test would make them resilient.',
+    // A fixing commit touched the file: escape history 1.
+    0.5 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    caseIds.get('invites a user by email'),
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
+  // The demo's source of UsersEndpoints.cs read at the commit: UpdateUser ran, its not-found answer never did.
+  codeGap(
+    'error-path-not-executed',
+    'blind-spot',
+    'api/Users/UsersEndpoints.cs',
+    '1 error path of api/Users/UsersEndpoints.cs never run',
+    'Line 59 · return TypedResults.NotFound(); · its function ran, this never did.',
+    0.7 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    null,
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
+}
+
+// ── Environment change markers (rng-free) ───────────────────────────────────
+// What `syncEnvironmentMarkersForRun` writes as each run finishes: against the
+// previous run of its project on the same branch and environment label,
+// incident runs left out on both sides, one marker per kind that changed, none
+// for a project that declines markers.
+{
+  const declinesMarkers = new Set(PROJECTS.filter((p) => p.capabilities?.markers === 'declined').map((p) => p.id));
+  const eligible = TEST_RUNS.filter((run) => !incidentRunIds.has(run.id) && !declinesMarkers.has(run.project_id)).sort(
+    (a, b) => a.start_time - b.start_time || a.id - b.id,
+  );
+  for (const run of eligible) {
+    const prev = eligible
+      .filter(
+        (p) =>
+          p.project_id === run.project_id &&
+          p.start_time < run.start_time &&
+          (p.environment ?? null) === (run.environment ?? null) &&
+          (p.branch ?? null) === (run.branch ?? null),
+      )
+      .at(-1);
+    if (!prev) continue;
+    for (const change of environmentChangeMarkers(
+      SNAPSHOTS_BY_RUN.get(prev.id) ?? [],
+      SNAPSHOTS_BY_RUN.get(run.id) ?? [],
+    )) {
+      ENVIRONMENT_MARKERS.push({
+        project_id: run.project_id,
+        occurred_at: run.start_time,
+        label: change.label,
+        description: change.description,
+        category: change.category,
+        environment: run.environment ?? null,
+        source: 'auto',
+        run_id: run.id,
+        created_at: run.start_time,
+        updated_at: run.start_time,
+      });
+    }
+  }
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.
@@ -6204,6 +6687,82 @@ const ASSISTANT_MESSAGES = [
   },
 ];
 
+// ── Final attempts ─────────────────────────────────────────────────────────
+// Each execution stores whether it is the final attempt of its run, test,
+// project and repetition, as ingest keeps it (`settleFinalAttempts`): the
+// highest retry, the higher id of two with as many.
+{
+  const finalByResult = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const key = `${row.test_run_id}|${row.test_case_id}|${row.browser_name ?? ''}|${row.repeat_each_index ?? 0}`;
+    const final = finalByResult.get(key);
+    if (!final || row.retries > final.retries || (row.retries === final.retries && row.id > final.id)) {
+      finalByResult.set(key, row);
+    }
+  }
+  const finals = new Set(finalByResult.values());
+  for (const row of TEST_RUNS_CASES) row.final_attempt = finals.has(row) ? 1 : 0;
+}
+
+// ── Passed after a failure ─────────────────────────────────────────────────
+// Each final attempt stores whether it passed after an earlier attempt of its
+// result failed or timed out, as ingest sets it (`fillAttemptHistories`,
+// `isFlakyExecution`): the earlier entries of its attempt history, else the
+// earlier stored attempts of its result. A pass on a retry with neither is one.
+// An earlier attempt carries no verdict (`settleFinalAttempts`).
+{
+  const unexpected = (status) => status === 'failed' || status === 'timedout' || status === 'timedOut';
+  const byResult = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const key = `${row.test_run_id}|${row.test_case_id}|${row.browser_name ?? ''}|${row.repeat_each_index ?? 0}`;
+    const list = byResult.get(key);
+    if (list) list.push(row);
+    else byResult.set(key, [row]);
+  }
+  for (const [key, rows] of byResult) {
+    for (const row of rows) {
+      const retries = row.retries ?? 0;
+      if (row.status !== 'passed' || retries === 0 || !row.final_attempt) {
+        row.passed_after_failure = 0;
+        continue;
+      }
+      const history = typeof row.attempts === 'string' ? JSON.parse(row.attempts) : row.attempts;
+      const earlier =
+        Array.isArray(history) && history.length > 0
+          ? history.filter((a) => (a?.retry ?? 0) < retries).map((a) => a?.status)
+          : byResult
+              .get(key)
+              .filter((other) => (other.retries ?? 0) < retries)
+              .map((other) => other.status);
+      row.passed_after_failure = earlier.length === 0 || earlier.some(unexpected) ? 1 : 0;
+    }
+  }
+}
+
+// ── Worker lanes (rng-free) ────────────────────────────────────────────────
+// Each execution stores its worker's lane (`parallel_index`), as the reporter
+// sends Playwright's `parallelIndex`. A seeded worker runs its shard's lane
+// from start to end, never started again, so its lane is its index.
+for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null;
+
+// ── Configured projects (rng-free) ─────────────────────────────────────────
+// Each run's metadata lists the Playwright projects its executions ran
+// (`htmlReport.projects`, as the reporter records the config's projects), with
+// each project's browser and viewport and the run's baseURL, so the list and
+// the executions' `browser_name` agree.
+{
+  const browsersByRun = new Map();
+  for (const row of [...TEST_RUNS_CASES].sort((a, b) => a.id - b.id)) {
+    if (!browsersByRun.has(row.test_run_id)) browsersByRun.set(row.test_run_id, []);
+    browsersByRun.get(row.test_run_id).push(row.browser);
+  }
+  for (const run of TEST_RUNS) {
+    const browsers = browsersByRun.get(run.id);
+    if (!browsers) continue;
+    run.metadata = { ...run.metadata, htmlReport: demoHtmlReport(browsers, RUN_BASE_URLS.get(run.id) ?? null) };
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -6229,6 +6788,13 @@ const lines = [
   insert('groups', GROUPS),
   insert('group_members', GROUP_MEMBERS),
   insert('role_bindings', ROLE_BINDINGS),
+  '',
+  '-- The desktop app the identity the demo opens as connected (Connected apps)',
+  insert('api_keys', CONNECTED_APP_KEYS),
+  insert('run_targets', RUN_TARGETS),
+  '',
+  '-- Starred projects (of the identity the demo opens as)',
+  insert('project_stars', PROJECT_STARS),
   '',
   '-- App settings (the `ai` key marks the demo provider as configured)',
   insert('app_settings', APP_SETTINGS),
@@ -6262,6 +6828,13 @@ const lines = [
     'markers',
     INCIDENT_MARKERS.map((m, i) => ({
       id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + i + 1,
+      ...m,
+    })),
+  ),
+  insert(
+    'markers',
+    ENVIRONMENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + INCIDENT_MARKERS.length + i + 1,
       ...m,
     })),
   ),
@@ -6332,6 +6905,7 @@ const lines = [
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
   insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
+  insert('test_run_environment_snapshots', TEST_RUN_ENVIRONMENT_SNAPSHOTS),
   insert('resource_findings', RESOURCE_FINDINGS),
   insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',

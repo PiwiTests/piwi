@@ -83,7 +83,7 @@ export const ES_COPY = {
             score: 'Su puntuación de inestabilidad, de 0 a 100, según sus reintentos y alternancias.',
             'top-suspect': 'Su principal sospechoso: la condición que más comparten sus fallos.',
             quarantine:
-              '**Quarantine** mantiene la prueba en ejecución y con resultados, pero el control de la CI la ignora.',
+              '**Quarantined**: la prueba sigue en ejecución y con resultados, pero el control de la CI la ignora.',
           },
         },
         suspects: {
@@ -114,7 +114,7 @@ export const ES_COPY = {
       stops: {
         health: {
           title: 'Todos los proyectos de un vistazo',
-          body: '**Project health** muestra de cada proyecto sus últimos 20 runs, su tendencia y la tasa de éxito de su último run, con los proyectos que fallan primero. Abre uno para ver qué falló.',
+          body: '**Project health** muestra de cada proyecto sus últimos 20 runs, su tendencia y la tasa de éxito de su último run: primero los proyectos con estrella, luego los que fallan. Abre uno para ver qué falló.',
         },
         analytics: {
           title: 'La calidad a lo largo del tiempo',
@@ -160,7 +160,7 @@ export const ES_COPY = {
         },
         setup: {
           title: 'Qué está activado',
-          body: "**What's switched on** lee los datos de esta instancia, no su configuración, para mostrar qué funciones están en uso y qué necesita cada una de las demás, como un token del repositorio o un proveedor de IA. Los pasos de arriba conectan una suite.",
+          body: "**What's switched on** lee los datos de esta instancia, no su configuración, para mostrar qué funciones están en uso y qué necesita cada una de las demás, como un token del repositorio o un proveedor de IA.",
         },
         simulate: {
           title: 'Mira cómo llega un run en directo',

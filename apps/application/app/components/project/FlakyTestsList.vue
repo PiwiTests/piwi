@@ -24,7 +24,11 @@ const quarantiningId = ref<number | null>(null);
 const runsWindow = useViewState('failures:flaky-runs-window', () => 50);
 const rootCauseFilter = useViewState<string[]>('failures:flaky-root-causes', () => []);
 
-const { data: flaky, status } = await useFetch(
+const {
+  data: flaky,
+  status,
+  refresh,
+} = await useFetch(
   () => {
     const params = new URLSearchParams({
       runs: String(runsWindow.value),
@@ -38,6 +42,10 @@ const { data: flaky, status } = await useFetch(
     transform: (r: { items: FlakyTest[]; verifiedFixed?: VerifiedFixedFlakyTest[] }) => r,
   },
 );
+// A run that starts or ends reads the list again, as it does the tab's counts, and so does a read asked from outside
+// the page (the assistant, once a proposal is applied).
+useRunStream(() => refresh());
+usePageReload(() => refresh());
 const tests = computed(() => flaky.value?.items ?? null);
 /** Tests a verified fix took off the ranking; they return to it at their next retry-pass. */
 const verifiedFixed = computed(() => flaky.value?.verifiedFixed ?? []);
@@ -75,16 +83,18 @@ watch(
   { immediate: true },
 );
 
-// Piwi's quarantine proposals among the listed tests, read after the list so the
-// list never waits on them. A proposal dismissed since the newest run is not marked.
+// Piwi's quarantine proposals among the listed tests, and the tests already quarantined, read after the list so the
+// list never waits on them. A proposal dismissed since the newest run the candidates read is not marked.
 type QuarantineResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/quarantine.get').default>;
 const proposals = ref(new Map<number, QuarantineResponse['candidates'][number]>());
+const quarantined = ref(new Set<number>());
 
 async function loadProposals() {
   if (capabilityHidden('quarantine')) return;
   try {
     const res = await $fetch<QuarantineResponse>(`/api/projects/${props.projectId}/quarantine`);
     proposals.value = new Map(res.candidates.filter((c) => !c.dismissed).map((c) => [c.testCaseId, c]));
+    quarantined.value = new Set(res.entries.map((entry) => entry.testCaseId));
   } catch {
     // The proposals are optional; the list reads the same without them.
   }
@@ -120,6 +130,7 @@ async function quarantineTest(test: FlakyTest) {
         : { testCaseId: test.testCaseId, reason: 'Flaky', source: 'manual' },
     });
     toast.add({ title: 'Test quarantined', description: test.title, color: 'success' });
+    quarantined.value = new Set([...quarantined.value, test.testCaseId]);
     if (proposal) {
       const next = new Map(proposals.value);
       next.delete(test.testCaseId);
@@ -272,8 +283,16 @@ function flakyBadges(test: FlakyTest) {
             proposal="quarantine"
             @dismissed="loadProposals"
           />
+          <span
+            v-if="quarantined.has(test.testCaseId)"
+            class="inline-flex"
+            data-testid="flaky-quarantined"
+            data-tour-part="quarantine"
+          >
+            <QuarantinedChip />
+          </span>
           <CoverageLossPopover
-            v-if="canQuarantine"
+            v-else-if="canQuarantine"
             :project-id="projectId"
             :project-name="projectName"
             :test-case-ids="[test.testCaseId]"

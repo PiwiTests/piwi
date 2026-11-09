@@ -2,17 +2,24 @@
 import type { DemoScenario } from '~/demo/simulator';
 
 /**
- * Scenario launcher for the demo run simulator, rendered inside the demo
- * banner. Lets visitors replay different kinds of live test runs as if a
- * Piwi reporter were streaming them in (see app/demo/simulator.ts).
+ * Scenario launcher for the demo run simulator, rendered inside the demo banner. Lets visitors replay different kinds
+ * of live test runs as if a Piwi reporter were streaming them in (see app/demo/simulator.ts). The scenarios open in a
+ * popover from `sm` up and in a sheet from the bottom of the screen on a phone; while one runs, its progress takes the
+ * button's place, on a row of its own on a phone.
  */
 
-const { state, scenarios, start, stop, cancelStaleRuns } = useDemoSimulator();
+const { state, scenarios, start, stop, cancelStaleRuns, runPath } = useDemoSimulator();
 
 // Demo DB readiness — flipped once the service worker answers its first query (demo-fetch plugin)
 const demoReady = useState('demoReady', () => false);
 
-const popoverOpen = ref(false);
+/** From `sm` up the scenarios open in a popover under the button; below, in a sheet. */
+const wide = useMediaQuery('(min-width: 640px)');
+const pickerOpen = ref(false);
+// Crossing the breakpoint swaps the popover for the sheet: neither opens by itself.
+watch(wide, () => (pickerOpen.value = false));
+
+const INTRO = 'Watch a live run arrive, as if a Piwi reporter were streaming it from CI.';
 
 onMounted(() => {
   // Clean up runs orphaned by a reload mid-simulation. $fetch waits for the
@@ -21,15 +28,24 @@ onMounted(() => {
 });
 
 function launch(scenario: DemoScenario) {
-  popoverOpen.value = false;
+  pickerOpen.value = false;
   start(scenario);
 }
 </script>
 
 <template>
-  <div class="flex items-center gap-2" data-tour="demo-simulator">
+  <div
+    class="flex min-w-0 items-center gap-2"
+    :class="state.status === 'idle' ? '' : 'max-sm:order-last max-sm:basis-full max-sm:justify-between'"
+    data-tour="demo-simulator"
+  >
     <template v-if="state.status === 'idle'">
-      <UPopover v-model:open="popoverOpen">
+      <UPopover
+        v-if="wide"
+        v-model:open="pickerOpen"
+        :content="{ align: 'end', collisionPadding: 8 }"
+        :ui="{ content: 'z-[70]' }"
+      >
         <UButton
           size="xs"
           color="warning"
@@ -41,54 +57,78 @@ function launch(scenario: DemoScenario) {
         />
 
         <template #content>
-          <div class="p-2 w-80">
-            <p class="text-xs text-muted px-2 py-1.5">
-              Watch a live run arrive, as if a Piwi reporter were streaming it from CI.
-            </p>
-            <button
-              v-for="scenario in scenarios"
-              :key="scenario.id"
-              type="button"
-              class="w-full flex items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-elevated transition-colors"
-              @click="launch(scenario)"
-            >
-              <UIcon :name="scenario.icon" class="size-4.5 mt-0.5 shrink-0 text-muted" />
-              <span class="flex flex-col">
-                <span class="text-sm font-medium text-highlighted">{{ scenario.label }}</span>
-                <span class="text-xs text-muted">{{ scenario.description }}</span>
-              </span>
-            </button>
+          <div
+            class="max-h-(--reka-popover-content-available-height) w-[min(40rem,calc(100vw-1rem))] overflow-y-auto p-2"
+            data-shot="demo-simulator-menu"
+          >
+            <p class="px-2 pb-2 text-xs text-muted">{{ INTRO }}</p>
+            <DemoScenarioList :scenarios="scenarios" columns @pick="launch" />
           </div>
         </template>
       </UPopover>
+
+      <!-- Above the demo banner (z-index 60), like its other menus. -->
+      <UDrawer
+        v-else
+        v-model:open="pickerOpen"
+        title="Simulate a test run"
+        :description="INTRO"
+        :ui="{ overlay: 'z-[70]', content: 'z-[70] max-h-[85dvh]', container: 'gap-3', header: 'shrink-0' }"
+      >
+        <UButton
+          size="xs"
+          color="warning"
+          variant="solid"
+          icon="i-lucide-radio-tower"
+          aria-label="Simulate a test run"
+          label="Simulate"
+          :disabled="!demoReady"
+        />
+
+        <template #body>
+          <div data-shot="demo-simulator-sheet">
+            <DemoScenarioList :scenarios="scenarios" @pick="launch" />
+          </div>
+        </template>
+      </UDrawer>
     </template>
 
     <template v-else>
-      <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin shrink-0" />
-      <span class="text-sm whitespace-nowrap">
-        {{ state.scenario?.label }} —
-        <template v-if="state.total > 0">{{ state.completed }}/{{ state.total }} tests</template>
-        <template v-else>starting…</template>
-      </span>
-      <UBadge v-if="state.failed > 0" color="error" variant="subtle" size="sm"> {{ state.failed }} failed </UBadge>
-      <UButton
-        v-if="state.runId"
-        size="xs"
-        color="warning"
-        variant="solid"
-        icon="i-lucide-eye"
-        label="View run"
-        :to="`/test-runs/${state.runId}`"
-      />
-      <UButton
-        size="xs"
-        color="warning"
-        variant="outline"
-        icon="i-lucide-square"
-        label="Stop"
-        :loading="state.status === 'stopping'"
-        @click="stop"
-      />
+      <div class="flex min-w-0 items-center gap-2">
+        <UIcon name="i-lucide-loader-circle" class="size-4 shrink-0 animate-spin" />
+        <span class="min-w-0 truncate text-sm">{{ state.scenario?.label }}</span>
+        <span class="shrink-0 text-sm whitespace-nowrap tabular-nums">
+          <template v-if="state.total > 0">
+            {{ state.completed }}/{{ state.total }}<span class="max-sm:hidden"> tests</span>
+          </template>
+          <template v-else>starting…</template>
+        </span>
+        <UBadge v-if="state.failed > 0" color="error" variant="subtle" size="sm" class="shrink-0 whitespace-nowrap">
+          {{ state.failed }} failed
+        </UBadge>
+      </div>
+      <div class="flex shrink-0 items-center gap-1.5">
+        <UButton
+          v-if="state.runId"
+          size="xs"
+          color="warning"
+          variant="solid"
+          icon="i-lucide-eye"
+          aria-label="View run"
+          :to="runPath(state.runId, state.scenario)"
+        >
+          <span class="max-sm:hidden">View run</span>
+        </UButton>
+        <UButton
+          size="xs"
+          color="warning"
+          variant="outline"
+          icon="i-lucide-square"
+          label="Stop"
+          :loading="state.status === 'stopping'"
+          @click="stop"
+        />
+      </div>
     </template>
   </div>
 </template>

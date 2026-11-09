@@ -21,8 +21,8 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run case ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
-  const answer = await getCoverageDivergence(db, id);
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
+  const answer = await getCoverageDivergence(db, id, user.id);
   if (!answer) throw apiError({ statusCode: 404, message: 'Test run case not found' });
   return answer;
 });

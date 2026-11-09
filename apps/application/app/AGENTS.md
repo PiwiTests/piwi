@@ -86,6 +86,9 @@ one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Settings surface
 
+- **The sidebar holds what people open every day; a page opened to connect or set something up is a settings page.**
+  The connect wizard, the capabilities, the MCP server, the API reference and the companion tools are the Setup
+  section of `SETTINGS_PAGES`; the desktop app's own wiring is a `desktopOnly` page. Never a sidebar link.
 - **A settings page or field is an entry of `SETTINGS_PAGES`** (`shared/settings-metadata.ts`, which `useSettingsNav`
   and the assistant's `explain_setting` read). To add a field: (1) its env var in `shared/piwi-env-vars.ts`, (2) its
   `HELP_TOPICS` entry with `envVars`, (3) its `fields` entry in `SETTINGS_PAGES`, (4) render it with `SettingsField`,
@@ -197,11 +200,14 @@ views are exempt only where a rule says so.
 ## Test outcome colors
 
 - **Each outcome has one color everywhere**: the `--color-status-*` tokens in `app/assets/css/main.css` (passed,
-  failed, flaky, skipped, didn't run, running; violet is the accent, never an outcome). Timed-out and interrupted count
-  as failed, a pass that needed a retry as flaky, and a `test.fixme()` skip is the second grey `fixme`
+  failed, flaky, skipped, didn't run, running, interrupted; violet is the accent, never an outcome). Timed-out counts
+  as failed, a pass after a failed attempt as flaky, and a `test.fixme()` skip is the second grey `fixme`
   (`isFixmeSkip` / `fixmeSkipPredicate`, `shared/utils/skip-kind.ts`), carved out of skipped as flaky is out of passed.
+  An interrupted test counts in no outcome and no pass rate: it is the neutral slate `interrupted`, labelled
+  "Interrupted" in every legend, and a bar names the gap its interrupted tests leave ("2 interrupted").
 - **Never hardcode a status color** in a bar, chart, legend, dot, history cell, timeline bar or filter chip: use
-  `STATUS_PALETTE` / `statusPalette(status, retries?)` (`app/utils/status-palette.ts`; `bg-status-*` in HTML,
+  `STATUS_PALETTE` / `statusPalette(status, flaky?)` (`app/utils/status-palette.ts`, `flaky` the execution's stored
+  `passedAfterFailure` or `isFlakyExecution`; `bg-status-*` in HTML,
   `var(--color-status-*)` in an SVG `style`), the shared `StatusFilterChip`, and `getStatusColor` for badges (`flaky` is
   a registered Nuxt UI color). A view needing another shade adds it to the palette entry, not to the component.
 - **A pass rate takes its band and color from `app/utils/pass-rate.ts`** (`passRateTone`, `passRateTextClass`,
@@ -262,10 +268,19 @@ views are exempt only where a rule says so.
   on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
   a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
 - **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
-  from the Local runs tray): while it is open every headless stop waits for the window, so the tray opens on each stop
-  it hears, once, and it says `show` only for the running runs whose **Hold failures** switch is on (off by default,
-  on for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
-  steps' names (`hubRefs`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`).
+  from `plugins/desktop-run-hub.client.ts`, whatever the layout: a run of the Local runs tray runs, or the hub says it
+  has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
+  window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
+  **Hold failures** switch is on (off by default, on for a reproduction, `desktopHoldsByDefault`; never for a run
+  nobody attends, `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted
+  (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
+  `tests/unit/desktop-run-hub-plugin.test.ts`).
+- **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
+  page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
+  `<form>` without it.
+- **The client bundle never compiles code** (`eval`, `new Function`): the desktop build's CSP
+  (`server/utils/desktop-csp.ts`) has no `'unsafe-eval'`. Zod parses without its JIT (`plugins/00.zod-jitless.client.ts`,
+  `tests/unit/zod-jitless.test.ts`); a new dependency that evaluates code needs its switch, or another library.
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.

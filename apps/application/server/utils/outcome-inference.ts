@@ -45,6 +45,8 @@ interface RunExecution {
   status: string;
   error: string | null;
   browserKey: string;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
 }
 
 /** Record every hand-back outcome a finished run shows. Best-effort per step. */
@@ -76,6 +78,7 @@ export async function inferRunOutcomes(db: DrizzleDB, runId: number): Promise<vo
         status: testRunsCases.status,
         error: testRunsCases.error,
         browser: testRunsCases.browser,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
       })
       .from(testRunsCases)
       .where(eq(testRunsCases.testRunId, runId))
@@ -277,16 +280,8 @@ async function recordVerifiedHealPrs(db: DrizzleDB, run: InferenceRun, execution
 // ── Flake Lab verified fixes ────────────────────────────────────────────────
 
 async function recordFlakeRegressions(db: DrizzleDB, run: InferenceRun, executions: RunExecution[]): Promise<void> {
-  // A retry-pass: a failed and a passed attempt of the test in this run, on one browser.
-  const groups = new Map<string, { testCaseId: number; failed: boolean; passed: boolean }>();
-  for (const e of executions) {
-    const key = `${e.testCaseId}\u0000${e.browserKey}`;
-    const group = groups.get(key) ?? { testCaseId: e.testCaseId, failed: false, passed: false };
-    if (isFailedStatus(e.status)) group.failed = true;
-    if (e.status === 'passed') group.passed = true;
-    groups.set(key, group);
-  }
-  const flaked = [...new Set([...groups.values()].filter((g) => g.failed && g.passed).map((g) => g.testCaseId))];
+  // A retry-pass: an attempt of the test in this run that passed after an earlier one failed or timed out.
+  const flaked = [...new Set(executions.filter((e) => e.passedAfterFailure).map((e) => e.testCaseId))];
   if (flaked.length === 0) return;
 
   const rows = await listOutcomes(db, {

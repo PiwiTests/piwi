@@ -40,6 +40,13 @@ line, through the source map, and the file's git blob: line numbers then leave t
 run also records every function the pages' scripts declare, run or not, so the run's coverage can say how many of a
 file's functions ran. A function declared inside a function that never ran is not listed: V8 has not seen it.
 
+`'lines'` adds the lines that ran, from V8's block coverage, which counts each branch and block apart. A file's
+executable lines are the lines its source map maps code to, so a Vue component counts the lines its compiled module
+maps back to, not the hot-reload code the dev server adds; a module with no map counts the lines holding code
+inside its functions. A line ran when code mapped to it ran. A module's top-level lines count as run in the run's
+coverage once it is imported, and in a test's only when one of its functions ran. Block coverage slows the page's
+scripts more than function coverage does: [Coverage cost](/reference/coverage-cost) has the numbers.
+
 Paths resolve against the Playwright config's directory, then the repository root. Set `codeReachRoots` to the dev
 server's root when it is elsewhere; for Nuxt that is `app/`:
 
@@ -128,7 +135,7 @@ test to copy.
   pages' [What changed](./failure-clusters#the-cluster-page), in the [AI diagnosis](./ai-diagnosis#scm-grounded-context)
   and the [fix plan](./fix-plans).
 
-The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the tests reaching a file and a branch's map.
+The [API](https://piwitests.dev/demo/settings/api) (`/settings/api` on your instance) serves the tests reaching a file and a branch's map.
 
 ## Limits
 

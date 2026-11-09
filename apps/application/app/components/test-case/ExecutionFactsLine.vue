@@ -19,6 +19,8 @@ import { useResizeObserver } from '@vueuse/core';
 import type { AttemptOutcome, EntityLinkInfo, TestCaseHistoryPoint } from '~~/types/api';
 import type { LinkEntityType } from '#shared/handlers/links';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { shownWorkerNumber } from '#shared/worker-lane';
+import { failurePlace } from '~/utils/ide-links';
 
 const props = defineProps<{
   /** The fetched execution — every fact reads off this object. */
@@ -129,20 +131,11 @@ const environment = computed(() => props.testCase?.testRun?.environment);
 const browser = computed(() => props.testCase?.browser ?? null);
 const stepsCount = computed(() => (props.testCase?.steps as unknown[] | null)?.length ?? 0);
 
-// The first captured source frame — the failing line — for the "open in IDE"
-// link. The test's own file and line are on the identity line above, so a
-// frame that points at them, or no frame, shows no link here.
-const ideTarget = computed(() => {
-  const tc = props.testCase as {
-    filePath?: string | null;
-    line?: number | null;
-    testSourceFrames?: Array<{ filePath?: string; line?: number }> | null;
-  } | null;
-  const frame = tc?.testSourceFrames?.[0];
-  if (!frame?.filePath) return null;
-  if (frame.filePath === tc?.filePath && frame.line === tc?.line) return null;
-  return { filePath: frame.filePath, line: frame.line };
-});
+// Where the failure enters the test's code (`failurePlace`: the innermost
+// captured source frame) for the "open in IDE" link. The test's own file and
+// line are on the identity line above, so a stack that names no other line
+// shows no link here.
+const ideTarget = computed(() => failurePlace(props.testCase));
 
 const historicalTiming = computed(() => {
   const history = props.history;
@@ -324,7 +317,7 @@ defineExpose({ revealRawError });
               <div class="space-y-1">
                 <p class="text-xs font-medium text-muted uppercase tracking-wide">Execution</p>
                 <p class="tabular-nums">
-                  Worker {{ testCase?.workerIndex ?? '—'
+                  Worker {{ (testCase && shownWorkerNumber(testCase)) ?? '—'
                   }}<template v-if="testCase?.shardIndex != null"> · Shard {{ testCase.shardIndex }}</template> ·
                   {{ stepsCount }} steps
                 </p>

@@ -47,6 +47,7 @@ const emit = defineEmits<{ toggle: [runId: number] }>();
             :fixme="run.fixmeTests ?? 0"
             :flaky="run.flakyTests"
             :did-not-run="run.didNotRunTests ?? 0"
+            :interrupted="run.interruptedTests ?? 0"
             :total="run.totalTests"
           />
           <div class="flex items-center justify-between text-xs text-muted">

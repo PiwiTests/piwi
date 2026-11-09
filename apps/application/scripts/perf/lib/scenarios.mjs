@@ -1,8 +1,10 @@
 /**
  * The pages the suite opens: the projects list, every tab of a project (and
- * the Failures tab's three segments), the test-run page's tabs, and a failed
- * execution's page with a large trace. Each opens the dataset's large project,
- * its newest failing run, or the execution the suite's trace was uploaded to.
+ * the Failures tab's three segments), the test-run page's tabs, a failed
+ * execution's page with a large trace, and the Overview analytics dashboard
+ * over every project, with and without a test filter (the built-in `failed`
+ * selection). Each opens the dataset's large project, its newest failing run,
+ * the execution the suite's trace was uploaded to, or every project.
  */
 
 /** @param {{ projectId: number, runId: number, executionId: number }} manifest */
@@ -24,6 +26,12 @@ export function pageScenarios({ projectId, runId, executionId }) {
     { id: 'run-changes', label: 'Test run › Changes', path: run('changes') },
     { id: 'run-timeline', label: 'Test run › Timeline', path: run('workers') },
     { id: 'execution-trace', label: 'Failed test with a trace', path: `/test-run-cases/${executionId}` },
+    { id: 'analytics', label: 'Analytics › Overview', path: '/analytics/d/overview?period=last-30d' },
+    {
+      id: 'analytics-failed',
+      label: 'Analytics › Overview › Failed tests',
+      path: '/analytics/d/overview?period=last-30d&sel=failed',
+    },
   ];
 }
 

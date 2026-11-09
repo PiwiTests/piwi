@@ -1,6 +1,6 @@
 [package]
 name = "piwi-desktop"
-version = "0.63.0" # x-release-please-version
+version = "0.67.0" # x-release-please-version
 description = "Piwi Dashboard desktop app"
 authors = ["piwitests"]
 license = "FSL-1.1-MIT"
@@ -25,13 +25,24 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-deep-link = "2"
+keepawake = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand = "0.9"
+hmac = "0.12"
+sha2 = "0.10"
+# The release notes of an update come from GitHub's releases API. These crates
+# are already built for `tauri-plugin-updater`, with its TLS stack: rustls on
+# ring, whose provider `fetch_release_notes` installs.
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+semver = "1"
 # Only compiled into e2e test builds (see the `e2e-testing` feature). Lets a
 # Playwright runner drive the real webview to smoke-test the shell integration.
 tauri-plugin-playwright = { version = "0.4", optional = true }
@@ -46,7 +57,15 @@ tauri-plugin-playwright = { version = "0.4", optional = true }
 # ApplicationModel, see src/msix.rs). Pinned to the same `windows` version Tauri already resolves
 # so the `HWND` returned by `WebviewWindow::hwnd()` is the same type (one shared
 # copy of the crate), and so nothing extra is pulled in.
+# The OS keychain holds the key of each instance the app takes run requests from.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.62", features = [
     "ApplicationModel",
     "Win32_Foundation",
@@ -64,6 +83,9 @@ windows = { version = "0.62", features = [
 # the playwright control plugin and Tauri's runtime-ACL support so the capability
 # it needs can be added only in test builds — never in shipped installers.
 e2e-testing = ["dep:tauri-plugin-playwright", "tauri/dynamic-acl"]
+# Build with `--features runner --config src-tauri/runner.conf.json` for Piwi Runner: the same shell with the Runner host
+# as its sidecar instead of the dashboard's server (src/runner_app.rs), and its own keychain service.
+runner = []
 
 [profile.release]
 panic = "abort"

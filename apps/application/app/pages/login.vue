@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { safeReturnPath } from '#shared/return-path';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 
 const { login } = useAuth();
 const router = useRouter();
@@ -14,6 +15,12 @@ const state = reactive({
 
 const loading = ref(false);
 const error = ref('');
+
+// The account a password was just set for: `/reset-password` hands its username over in the history entry's state.
+onMounted(() => {
+  const handedOver = (window.history.state as { username?: unknown } | null)?.username;
+  if (typeof handedOver === 'string' && !state.username) state.username = handedOver;
+});
 
 // Where to land after signing in: a same-origin path handed over by a link
 // that needed a session first (the reporter's per-failure links), else home.
@@ -60,6 +67,10 @@ async function handleSetup() {
   // hints instead of a generic "Invalid request body" error.
   if (setupState.username.length < 3) {
     setupError.value = 'Username must be at least 3 characters';
+    return;
+  }
+  if (setupState.username.length > USERNAME_MAX_LENGTH) {
+    setupError.value = `Username must be at most ${USERNAME_MAX_LENGTH} characters`;
     return;
   }
   if (setupState.password.length < 8) {
@@ -187,7 +198,7 @@ definePageMeta({
 
       <UAlert v-if="setupError" color="error" :title="setupError" variant="subtle" class="mb-4" />
 
-      <form class="space-y-4" @submit.prevent="handleSetup">
+      <form class="space-y-4" method="post" @submit.prevent="handleSetup">
         <UFormField
           v-if="setupTokenRequired"
           label="Setup token"
@@ -292,7 +303,7 @@ definePageMeta({
       </div>
 
       <!-- Password login form -->
-      <form class="space-y-4" @submit.prevent="handleLogin">
+      <form class="space-y-4" method="post" @submit.prevent="handleLogin">
         <UFormField label="Username" name="username" required>
           <UInput
             v-model="state.username"
@@ -334,7 +345,7 @@ definePageMeta({
         GitHub
       </a>
       <span>·</span>
-      <NuxtLink to="/docs" class="flex items-center gap-1.5 hover:text-default transition-colors">
+      <NuxtLink to="/settings/api" class="flex items-center gap-1.5 hover:text-default transition-colors">
         <UIcon name="i-lucide-book-open" class="size-4" />
         API Docs
       </NuxtLink>

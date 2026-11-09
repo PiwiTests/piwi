@@ -8,11 +8,11 @@ import {
   fetchContextRuns,
   fetchTagsByProject,
   getAnalyticsContext,
-  roundRate,
   FAILING_RUN_STATUSES,
   type ProjectAccess,
   type ScopedRun,
 } from './common';
+import { passRatePercent } from '../../utils/pass-rate';
 import { groupRows, loadScalarRows } from './scalar-rows';
 import { evaluateTargets } from './targets';
 import { resolveCiCost } from '../ci-cost';
@@ -77,8 +77,10 @@ export async function getAnalyticsPortfolio(
     const prevTotals = previous.get(project.id);
     const projectRuns = runsByProject.get(project.id) ?? [];
 
-    const passRate = totals ? roundRate(totals.passedTests, totals.totalTests) : null;
-    const prevPassRate = prevTotals ? roundRate(prevTotals.passedTests, prevTotals.totalTests) : null;
+    const passRate = totals ? passRatePercent({ passed: totals.passedTests, failed: totals.failedTests }, 1) : null;
+    const prevPassRate = prevTotals
+      ? passRatePercent({ passed: prevTotals.passedTests, failed: prevTotals.failedTests }, 1)
+      : null;
     const passRateDelta =
       passRate !== null && prevPassRate !== null ? Math.round((passRate - prevPassRate) * 10) / 10 : null;
 

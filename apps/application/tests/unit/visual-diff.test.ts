@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { diffRawImages } from '~~/server/utils/visual-diff';
+import { diffRawImages, pickBaselineShot } from '~~/server/utils/visual-diff';
+import type { ScreenshotFileRow } from '~~/server/utils/case-screenshots';
 
 /** Solid-color RGBA image. */
 function solid(width: number, height: number, rgba: [number, number, number, number]) {
@@ -45,5 +46,36 @@ describe('diffRawImages', () => {
     // a is missing the 2px right column (2*8 visible in b), b is missing the
     // bottom 2 rows of a (10*2). Overlap area is identical.
     expect(result.changedPixels).toBe(2 * 8 + 10 * 2);
+  });
+});
+
+describe('pickBaselineShot', () => {
+  let nextId = 1;
+  /** A screenshot row: its attachment name, and its stored file name. */
+  function shot(subtype: string | null, file: string): ScreenshotFileRow {
+    return { id: nextId++, type: 'attachment', subtype, label: 'image/png', path: `project-1/run-1/case-1/${file}` };
+  }
+
+  test('a step screenshot is compared with the same step, not the newest step', () => {
+    const failing = shot('Step 3', 'step-3.png');
+    const candidates = [
+      shot('Step 10', 'step-10.png'),
+      shot('Step 9', 'step-9.png'),
+      shot('Step 3', 'step-3.png'),
+      shot('Step 1', 'step-1.png'),
+    ];
+    expect(pickBaselineShot(failing, candidates)).toBe(candidates[2]);
+  });
+
+  test("Playwright's failure screenshot still matches the passing run's screenshot", () => {
+    const failing = shot('screenshot', 'test-failed-1.png');
+    const candidates = [shot('Cart', 'cart.png'), shot('screenshot', 'test-finished-1.png')];
+    expect(pickBaselineShot(failing, candidates)).toBe(candidates[1]);
+  });
+
+  test('with no screenshot of the same name, the newest is the baseline', () => {
+    const failing = shot('Step 3', 'step-3.png');
+    const candidates = [shot('Checkout', 'checkout.png'), shot('Cart', 'cart.png')];
+    expect(pickBaselineShot(failing, candidates)).toBe(candidates[0]);
   });
 });

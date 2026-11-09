@@ -243,7 +243,7 @@ export const DEMO_EXAMPLES = [
     doc: 'features/scenario-gaps',
     title: 'Web Dashboard › Gaps',
     shows:
-      'Ten tests against a whole admin console: routes never seen failing, pages linked and never visited, declared routes nothing requests, a save that passed while the backend logged an error, page-object methods no test calls, and the team’s verdicts on them. Under the list, map health shows probes short at 7 of 16 routes.',
+      'Ten tests against a whole admin console: routes never seen failing, pages linked and never visited, declared routes nothing requests, a save that passed while the backend logged an error, page-object methods no test calls, and the team’s verdicts on them. In the Map view, map health shows probes short at 7 of 16 routes.',
     route: '/projects/5?tab=gaps',
     expect: {
       project: { id: 5, name: 'web-dashboard' },

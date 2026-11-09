@@ -15,28 +15,39 @@ responsibilities.
    change and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts`
    pins the two together.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
+   - a requested run's `PIWI_REQUEST_INSTANCE` and `PIWI_REQUEST_TOKEN_FILE`, which beat every other server and
+     credential, in the reporter and in each worker's environment (`applyRequestedRunEnv`, written last), and skip
+     every rung but `/finish` ([`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects), `tests/requested-run.spec.ts`);
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment; the boolean ones `onBegin` writes as `true`
      or `false`, `normalizeBoolEnv`), and the ones `onBegin` sets for the workers: for a run started in a terminal or
      by an editor's test runner (`PW_TEST_REPORTER` naming a file), `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`
      (`terminal-<pid>-<time>`) of the editor whose workspace holds it (`internal/config/editors.ts`: never under CI,
      Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
-     `PIWI_EDITOR=on`), with one line saying so;
-   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
-     `[Piwi Dashboard]`-prefixed log output;
+     `PIWI_EDITOR=on`), with one line saying so; and outside CI `PIWI_STOP_NOTES`, the private file each worker notes
+     its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
+   - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
+     `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
+     `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
+     (`internal/collect/run-environments.ts`), unless `collectEnvironmentInfo` is off (`tests/environment-collect.spec.ts`);
+   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
+     in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
      (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
      covered page, in its own isolated world (`internal/capture/code-reach.ts`);
    - the boxed stack prefix `internal/capture/quiet-capture.ts` registers for this package's `dist/` in each worker;
-   - the resource ledger's listener on each worker's Playwright and its wrappers on the browser types
-     (`internal/capture/resource-ledger.ts`), and the `clear_refs` writes and DevTools sessions of
-     `internal/capture/worker-metrics.ts`;
+   - the resource ledger's listener on each worker's Playwright (its before-close hook of a context included), its
+     wrappers on the browser types and on the `sendMessageToServer` of the worker's connection and of each browser it
+     connects to while that browser is connected, which only read each call (`internal/capture/resource-ledger.ts`),
+     and the `clear_refs` writes and DevTools sessions of `internal/capture/worker-metrics.ts`;
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
-     bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
-     (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
-     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
+     bar (made `inert` while a viewer's keys play, each input message holding it by its token in the bar's
+     `__piwiKeyHolds` and letting go as it ends, `keyMayPlay` in `run-channel.ts`), `PW_CODEGEN_NO_INSPECTOR`, the
+     wrapped `Page.prototype.pause`, the runner internals it reads (`_onDidFinishTestFunctionCallbacks`,
+     `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses` attachment and the locator posted to
+     `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
      and outlines, which Piwi draws itself in its own layer of the page, a manual popover in the top layer
      (`highlightAtStop`, `showStopHighlight` of `@piwitests/picker-dom`), never through Playwright's highlight, so the
      test's own highlights and screencast overlays stay as they were: drawn again every `REDRAW_MS` in the frame the
@@ -50,32 +61,51 @@ responsibilities.
      the desktop app, which names its runs by `PIWI_RUN_REF` and keeps `PIWI_ORIGIN_REF` for what they were for)
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
-     intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
+     intents and queries (`takes` in its `run-attach`), with the run's own connection from `onBegin` to `onEnd`
+     (`internal/streaming/run-hub-link.ts`: how many tests, each that ended for good, how the run ended and its first
+     failure through `hideSecretsInText`, `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
      through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
-     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
+     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
+     as asked (`give-up`, in `features`: the call given up through its `signal` where it carries one, else the attempt
+     skipped at its next locator call, `tests/run-channel-give-up.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
-     viewer outside the page, it streams a stopped page's screencast (`view`), plays trusted input there only while that
-     stop's view is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
+     viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
+     `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
+     view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
+     stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on, no press on the pause
+     bar's band nor a key press the bar was not held inert for, a release always played and activating nothing on the
+     bar, `tests/page-view-bar.spec.ts`, `tests/run-channel-lane.spec.ts`), runs the bar's actions in a headless page through
      it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
-     never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later
-     (`tests/run-channel-view.spec.ts`); for an agent, at the stop held alone, it reads the page's AI snapshot, acts on
-     an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
+     never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
+     each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's
+     secret fields painted over as the instance's are (`live-mask.ts`), each frame of a headed stop with the pause bar
+     painted over in the same pass (`page-view.ts`; not without `jpeg-js`, for a bar laid out nowhere in the viewport,
+     nor in Firefox's frames dated late or the undated ones before Playwright 1.61, which may show it as it comes
+     down), and every call's and stop's title, the pause
+     bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
+     (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
+     held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
      and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and
      binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);
    - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in any run, for a
      project with the live view on; outside CI, `none:<why>` for a run without one), each worker's event stream to
      the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): in a CI run (`detectCi`,
-     as the run's origin) opened in the background by the `piwiResources` worker fixture, outside CI only while the
-     run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
-     bounded retries: only while the instance says someone watches does it post frames of the test's page, through
-     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
-     and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     as the run's origin) opened in the background by the `piwiResources` worker fixture and tried again while the
+     worker lasts (every 30 to 60 s past the quick retries, after a 401 or 404 too; a 403 or 410 ends it), the run's
+     log saying once when it is lost and once when it is back, through the file the global setup relays from the
+     runner's process (`PIWI_RUN_LOG`, `internal/support/run-log.ts`: what a worker writes goes to its running test's
+     output); outside CI only while the run channel shares the run (`share`, **Share live**, the state told back as
+     `live`), given up after the quick retries or a 401 or 404 until shared again: only while the instance says
+     someone watches does it post frames of the test's page, through
+     the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
+     its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
-     feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`). Never a frame while nobody
+     feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`); a
+     headed stop's pause bar is painted over in the same pass, as in the editor's views. Never a frame while nobody
      watches, never stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
      `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`,
      `tests/live-view-mask.spec.ts`). The key is
@@ -141,6 +171,16 @@ responsibilities.
   streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
+- **A streaming request carries its run's token twice**: in its body and in the `RUN_TOKEN_HEADER` header
+  (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
+  `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
+  `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A private temp file goes through `internal/support/private-file.ts`**: in `privateTempDir()`, never `os.tmpdir()`
+  itself (on Windows, `%LOCALAPPDATA%\piwi\tmp`: a service account's `os.tmpdir()` is shared), written and read with
+  `writePrivateFile`, `appendPrivateFile` and `readPrivateFile`; or it lives in a `fs.mkdtempSync` folder. Owner-only,
+  its path checked before it is opened, never written through a link nor waited on as a named pipe, read back only
+  when this user owns it; on Windows the owner and mode checks are no-ops and only that path check refuses a link
+  (`tests/private-file.spec.ts`).
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor

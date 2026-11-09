@@ -36,6 +36,11 @@ const props = defineProps<{
   resourceTracks?: Array<{ kind: ResourceTrackKind; label: string; shown: boolean }>;
   /** The metrics the strip under each worker can draw, with the one drawn. */
   workerMetrics?: Array<{ kind: WorkerMetricKind; label: string; shown: boolean }>;
+  /** Objects the run left open past their scope, and ones open long after their last use, as the rows' tails. */
+  leftOpenCount?: number;
+  lingeringCount?: number;
+  /** Current state of the tails toggle. */
+  showLeaks?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +48,7 @@ const emit = defineEmits<{
   toggleHooks: [visible: boolean];
   toggleWaits: [visible: boolean];
   toggleLocks: [visible: boolean];
+  toggleLeaks: [visible: boolean];
   toggleResource: [kind: ResourceTrackKind];
   selectWorkerMetric: [kind: WorkerMetricKind | null];
   collapseAll: [];
@@ -118,6 +124,12 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
         </template>
         <template v-if="lockCount && lockCount > 0">
           &middot; {{ lockCount }} lock{{ lockCount > 1 ? 's' : '' }}
+        </template>
+        <template v-if="leftOpenCount && leftOpenCount > 0">
+          &middot; <span data-testid="timeline-left-open">{{ leftOpenCount }} left open</span>
+        </template>
+        <template v-if="lingeringCount && lingeringCount > 0">
+          &middot; <span data-testid="timeline-lingering">{{ lingeringCount }} lingering</span>
         </template></span
       >
       <HelpHint topic="run.timeline" />
@@ -161,6 +173,15 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
           Resources
         </UButton>
       </UDropdownMenu>
+      <USwitch
+        v-if="(leftOpenCount ?? 0) + (lingeringCount ?? 0) > 0"
+        :model-value="showLeaks"
+        label="Show leaks"
+        size="xs"
+        class="mr-1"
+        data-testid="timeline-leaks-switch"
+        @update:model-value="$emit('toggleLeaks', $event === true)"
+      />
       <USwitch
         v-if="hasLocks"
         :model-value="showLocks"

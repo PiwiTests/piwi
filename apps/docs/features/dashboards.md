@@ -122,7 +122,9 @@ covers can be read off its **Filters** block.
 ## Live refresh and TV mode
 
 An open dashboard refreshes a widget when a run of one of its projects finishes, at most once every 30
-seconds per widget. Widget answers are cached on the server for 60 seconds.
+seconds per widget. Widget answers are cached on the server for 60 seconds. The tests a test filter
+matches are kept for 30 seconds, so the widgets of one page resolve the filter once; a finished or deleted run, or a
+change to a selection or a quarantine, in one of its projects resolves it again.
 
 **TV mode** (*TV mode* in the menu, or `?tv=1`) is for a wall screen: no navigation, larger type, and a full refresh every five minutes on top of the live one. Add `?cycle=12,15&every=60`
 to rotate through several dashboards, one every 60 seconds (15 at least). TV mode needs a signed-in

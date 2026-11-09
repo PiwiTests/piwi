@@ -36,8 +36,6 @@ import type { PickerProbe } from './pick-on-failure.js';
 const ACT_MS = 5000;
 /** The fields whose value is a secret (`SECRET_FIELD_SELECTOR`). */
 const SECRET_FIELDS = SECRET_FIELD_SELECTOR;
-/** The pause bar, hidden in an image of the stopped page. */
-const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
 /**
  * Why a page's call failed: the first line of Playwright's error alone, since its call log quotes the element's HTML,
@@ -134,7 +132,7 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
   const cut = hidden.length > MAX_AGENT_SNAPSHOT;
   let shot: PausedImage | null = null;
   if (image) {
-    const data = await maskedImage(page, { quality: 60, style: BAR_HIDDEN, timeout: ACT_MS });
+    const data = await maskedImage(page, { quality: 60, withoutBar: true, timeout: ACT_MS });
     const viewport = page.viewportSize();
     if (data) shot = { mime: 'image/jpeg', data: data.toString('base64'), ...viewport };
   }

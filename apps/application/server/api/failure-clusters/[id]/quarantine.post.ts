@@ -17,7 +17,7 @@ export default eventHandler(async (event) => {
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const body = await readBody(event).catch(() => ({}));
-  const reason = typeof body?.reason === 'string' ? body.reason : undefined;
+  const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 500) : undefined;
 
   const result = await quarantineClusterTests(db, id, { createdBy: user?.id ?? null, reason });
   if (!result) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });

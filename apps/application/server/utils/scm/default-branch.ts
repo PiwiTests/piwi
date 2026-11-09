@@ -6,6 +6,7 @@ import { createScmProvider } from './index';
 import { normalizeGitUrl, FALLBACK_DEFAULT_BRANCH } from './git-url';
 import { mostCommonRunBranch, type DefaultBranchProject } from './stored-default-branch';
 import { TtlCache } from '../ttl-cache';
+import { runOrigin } from '#shared/run-eligibility';
 
 /**
  * How long a repository whose default branch its SCM provider did not give (no
@@ -52,6 +53,8 @@ function providerDefaultBranch(db: DbClient, projectId: number, repositoryUrl: s
  * Steps 4–5 are shared with `resolveStoredDefaultBranch` (`stored-default-branch.ts`),
  * the no-network variant the ingest hot path uses, so every canonical-graph path agrees.
  *
+ * Steps 2 and 3 never read a private run's metadata.
+ *
  * Always returns a branch name — never null — so callers get a usable default.
  */
 export async function resolveDefaultBranch(
@@ -62,7 +65,8 @@ export async function resolveDefaultBranch(
   const configured = project.defaultBranch?.trim();
   if (configured) return configured;
 
-  const meta = (runMetadata as RunMetadata | null) ?? null;
+  // A private run's metadata never sets the project's default branch.
+  const meta = runOrigin(runMetadata) === 'request' ? null : ((runMetadata as RunMetadata | null) ?? null);
 
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
   if (repositoryUrl) {

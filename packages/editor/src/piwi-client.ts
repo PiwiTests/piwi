@@ -221,7 +221,7 @@ export interface FlakeLabEntry {
   flaky: boolean;
   /** The condition that last reproduced it. */
   reproducedBy: string | null;
-  /** Share of the runs read in which it failed at least once; absent from an older instance. */
+  /** Share of the runs read where it passed or failed in which it failed at least once; absent from an older instance. */
   flakeRate?: number | null;
   /** The suspect it is shown with; absent from an older instance or past the instance's limit. */
   suspect?: { id: string; label: string; standing: string; lab: string } | null;
@@ -839,5 +839,10 @@ export class PiwiClient {
   /** A test case's Flakiness tab. */
   flakinessUrl(testCaseId: number): string {
     return `${this.testUrl(testCaseId)}?tab=flakiness`;
+  }
+
+  /** The Gaps tab on the gaps of one repository-relative file, such as its uncovered change. */
+  gapsOfFileUrl(projectId: number, file: string): string {
+    return `${this.connection.serverUrl}/projects/${projectId}?tab=gaps&gapFile=${encodeURIComponent(file)}`;
   }
 }

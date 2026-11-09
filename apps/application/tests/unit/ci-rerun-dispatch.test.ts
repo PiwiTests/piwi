@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
@@ -15,6 +17,7 @@ vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: (url: string | null) => (url?.includes('gitlab') ? 'gitlab' : url ? 'github' : null),
   resolveScmToken: async () => 'token',
   createScmProvider: async () => ({
+    provider: 'gitlab',
     dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
       dispatched.push({ args, request, settings });
       return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };
@@ -22,10 +25,21 @@ vi.mock('../../server/utils/scm', () => ({
   }),
 }));
 
-const { rerunClusterInCi, matchCiRerunRun, runFlakeLabInCi, flakeLabCiAvailability } =
-  await import('../../server/utils/ci-rerun');
-const { flakeLabRerunSettings, matchRerunDispatch, resolveCiRerunSettings, RERUN_MATCH_WINDOW_MS } =
-  await import('#shared/ci-rerun');
+const {
+  rerunClusterInCi,
+  rerunExecutionInCi,
+  matchCiRerunRun,
+  runFlakeLabInCi,
+  flakeLabCiAvailability,
+  ciRerunAvailability,
+} = await import('../../server/utils/ci-rerun');
+const {
+  flakeLabRerunSettings,
+  matchRerunDispatch,
+  resolveCiRerunSettings,
+  RERUN_CLOCK_SLACK_MS,
+  RERUN_MATCH_WINDOW_MS,
+} = await import('#shared/ci-rerun');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -42,7 +56,7 @@ async function seed(remoteUrl: string) {
     ciRerun: {
       enabled: true,
       github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args', dispatchIdInput: 'piwi_dispatch' },
-      gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+      gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
     },
   });
   await db.insert(schema.testCases).values([
@@ -153,6 +167,25 @@ describe('the run a CI re-run started', () => {
     expect((await originOf(3)).kind).toBe('ci-rerun');
   });
 
+  test('links the dispatch to the build the run recorded', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    const ci = { provider: 'GitHub Actions', buildUrl: 'https://github.com/acme/shop/actions/runs/77' };
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci }, [1], at + 60_000);
+    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect((await lastDispatch()).url).toBe('https://github.com/acme/shop/actions/runs/77');
+  });
+
+  test('keeps the dispatch link when the recorded build URL is not http(s)', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci: { buildUrl: 'javascript:alert(1)' } }, [1], at);
+    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect((await lastDispatch()).url).toBe('https://ci.example/runs');
+  });
+
   test('without an id, by its branch, start time and test files', async () => {
     await seed(GITHUB);
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
@@ -186,6 +219,56 @@ describe('matchRerunDispatch', () => {
     const d = { ...base, provider: 'bitbucket' as const, id: 'x', at: 0, buildNumber: '42' };
     expect(matchRerunDispatch({ ...run, buildNumber: '42' }, [d])).toBe(d);
     expect(matchRerunDispatch({ ...run, buildNumber: '41' }, [d])).toBeNull();
+  });
+
+  test("matches a CI server's build number with its branch and files, and its branch, time and files without one", () => {
+    const numbered = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'x',
+      at: 0,
+      ref: 'main',
+      buildNumber: '42',
+      files: run.files,
+    };
+    expect(matchRerunDispatch({ ...run, buildNumber: '42' }, [numbered])).toBe(numbered);
+    expect(matchRerunDispatch({ ...run, branch: 'release', buildNumber: '42' }, [numbered])).toBeNull();
+    const unnumbered = { ...base, provider: 'ci-server' as const, id: 'y', at: 999_000, ref: 'main', files: run.files };
+    expect(matchRerunDispatch(run, [unnumbered])).toBe(unnumbered);
+    expect(matchRerunDispatch({ ...run, branch: 'other' }, [unnumbered])).toBeNull();
+  });
+
+  test("leaves another job's build of the same number, and a build started before the dispatch", () => {
+    const d = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'x',
+      at: 1_000_000,
+      ref: 'main',
+      buildNumber: '57',
+      files: ['tests/a.spec.ts'],
+    };
+    const nightly = { ...run, files: ['tests/a.spec.ts', 'tests/b.spec.ts'], buildNumber: '57' };
+    expect(matchRerunDispatch(nightly, [d])).toBeNull();
+    const early = { ...run, buildNumber: '57', startedAt: 1_000_000 - RERUN_CLOCK_SLACK_MS - 1 };
+    expect(matchRerunDispatch(early, [d])).toBeNull();
+  });
+
+  test('picks, by its build number, the dispatch a run answers among those of the same branch and files', () => {
+    const older = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'older',
+      at: 900_000,
+      ref: 'main',
+      buildNumber: '57',
+      files: ['tests/a.spec.ts'],
+    };
+    const newer = { ...older, id: 'newer', at: 950_000, buildNumber: '58' };
+    expect(matchRerunDispatch({ ...run, buildNumber: '57' }, [older, newer])).toBe(older);
+    expect(matchRerunDispatch({ ...run, buildNumber: null }, [older, newer])).toBe(newer);
+    // A CI clock a few seconds behind Piwi's still matches the build.
+    expect(matchRerunDispatch({ ...run, buildNumber: '57', startedAt: 895_000 }, [older])).toBe(older);
   });
 
   test('leaves a run started outside the window or before the dispatch', () => {
@@ -289,5 +372,176 @@ describe('the Flake Lab target', () => {
     expect(await runFlakeLabInCi(db as never, 404, 'reproduce', { id: 1, name: 'Ada' })).toMatchObject({
       error: 'not-found',
     });
+  });
+});
+
+describe('a CI server dispatch', () => {
+  let server: Server;
+  let base: string;
+  let status = 201;
+  const received: Array<{ method: string; url: string; authorization?: string; body: string }> = [];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        received.push({ method: req.method ?? '', url: req.url ?? '', authorization: req.headers.authorization, body });
+        res.writeHead(status, { Location: `${base}queue/item/5/`, 'Content-Type': 'application/json' });
+        res.end(status === 201 ? '' : '{"message":"No such job"}');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  });
+
+  afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+  beforeEach(() => {
+    received.length = 0;
+    status = 201;
+    process.env.PIWI_CI_SERVER_URL = base;
+    process.env.PIWI_CI_SERVER_USER = 'piwi-bot';
+    process.env.PIWI_CI_SERVER_TOKEN = 'instance-secret';
+  });
+
+  afterEach(() => {
+    delete process.env.PIWI_CI_SERVER_URL;
+    delete process.env.PIWI_CI_SERVER_USER;
+    delete process.env.PIWI_CI_SERVER_TOKEN;
+  });
+
+  async function useCiServer(ciServer: Record<string, unknown> | null, enabled = true) {
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: { enabled, via: 'ci-server', ...(ciServer ? { ciServer } : {}) } })
+      .where(eq(schema.projects.id, 1));
+  }
+
+  test('is available without an SCM repository target, and names what is missing', async () => {
+    await seed(GITHUB);
+    await useCiServer(null);
+    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+      available: false,
+      provider: 'ci-server',
+      reason: 'No CI server is configured for this project.',
+    });
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } }, false);
+    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+      available: false,
+      reason: 'CI re-run is off for this project.',
+    });
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } });
+    expect(await ciRerunAvailability(db as never, 1, 1)).toEqual({
+      available: true,
+      reason: null,
+      provider: 'ci-server',
+      enabled: true,
+      hasToken: true,
+    });
+    delete process.env.PIWI_CI_SERVER_URL;
+    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+      available: false,
+      reason: 'No CI server is configured for this project.',
+    });
+  });
+
+  test('is unavailable when the branch job has no branch to name', async () => {
+    await seed(GITHUB);
+    await db
+      .update(schema.testRuns)
+      .set({ branch: null, metadata: { scm: { remoteUrl: GITHUB }, piwiOrigin: { kind: 'ci' } } })
+      .where(eq(schema.testRuns.id, 1));
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e/{branch}' } });
+    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe('The path placeholder {{branchJob}} is empty');
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e/{branch}', ref: 'main' } });
+    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(true);
+  });
+
+  test('refuses an http base URL on a host nobody listed', async () => {
+    await seed(GITHUB);
+    await useCiServer({ preset: 'jenkins', baseUrl: 'http://jenkins.example.com/', rerun: { job: 'e2e' } });
+    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toContain('https');
+  });
+
+  test('sends the Jenkins request with the instance credential, and records it', async () => {
+    await seed(GITHUB);
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } });
+    const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
+    expect(outcome.ok).toBe(true);
+    expect(dispatched).toHaveLength(0);
+    expect(received).toHaveLength(1);
+    const record = await lastDispatch();
+    expect(received[0]).toMatchObject({
+      method: 'POST',
+      url: '/job/polaris/job/e2e/buildWithParameters',
+      authorization: `Basic ${Buffer.from('piwi-bot:instance-secret').toString('base64')}`,
+    });
+    const form = new URLSearchParams(received[0]!.body);
+    expect(form.get('PIWI_RERUN_ARGS')).toBe(
+      '"tests/checkout.spec.ts:30" "tests/checkout.spec.ts:12" --project="chromium"',
+    );
+    expect(form.get('PIWI_ORIGIN_REF')).toBe(record.id);
+    expect(record).toMatchObject({
+      provider: 'ci-server',
+      preset: 'jenkins',
+      url: `${base}job/polaris/job/e2e/`,
+      ref: 'feature/coupon',
+      files: ['tests/checkout.spec.ts'],
+      tests: 2,
+      byName: 'Ada',
+    });
+  });
+
+  test('sends no instance credential to a base URL a project set elsewhere', async () => {
+    await seed(GITHUB);
+    const other = base.replace('127.0.0.1', 'localhost');
+    process.env.PIWI_CI_SERVER_HOSTS = 'localhost';
+    await useCiServer({ preset: 'jenkins', baseUrl: other, rerun: { job: 'e2e' } });
+    expect((await ciRerunAvailability(db as never, 1, 1)).hasToken).toBe(false);
+    expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
+    expect(received[0]!.authorization).toBeUndefined();
+    delete process.env.PIWI_CI_SERVER_HOSTS;
+  });
+
+  test("fails with the server's status and message", async () => {
+    await seed(GITHUB);
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
+    status = 404;
+    expect(await rerunClusterInCi(db as never, 1, { id: null, name: null })).toEqual({
+      ok: false,
+      error: 'dispatch-failed',
+      message: 'The CI server answered 404: No such job',
+    });
+  });
+
+  test('re-runs one execution, and the run it starts is matched and linked to its build', async () => {
+    await seed(GITHUB);
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
+    const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
+    expect((await rerunExecutionInCi(db as never, execution!.id, { id: null, name: null })).ok).toBe(true);
+    expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe(
+      '"tests/checkout.spec.ts:12" --project="chromium"',
+    );
+    const { id, at } = await lastDispatch();
+    const ci = { provider: 'Jenkins', buildNumber: '88', buildUrl: `${base}job/e2e/88/` };
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci }, [1], at + 60_000);
+    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect(await lastDispatch()).toMatchObject({ runId: 2, url: `${base}job/e2e/88/` });
+  });
+
+  test('runs Flake Lab on its own job', async () => {
+    await seed(GITHUB);
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
+    expect(await flakeLabCiAvailability(db as never, 1, 1)).toEqual({
+      available: false,
+      reason: 'No Flake Lab request is configured for the CI server.',
+      provider: 'ci-server',
+    });
+    await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' }, flakeLab: { job: 'flake-lab' } });
+    const outcome = await runFlakeLabInCi(db as never, 1, 'reproduce', { id: 1, name: 'Ada' });
+    expect(outcome).toMatchObject({ ok: true, dispatch: { provider: 'ci-server', args: 'flake 1' } });
+    expect(received[0]!.url).toBe('/job/flake-lab/buildWithParameters');
+    expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe('flake 1');
   });
 });

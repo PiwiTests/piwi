@@ -7,12 +7,14 @@ import type {
   ConnectionTestResult,
   ExistingIssueCandidate,
   IssueDraft,
+  IssueEntityType,
   TrackerIssueOption,
   TrackerSummary,
 } from '#shared/integrations/types';
 import { foldText } from '#shared/utils/fold-text';
-import { nonSecretCredentials } from '#shared/integrations/registry';
+import { connectionBaseUrl, credentialFieldError, nonSecretCredentials } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import { demoHttpError } from './http-error';
 import {
   missingFieldsMessage,
   missingRequiredFields,
@@ -25,7 +27,14 @@ import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages'
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { previewAutoCreate, type AutoCreatePreview } from '#shared/handlers/tracker-automation';
 import { projectDefaultBranch } from '~~/server/utils/scm/stored-default-branch';
-import { buildClusterIssue, buildExecutionIssue } from '~~/server/utils/integrations/documents';
+import {
+  buildBugReportIssue,
+  buildClusterIssue,
+  buildExecutionIssue,
+  buildRunIssue,
+  buildStandaloneExecutionIssue,
+} from '~~/server/utils/integrations/documents';
+import { normalizeIssueComment, type IssueComment } from '#shared/integrations/run-issue';
 import { entityLinks, projects, testRunsCases } from '~~/server/database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -67,15 +76,33 @@ export function getDemoConnection(id: number): { connection: ConnectionSummary }
   return id === DEMO_CONNECTION.id ? { connection: demoConnection() } : null;
 }
 
-export function createDemoConnection(body: ConnectionInput): { connection: ConnectionSummary } {
+/**
+ * The base URL a connection is saved with, and its region, as the server sets them: the typed address, or the chosen
+ * region's host. Refuses a select credential field set to none of its options.
+ */
+function demoConnectionEndpoint(
+  provider: string,
+  body: { baseUrl?: string; region?: string; credentials?: Record<string, string> | null },
+): { baseUrl: string; region?: string } {
+  const endpoint = connectionBaseUrl(provider, body);
+  if ('error' in endpoint) throw demoHttpError(400, endpoint.error);
+  const fieldError = credentialFieldError(provider, body.credentials);
+  if (fieldError) throw demoHttpError(400, fieldError);
+  return endpoint;
+}
+
+export function createDemoConnection(body: Omit<ConnectionInput, 'baseUrl'> & { baseUrl?: string; region?: string }): {
+  connection: ConnectionSummary;
+} {
+  const endpoint = demoConnectionEndpoint(body.provider, body);
   return {
     connection: {
       ...DEMO_CONNECTION,
       id: 2,
       provider: body.provider,
       name: body.name,
-      baseUrl: body.baseUrl,
-      config: body.config ?? { flavor: 'cloud' },
+      baseUrl: endpoint.baseUrl,
+      config: endpoint.region ? { ...body.config, region: endpoint.region } : (body.config ?? { flavor: 'cloud' }),
       status: 'unverified',
       hasCredentials: !!body.credentials && Object.keys(body.credentials).length > 0,
       credentialValues: nonSecretCredentials(body.provider, body.credentials),
@@ -83,13 +110,21 @@ export function createDemoConnection(body: ConnectionInput): { connection: Conne
   };
 }
 
-export function updateDemoConnection(id: number, body: Partial<ConnectionInput>): { connection: ConnectionSummary } {
+export function updateDemoConnection(
+  id: number,
+  body: Partial<ConnectionInput> & { region?: string },
+): { connection: ConnectionSummary } {
+  // The demo's one connection is Jira, moved by a typed address only.
+  const baseUrl =
+    body.baseUrl !== undefined
+      ? demoConnectionEndpoint(DEMO_CONNECTION.provider, body).baseUrl
+      : DEMO_CONNECTION.baseUrl;
   return {
     connection: {
       ...DEMO_CONNECTION,
       id,
       name: body.name ?? DEMO_CONNECTION.name,
-      baseUrl: body.baseUrl ?? DEMO_CONNECTION.baseUrl,
+      baseUrl,
       // Mirror the server's merge: submitted non-secret fields override the stored ones.
       credentialValues: { ...DEMO_CONNECTION.credentialValues, ...nonSecretCredentials('jira', body.credentials) },
     },
@@ -140,13 +175,10 @@ export function demoTrackerStatus(): { trackers: TrackerSummary[] } {
   return { trackers: [DEMO_TRACKER] };
 }
 
-/** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
-async function resolveClusterId(
-  db: DrizzleDB,
-  entityType: 'failure_cluster' | 'test_runs_case',
-  entityId: number,
-): Promise<number | null> {
+/** The cluster an entity belongs to (itself for a cluster, its cluster for an execution, none for a bug report). */
+async function resolveClusterId(db: DrizzleDB, entityType: IssueEntityType, entityId: number): Promise<number | null> {
   if (entityType === 'failure_cluster') return entityId;
+  if (entityType === 'bug_report' || entityType === 'test_run') return null;
   const [row] = await db
     .select({ clusterId: testRunsCases.failureClusterId })
     .from(testRunsCases)
@@ -154,12 +186,23 @@ async function resolveClusterId(
   return row?.clusterId ?? null;
 }
 
-/** Jira-shaped links already pinned to the cluster, as dedupe candidates. */
-async function demoExisting(db: DrizzleDB, clusterId: number): Promise<ExistingIssueCandidate[]> {
+/** Jira-shaped links already pinned to the cluster or the bug report, as dedupe candidates. */
+async function demoExisting(
+  db: DrizzleDB,
+  target: { clusterId: number } | { bugReportId: number } | { testRunId: number } | { testRunsCaseId: number },
+): Promise<ExistingIssueCandidate[]> {
+  const pinnedTo =
+    'clusterId' in target
+      ? eq(entityLinks.failureClusterId, target.clusterId)
+      : 'bugReportId' in target
+        ? eq(entityLinks.bugReportId, target.bugReportId)
+        : 'testRunId' in target
+          ? eq(entityLinks.testRunId, target.testRunId)
+          : eq(entityLinks.testRunsCaseId, target.testRunsCaseId);
   const links = await db
     .select()
     .from(entityLinks)
-    .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)));
+    .where(and(pinnedTo, isNotNull(entityLinks.key)));
   return links
     .filter((l) => l.provider === 'jira')
     .map((l) => ({
@@ -172,54 +215,142 @@ async function demoExisting(db: DrizzleDB, clusterId: number): Promise<ExistingI
     }));
 }
 
+/** The draft fields every entity shares: the canned binding, and nothing that links back. */
+function demoDraftBase(locale: IssueLocale) {
+  const binding = getDemoProjectIntegration();
+  return {
+    projectBound: true,
+    // The static demo has no public address to link back to.
+    linksBack: false,
+    connectionId: binding.connectionId,
+    projectKey: DEMO_PROJECT_KEY,
+    issueType: DEMO_ISSUE_TYPE,
+    assignee: null,
+    locale,
+    fieldValues: binding.fieldDefaults,
+    include: { includeDiagnosis: true, includePatch: true, includeScreenshot: false, includeShareLink: false },
+  };
+}
+
+/** The draft for a bug report, as the server builds it: its own document and labels, no cluster. */
+async function demoBugReportDraft(db: DrizzleDB, bugReportId: number, locale: IssueLocale): Promise<IssueDraft | null> {
+  const built = await buildBugReportIssue(db, bugReportId, { locale });
+  if (!built) return null;
+  return {
+    ...demoDraftBase(locale),
+    entityType: 'bug_report',
+    entityId: bugReportId,
+    clusterId: null,
+    projectId: built.projectId,
+    title: built.title,
+    labels: [...new Set([...getDemoProjectIntegration().labels, ...built.labels])],
+    markdown: renderMarkdown(built.document),
+    document: built.document,
+    existing: await demoExisting(db, { bugReportId }),
+  };
+}
+
+/** The issue of a run, or of an execution with no failure cluster, as the server builds it. */
+function demoRunIssue(
+  db: DrizzleDB,
+  entityType: IssueEntityType,
+  entityId: number,
+  opts: { locale?: IssueLocale; comment?: IssueComment | null; filedBy?: string | null },
+) {
+  return entityType === 'test_run'
+    ? buildRunIssue(db, entityId, opts)
+    : buildStandaloneExecutionIssue(db, entityId, opts);
+}
+
+/** The draft for a run, or for an execution with no failure cluster: the issues linked to it never stop a new one. */
+async function demoRunDraft(
+  db: DrizzleDB,
+  entityType: IssueEntityType,
+  entityId: number,
+  locale: IssueLocale,
+  filedBy: string | null,
+): Promise<IssueDraft | null> {
+  const built = await demoRunIssue(db, entityType, entityId, { locale, filedBy });
+  if (!built) return null;
+  return {
+    ...demoDraftBase(locale),
+    entityType,
+    entityId,
+    clusterId: null,
+    projectId: built.projectId,
+    title: built.title,
+    labels: [...new Set([...getDemoProjectIntegration().labels, ...built.labels])],
+    markdown: renderMarkdown(built.document),
+    document: built.document,
+    existing: await demoExisting(
+      db,
+      entityType === 'test_run' ? { testRunId: entityId } : { testRunsCaseId: entityId },
+    ),
+  };
+}
+
 export async function demoIssueDraft(
   db: DrizzleDB,
-  entityType: 'failure_cluster' | 'test_runs_case',
+  entityType: IssueEntityType,
   entityId: number,
   locale: IssueLocale = DEFAULT_LOCALE,
+  filedBy: string | null = null,
 ): Promise<IssueDraft | null> {
+  const draft = await demoIssueDraftFor(db, entityType, entityId, locale, filedBy);
+  return draft ? { ...draft, filedBy } : null;
+}
+
+async function demoIssueDraftFor(
+  db: DrizzleDB,
+  entityType: IssueEntityType,
+  entityId: number,
+  locale: IssueLocale,
+  filedBy: string | null,
+): Promise<IssueDraft | null> {
+  if (entityType === 'bug_report') return demoBugReportDraft(db, entityId, locale);
+  if (entityType === 'test_run') return demoRunDraft(db, entityType, entityId, locale, filedBy);
   const clusterId = await resolveClusterId(db, entityType, entityId);
-  if (clusterId == null) return null;
+  if (clusterId == null) {
+    return entityType === 'test_runs_case' ? demoRunDraft(db, entityType, entityId, locale, filedBy) : null;
+  }
   const built =
     entityType === 'failure_cluster'
       ? await buildClusterIssue(db, entityId, { locale })
       : await buildExecutionIssue(db, entityId, { locale });
   if (!built) return null;
   return {
+    ...demoDraftBase(locale),
     entityType,
     entityId,
     clusterId,
     projectId: built.projectId,
-    projectBound: true,
-    // The static demo has no public address to link back to.
-    linksBack: false,
     title: built.title,
-    connectionId: getDemoProjectIntegration().connectionId,
-    projectKey: DEMO_PROJECT_KEY,
-    issueType: DEMO_ISSUE_TYPE,
     labels: built.labels,
-    assignee: null,
-    locale,
-    fieldValues: getDemoProjectIntegration().fieldDefaults,
-    include: { includeDiagnosis: true, includePatch: true, includeScreenshot: false, includeShareLink: false },
     markdown: renderMarkdown(built.document),
     document: built.document,
-    existing: await demoExisting(db, clusterId),
+    existing: await demoExisting(db, { clusterId }),
   };
 }
 
 /**
- * File a DEMO-<n> issue and write the known-issue link into the in-browser DB —
- * or, like the server, refuse before filing when the issue type's required
- * fields are still empty.
+ * File a DEMO-<n> issue and write its link into the in-browser DB (on the
+ * cluster, or on the bug report) — or, like the server, refuse before filing
+ * when the issue type's required fields are still empty. Null when the bug
+ * report is gone.
  */
 export async function demoCreateIssue(
   db: DrizzleDB,
-  entityType: 'failure_cluster' | 'test_runs_case',
+  entityType: IssueEntityType,
   entityId: number,
   title?: string | null,
-  request: { issueType?: string; fields?: unknown } = {},
-): Promise<CreateIssueResponse> {
+  request: {
+    issueType?: string;
+    fields?: unknown;
+    comment?: string | null;
+    filedBy?: string | null;
+    submissionId?: string | null;
+  } = {},
+): Promise<CreateIssueResponse | null> {
   const values = { ...getDemoProjectIntegration().fieldDefaults, ...normalizeFieldValues(request.fields) };
   const missing = missingRequiredFields(demoCreateFields(request.issueType ?? DEMO_ISSUE_TYPE).fields, values);
   if (missing.length) {
@@ -231,20 +362,81 @@ export async function demoCreateIssue(
     };
   }
 
-  const clusterId = (await resolveClusterId(db, entityType, entityId)) ?? entityId;
+  const commentText = normalizeIssueComment(request.comment);
+  const comment = commentText ? { text: commentText, author: request.filedBy ?? null } : null;
 
-  // Like the server, the cluster and its executions share one filing while its link is there.
+  // A run, and an execution with no failure cluster, get one issue per submission.
+  const clusterId = await resolveClusterId(db, entityType, entityId);
+  if (entityType === 'test_run' || (entityType === 'test_runs_case' && clusterId == null)) {
+    const submission = request.submissionId ? `${entityType}:${entityId}:${request.submissionId}` : null;
+    const sent = submission ? DEMO_SUBMISSIONS.get(submission) : undefined;
+    if (sent) return { ...sent, submissionFiled: true };
+    const built = await demoRunIssue(db, entityType, entityId, { comment, filedBy: request.filedBy ?? null });
+    if (!built) return null;
+    const filed = await insertDemoIssueLink(
+      db,
+      entityType === 'test_run' ? { testRunId: entityId } : { testRunsCaseId: entityId },
+      title?.trim() || built.title,
+    );
+    if (submission) DEMO_SUBMISSIONS.set(submission, filed);
+    return filed;
+  }
+
+  // A bug report's issue is linked to the report; a failure's to its cluster,
+  // which the cluster and its executions share while the link is there.
+  let linkTarget: { failureClusterId: number } | { bugReportId: number };
+  let built: { title: string } | null;
+  if (entityType === 'bug_report') {
+    built = await buildBugReportIssue(db, entityId, {});
+    if (!built) return null;
+    linkTarget = { bugReportId: entityId };
+  } else {
+    linkTarget = { failureClusterId: clusterId ?? entityId };
+    built =
+      entityType === 'failure_cluster'
+        ? await buildClusterIssue(db, entityId, {})
+        : await buildExecutionIssue(db, entityId, {});
+  }
+
   const [filed] = await db
     .select()
     .from(entityLinks)
-    .where(and(eq(entityLinks.failureClusterId, clusterId), eq(entityLinks.origin, 'created')));
-  if (filed?.key) return { actionId: filed.id, status: 'done', key: filed.key, url: filed.url, alreadyFiled: true };
+    .where(
+      and(
+        'bugReportId' in linkTarget
+          ? eq(entityLinks.bugReportId, linkTarget.bugReportId)
+          : eq(entityLinks.failureClusterId, linkTarget.failureClusterId),
+        eq(entityLinks.origin, 'created'),
+      ),
+    );
+  if (filed?.key) {
+    // Like the server, the comment goes to the issue already filed.
+    return {
+      actionId: filed.id,
+      status: 'done',
+      key: filed.key,
+      url: filed.url,
+      alreadyFiled: true,
+      ...(comment ? { commentStatus: 'added' as const } : {}),
+    };
+  }
 
-  const built =
-    entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, entityId, {})
-      : await buildExecutionIssue(db, entityId, {});
+  return insertDemoIssueLink(db, linkTarget, title?.trim() || built?.title || null);
+}
 
+/** What each submission of the create dialog filed in the demo, so sending it again files nothing new. */
+const DEMO_SUBMISSIONS = new Map<string, CreateIssueResponse>();
+
+/** File a DEMO-<n> issue: its link on the entity, as a created one. */
+async function insertDemoIssueLink(
+  db: DrizzleDB,
+  linkTarget:
+    | { failureClusterId: number }
+    | { bugReportId: number }
+    | { testRunId: number }
+    | { testRunsCaseId: number },
+  title: string | null,
+): Promise<CreateIssueResponse> {
   const existing = await db.select().from(entityLinks).where(isNotNull(entityLinks.key));
   const n = 100 + existing.filter((l) => l.provider === 'jira').length + 1;
   const key = `${DEMO_PROJECT_KEY}-${n}`;
@@ -253,11 +445,11 @@ export async function demoCreateIssue(
   const [row] = await db
     .insert(entityLinks)
     .values({
-      failureClusterId: clusterId,
+      ...linkTarget,
       url,
       provider: 'jira',
       key,
-      title: title?.trim() || built?.title || key,
+      title: title || key,
       statusText: 'To Do',
       statusColor: 'info',
       connectionId: DEMO_CONNECTION.id,

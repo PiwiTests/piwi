@@ -56,7 +56,7 @@ async function submit() {
     <SectionCard
       icon="i-lucide-radar"
       title="Scenario gaps"
-      subtitle="What the Gaps tab compares the tests against"
+      subtitle="What the Coverage tab’s gaps compare the tests against"
       data-shot="project-gaps-settings"
     >
       <div class="space-y-5">

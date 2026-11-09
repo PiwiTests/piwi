@@ -92,7 +92,7 @@ beforeEach(async () => {
   ]);
   await db.insert(schema.testRunsCases).values([
     { id: 10, testRunId: 1, testCaseId: 1, status: 'failed', error: 'Error: expected 200', line: 7 },
-    { id: 11, testRunId: 1, testCaseId: 2, status: 'passed', line: 3 },
+    { id: 11, testRunId: 1, testCaseId: 2, repeatEachIndex: 1, status: 'passed', line: 3 },
     { id: 20, testRunId: 2, testCaseId: 1, status: 'failed', error: 'Error: expected 200', line: 7 },
   ]);
   await db

@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.63.0",
+  "version": "0.67.0",
   "license": "MIT",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
@@ -10,6 +10,7 @@
     "./codeowners": "./src/codeowners.ts",
     "./gate": "./src/gate.ts",
     "./spec-filter": "./src/spec-filter.ts",
+    "./rerun-args": "./src/rerun-args.ts",
     "./locator-generation": "./src/locator-generation.ts",
     "./locator-fingerprint": "./src/locator-fingerprint.ts",
     "./locator-healing-types": "./src/locator-healing-types.ts",
@@ -31,6 +32,7 @@
     "./live-view": "./src/live-view.ts",
     "./editor-discovery": "./src/editor-discovery.ts",
     "./function-match": "./src/function-match.ts",
+    "./glob": "./src/glob.ts",
     "./codegen": "./src/codegen.ts",
     "./piwi-config": "./src/piwi-config.ts",
     "./locator-chain": "./src/locator-chain.ts",
@@ -67,7 +69,11 @@
     "./flake-plan": "./src/flake-plan.ts",
     "./flake-verdict": "./src/flake-verdict.ts",
     "./skill-stamp": "./src/skill-stamp.ts",
-    "./page-interaction": "./src/page-interaction.ts"
+    "./hash": "./src/hash.ts",
+    "./page-interaction": "./src/page-interaction.ts",
+    "./run-errors": "./src/run-errors.ts",
+    "./test-output": "./src/test-output.ts",
+    "./run-request": "./src/run-request.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

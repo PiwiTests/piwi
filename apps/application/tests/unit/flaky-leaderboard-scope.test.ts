@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * Which runs the flaky leaderboard reads: with no branch named, those of the
@@ -48,15 +49,17 @@ async function seedRun(
   for (const [caseId, outcome] of Object.entries(tests)) {
     const attempts = outcome === 'flaky' ? ['failed', 'passed'] : ['passed'];
     for (const [retries, status] of attempts.entries()) {
-      await db.insert(schema.testRunsCases).values({
-        testRunId: run!.id,
-        testCaseId: Number(caseId),
-        status,
-        retries,
-        duration: 2_000,
-        browserName,
-        browser: { projectName: browserName },
-      });
+      await db.insert(schema.testRunsCases).values(
+        withStoredVerdicts({
+          testRunId: run!.id,
+          testCaseId: Number(caseId),
+          status,
+          retries,
+          duration: 2_000,
+          browserName,
+          browser: { projectName: browserName },
+        }),
+      );
     }
   }
   return run!.id;

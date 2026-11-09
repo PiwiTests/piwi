@@ -2,7 +2,9 @@
  * The project changelog (`CHANGELOG.md` at the repository root), parsed into
  * releases. It feeds the MCP `get_release_notes` tool, which ships the file
  * inside the server build so it answers for the running version, and the docs'
- * generated What's new page (`apps/docs/scripts/generate-whats-new.mjs`).
+ * generated What's new page (`apps/docs/scripts/generate-whats-new.mjs`). The
+ * desktop app's update card reads a GitHub release body the same way, through
+ * `parseReleaseNotes`.
  *
  * The file mixes two shapes: release-please's raw sections (`### Features`,
  * `### Bug Fixes`, one `* **scope:** subject ([hash](url))` line per commit, so
@@ -151,4 +153,63 @@ export function parseChangelog(text: string): ChangelogRelease[] {
   }
   finishIntro();
   return releases;
+}
+
+/** Push every Markdown heading one level down, leaving fenced code blocks alone. */
+function demoteHeadings(text: string): string {
+  let inFence = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*```/.test(line)) inFence = !inFence;
+      if (inFence) return line;
+      return line.replace(/^(#{1,5}) /, '$1# ');
+    })
+    .join('\n');
+}
+
+/** Whether the text has a `## ` heading outside a fenced code block. */
+function hasLevelTwoHeading(text: string): boolean {
+  let inFence = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) inFence = !inFence;
+    else if (!inFence && /^## /.test(line)) return true;
+  }
+  return false;
+}
+
+/**
+ * One GitHub release body, parsed as its `CHANGELOG.md` section would be.
+ * A polished body titles its sections `##`, one level above the changelog's,
+ * so its headings move down a level first.
+ */
+export function parseReleaseNotes(release: {
+  version: string;
+  date: string | null;
+  url: string;
+  body: string;
+}): ChangelogRelease {
+  const body = release.body.replace(/\r\n/g, '\n');
+  const date = release.date ? release.date.slice(0, 10) : null;
+  const header = `## [${release.version}](${release.url})${date ? ` (${date})` : ''}`;
+  const parsed = parseChangelog(`${header}\n\n${hasLevelTwoHeading(body) ? demoteHeadings(body) : body}`)[0];
+  return (
+    parsed ?? {
+      version: release.version,
+      from: release.version,
+      to: release.version,
+      date,
+      url: release.url,
+      intro: null,
+      entries: emptyEntries(),
+    }
+  );
+}
+
+const ENTRY_SCOPE = /^\*\*([a-z-]+):\*\*\s+/;
+
+/** A raw entry's `**scope:**` prefix, apart from its sentence; `null` scope when it has none. */
+export function splitEntryScope(entry: string): { scope: string | null; text: string } {
+  const match = entry.match(ENTRY_SCOPE);
+  return match ? { scope: match[1]!, text: entry.slice(match[0].length) } : { scope: null, text: entry };
 }

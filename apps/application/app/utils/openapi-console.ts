@@ -1,5 +1,5 @@
 /**
- * Pure helpers backing the `/docs` "Try it out" console and code samples.
+ * Pure helpers backing the API reference's (`/settings/api`) "Try it out" console and code samples.
  *
  * These build request URLs, example request bodies, and copy-paste cURL / fetch
  * snippets from the OpenAPI spec. They are side-effect free (no network, no

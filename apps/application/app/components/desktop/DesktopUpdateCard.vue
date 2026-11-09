@@ -8,13 +8,20 @@
  * An update the shell's startup check already found shows without a click, and
  * a checkbox turns that check's native notification on or off. The Microsoft
  * Store package updates through the Store, which the card says instead.
+ *
+ * Once an update is on offer, the shell reads the release notes of every
+ * version in between from GitHub (`desktop_get_release_notes`, once per offered
+ * version): the card sums them up (how many releases, how many breaking
+ * changes, the newest highlights) and What's new opens them in full. Without
+ * them the card links to the releases page, and installing works the same.
  */
+import { parseReleaseNotes } from '#shared/changelog';
+
 const props = defineProps<{ currentVersion?: string | null }>();
 
 interface UpdateStatus {
   state: 'unsupported' | 'uptodate' | 'available';
   version: string | null;
-  notes: string | null;
   date: string | null;
 }
 
@@ -37,6 +44,10 @@ const supported = ref(false);
 const fromStore = ref(false);
 const notifyOnStartup = ref(true);
 const savingNotify = ref(false);
+const notes = ref<DesktopReleaseNotes | null>(null);
+const notesError = ref<string | null>(null);
+const notesLoading = ref(false);
+const notesOpen = ref(false);
 
 let unlisten: (() => void) | null = null;
 
@@ -125,6 +136,53 @@ async function restart() {
   }
 }
 
+/** The version whose notes were last asked for, so each offered version is read once. */
+let notesFor: string | null = null;
+
+async function loadNotes(version: string) {
+  const core = tauriCore();
+  if (!core || notesFor === version) return;
+  notesFor = version;
+  notesLoading.value = true;
+  notesError.value = null;
+  try {
+    const answer = await core.invoke<DesktopReleaseNotes>('desktop_get_release_notes');
+    if (notesFor !== version) return;
+    if (answer.offered === version) notes.value = answer;
+    else notesError.value = `the notes found are for v${answer.offered}; check for updates again`;
+  } catch (error) {
+    if (notesFor === version) {
+      notes.value = null;
+      notesError.value = (typeof error === 'string' ? error : errorMessage(error)).replace(/\.$/, '');
+    }
+  } finally {
+    if (notesFor === version) notesLoading.value = false;
+  }
+}
+
+/** Ask the shell again after a failure. */
+function retryNotes() {
+  const version = status.value?.state === 'available' ? status.value.version : null;
+  if (!version) return;
+  notesFor = null;
+  void loadNotes(version);
+}
+
+watch(
+  () => (status.value?.state === 'available' ? status.value.version : null),
+  (version) => {
+    if (version) void loadNotes(version);
+  },
+);
+
+const notesSummary = computed(() =>
+  notes.value ? summarizeReleaseNotes(notes.value.releases.map(parseReleaseNotes)) : null,
+);
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+const PROSE_LINK = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
+
 const progressPercent = computed(() => {
   const p = progress.value;
   if (!p?.total) return null;
@@ -186,10 +244,48 @@ const progressPercent = computed(() => {
       </template>
 
       <template v-else>
-        <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start justify-between gap-3" data-shot="desktop-update-card">
           <div class="space-y-1 min-w-0">
             <p class="text-sm font-medium">Version {{ status.version }} is available</p>
-            <p v-if="status.notes" class="text-xs text-muted whitespace-pre-wrap line-clamp-6">{{ status.notes }}</p>
+            <p v-if="notesLoading" class="text-xs text-muted">Loading what's new…</p>
+            <p v-else-if="notesError" class="text-xs text-muted">
+              What's new is unavailable: {{ notesError }}.
+              <ULink :to="RELEASES_PAGE_URL" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
+                >Read the release notes on GitHub</ULink
+              >
+              or
+              <button type="button" :class="PROSE_LINK" @click="retryNotes">try again</button>.
+            </p>
+            <template v-else-if="notes && notesSummary">
+              <p class="text-xs text-muted" data-testid="release-notes-summary">
+                <template v-if="notesSummary.count">
+                  {{ plural(notesSummary.count, 'release', 'releases') }} since v{{ notes.installed }}
+                </template>
+                <template v-else>No release notes found since v{{ notes.installed }}</template>
+                <template v-if="notesSummary.breaking.length">
+                  · {{ plural(notesSummary.breaking.length, 'breaking change', 'breaking changes') }}
+                </template>
+              </p>
+              <ul v-if="notesSummary.preview.length" class="space-y-0.5">
+                <!-- eslint-disable-next-line vue/no-v-html -- releaseNoteHtml escapes before it adds its tags -->
+                <li
+                  v-for="(line, i) in notesSummary.preview"
+                  :key="i"
+                  class="text-sm text-highlighted leading-relaxed line-clamp-3 before:content-['•'] before:mr-2 before:text-muted"
+                  v-html="releaseNoteHtml(line)"
+                />
+              </ul>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                class="mt-1"
+                data-testid="release-notes-open"
+                @click="notesOpen = true"
+              >
+                What's new
+              </UButton>
+            </template>
           </div>
           <UButton
             v-if="!installed"
@@ -209,6 +305,14 @@ const progressPercent = computed(() => {
         <p v-if="installed" class="text-xs text-muted">
           The update is installed — it applies the next time the app starts.
         </p>
+        <DesktopReleaseNotesModal
+          v-if="notes"
+          v-model:open="notesOpen"
+          :notes="notes"
+          :installing="installing"
+          :installed="installed"
+          @install="install"
+        />
       </template>
 
       <UCheckbox

@@ -40,8 +40,7 @@ const canScheduleReports = computed(() => canAnywhere('report:write'));
 const canShareLinks = computed(() => canAnywhere('share:create'));
 const reportOpen = ref(false);
 const liveLinksOpen = ref(false);
-// Share links need the server; the public demo has no share-link routes.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const offersShareLinks = await useShareLinksOffered();
 const scheduleOpen = ref(false);
 const testFilterActive = computed(() => hasTestFilter(scope.value));
 
@@ -509,7 +508,7 @@ const moreItems = computed(() => {
   const manage: Array<Record<string, any>> = [
     { label: 'Manage dashboards', icon: 'i-lucide-layout-dashboard', to: '/analytics/dashboards' },
   ];
-  if (isSaved && !isDemoMode && canShareLinks.value) {
+  if (isSaved && offersShareLinks.value && canShareLinks.value) {
     manage.unshift({
       label: 'Live dashboard links',
       icon: 'i-lucide-cast',
@@ -916,7 +915,7 @@ useViewScroll(() => dashboardPanelBody('analytics'));
       <DeleteDashboardModal v-model:open="deleteOpen" :dashboard="view" @confirm="confirmDelete" />
       <RenameDashboardModal v-if="isSaved" v-model:open="renameOpen" :dashboard="view" @saved="onRenamed" />
       <ShareLinksModal
-        v-if="isSaved && !isDemoMode"
+        v-if="isSaved && offersShareLinks"
         v-model:open="liveLinksOpen"
         kind="dashboard"
         :trigger="false"

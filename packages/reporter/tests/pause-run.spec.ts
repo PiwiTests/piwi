@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startServer, type FakeServer } from './_helpers.js';
+import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 import { collectStepMetrics } from '@piwitests/core/step-analysis';
 import { readPauses } from '../src/internal/collect/pause-events.js';
 
@@ -341,8 +341,9 @@ module.exports = defineConfig({
     ...process.env,
     PIWI_PAUSE_AT: bp.map((line) => `tests/pause.spec.cjs:${line}`).join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
     delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

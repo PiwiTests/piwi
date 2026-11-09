@@ -23,10 +23,16 @@ import {
 } from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
-import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
+import { distinctRunCountsFromAttempts, normalizeTestCaseStatus } from '#shared/utils/test-counts';
+import { parseTestMetadata } from '@piwitests/core/test-meta';
+import { MAX_RUN_ERRORS, runErrorOfReported } from '@piwitests/core/run-errors';
+import { boundTestOutput } from '@piwitests/core/test-output';
+import type { WireRunError } from '@piwitests/core/wire';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
 import type { RunCaseInput } from './persist-run-cases';
+import { workerLane } from '#shared/worker-lane';
+import type { WireRunnerEnvironment } from '@piwitests/core/wire';
 
 /**
  * Reads one entry out of the archive, or null when it is absent or unreadable.
@@ -70,10 +76,14 @@ export interface ParsedBlobReport {
   duration: number | null;
   /** Run status in Piwi's vocabulary (`passed` / `failed` / `timedout` / `interrupted`). */
   status: string;
+  /**
+   * One per test and `--repeat-each` repetition, its retries folded in: the counters below add up to it, but for a
+   * test the run stopped (`interrupted`), which counts in none, as in every stored run.
+   */
   totalTests: number;
   passedTests: number;
+  /** Failed and timed-out, folded. */
   failedTests: number;
-  timedOutTests: number;
   skippedTests: number;
   didNotRunTests: number;
   flakyTests: number;
@@ -83,6 +93,13 @@ export interface ParsedBlobReport {
   projectNames: string[];
   /** The commit and branch Playwright's git info recorded in the config metadata, when it did. */
   scm: BlobScm | null;
+  /**
+   * The errors Playwright reported outside any test (`onError`), as the reporter keeps them (`runErrorOfReported`):
+   * the first `MAX_RUN_ERRORS`, each text with what may be a secret hidden.
+   */
+  runErrors: WireRunError[];
+  /** The partial runner snapshot the blob report's user agent tells (OS, architecture, Node.js), marked imported. */
+  runner: WireRunnerEnvironment | null;
   cases: ImportedRunCase[];
 }
 
@@ -134,11 +151,17 @@ interface ResultAccumulator {
   testId: string;
   retry: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`). */
+  parallelIndex: number | null;
   startedAt: number | null;
   rootSteps: StepNode[];
   stepsById: Map<string, StepNode>;
   traces: BlobAttachmentRef[];
   attachments: BlobAttachmentRef[];
+  /** What the attempt wrote to stdout (`onStdIO`), in order: text, or bytes. */
+  stdout: Array<string | Uint8Array>;
+  /** What the attempt wrote to stderr (`onStdIO`), in order: text, or bytes. */
+  stderr: Array<string | Uint8Array>;
 }
 
 /** A test as declared in the `onProject` suite tree. */
@@ -149,6 +172,7 @@ interface PlannedTest {
   column: number | null;
   suitePath: string[];
   annotations: TestAnnotation[];
+  /** As Playwright lists them: `persistRunCases` normalizes them and records the tests whose tags it cuts. */
   tags: string[];
   timeout: number | null;
   /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition is a test of its own. */
@@ -238,6 +262,10 @@ function collectPlannedTests(
   for (const key of ['browserName', 'channel', 'viewport', 'locale', 'timezoneId', 'userAgent'] as const) {
     if (use[key] !== undefined) browser[key] = use[key];
   }
+  // A `devices` preset names the engine as `defaultBrowserType`, which Playwright's `browserName` defaults to.
+  if (browser.browserName === undefined && use.defaultBrowserType !== undefined) {
+    browser.browserName = use.defaultBrowserType;
+  }
   const projectTimeout = typeof project.timeout === 'number' ? project.timeout : null;
 
   // v2 nests everything under `entries`; older archives split `suites`/`tests`.
@@ -261,7 +289,7 @@ function collectPlannedTests(
           column: typeof location.column === 'number' ? location.column : null,
           suitePath,
           annotations: Array.isArray(child.annotations) ? (child.annotations as TestAnnotation[]) : [],
-          tags: normalizeTestTags(child.tags),
+          tags: Array.isArray(child.tags) ? child.tags.filter((tag): tag is string => typeof tag === 'string') : [],
           timeout: typeof child.timeout === 'number' ? child.timeout : projectTimeout,
           repeatEachIndex: typeof child.repeatEachIndex === 'number' ? child.repeatEachIndex : 0,
           projectName,
@@ -363,10 +391,34 @@ function applyAttachments(acc: ResultAccumulator, attachments: unknown): void {
   }
 }
 
+/** The bytes a base64 chunk of output holds, or null when it is not base64. */
+function base64Bytes(data: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What an attempt wrote to one stream, as the reporter keeps it: its chunks joined in order, the bytes read as UTF-8
+ * (one stream, so a character split across two chunks stays whole), bounded and with what may be a secret hidden
+ * (`boundTestOutput`). Null when it wrote nothing but white space.
+ */
+function testOutputOf(chunks: Array<string | Uint8Array>): string | null {
+  if (chunks.length === 0) return null;
+  const decoder = new TextDecoder();
+  let text = '';
+  for (const chunk of chunks) {
+    text += typeof chunk === 'string' ? decoder.decode() + chunk : decoder.decode(chunk, { stream: true });
+  }
+  return boundTestOutput(text + decoder.decode());
+}
+
 /** Assemble the error text for an execution, matching the reporter's rules. */
 function buildErrorText(errors: unknown, resolver: PathResolver): string | null {
   if (!Array.isArray(errors)) return null;
-  const text = joinErrorMessages(errors as Array<{ message?: string }>);
+  const text = joinErrorMessages(errors as Array<{ message?: string; value?: string }>);
   if (!text) return null;
 
   const location = errorLocation(locatedError(errors as Array<Record<string, unknown>>), resolver);
@@ -401,8 +453,12 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
   const planned = new Map<string, PlannedTest>();
   const results = new Map<string, ResultAccumulator>();
   const cases: ImportedRunCase[] = [];
-  /** Final status per test, in report order, to derive the flaky count. */
-  const attemptsByTest = new Map<string, string[]>();
+  const runErrors: WireRunError[] = [];
+  /** Each test's attempts in report order: the attempt history its cases carry, and the flaky count. */
+  const attemptsByTest = new Map<
+    string,
+    Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
+  >();
 
   let runStartTime: number | null = null;
   let runDuration: number | null = null;
@@ -427,12 +483,32 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         testId,
         retry: typeof result.retry === 'number' ? result.retry : 0,
         workerIndex: typeof result.workerIndex === 'number' ? result.workerIndex : null,
+        parallelIndex: workerLane(result.parallelIndex),
         startedAt: typeof result.startTime === 'number' ? result.startTime : null,
         rootSteps: [],
         stepsById: new Map(),
         traces: [],
         attachments: [],
+        stdout: [],
+        stderr: [],
       });
+      continue;
+    }
+
+    if (method === 'onStdIO') {
+      // Output written outside a test's attempt (no result) belongs to no execution.
+      const acc = typeof params.resultId === 'string' ? results.get(params.resultId) : undefined;
+      const stream = params.type === 'stdout' ? acc?.stdout : params.type === 'stderr' ? acc?.stderr : undefined;
+      if (!stream || typeof params.data !== 'string') continue;
+      const chunk = params.isBase64 === true ? base64Bytes(params.data) : params.data;
+      if (chunk !== null) stream.push(chunk);
+      continue;
+    }
+
+    if (method === 'onError') {
+      if (runErrors.length >= MAX_RUN_ERRORS) continue;
+      const error = runErrorOfReported(record(params.error), (file) => resolver.fromAbsolute(file));
+      if (error) runErrors.push(error);
       continue;
     }
 
@@ -460,6 +536,13 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const acc = resultId ? results.get(resultId) : undefined;
       const testId = typeof test.testId === 'string' ? test.testId : acc?.testId;
       if (!testId) continue;
+      // Archives written before Playwright 1.53 carry a result's attachments here, with no `onAttach` event: the whole
+      // list, which replaces what the result gathered, as Playwright's own merge reads it.
+      if (acc && Array.isArray(result.attachments)) {
+        acc.traces = [];
+        acc.attachments = [];
+        applyAttachments(acc, result.attachments);
+      }
 
       const plan = planned.get(testId);
       const annotations = mergeAnnotations(
@@ -467,13 +550,23 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         { annotations: result.annotations as TestAnnotation[] | undefined },
       );
       const rawStatus = String(result.status ?? 'failed');
-      const status = classifyStatus(rawStatus, annotations);
+      const expectedStatus = typeof test.expectedStatus === 'string' ? test.expectedStatus : null;
+      const status = classifyStatus(rawStatus, annotations, expectedStatus);
 
       const metrics = collectStepMetrics(acc?.rootSteps ?? [], resultErrors(result.errors, resolver));
       const stepEvents = [
         ...extractTestStepEvents(acc?.rootSteps ?? [], new Date(acc?.startedAt ?? 0)),
         ...extractWaitEvents(acc?.rootSteps ?? []),
       ];
+
+      const attempts = attemptsByTest.get(testId) ?? [];
+      attempts.push({
+        retry: acc?.retry ?? 0,
+        status,
+        duration: typeof result.duration === 'number' ? result.duration : 0,
+        startedAt: acc?.startedAt ?? null,
+      });
+      attemptsByTest.set(testId, attempts);
 
       cases.push({
         case: {
@@ -488,10 +581,12 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           timeout: typeof test.timeout === 'number' ? test.timeout : (plan?.timeout ?? null),
           // A `test.fail()` test that passed is now `failed` with no recorded
           // error; Playwright reports the same line, so synthesize it.
-          error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
-          expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
+          error:
+            expectedFailureError(rawStatus, annotations, expectedStatus) ?? buildErrorText(result.errors, resolver),
+          expectedStatus,
           retries: acc?.retry ?? 0,
           repeatEachIndex: plan?.repeatEachIndex ?? 0,
+          attempts: attempts.map((attempt) => ({ ...attempt })),
           line: plan?.line ?? null,
           column: plan?.column ?? null,
           steps: metrics.steps.length ? metrics.steps : null,
@@ -500,16 +595,15 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           slowestStepDuration: metrics.slowestStep?.duration ?? null,
           wastedTimeMs: metrics.waitTotalDuration,
           workerIndex: acc?.workerIndex ?? null,
+          parallelIndex: acc?.parallelIndex ?? null,
           startedAt: acc?.startedAt ?? null,
           browser: plan?.browser ?? null,
+          stdout: testOutputOf(acc?.stdout ?? []),
+          stderr: testOutputOf(acc?.stderr ?? []),
         },
         traces: acc?.traces ?? [],
         attachments: acc?.attachments ?? [],
       });
-
-      const attempts = attemptsByTest.get(testId) ?? [];
-      attempts.push(status);
-      attemptsByTest.set(testId, attempts);
 
       if (resultId) results.delete(resultId);
       continue;
@@ -548,7 +642,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       traces: [],
       attachments: [],
     });
-    attemptsByTest.set(testId, ['didnotrun']);
+    attemptsByTest.set(testId, [{ retry: 0, status: 'didnotrun', duration: 0, startedAt: null }]);
   }
 
   const shardConfig = config.shard as Record<string, unknown> | null | undefined;
@@ -561,22 +655,18 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     for (const entry of cases) entry.case.shardIndex = shard.current;
   }
 
-  const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
-  for (const entry of cases) {
-    if (entry.case.status === 'passed') counts.passed++;
-    else if (entry.case.status === 'timedOut') counts.timedOut++;
-    else if (entry.case.status === 'skipped') counts.skipped++;
-    else if (entry.case.status === 'didnotrun') counts.didNotRun++;
-    else counts.failed++;
-  }
-
-  // Flaky: an earlier attempt failed and the last one passed.
-  let flakyTests = 0;
-  for (const attempts of attemptsByTest.values()) {
-    if (attempts.length < 2) continue;
-    const last = attempts.at(-1);
-    if (last === 'passed' && attempts.slice(0, -1).some((s) => s === 'failed' || s === 'timedOut')) flakyTests++;
-  }
+  // One result per test, each `--repeat-each` repetition being a test of its own (a Playwright test id of its own),
+  // counted from its attempts as the stored rows of every run are (`distinctRunCountsFromAttempts`).
+  const counts = distinctRunCountsFromAttempts(
+    [...attemptsByTest.values()].flatMap((attempts, testCaseId) =>
+      attempts.map((attempt) => ({
+        testCaseId,
+        repeatEachIndex: 0,
+        retries: attempt.retry,
+        status: normalizeTestCaseStatus(attempt.status),
+      })),
+    ),
+  );
 
   const projectNames = [...new Set([...planned.values()].map((p) => p.projectName).filter(Boolean))];
 
@@ -586,16 +676,41 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     startTime: new Date(runStartTime && runStartTime > 0 ? runStartTime : Date.now()),
     duration: runDuration,
     status: runStatus,
-    totalTests: cases.length,
-    passedTests: counts.passed,
-    failedTests: counts.failed,
-    timedOutTests: counts.timedOut,
-    skippedTests: counts.skipped,
-    didNotRunTests: counts.didNotRun,
-    flakyTests,
+    totalTests: counts.totalTests,
+    passedTests: counts.passedTests,
+    failedTests: counts.failedTests,
+    skippedTests: counts.skippedTests,
+    didNotRunTests: counts.didNotRunTests,
+    flakyTests: counts.flakyTests,
     shard,
     projectNames,
     scm: readBlobScm(config.metadata),
+    runErrors,
+    runner: runnerFromUserAgent((metadataEvent?.params as Record<string, unknown> | undefined)?.userAgent, shard),
     cases,
+  };
+}
+
+/**
+ * The runner a blob report's user agent describes, as Playwright writes it in `onBlobReportMetadata`
+ * (`Playwright/1.56.0 (x64; ubuntu 24.04) node/24.3`, a CI suffix after it): its OS, architecture and Node.js
+ * version, marked imported. Null for any other shape.
+ */
+export function runnerFromUserAgent(
+  userAgent: unknown,
+  shard: { current: number } | null = null,
+): WireRunnerEnvironment | null {
+  if (typeof userAgent !== 'string') return null;
+  const match = userAgent.match(/^Playwright\/\S+ \(([^;()]+);\s*([^)]+)\)\s+node\/(\S+)/);
+  if (!match) return null;
+  const node = match[3]!;
+  return {
+    kind: 'runner',
+    v: 1,
+    shardIndex: shard?.current ?? null,
+    arch: match[1]!.trim(),
+    os: match[2]!.trim(),
+    nodeVersion: node.startsWith('v') ? node : `v${node}`,
+    imported: true,
   };
 }

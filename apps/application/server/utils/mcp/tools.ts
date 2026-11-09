@@ -1,4 +1,5 @@
-import { eq, and, desc, or, lt, gt, inArray } from 'drizzle-orm';
+import { eq, and, desc, or, lt, inArray } from 'drizzle-orm';
+import { notPrivateExecution, notPrivateRun } from '#shared/run-eligibility';
 import {
   listProjects,
   getProjectFlakyTests,
@@ -9,6 +10,7 @@ import {
 } from '#shared/handlers/projects';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { workerNumber } from '#shared/worker-lane';
 import { describeProjectRunScope } from '#shared/project-run-scope';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
@@ -35,9 +37,11 @@ import {
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { sanitizeRunErrors } from '@piwitests/core/run-errors';
+import { boundTestOutput } from '@piwitests/core/test-output';
 import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
-import { storedPatchValidation } from '#shared/patch';
+import { PATCH_TRUNCATED_NOTE, storedPatchValidation } from '#shared/patch';
 import { parseFixAttempt } from '#shared/fix-attempts';
 import type { LatestExecution } from '#shared/latest-execution';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
@@ -60,7 +64,16 @@ import {
   quarantineClusterTests,
   releaseClusterTests,
 } from '#shared/handlers/failure-clusters';
-import { BULK_TRIAGE_MAX, clusterInQueue, isInboxQueue, isSnoozeOption, parseBulkIds } from '#shared/inbox-queues';
+import {
+  BULK_TRIAGE_MAX,
+  CLUSTER_STATUSES,
+  clusterInQueue,
+  inboxIdentity,
+  isClusterStatus,
+  isInboxQueue,
+  isSnoozeOption,
+  parseBulkIds,
+} from '#shared/inbox-queues';
 import {
   getSuggestionProjectId,
   pendingSuggestionsForCluster,
@@ -141,6 +154,8 @@ import { getLocatorIndex } from '../locator-usages';
 
 /** The largest diff `predict_locator_breaks` and `get_impacted_tests` read, in characters. */
 const MAX_DIFF_CHARS = 2_000_000;
+/** The patch text `get_repo_diff` answers with, all files together. */
+const MAX_REPO_DIFF_PATCH_CHARS = 200_000;
 /** Changed files `get_impacted_tests` lists, and tests per file. */
 const MAX_IMPACT_FILES = 50;
 const MAX_IMPACT_FILE_TESTS = 20;
@@ -148,9 +163,9 @@ const MAX_IMPACT_FILE_TESTS = 20;
 const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
-import { inlineCasePayloads } from '../case-payloads';
+import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
-import { failurePageScreenshot } from '#shared/file-classify';
+import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
@@ -201,7 +216,7 @@ import { stat, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, basename } from 'node:path';
 import { importArchive } from '../import-archive';
 import { sanitizeFilename } from '../sanitize-filename';
-import { resolveMaxUploadBytes } from '../upload-limits';
+import { resolveMaxImportBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { dropNulls } from './json';
 import { describePiwi, getReleaseNotes } from './about-piwi';
@@ -212,10 +227,45 @@ import {
   uniqueCoverageSummary,
 } from './coverage-tools';
 import { parseImpactChanges, resolveImpact } from '../selection-impact';
+import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
+import { loadRunEnvironments } from '#shared/handlers/environment-snapshots';
+import { BROWSER_FIELDS, RUNNER_FIELDS, SERVER_FIELDS, type EnvironmentField } from '#shared/environment-snapshots';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
+
+/**
+ * The run's environment snapshots for `get_run`, compared fields only: each shard's runner, each project's browser,
+ * each server under test with its clock offset and whether it restarted. Null when the run recorded none.
+ */
+async function mcpRunEnvironments(db: DbClient, runId: number) {
+  const env = await loadRunEnvironments(db, runId);
+  if (!env.runner.length && !env.browser.length && !env.server.length) return null;
+  const compact = (snapshot: object, fields: readonly EnvironmentField[], extra: Record<string, unknown> = {}) =>
+    dropNulls({
+      ...extra,
+      ...Object.fromEntries(
+        fields
+          .filter((f) => !f.informational)
+          .map((f) => [f.key, (snapshot as Record<string, unknown>)[f.key] ?? null]),
+      ),
+    });
+  return dropNulls({
+    runner: env.runner.map((r) => compact(r, RUNNER_FIELDS, { shard: r.shardIndex ?? null })),
+    browser: env.browser.map((b) => compact(b, BROWSER_FIELDS, { project: b.project, shard: b.shardIndex ?? null })),
+    server: env.server.map((s) =>
+      compact(s, SERVER_FIELDS, {
+        origin: s.origin,
+        clockOffsetMs: s.clockOffsetMs ?? null,
+        restarted: s.restarted || null,
+      }),
+    ),
+  });
+}
+
+/** The most characters of each stream an execution wrote that `get_test_run_case` returns: its first and last lines. */
+const MCP_OUTPUT_CHARS = 8000;
 
 function trunc(s: string | null | undefined, max = 300): string | null {
   if (!s) return null;
@@ -239,6 +289,24 @@ function compactBrowser(browser: unknown): string | null {
   const b = browser as BrowserConfig | null;
   if (!b) return null;
   return [b.projectName, b.browserName].filter(Boolean).join('/') || null;
+}
+
+/**
+ * The worker an execution ran on, as a tool reports it: `worker`, its lane from 1 (`Worker 2` on the run page), its
+ * shard in a sharded run, and Playwright's `workerIndex`, the worker process, which tells two tests of one lane apart
+ * across a restart. A result that carries no lane (an older reporter's) has no `worker`.
+ */
+function executionWorker(row: {
+  workerIndex: number | null;
+  parallelIndex: number | null;
+  shardIndex: number | null;
+}): { worker?: number; workerIndex?: number | null; shardIndex: number | null } {
+  const worker = workerNumber(row.parallelIndex);
+  return {
+    ...(worker !== null ? { worker } : {}),
+    workerIndex: row.workerIndex ?? null,
+    shardIndex: row.shardIndex ?? null,
+  };
 }
 
 /** Project the deterministic clues into the compact shape MCP tools return. */
@@ -327,10 +395,10 @@ async function checkEntityScope<T extends number | { projectId: number }>(
   db: DbClient,
   ctx: McpContext,
   id: number,
-  resolve: (db: DbClient, id: number) => Promise<T | null>,
+  resolve: (db: DbClient, id: number, viewerId: number | null) => Promise<T | null>,
   permission?: ProjectPermission,
 ): Promise<T | 'not-found'> {
-  const found = await resolve(db, id);
+  const found = await resolve(db, id, ctx.user?.id ?? null);
   if (found == null) return 'not-found';
   const projectId = typeof found === 'number' ? found : found.projectId;
   assertProject(ctx, projectId);
@@ -468,7 +536,7 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
 // ── Tool handlers ────────────────────────────────────────────────────────────
 //
 // Keyed by tool name. The catalog (name/description/inputSchema) lives in
-// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
+// `shared/mcp-tools.ts` so both this server and `app/pages/settings/mcp.vue` render the
 // same list; here we attach the DB-backed behavior. The record is keyed by
 // `McpToolName` (derived from MCP_TOOL_DEFS), so TypeScript rejects a handler
 // whose name isn't a declared tool, and a declared tool with no handler.
@@ -511,7 +579,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return null;
 
-    const conditions = [eq(testRuns.projectId, id)];
+    const conditions = [eq(testRuns.projectId, id), notPrivateRun()];
     if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
 
     const runRows = await db
@@ -573,7 +641,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const statusFilter = params.status as string | undefined;
     const branchFilter = params.branch as string | undefined;
 
-    const conditions = [eq(testRuns.projectId, projectId)];
+    const conditions = [eq(testRuns.projectId, projectId), notPrivateRun()];
     if (statusFilter) conditions.push(eq(testRuns.status, statusFilter));
     // Branch is a scalar column indexed on (project_id, branch, start_time), so
     // the filter is a plain equality served by the database — no over-fetch.
@@ -628,6 +696,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const statusFilter = (params.statusFilter as string) || 'failed';
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
+    if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
     // Slim run-summary select — counts come from denormalized columns, so we
     // never load every case just to summarize the run.
@@ -650,6 +719,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         metadata: testRuns.metadata,
         playwrightVersion: testRuns.playwrightVersion,
         reporterVersion: testRuns.reporterVersion,
+        runErrors: testRuns.runErrors,
       })
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
@@ -661,7 +731,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // JSON) are never loaded just to be discarded.
     const caseConditions = [eq(testRunsCases.testRunId, runId)];
     if (statusFilter === 'flaky') {
-      caseConditions.push(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0))!);
+      caseConditions.push(flakyResultSql());
     } else if (statusFilter !== 'all') {
       caseConditions.push(inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]));
     }
@@ -677,10 +747,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: testRunsCases.status,
         duration: testRunsCases.duration,
         retries: testRunsCases.retries,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
         error: testRunsCases.error,
         clusterId: testRunsCases.failureClusterId,
         browser: testRunsCases.browser,
         workerIndex: testRunsCases.workerIndex,
+        parallelIndex: testRunsCases.parallelIndex,
+        shardIndex: testRunsCases.shardIndex,
         line: testRunsCases.line,
       })
       .from(testRunsCases)
@@ -699,10 +772,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: c.status,
         duration: c.duration,
         retries: c.retries || null,
+        passedAfterFailure: c.passedAfterFailure || null,
         error: trunc(c.error, 400),
         clusterId: c.clusterId || null,
         browser: compactBrowser(c.browser),
-        worker: c.workerIndex ?? null,
+        ...executionWorker(c),
         line: c.line || null,
       }),
     );
@@ -728,6 +802,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       commit: meta?.scm?.commit?.slice(0, 8) || null,
       playwrightVersion: run.playwrightVersion || null,
       reporterVersion: run.reporterVersion || null,
+      runErrors: (sanitizeRunErrors(run.runErrors) ?? []).map((e) =>
+        dropNulls({
+          message: trunc(e.message, 400),
+          stack: trunc(e.stack, 400),
+          filePath: e.location?.file ?? null,
+          line: e.location?.line ?? null,
+          column: e.location?.column ?? null,
+        }),
+      ),
+      environments: await mcpRunEnvironments(db, run.id),
       cases: paged.items,
       nextCursor: paged.nextCursor,
       filter: statusFilter,
@@ -742,7 +826,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const cursor = numericCursor(params.cursor);
     const runId = params.runId ? numericParam(params.runId, 'runId') : undefined;
 
-    const conditions = [eq(testRuns.projectId, projectId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])];
+    const conditions = [
+      eq(testRuns.projectId, projectId),
+      notPrivateRun(),
+      inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]),
+    ];
     if (runId) conditions.push(eq(testRunsCases.testRunId, runId));
     if (cursor) conditions.push(lt(testRunsCases.id, cursor));
 
@@ -842,12 +930,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
 
-    const tc = (await getTestCase(db, id)) as any;
+    const tc = (await getTestCase(db, id, ctx.user?.id ?? null)) as any;
     if (!tc) return null;
     if (tc.project?.id != null) assertProject(ctx, tc.project.id);
 
     // Fetch executions with cursor pagination
-    const execConditions = [eq(testRunsCases.testCaseId, id)];
+    const execConditions = [eq(testRunsCases.testCaseId, id), notPrivateExecution(testRunsCases.testRunId)];
     if (cursor) execConditions.push(lt(testRunsCases.id, cursor));
 
     const execRows = tc.recentExecutions
@@ -858,6 +946,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             status: testRunsCases.status,
             duration: testRunsCases.duration,
             retries: testRunsCases.retries,
+            passedAfterFailure: testRunsCases.passedAfterFailure,
             error: testRunsCases.error,
             startedAt: testRunsCases.startedAt,
           })
@@ -874,6 +963,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: e.status,
         duration: e.duration,
         retries: e.retries || null,
+        passedAfterFailure: e.passedAfterFailure || null,
         error: trunc(e.error, 400),
         startedAt: iso(e.startedAt),
       }),
@@ -1163,7 +1253,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const allRows = await selectCaseScreenshots(db, id);
     if (allRows.length === 0) return { items: [] };
-    const atFailure = failurePageScreenshot(allRows, (r) => r.subtype);
+    const [execution] = await db
+      .select({ status: testRunsCases.status })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.id, id))
+      .limit(1);
+    const atFailure = failurePageScreenshot(allRows, (r) => r.subtype, { failed: executionFailed(execution?.status) });
     const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();
@@ -1211,8 +1306,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!clusterRow) return null;
     assertProject(ctx, clusterRow.projectId);
 
-    const baseCommit = params.baseCommit as string | undefined;
-    const selectedCommitShas = params.selectedCommitShas as string[] | undefined;
+    const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
+    const selectedCommitShas = Array.isArray(params.selectedCommitShas)
+      ? params.selectedCommitShas.filter((sha): sha is string => typeof sha === 'string')
+      : undefined;
 
     const { text, coverage, images } = await buildClusterDiagnosisContext(db, clusterRow, {
       baseCommit,
@@ -1241,6 +1338,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             filesCount: coverage.scm.filesCount || null,
             patchedFilesCount: coverage.scm.patchedFilesCount || null,
             patchesOmitted: coverage.scm.patchesOmitted || null,
+            patchesTruncated: coverage.scm.patchesTruncated || null,
+            filesTruncated: coverage.scm.filesTruncated || null,
+            totalChangedFiles: coverage.scm.totalChangedFiles ?? null,
+            commitsTruncated: coverage.scm.commitsTruncated || null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
             range: coverage.scm.range ? `${coverage.scm.range.from}..${coverage.scm.range.to}` : null,
             compareUrl: coverage.scm.compareUrl || null,
@@ -1317,6 +1418,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const want = (k: string) => include === null || include.has(k);
 
     const evidence = want('aria') || want('source') ? await inlineCasePayloads(db, row) : row;
+    const output = want('output') ? await caseOutput(db, row) : null;
 
     // Deterministic clues ride alongside the error unless the caller opts out.
     const clues = want('clues') ? await getFailureClues(db, id).catch(() => null) : null;
@@ -1329,13 +1431,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       status: row.status,
       duration: row.duration,
       retries: row.retries || null,
+      passedAfterFailure: row.passedAfterFailure || null,
       headline: caseHeadline(row)?.headline ?? null,
       error: row.error, // full, untruncated
       clues: clues ? compactClues(clues) : null,
       clusterId: row.failureClusterId || null,
       line: row.line || null,
       column: row.column || null,
-      workerIndex: row.workerIndex ?? null,
+      ...executionWorker(row),
       browser: compactBrowser(row.browser),
       steps: want('steps') ? row.steps : null,
       stepEvents: want('steps') ? row.stepEvents : null,
@@ -1345,6 +1448,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       webVitals: want('webVitals') ? row.webVitals : null,
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
+      stdout: output?.stdout ? boundTestOutput(stripAnsi(output.stdout), MCP_OUTPUT_CHARS) : null,
+      stderr: output?.stderr ? boundTestOutput(stripAnsi(output.stderr), MCP_OUTPUT_CHARS) : null,
       testAnnotations: row.testAnnotations,
       locks: Array.isArray(row.locks) && row.locks.length ? (row.locks as string[]) : null,
       startedAt: iso(row.startedAt),
@@ -1360,7 +1465,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     // Restrict the cross-project feed to the caller's assigned projects.
     if (ctx.scope !== 'all' && ctx.scope.size === 0) return { items: [], nextCursor: null };
-    const conditions = cursor ? [lt(testRuns.startTime, new Date(cursor))] : [];
+    const conditions = [notPrivateRun()];
+    if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
     if (ctx.scope !== 'all') conditions.push(inArray(testRuns.projectId, [...ctx.scope]));
 
     const rows = await db
@@ -1432,7 +1538,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_repo_diff(db, params, ctx) {
     const projectId = numericParam(params.projectId, 'projectId');
     assertProject(ctx, projectId);
-    const sha = (params.sha as string)?.trim();
+    const sha = typeof params.sha === 'string' ? params.sha.trim() : '';
     if (!sha) return { error: 'sha is required' };
 
     const repoUrl = await readProjectRepositoryUrl(db, projectId);
@@ -1444,21 +1550,37 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     try {
       const changes = await provider.fetchCommitDiff(sha);
       if (!changes) return { error: 'Diff unavailable for this commit' };
+      // One budget for every patch of the answer: past it, a patch is cut and the next ones are left out.
+      let budget = MAX_REPO_DIFF_PATCH_CHARS;
+      let patchesTruncated = false;
+      const files = changes.files.map((f) => {
+        let patch: string | null = f.patch || null;
+        if (patch?.endsWith(PATCH_TRUNCATED_NOTE)) patchesTruncated = true;
+        if (patch && patch.length > budget) {
+          patch = budget > 0 ? `${patch.slice(0, budget)}\n${PATCH_TRUNCATED_NOTE}` : null;
+          patchesTruncated = true;
+        }
+        budget -= Math.min(budget, f.patch?.length ?? 0);
+        return dropNulls({
+          filename: f.filename,
+          previousFilename: f.previousFilename ?? null,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch,
+        });
+      });
+      const commit = changes.commits[0];
       return dropNulls({
         commit: sha,
-        files: changes.files.map((f) =>
-          dropNulls({
-            filename: f.filename,
-            status: f.status,
-            additions: f.additions,
-            deletions: f.deletions,
-            patch: f.patch || null,
-          }),
-        ),
+        message: commit?.fullMessage ?? commit?.message ?? null,
+        files,
+        filesTruncated: changes.filesTruncated || null,
         patchesOmitted: changes.patchesOmitted || null,
+        patchesTruncated: patchesTruncated || null,
       });
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: trunc(err instanceof Error ? err.message : String(err), 400) };
     }
   },
 
@@ -1496,7 +1618,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       slowestTests: cap(r.slowestTests),
       mostImproved: cap(r.mostImproved),
       mostRegressed: cap(r.mostRegressed),
-      workerImbalance: r.workerImbalance,
+      workerImbalance: r.workerImbalance.map((w) => dropNulls(w)),
       workerImbalanceWarning: r.workerImbalanceWarning || null,
       flakyOnRetry: cap(r.flakyOnRetry),
       clusterNew: cap(r.clusterNew),
@@ -1770,6 +1892,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
                   testCaseId: c.testCaseId,
                   title: c.title,
                   filePath: c.filePath,
+                  ...executionWorker(c),
                 }),
               )
             : null,
@@ -1967,7 +2090,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
     }
     const entityId = numericParam(params.entityId, 'entityId');
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'issue:create', projectId);
@@ -1981,6 +2104,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const draft = await buildIssueDraft(db, entityType, entityId, { include, locale, siteUrl });
     if (!draft) throw new Error('No Jira connection is configured');
+    // One issue per cluster: an execution with no failure cluster is filed from the dashboard.
+    if (entityType === 'test_runs_case' && draft.clusterId == null) {
+      throw new Error("This execution belongs to no failure cluster: file its issue from the execution's page");
+    }
 
     // Already tracked: hand back the existing issue rather than filing a second.
     if (draft.existing.length) {
@@ -2284,7 +2411,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // the same axis as the emitted cursor.
     const queue = params.queue as string | undefined;
     if (queue && isInboxQueue(queue) && queue !== 'all') {
-      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const user = inboxIdentity(ctx.user);
       const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
       const mappedQueue = enriched
         .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))
@@ -2358,7 +2485,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── explain_failure ────────────────────────────────────────────────────────
   async explain_failure(db, params, ctx) {
     const id = numericParam(params.executionId, 'executionId');
-    const projectId = await resolveTestRunCaseProjectId(db, id);
+    const projectId = await resolveTestRunCaseProjectId(db, id, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
 
@@ -2453,8 +2580,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
     const status = String(params.status ?? '');
-    if (!['open', 'resolved', 'ignored'].includes(status)) {
-      throw new Error('status must be one of: open, resolved, ignored');
+    if (!isClusterStatus(status)) {
+      throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
     }
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
@@ -2553,8 +2680,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     let apply: (allowed: number[]) => Promise<{ updated: number; tests?: number; changed?: number }>;
     if (action === 'status') {
       const status = String(params.status ?? '');
-      if (!['open', 'resolved', 'ignored'].includes(status)) {
-        throw new Error('status must be one of: open, resolved, ignored');
+      if (!isClusterStatus(status)) {
+        throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
       }
       const note = typeof params.note === 'string' && params.note.trim() ? params.note : null;
       apply = async (allowed) => {
@@ -2816,7 +2943,13 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
     if (!parsed.ok) throw new Error(parsed.message);
     const id = target.scope === 'cluster' ? target.clusterId : target.executionId;
-    const resolved = await checkEntityScope(db, ctx, id, (db) => resolveAgentDiagnosisTarget(db, target), 'ai:run');
+    const resolved = await checkEntityScope(
+      db,
+      ctx,
+      id,
+      (db, _id, viewerId) => resolveAgentDiagnosisTarget(db, target, viewerId),
+      'ai:run',
+    );
     if (resolved === 'not-found') return null;
     const result = await recordAgentDiagnosisOn(db, target, parsed.value, mcpActor(ctx), resolved);
     if (!result.ok) {
@@ -2884,7 +3017,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     }
     const { entityType, entityId } = validation.data;
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
@@ -2913,7 +3046,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     }
     const { entityType, entityId, url } = validation.data;
-    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, ctx.user?.id ?? null);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
     assertPermission(ctx, 'link:write', projectId);
@@ -3035,7 +3168,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
     const limit = params.limit != null ? clampPageSize(params.limit) : 20;
 
-    // A muted detector's gaps come after every other, as on the Gaps tab.
+    // A muted detector's gaps come after every other, as in the Gaps view.
     let gaps = await listScenarioGaps(db, projectId, {
       class: gapClass,
       minScore,
@@ -3485,7 +3618,7 @@ const DESKTOP_HANDLERS: Record<DesktopMcpToolName, McpToolHandler> = {
       throw new Error(`file not found: ${path}`);
     }
     if (!info.isFile()) throw new Error('not a file');
-    const maxBytes = resolveMaxUploadBytes();
+    const maxBytes = resolveMaxImportBytes();
     if (info.size > maxBytes) throw new Error(`archive too large (max ${formatBytes(maxBytes)})`);
 
     const data = await readFile(path);

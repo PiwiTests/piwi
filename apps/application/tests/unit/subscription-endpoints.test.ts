@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { passesSubscriptionFilters, type RunFinishedPayload } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import {
+  NAME_PATTERN_LIMITS,
+  NAME_PATTERNS_TOTAL_LIMIT,
+  subscriptionFiltersSchema,
+} from '#shared/subscription-filters';
 import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -150,5 +154,66 @@ describe('PATCH /api/subscriptions/:id filters', () => {
 describe('subscriptionFiltersSchema', () => {
   test('drops keys that are not delivery filters', () => {
     expect(subscriptionFiltersSchema.parse({ owners: ['a'], unknown: 1 })).toEqual({ owners: ['a'] });
+  });
+});
+
+describe('subscription input bounds', () => {
+  const patch = (id: number, body: unknown) => updateSubscription({ params: { id: String(id) }, body });
+  const createDigest = (digestAt: string) =>
+    createSubscription({ body: { channelId, events: ['run.failed'], mode: 'digest', digestAt } });
+
+  test('takes a digest time only as a time of day', async () => {
+    await expect(createDigest('23:59')).resolves.toBeTruthy();
+    await expect(createDigest('9:05')).resolves.toBeTruthy();
+    for (const digestAt of ['99:99', '24:00', '12:60', '7']) {
+      await expect(createDigest(digestAt)).rejects.toMatchObject({ statusCode: 400 });
+    }
+    const { subscription } = await createDigest('08:30');
+    await expect(patch(subscription.id, { digestAt: '25:00' })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test('refuses filter lists and values past their caps', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => `team-${i}`);
+    await expect(create({ owners: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ branches: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ statuses: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ environments: ['x'.repeat(257)] })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ owners: many.slice(0, 100) })).resolves.toBeTruthy();
+  });
+
+  test('refuses a branch or environment pattern over 200 characters or 10 "*", saying so', async () => {
+    const refused = { statusCode: 400, message: NAME_PATTERN_LIMITS };
+    await expect(create({ branches: ['b'.repeat(201)] })).rejects.toMatchObject(refused);
+    await expect(create({ environments: [`${'*e'.repeat(11)}!`] })).rejects.toMatchObject(refused);
+    await expect(create({ branches: ['b'.repeat(200), `${'*e'.repeat(10)}`] })).resolves.toBeTruthy();
+    const { subscription } = await create({ branches: ['main'] });
+    await expect(
+      updateSubscription({
+        params: { id: String(subscription.id) },
+        body: { filters: { branches: ['*'.repeat(11)] } },
+      }),
+    ).rejects.toMatchObject(refused);
+  });
+
+  test('refuses branch and environment patterns over 2,000 characters together, saying so', async () => {
+    const refused = { statusCode: 400, message: NAME_PATTERNS_TOTAL_LIMIT };
+    // Patterns of 200 characters each.
+    const patterns = (count: number, prefix: string) =>
+      Array.from({ length: count }, (_, i) => `${prefix}${i}-*`.padEnd(200, 'x'));
+    await expect(create({ branches: patterns(10, 'b') })).resolves.toBeTruthy();
+    await expect(create({ branches: patterns(6, 'b'), environments: patterns(5, 'e') })).rejects.toMatchObject(refused);
+    const { subscription } = await create({ branches: ['main'] });
+    await expect(
+      updateSubscription({
+        params: { id: String(subscription.id) },
+        body: { filters: { branches: patterns(5, 'b'), environments: patterns(6, 'e') } },
+      }),
+    ).rejects.toMatchObject(refused);
+    expect(await storedFilters(subscription.id)).toEqual({ branches: ['main'] });
+  });
+
+  test('refuses an event list longer than the events there are', async () => {
+    const events = Array.from({ length: 1000 }, () => 'run.failed');
+    await expect(createSubscription({ body: { channelId, events } })).rejects.toMatchObject({ statusCode: 400 });
   });
 });

@@ -13,6 +13,7 @@ import {
 } from '../../server/database/schema';
 import { projectRouteOrigins, runBaseUrls, urlOrigin } from '#shared/graph';
 import type { DrizzleDB } from './db';
+import { notPrivateRun } from '../run-eligibility';
 
 /**
  * A project's URL patterns: the addresses its application is served at, which
@@ -249,7 +250,7 @@ async function suggestionRunIds(db: DrizzleDB, projectId: number): Promise<numbe
   const recent = await db
     .select({ id: testRuns.id, environment: testRuns.environment })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(SUGGESTION_RUN_WINDOW);
   const perEnvironment = new Map<string, number>();

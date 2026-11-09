@@ -33,7 +33,7 @@ export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish' | 'en
  * attempt, the call and its locator, and its buttons (Record here when the editor can record, End the test when the
  * test can end there). The choice lands in
  * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes, but in a
- * dialog, a menu or an open popup of the page. The page under the bar stays live.
+ * dialog, a menu or an open popup of the page, and while the bar is inert. The page under the bar stays live.
  * Must stay fully self-contained.
  */
 export function showPauseBar(arg: PauseBarArg): void {
@@ -90,7 +90,8 @@ export function showPauseBar(arg: PauseBarArg): void {
     }
   };
   const onKey = (e: any) => {
-    if (e.key !== 'Escape' || pageTakesEscape(e)) return;
+    // An inert bar takes no key: Escape is the page's then.
+    if (e.key !== 'Escape' || bar.inert || pageTakesEscape(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     done('resume');

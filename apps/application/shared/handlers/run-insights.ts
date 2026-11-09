@@ -7,10 +7,16 @@ import { listBaselineBranches, selectBaselineRun } from '../../server/utils/bran
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
-import { finalAttempts, testKey, testOutcomes } from '../utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '../utils/test-counts';
+import { passRatePercent } from '../utils/pass-rate';
 import { notLabRun } from './probes';
+import { isVisibleRun } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
+import { liveWorkerName } from '#shared/live-view';
+import { workerKey, workerNumber } from '#shared/worker-lane';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { comparableSnapshots, disagreeingFields } from '#shared/environment-snapshots';
 
 interface TestCaseEntry {
   executionId: number;
@@ -52,6 +58,18 @@ export interface InsightsEarlierRun {
 /** How the baseline was picked: the automatic ladder, a run, or a base branch someone chose. */
 export type InsightsBaselineSource = 'auto' | 'run' | 'branch';
 
+/**
+ * How many test results one worker ran, within the shard `shardIndex` names in a sharded run (null otherwise):
+ * `worker` is its lane from 1 as the run page names it (`Worker 2`), whichever processes Playwright started in it; a
+ * result without a lane, from an older reporter, counts under its worker process, `workerIndex`, and `worker` is null.
+ */
+export interface WorkerTestCount {
+  worker: number | null;
+  workerIndex: number | null;
+  shardIndex: number | null;
+  count: number;
+}
+
 /** How many earlier runs the Changes tab offers to compare with. */
 const EARLIER_RUN_LIMIT = 50;
 
@@ -78,12 +96,16 @@ export interface RunInsightsResult {
   newFailures: number;
   commitRange: CommitRange | null;
   metadataDiff: MetaDiffEntry[];
+  /** The runner fields this run's shards disagree on (another time zone, another image), by label. */
+  shardDisagreement: string[];
   totalTests: number;
   passedTests: number;
   failedTests: number;
-  passRate: number;
-  baselinePassRate: number;
-  passRateDelta: number;
+  /** Whole percent (`passRatePercent`); null when no test passed or failed. */
+  passRate: number | null;
+  baselinePassRate: number | null;
+  /** Points this run's pass rate is above the baseline's; null when either has none. */
+  passRateDelta: number | null;
   avgDurationDelta: number | null;
   newRegressions: TestCaseEntry[];
   recurrences: TestCaseEntry[];
@@ -92,7 +114,8 @@ export interface RunInsightsResult {
   slowestTests: Array<{ executionId: number; title: string; filePath: string; duration: number }>;
   mostImproved: PerfChangeEntry[];
   mostRegressed: PerfChangeEntry[];
-  workerImbalance: Array<{ workerIndex: number; count: number }>;
+  workerImbalance: WorkerTestCount[];
+  /** Names the busiest worker and the least busy one when it ran at least 1.5 times as many tests. */
   workerImbalanceWarning: string | null;
   flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }>;
   clusterNew: Array<{
@@ -132,25 +155,28 @@ export async function computeRunInsights(
   const run = runResults[0];
   if (!run) throw new Error('Run not found');
 
-  // The run's test results, one row per (test case, browser, repetition): its final attempt.
-  const currentCases: any[] = finalAttempts(
-    await db
-      .select({
-        id: testRunsCases.id,
-        testCaseId: testRunsCases.testCaseId,
-        browserName: testRunsCases.browserName,
-        repeatEachIndex: testRunsCases.repeatEachIndex,
-        status: testRunsCases.status,
-        duration: testRunsCases.duration,
-        retries: testRunsCases.retries,
-        workerIndex: testRunsCases.workerIndex,
-        title: testCases.title,
-        filePath: testCases.filePath,
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(eq(testRunsCases.testRunId, runId)),
-  );
+  // The run's attempts; its test results are their final attempts, one per (test case, browser, repetition).
+  const currentRows: any[] = await db
+    .select({
+      id: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
+      workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
+      title: testCases.title,
+      filePath: testCases.filePath,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, runId));
+  const currentCases = finalAttempts(currentRows);
+  const currentFlaky = flakyFinalAttempts(currentRows);
 
   // The baseline ladder: a passing full run in this run's environment, on its
   // own branch, else on the branch it forked from (the pull request's target
@@ -209,7 +235,8 @@ export async function computeRunInsights(
   let baselineMatch: RunBaselineMatch | null = null;
   if (options?.baselineId != null && options.baselineId !== runId) {
     const [picked] = await db.select().from(testRuns).where(eq(testRuns.id, options.baselineId));
-    if (picked && picked.projectId === run.projectId) {
+    // A private run is never a baseline: the page that picks one is read by the whole project.
+    if (picked && picked.projectId === run.projectId && isVisibleRun(picked, null)) {
       baselineRun = picked as TestRun;
       baselineSource = 'run';
     }
@@ -242,12 +269,13 @@ export async function computeRunInsights(
     newFailures: 0,
     commitRange: null,
     metadataDiff: [],
+    shardDisagreement: [],
     totalTests: 0,
     passedTests: 0,
     failedTests: 0,
-    passRate: 0,
-    baselinePassRate: 0,
-    passRateDelta: 0,
+    passRate: null,
+    baselinePassRate: null,
+    passRateDelta: null,
     avgDurationDelta: null,
     newRegressions: [],
     recurrences: [],
@@ -262,23 +290,30 @@ export async function computeRunInsights(
     clusterNew: [],
   };
 
-  if (!baselineRun) return empty;
+  // Shards that disagree say so whether or not a baseline exists.
+  const snapshots = await loadRunsSnapshots(db, baselineRun ? [baselineRun.id, run.id] : [run.id]);
+  const currentSnapshots = snapshots.get(run.id) ?? [];
+  const shardDisagreement = disagreeingFields(
+    comparableSnapshots(currentSnapshots).filter((s) => s.kind === 'runner'),
+  ).map((f) => f.label);
+  if (!baselineRun) return { ...empty, shardDisagreement };
 
-  const baselineCases: any[] = finalAttempts(
-    await db
-      .select({
-        testCaseId: testRunsCases.testCaseId,
-        browserName: testRunsCases.browserName,
-        repeatEachIndex: testRunsCases.repeatEachIndex,
-        status: testRunsCases.status,
-        duration: testRunsCases.duration,
-        retries: testRunsCases.retries,
-      })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, baselineRun.id)),
-  );
+  const baselineRows: any[] = await db
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
+    })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testRunId, baselineRun.id));
+  const baselineCases = finalAttempts(baselineRows);
+  const baselineFlaky = flakyFinalAttempts(baselineRows);
   // Each test is compared with the baseline through its outcome in either run, whatever their repetitions.
-  const baselineByTest = new Map<string, any>(testOutcomes(baselineCases).map((bc) => [testKey(bc), bc]));
+  const baselineByTest = new Map<string, any>(testOutcomes(baselineRows).map((bc) => [testKey(bc), bc]));
 
   const newRegressions: TestCaseEntry[] = [];
   const recurrences: TestCaseEntry[] = [];
@@ -287,7 +322,7 @@ export async function computeRunInsights(
   const flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }> = [];
   const perfChanges: PerfChangeEntry[] = [];
 
-  for (const cc of testOutcomes(currentCases)) {
+  for (const cc of testOutcomes(currentRows)) {
     const bc = baselineByTest.get(testKey(cc));
 
     // Status changes
@@ -306,8 +341,8 @@ export async function computeRunInsights(
 
     // Flaky detection
     if (bc) {
-      const wasStable = (bc.retries ?? 0) === 0 && bc.status === 'passed';
-      const isNowFlaky = (cc.retries ?? 0) > 0 && cc.status === 'passed';
+      const wasStable = bc.status === 'passed' && !baselineFlaky.has(bc);
+      const isNowFlaky = currentFlaky.has(cc);
       if (wasStable && isNowFlaky) {
         newFlaky.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       }
@@ -331,10 +366,10 @@ export async function computeRunInsights(
     }
   }
 
-  // Flaky on retry (passed but had retries): once per test, with the repetition that needed the most retries
+  // Flaky on retry (passed after an earlier attempt failed): once per test, with the repetition that needed the most retries
   const flakyByTest = new Map<string, (typeof flakyOnRetry)[number]>();
   for (const cc of currentCases) {
-    if (cc.status !== 'passed' || (cc.retries ?? 0) === 0) continue;
+    if (!currentFlaky.has(cc)) continue;
     const known = flakyByTest.get(testKey(cc));
     if (!known || (cc.retries ?? 0) > known.retries) {
       flakyByTest.set(testKey(cc), {
@@ -351,12 +386,13 @@ export async function computeRunInsights(
   const totalTests = currentCases.length;
   const passedTests = currentCases.filter((c: any) => c.status === 'passed').length;
   const failedTests = currentCases.filter((c: any) => FAIL_STATUSES.has(c.status)).length;
-  const passRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
+  const passRate = passRatePercent({ passed: passedTests, failed: failedTests });
 
-  const baselineTotal = baselineCases.length;
-  const baselinePassed = baselineCases.filter((bc: any) => bc.status === 'passed').length;
-  const baselinePassRate = baselineTotal > 0 ? Math.round((baselinePassed / baselineTotal) * 100) : 0;
-  const passRateDelta = passRate - baselinePassRate;
+  const baselinePassRate = passRatePercent({
+    passed: baselineCases.filter((bc: any) => bc.status === 'passed').length,
+    failed: baselineCases.filter((bc: any) => FAIL_STATUSES.has(bc.status)).length,
+  });
+  const passRateDelta = passRate !== null && baselinePassRate !== null ? passRate - baselinePassRate : null;
 
   // Average duration change across all comparable passing tests
   const avgDurationDelta =
@@ -382,28 +418,40 @@ export async function computeRunInsights(
     .sort((a, b) => a.pctChange - b.pctChange)
     .slice(0, 10);
 
-  // Worker imbalance
-  const workerCounts = new Map<number, number>();
+  // Worker imbalance: test results per worker, a lane in its shard
+  const workerCounts = new Map<string, WorkerTestCount>();
   for (const cc of currentCases) {
-    if (cc.workerIndex != null) {
-      workerCounts.set(cc.workerIndex, (workerCounts.get(cc.workerIndex) ?? 0) + 1);
+    const key = workerKey(cc);
+    if (key === null) continue;
+    const known = workerCounts.get(key);
+    if (known) known.count++;
+    else {
+      const worker = workerNumber(cc.parallelIndex);
+      workerCounts.set(key, {
+        worker,
+        workerIndex: worker === null ? (cc.workerIndex ?? null) : null,
+        shardIndex: cc.shardIndex ?? null,
+        count: 1,
+      });
     }
   }
-  const workerImbalance = [...workerCounts.entries()]
-    .map(([workerIndex, count]) => ({ workerIndex, count }))
-    .sort((a, b) => a.workerIndex - b.workerIndex);
+  const shown = (w: WorkerTestCount) => w.worker ?? w.workerIndex ?? 0;
+  const workerImbalance = [...workerCounts.values()].sort(
+    (a, b) =>
+      (a.shardIndex ?? -1) - (b.shardIndex ?? -1) ||
+      Number(a.worker === null) - Number(b.worker === null) ||
+      shown(a) - shown(b),
+  );
 
-  // Worker imbalance warning
   let workerImbalanceWarning: string | null = null;
-  if (workerCounts.size > 1) {
-    const counts = [...workerCounts.values()];
-    const maxCount = Math.max(...counts);
-    const minCount = Math.min(...counts);
-    if (minCount > 0 && maxCount >= minCount * 1.5) {
-      const maxWorker = [...workerCounts.entries()].find(([, c]) => c === maxCount)?.[0];
-      const minWorker = [...workerCounts.entries()].find(([, c]) => c === minCount)?.[0];
-      const ratio = Math.round((maxCount / minCount) * 10) / 10;
-      workerImbalanceWarning = `Worker W${maxWorker} ran ${ratio}\u00d7 more tests than worker W${minWorker}`;
+  if (workerImbalance.length > 1) {
+    const busiest = workerImbalance.reduce((max, w) => (w.count > max.count ? w : max));
+    const idlest = workerImbalance.reduce((min, w) => (w.count < min.count ? w : min));
+    if (busiest.count >= idlest.count * 1.5) {
+      const name = (w: WorkerTestCount) => liveWorkerName({ shard: w.shardIndex, worker: shown(w) });
+      const ratio = Math.round((busiest.count / idlest.count) * 10) / 10;
+      const sentence = `${name(busiest)} ran ${ratio}\u00d7 more tests than ${name(idlest)}`;
+      workerImbalanceWarning = sentence.charAt(0).toUpperCase() + sentence.slice(1);
     }
   }
 
@@ -418,7 +466,10 @@ export async function computeRunInsights(
     baseMeta?.scm?.commit ?? null,
     currMeta?.scm?.commit ?? null,
   );
-  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment);
+  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment, {
+    before: { playwrightVersion: baselineRun.playwrightVersion, snapshots: snapshots.get(baselineRun.id) ?? [] },
+    after: { playwrightVersion: run.playwrightVersion, snapshots: currentSnapshots },
+  });
 
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
@@ -463,6 +514,7 @@ export async function computeRunInsights(
     newFailures: newRegressions.length,
     commitRange,
     metadataDiff,
+    shardDisagreement,
     totalTests,
     passedTests,
     failedTests,

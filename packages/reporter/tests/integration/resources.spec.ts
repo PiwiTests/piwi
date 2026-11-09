@@ -1,6 +1,9 @@
 import { test as base, expect, chromium, request, type BrowserContext, type Page } from '@playwright/test';
 import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { extendPiwiFixtures } from '../../dist/index.js';
 
 /**
@@ -16,7 +19,27 @@ import { extendPiwiFixtures } from '../../dist/index.js';
  * piling up on the shared page and the server left listening are read across
  * tests.
  */
-const test = extendPiwiFixtures(base).extend<{}, { sharedPage: Page; mockServer: string }>({
+const test = extendPiwiFixtures(base).extend<
+  { slowContext: BrowserContext; slowClosedContext: BrowserContext },
+  { sharedPage: Page; mockServer: string }
+>({
+  // Test-scoped with a timeout of its own, which gives it the timeout slot a
+  // worker fixture has: it never closes its context.
+  slowContext: [
+    async ({ browser }, use) => {
+      await use(await browser.newContext()); // site:timed-fixture
+    },
+    { timeout: 20_000 },
+  ],
+  // The same, closing what it opens.
+  slowClosedContext: [
+    async ({ browser }, use) => {
+      const context = await browser.newContext();
+      await use(context);
+      await context.close();
+    },
+    { timeout: 20_000 },
+  ],
   // Worker-scoped, the "one page for the whole suite" pattern: what a test
   // opens from it, or adds to it, outlives the test.
   sharedPage: [
@@ -88,7 +111,36 @@ test.afterAll(async () => {
 test('resources: leaks a context', async ({ browser }) => {
   const context = await browser.newContext(); // site:context
   const page = await context.newPage();
-  await page.goto(`${baseUrl}/busy`);
+  await page.goto(`${baseUrl}/busy`); // site:context-last-use
+});
+
+// A worker fixture is set up once per worker: a fixture with a timeout that opens in two tests is test-scoped.
+for (const n of [1, 2]) {
+  test(`resources: a test fixture with a timeout leaks a context ${n}`, async ({ slowContext }) => {
+    await (await slowContext.newPage()).goto(baseUrl);
+  });
+}
+
+test('resources: clean, a test fixture with a timeout closes its context', async ({ slowClosedContext }) => {
+  await (await slowClosedContext.newPage()).goto(baseUrl);
+});
+
+test('resources: leaks a persistent context', async ({ launchOptions }) => {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-resources-profile-'));
+  const context = await chromium.launchPersistentContext(profile, launchOptions); // site:persistent
+  await context.pages()[0]!.goto(baseUrl);
+});
+
+test('resources: keeps a popup open long after its last use', async ({ page }) => {
+  await page.goto(baseUrl);
+  const popup = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Open' }).click(); // site:linger
+  await (await popup).waitForLoadState(); // site:linger-last-use
+  // The rest of the test works on its first page alone; the fixture closes the popup with its context.
+  for (let i = 0; i < 5; i++) {
+    await expect(page.getByRole('heading')).toHaveText('Resources');
+    await page.waitForTimeout(500);
+  }
 });
 
 test('resources: leaks a page from browser.newPage', async ({ browser }) => {

@@ -11,3 +11,9 @@ export function publicBaseUrl(event: H3Event): string {
   const url = getRequestURL(event);
   return resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
 }
+
+/** `PIWI_SITE_URL` from the environment, else from the runtime config; null when it is unset. */
+export function configuredSiteUrl(event: H3Event): string | null {
+  const fromConfig = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
+  return process.env.PIWI_SITE_URL?.trim() || fromConfig?.trim() || null;
+}

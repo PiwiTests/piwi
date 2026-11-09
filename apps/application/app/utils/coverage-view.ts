@@ -118,7 +118,7 @@ function markOf(path: string, suspects: SuspectLinesAnswer | null | undefined): 
 /**
  * A capture's files as the section's rows: server files by executed lines,
  * most first (then by functions that ran, then by path), browser files by
- * the functions that ran, most first, then by path. `suspects` marks the files the suspect lines name or the range
+ * the functions that ran, most first (then by executed lines, then by path). `suspects` marks the files the suspect lines name or the range
  * changed.
  */
 export function coverageGroups(
@@ -145,7 +145,7 @@ export function coverageGroups(
       .sort((a, b) => b.executedLines - a.executedLines || b.functionCount - a.functionCount || byPath(a, b)),
     browser: rows
       .filter((r) => r.file.runtime === 'browser')
-      .sort((a, b) => b.functionCount - a.functionCount || byPath(a, b)),
+      .sort((a, b) => b.functionCount - a.functionCount || b.executedLines - a.executedLines || byPath(a, b)),
   };
 }
 
@@ -153,24 +153,21 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
  * The summary sentence over the groups: "Ran 12 server files (184 lines) and
- * 5 browser files (31 functions)." The server count names the executed lines
- * when any file has them, else the functions that ran; the browser count names
- * the functions that ran when its files have them. Null when there is no file.
+ * 5 browser files (31 functions)." Each count names the executed lines when
+ * any of its files has them, else the functions that ran when any has them.
+ * Null when there is no file.
  */
 export function coverageSummary(groups: CoverageGroups): string | null {
-  const parts: string[] = [];
-  if (groups.server.length > 0) {
-    const lines = groups.server.reduce((n, r) => n + r.executedLines, 0);
-    const functions = groups.server.reduce((n, r) => n + r.functionCount, 0);
+  const part = (rows: CoverageRow[], noun: string) => {
+    const lines = rows.reduce((n, r) => n + r.executedLines, 0);
+    const functions = rows.reduce((n, r) => n + r.functionCount, 0);
     const detail =
       lines > 0 ? ` (${plural(lines, 'line')})` : functions > 0 ? ` (${plural(functions, 'function')})` : '';
-    parts.push(`${plural(groups.server.length, 'server file')}${detail}`);
-  }
-  if (groups.browser.length > 0) {
-    const functions = groups.browser.reduce((n, r) => n + r.functionCount, 0);
-    const detail = functions > 0 ? ` (${plural(functions, 'function')})` : '';
-    parts.push(`${plural(groups.browser.length, 'browser file')}${detail}`);
-  }
+    return `${plural(rows.length, noun)}${detail}`;
+  };
+  const parts: string[] = [];
+  if (groups.server.length > 0) parts.push(part(groups.server, 'server file'));
+  if (groups.browser.length > 0) parts.push(part(groups.browser, 'browser file'));
   return parts.length > 0 ? `Ran ${parts.join(' and ')}.` : null;
 }
 
@@ -196,25 +193,6 @@ export function coverageRowCounts(row: CoverageRow): string {
   }
   if (row.granularity === 'functions') return plural(row.functionCount, 'function');
   return '';
-}
-
-/** Lines of normalized ranges `a` that are in no range of normalized ranges `b`, normalized. */
-export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] {
-  const out: LineRange[] = [];
-  let j = 0;
-  for (const [start, end] of a) {
-    let from = start;
-    while (j < b.length && b[j]![1] < from) j++;
-    let k = j;
-    while (k < b.length && b[k]![0] <= end) {
-      const [bStart, bEnd] = b[k]!;
-      if (bStart > from) out.push([from, bStart - 1]);
-      from = Math.max(from, bEnd + 1);
-      k++;
-    }
-    if (from <= end) out.push([from, end]);
-  }
-  return out;
 }
 
 const NOT_NAMES = new Set([

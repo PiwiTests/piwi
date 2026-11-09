@@ -729,13 +729,30 @@ data class RunWorker(
     val stop: RunStop? = null,
     val pausing: Boolean = false,
     val takes: List<String>? = null,
+    /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
+    val watchable: Boolean = false,
+    /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
+    val waiting: RunWaiting? = null,
+)
+
+/**
+ * The call a pausing worker's test waits in: its title, its file and 0-based line (null when the worker names none),
+ * when it began (`since`, ISO 8601; null when the worker cannot tell), and whether End the Test gives it up at once.
+ */
+data class RunWaiting(
+    val title: String = "",
+    val uri: String? = null,
+    val line: Int? = null,
+    val since: String? = null,
+    val endable: Boolean = false,
 )
 
 /**
  * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
  * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
- * the run stands on the team instance's live view (Share live), for a run whose reporter shares it.
+ * the run stands on the team instance's live view (Share live), for a run whose reporter shares it, and `progress`
+ * how far it is, as its own process says.
  */
 data class RunSession(
     val ref: String? = null,
@@ -745,6 +762,29 @@ data class RunSession(
     val terminal: Boolean = false,
     val runner: Boolean = false,
     val live: RunLive? = null,
+    val progress: RunProgress? = null,
+)
+
+/**
+ * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
+ * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`), whether it still runs or how it
+ * ended (`status`: `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it
+ * ended (null for none). Null for a run whose reporter predates it.
+ */
+data class RunProgress(
+    val total: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val status: String = "running",
+    val failure: RunFailure? = null,
+)
+
+/** A run's first failure: its test's title and its error's first line (null for none). */
+data class RunFailure(
+    val title: String = "",
+    val error: String? = null,
 )
 
 /**
@@ -825,6 +865,28 @@ data class PageInput(
 data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
 
 data class PageFrame(val ref: String, val worker: Int, val since: String, val data: String? = null, val width: Int? = null, val height: Int? = null, val refused: String? = null)
+
+/**
+ * `piwi/laneView`: the IDE watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or stopped,
+ * through its tests and the worker Playwright starts in its place, until `on` is false or the run ends; one at a time.
+ */
+data class LaneViewParams(val ref: String, val lane: Int, val on: Boolean)
+
+/**
+ * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the
+ * stop `since` names; or why it has none now (`refused`).
+ */
+data class LaneFrame(
+    val ref: String,
+    val lane: Int,
+    val worker: Int,
+    val test: String? = null,
+    val since: String? = null,
+    val data: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val refused: String? = null,
+)
 
 /**
  * `piwi/pickAt`: the element under the point `x`, `y` of the page stopped at `since` (CSS pixels of its viewport: a
@@ -1033,6 +1095,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pageInput")
     fun pageInput(params: PageInputParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/laneView")
+    fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>

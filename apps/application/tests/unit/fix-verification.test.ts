@@ -24,9 +24,14 @@ let changedCommits: Array<{ sha: string; message: string; fullMessage?: string }
 let commitAuthor: { name: string; email: string } | null = null;
 // The repository's files at the run's commit, by repo-relative path.
 let filesAtRef: Record<string, string> = {};
+// What happens while the commits are fetched: a person's triage, made meanwhile.
+let whileFetching: (() => Promise<void>) | null = null;
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
-    fetchChanges: async () => ({ commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) }),
+    fetchChanges: async () => {
+      await whileFetching?.();
+      return { commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) };
+    },
     getCommitAuthor: async () => commitAuthor,
     getDefaultBranch: async () => 'main',
     fetchFileAtRef: async (path: string) =>
@@ -38,7 +43,7 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote, classifyQuietRun, healKeysFromCommits } =
+const { verifyClusterFixes, classifyQuietRun, classifyFailingRun, healKeysFromCommits } =
   await import('../../server/utils/fix-verification');
 const { getClusterPatchFacts, getFailureCluster } = await import('../../shared/handlers/failure-clusters');
 
@@ -52,7 +57,13 @@ const REMOTE = 'https://github.com/acme/shop.git';
 async function insertRun(
   status: 'passed' | 'failed',
   commit: string,
-  opts: { isFullRun?: boolean; branch?: string; origin?: string } = {},
+  opts: {
+    isFullRun?: boolean;
+    branch?: string;
+    origin?: string;
+    startedHoursBefore?: number;
+    configuredProjects?: string[];
+  } = {},
 ) {
   const id = ++runSeq;
   const branch = opts.branch ?? 'main';
@@ -60,13 +71,18 @@ async function insertRun(
     id,
     projectId: 1,
     status,
-    startTime: new Date(Date.UTC(2026, 0, 1) + id * 3_600_000),
+    // Each run starts an hour after the one before it, unless it started earlier and finished late.
+    startTime: new Date(Date.UTC(2026, 0, 1) + (id - (opts.startedHoursBefore ?? 0)) * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
+    ...(opts.origin ? { origin: opts.origin } : {}),
     environment: 'staging',
     branch,
     metadata: {
       scm: { commit, remoteUrl: REMOTE, branch },
       ...(opts.origin ? { piwiOrigin: { kind: opts.origin } } : {}),
+      ...(opts.configuredProjects
+        ? { htmlReport: { projects: opts.configuredProjects.map((name) => ({ name, use: { browserName: name } })) } }
+        : {}),
     },
   });
   return id;
@@ -88,8 +104,16 @@ async function insertCluster(opts: { status?: string; triageNote?: string | null
   return id;
 }
 
-async function insertCase(runId: number, status: 'passed' | 'failed', clusterId: number | null, testCaseId = 1) {
-  await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId });
+async function insertCase(
+  runId: number,
+  status: 'passed' | 'failed',
+  clusterId: number | null,
+  testCaseId = 1,
+  browserName: string | null = null,
+) {
+  await db
+    .insert(schema.testRunsCases)
+    .values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId, browserName });
 }
 
 async function markSeen(clusterId: number, runId: number) {
@@ -135,16 +159,7 @@ beforeEach(() => {
   changedCommits = [];
   commitAuthor = null;
   filesAtRef = {};
-});
-
-describe('appendTriageNote', () => {
-  test('keeps what a person wrote and adds the system line below it', () => {
-    expect(appendTriageNote('Closed by hand', 'Reopened automatically: regressed in run #3')).toBe(
-      'Closed by hand\nReopened automatically: regressed in run #3',
-    );
-    expect(appendTriageNote('  ', 'line')).toBe('line');
-    expect(appendTriageNote(null, 'line')).toBe('line');
-  });
+  whileFetching = null;
 });
 
 describe('verifyClusterFixes — status transitions', () => {
@@ -393,6 +408,225 @@ describe('classifyQuietRun', () => {
   });
 });
 
+describe('verifyClusterFixes — Playwright projects', () => {
+  const landedIn = async (clusterId: number) => (await cluster(clusterId)).fixLandedRunId;
+
+  test('a run of another project records nothing; a pass in the project it failed in records the fix', async () => {
+    const failing = await insertRun('failed', 'e0e0001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+
+    const chromiumJob = await insertRun('passed', 'e0e0002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+    expect(emitted.filter((e) => e.event === 'cluster.fixed' && e.payload.clusterId === clusterId)).toEqual([]);
+
+    const webkitJob = await insertRun('passed', 'e0e0002', { isFullRun: false });
+    await insertCase(webkitJob, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitJob);
+    expect(await landedIn(clusterId)).toBe(webkitJob);
+  });
+
+  test('one CI job per project: the job of the project the test last failed in records the fix', async () => {
+    const chromiumFailing = await insertRun('failed', 'e3e3001', { isFullRun: false });
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e3e3001', { isFullRun: false });
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e3e3002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+
+    const webkitJob = await insertRun('passed', 'e3e3002', { isFullRun: false });
+    await insertCase(webkitJob, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitJob);
+    expect(await landedIn(clusterId)).toBe(webkitJob);
+  });
+
+  test('one CI job per project: a job that ran every test records the fix of tests that failed in different jobs', async () => {
+    const chromiumFailing = await insertRun('failed', 'e8e8001', { isFullRun: false });
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 1, 'chromium');
+    await insertCase(chromiumFailing, 'passed', null, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e8e8001', { isFullRun: false });
+    await insertCase(webkitFailing, 'passed', null, 1, 'webkit');
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e8e8002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 1, 'chromium');
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBe(chromiumJob);
+  });
+
+  test('a project the test failed in before its latest failing run says nothing', async () => {
+    const chromiumFailing = await insertRun('failed', 'e6e6001');
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e6e6002');
+    await insertCase(webkitFailing, 'passed', null, 2, 'chromium');
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e6e6003', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a reproduction of one project does not narrow the projects a fix must pass in', async () => {
+    const failing = await insertRun('failed', 'e9e9001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    const reproduction = await insertRun('failed', 'e9e9001', { isFullRun: false, origin: 'reproduce' });
+    await insertCase(reproduction, 'failed', clusterId, 2, 'chromium');
+
+    const chromiumJob = await insertRun('passed', 'e9e9002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a project where the test was skipped says nothing', async () => {
+    const failing = await insertRun('failed', 'e7e7001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const green = await insertRun('passed', 'e7e7002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: green, testCaseId: 2, status: 'skipped', browserName: 'webkit' });
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the test failed in that no longer runs says nothing', async () => {
+    const failing = await insertRun('failed', 'e4e4001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'firefox');
+
+    const green = await insertRun('passed', 'e4e4002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a failed repetition in the project it failed in records nothing', async () => {
+    const failing = await insertRun('failed', 'e5e5001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    // `--repeat-each=2`: the first repetition passed, the second failed with another error.
+    const repeated = await insertRun('failed', 'e5e5002');
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: repeated, testCaseId: 2, status: 'passed', browserName: 'webkit', repeatEachIndex: 0 },
+      { testRunId: repeated, testCaseId: 2, status: 'failed', browserName: 'webkit', repeatEachIndex: 1 },
+    ]);
+    await verifyClusterFixes(db, repeated);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a pass at the failing commit in another project is no flake evidence', async () => {
+    const failing = await insertRun('failed', 'e1e1001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const chromiumJob = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBeNull();
+
+    const webkitRerun = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(webkitRerun, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitRerun);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBe(webkitRerun);
+  });
+
+  test('a failure whose project is unknown is answered by a pass in any project', async () => {
+    const failing = await insertRun('failed', 'e2e2001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, null);
+
+    const green = await insertRun('passed', 'e2e2002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the config no longer lists is answered by a pass in any project', async () => {
+    const failing = await insertRun('failed', 'eaea001', { configuredProjects: ['chromium', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+
+    const green = await insertRun('passed', 'eaea002', { configuredProjects: ['chromium'] });
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the config still lists but the run left out records nothing', async () => {
+    const failing = await insertRun('failed', 'ebeb001', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'webkit'],
+    });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const chromiumJob = await insertRun('passed', 'ebeb002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'webkit'],
+    });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a project the config no longer lists does not excuse one it still lists', async () => {
+    const failing = await insertRun('failed', 'eded001', { configuredProjects: ['chromium', 'firefox', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'failed', clusterId, 2, 'firefox');
+
+    const chromiumJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+
+    const firefoxJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(firefoxJob, 'passed', null, 2, 'firefox');
+    await verifyClusterFixes(db, firefoxJob);
+    expect(await landedIn(clusterId)).toBe(firefoxJob);
+  });
+
+  test('a run that lists no configured projects records nothing from another project', async () => {
+    const failing = await insertRun('failed', 'ecec001', { configuredProjects: ['chromium', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const green = await insertRun('passed', 'ecec002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+});
+
 describe('verifyClusterFixes — which quiet runs count', () => {
   test('a pass at the failing commit is flake evidence; a pass at a new default-branch commit is the fix', async () => {
     const failing = await insertRun('failed', 'c0ffee1');
@@ -447,6 +681,246 @@ describe('verifyClusterFixes — which quiet runs count', () => {
     const local = await insertRun('passed', `ee2222${origin.length}`, { origin: 'local' });
     await insertCase(local, 'passed', null);
     expect((await verifyClusterFixes(db, local)).map((f) => f.clusterId)).toEqual([clusterId]);
+  });
+});
+
+describe('verifyClusterFixes — run order', () => {
+  test('a run that started before the last failure records no fix', async () => {
+    const failing = await insertRun('failed', 'ab10001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+
+    // Started an hour before the failing run, finished after it.
+    const earlier = await insertRun('passed', 'ab10002', { startedHoursBefore: 2 });
+    await insertCase(earlier, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, earlier)).some((f) => f.clusterId === clusterId)).toBe(false);
+    expect((await cluster(clusterId)).fixLandedRunId).toBeNull();
+    expect(emitted.filter((e) => e.payload.clusterId === clusterId)).toEqual([]);
+
+    const later = await insertRun('passed', 'ab10003');
+    await insertCase(later, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, later)).some((f) => f.clusterId === clusterId)).toBe(true);
+  });
+
+  test('a failing run that started before the fix landed does not regress it', async () => {
+    const failing = await insertRun('failed', 'ab20001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    const green = await insertRun('passed', 'ab20002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    emitted.length = 0;
+
+    // Started between the failure and the fix, finished after the fix.
+    const late = await insertRun('failed', 'ab20003', { startedHoursBefore: 2 });
+    await insertCase(late, 'failed', clusterId, 2);
+    await verifyClusterFixes(db, late);
+    let row = await cluster(clusterId);
+    expect(row.fixVerification).toBe('diagnosis-verified');
+    expect(row.status).toBe('resolved');
+    expect(emitted).toEqual([]);
+
+    const after = await insertRun('failed', 'ab20004');
+    await insertCase(after, 'failed', clusterId, 2);
+    await markSeen(clusterId, after);
+    await verifyClusterFixes(db, after);
+    row = await cluster(clusterId);
+    expect(row.fixVerification).toBe('regressed');
+    expect(row.status).toBe('open');
+  });
+});
+
+describe("verifyClusterFixes — a person's triage made meanwhile", () => {
+  test('a person who ignores the cluster while the fix is verified keeps their status and note', async () => {
+    const failing = await insertRun('failed', 'cc10001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    whileFetching = async () => {
+      whileFetching = null;
+      await db
+        .update(schema.failureClusters)
+        .set({ status: 'ignored', triageNote: 'Known, ignore' })
+        .where(eq(schema.failureClusters.id, clusterId));
+    };
+
+    const green = await insertRun('passed', 'cc10002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+
+    const row = await cluster(clusterId);
+    expect(row).toMatchObject({
+      fixVerification: 'diagnosis-verified',
+      status: 'ignored',
+      triageNote: 'Known, ignore',
+    });
+    expect(emitted.find((e) => e.payload.clusterId === clusterId)?.payload).toMatchObject({ resolved: false });
+  });
+
+  test('a note a person edits while the fix is verified is kept below the line Piwi adds', async () => {
+    const failing = await insertRun('failed', 'cc20001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing, triageNote: 'Looking into it' });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    whileFetching = async () => {
+      whileFetching = null;
+      await db
+        .update(schema.failureClusters)
+        .set({ triageNote: 'Looking into it\nThe cart API changed' })
+        .where(eq(schema.failureClusters.id, clusterId));
+    };
+
+    const green = await insertRun('passed', 'cc20002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+
+    expect(await cluster(clusterId)).toMatchObject({
+      status: 'resolved',
+      triageNote: `Looking into it\nThe cart API changed\nResolved automatically: diagnosis verified in run #${green}`,
+    });
+  });
+});
+
+describe('verifyClusterFixes — runs that send no notifications', () => {
+  test.each([
+    ['an editor run', { origin: 'editor' }],
+    ['a partial local run', { isFullRun: false }],
+  ])('%s records the fix and the regression without an event', async (_label, opts) => {
+    const failing = await insertRun('failed', `ed${runSeq + 1}a`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    commitAuthor = { name: 'Ada Lovelace', email: 'ada@example.com' };
+
+    const green = await insertRun('passed', `ed${runSeq + 1}b`, opts);
+    await insertCase(green, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, green)).some((f) => f.clusterId === clusterId)).toBe(true);
+    expect((await cluster(clusterId)).fixLandedRunId).toBe(green);
+
+    const red = await insertRun('failed', `ed${runSeq + 1}c`, opts);
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    expect((await cluster(clusterId)).fixVerification).toBe('regressed');
+
+    expect(emitted.filter((e) => e.payload.clusterId === clusterId)).toEqual([]);
+  });
+});
+
+describe('verifyClusterFixes — which failing runs regress a fix', () => {
+  async function fixedOn(branch: string) {
+    const failing = await insertRun('failed', `br${runSeq + 1}a`, { branch });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    const green = await insertRun('passed', `br${runSeq + 1}b`, { branch });
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+    expect((await cluster(clusterId)).fixLandedRunId).toBe(green);
+    emitted.length = 0;
+    return clusterId;
+  }
+
+  async function failOn(clusterId: number, branch: string) {
+    const red = await insertRun('failed', `br${runSeq + 1}c`, { branch });
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    return (await cluster(clusterId)).fixVerification;
+  }
+
+  test('a failure on a branch that may not have the fix leaves the fix standing', async () => {
+    const clusterId = await fixedOn('main');
+    expect(await failOn(clusterId, 'feature/old')).toBe('stopped-failing');
+    expect(emitted).toEqual([]);
+    expect(await failOn(clusterId, 'main')).toBe('regressed');
+    expect(emitted.map((e) => e.event)).toEqual(['cluster.regressed']);
+  });
+
+  test('a failure on the branch the fix landed on, or on the default branch, regresses it', async () => {
+    expect(await failOn(await fixedOn('feature/cart'), 'feature/cart')).toBe('regressed');
+    expect(await failOn(await fixedOn('feature/cart'), 'main')).toBe('regressed');
+  });
+
+  test('classifyFailingRun', () => {
+    const base = { runBranch: 'main', fixBranch: 'main', defaultBranch: 'main' };
+    expect(classifyFailingRun(base)).toBe('regression');
+    expect(classifyFailingRun({ ...base, runBranch: 'feature/x' })).toBe('other-branch');
+    expect(classifyFailingRun({ ...base, fixBranch: 'feature/x' })).toBe('regression');
+    expect(classifyFailingRun({ ...base, runBranch: null })).toBe('other-branch');
+    expect(classifyFailingRun({ runBranch: null, fixBranch: null, defaultBranch: null })).toBe('regression');
+  });
+});
+
+describe('verifyClusterFixes — a cluster resolved by hand that fails again', () => {
+  /** A cluster failing on `branch`, resolved by hand half an hour after the failing run started. */
+  async function resolvedByHand(opts: { branch?: string; status?: string } = {}) {
+    const failing = await insertRun('failed', `rh${runSeq + 1}a`, { branch: opts.branch });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await db
+      .update(schema.failureClusters)
+      .set({
+        status: opts.status ?? 'resolved',
+        triageNote: 'Fixed the cart',
+        updatedAt: new Date(Date.UTC(2026, 0, 1) + (failing + 0.5) * 3_600_000),
+      })
+      .where(eq(schema.failureClusters.id, clusterId));
+    return clusterId;
+  }
+
+  async function failAgain(
+    clusterId: number,
+    opts: { branch?: string; origin?: string; startedHoursBefore?: number } = {},
+  ) {
+    const red = await insertRun('failed', `rh${runSeq + 1}b`, opts);
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    return red;
+  }
+
+  test('a run started after it was resolved reopens it, with a line, and sends cluster.regressed', async () => {
+    const clusterId = await resolvedByHand();
+    const red = await failAgain(clusterId);
+    expect(await cluster(clusterId)).toMatchObject({
+      status: 'open',
+      triageNote: `Fixed the cart\nReopened automatically: failed again in run #${red}`,
+      fixVerification: null,
+    });
+    expect(emitted.map((e) => [e.event, e.payload.clusterId])).toEqual([['cluster.regressed', clusterId]]);
+    expect(emitted[0]!.payload).toMatchObject({ runId: red, fixLandedRunId: null, reopened: true });
+  });
+
+  test('a run that started before it was resolved leaves it resolved', async () => {
+    const clusterId = await resolvedByHand();
+    await failAgain(clusterId, { startedHoursBefore: 1 });
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    expect(emitted).toEqual([]);
+  });
+
+  test('a failure on a branch that may not have the fix leaves it resolved', async () => {
+    const clusterId = await resolvedByHand({ branch: 'feature/cart' });
+    await failAgain(clusterId, { branch: 'feature/old' });
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    await failAgain(clusterId, { branch: 'feature/cart' });
+    expect((await cluster(clusterId)).status).toBe('open');
+  });
+
+  test('a failure from a run that does not count as an occurrence leaves it resolved', async () => {
+    const clusterId = await resolvedByHand();
+    await failAgain(clusterId, { origin: 'editor' });
+    expect((await cluster(clusterId)).status).toBe('resolved');
+  });
+
+  test('an ignored cluster stays ignored', async () => {
+    const clusterId = await resolvedByHand({ status: 'ignored' });
+    await failAgain(clusterId);
+    expect((await cluster(clusterId)).status).toBe('ignored');
+    expect(emitted).toEqual([]);
   });
 });
 
@@ -648,5 +1122,36 @@ describe('verifyClusterFixes — the auto-heal PR that landed the fix', () => {
         { sha: 'c', message: 'fix: c', fullMessage: 'fix: c\n\npiwi-heal: k1' },
       ]),
     ).toEqual(['k1']);
+  });
+});
+
+describe('verifyClusterFixes — incidental catch', () => {
+  const catchesOf = async (clusterId: number) =>
+    (await db.select().from(schema.scenarioGaps))
+      .filter((g) => g.failureClusterId === clusterId)
+      .map((g) => `${g.detector} ${g.title}`);
+
+  async function fixWith(files: string[]) {
+    const failing = await insertRun('failed', `f${runSeq + 1}`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    changedFiles = files;
+    const green = await insertRun('passed', `g${runSeq + 1}`);
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    return clusterId;
+  }
+
+  test('a fix in a file the catching test is not about raises incidental catch', async () => {
+    const clusterId = await fixWith(['src/pricing/rounding.ts']);
+    expect(await catchesOf(clusterId)).toEqual([
+      'incidental-catch src/pricing/rounding.ts is caught only incidentally',
+    ]);
+  });
+
+  test('a fix in the file the test is named for, one that came with a test, or a broad one raises nothing', async () => {
+    expect(await catchesOf(await fixWith(['src/checkout.ts']))).toEqual([]);
+    expect(await catchesOf(await fixWith(['src/pricing/rounding.ts', 'tests/rounding.spec.ts']))).toEqual([]);
+    expect(await catchesOf(await fixWith(['a/one.ts', 'b/two.ts', 'c/three.ts', 'd/four.ts']))).toEqual([]);
   });
 });

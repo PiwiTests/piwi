@@ -9,6 +9,7 @@ import { parseSourceSnippet } from '#shared/source-snippet';
 import type { StatusColorKey } from '#shared/status-colors';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { STUCK_FACTOR, STUCK_FLOOR_MS, STUCK_HISTORY } from '#shared/stuck-tests';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import {
   clusterOutcome,
   failureTargetPath,
@@ -301,8 +302,9 @@ const NOT_REPORTED: StatusColorKey = 'fixme';
 /**
  * A run's tests split by outcome, in the dashboard's order, empty outcomes
  * left out. Flaky tests are a part of the passed ones, counted apart from them.
- * The tests a run counted but never reported (an interrupted run stops before
- * them) come last, as not reported.
+ * The tests the run's interruption cut short, in no outcome, are named as
+ * interrupted, and the tests a run counted but never reported (an interrupted
+ * run stops before them) come last, as not reported.
  */
 export function runSegments(counts: {
   totalTests?: number;
@@ -311,6 +313,7 @@ export function runSegments(counts: {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  interruptedTests?: number;
 }): OutcomeSegment[] {
   const reported: OutcomeSegment[] = [
     { key: 'passed', label: 'passed', count: Math.max(0, (counts.passedTests ?? 0) - (counts.flakyTests ?? 0)) },
@@ -318,6 +321,7 @@ export function runSegments(counts: {
     { key: 'flaky', label: 'flaky', count: counts.flakyTests ?? 0 },
     { key: 'skipped', label: 'skipped', count: counts.skippedTests ?? 0 },
     { key: 'didnotrun', label: "didn't run", count: counts.didNotRunTests ?? 0 },
+    { key: 'interrupted', label: 'interrupted', count: counts.interruptedTests ?? 0 },
   ];
   const sum = reported.reduce((total, s) => total + s.count, 0);
   const missing = (counts.totalTests ?? 0) - sum;
@@ -352,6 +356,7 @@ export const OUTCOME_SQUARES: Record<StatusColorKey, string> = {
   fixme: '⬛',
   didnotrun: '🟧',
   running: '🟦',
+  interrupted: '⬜',
 };
 
 /**
@@ -375,11 +380,11 @@ export function outcomeSquares(segments: OutcomeSegment[], total: number, width 
 
 // ── History ───────────────────────────────────────────────────────────────────
 
-/** A run's status as an outcome color: interrupted in the did-not-run amber. */
+/** A run's status as an outcome color: an interrupted run in the neutral slate of no outcome. */
 export function runStatusKey(status: string): StatusColorKey {
   if (status === 'passed') return 'passed';
   if (status === 'failed' || status === 'timedout') return 'failed';
-  if (status === 'interrupted') return 'didnotrun';
+  if (status === 'interrupted') return 'interrupted';
   return 'skipped';
 }
 
@@ -443,6 +448,7 @@ const RUN_SYMBOLS: Record<StatusColorKey, string> = {
   fixme: '-',
   didnotrun: '!',
   running: '…',
+  interrupted: '-',
 };
 
 /** The history in plain text: one symbol per run, then its sentence. */
@@ -695,7 +701,12 @@ export function eventFacts(event: NotificationEvent, payload: NotificationPayloa
     }
     case 'test.stuck': {
       const p = payload as TestStuckPayload;
-      const where = [p.browserName, p.workerIndex != null ? `worker ${p.workerIndex}` : null].filter(Boolean);
+      const worker = shownWorkerNumber(p);
+      const where = [
+        p.browserName,
+        p.shardIndex != null ? `shard ${p.shardIndex}` : null,
+        worker != null ? `worker ${worker}` : null,
+      ].filter(Boolean);
       return [
         runFact(links, p),
         ...(p.location ? [{ label: 'Test', value: p.location, code: true }] : []),
@@ -734,8 +745,17 @@ export function eventSentences(event: NotificationEvent, payload: NotificationPa
       return ['The usual time is the median of the last runs on the same branch and environment.'];
     case 'cluster.new': {
       const p = payload as ClusterNewPayload;
+      const several = (p.affectedCases ?? 0) > 1;
+      if (p.firstSeenRunId != null) {
+        const first = `first seen in run #${p.firstSeenRunId}, which sent no notification of it`;
+        return [
+          several
+            ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, ${first}.`
+            : `A test of run #${p.runId} failed with an error ${first}.`,
+        ];
+      }
       return [
-        (p.affectedCases ?? 0) > 1
+        several
           ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, one no earlier run produced, so Piwi grouped them in one cluster.`
           : `A test of run #${p.runId} failed with an error no earlier run produced.`,
       ];

@@ -199,7 +199,7 @@ export interface FailureClueLockHolder {
  * executions show it, and the counts behind it.
  */
 export interface FailureClueFlakeSuspect {
-  kind: 'slow-route' | 'failed-route' | 'alongside' | 'before' | 'load' | 'project';
+  kind: 'slow-route' | 'failed-route' | 'alongside' | 'before' | 'load' | 'project' | 'environment';
   label: string;
   counts: { failuresWith: number; failures: number; passesWith: number; passes: number };
   route?: string;
@@ -456,6 +456,8 @@ function knownFlakeSuspectClue(suspect: FailureClueFlakeSuspect, requests: Failu
       return { ...base, detail: `"${title}" ran just before on this worker; it does in ${counts}.`, citations };
     case 'load':
       return { ...base, detail: `${suspect.label} during this attempt, as in ${counts}.`, citations };
+    case 'environment':
+      return { ...base, detail: `It ran ${suspect.label}, as in ${counts}.`, citations };
     default:
       return { ...base, detail: `It ran on ${suspect.project ?? 'this project'}, as in ${counts}.`, citations };
   }

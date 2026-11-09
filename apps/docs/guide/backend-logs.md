@@ -15,6 +15,7 @@ except in those response headers, or from the coverage endpoints of a coverage b
 | [Backend logs](#backend-logs) | The server's warnings and errors, next to the request that caused them | ✓ | ✓ |
 | [Server spans](#server-spans) | The server's time on a request, and the handler and dependencies it reached | | ✓ |
 | [Route manifest](#route-manifest) | The routes the server has, so the Test Map can name the ones no test reaches | ✓ | ✓ |
+| [Server environment](#server-environment) | The server process's runtime, time zone, locale and start time | ✓ | ✓ |
 | [Server probes](#server-probes) | A fault injected inside the server for one request (**Experimental**) | ✓ | ✓ |
 | [Server coverage](/features/server-coverage) | Backend files, functions and lines each test ran, from a coverage build | ✓ | ✓ |
 
@@ -147,7 +148,9 @@ Both packages serve `/__piwi/manifest` outside production: the routes the server
 reporter fetches it from each `baseURL` and each other origin whose responses carry an instrumentation header, and
 uploads it with the run, so a route or page nothing reaches becomes a
 [declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can commit a
-`piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`.
+`piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`. A pattern
+holds at most 2,048 characters and 16 parameters in one segment: Piwi refuses a manifest past either limit, and leaves
+such a path out of an OpenAPI document.
 
 - **ASP.NET Core** reads the application's endpoint table, so the manifest holds every route from the first run, hit
   or not: minimal APIs and route groups, controllers (attribute routes, conventional routes and areas) and SignalR
@@ -158,6 +161,12 @@ uploads it with the run, so a route or page nothing reaches becomes a
   every rule.
 - **Nitro** reads its route table at build time through the package's module
   (`modules: ['@piwitests/instrumentation-nitro/module']`, under `nitro` in Nuxt); without it, only matched routes.
+
+## Server environment
+
+Both packages serve `/__piwi/environment` under the same rule as the route manifest: the server process's runtime, OS,
+time zone, locale, start time and clock, so a failure that depends on them can be told from one in the code. No other
+environment variable, path or connection string. Never enable it on a public production server.
 
 ## Server probes
 

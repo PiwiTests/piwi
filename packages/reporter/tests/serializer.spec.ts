@@ -82,6 +82,37 @@ describe('computeDistinctRunCounts', () => {
     expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, failedTests: 1, passedTests: 0 });
     expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ failedTests: 1, passedTests: 0 });
   });
+
+  it('counts a test as flaky only when an attempt before its passing one failed', () => {
+    const counts = computeDistinctRunCounts([
+      // Failed, then passed on a retry: flaky.
+      { testId: 'flaky', title: 'a', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { testId: 'flaky', title: 'a', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
+      // A describe.serial sibling that passed, run again when the group was retried.
+      { testId: 'serial', title: 'b', location: 'a.spec.ts:2:1', status: 'passed', retries: 0 },
+      { testId: 'serial', title: 'b', location: 'a.spec.ts:2:1', status: 'passed', retries: 1 },
+      // A test.fail() test in that group: its expected failure is stored as passed on both attempts.
+      { testId: 'expected', title: 'c', location: 'a.spec.ts:3:1', status: 'passed', retries: 0 },
+      { testId: 'expected', title: 'c', location: 'a.spec.ts:3:1', status: 'passed', retries: 1 },
+      // Did not run behind the group's failure, then passed on the retry.
+      { testId: 'blocked', title: 'd', location: 'a.spec.ts:4:1', status: 'didnotrun', retries: 0 },
+      { testId: 'blocked', title: 'd', location: 'a.spec.ts:4:1', status: 'passed', retries: 1 },
+      // Timed out, then passed.
+      { testId: 'slow', title: 'e', location: 'a.spec.ts:5:1', status: 'timedOut', retries: 0 },
+      { testId: 'slow', title: 'e', location: 'a.spec.ts:5:1', status: 'passed', retries: 1 },
+    ]);
+    expect(counts).toMatchObject({ totalTests: 5, passedTests: 5, flakyTests: 2 });
+  });
+
+  it('counts a test retried after it already passed once, whatever the attempt order', () => {
+    const attempts = [
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 2 },
+    ];
+    expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, flakyTests: 1 });
+    expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ totalTests: 1, flakyTests: 1 });
+  });
 });
 
 describe('resolveOverallStatus', () => {
@@ -180,6 +211,12 @@ describe('toWireTestCase', () => {
   it('preserves workerIndex=0 (?? null, not || null)', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l', workerIndex: 0 });
     expect(out.workerIndex).toBe(0);
+  });
+
+  it("carries the worker's lane, 0 included, and null without one", () => {
+    expect(toWireTestCase({ type: 'begin', title: 't', location: 'l', parallelIndex: 0 }).parallelIndex).toBe(0);
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l', parallelIndex: 3 }).parallelIndex).toBe(3);
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l' }).parallelIndex).toBe(null);
   });
 
   it('preserves startedAt=0', () => {
@@ -304,9 +341,11 @@ describe('toWireTestCase', () => {
       'locatorPages',
       'locatorSnapshots',
       'locks',
+      'maxRetries',
       'networkRequests',
       'pageInventory',
       'pageState',
+      'parallelIndex',
       'repeatEachIndex',
       'resources',
       'retries',
@@ -315,6 +354,8 @@ describe('toWireTestCase', () => {
       'slowestStepDuration',
       'startedAt',
       'status',
+      'stderr',
+      'stdout',
       'stepEvents',
       'steps',
       'suiteConfig',
@@ -390,6 +431,30 @@ describe('serializeRun', () => {
     expect(serializeRun({ ...makePayload(), deliveryKey: 'key-1' }, { includeTestCases: true }).deliveryKey).toBe(
       'key-1',
     );
+  });
+
+  it("carries the suite's setup steps when the run has some, as /finish does", () => {
+    const step = {
+      title: 'beforeAll hook',
+      category: 'hook',
+      startedAt: 1_700_000_000_000,
+      duration: 12,
+      status: 'passed',
+      location: 'tests/a.spec.ts:3:1',
+      workerIndex: 0,
+    };
+    expect(serializeRun({ ...makePayload(), setupSteps: [step] }, { includeTestCases: false }).setupSteps).toEqual([
+      step,
+    ]);
+    expect('setupSteps' in serializeRun({ ...makePayload(), setupSteps: [] }, { includeTestCases: false })).toBe(false);
+  });
+
+  it('carries the errors Playwright reported outside any test when the run has some, as /finish does', () => {
+    const error = { message: 'Error: No tests found', stack: null, location: null };
+    expect(serializeRun({ ...makePayload(), runErrors: [error] }, { includeTestCases: true }).runErrors).toEqual([
+      error,
+    ]);
+    expect('runErrors' in serializeRun({ ...makePayload(), runErrors: [] }, { includeTestCases: true })).toBe(false);
   });
 
   it('sends keep: true only when the run asked to be kept', () => {

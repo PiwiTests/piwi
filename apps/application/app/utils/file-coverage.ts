@@ -17,7 +17,8 @@ import {
   type CoverageRuntime,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { subtractLineRanges, unionLineRanges, type NearestTest } from '#shared/coverage-insights';
+import { subtractLineRanges } from '#shared/coverage-combine';
+import { unionLineRanges, type NearestTest } from '#shared/coverage-insights';
 
 /** One distinct coverage of the file and the positions, in the answer's `tests`, of the tests that recorded it. */
 export type FileCoverageFragment = CoverageFile & { tests: number[] };

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { openTempDb, type TempDb } from './temp-db';
@@ -70,12 +71,15 @@ const { handler: dismissRoute, permission: dismissPermission } = await loadRoute
 }>('../../server/api/projects/[id]/quarantine/[testCaseId]/dismiss.post');
 const { handler: listRoute } = await loadRoute<{
   entries: Array<{ testCaseId: number; releaseProposed: boolean; releaseDismissed: boolean }>;
+  debt: { readyToRelease: number };
   candidates: Array<{ testCaseId: number; dismissed: boolean }>;
 }>('../../server/api/projects/[id]/quarantine.get');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 const { logMcpToolCall } = await import('../../server/utils/mcp/write-log');
 const { listOutcomes } = await import('../../server/utils/outcomes');
 const { addQuarantine, RELEASE_AFTER_CONSECUTIVE_PASSES } = await import('#shared/handlers/quarantine');
+const { runOrigin } = await import('#shared/run-eligibility');
+const { getOpenFailureClusters } = await import('#shared/handlers/failure-clusters');
 const dismissTool = MCP_TOOLS.find((t) => t.name === 'dismiss_quarantine_proposal')!.handler;
 
 const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
@@ -97,9 +101,12 @@ let db: TempDb;
 let close: () => Promise<void>;
 let runSeq = 0;
 
+/** A run started a minute after the one before it, and after the quarantines made meanwhile. */
 async function insertRun(projectId = 1): Promise<number> {
   const id = ++runSeq;
-  await db.insert(schema.testRuns).values({ id, projectId, status: 'passed', startTime: new Date() });
+  await db
+    .insert(schema.testRuns)
+    .values({ id, projectId, status: 'passed', startTime: new Date(Date.now() + id * 60_000) });
   return id;
 }
 
@@ -168,6 +175,8 @@ afterEach(async () => {
 
 describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
   test('dismisses a proposed release with a reason, as the signed-in person over the dashboard', async () => {
+    const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    expect((await list()).debt.readyToRelease).toBe(1);
     const result = await dismissRoute({
       params: { id: '1', testCaseId: '2' },
       body: { proposal: 'release', reason: '  Still fails on staging  ' },
@@ -184,12 +193,13 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
         details: { reason: 'Still fails on staging' },
       },
     ]);
-    // Nothing else changes: the test is still quarantined.
-    const listed = await listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    // Nothing else changes: the test stays quarantined, and its dismissed release does not count as ready.
+    const listed = await list();
     expect(listed.entries.find((e) => e.testCaseId === 2)).toMatchObject({
       releaseProposed: true,
       releaseDismissed: true,
     });
+    expect(listed.debt.readyToRelease).toBe(0);
   });
 
   test('dismisses a quarantine candidate, once, and the list marks it until a newer run arrives', async () => {
@@ -210,6 +220,35 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
     const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
     expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: true }]);
     await insertRun();
+    expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: false }]);
+  });
+
+  test('a dismissed candidate stays dismissed through the runs the candidates do not read', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    await dismissRoute({ params: { id: '1', testCaseId: '1' }, body: { proposal: 'quarantine' } });
+    const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    const run = async (values: Partial<typeof schema.testRuns.$inferInsert> = {}) => {
+      const id = ++runSeq;
+      const metadata = values.metadata ?? null;
+      await db.insert(schema.testRuns).values({
+        id,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(Date.now() + id * 60_000),
+        ...values,
+        origin: runOrigin(metadata),
+      });
+    };
+
+    await run({ metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } } });
+    await run({ metadata: { piwiOrigin: { kind: 'bisect' } } });
+    await run({ branch: 'feature/cart' });
+    await run({ status: 'running' });
+    // An older report imported after the dismissal.
+    await run({ startTime: new Date(Date.now() - 3_600_000) });
+    expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: true }]);
+
+    await run({ branch: 'main' });
     expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: false }]);
   });
 
@@ -246,6 +285,30 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
       dismissRoute({ params: { id: '2', testCaseId: '4' }, body: { proposal: 'quarantine' } }),
     ).rejects.toMatchObject({ statusCode: 403 });
     expect(await outcomes()).toEqual([]);
+  });
+});
+
+describe('the failure inbox', () => {
+  test('does not count a test whose proposed release was dismissed as ready to release', async () => {
+    // Test 2 earned its release and failed once before, in a cluster still open.
+    const runId = await insertRun();
+    await db.insert(schema.failureClusters).values({
+      id: 1,
+      projectId: 1,
+      fingerprint: 'cart-timeout',
+      signature: 'Timeout 5000ms exceeded',
+      firstSeenRunId: runId,
+      lastSeenRunId: runId,
+    });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'failed', failureClusterId: 1 });
+    const readyCount = async () => (await getOpenFailureClusters(db as never, 'all'))[0]!.quarantineReadyCount;
+    expect(await readyCount()).toBe(1);
+
+    await dismissRoute({ params: { id: '1', testCaseId: '2' }, body: { proposal: 'release' } });
+
+    expect(await readyCount()).toBe(0);
   });
 });
 

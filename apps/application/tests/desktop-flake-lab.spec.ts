@@ -70,7 +70,7 @@ async function installFakeBridge(page: Page, options: { linked?: boolean } = {})
                 return ++state.lastRunId;
               case 'desktop_stop_local_tests':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
                 return null;
               default:
                 throw new Error(`unexpected command: ${cmd}`);
@@ -287,6 +287,9 @@ test.describe('Flake Lab in the desktop app', () => {
     if (!(await body.isVisible())) await page.getByRole('button', { name: /^Reproduce and bisect/ }).click();
     await expect(page.getByTestId('bisect-flake-arm')).toContainText('delay GET /api/cart 2 s');
     await page.getByTestId('bisect-here').click();
+    await expect
+      .poll(() => page.evaluate(() => window.__piwiFlake.invocations.some((i) => i.cmd === 'desktop_bisect_here')))
+      .toBe(true);
     const invoked = await page.evaluate(() =>
       window.__piwiFlake.invocations.find((i) => i.cmd === 'desktop_bisect_here'),
     );

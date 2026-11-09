@@ -369,8 +369,10 @@ test.describe.serial('MCP server', () => {
       (await mcp(request, 'tools/call', { name: 'get_run_insights', arguments: { runId } })).result.content[0].text,
     );
     expect(insights.runId).toBe(runId);
-    expect(typeof insights.passRate).toBe('number');
     expect(typeof insights.hasBaseline).toBe('boolean');
+    // Insights compare a run with its baseline: without one there is no pass rate (null, stripped by dropNulls).
+    if (insights.hasBaseline) expect(typeof insights.passRate).toBe('number');
+    else expect(insights.passRate).toBeUndefined();
     // Empty arrays are stripped by dropNulls; when present, it's an array.
     if (insights.newRegressions !== undefined) expect(Array.isArray(insights.newRegressions)).toBe(true);
   });

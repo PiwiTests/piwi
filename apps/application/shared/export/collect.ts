@@ -11,9 +11,10 @@ import { getTestRunCase, getTestRunCaseTraces } from '#shared/handlers/test-case
 import { getFailureCluster, getClusterDiagnosis, getExecutionDiagnosis } from '#shared/handlers/failure-clusters';
 import { getFailureGroups, getTestRun } from '#shared/handlers/test-runs';
 import { classifyEvidenceFile, contentTypeForPath } from '#shared/file-classify';
-import { finalAttempts, isFailedStatus } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '#shared/utils/test-counts';
 import { stripAnsi } from '#shared/error-fingerprint';
 import type { ExportAsset, ExportBundle, ExportCase, ExportRunGroup, ExportRunTest } from './types';
+import { withoutPrivateFields } from '#shared/environment-snapshots';
 
 export interface CollectOptions {
   /** Member cases carrying full evidence; the rest are listed only. */
@@ -176,13 +177,8 @@ export async function collectClusterBundle(
   };
 }
 
-/** Whether a test's outcome in a run is a failure: failed, timed out or interrupted. */
-function isFailingOutcome(status: string): boolean {
-  return isFailedStatus(status) || status === 'interrupted';
-}
-
 /** The run fields an export states, and nothing else of the run row (no local paths, tokens or storage). */
-function exportRunDetail(run: Record<string, any>): Record<string, unknown> {
+function exportRunDetail(run: Record<string, any>, interruptedTests: number): Record<string, unknown> {
   const scm = (run.metadata?.scm ?? {}) as Record<string, any>;
   const ci = (run.metadata?.ci ?? {}) as Record<string, any>;
   return {
@@ -202,8 +198,12 @@ function exportRunDetail(run: Record<string, any>): Record<string, unknown> {
     flakyTests: run.flakyTests ?? 0,
     skippedTests: run.skippedTests ?? 0,
     didNotRunTests: run.didNotRunTests ?? 0,
+    // The run's counters leave its interrupted tests out: named apart in its outcome bar.
+    interruptedTests,
     shardTotal: run.shardTotal ?? null,
     playwrightVersion: run.playwrightVersion ?? null,
+    // Where the run executed, without host names: an export leaves the instance.
+    environments: run.environments ? withoutPrivateFields(run.environments) : null,
     metadata: {
       scm: { commit: scm.commit, commitMessage: scm.commitMessage, author: scm.author, branch: scm.branch },
       ci: {
@@ -245,6 +245,7 @@ export async function collectRunBundle(
     browserName: (tc.browserName ?? tc.browser?.projectName ?? null) as string | null,
   }));
   const final = finalAttempts(rows);
+  const flaky = flakyFinalAttempts(rows);
   const repeated = final.some((tc) => (tc.repeatEachIndex ?? 0) > 0);
   const tests: ExportRunTest[] = final
     .map((tc) => {
@@ -263,7 +264,7 @@ export async function collectRunBundle(
         browser: tc.browserName,
         repetition: repeated ? (tc.repeatEachIndex ?? 0) + 1 : null,
         status: tc.status,
-        flaky: tc.status === 'passed' && Number(tc.retries ?? 0) > 0,
+        flaky: flaky.has(tc),
         retries: Number(tc.retries ?? 0),
         duration: tc.duration == null ? null : Number(tc.duration),
         error: error ? error.split('\n')[0]!.slice(0, 300) : null,
@@ -279,7 +280,8 @@ export async function collectRunBundle(
     );
 
   // Each failing result under its own failure cluster, the clusters with the most failures first.
-  const failing = tests.filter((t) => isFailingOutcome(t.status));
+  // An interrupted result is in no outcome, so never among the failures.
+  const failing = tests.filter((t) => isFailedStatus(t.status));
   const members = new Map<number, number[]>();
   for (const t of failing) {
     if (t.failureClusterId == null) continue;
@@ -322,7 +324,11 @@ export async function collectRunBundle(
     title: run.label ? `Run #${runId} · ${run.label}` : `Run #${runId}`,
     project: project ? { id: project.id, name: project.name, label: project.label ?? null } : null,
     cluster: null,
-    run: { detail: exportRunDetail(run), tests, groups },
+    run: {
+      detail: exportRunDetail(run, tests.filter((t) => t.status === 'interrupted').length),
+      tests,
+      groups,
+    },
     cases,
     truncatedCases: ranked
       .filter((t) => !included.has(t.executionId))

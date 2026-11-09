@@ -48,24 +48,15 @@ const reconcileLabel = computed(() => (props.state.action ? RECONCILE_LABEL[prop
 
 const busy = ref(false);
 
-async function patchStatus(status: string, triageNote?: string | null) {
-  return $fetch(`/api/failure-clusters/${props.cluster.id}/status`, {
-    method: 'PATCH',
-    body: { status, triageNote: triageNote !== undefined ? triageNote : (props.cluster.triageNote ?? null) },
-  });
-}
 async function patchSnooze(option: SnoozeOption | null) {
   return $fetch(`/api/failure-clusters/${props.cluster.id}/snooze`, { method: 'PATCH', body: { snooze: option } });
 }
 
 // ── The one reconcile action ─────────────────────────────────────────────────
 const { releaseOne } = useQuarantine(() => props.cluster.project?.id ?? null);
-// Mark resolved / reopen share the failure pages' triage helper, preserving the
-// existing note through the status PATCH.
-const { setClusterStatus } = useClusterTriage(() => props.cluster.id, {
-  currentNote: () => props.cluster.triageNote,
-  onSaved: () => emit('saved'),
-});
+// Mark resolved / reopen share the failure pages' triage helper, which keeps the
+// note as it is stored.
+const { setClusterStatus } = useClusterTriage(() => props.cluster.id, { onSaved: () => emit('saved') });
 
 async function runReconcile() {
   if (!canReconcile.value || busy.value || !props.state.action) return;
@@ -121,9 +112,12 @@ async function saveTriage() {
   if (!canTriage.value || savingTriage.value) return;
   savingTriage.value = true;
   try {
-    const note = draftNote.value.trim() || null;
-    if (draftStatus.value !== props.cluster.status || note !== (props.cluster.triageNote ?? null)) {
-      await patchStatus(draftStatus.value, note);
+    const body = triagePanelPatch(
+      { status: draftStatus.value, note: draftNote.value },
+      { status: props.cluster.status, triageNote: props.cluster.triageNote },
+    );
+    if (body) {
+      await $fetch(`/api/failure-clusters/${props.cluster.id}/status`, { method: 'PATCH', body });
     }
     const assignee = draftAssignee.value.trim() || null;
     if (assignee !== (props.cluster.assignee ?? null)) {

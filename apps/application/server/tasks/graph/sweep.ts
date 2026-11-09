@@ -1,4 +1,5 @@
-import { desc, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import {
@@ -16,6 +17,7 @@ import { pruneCoverageReports } from '../../utils/coverage-reports';
 import { pruneSupersededReports } from '../../utils/coverage-totals';
 import { refreshOpenApiSurface } from '../../utils/openapi-surface';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { projectSourceReader } from '../../utils/source-at-blob';
 
 /**
  * Resolve and cache the default branch for projects that lack one, off the
@@ -34,7 +36,7 @@ async function backfillDefaultBranches(db: Awaited<ReturnType<typeof getDatabase
     const [latest] = await db
       .select({ metadata: testRuns.metadata })
       .from(testRuns)
-      .where(eq(testRuns.projectId, project.id))
+      .where(and(eq(testRuns.projectId, project.id), notPrivateRun(testRuns.origin)))
       .orderBy(desc(testRuns.id))
       .limit(1);
     if (!latest) continue;
@@ -102,7 +104,10 @@ export default defineTask({
       // so it never races a run's own recompute.
       const gaps = await withProjectGraphLock(project.id, async () => {
         if (project.openApiUrl) await refreshOpenApiSurface(db, project.id, project.openApiUrl).catch(() => false);
-        return computeScenarioGaps(db, project.id, { closeTriaged: false });
+        return computeScenarioGaps(db, project.id, {
+          closeTriaged: false,
+          readSource: projectSourceReader(db, project.id),
+        });
       }).catch(() => ({ upserted: 0, closed: 0 }));
       gapsUpserted += gaps.upserted;
       gapsClosed += gaps.closed;

@@ -8,7 +8,7 @@ a decision, or deserves its own pull request. This proposal keeps that list so t
 Each finding says what happens, where, and the fix the review suggested. A finding names functions and files rather than
 line numbers, which move.
 
-**Status.** Proposed 2026-10-27, from the review of the agent guide restructuring. F1, F3, F4, F5 and F21 are fixed
+**Status.** Proposed 2026-10-27, from the review of the agent guide restructuring. F1, F3, F4, F5, F13 and F21 are fixed
 and their entries removed; the others are open. The findings are independent: each can ship alone, in any order, and
 close its line here.
 
@@ -88,12 +88,6 @@ close its line here.
   shared module.
 - The tool names, commands and flags the skills under `packages/reporter/templates/skills/` name: a rename breaks the
   skills installed in users' projects without failing a test.
-
-### F13. Hard-coded browser path in the reporter's integration suite
-
-- **Where:** `packages/reporter/tests/integration/playwright.config.ts` launches `/opt/pw-browsers/chromium`, so
-  `npm run reporter:test:integration` fails outside that sandbox.
-- **Fix:** read `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, else use Playwright's own download, as the dashboard's scripts do.
 
 ### F14. The guides' CI path filter is kept by hand
 

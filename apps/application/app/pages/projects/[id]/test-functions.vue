@@ -13,6 +13,8 @@ const route = useRoute();
 const projectId = route.params.id as string;
 const toast = useToast();
 const { aiStatus } = useAiStatus();
+// The demo has no model to read pasted code: it offers the prompt to copy alone.
+const isDemo = useRuntimeConfig().public.demoMode;
 
 const { data: project, error: projectError } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
 if (projectError.value) showPageLoadError(projectError.value, 'project');
@@ -515,7 +517,7 @@ function describeSteps(entry: TestFunctionInfo): string {
               />
               <div class="flex items-center gap-2 flex-wrap">
                 <UButton
-                  v-if="aiStatus?.configured"
+                  v-if="aiStatus?.configured && !isDemo"
                   label="Extract"
                   icon="i-lucide-wand-2"
                   size="sm"

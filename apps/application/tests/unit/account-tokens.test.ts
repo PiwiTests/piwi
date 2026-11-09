@@ -10,15 +10,21 @@ import { migrateToLatest } from './temp-db';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false, released: [] as string[] }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/rate-limit', () => ({
   checkRateLimit: () => true,
   rateLimitClientIp: () => 'test',
   rateLimitedError: () => new Error('rate limited'),
+  releaseRateLimit: (key: string) => state.released.push(key),
 }));
 vi.mock('../../server/utils/auth', () => ({
-  hashPassword: async (password: string) => `hashed:${password}`,
+  // Takes a few milliseconds, as the real scrypt hash does, so concurrent requests interleave around it.
+  hashPassword: async (_event: unknown, password: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    if (state.hashBusy) throw Object.assign(new Error('busy'), { statusCode: 503 });
+    return `hashed:${password}`;
+  },
   revokeUserSessions: async () => 0,
   clearUserSession: async () => {},
 }));
@@ -51,6 +57,7 @@ beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
   state.db = db;
+  state.hashBusy = false;
   await db.insert(schema.users).values({ id: 1, username: 'alice', password: 'old', role: 'member', email: ALICE });
 });
 
@@ -117,9 +124,79 @@ describe('POST /api/auth/reset-password', () => {
   test('an invite accepted at the address it was sent to sets the password and verifies the address', async () => {
     const token = await mintAccountToken(db, 1, 'invite', ALICE);
 
-    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
 
     expect(await account()).toMatchObject({ password: 'hashed:new-password', emailVerified: true });
+  });
+
+  test('a token sets a password once', async () => {
+    const token = await mintAccountToken(db, 1, 'reset', ALICE);
+    await resetPassword({ body: { token, password: 'first-password' } });
+
+    await expect(resetPassword({ body: { token, password: 'second-password' } })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+
+    expect(await account()).toMatchObject({ password: 'hashed:first-password' });
+  });
+
+  test.each(['invite', 'reset'] as const)(
+    'two concurrent requests with one "%s" token: exactly one sets the password',
+    async (purpose) => {
+      const token = await mintAccountToken(db, 1, purpose, ALICE);
+      const passwords = ['first-password', 'second-password'];
+
+      const results = await Promise.allSettled(
+        passwords.map((password) => resetPassword({ body: { token, password } })),
+      );
+
+      const succeeded = results.flatMap((result, i) => (result.status === 'fulfilled' ? [passwords[i]] : []));
+      expect(succeeded).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({ reason: { statusCode: 400 } });
+      expect(await account()).toMatchObject({ password: `hashed:${succeeded[0]}` });
+    },
+  );
+
+  test('a reset refused while the server is busy leaves its token usable and gives back its rate-limit slot', async () => {
+    const token = await mintAccountToken(db, 1, 'reset', ALICE);
+    state.hashBusy = true;
+    state.released.length = 0;
+    await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    expect(state.released).toEqual(['reset:test']);
+    state.hashBusy = false;
+
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
+
+    expect(await account()).toMatchObject({ password: 'hashed:new-password' });
+  });
+
+  test('an expired token sets no password', async () => {
+    const token = await mintAccountToken(db, 1, 'reset', ALICE);
+    await db.update(schema.accountTokens).set({ expiresAt: new Date(Date.now() - 1000) });
+
+    await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+
+    expect(await account()).toMatchObject({ password: 'old' });
+  });
+
+  test('a verify token sets no password', async () => {
+    const token = await mintAccountToken(db, 1, 'verify', ALICE);
+
+    await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+
+    expect(await account()).toMatchObject({ password: 'old' });
   });
 
   test.each(['invite', 'reset'] as const)(
@@ -135,4 +212,20 @@ describe('POST /api/auth/reset-password', () => {
       expect(await account()).toMatchObject({ password: 'old', email: OTHER, emailVerified: false });
     },
   );
+
+  test('a link refused for a changed address stays usable once the account holds the address again', async () => {
+    const token = await mintAccountToken(db, 1, 'reset', ALICE);
+    await changeEmail(OTHER);
+    await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await changeEmail(ALICE);
+
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
+
+    expect(await account()).toMatchObject({ password: 'hashed:new-password' });
+  });
 });

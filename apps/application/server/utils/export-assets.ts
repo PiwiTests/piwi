@@ -12,6 +12,7 @@ import {
 } from '#shared/export/limits';
 import type { ExportAsset, ExportAssetReader, ExportBudget } from '#shared/export/types';
 import { readFileResolvingTrace } from './trace-reconstruct';
+import { escapesStorageRoot } from './sanitize-filename';
 
 function envNumber(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -51,7 +52,7 @@ export const serverAssetReader: ExportAssetReader = {
   async read(asset: ExportAsset): Promise<Uint8Array | null> {
     // The paths come from `files` rows, but an export is a bulk read of many of
     // them — keep the same traversal guard the file endpoint applies.
-    if (asset.storagePath.includes('..') || asset.storagePath.startsWith('/')) return null;
+    if (escapesStorageRoot(asset.storagePath)) return null;
 
     const buffer = await readFileResolvingTrace(asset.storagePath);
     if (!buffer) return null;

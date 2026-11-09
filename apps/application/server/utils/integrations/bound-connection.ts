@@ -1,6 +1,8 @@
 /**
- * The one connection a project reads and writes its tracker through: the one
- * its tracker binding names. A link belongs to the project of the entity it is
+ * The one connection a project reads and writes each kind of integration
+ * through: the one its binding for that kind names. The tracker binding is
+ * `project_integrations`; a kind with no binding table binds no project. Links
+ * are tracker issues, read through the tracker binding. A link belongs to the project of the entity it is
  * pinned to (a failure cluster, a bug report, a run, an execution or a test).
  * Creating a link matches its URL against that connection alone, so a link to
  * another site stays a plain link. A link that carries another connection keeps
@@ -11,12 +13,26 @@ import { eq, inArray } from 'drizzle-orm';
 import { bugReports, failureClusters, testCases, testRuns, testRunsCases } from '../../database/schema';
 import type { EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
+import type { IntegrationKind } from '#shared/integrations/registry';
 import { readProjectIntegration } from './binding';
 
-/** The connection a project's tracker binding names, or null for no project or a project bound to none. */
-export async function boundConnectionId(db: DbClient, projectId: number | null): Promise<number | null> {
+/**
+ * The connection a project's binding for `kind` names, or null for no project, a project bound to none, or a kind
+ * with no binding yet.
+ */
+export async function boundConnectionId(
+  db: DbClient,
+  projectId: number | null,
+  kind: IntegrationKind,
+): Promise<number | null> {
   if (projectId == null) return null;
-  return (await readProjectIntegration(db, projectId)).connectionId;
+  switch (kind) {
+    case 'tracker':
+      return (await readProjectIntegration(db, projectId)).connectionId;
+    case 'test-management':
+    case 'wiki':
+      return null;
+  }
 }
 
 /** Each kind of entity a link can be pinned to: the link's column for it, and the project of each of its ids. */
@@ -84,7 +100,8 @@ export async function linksOnBoundConnection(db: DbClient, links: EntityLink[]):
     links.filter((link) => link.connectionId != null),
   );
   const bound = new Map<number, number | null>();
-  for (const projectId of new Set(projects.values())) bound.set(projectId, await boundConnectionId(db, projectId));
+  for (const projectId of new Set(projects.values()))
+    bound.set(projectId, await boundConnectionId(db, projectId, 'tracker'));
   return links.filter((link) => {
     const projectId = projects.get(link.id);
     return link.connectionId != null && projectId != null && bound.get(projectId) === link.connectionId;

@@ -265,8 +265,9 @@ export interface TestErrorLike {
  * every step error it recorded is marked.
  */
 export function markRecoveredSteps(steps: FlatStep[], errors: readonly TestErrorLike[]): void {
+  // The step's error has what may be a secret hidden (`flattenSteps`): the test's is read hidden the same way.
   const fatal = errors.map((error) => ({
-    head: firstErrorLine(error.message),
+    head: firstErrorLine(typeof error.message === 'string' ? hideSecretsInError(error.message) : ''),
     location: locationText(error.location),
   }));
   for (const step of steps) {
@@ -334,8 +335,8 @@ export function hideTypedStepTitle(title: string, category?: string | null): str
  * step recording its `depth` so the tree can be rebuilt. Uses Playwright's
  * built-in category when available. The text a fill, a typing or an insert
  * typed into a field that may hold a secret is hidden from the title and the
- * params (`withoutTypedText`), and any typed text from the step's error
- * (`hideSecretsInLog`).
+ * params (`withoutTypedText`), and what may be a secret from the step's error
+ * (`hideSecretsInError`).
  */
 export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   const result: FlatStep[] = [];
@@ -571,11 +572,14 @@ function stepLocation(step: any): string | null {
   return step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : null;
 }
 
-/** The first non-empty line of a step's error, without ANSI codes and capped; null when it has none. */
+/**
+ * The first non-empty line of a step's error, with what may be a secret hidden (`hideSecretsInError`), without ANSI
+ * codes and capped; null when it has none.
+ */
 function stepErrorLine(step: any): string | null {
   const raw = step.error?.message ?? step.error?.value;
   if (typeof raw !== 'string') return null;
-  const line = stripAnsi(raw)
+  const line = stripAnsi(hideSecretsInError(raw))
     .split('\n')
     .map((l) => l.trim())
     .find((l) => l.length > 0);

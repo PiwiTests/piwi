@@ -1,104 +1,123 @@
 /**
  * The guide anchors of the pages that connect things to the instance and take
- * things in: Setup (`/setup`), the MCP server (`/mcp`), the API reference
- * (`/docs`), a project's bug reports and imports, and a bug report's page.
+ * things in: the Setup section of Settings (Connect a suite, Capabilities, the
+ * MCP server, the API reference, Companion tools), a project's bug reports and
+ * imports, and a bug report's page.
  */
 
 /** @type {readonly import('./index.d.mts').GuideAnchor[]} */
 export const SETUP_ANCHORS = [
   {
-    id: 'setup-page',
+    id: 'connect-page',
     kind: 'page',
-    pages: ['/setup'],
+    pages: ['/settings/connect'],
     describes:
-      'The Setup page: the steps that get results to this instance, what you want Piwi for, which optional capabilities it uses and the tools to install.',
-    requires: { permission: 'settings:manage' },
+      'Settings → Connect a suite: the steps that get a Playwright suite’s results to this instance, with one command, a coding agent or by hand.',
     doc: 'features/ui-overview#setup',
-    sample: { route: '/setup' },
+    sample: { route: '/settings/connect' },
+  },
+  {
+    id: 'capabilities-page',
+    kind: 'page',
+    pages: ['/settings/capabilities'],
+    describes:
+      'Settings → Capabilities: what you want Piwi for, and which optional capabilities this instance uses, read from its data.',
+    requires: { permission: 'settings:manage' },
+    doc: 'operate/capabilities',
+    sample: { route: '/settings/capabilities' },
   },
   {
     id: 'capability-presets',
     kind: 'block',
-    pages: ['/setup'],
+    pages: ['/settings/capabilities'],
     describes:
       'The What do you want Piwi for card: the groups of capabilities this instance uses; unchecking one declines its capabilities everywhere.',
     requires: { permission: 'settings:manage' },
     help: 'setup.presets',
     doc: 'operate/capabilities',
-    sample: { route: '/setup' },
+    sample: { route: '/settings/capabilities' },
   },
   {
     id: 'setup-ladder',
     kind: 'block',
-    pages: ['/setup'],
+    pages: ['/settings/capabilities'],
     describes:
       'The heading of What’s switched on: every optional capability, whether this instance uses it, and what each of the others needs.',
     requires: { permission: 'settings:manage' },
     doc: 'operate/capabilities',
-    sample: { route: '/setup' },
+    sample: { route: '/settings/capabilities' },
   },
   {
     id: 'mcp-page',
     kind: 'page',
-    pages: ['/mcp'],
+    pages: ['/settings/mcp'],
     describes:
-      'The MCP server page: how to connect Claude Code, Cursor, VS Code or another MCP client to this instance, the tools it serves and how clients sign in.',
+      'Settings → MCP server: how to connect Claude Code, Cursor, VS Code or another MCP client to this instance, the tools it serves and how clients sign in.',
     requires: { capability: 'mcp' },
     doc: 'features/mcp',
-    sample: { route: '/mcp' },
+    sample: { route: '/settings/mcp' },
   },
   {
     id: 'mcp-setup',
     kind: 'block',
-    pages: ['/mcp'],
+    pages: ['/settings/mcp'],
     describes:
       'The Client setup card: the configuration that connects Claude Code, Cursor, VS Code or another MCP client to this instance.',
     requires: { capability: 'mcp' },
     help: 'mcp.client-setup',
     doc: 'features/mcp',
-    sample: { route: '/mcp' },
+    sample: { route: '/settings/mcp' },
   },
   {
     id: 'mcp-tools',
     kind: 'block',
-    pages: ['/mcp'],
+    pages: ['/settings/mcp'],
     describes:
       'The What it provides card: the MCP tools this instance serves, grouped by module, and the switch that narrows a client to the core tools.',
     requires: { capability: 'mcp' },
     help: 'mcp.tools',
     doc: 'features/mcp#what-it-provides',
-    sample: { route: '/mcp' },
+    sample: { route: '/settings/mcp' },
   },
   {
     id: 'mcp-skills',
     kind: 'block',
-    pages: ['/mcp'],
+    pages: ['/settings/mcp'],
     describes:
       'The Agent skills card: the SKILL.md workflows the reporter CLI installs in a test project, such as investigating a failed run.',
     requires: { capability: 'mcp' },
     help: 'mcp.skills',
     doc: 'features/agent-skills',
-    sample: { route: '/mcp' },
+    sample: { route: '/settings/mcp' },
   },
   {
     id: 'mcp-auth',
     kind: 'block',
-    pages: ['/mcp'],
+    pages: ['/settings/mcp'],
     describes:
       'The Authentication card: how an MCP client proves who it is, by signing in through OAuth in the browser or with an API key.',
     requires: { capability: 'mcp' },
     help: 'mcp.auth',
     doc: 'features/mcp#authentication',
-    sample: { route: '/mcp' },
+    sample: { route: '/settings/mcp' },
   },
   {
     id: 'api-reference-page',
     kind: 'page',
-    pages: ['/docs'],
+    pages: ['/settings/api'],
     describes:
-      'The API Reference page: this instance’s OpenAPI reference of every REST endpoint, with its parameters, its responses and a form to try it out.',
-    doc: 'features/ui-overview#settings',
-    sample: { route: '/docs' },
+      'Settings → API reference: this instance’s OpenAPI reference of every REST endpoint, with its parameters, its responses and a form to try it out.',
+    doc: 'features/ui-overview#setup',
+    sample: { route: '/settings/api' },
+  },
+  {
+    id: 'companion-tools-page',
+    kind: 'page',
+    pages: ['/settings/companion-tools'],
+    describes:
+      'Settings → Companion tools: what installs outside the dashboard and works with it, such as Piwi Picker, the desktop app and the editor extensions.',
+    doc: 'features/ui-overview#setup',
+    sample: { route: '/settings/companion-tools' },
   },
   {
     id: 'bug-report-list',

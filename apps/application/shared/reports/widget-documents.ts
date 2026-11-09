@@ -279,8 +279,8 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         rows: health.specs.map((spec) =>
           row({
             spec: spec.prefix,
-            pass: num(ctx, spec.passRate * 100, 'percent', 0),
-            flaky: num(ctx, spec.flakyRate * 100, 'percent', 0),
+            pass: num(ctx, spec.passRate === null ? null : spec.passRate * 100, 'percent', 0),
+            flaky: num(ctx, spec.flakyRate === null ? null : spec.flakyRate * 100, 'percent', 0),
             tests: num(ctx, spec.testCount, 'count'),
           }),
         ),
@@ -1019,7 +1019,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
               worst: f.worstClass ? ctx.s.gapClass(f.worstClass) : '—',
               count: num(ctx, f.count, 'count'),
             },
-            link(ctx, `/projects/${f.projectId}?tab=gaps`),
+            link(ctx, `/projects/${f.projectId}?tab=coverage`),
           ),
         ),
       });
@@ -1048,7 +1048,7 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
                 class: ctx.s.gapClass(g.class),
                 score: num(ctx, g.score, 'count', 3),
               },
-              link(ctx, `/projects/${p.projectId}?tab=gaps`),
+              link(ctx, `/projects/${p.projectId}?tab=coverage`),
             ),
           ),
         ),

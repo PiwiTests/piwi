@@ -24,3 +24,18 @@ export function liveRowNote(run: LiveRowRun): LiveRowNote | null {
   if (run.desktop) return 'desktop';
   return run.keyed && !run.ci ? 'unshared' : null;
 }
+
+/**
+ * What a running row shows where Watch would be: **Watch** on its worker in the run's live view (`watch`), else
+ * **Pause and watch** on its worker in a run the desktop app started (`pause-and-watch`), else the run's note. Null
+ * when the row shows none.
+ */
+export function liveRowShows(row: {
+  liveWorker: boolean;
+  desktopWorker: boolean;
+  note: LiveRowNote | null;
+}): 'watch' | 'pause-and-watch' | LiveRowNote | null {
+  if (row.liveWorker) return 'watch';
+  if (row.desktopWorker) return 'pause-and-watch';
+  return row.note;
+}

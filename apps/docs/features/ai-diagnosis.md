@@ -90,7 +90,9 @@ The diagnosis is fed the code that changed. On a cluster page you can:
 - **Preview the exact context** before running it, so nothing leaves your server by surprise.
 
 Without a pinned baseline, the diff starts at the last green run before the cluster first appeared, else at the last
-run where this test passed; the context preview names which one it used. With the repository reachable, Piwi also sends the
+run before it where this test passed; the context preview names which one it used. When the host lists only part of a
+large diff (its newest commits, its first files), or the patches are cut to the context budget, the context says so and
+marks the section truncated. With the repository reachable, Piwi also sends the
 **full current content** of the most suspect changed files and of the failing test's local imports (page objects,
 helpers, fixtures), capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4) and `PIWI_AI_MAX_SOURCE_FILE_CHARS`. The
 repository connection is set up on [Source control](/guide/source-control).
@@ -112,7 +114,7 @@ deterministic locator edits.
 ## Diagnoses written by an agent
 
 A coding agent can record its own diagnosis on a cluster, or on one failure, with the MCP tool `record_diagnosis`, in
-the same JSON a model returns here. On one failure, the [REST API](https://piwitests.dev/demo/docs) records it too.
+the same JSON a model returns here. On one failure, the [REST API](https://piwitests.dev/demo/settings/api) records it too.
 It needs no AI provider, its patch is validated against the failing commit's source when
 [source control](/guide/source-control) is connected, and the panel shows it as **written by an agent** with the
 model it named. It replaces the current diagnosis, which stays in the history. Declining the **Agent diagnoses**

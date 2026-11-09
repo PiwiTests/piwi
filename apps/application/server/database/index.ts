@@ -3,7 +3,11 @@
 // TypeScript uses the SQLite types as the canonical reference throughout.
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
-import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
+import {
+  ALIAS_SAMPLES_BACKFILLED_SETTING,
+  backfillAliasSamples,
+  reclusterFailureFingerprints,
+} from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { configureSqliteConnections, sqliteClientConfig } from './sqlite-connections';
@@ -103,6 +107,125 @@ function backfillAnalyticsRollups(): void {
 }
 
 /**
+ * Give the retries stored without an attempt history one from their run's
+ * stored attempts (`backfillAttemptHistoriesOnce`), once per instance, without
+ * blocking startup; an interrupted backfill resumes at the next start.
+ */
+function backfillAttemptHistories(): void {
+  void (async () => {
+    try {
+      const { backfillAttemptHistoriesOnce } = await import('../utils/attempt-history-backfill');
+      const filled = await backfillAttemptHistoriesOnce(db as any);
+      if (filled) console.log(`[Database] Attempt-history backfill filled ${filled} execution(s)`);
+    } catch (err) {
+      console.error('[Database] Attempt-history backfill failed:', err);
+    }
+  })();
+}
+
+/**
+ * Hide each credential's shape in the test errors stored before ingest hid
+ * them (`hideSecretShapesInStoredErrorsOnce`): the executions' errors, their
+ * steps' and hooks' errors, the runs' errors. Once per instance, without
+ * blocking startup; an interrupted pass resumes at the next start.
+ */
+function hideSecretsInStoredErrors(): void {
+  void (async () => {
+    try {
+      const { hideSecretShapesInStoredErrorsOnce } = await import('../utils/error-secrets-backfill');
+      const hidden = await hideSecretShapesInStoredErrorsOnce(db as any);
+      if (hidden) console.log(`[Database] Credentials hidden in ${hidden} stored error(s)`);
+    } catch (err) {
+      console.error('[Database] Hiding credentials in stored errors failed:', err);
+    }
+  })();
+}
+
+/**
+ * Re-fingerprint the failure clusters (`reclusterFailureFingerprints`), after
+ * giving a sample to the aliases stored without one (`backfillAliasSamples`),
+ * then hiding each credential's shape in the clusters' and aliases' samples
+ * (`hideSecretShapesInClusterSamples`), each once per instance. Startup waits
+ * for all three, so a sample that changed is fingerprinted again before ingest
+ * fingerprints the same failure. A failure is logged, and the next start tries
+ * again.
+ */
+async function reclusterFailureClusters(target: DB): Promise<void> {
+  try {
+    const { getAppSetting, setAppSetting } = await import('../utils/app-settings');
+    if (!(await getAppSetting(target, ALIAS_SAMPLES_BACKFILLED_SETTING))) {
+      const found = await backfillAliasSamples(target);
+      await setAppSetting(target, ALIAS_SAMPLES_BACKFILLED_SETTING, new Date().toISOString());
+      if (found > 0) console.log(`[Database] Failure-cluster alias backfill found ${found} sample(s)`);
+    }
+    const { CLUSTER_SAMPLE_SECRETS_SETTING, hideSecretShapesInClusterSamples } =
+      await import('../utils/error-secrets-backfill');
+    if (!(await getAppSetting(target, CLUSTER_SAMPLE_SECRETS_SETTING))) {
+      const hidden = await hideSecretShapesInClusterSamples(target);
+      await setAppSetting(target, CLUSTER_SAMPLE_SECRETS_SETTING, new Date().toISOString());
+      if (hidden > 0) console.log(`[Database] Credentials hidden in ${hidden} failure-cluster sample(s)`);
+    }
+    const { updated, merged } = await reclusterFailureFingerprints(target);
+    if (updated || merged) {
+      console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
+    }
+  } catch (err) {
+    console.error('[Database] Failure-cluster re-fingerprinting failed:', err);
+  }
+}
+
+/**
+ * Give the stored resource findings the current identity
+ * (`rekeyResourceFindingsOnce`), once per identity version. Startup waits for
+ * it, so no run is recorded under the current identity beside a finding still
+ * stored under the one before. A failure is logged, and the next start tries
+ * again; a finding a run recorded meanwhile keeps the current identity.
+ */
+async function rekeyResourceFindings(target: DB): Promise<void> {
+  try {
+    const { rekeyResourceFindingsOnce } = await import('#shared/handlers/resource-findings');
+    const rekeyed = await rekeyResourceFindingsOnce(target as any);
+    if (rekeyed && (rekeyed.updated || rekeyed.merged)) {
+      console.log(`[Database] Resource findings re-keyed: ${rekeyed.updated} updated, ${rekeyed.merged} merged`);
+    }
+  } catch (err) {
+    console.error('[Database] Re-keying the resource findings failed:', err);
+  }
+}
+
+/**
+ * Release the `cluster.new` claim the migration adding `announced_at` set on
+ * the clusters no run announced (`releaseUnannouncedClusterClaimsOnce`), once
+ * per instance. Startup waits for it, so no run claims a cluster before it. A
+ * failure is logged, and the next start tries again.
+ */
+async function releaseUnannouncedClusterClaims(target: DB): Promise<void> {
+  try {
+    const { releaseUnannouncedClusterClaimsOnce } = await import('../utils/notifications/cluster-claims');
+    const released = await releaseUnannouncedClusterClaimsOnce(target as any);
+    if (released) console.log(`[Database] ${released} failure cluster(s) left for a run to announce`);
+  } catch (err) {
+    console.error('[Database] Releasing unannounced failure-cluster claims failed:', err);
+  }
+}
+
+/**
+ * Redact the share tokens the integration actions and the issue links stored
+ * (`redactStoredShareTokensOnce`), once per instance. Startup waits for it, so
+ * no action is sent from a body that still holds one. A failure is logged, and
+ * the next start tries again.
+ */
+async function redactStoredShareTokens(target: DB): Promise<void> {
+  try {
+    const { redactStoredShareTokensOnce } = await import('../utils/integrations/share-url');
+    const redacted = await redactStoredShareTokensOnce(target as any);
+    if (redacted) console.log(`[Database] Share tokens redacted in ${redacted} stored row(s)`);
+  } catch (err) {
+    console.error('[Database] Redacting stored share tokens failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -133,17 +256,15 @@ async function openDatabase(): Promise<DB> {
           const target = postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder }));
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
-          try {
-            const { updated, merged } = await reclusterFailureFingerprints(db as any);
-            if (updated || merged) {
-              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
-            }
-          } catch (rcErr) {
-            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
-          }
+          await reclusterFailureClusters(db);
+          await rekeyResourceFindings(db);
+          await releaseUnannouncedClusterClaims(db);
+          await redactStoredShareTokens(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
+          backfillAttemptHistories();
+          hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -192,17 +313,15 @@ async function openDatabase(): Promise<DB> {
             migrationClient.close();
           }
           console.log('[Database] SQLite migrations completed successfully');
-          try {
-            const { updated, merged } = await reclusterFailureFingerprints(db);
-            if (updated || merged) {
-              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
-            }
-          } catch (rcErr) {
-            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
-          }
+          await reclusterFailureClusters(db);
+          await rekeyResourceFindings(db);
+          await releaseUnannouncedClusterClaims(db);
+          await redactStoredShareTokens(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
+          backfillAttemptHistories();
+          hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;

@@ -99,6 +99,17 @@ pub struct LocalRuns {
     /// Reproduction specs written into a linked folder, by run id: removed when
     /// their run ends, or when the app quits.
     specs: Mutex<HashMap<u32, PathBuf>>,
+    /// What each running run is, for the tray's Stop items (`run_label`).
+    labels: Mutex<HashMap<u32, String>>,
+}
+
+/// What a local run is, as the tray names it: `tests in shop`, `the bisect in
+/// shop`, after the linked folder's name.
+pub(crate) fn run_label(what: &str, folder: &Path) -> String {
+    match folder.file_name() {
+        Some(name) => format!("{what} in {}", name.to_string_lossy()),
+        None => what.to_string(),
+    }
 }
 
 impl LocalRuns {
@@ -113,6 +124,23 @@ impl LocalRuns {
         self.next_id.fetch_add(1, Ordering::SeqCst) + 1
     }
 
+    /// The running runs, by id, each with its label (`run_label`).
+    pub fn listed(&self) -> Vec<(u32, String)> {
+        let mut ids: Vec<u32> = self.children.lock().unwrap().keys().copied().collect();
+        ids.extend(self.jobs.lock().unwrap().keys().copied());
+        ids.sort_unstable();
+        ids.dedup();
+        let labels = self.labels.lock().unwrap();
+        ids.into_iter()
+            .map(|id| (id, labels.get(&id).cloned().unwrap_or_else(|| "a local run".to_string())))
+            .collect()
+    }
+
+    /// Name run `id` for the tray (`run_label`).
+    pub(crate) fn label(&self, id: u32, label: String) {
+        self.labels.lock().unwrap().insert(id, label);
+    }
+
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.
     pub(crate) fn register_job(&self, id: u32, job: Job) {
         self.jobs.lock().unwrap().insert(id, job);
@@ -121,6 +149,7 @@ impl LocalRuns {
     /// Remove a job from tracking once its driver has finished with it.
     pub(crate) fn drop_job(&self, id: u32) {
         self.jobs.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
     }
 
     /// Record (or clear) the child currently running for a job, so a stop or
@@ -157,12 +186,14 @@ impl LocalRuns {
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
     }
 
     /// Kill a plain run's process tree now, if it is still running.
     fn kill_child(&self, id: u32) {
         let child = self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
         if let Some(child) = child {
             crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
@@ -216,6 +247,7 @@ impl LocalRuns {
         for (_, spec) in self.specs.lock().unwrap().drain() {
             crate::repro::remove_spec(&spec);
         }
+        self.labels.lock().unwrap().clear();
     }
 
     /// Whether a plain run, or a job's test or browser install, is still running.
@@ -619,13 +651,10 @@ impl RunEventPayload {
 
 /// The bundled server's run channel, and the address its runs' picks go to,
 /// asked of `GET /api/desktop/run-channel` with the desktop token, once the
-/// server at the port proved it is the one this launch started (the readiness
-/// nonce), so the token never goes to another process that took the port. None
-/// when it does not answer a channel.
-fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String, Option<String>)> {
-    if !crate::health_ok(port, nonce) {
-        return None;
-    }
+/// server at the port proved it holds the token (the readiness challenge), so
+/// the token never goes to another process that took the port. None when it
+/// does not answer a channel.
+fn bundled_run_channel(port: u16, token: String) -> Option<(String, Option<String>)> {
     let server = crate::mcp_clients::ServerInfo { port, token };
     let body = crate::repro::local_get_json(&server, "/api/desktop/run-channel").ok()?;
     let channel = body.get("runChannel")?.as_str()?.to_string();
@@ -638,33 +667,26 @@ fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String,
 
 /// The environment naming the bundled server as run `id`'s hub, and as where
 /// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
-/// the run starts. `attended`: whether a person attends the run, whose
-/// failures the server may then hold for them.
+/// the run starts; the run's name alone when the server names no hub.
+/// `attended`: whether a person attends the run, whose failures the server may
+/// then hold for them.
 pub(crate) async fn bundled_hub_env(
     app: &AppHandle,
     id: u32,
     attended: bool,
 ) -> Vec<(&'static str, String)> {
-    let (port, token, nonce) = {
-        let (Some(server), Some(nonce)) = (
-            app.try_state::<crate::mcp_clients::ServerInfo>(),
-            app.try_state::<crate::LaunchNonce>(),
-        ) else {
-            return Vec::new();
+    let (port, token) = {
+        let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
+            return crate::hub_env::hub_env(None, None, id, attended);
         };
-        (server.port, server.token.clone(), nonce.0.clone())
+        (server.port, server.token.clone())
     };
-    let found =
-        tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token, &nonce))
-            .await
-            .ok()
-            .flatten();
-    match found {
-        Some((channel, picks)) => {
-            crate::hub_env::hub_env(Some(channel.as_str()), picks.as_deref(), id, attended)
-        }
-        None => Vec::new(),
-    }
+    let found = tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token))
+        .await
+        .ok()
+        .flatten();
+    let (channel, picks) = found.unzip();
+    crate::hub_env::hub_env(channel.as_deref(), picks.flatten().as_deref(), id, attended)
 }
 
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
@@ -694,29 +716,47 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await
+}
+
+/// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
+/// `folder` with the bundled Node sidecar, `envs` beside the run's own (the
+/// hub's, the colors, the folder's `PATH`), and stream its output as
+/// `piwi:local-run` events. `on_exit` hears its exit code once it ends, before
+/// the window does, and whether a stop was asked for it. Returns the run id.
+pub(crate) async fn spawn_tests(
+    app: &AppHandle,
+    folder: &Path,
+    cli: &Path,
+    args: Vec<String>,
+    envs: Vec<(&'static str, String)>,
+    on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
+) -> Result<u32, String> {
     let attended = crate::hub_env::attended_args(&args);
-    let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into()];
+    let mut cmd_args: Vec<String> = vec![node_path(cli), "test".into()];
     cmd_args.extend(args);
 
     let id = app.state::<LocalRuns>().allocate_id();
-    let hub = bundled_hub_env(&app, id, attended).await;
+    let hub = bundled_hub_env(app, id, attended).await;
     let command = app
         .shell()
         .sidecar("node")
         .map_err(|e| e.to_string())?
         .args(cmd_args)
-        .current_dir(&folder)
-        .envs(crate::worktree::run_path_env(&app, &folder))
+        .current_dir(folder)
+        .envs(crate::worktree::run_path_env(app, folder))
         .envs(COLOR_ENV)
-        .envs(origin)
+        .envs(envs)
         .envs(hub);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
+    state.label(id, run_label("tests", folder));
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
+    let mut on_exit = Some(on_exit);
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             let payload = match event {
@@ -732,8 +772,13 @@ pub async fn desktop_run_local_tests(
                 ),
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
+                    let mut stopped = false;
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                        stopped = runs.stopping.lock().unwrap().contains(&id);
                         runs.drop_child(id);
+                    }
+                    if let Some(on_exit) = on_exit.take() {
+                        on_exit(status.code, stopped);
                     }
                     RunEventPayload::exit(id, status.code)
                 }
@@ -804,6 +849,13 @@ fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_is_named_after_its_linked_folder() {
+        assert_eq!(run_label("tests", Path::new("/work/shop")), "tests in shop");
+        assert_eq!(run_label("the bisect", Path::new("/work/admin/")), "the bisect in admin");
+        assert_eq!(run_label("tests", Path::new("/")), "tests");
+    }
 
     #[test]
     fn quitting_removes_the_reproduction_specs_still_on_disk() {

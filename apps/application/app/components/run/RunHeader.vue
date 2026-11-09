@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import type { TestRunDetails, ReportInfo } from '~~/types/api';
-import type { RetryMode } from '~/utils/retry-command';
-import { highlightCode } from '#shared/highlight';
+import type { TestRunDetails, ReportInfo, TestCaseResult } from '~~/types/api';
+import { highlightCode } from '@piwitests/run-ui/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
-import { mergeExternalIdDuplicates, type ExternalIdDuplicateTest } from '@piwitests/core/test-meta';
+import {
+  MAX_TEST_TAGS,
+  mergeExternalIdDuplicates,
+  formatTagsTruncatedTests,
+  readTagsTruncated,
+  tagsTruncatedCount,
+  type ExternalIdDuplicateTest,
+} from '@piwitests/core/test-meta';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
+import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
+import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
+import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -28,12 +39,18 @@ const props = defineProps<{
     fixmeTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
+    /** Tests the run's interruption cut short: in no outcome, known from the loaded cases only. */
+    interruptedTests?: number;
   } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
   /** The active status filters: the count bar sets them and the Tests list applies them. */
   activeStatuses: string[];
   finalizing?: boolean;
+  /** The run's tests as the page shows them while it is live, the streamed ones included. */
+  liveCases?: TestCaseResult[] | null;
+  /** The page can no longer read the run (deleted, signed out, no access): its status stands still. */
+  stopped?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -45,12 +62,54 @@ const toast = useToast();
 const config = useRuntimeConfig();
 const { onOpenReport } = useDesktopReportLink();
 
+// Create issue about the run: a person's comment, with its tests and clusters attached.
+const { hasTracker } = useTrackerStatus();
+const { can } = useAuth();
+const canFileRunIssue = computed(
+  () => hasTracker.value && !!props.testRun?.id && can('issue:create', props.testRun?.projectId),
+);
+const runIssueOpen = ref(false);
+
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
+
+const environmentOpen = ref(false);
+/** The runner's time zone, locale and OS in one line; null when the run recorded no environment. */
+const environmentSummary = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const runner = env.runner[0];
+  if (runner) {
+    const parts = [
+      runner.timeZone,
+      runner.locale,
+      runner.os,
+      runner.nodeVersion ? `Node.js ${runner.nodeVersion}` : null,
+    ];
+    const text = parts.filter(Boolean).join(' · ');
+    if (text) return text;
+  }
+  if (env.browser.length || env.server.length) return `${env.browser.length + env.server.length} recorded`;
+  return null;
+});
+/** What warns about the run's environment: shards that disagree, a server that restarted or whose clock is off. */
+const environmentWarning = computed(() => {
+  const env = props.testRun?.environments;
+  if (!env) return null;
+  const differing = disagreeingFields(env.runner);
+  if (differing.length) return `shards differ on ${differing.map((f) => f.label).join(', ')}`;
+  const warned = env.server.filter((s) => serverWarnings(s).length > 0);
+  if (warned.length) return `${warned.length} server${warned.length === 1 ? '' : 's'} to check`;
+  return null;
+});
 const scm = computed(() => props.testRun?.metadata?.scm);
+/** Where the run started and the editor that steers it (`runStartedFrom`). */
+const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
 const incident = computed(() => readRunIncident(props.testRun?.metadata));
+// The errors Playwright reported outside any test, which explain a failed run its tests do not.
+const runErrors = computed(() => props.testRun?.runErrors ?? []);
 // The seed of a run Playwright scheduled in random order (`--shuffle`).
 const shuffleSeed = computed(() => readShuffleSeed(props.testRun?.metadata));
 const { copy } = useCopy();
@@ -78,7 +137,18 @@ const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.t
 const externalIdDuplicates = computed(() =>
   mergeExternalIdDuplicates((props.testRun?.metadata as Record<string, unknown> | null)?.externalIdDuplicates),
 );
-function duplicateTestLabel(test: ExternalIdDuplicateTest): string {
+/** The tests whose tags were cut at the limit: how many, and the ones the run recorded. */
+const tagsTruncated = computed(() =>
+  readTagsTruncated((props.testRun?.metadata as Record<string, unknown> | null)?.tagsTruncated),
+);
+const tagsTruncatedFact = computed(
+  () =>
+    `Tags cut at ${MAX_TEST_TAGS} on ${tagsTruncated.value ? formatTagsTruncatedTests(tagsTruncated.value) : '0 tests'}`,
+);
+const tagsTruncatedHasMore = computed(() =>
+  tagsTruncated.value ? tagsTruncatedCount(tagsTruncated.value).atLeast : false,
+);
+function runTestLabel(test: ExternalIdDuplicateTest): string {
   const where = test.line != null ? `${test.filePath}:${test.line}` : test.filePath;
   return `${where} · ${[...(test.suitePath ?? []), test.title].join(' › ')}`;
 }
@@ -95,22 +165,50 @@ const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?
 // segments while the run is still going instead of only at the end.
 const flaky = computed(() => props.displayProgress?.flakyTests ?? props.testRun?.flakyTests ?? 0);
 const didNotRun = computed(() => props.displayProgress?.didNotRunTests ?? props.testRun?.didNotRunTests ?? 0);
+const interrupted = computed(() => props.displayProgress?.interruptedTests ?? 0);
 
 // The first uploaded report is the run's headline artifact.
 const primaryReport = computed(() => props.allReports[0] ?? null);
 
 const {
-  mode: retryMode,
   failedCases,
   flakyCases,
   allCases,
+  everyCase,
+  projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
-} = useRunRetryCommand(() => props.testRun?.testCases);
+} = useRunRetryCommand(() =>
+  runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases),
+);
 
-// A red run leads with Copy retry command; a green run leads with its report.
-const retryIsPrimary = computed(() => failedCases.value.length > 0);
+/**
+ * Whether Copy retry command leads (a red run) or the report (a green one): decided once the run has ended, from its
+ * failed tests, and kept for the page view, until the run goes on again. A run still going leads with neither: Copy
+ * retry command stays a secondary action for the tests that failed so far.
+ */
+const retryIsPrimary = ref(false);
+const runEnded = computed(
+  () =>
+    !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
+);
+let primaryDecided = false;
+watch(
+  runEnded,
+  (ended) => {
+    if (!ended) {
+      primaryDecided = false;
+      retryIsPrimary.value = false;
+    } else if (!primaryDecided) {
+      primaryDecided = true;
+      retryIsPrimary.value = failedCases.value.length > 0;
+    }
+  },
+  { immediate: true },
+);
+/** Whether Copy retry command shows: on a red run, and on a live one once a test failed. */
+const retryShown = computed(() => retryIsPrimary.value || (!runEnded.value && failedCases.value.length > 0));
 
 /** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
 const MAX_TESTS_IN_A_WHOLE_RUN = 200;
@@ -149,6 +247,33 @@ const rerunSets = computed<LocalRunSet[]>(() => {
   return sets.filter((set) => set.cases.length > 0);
 });
 const rerunMain = computed(() => rerunSets.value[0] ?? null);
+
+/** What Run on my machine sends from a run: its failed tests when it has some, and all its tests. */
+const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
+  const runId = props.testRun?.id;
+  if (!runId) return [];
+  const max = RUN_REQUEST_LIMITS.tests.max;
+  const choices: RunOnMyMachineChoice[] = [];
+  const failed = failedCases.value.length;
+  if (failed && failed <= max) {
+    choices.push({
+      label: 'The failed tests',
+      count: failed,
+      source: { runId, tests: 'failed' },
+      projects: retryProjects.value,
+    });
+  }
+  const all = everyCase.value.length;
+  if (all && all <= max) {
+    choices.push({
+      label: 'All the tests of the run',
+      count: all,
+      source: { runId, tests: 'all' },
+      projects: retryProjectsOf(everyCase.value),
+    });
+  }
+  return choices;
+});
 
 const desktopBridge = ref(false);
 onMounted(() => {
@@ -207,6 +332,7 @@ function onLabelKeydown(e: KeyboardEvent) {
 <template>
   <DetailHeader
     :status="testRun?.status ?? ''"
+    :status-still="stopped"
     :title="`Run #${testRun?.id}`"
     :badges="incidentBadges"
     data-shot="run-header"
@@ -265,31 +391,22 @@ function onLabelKeydown(e: KeyboardEvent) {
       <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
            tests in the desktop app; the report leads on a green one, where the desktop
            app offers to re-run the flaky tests, else all of them. -->
-      <UPopover v-if="retryIsPrimary && !desktopBridge">
+      <!-- The copy's fallback selects a hidden textarea: focus leaving the menu keeps it open. -->
+      <UPopover v-if="retryShown && !desktopBridge" :content="KEEP_OPEN_ON_FOCUS_OUT">
         <UButton
           size="xs"
-          color="primary"
-          variant="solid"
+          :color="retryIsPrimary ? 'primary' : 'neutral'"
+          :variant="retryIsPrimary ? 'solid' : 'outline'"
           :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
           :title="retryTitle"
           aria-label="Copy retry command"
+          data-tour="run-retry-command"
           @click="copyRetryCommand()"
         >
           <span class="hidden sm:inline">Copy retry command</span>
         </UButton>
         <template #content>
-          <div class="p-2 space-y-1 min-w-32">
-            <p class="text-xs font-medium text-zinc-500 px-2 py-1">Mode</p>
-            <button
-              v-for="m in ['file-line', 'grep', 'file'] as RetryMode[]"
-              :key="m"
-              class="w-full text-left px-2 py-1 text-sm rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="retryMode === m ? 'bg-primary/10 text-primary' : ''"
-              @click="retryMode = m"
-            >
-              {{ m === 'file-line' ? 'File:line' : m === 'grep' ? 'Title (grep)' : 'File only' }}
-            </button>
-          </div>
+          <RetryCommandOptions :projects="retryProjects" />
         </template>
       </UPopover>
 
@@ -304,6 +421,13 @@ function onLabelKeydown(e: KeyboardEvent) {
         :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
         :other-sets="rerunSets.slice(1)"
+      />
+
+      <RunOnMyMachineButton
+        v-if="testRun?.projectId && machineChoices.length"
+        :project-id="testRun.projectId"
+        :machine-runs="testRun.machineRuns ?? false"
+        :choices="machineChoices"
       />
 
       <UButton
@@ -322,12 +446,34 @@ function onLabelKeydown(e: KeyboardEvent) {
       >
         <span class="hidden sm:inline">{{ primaryReport.label }}</span>
       </UButton>
+
+      <UButton
+        v-if="canFileRunIssue"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-simple-icons-jira"
+        aria-label="Create issue"
+        data-tour="run-create-issue"
+        @click="runIssueOpen = true"
+      >
+        <span class="hidden sm:inline">Create issue</span>
+      </UButton>
+      <CreateIssueModal
+        v-if="canFileRunIssue && testRun"
+        v-model:open="runIssueOpen"
+        entity-type="test_run"
+        :entity-id="testRun.id"
+        @created="emit('label-updated')"
+        @queued="emit('label-updated')"
+      />
     </template>
 
     <template #facts>
       <ClientOnly>
         <span :title="prettyDateFormat(testRun?.startTime)">Started {{ formatRelativeTime(testRun?.startTime) }}</span>
       </ClientOnly>
+      <span v-if="startedFrom" data-testid="run-started-from">from {{ startedFrom }}</span>
       <template v-if="testRun?.duration">
         <span class="text-dimmed">·</span>
         <DurationValue :ms="testRun.duration" />
@@ -374,6 +520,16 @@ function onLabelKeydown(e: KeyboardEvent) {
           }}</span
         >
       </template>
+      <template v-if="tagsTruncated">
+        <span class="text-dimmed">·</span>
+        <span
+          class="text-warning"
+          :title="tagsTruncated.examples.map(runTestLabel).join('\n')"
+          data-testid="run-tags-truncated-fact"
+          data-shot="run-tags-truncated-fact"
+          >{{ tagsTruncatedFact }}</span
+        >
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
         <a
@@ -405,6 +561,30 @@ function onLabelKeydown(e: KeyboardEvent) {
           <template v-if="testRun?.reporterVersion">Piwi v{{ testRun.reporterVersion }}</template>
         </span>
       </div>
+      <div v-if="environmentSummary" class="flex items-start gap-1.5 min-w-0" data-tour="run-environment">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Environment <HelpHint topic="run-environment"
+        /></span>
+        <span class="min-w-0">
+          <button
+            type="button"
+            class="text-left break-words hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+            title="Where this run executed"
+            data-environment-open
+            @click="environmentOpen = true"
+          >
+            {{ environmentSummary }}
+          </button>
+          <span v-if="environmentWarning" class="text-highlighted" data-environment-warning>
+            · {{ environmentWarning }}</span
+          >
+        </span>
+      </div>
+      <UModal v-model:open="environmentOpen" title="Run environment" :ui="{ content: 'max-w-3xl' }">
+        <template #body>
+          <RunEnvironmentDetails v-if="testRun?.environments" :environments="testRun.environments" />
+        </template>
+      </UModal>
       <div v-if="shuffleSeed" class="flex items-center gap-1.5">
         <span class="text-muted inline-flex items-center gap-1">Order <HelpHint topic="run.shuffle" /></span>
         <span>Shuffled, seed</span>
@@ -463,11 +643,29 @@ function onLabelKeydown(e: KeyboardEvent) {
             <TestIdChip :external-id="duplicate.externalId" class="mr-1.5" />
             <span class="text-muted">declared by {{ duplicate.tests.length }} tests:</span>
             <ul class="ml-4 break-words">
-              <li v-for="test in duplicate.tests" :key="duplicateTestLabel(test)" class="text-xs text-muted">
-                {{ duplicateTestLabel(test) }}
+              <li v-for="test in duplicate.tests" :key="runTestLabel(test)" class="text-xs text-muted">
+                {{ runTestLabel(test) }}
               </li>
             </ul>
           </li>
+        </ul>
+      </div>
+      <div
+        v-if="tagsTruncated"
+        class="flex items-start gap-1.5"
+        data-testid="run-tags-truncated"
+        data-shot="run-tags-truncated"
+        data-tour="run-tags-truncated"
+      >
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Tags cut <HelpHint topic="run.tagsTruncated"
+        /></span>
+        <ul class="space-y-1 min-w-0 break-words">
+          <li v-for="test in tagsTruncated.examples" :key="runTestLabel(test)" class="text-xs text-muted">
+            {{ runTestLabel(test) }}
+            ({{ test.dropped === 1 ? '1 tag' : `${test.dropped} tags` }} dropped)
+          </li>
+          <li v-if="tagsTruncatedHasMore" class="text-xs text-muted">and possibly more</li>
         </ul>
       </div>
       <div
@@ -523,15 +721,24 @@ function onLabelKeydown(e: KeyboardEvent) {
       </div>
     </template>
 
-    <template v-if="incident" #below>
-      <RunIncidentLine
-        variant="line"
-        :run-id="testRun.id"
-        :project-id="testRun.projectId"
-        :incident="incident"
-        :review="incidentReview"
-        @changed="emit('label-updated')"
-      />
+    <template v-if="runErrors.length || incident" #below>
+      <div class="space-y-3">
+        <RunErrors
+          v-if="runErrors.length"
+          :errors="runErrors"
+          :project-key="testRun.projectId"
+          :project-name="testRun.project?.name"
+        />
+        <RunIncidentLine
+          v-if="incident"
+          variant="line"
+          :run-id="testRun.id"
+          :project-id="testRun.projectId"
+          :incident="incident"
+          :review="incidentReview"
+          @changed="emit('label-updated')"
+        />
+      </div>
     </template>
 
     <template #count-bar>
@@ -542,6 +749,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :skipped="skipped"
         :fixme="fixme"
         :did-not-run="didNotRun"
+        :interrupted="interrupted"
         :total="total"
         :active-statuses="activeStatuses"
         @toggle-status="emit('toggle-status', $event)"

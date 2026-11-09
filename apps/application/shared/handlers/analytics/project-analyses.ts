@@ -67,7 +67,8 @@ export async function getAnalyticsSpecHealth(
   const ctx = await getAnalyticsContext(db, scope, access);
   return analyse(db, scope, access, async (id) => {
     const health = await getProjectSpecHealth(db, id, periodDays(ctx.period));
-    const specs = [...health.specs].sort((a, b) => a.passRate - b.passRate).slice(0, limit);
+    // Worst pass rate first; an area with no passed or failed run last.
+    const specs = [...health.specs].sort((a, b) => (a.passRate ?? 2) - (b.passRate ?? 2)).slice(0, limit);
     return { specs };
   });
 }

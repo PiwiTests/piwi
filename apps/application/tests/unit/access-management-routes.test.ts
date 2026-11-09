@@ -22,7 +22,7 @@ const state = vi.hoisted(
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/auth', async () => ({
   ...(await import('./route-access')).authMock(state),
-  hashPassword: async (password: string) => `hashed:${password}`,
+  hashPassword: async (_event: unknown, password: string) => `hashed:${password}`,
   revokeUserSessions: async (userId: number) => {
     state.revoked.push(userId);
     return 1;
@@ -63,6 +63,7 @@ const patchUser = await loadRoute('../../server/api/users/[id].patch');
 const listGroups = await loadRoute('../../server/api/groups/index.get');
 const getMembers = await loadRoute('../../server/api/projects/[id]/members.get');
 const putMembers = await loadRoute('../../server/api/projects/[id]/members.put');
+const removeUserPicture = await loadRoute('../../server/api/users/[id]/avatar.delete');
 
 const asUser = (id: number, role: string) => ({ id, role, username: `user${id}`, name: null }) as unknown as User;
 const caller = (id: number, role: InstanceRole, ...grants: { projectId: number | null; role: ProjectRole }[]) =>
@@ -259,6 +260,12 @@ describe('users writes', () => {
     expect(await status(createUser({ body: { username: 'kim', role: 'member' } }))).toBe(403);
   });
 
+  test('POST takes a username of 200 characters at most', async () => {
+    state.caller = avery;
+    expect(await status(createUser({ body: { username: 'r'.repeat(201), role: 'member' } }))).toBe(400);
+    expect(await status(createUser({ body: { username: 'r'.repeat(200), role: 'member' } }))).toBe(200);
+  });
+
   test('PATCH revokes sessions on an instance role change only, and keeps the last administrator', async () => {
     state.caller = avery;
     expect(await status(patchUser({ params: { id: '1' }, body: { role: 'member' } }))).toBe(400);
@@ -274,5 +281,33 @@ describe('users writes', () => {
     expect((await patchUser({ params: { id: '3' }, body: { name: 'Sammy' } })).user.name).toBe('Sammy');
     expect(await status(patchUser({ params: { id: '2' }, body: { name: 'Q' } }))).toBe(403);
     expect(await status(patchUser({ params: { id: '3' }, body: { role: 'administrator' } }))).toBe(403);
+  });
+
+  test("PATCH with an API key changes its own account's name, never its email", async () => {
+    state.caller = { ...sam, apiKey: true };
+    expect((await patchUser({ params: { id: '3' }, body: { name: 'Sammy' } })).user.name).toBe('Sammy');
+    expect(await status(patchUser({ params: { id: '3' }, body: { email: 'sam@example.com' } }))).toBe(403);
+    expect(await status(patchUser({ params: { id: '3' }, body: { email: null } }))).toBe(403);
+
+    state.caller = sam;
+    const { user } = await patchUser({ params: { id: '3' }, body: { email: 'sam@example.com' } });
+    expect(user.email).toBe('sam@example.com');
+
+    state.caller = { ...avery, apiKey: true };
+    expect(await status(patchUser({ params: { id: '1' }, body: { email: 'avery@example.org' } }))).toBe(403);
+    const managed = await patchUser({ params: { id: '3' }, body: { email: 'samuel@example.com' } });
+    expect(managed.user.email).toBe('samuel@example.com');
+  });
+});
+
+describe("removing a user's profile picture", () => {
+  test('is an administrator’s: a member is refused, even for their own account', async () => {
+    state.caller = sam;
+    expect(await status(removeUserPicture({ params: { id: '3' } }))).toBe(403);
+    state.caller = quinn;
+    expect(await status(removeUserPicture({ params: { id: '3' } }))).toBe(403);
+    state.caller = avery;
+    expect(await removeUserPicture({ params: { id: '3' } })).toEqual({ removed: false });
+    expect(await status(removeUserPicture({ params: { id: '99' } }))).toBe(404);
   });
 });

@@ -37,6 +37,7 @@ const wireCase = {
   ariaSnapshot: '- button "Pay"',
   ariaSnapshotJson: '{"role":"button"}',
   workerIndex: 3,
+  parallelIndex: 1,
   shardIndex: 2,
   startedAt: 1_700_000_001_000,
   browser: { projectName: 'chromium' },
@@ -54,6 +55,8 @@ const wireCase = {
   didNotRunReason: 'previous-failure',
   expectedStatus: 'passed',
   blockedBy: 'tests/checkout.spec.ts:10:3',
+  stdout: 'order 4521 created\n',
+  stderr: 'payment sandbox answered 502\n',
 } satisfies Required<TestCasePayload>;
 
 /** What `persistRunCases` must receive for `wireCase`: every field it reads, by name. */
@@ -98,6 +101,7 @@ const expected = {
   testSource: wireCase.testSource,
   testSourceFrames: wireCase.testSourceFrames,
   workerIndex: wireCase.workerIndex,
+  parallelIndex: wireCase.parallelIndex,
   shardIndex: wireCase.shardIndex,
   startedAt: wireCase.startedAt,
   browser: wireCase.browser,
@@ -105,6 +109,8 @@ const expected = {
   didNotRunReason: wireCase.didNotRunReason,
   expectedStatus: wireCase.expectedStatus,
   blockedBy: wireCase.blockedBy,
+  stdout: wireCase.stdout,
+  stderr: wireCase.stderr,
 } satisfies Required<RunCaseInput>;
 
 describe('mapWireCaseToRunCase', () => {

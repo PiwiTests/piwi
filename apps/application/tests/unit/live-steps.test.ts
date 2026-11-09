@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { stepLabel } from '@piwitests/core/step-analysis';
-import { liveStepForCase, type LiveStepsByWorker } from '../../app/utils/live-steps';
+import { liveStepForCase, liveStepOf, type LiveStepsByWorker } from '../../app/utils/live-steps';
 import type { TestCaseResult } from '../../types/api';
 
 function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
@@ -16,12 +16,26 @@ function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
 }
 
 const steps: LiveStepsByWorker = {
-  0: { title: 'click "Pay now"', category: 'pw:api', parentTitle: 'checkout completes' },
-  1: { title: 'expect(page).toHaveURL(...)', category: 'expect', status: 'passed', parentTitle: 'catalog filters' },
+  ':0': { title: 'click "Pay now"', category: 'pw:api', parentTitle: 'checkout completes' },
+  ':1': { title: 'expect(page).toHaveURL(...)', category: 'expect', status: 'passed', parentTitle: 'catalog filters' },
 };
 
 test('matches the running row to its worker step', () => {
   expect(liveStepForCase(steps, makeCase({}))?.title).toBe('click "Pay now"');
+});
+
+test('in a sharded run, each shard’s worker shows its own step', () => {
+  const sharded: LiveStepsByWorker = {
+    '1:0': { title: 'Click', parentTitle: 'pays by card' },
+    '2:0': { title: 'Fill', parentTitle: 'searches' },
+  };
+  expect(liveStepForCase(sharded, makeCase({ title: 'pays by card', shardIndex: 1 }))?.title).toBe('Click');
+  expect(liveStepForCase(sharded, makeCase({ title: 'searches', shardIndex: 2 }))?.title).toBe('Fill');
+});
+
+test('a step a reporter sent without its shard still shows on its worker’s row', () => {
+  const unsharded: LiveStepsByWorker = { ':0': { title: 'Click', parentTitle: 'pays by card' } };
+  expect(liveStepForCase(unsharded, makeCase({ title: 'pays by card', shardIndex: 2 }))?.title).toBe('Click');
 });
 
 test('only running rows show a step', () => {
@@ -47,13 +61,13 @@ test('a lingering step from the previous test never surfaces on the next row', (
 });
 
 test('a step with no parent title falls back to the worker match', () => {
-  const anonymous: LiveStepsByWorker = { 0: { title: 'fixture: context', category: 'fixture' } };
+  const anonymous: LiveStepsByWorker = { ':0': { title: 'fixture: context', category: 'fixture' } };
   expect(liveStepForCase(anonymous, makeCase({}))?.title).toBe('fixture: context');
 });
 
 test('a live step keeps its subtitle, and the label composes both', () => {
   const withSubtitle: LiveStepsByWorker = {
-    0: {
+    ':0': {
       title: 'Click',
       subtitle: "getByRole('button', { name: 'Pay' })",
       category: 'pw:api',
@@ -63,4 +77,15 @@ test('a live step keeps its subtitle, and the label composes both', () => {
   const live = liveStepForCase(withSubtitle, makeCase({}));
   expect(live?.subtitle).toBe("getByRole('button', { name: 'Pay' })");
   expect(stepLabel(live!)).toBe("Click getByRole('button', { name: 'Pay' })");
+});
+
+test('finds a watched worker’s step in its test, by shard and worker, else by worker alone', () => {
+  const sharded: LiveStepsByWorker = {
+    '2:0': { title: 'Fill', category: 'pw:api', parentTitle: 'pays by card' },
+    ':1': { title: 'Click', category: 'pw:api', parentTitle: 'searches' },
+  };
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'pays by card' })?.title).toBe('Fill');
+  expect(liveStepOf(sharded, { shard: 1, worker: 0, test: 'pays by card' })).toBeNull();
+  expect(liveStepOf(sharded, { shard: 3, worker: 1, test: 'searches' })?.title).toBe('Click');
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'another test' })).toBeNull();
 });

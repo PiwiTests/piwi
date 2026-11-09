@@ -41,7 +41,7 @@ export type EvidenceState =
   | { state: 'present'; derivedFromTrace: boolean }
   /** The capability behind this card is declined for this project. */
   | { state: 'declined'; title: string; description: string }
-  /** The fixtures were never switched on for this project — the card links to `/setup`. */
+  /** The fixtures were never switched on for this project — the card links to the connect wizard (`/settings/connect`). */
   | { state: 'not-captured'; title: string; description: string; to: string; toLabel: string }
   /** The fixtures were active and this run simply produced nothing. */
   | { state: 'nothing-happened'; title: string; description: string }
@@ -94,7 +94,7 @@ const CARD_COPY: Record<EvidenceCardId, CardCopy> = {
  * Decide which of the three empty states a card is in — or that it holds data.
  *
  * `not-captured` is the "you never switched this on" state and always links to
- * `/setup`; `nothing-happened` is the fixtures running and finding nothing;
+ * the connect wizard; `nothing-happened` is the fixtures running and finding nothing;
  * `not-applicable` is reserved for backend logs, which need a Piwi backend
  * integration on the app under test on top of the fixtures.
  */
@@ -134,7 +134,7 @@ export function resolveEvidenceState(id: EvidenceCardId, input: EvidenceStateInp
     state: 'not-captured',
     title: copy.title,
     description: `${copy.title} is not captured for this project — ${copy.enable}.`,
-    to: '/setup',
+    to: '/settings/connect',
     toLabel: 'Open setup',
   };
 }

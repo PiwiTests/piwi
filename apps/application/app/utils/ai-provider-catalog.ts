@@ -4,6 +4,7 @@
  * its base URL. `tileFor` reads a stored config back into its tile.
  */
 import type { AiProvider } from '~~/types/api';
+import { looksPrivateHost } from '#shared/utils/private-host';
 
 export type ProviderTileId =
   | 'anthropic'
@@ -209,14 +210,15 @@ export function providerLabel(provider: string | null | undefined, baseUrl?: str
   return providerTile(tileFor(provider, baseUrl))?.label ?? provider ?? '';
 }
 
-/** Whether a base URL points at this machine or a private network, so the evidence stays there. */
+/** Whether a base URL points at this machine or a private network, so the evidence stays there (`looksPrivateHost`). */
 export function isPrivateUrl(url: string | null | undefined): boolean {
-  let host: string;
+  let parsed: URL;
   try {
-    host = new URL(url ?? '').hostname;
+    parsed = new URL(url ?? '');
   } catch {
     return false;
   }
-  if (host === 'localhost' || host === '[::1]' || host.endsWith('.local') || host.endsWith('.internal')) return true;
-  return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0$)/.test(host);
+  // `host:8000/v1` typed without a scheme parses as the scheme `host:` with no host at all.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return looksPrivateHost(parsed.hostname);
 }

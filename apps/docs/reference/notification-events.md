@@ -15,19 +15,19 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | Event | Fires when |
 |-------|------------|
 | `run.finished` | A run completes (any status) |
-| `run.failed` | A run completes with failures |
-| `run.failed.default_branch` | A run fails on the repository's default branch |
-| `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity, an hour for a sharded run whose shards send their results in one batch). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
-| `cluster.new` | A new failure cluster appears |
+| `run.failed` | A run completes with failures, or stops at Playwright's global timeout (`status: "timedout"`) |
+| `run.failed.default_branch` | A run fails, as `run.failed` reads it, on the repository's default branch |
+| `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity, an hour for a run still in its global setup or with a shard still in its own, and an hour for a sharded run waiting for a shard that has not started, once every shard that started has ended; each counted at the earliest from when the server could be reached again, after a restart or a database outage). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
+| `cluster.new` | A new failure cluster appears in a run that ran to its end (passed, failed or timed out). A cluster first seen by a run that sent no notification of it (a run from an editor, a partial run from a developer's machine, an import, a cancelled or interrupted run) is announced by the first such run that sends notifications, unless the cluster is resolved, ignored or snoozed when that run ends, or its first run was deleted. When runs overlap, the first to end announces it and no other run does, whether or not a channel is subscribed |
 | `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
-| `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
+| `cluster.regressed` | A cluster with a recorded fix fails again, or one resolved by hand fails in a run started after it was resolved (no `fixLandedRunId` then); `reopened` says whether a *resolved* cluster was set back to open |
 | `flakiness.spike` | A completed run contains flaky tests; the flakiness-threshold filter keeps only rates above N% |
-| `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch and environment; the regression-% filter raises the bar |
+| `perf.regression` | A run is at least 20% slower than the median of the previous five complete runs on the same branch and environment (runs of the whole suite: no partial, Flake Lab, probe, bisect or reproduction run, and no environment incident); the regression-% filter raises the bar |
 | `diagnosis.completed` | A diagnosis of a cluster, or of one of its failures, is stored: Piwi's (requires an [AI provider](/guide/ai-provider)) or one an agent records. A failure in no cluster sends none |
 | `auto_heal.pr_opened` | [Auto-heal](/features/auto-heal) opened a pull request; the payload carries `prNumber`, `prUrl`, `branch` and `editCount` |
 | `environment.incident` | A completed run is flagged as an [environment incident](/features/environment-incidents); it replaces the run's `run.failed`, `run.failed.default_branch`, `flakiness.spike`, `perf.regression`, `cluster.new` and `bug.looks_fixed` (`run.finished` still fires). The payload carries `rule`, `reason`, `host`, `otherProjects` and `incidentKey`, which is the same for every run of one outage across projects, so a channel receives one message. A subscription filtered on owners does not receive it |
-| `test.stuck` | A running test of a live run has run longer than both two minutes and three times its longest duration among its last ten passing executions ([Stuck tests](/features/stuck-tests)), once per attempt; runs that send no run event send none |
-| `bug.looks_fixed` | A `test.fail()` test passed in a completed run, in every browser project that ran it, and did not already pass on the previous completed run of the same branch; the payload lists the `tests`, each with the bug report (`bugId`, from `piwi:bug`) and ticket (`link`) it names |
+| `test.stuck` | A running test of a live run has run longer than both two minutes and three times its longest duration among its last ten passing executions ([Stuck tests](/features/stuck-tests)), once per attempt; a run started on a developer's machine (origin `local`, `desktop`, `editor`, `preflight` or `bug`) sends none, complete or not, and neither does a run that sends no run event |
+| `bug.looks_fixed` | A `test.fail()` test passed in a completed run, in every browser project that ran it, and did not already pass on the previous completed run of the same branch that sends notifications itself; the payload lists the `tests`, each with the bug report (`bugId`, from `piwi:bug`) and ticket (`link`) it names |
 
 **`report.ready`** needs no subscription: a [report schedule](/features/quality-reports#report-schedules) sends it to
 the channels it names, through the same outbox. Its webhook body adds the whole report:
@@ -51,6 +51,7 @@ For run events the payload includes up to three failing tests, so you can act wi
     "flakyTests": 2,
     "skippedTests": 3,
     "didNotRunTests": 0,
+    "interruptedTests": 0,
     "failingTestCount": 3,
     "branch": "main",
     "environment": "staging",
@@ -100,7 +101,7 @@ timeout. Slack and email messages lead with the headline, quote the excerpt and 
 The [pull-request comment](/features/pr-feedback) quotes failures the same way.
 
 A test is failing when the last attempt of one of its repetitions failed: a test that passed on a retry counts as flaky,
-never as a failure. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
+never as a failure. `interruptedTests` counts the tests the run's interruption cut short, in none of the other counts. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
 Playwright project however many of its `--repeat-each` repetitions failed (`failedTests` counts each failed repetition),
 and `owners` covers every failed attempt, so a team hears of its flaky test's failed first attempt. Each failure names its describe blocks (`suitePath`), the line it is declared on, its Playwright project
 (`browserName`) and its `owner`. `source` holds the lines around the line the failure threw at, as the reporter
@@ -112,7 +113,8 @@ failing line marked `>`.
 `history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
 that would send notifications themselves (no lab run, no run from an editor, no bisect step or reproduction, no
 partial run from a developer's machine or the desktop app, no environment incident). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
-`skipped`, `didnotrun` for a test that did not run or was interrupted, or `null` when the run did not report it). `commit`
+`skipped`, `didnotrun` for a test that did not run, `interrupted` for one the run's interruption cut short, in no
+outcome, or `null` when the run did not report it). `commit`
 comes from the run's Git metadata, linked when the project's repository host is known, and `ciUrl` from its CI
 metadata.
 
@@ -147,16 +149,18 @@ Every event that comes from a run carries that run's `branch` and `environment` 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
 - **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`),
-  `affectedCases`, and the `owners` of the tests that failed into it in that run.
+  `affectedCases`, the `owners` of the tests that failed into it in that run, and `firstSeenRunId` when it first
+  appeared in an earlier run, which sent no notification of it.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).
   A fix landed by an [auto-heal PR](/features/auto-heal#after-the-pr-opens) carries `healPr` (`{ number, url, actionId }`).
 - **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`. A
   diagnosis of one failure in the cluster adds its `executionId`, and the notification opens that failure.
-- **`test.stuck`**: the run, the test's `testTitle`, `suitePath` and `location`, the `browserName`, `workerIndex` and
-  `shardIndex` it runs in, the attempt's `startedAt` (epoch ms), `elapsedMs` (how long it had run) and `usualMs` (its
-  longest passing duration), and the test's `owners`.
+- **`test.stuck`**: the run, the test's `testTitle`, `suitePath` and `location`, the `browserName`, `shardIndex` and
+  worker it runs in (`parallelIndex`, its lane from 0, which the message shows from 1 as `worker 2`, absent from an
+  older reporter; `workerIndex`, Playwright's worker process), the attempt's `startedAt` (epoch ms), `elapsedMs` (how
+  long it had run) and `usualMs` (its longest passing duration), and the test's `owners`.
 
 A `cluster.*` event also carries `knownIssue` (`{ key, url }`) when the cluster is linked to a tracker issue.
 

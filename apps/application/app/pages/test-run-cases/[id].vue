@@ -5,6 +5,8 @@ import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from 
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
+import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
+import { escapeHtml } from '#shared/markdown-to-html';
 import { buildRetryCommand } from '~/utils/retry-command';
 import { fixturesActiveIn } from '~/utils/fixtures-active';
 import type { FailureVerdict } from '#shared/failure-verdict';
@@ -30,18 +32,21 @@ import { hasHealingAlternatives } from '#shared/locator-healing';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 import { coverageLossPreview } from '~/utils/coverage-insights';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const {
-  data: testCase,
-  error: testCaseError,
-  refresh,
-} = await useFetch<ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>>(
-  `/api/test-run-cases/${testCaseId}`,
-);
+type ExecutionDetail = ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>;
+const { data: testCase, error: testCaseError } = await useFetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`);
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
+// Every later read of the execution keeps the one the page shows when it fails.
+const readExecution = refetchKeeping(testCase, () => $fetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`));
+async function refresh(): Promise<void> {
+  await readExecution();
+}
+// A read asked from outside the page (the assistant, once a proposal is applied); the diagnosis panel adds its own.
+usePageReload(refresh);
 provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
 
 // Server-rendered fetches carry the viewer's session.
@@ -67,7 +72,9 @@ const isProblem = computed(() => {
   const s = testCase.value?.status;
   return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
 });
-const isPassedOnRetry = computed(() => statusPaletteKey(testCase.value?.status, testCase.value?.retries) === 'flaky');
+const isPassedOnRetry = computed(
+  () => statusPaletteKey(testCase.value?.status, testCase.value?.passedAfterFailure) === 'flaky',
+);
 
 // The deterministic clues and the story that chains them: Most likely chooses
 // between them and the cluster's diagnosis, folds every clue under its
@@ -220,6 +227,7 @@ const {
   decide: decideProjectCap,
 } = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
 const { decide: decideInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 // The evidence footer's decline controls: both write a `declined` decision, one
 // per level, and the resolver hides the sources everywhere on the next read.
@@ -320,8 +328,6 @@ const nextStepSource = computed(() =>
 
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => failureCluster.value?.id ?? null,
-  status: () => failureCluster.value?.status,
-  currentNote: () => (failureCluster.value as { triageNote?: string | null } | null)?.triageNote,
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
@@ -393,7 +399,7 @@ const quarantined = computed(() => Boolean((testCase.value as { quarantined?: bo
 
 // The situation block's edge, in this execution's outcome color.
 const statusEdge = computed(() =>
-  testCase.value ? statusPalette(testCase.value.status, testCase.value.retries).color : null,
+  testCase.value ? statusPalette(testCase.value.status, testCase.value.passedAfterFailure).color : null,
 );
 
 /**
@@ -452,7 +458,11 @@ const retryCases = computed(() => [
     projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
   },
 ]);
-const retryCommand = computed(() => buildRetryCommand(retryCases.value));
+// This one test by its file and line, with the run options the browser remembers from the run page.
+const { optionsFor: retryOptionsFor } = useRetryOptions();
+const retryCommand = computed(() =>
+  buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() }),
+);
 const { copy: copyRetry } = useCopy();
 
 onMounted(() => {
@@ -510,7 +520,6 @@ function copyFailure() {
   const loc = tc.location ?? '';
   // eslint-disable-next-line no-control-regex
   const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;
   const testCaseUrl = `${origin}/test-run-cases/${testCaseId}`;
   const stableUrl = testCase.value?.testCaseId ? `${origin}/test-cases/${testCase.value.testCaseId}` : null;
@@ -532,12 +541,10 @@ function copyFailure() {
     .join('\n');
 
   const html = [
-    `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
-    issue
-      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
-      : '',
+    `<p><strong>❌ Test failed: ${escapeHtml(title)}</strong>${loc ? `<br><code>${escapeHtml(loc)}</code>` : ''}</p>`,
+    issue ? trackedIssueHtml(issue) : '',
     `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
-    `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Execution details</a>${stableUrl ? ` · <a href="${stableUrl}">Test history</a>` : ''}</p>`,
+    `<p>🔗 ${clusterUrl ? `${richCopyLink(clusterUrl, 'View failure cluster')} · ` : ''}${richCopyLink(testCaseUrl, 'Execution details')}${stableUrl ? ` · ${richCopyLink(stableUrl, 'Test history')}` : ''}</p>`,
   ].join('');
 
   copyRich(plain, html, { toast: 'Failure copied' });
@@ -591,6 +598,15 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     });
   } else if (canFileIssue.value && failureCluster.value) {
     issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+  } else if (canFileIssue.value && testCase.value?.id) {
+    // An execution with no failure cluster files an issue of its own: a test that
+    // passed but misses a case, a skipped one, a failure not grouped.
+    issue.push({
+      label: 'Create issue',
+      icon: 'i-lucide-file-plus',
+      'data-tour': 'execution-create-issue',
+      onSelect: () => (issueModalOpen.value = true),
+    });
   }
   if (canEditLinks.value && failureCluster.value) {
     issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
@@ -639,7 +655,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 let eventSource: EventSource | null = null;
 function connectToRunStream() {
-  if (!import.meta.client || isDemoMode || eventSource) return;
+  if (!import.meta.client || isDemoMode || eventSource || document.visibilityState === 'hidden') return;
   const runId = testCase.value?.testRun?.id;
   if (!runId) return;
   eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
@@ -677,6 +693,16 @@ watch(
   { immediate: true },
 );
 onUnmounted(disconnectRunStream);
+// A hidden tab holds no stream. Shown again, the page reads the execution and its traces, whose files may have come
+// meanwhile, and listens again: the stream says at once when the run ended meanwhile.
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (!runIsActive.value) return;
+  if (state === 'hidden') return disconnectRunStream();
+  refresh();
+  refreshTraces();
+  connectToRunStream();
+});
 
 // ── Section locator ─────────────────────────────────────────────────────────
 // A clue or diagnosis citation reveals the evidence it came from: the evidence
@@ -787,6 +813,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :run-title="testLabel(testCase)"
               :source-run-id="testCase?.testRun?.id"
             />
+            <RunOnMyMachineButton
+              v-if="testCase?.testRun?.project?.id"
+              class="mr-2"
+              :project-id="testCase.testRun.project.id"
+              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
+            />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
@@ -799,7 +831,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               <span class="hidden xl:inline">Test history</span>
             </NuxtLink>
             <ShareLinksModal
-              v-if="testCase && !isDemoMode"
+              v-if="testCase && offersShareLinks"
               :endpoint="`/api/test-run-cases/${testCase.id}/share-links`"
               :project-id="executionProjectId"
             />
@@ -835,7 +867,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="execution-heading">
-              <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
+              <StatusChip :status="testCase?.status ?? ''" :flaky="testCase?.passedAfterFailure" class="shrink-0" />
               <!-- The path in the meta style, the title in the body style -->
               <TestTitlePath
                 data-shot="test-title-path"
@@ -1103,11 +1135,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   Re-run the cluster in CI
                 </UButton>
                 <ClientOnly>
-                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
-                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                  </span>
+                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
               </div>
             </template>

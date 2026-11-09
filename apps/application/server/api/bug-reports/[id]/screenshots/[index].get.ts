@@ -1,6 +1,7 @@
 import {
   requireResolvedProjectAccess,
   requireRouteId,
+  requireRouteIndex,
   resolveBugReportProjectId,
 } from '../../../../utils/project-access';
 import { apiError } from '../../../../utils/api-error';
@@ -22,10 +23,10 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'bug report ID');
-  const index = Number(getRouterParam(event, 'index'));
+  const index = requireRouteIndex(event, 'index', 'screenshot index');
   const { db } = await requireResolvedProjectAccess(event, id, resolveBugReportProjectId, 'Bug report');
   const report = await getBugReport(db, id);
-  const shot = Number.isInteger(index) ? report?.evidence.screenshots[index] : undefined;
+  const shot = report?.evidence.screenshots[index];
   if (!shot) throw apiError({ statusCode: 404, message: 'Screenshot not found' });
   const path = `${bugReportStorageDir(id)}/${shot.file.replace(/^screenshots\//, '')}`;
   const storage = getStorage();

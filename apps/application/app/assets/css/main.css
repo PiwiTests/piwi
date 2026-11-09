@@ -22,7 +22,8 @@
    * filter dots, timeline bars). Use the generated utilities (`bg-status-passed`,
    * `fill-status-failed`, `ring-status-flaky`…) in templates and
    * `var(--color-status-*)` in SVG styles; `app/utils/status-palette.ts` maps a
-   * status string to them. Timed-out and interrupted tests count as failed.
+   * status string to them. Timed-out tests count as failed; an interrupted test
+   * is in no outcome and takes the neutral slate `interrupted`.
    * Skipped has two greys: `skipped` for `test.skip()` and `fixme` for
    * `test.fixme()` (redefined for dark mode below, so it stays the stronger one).
    */
@@ -33,6 +34,7 @@
   --color-status-fixme: var(--color-zinc-600);
   --color-status-didnotrun: var(--color-amber-500);
   --color-status-running: var(--color-blue-500);
+  --color-status-interrupted: var(--color-slate-500);
 
   /*
    * Coverage marks: the bar of a line the tests ran and of an executable line

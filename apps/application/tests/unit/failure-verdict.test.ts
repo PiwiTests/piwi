@@ -120,10 +120,13 @@ describe('buildFailureVerdict', () => {
 
   test('classifies why in priority order: regression, retry pass, new flaky, infrastructure', () => {
     const base = { error: PAY_ERROR, runId: 9 };
-    expect(buildFailureVerdict({ ...base, status: 'passed', retries: 1 })!.why).toBe('passed-on-retry');
-    expect(buildFailureVerdict({ ...base, status: 'passed', retries: 1, isNewRegression: true })!.why).toBe(
-      'new-regression',
+    expect(buildFailureVerdict({ ...base, status: 'passed', passedAfterFailure: true })!.why).toBe('passed-on-retry');
+    expect(buildFailureVerdict({ ...base, status: 'passed', passedAfterFailure: false })?.why ?? null).not.toBe(
+      'passed-on-retry',
     );
+    expect(
+      buildFailureVerdict({ ...base, status: 'passed', passedAfterFailure: true, isNewRegression: true })!.why,
+    ).toBe('new-regression');
     expect(buildFailureVerdict({ ...base, status: 'failed', isNewFlaky: true })!.why).toBe('new-flaky');
     expect(
       buildFailureVerdict({
@@ -141,7 +144,7 @@ describe('buildFailureVerdict', () => {
     const verdict = buildFailureVerdict({
       error: PAY_ERROR,
       status: 'passed',
-      retries: 1,
+      passedAfterFailure: true,
       runId: 9,
       fromAttempt: { retry: 0, executionId: 41 },
     });

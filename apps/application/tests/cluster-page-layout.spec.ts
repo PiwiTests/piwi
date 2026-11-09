@@ -16,8 +16,8 @@ import { NEXT_STEP_SECTION } from '../app/utils/fix-sections';
  */
 
 // Two cases sharing one fingerprint (identical error, different spec files) so
-// the cluster has two affected test cases → a selector. The stack frame is not
-// hashed, so they cluster together.
+// the cluster has two affected test cases → a selector. The error names its
+// locator, so its stack frame is not hashed and they cluster together.
 const sharedError = (frame: string) =>
   `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Submit' })\n    at ${frame}`;
 

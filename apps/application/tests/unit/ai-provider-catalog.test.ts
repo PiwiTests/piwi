@@ -30,12 +30,17 @@ describe('provider tiles', () => {
     expect(suggestedModel('anthropic', 'fast')).toBe('claude-haiku-4-5');
   });
 
-  test('a local or private address keeps the evidence on the network', () => {
+  test('a local or private address keeps the evidence on the network, as looksPrivateHost reads its host', () => {
     expect(isPrivateUrl('http://localhost:11434/v1')).toBe(true);
-    expect(isPrivateUrl('http://192.168.1.20:1234/v1')).toBe(true);
-    expect(isPrivateUrl('http://gpu.internal/v1')).toBe(true);
+    expect(isPrivateUrl('http://ollama:11434/v1')).toBe(true);
+    expect(isPrivateUrl('http://[::1]:1234/v1')).toBe(true);
+    expect(isPrivateUrl('http://169.254.10.2:8080/v1')).toBe(true);
     expect(isPrivateUrl('https://api.openai.com/v1')).toBe(false);
     expect(isPrivateUrl('not a url')).toBe(false);
+    expect(isPrivateUrl(null)).toBe(false);
+    expect(isPrivateUrl('api.openai.com:443/v1')).toBe(false);
+    expect(isPrivateUrl('my-vllm.example.com:8000/v1')).toBe(false);
+    expect(isPrivateUrl('mailto:me@example.com')).toBe(false);
   });
 });
 

@@ -135,7 +135,7 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: 'my-project',
     }],
   ],
@@ -243,7 +243,7 @@ Full docs at **[piwitests.dev](https://piwitests.dev)**. The usual entry points:
 - [Browser extension](https://piwitests.dev/features/extension) and [Editor extensions](https://piwitests.dev/features/editors): Piwi where you write the tests
 - [MCP server](https://piwitests.dev/features/mcp) and [Agent skills](https://piwitests.dev/features/agent-skills): Piwi for your coding agent
 
-A running dashboard also serves interactive API docs at `/docs`, rendered in-app from its own OpenAPI
+A running dashboard also serves interactive API docs at `/settings/api`, rendered in-app from its own OpenAPI
 spec, with no external CDN, so they work offline.
 
 ## Community & support

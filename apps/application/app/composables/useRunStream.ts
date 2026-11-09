@@ -1,5 +1,6 @@
 import { onUnmounted } from 'vue';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import type { RefetchResult } from '~/utils/refetch-keeping';
 
 /**
  * Shared SSE connection and subscriber list.
@@ -14,6 +15,19 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  *   When the tab is hidden the SSE connection is closed, freeing the
  *   server-side keep-alive. On tab focus it reconnects and immediately
  *   refreshes all subscribers so missed events are caught up.
+ *
+ * A late first connection:
+ *   A run event published between the server render and the first
+ *   connection is never heard. The connection's first event says when the
+ *   server last published one: when it is later than the server render, the
+ *   subscribers refresh once, after hydration.
+ *
+ * Error answers:
+ *   The browser reconnects a dropped stream by itself, but gives up on one
+ *   whose reconnection gets an error answer (a proxy's 502 while the instance
+ *   restarts, an expired session). The connection then opens again after a
+ *   wait that doubles each time (2 s to 30 s), and refreshes all subscribers
+ *   once it is open.
  *
  * In demo mode the API handlers run in the service worker, so the SSE
  * connection is replaced with a BroadcastChannel subscription carrying the
@@ -98,18 +112,54 @@ function notifySubscribers(eventType: string) {
   }, getDebounceDelay());
 }
 
+const REOPEN_MIN_MS = 2_000;
+const REOPEN_MAX_MS = 30_000;
+let reopenDelay = REOPEN_MIN_MS;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+/** Set while a connection reopened after an error answer has not opened yet: its subscribers refresh once it does. */
+let refreshOnOpen = false;
+/** Whether no connection of this page has opened yet, nor has the tab come back into view (which refreshes). */
+let firstOpen = true;
+/** When the server rendered the page, by the server's clock, which the stream's `lastEventAt` is read against. */
+let renderedAt: number | null = null;
+let nuxtApp: ReturnType<typeof useNuxtApp> | null = null;
+
+/** Refresh every subscriber, once the app has hydrated: a refetch while it hydrates answers with its loaded data. */
+function refreshAfterHydration() {
+  if (nuxtApp?.isHydrating) {
+    nuxtApp.hooks.hookOnce('app:suspense:resolve', refreshAfterHydration);
+    return;
+  }
+  for (const fn of subscribers) fn();
+}
+
 function openEventSource() {
   if (sharedEventSource || demoMode) return;
 
-  sharedEventSource = new EventSource('/api/stream');
+  const source = new EventSource('/api/stream');
+  sharedEventSource = source;
 
   // Opens once the server has subscribed it (it writes a comment then), on the first connection and on each
   // reconnection.
-  sharedEventSource.onopen = notifyOpenListeners;
+  source.onopen = () => {
+    reopenDelay = REOPEN_MIN_MS;
+    if (refreshOnOpen) {
+      refreshOnOpen = false;
+      firstOpen = false;
+      for (const fn of subscribers) fn();
+    }
+    notifyOpenListeners();
+  };
 
-  sharedEventSource.onmessage = (event) => {
+  source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      if (data?.type === 'stream-open') {
+        const late = firstOpen && typeof data.lastEventAt === 'number' && renderedAt !== null;
+        if (late && data.lastEventAt >= renderedAt!) refreshAfterHydration();
+        firstOpen = false;
+        return;
+      }
       notifySubscribers(data.type);
       if (data && typeof data.type === 'string') notifyEventListeners(data);
     } catch {
@@ -117,9 +167,29 @@ function openEventSource() {
     }
   };
 
-  sharedEventSource.onerror = () => {
-    // EventSource will automatically attempt to reconnect on error
+  source.onerror = () => {
+    // EventSource reconnects by itself, unless an error answer closed it for good.
+    if (source.readyState === EventSource.CLOSED && sharedEventSource === source) reopenEventSource();
   };
+}
+
+/** Open the connection again after an error answer closed it, waiting longer each time. */
+function reopenEventSource() {
+  sharedEventSource?.close();
+  sharedEventSource = null;
+  if (reopenTimer) return;
+  reopenTimer = setTimeout(() => {
+    reopenTimer = null;
+    if (document.visibilityState === 'hidden' || (subscribers.size === 0 && eventListeners.size === 0)) return;
+    refreshOnOpen = true;
+    openEventSource();
+  }, reopenDelay);
+  reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
+}
+
+function cancelReopen() {
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
 }
 
 function handleVisibilityChange() {
@@ -127,6 +197,7 @@ function handleVisibilityChange() {
 
   if (document.visibilityState === 'hidden') {
     // Close SSE while hidden — frees the server-side keep-alive connection
+    cancelReopen();
     if (sharedEventSource) {
       sharedEventSource.close();
       sharedEventSource = null;
@@ -137,6 +208,7 @@ function handleVisibilityChange() {
     }
   } else if (subscribers.size > 0 || eventListeners.size > 0) {
     // Tab is visible again — reconnect and immediately refresh to catch up on missed events
+    firstOpen = false;
     openEventSource();
     for (const fn of subscribers) fn();
   }
@@ -153,6 +225,10 @@ function ensureConnection() {
   }
 
   demoMode = Boolean(useRuntimeConfig().public.demoMode);
+  if (!nuxtApp) {
+    nuxtApp = useNuxtApp();
+    renderedAt = useRenderedAt().value;
+  }
   if (demoMode) {
     if (demoUnsubscribe) return;
     demoUnsubscribe = subscribeDemoEvents((message) => {
@@ -173,6 +249,7 @@ function ensureConnection() {
 function closeConnection() {
   if (subscribers.size > 0 || eventListeners.size > 0) return;
 
+  cancelReopen();
   if (sharedEventSource) {
     sharedEventSource.close();
     sharedEventSource = null;
@@ -228,21 +305,43 @@ export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpe
   });
 }
 
+/** How long a run page waits before it reads an initializing run again after a read that failed. */
+export const RUN_START_RETRY_MS = 5_000;
+
 /**
  * Refetch a run the page shows as initializing once it moves on, so the page
  * goes live without a reload: on each lifecycle event of the run (its
  * `run-started`, or a cancel or an end before it began), and each time the
  * shared connection opens, for an event sent while it was closed. A refetch
  * while the app hydrates answers with the data it loaded with, so the page
- * reads the run once hydration ends.
+ * reads the run once hydration ends. A refetch that resolves to `failed` (the
+ * read failed, and a later one may not) is tried again after
+ * `RUN_START_RETRY_MS` while the run still initializes and the page is open; a
+ * final failure (`isFinalRefetch`: the run is gone, or the viewer cannot read
+ * it) is not.
  */
-export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
+export function useRunStart(
+  runId: number,
+  status: () => string | null | undefined,
+  refresh: () => Promise<RefetchResult>,
+) {
   const nuxtApp = useNuxtApp();
   let waitingForHydration = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let left = false;
+  const read = () => {
+    void refresh().then((result) => {
+      if (result !== 'failed' || retry || left) return;
+      retry = setTimeout(() => {
+        retry = null;
+        refreshWhileInitializing();
+      }, RUN_START_RETRY_MS);
+    });
+  };
   const refreshWhileInitializing = () => {
     if (status() !== 'initializing') return;
     if (!nuxtApp.isHydrating) {
-      refresh();
+      read();
     } else if (!waitingForHydration) {
       waitingForHydration = true;
       nuxtApp.hooks.hookOnce('app:suspense:resolve', () => {
@@ -254,4 +353,9 @@ export function useRunStart(runId: number, status: () => string | null | undefin
   useRunEvents((event) => {
     if (event.runId === runId) refreshWhileInitializing();
   }, refreshWhileInitializing);
+  onUnmounted(() => {
+    left = true;
+    if (retry) clearTimeout(retry);
+    retry = null;
+  });
 }

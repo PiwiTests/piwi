@@ -3,6 +3,7 @@ import type { FullConfig } from '@playwright/test/reporter';
 import {
   MetadataCollector,
   resolveRunOrigin,
+  resolveRunRef,
   resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
@@ -151,6 +152,32 @@ describe('MetadataCollector.getBrowserConfig', () => {
     expect(cfg?.viewport).toEqual({ width: 1280, height: 720 });
   });
 
+  it('names the engine a devices preset sets as defaultBrowserType', () => {
+    const mc = new MetadataCollector();
+    const project = {
+      name: 'Polaris',
+      use: { defaultBrowserType: 'chromium', viewport: { width: 1280, height: 720 } },
+    };
+    const test = { parent: { project: () => project } } as any;
+    const cfg = mc.getBrowserConfig(test);
+    expect(cfg?.projectName).toBe('Polaris');
+    expect(cfg?.browserName).toBe('chromium');
+  });
+
+  it('prefers an explicit browserName over the preset default', () => {
+    const mc = new MetadataCollector();
+    const project = { name: 'Polaris', use: { browserName: 'firefox', defaultBrowserType: 'chromium' } };
+    const test = { parent: { project: () => project } } as any;
+    expect(mc.getBrowserConfig(test)?.browserName).toBe('firefox');
+  });
+
+  it('leaves browserName out when the project names no engine', () => {
+    const mc = new MetadataCollector();
+    const project = { name: 'Polaris', use: {} };
+    const test = { parent: { project: () => project } } as any;
+    expect(mc.getBrowserConfig(test)).not.toHaveProperty('browserName');
+  });
+
   it('returns null when no project() is found within the depth limit', () => {
     const mc = new MetadataCollector();
     const test = { parent: { parent: { parent: undefined } } } as any;
@@ -275,6 +302,28 @@ describe('the working directory a run names', () => {
   });
 });
 
+describe("the Playwright config's and project's metadata", () => {
+  /** A suite whose first test's project carries `metadata`. */
+  const suiteOfProject = (metadata: unknown): any => ({
+    allTests: () => [{ parent: { project: () => ({ metadata }) } }],
+  });
+
+  it("go once each: a project that shares the config's, Playwright's git diff included, sends none of its own", () => {
+    const configMetadata = { gitDiff: 'diff --git a/app.ts b/app.ts', gitCommit: { hash: 'abc123' } };
+    const config = { ...fakeConfig(), metadata: configMetadata } as unknown as FullConfig;
+
+    const shared = new MetadataCollector().collect(config, suiteOfProject(configMetadata), {});
+    expect(shared.playwrightConfig).toEqual(configMetadata);
+    expect(shared.playwrightProject).toBeUndefined();
+
+    const copied = new MetadataCollector().collect(config, suiteOfProject(structuredClone(configMetadata)), {});
+    expect(copied.playwrightProject).toBeUndefined();
+
+    const own = new MetadataCollector().collect(config, suiteOfProject({ team: 'checkout' }), {});
+    expect(own.playwrightProject).toEqual({ team: 'checkout' });
+  });
+});
+
 describe('the run origin', () => {
   it('is local outside CI, with nothing set', () => {
     expect(resolveRunOrigin({})).toEqual({ kind: 'local' });
@@ -321,13 +370,43 @@ describe('the run origin', () => {
   });
 });
 
+describe('resolveRunRef', () => {
+  it("is the launcher's name for the run, beside the shared origin ref", () => {
+    expect(resolveRunRef({ PIWI_ORIGIN: 'reproduce', PIWI_ORIGIN_REF: '42', PIWI_RUN_REF: 'desktop-7' })).toBe(
+      'desktop-7',
+    );
+    expect(resolveRunRef({ PIWI_ORIGIN: 'bisect', PIWI_RUN_REF: 'desktop-8-unattended' })).toBe('desktop-8-unattended');
+  });
+
+  it('is the one a terminal run following an editor was given, and an editor run’s origin ref', () => {
+    expect(resolveRunRef({ PIWI_RUN_REF: 'terminal-12-34' })).toBe('terminal-12-34');
+    expect(resolveRunRef({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'ed-0a1b2c3d' })).toBe('ed-0a1b2c3d');
+    // Another launcher's origin ref names what it is about, not the run.
+    expect(resolveRunRef({ PIWI_ORIGIN: 'reproduce', PIWI_ORIGIN_REF: '42' })).toBeUndefined();
+  });
+
+  it('is one of its own outside CI when nothing named the run, and none in a CI job no launcher started', () => {
+    const own = () => 'local-1-2';
+    expect(resolveRunRef({}, own)).toBe('local-1-2');
+    expect(resolveRunRef({ PIWI_ORIGIN: 'nightly', PIWI_RUN_REF: 'a b' }, own)).toBe('local-1-2');
+    expect(resolveRunRef({ CI: 'true' }, own)).toBeUndefined();
+    expect(resolveRunRef({ CI: 'true', PIWI_RUN_REF: 'terminal-12-34' }, own)).toBeUndefined();
+    expect(resolveRunRef({ CI: 'true', PIWI_ORIGIN: 'bisect', PIWI_RUN_REF: 'desktop-8' }, own)).toBe('desktop-8');
+    // A launcher whose name for the run cannot be stored.
+    expect(resolveRunRef({ PIWI_ORIGIN: 'desktop', PIWI_RUN_REF: 'a b' }, own)).toBeUndefined();
+    expect(resolveRunRef({ PIWI_ORIGIN: 'desktop' }, own)).toBeUndefined();
+  });
+});
+
 describe('withoutCredentials', () => {
   it('drops the user name and the password a remote URL carries', () => {
     expect(withoutCredentials('https://gitlab-ci-token:glcbt-secret@gitlab.example.com/group/app.git')).toBe(
       'https://gitlab.example.com/group/app.git',
     );
     expect(withoutCredentials('https://ghp_secret@github.com/acme/app')).toBe('https://github.com/acme/app');
-    expect(withoutCredentials('ssh://git:secret@host.example.com/acme/app.git')).toBe('ssh://host.example.com/acme/app.git');
+    expect(withoutCredentials('ssh://git:secret@host.example.com/acme/app.git')).toBe(
+      'ssh://host.example.com/acme/app.git',
+    );
   });
 
   it('keeps a remote without credentials, an scp-like remote and a local path as they are', () => {
@@ -347,7 +426,7 @@ describe('resolveScmBranch — branch fallback chain', () => {
     expect(resolveScmBranch({})).toBeUndefined();
   });
 
-  it('treats git\'s literal HEAD (detached checkout) as unknown', () => {
+  it("treats git's literal HEAD (detached checkout) as unknown", () => {
     expect(resolveScmBranch({}, 'HEAD')).toBeUndefined();
   });
 
@@ -424,7 +503,7 @@ describe('resolveScmPrNumber — pull-request number capture', () => {
     expect(resolveScmPrNumber({})).toBeUndefined();
   });
 
-  it('parses the PR number out of GitHub\'s refs/pull/N/merge ref', () => {
+  it("parses the PR number out of GitHub's refs/pull/N/merge ref", () => {
     expect(resolveScmPrNumber({ GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/pull/42/merge' })).toBe('42');
     expect(resolveScmPrNumber({ GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/pull/7/head' })).toBe('7');
   });
@@ -452,7 +531,9 @@ describe('resolveScmBaseBranch — pull-request target branch capture', () => {
   it('returns undefined outside a pull-request build', () => {
     expect(resolveScmBaseBranch({})).toBeUndefined();
     expect(resolveScmBaseBranch({ GITHUB_ACTIONS: 'true', GITHUB_REF_NAME: 'main' })).toBeUndefined();
-    expect(resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: 'false', TRAVIS_BRANCH: 'main' })).toBeUndefined();
+    expect(
+      resolveScmBaseBranch({ TRAVIS: 'true', TRAVIS_PULL_REQUEST: 'false', TRAVIS_BRANCH: 'main' }),
+    ).toBeUndefined();
   });
 
   it('PIWI_BASE_BRANCH overrides the provider variable', () => {
@@ -480,7 +561,9 @@ describe('resolveScmBaseBranch — pull-request target branch capture', () => {
 
   it('Jenkins and Bitbucket read their destination variables', () => {
     expect(resolveScmBaseBranch({ JENKINS_URL: 'x', CHANGE_TARGET: 'main' })).toBe('main');
-    expect(resolveScmBaseBranch({ BITBUCKET_BUILD_NUMBER: '9', BITBUCKET_PR_DESTINATION_BRANCH: 'trunk' })).toBe('trunk');
+    expect(resolveScmBaseBranch({ BITBUCKET_BUILD_NUMBER: '9', BITBUCKET_PR_DESTINATION_BRANCH: 'trunk' })).toBe(
+      'trunk',
+    );
   });
 });
 
@@ -514,7 +597,7 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect((metadata.htmlReport as any).projects[0]).toMatchObject({ name: 'chromium', testDir: 'tests' });
   });
 
-  it('records each project\'s baseURL and testIdAttribute', () => {
+  it("records each project's baseURL and testIdAttribute", () => {
     const mc = new MetadataCollector();
     const config = {
       projects: [

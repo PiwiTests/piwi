@@ -2,7 +2,13 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { changelogSectionKind, cleanChangelogEntry, parseChangelog } from '#shared/changelog';
+import {
+  changelogSectionKind,
+  cleanChangelogEntry,
+  parseChangelog,
+  parseReleaseNotes,
+  splitEntryScope,
+} from '#shared/changelog';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
@@ -102,5 +108,106 @@ describe('parseChangelog', () => {
         release.version,
       ).toBe(false);
     }
+  });
+});
+
+const RELEASE = {
+  version: '0.67.0',
+  date: '2026-11-05T10:12:00Z',
+  url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.67.0',
+};
+
+describe('parseReleaseNotes', () => {
+  test('reads a raw release body: breaking changes, repeats and closes links', () => {
+    const release = parseReleaseNotes({
+      ...RELEASE,
+      body: [
+        '### ⚠ BREAKING CHANGES',
+        '',
+        "* **app:** the run insights endpoint's `workerImbalance` entries are `{ worker, count }`",
+        '',
+        '### Features',
+        '',
+        '* **reporter:** add piwi rerun ([7a1ebeb](https://github.com/PiwiTests/piwi/commit/7a1ebeb))',
+        '* **reporter:** add piwi rerun ([b18500d](https://github.com/PiwiTests/piwi/commit/b18500d)), closes [#1083](https://github.com/PiwiTests/piwi/issues/1083)',
+        '',
+        '',
+        '### Bug Fixes',
+        '',
+        '* **app:** keep a reported history ([da47453](https://github.com/PiwiTests/piwi/commit/da47453))',
+      ].join('\r\n'),
+    });
+    expect(release).toMatchObject({ version: '0.67.0', date: '2026-11-05', url: RELEASE.url, intro: null });
+    expect(release.entries.breaking).toEqual([
+      "**app:** the run insights endpoint's `workerImbalance` entries are `{ worker, count }`",
+    ]);
+    expect(release.entries.features).toEqual(['**reporter:** add piwi rerun']);
+    expect(release.entries.fixes).toEqual(['**app:** keep a reported history']);
+  });
+
+  test('reads a polished release body, its headings one level up', () => {
+    const release = parseReleaseNotes({
+      ...RELEASE,
+      body: [
+        'This release adds test selections and reads impact from a diff.',
+        '',
+        '**Full diff:** [v0.66.0…v0.67.0](https://github.com/PiwiTests/piwi/compare/v0.66.0...v0.67.0)',
+        '',
+        '## ✨ Highlights',
+        '',
+        '- **🎯 Test selections** — Save a set of tests and run it again.',
+        '',
+        '## Features',
+        '',
+        '### Selections',
+        '',
+        '- **app:** save a test selection ([4c6fc6d](https://github.com/PiwiTests/piwi/commit/4c6fc6d))',
+        '',
+        '<details>',
+        '<summary>Everything else</summary>',
+        '',
+        '- **ui:** tidy the run header',
+        '',
+        '</details>',
+        '',
+        '## Bug Fixes',
+        '',
+        '- **app:** keep the filter',
+        '',
+        '<!-- notes:polished -->',
+      ].join('\n'),
+    });
+    expect(release.intro).toBe('This release adds test selections and reads impact from a diff.');
+    expect(release.entries.highlights).toEqual(['**🎯 Test selections** — Save a set of tests and run it again.']);
+    expect(release.entries.features).toEqual(['**app:** save a test selection', '**ui:** tidy the run header']);
+    expect(release.entries.fixes).toEqual(['**app:** keep the filter']);
+  });
+
+  test('leaves a heading inside a code block alone', () => {
+    const release = parseReleaseNotes({
+      ...RELEASE,
+      body: ['## Features', '', '- **app:** a feature', '', '```md', '## Not a section', '```'].join('\n'),
+    });
+    expect(release.entries.features).toEqual(['**app:** a feature']);
+    expect(release.entries.other).toEqual([]);
+  });
+
+  test('reads an empty body as a release with nothing in it', () => {
+    const release = parseReleaseNotes({ ...RELEASE, date: null, body: '' });
+    expect(release).toMatchObject({ version: '0.67.0', date: null, intro: null });
+    expect(Object.values(release.entries).flat()).toEqual([]);
+  });
+});
+
+describe('splitEntryScope', () => {
+  test("separates a raw entry's scope from its sentence", () => {
+    expect(splitEntryScope('**app:** add **bold** words')).toEqual({ scope: 'app', text: 'add **bold** words' });
+  });
+
+  test('leaves an entry without a scope whole', () => {
+    expect(splitEntryScope('**🎯 Test selections** — Save a set')).toEqual({
+      scope: null,
+      text: '**🎯 Test selections** — Save a set',
+    });
   });
 });

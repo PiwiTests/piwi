@@ -4,6 +4,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const { recurrenceFlakinessSection, retryBehaviorSection } = await import('../../server/utils/ai-context');
@@ -19,13 +20,15 @@ async function seedRun(): Promise<number> {
 
 /** One execution of the test; a failure in the cluster carries its id, a pass carries none, as at ingest. */
 async function seedExec(runId: number, testCaseId: number, status: 'failed' | 'passed', retries = 0): Promise<void> {
-  await db.insert(schema.testRunsCases).values({
-    testRunId: runId,
-    testCaseId,
-    status,
-    retries,
-    failureClusterId: status === 'failed' ? 1 : null,
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      testRunId: runId,
+      testCaseId,
+      status,
+      retries,
+      failureClusterId: status === 'failed' ? 1 : null,
+    }),
+  );
 }
 
 async function loadCluster() {
@@ -70,7 +73,9 @@ describe('recurrence and retry sections of a flaky cluster', () => {
     expect(recurrence).toContain('- Retry-passes: 2 of 3 runs');
     expect(recurrence).toContain('- Pattern: intermittent');
 
-    expect(await retryBehaviorSection(db as never, cluster)).toContain('passed on retry in the last seen run');
+    expect(await retryBehaviorSection(db as never, cluster)).toContain(
+      'passed on a retry after a failed attempt in the last seen run',
+    );
   });
 
   test('a test that fails in every run with no retry pass reads as persistent', async () => {
