@@ -39,8 +39,8 @@ import { entityLinks, projects, testRunsCases } from '~~/server/database/schema'
 import type { DrizzleDB } from '#shared/handlers/db';
 
 /**
- * The demo has no server to reach Jira, so it ships one canned Jira connection
- * and answers the connection endpoints from constants. Nothing calls out.
+ * The demo has no server to reach Jira or Zephyr Scale, so it ships one canned connection of each and answers the
+ * connection endpoints from constants. Nothing calls out.
  */
 const DEMO_TIME = '2024-01-01T00:00:00.000Z';
 
@@ -61,6 +61,24 @@ const DEMO_CONNECTION: ConnectionSummary = {
   updatedAt: DEMO_TIME,
 };
 
+/** The canned Zephyr Scale connection, on the US region as the server would save it. */
+const DEMO_ZEPHYR_CONNECTION: ConnectionSummary = {
+  id: 3,
+  provider: 'zephyr-scale',
+  name: 'Zephyr Scale Cloud (United States)',
+  baseUrl: 'https://api.zephyrscale.smartbear.com/v2',
+  config: { region: 'us' },
+  status: 'ok',
+  lastCheckedAt: DEMO_TIME,
+  lastError: null,
+  managedBy: 'db',
+  hasCredentials: true,
+  credentialValues: {},
+  hasWebhookToken: false,
+  createdAt: DEMO_TIME,
+  updatedAt: DEMO_TIME,
+};
+
 /** Whether the canned connection's inbound webhook is on, for as long as the service worker runs. */
 let demoWebhookEnabled = false;
 
@@ -69,10 +87,11 @@ function demoConnection(): ConnectionSummary {
 }
 
 export function listDemoConnections(): { connections: ConnectionSummary[]; canStoreSecrets: boolean } {
-  return { connections: [demoConnection()], canStoreSecrets: true };
+  return { connections: [demoConnection(), DEMO_ZEPHYR_CONNECTION], canStoreSecrets: true };
 }
 
 export function getDemoConnection(id: number): { connection: ConnectionSummary } | null {
+  if (id === DEMO_ZEPHYR_CONNECTION.id) return { connection: DEMO_ZEPHYR_CONNECTION };
   return id === DEMO_CONNECTION.id ? { connection: demoConnection() } : null;
 }
 
@@ -114,7 +133,18 @@ export function updateDemoConnection(
   id: number,
   body: Partial<ConnectionInput> & { region?: string },
 ): { connection: ConnectionSummary } {
-  // The demo's one connection is Jira, moved by a typed address only.
+  if (id === DEMO_ZEPHYR_CONNECTION.id) {
+    // A region provider is moved by its region only, and keeps its region when none is sent.
+    const endpoint = body.region !== undefined ? demoConnectionEndpoint('zephyr-scale', body) : null;
+    return {
+      connection: {
+        ...DEMO_ZEPHYR_CONNECTION,
+        name: body.name ?? DEMO_ZEPHYR_CONNECTION.name,
+        ...(endpoint ? { baseUrl: endpoint.baseUrl, config: { region: endpoint.region } } : {}),
+      },
+    };
+  }
+  // Jira is moved by a typed address only.
   const baseUrl =
     body.baseUrl !== undefined
       ? demoConnectionEndpoint(DEMO_CONNECTION.provider, body).baseUrl
@@ -131,7 +161,10 @@ export function updateDemoConnection(
   };
 }
 
-export function testDemoConnection(): ConnectionTestResult {
+export function testDemoConnection(id?: number): ConnectionTestResult {
+  if (id === DEMO_ZEPHYR_CONNECTION.id) {
+    return { ok: true, account: { id: 'zephyr-scale:us', displayName: 'Zephyr Scale Cloud (United States)' } };
+  }
   return { ok: true, account: { id: 'demo-account', displayName: 'Demo User' }, tokenKind: 'classic' };
 }
 
@@ -140,7 +173,12 @@ export function testDemoConnection(): ConnectionTestResult {
  * it, but the demo runs in the browser and never calls out, so the site is
  * reported unreachable. Null when the address is not a URL.
  */
-export function checkDemoConnection(body: { baseUrl?: string }): ConnectionCheckResult | null {
+export function checkDemoConnection(body: {
+  provider?: string;
+  baseUrl?: string;
+  region?: string;
+}): ConnectionCheckResult | null {
+  if (body.provider === 'zephyr-scale') return checkDemoRegionConnection(body);
   const site = normalizeJiraSiteUrl(body.baseUrl ?? '');
   if (!site) return null;
   return {
@@ -155,6 +193,24 @@ export function checkDemoConnection(body: { baseUrl?: string }): ConnectionCheck
       error: 'The demo runs in your browser and does not contact Jira.',
       hint: null,
     },
+  };
+}
+
+/** The check of a region provider: answers as if the token signed in, with canned projects. */
+function checkDemoRegionConnection(body: { region?: string }): ConnectionCheckResult {
+  const endpoint = demoConnectionEndpoint('zephyr-scale', body);
+  return {
+    baseUrl: endpoint.baseUrl,
+    site: {
+      ok: true,
+      reachable: true,
+      deploymentType: null,
+      title: null,
+      reportedUrl: null,
+      cloudId: null,
+    },
+    auth: { ok: true, account: { id: `zephyr-scale:${endpoint.region}`, displayName: 'Zephyr Scale Cloud' } },
+    projects: { ok: true, count: 3, keys: ['DEMO', 'WEB', 'API'] },
   };
 }
 

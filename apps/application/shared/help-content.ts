@@ -1294,7 +1294,19 @@ export const HELP_TOPICS = {
     title: 'Integrations',
     text: "Connect an issue tracker and bind a project to it, so the project's pinned links to its site unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and any project can be bound to it.",
     doc: 'operate/integrations',
-    envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
+    envVars: [
+      'PIWI_JIRA_BASE_URL',
+      'PIWI_JIRA_EMAIL',
+      'PIWI_JIRA_API_TOKEN',
+      'PIWI_ZEPHYR_API_TOKEN',
+      'PIWI_ZEPHYR_REGION',
+    ],
+  },
+  'settings.integrations.zephyr-connection': {
+    title: 'Zephyr Scale Cloud',
+    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. The connection is what the results sync will use: that sync is not available yet, so Piwi sends nothing to Zephyr today.',
+    doc: 'operate/integrations#connecting-zephyr-scale-cloud',
+    envVars: ['PIWI_ZEPHYR_API_TOKEN', 'PIWI_ZEPHYR_REGION'],
   },
   'settings.integrations.connection': {
     title: 'Connect a system',
