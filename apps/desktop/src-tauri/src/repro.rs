@@ -188,13 +188,7 @@ pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_js
 /// user only, so another local user can neither predict the file nor plant one.
 pub(crate) fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
     let dir = std::env::temp_dir().join(format!("{prefix}{}", crate::random_hex_32()));
-    let mut builder = std::fs::DirBuilder::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt as _;
-        builder.mode(0o700);
-    }
-    builder.create(&dir)?;
+    crate::private_fs::private_dir_builder().create(&dir)?;
     Ok(dir)
 }
 
