@@ -1268,6 +1268,25 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
     }
 }
 
+/// What the supervisor does about a sidecar that exited without a deliberate quit.
+#[derive(Debug, PartialEq)]
+struct CrashDecision {
+    /// The crashes counted so far are older than `RESTART_WINDOW_SECS`: count from this one.
+    new_window: bool,
+    /// The sidecar crashed `MAX_RESTARTS_IN_WINDOW` times inside the window: stop restarting it.
+    give_up: bool,
+    /// How long to wait before starting it again.
+    backoff: Duration,
+}
+
+/// The decision after a crash, given the `restarts` already made in the window and how long ago the window began.
+fn crash_decision(restarts: u32, window_age: Duration) -> CrashDecision {
+    let new_window = window_age > Duration::from_secs(RESTART_WINDOW_SECS);
+    let restarts = if new_window { 0 } else { restarts };
+    let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+    CrashDecision { new_window, give_up: restarts >= MAX_RESTARTS_IN_WINDOW, backoff: Duration::from_secs(backoff) }
+}
+
 /// Own the sidecar for the life of the app: tee its output to the log and, when
 /// it exits without a deliberate quit (an OOM crash, say), restart it on the same
 /// port and token with a capped backoff so the window is never left pointed at a
@@ -1322,11 +1341,12 @@ fn supervise_server(
 
             // A server that stayed up past the window has recovered; forget older
             // crashes so a much later, isolated crash still gets the full budget.
-            if window_start.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+            let decision = crash_decision(restarts, window_start.elapsed());
+            if decision.new_window {
                 restarts = 0;
                 window_start = Instant::now();
             }
-            if restarts >= MAX_RESTARTS_IN_WINDOW {
+            if decision.give_up {
                 append_log(
                     &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
@@ -1338,11 +1358,13 @@ fn supervise_server(
             }
 
             let restart = session::server_stopped(&app, &server);
-            let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
             restarts += 1;
-            append_log(&log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            append_log(
+                &log_path,
+                &format!("[server] restarting in {}s (attempt {restarts})", decision.backoff.as_secs()),
+            );
             let _ = app.emit("server-status", "restarting");
-            std::thread::sleep(Duration::from_secs(backoff));
+            std::thread::sleep(decision.backoff);
 
             if shutting_down.load(Ordering::SeqCst) {
                 break;
@@ -3573,6 +3595,7 @@ mod tests {
     use std::time::Duration;
 
     use super::{
+        crash_decision, CrashDecision,
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
         connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
@@ -4693,5 +4716,33 @@ mod tests {
             ]
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The supervisor restarts a crashed sidecar with a growing backoff, gives up at the fifth crash inside the
+    /// window, and starts counting again once the window has passed.
+    #[test]
+    fn a_sidecar_that_crashes_again_and_again_is_given_up_on() {
+        let age = Duration::from_secs(10);
+        let mut seen = Vec::new();
+        let mut restarts = 0;
+        loop {
+            let decision = crash_decision(restarts, age);
+            if decision.give_up {
+                break;
+            }
+            seen.push(decision.backoff.as_secs());
+            restarts += 1;
+        }
+        assert_eq!(seen, vec![1, 2, 4, 8, 8]);
+        assert_eq!(restarts, 5);
+
+        // The window passed since the first crash: the older crashes no longer count.
+        assert_eq!(
+            crash_decision(5, Duration::from_secs(61)),
+            CrashDecision { new_window: true, give_up: false, backoff: Duration::from_secs(1) }
+        );
+        assert!(!crash_decision(5, Duration::from_secs(60)).new_window);
+        assert!(crash_decision(5, Duration::from_secs(60)).give_up);
+        assert!(!crash_decision(4, Duration::from_secs(60)).give_up);
     }
 }
