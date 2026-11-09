@@ -3319,16 +3319,19 @@ pub fn run() {
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 // The session code is asked over a connection that proved the token; no code, no session. A few
-                // tries, then the stopped splash.
-                let stop = || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst);
-                match session::session_url_retrying(port, &token, page.as_deref(), &PROOF_PACE, stop) {
-                    Ok(url) => session::SessionWindows::load_session(&nav_handle, url, holds),
-                    Err(error) => {
-                        append_log(&ready_log, &format!("no session code: {error}"));
-                        if !quitting.load(Ordering::SeqCst) {
-                            show_splash_status(&nav_handle, SPLASH_STOPPED, true);
-                        }
-                    }
+                // tries while the proof holds, then the stopped splash.
+                let server = session::ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: session::SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, page.as_deref(), holds) {
+                    append_log(&ready_log, &format!("no session code: {error}"));
                 }
             });
 

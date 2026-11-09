@@ -27,7 +27,7 @@ use crate::{
     random_hex_32, reapply_splash_status, run_app_menu_action, show_splash_status, shut_down, supervise_server,
     LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
-use crate::session::{self, ProofPace, ServerSession, Session, SessionWindows, SplashTexts};
+use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
 /// The app's name, in its menu and in the questions it asks.
@@ -362,15 +362,18 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 }
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
-                let stop = || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst);
-                match session::session_url_retrying(port, &token, None, &PROOF_PACE, stop) {
-                    Ok(url) => nav_handle.load_session(url, holds),
-                    Err(error) => {
-                        append_log(&log_path, &format!("no session code: {error}"));
-                        if !quitting.load(Ordering::SeqCst) {
-                            show_splash_status(&nav_handle, SPLASH_STOPPED, true);
-                        }
-                    }
+                let server = ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, None, holds) {
+                    append_log(&log_path, &format!("no session code: {error}"));
                 }
             });
 

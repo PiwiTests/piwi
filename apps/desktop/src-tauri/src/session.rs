@@ -379,6 +379,34 @@ pub(crate) fn resume_session<W: SessionWindows>(
     proved
 }
 
+/// The window's first session, once the sidecar proved the token at startup: the session code is asked a few times
+/// (`session_url_retrying`), and the tries end once `holds` says the proof can no longer stand. A sidecar that exits
+/// meanwhile is the supervisor's to restart, with its own "restarting" text, so the stopped splash is shown, with the
+/// window up, only while the proof still holds. Returns the error that left the window without a session.
+pub(crate) fn open_first_session<W: SessionWindows>(
+    windows: &W,
+    server: &ServerSession,
+    page: Option<&str>,
+    holds: ProofHolds,
+) -> Result<(), String> {
+    let stop = {
+        let holds = holds.clone();
+        move || !holds()
+    };
+    match session_url_retrying(server.port, &server.token, page, server.pace, stop) {
+        Ok(url) => {
+            windows.load_session(url, holds);
+            Ok(())
+        }
+        Err(error) => {
+            if holds() {
+                windows.show_splash(server.texts.stopped, true);
+            }
+            Err(error)
+        }
+    }
+}
+
 /// How many times a session code is asked for before the server is taken to give none: a server that proved the
 /// token can still fail one request.
 const SESSION_CODE_TRIES: usize = 4;
@@ -613,6 +641,49 @@ mod tests {
         windows.run_main_thread();
         assert!(windows.told.borrow().is_empty());
         assert!(asked.load(Ordering::SeqCst) < SESSION_CODE_TRIES);
+    }
+
+    /// The first session at startup: a server that gives no code leaves the stopped splash, with the window up, while
+    /// the proof holds; a sidecar that exits during the tries leaves the splash to the supervisor's "restarting", and a
+    /// window launched hidden to the tray stays hidden.
+    #[test]
+    fn the_startup_shows_stopped_only_while_the_proof_holds() {
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
+        let windows = Recorder::default();
+        let error = open_first_session(&windows, &server(port, "pd_token"), None, always()).unwrap_err();
+        assert!(!error.is_empty());
+        assert_eq!(*windows.told.borrow(), vec!["splash: stopped (revealed)".to_string()]);
+        assert_eq!(asked.load(Ordering::SeqCst), SESSION_CODE_TRIES);
+
+        // The sidecar exits after the first ask: the tries stop, and nothing is said.
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
+        let windows = Recorder::default();
+        let session = Arc::new(Session::new(None, None));
+        let generation = session.generation();
+        let holds: ProofHolds = {
+            let session = session.clone();
+            let seen = Arc::new(AtomicUsize::new(0));
+            Arc::new(move || {
+                if seen.fetch_add(1, Ordering::SeqCst) == 1 {
+                    session.exited();
+                }
+                session.unchanged_since(generation)
+            })
+        };
+        assert!(open_first_session(&windows, &server(port, "pd_token"), None, holds).is_err());
+        windows.run_main_thread();
+        assert!(windows.told.borrow().is_empty(), "{:?}", windows.told.borrow());
+        assert!(asked.load(Ordering::SeqCst) < SESSION_CODE_TRIES);
+
+        // A code that comes loads the session.
+        let (port, _) = serve_codes_after("pd_token", 1);
+        let windows = Recorder::default();
+        assert!(open_first_session(&windows, &server(port, "pd_token"), None, always()).is_ok());
+        windows.run_main_thread();
+        assert_eq!(
+            *windows.told.borrow(),
+            vec![format!("session: http://127.0.0.1:{port}/__piwi/session?code={CODE}")]
+        );
     }
 
     /// A panic under the turn (a `holds` that panics) poisons its lock; the exit and the give-up still run, so the
