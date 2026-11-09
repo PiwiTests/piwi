@@ -82,7 +82,13 @@ async function addRun(
     metadata: { scm: { commit, branch }, piwiOrigin: { kind: origin } },
     totalTests: cases.length,
   });
-  await persistRunCases(db as never, 1, id, cases);
+  // Each test starts `startedAt` seconds into its run.
+  await persistRunCases(
+    db as never,
+    1,
+    id,
+    cases.map((c) => ({ ...c, startedAt: start + c.startedAt * 1000 })),
+  );
 }
 
 beforeAll(async () => {
@@ -163,6 +169,13 @@ describe('getReuseForecast', () => {
     const forecast = await getReuseForecast(db as never, 1, { now: new Date(Date.now() + 60 * 24 * HOUR) });
     expect(forecast.total).toMatchObject({ results: 10, reusable: 6 });
     expect(Date.parse(forecast.to)).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('a truncated read keeps whole runs and counts the half with sources read behind it', async () => {
+    // Five attempts reach into run 3: runs 6 and 4 are kept whole, and only run 6 is counted.
+    const forecast = await getReuseForecast(db as never, 1, { maxAttempts: 5 });
+    expect(forecast.truncated).toBe(true);
+    expect(forecast.total).toMatchObject({ results: 2, reusable: 0 });
   });
 
   test('a window that ended before the runs counts nothing', async () => {

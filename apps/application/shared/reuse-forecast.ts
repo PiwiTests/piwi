@@ -37,7 +37,7 @@ export interface ForecastResult {
   testCaseId: number;
   /** The Playwright project; '' when unknown. */
   browserName: string;
-  /** When its run started, in milliseconds. */
+  /** When it started, in milliseconds. */
   at: number;
   scope: ReuseScope;
   outcome: ReuseOutcome;
@@ -117,12 +117,63 @@ interface Newest {
   otherRun: ForecastResult | null;
 }
 
+function advance(known: Newest | undefined, source: ForecastResult): Newest {
+  if (!known) return { latest: source, otherRun: null };
+  return { latest: source, otherRun: known.latest.runId !== source.runId ? known.latest : known.otherRun };
+}
+
 function remember<K>(map: Map<K, Newest>, key: K, source: ForecastResult): void {
-  const known = map.get(key);
-  if (!known) map.set(key, { latest: source, otherRun: null });
-  else {
-    if (known.latest.runId !== source.runId) known.otherRun = known.latest;
-    known.latest = source;
+  map.set(key, advance(map.get(key), source));
+}
+
+/**
+ * The sources of one test, indexed by the highest-ranked file version each one
+ * ran, usually its newest: a result can only have run every version of a source
+ * if it ran that one, so a lookup probes one bucket per version the result ran
+ * instead of scanning every source.
+ */
+class VersionSources {
+  private byVersions = new Map<ReadonlySet<string | number>, Newest>();
+  private buckets = new Map<string | number, Array<ReadonlySet<string | number>>>();
+
+  constructor(private rank: (version: string | number) => number) {}
+
+  remember(source: ForecastResult): void {
+    const versions = source.versions!;
+    const known = this.byVersions.get(versions);
+    this.byVersions.set(versions, advance(known, source));
+    if (known) return;
+    let key: string | number | undefined;
+    for (const version of versions) if (key === undefined || this.rank(version) > this.rank(key)) key = version;
+    const bucket = this.buckets.get(key!);
+    if (bucket) bucket.push(versions);
+    else this.buckets.set(key!, [versions]);
+  }
+
+  /** The newest source whose versions `result` all ran, of another run and young enough, or `best` when none is newer. */
+  match(result: ForecastResult, maxSourceAgeMs: number, best: ForecastResult | null): ForecastResult | null {
+    const ran = result.versions!;
+    // Probe the smaller side: the result's versions, or the keys of the sources.
+    const keys = this.buckets.size < ran.size ? [...this.buckets.keys()].filter((key) => ran.has(key)) : ran;
+    for (const version of keys) {
+      const bucket = this.buckets.get(version);
+      if (!bucket) continue;
+      for (let i = bucket.length - 1; i >= 0; i--) {
+        const versions = bucket[i]!;
+        const newest = this.byVersions.get(versions)!;
+        if (result.at - newest.latest.at > maxSourceAgeMs) {
+          // Results come in time order: a source too old for this one is too old for every later one.
+          bucket.splice(i, 1);
+          this.byVersions.delete(versions);
+          continue;
+        }
+        if (best && newest.latest.at <= best.at) continue;
+        const source = usable(newest, result, maxSourceAgeMs);
+        if (source && (!best || source.at > best.at) && isSubset(versions, ran)) best = source;
+      }
+      if (bucket.length === 0) this.buckets.delete(version);
+    }
+    return best;
   }
 }
 
@@ -135,28 +186,16 @@ function usable(newest: Newest, result: ForecastResult, maxSourceAgeMs: number):
 /** The newest source `result` ran the code of, or null. */
 function matchingSource(
   result: ForecastResult,
-  byVersions: Map<ReadonlySet<string | number>, Newest>,
+  byVersions: VersionSources,
   byCommit: Map<string, Newest>,
   maxSourceAgeMs: number,
 ): ForecastResult | null {
   let best: ForecastResult | null = null;
-  const consider = (source: ForecastResult | null) => {
-    if (source && (!best || source.at > best.at)) best = source;
-  };
   if (result.ciCommit) {
     const newest = byCommit.get(result.ciCommit);
-    if (newest) consider(usable(newest, result, maxSourceAgeMs));
+    if (newest) best = usable(newest, result, maxSourceAgeMs);
   }
-  if (result.versions && result.versions.size > 0) {
-    for (const [versions, newest] of byVersions) {
-      if (result.at - newest.latest.at > maxSourceAgeMs) {
-        byVersions.delete(versions);
-        continue;
-      }
-      const source = usable(newest, result, maxSourceAgeMs);
-      if (source && (!best || source.at > best.at) && isSubset(versions, result.versions)) best = source;
-    }
-  }
+  if (result.versions && result.versions.size > 0) best = byVersions.match(result, maxSourceAgeMs, best);
   return best;
 }
 
@@ -175,6 +214,16 @@ export function forecastReuse(
   };
   const tests = new Map<string, IdenticalCodeFailure>();
 
+  // Each version's rank, its index key: a number ranks as itself (the handler interns versions in the order their
+  // coverage fragments were stored, so the highest is the newest); a string by the order it was first seen in.
+  const ranks = new Map<string, number>();
+  for (const result of [...results].sort((a, b) => a.at - b.at)) {
+    for (const version of result.versions ?? []) {
+      if (typeof version === 'string' && !ranks.has(version)) ranks.set(version, ranks.size);
+    }
+  }
+  const rank = (version: string | number) => (typeof version === 'number' ? version : (ranks.get(version) ?? -1));
+
   const groups = new Map<string, ForecastResult[]>();
   for (const result of results) {
     const key = `${result.testCaseId}\x00${result.browserName}`;
@@ -185,7 +234,7 @@ export function forecastReuse(
 
   for (const [key, group] of groups) {
     group.sort((a, b) => a.at - b.at || a.executionId - b.executionId);
-    const byVersions = new Map<ReadonlySet<string | number>, Newest>();
+    const byVersions = new VersionSources(rank);
     const byCommit = new Map<string, Newest>();
     for (const result of group) {
       if (result.at >= opts.from) {
@@ -218,7 +267,7 @@ export function forecastReuse(
         }
       }
       if (isSource(result)) {
-        remember(byVersions, result.versions!, result);
+        byVersions.remember(result);
         if (result.ciCommit) remember(byCommit, result.ciCommit, result);
       }
     }

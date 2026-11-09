@@ -137,6 +137,28 @@ describe('forecastReuse', () => {
     expect(out.total).toMatchObject({ results: 4, comparable: 3, reusable: 1, failed: 1 });
   });
 
+  test('a pass that started after the result is not its source, even in a run that started first', () => {
+    const out = forecastReuse(
+      [
+        result({ at: T0 + DAY + 40, runId: 1, ciCommit: 'c1' }),
+        result({ at: T0 + DAY + 6, runId: 2, ciCommit: 'c1', outcome: 'failed' }),
+      ],
+      OPTS,
+    );
+    expect(out.total).toMatchObject({ reusable: 0, failed: 0 });
+  });
+
+  test('the newest source wins across the commit and the versions, scanning the versions newest first', () => {
+    const a = new Set([v('src/cart.ts', 'a')]);
+    const b = new Set([v('src/cart.ts', 'b')]);
+    const oldA = result({ at: T0 + DAY, versions: a, ciCommit: 'c0' });
+    const newB = result({ at: T0 + 2 * DAY, versions: b, ciCommit: 'c1' });
+    const newA = result({ at: T0 + 3 * DAY, versions: a, ciCommit: 'c2' });
+    const failed = result({ at: T0 + 4 * DAY, versions: a, ciCommit: 'c1', outcome: 'failed' });
+    const out = forecastReuse([oldA, newB, newA, failed], OPTS);
+    expect(out.tests[0]).toMatchObject({ lastExecutionId: failed.executionId, sourceExecutionId: newA.executionId });
+  });
+
   test('failures and retried passes with the code unchanged are counted and listed by test', () => {
     const pass = result({ at: T0 + DAY });
     const failed = result({ at: T0 + 2 * DAY, outcome: 'failed' });
