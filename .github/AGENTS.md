@@ -55,7 +55,8 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   from `releases/latest/download/`, and the download links open `releases/latest`. `release-please.yml` marks the
   previous release the latest again as soon as it creates one, and the `latest` job of `reusable-publish-desktop.yml`
   marks the new one once every leg has uploaded, when its tag is the newest. tauri-action gets the release's id, never
-  its tag: given a tag, it rewrites the release's name and empties its body.
+  its tag: given a tag, it rewrites the release's name and empties its body. `reusable-publish-runner.yml` attaches
+  Piwi Runner's installers without gating that: a Runner failure never holds the dashboard's release back.
 - **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path is longer than 259
   characters, so `ci.yml`'s `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. The
   usual cause is a dependency installed in two versions, one nested under the other.
