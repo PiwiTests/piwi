@@ -1023,6 +1023,21 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'get_reuse_forecast',
+    module: 'workflow',
+    description: md(
+      'Get how much of a project’s recent test time ran code identical to an earlier pass, and the tests that failed anyway, read-only.',
+      'Over the 30 days before the project’s latest result, a result is reusable when an earlier first-attempt pass of the same test and Playwright project, at most 14 days older and in another run, recorded file versions (runtime, path, git blob) that are all among the versions the result’s own coverage recorded. It is what a run that skips unchanged tests could have saved.',
+      'Each of `total` and `scopes` (`default-branch`, `other-branches`) gives `results`, `comparable` (results whose coverage names file versions), `reusable`, `durationMs`, `reusableDurationMs`, and the reusable results that `failed` or were `flaky`. `tests` lists the tests with such identical-code failures, with the execution of the last one and of the pass it matched: their failure came from the test, its data or its environment, not the code.',
+      'An upper bound: test-side code and configuration are not seen. A project without coverage at `functions` or `lines` has no comparable result.',
+    ),
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'number', description: 'Project ID' } },
+      required: ['projectId'],
+    },
+  },
+  {
     name: 'get_impacted_tests',
     module: 'workflow',
     description: md(

@@ -6,7 +6,12 @@ coverage Piwi already stores per execution (every file a test ran, with the git 
 evidence; impact-from-diff, applied with each test's own base, is the rule.
 
 **Status.** Proposed 2026-11-09; D9 to D12 and the defaults (14-day sources, 5% verification, a 0.1% false-reuse
-switch-off, reused results passing the gate) settled with the maintainer the same day. Nothing is built. The contracts it would add are entry D66 of
+switch-off, reused results passing the gate) settled with the maintainer the same day. PR 1 is built but for one
+piece: the forecast (`shared/reuse-forecast.ts`, `getReuseForecast` in `shared/handlers/reuse-forecast.ts`, the
+`pass-reuse` run use), `GET /api/projects/:id/selections/reuse-forecast` and its demo mirror, the Selections tab's
+card, `get_reuse_forecast`, and the [Reuse forecast](../apps/docs/features/reuse-forecast.md) page. Its window ends at
+the project's latest result, so a project that stopped running keeps its last 30 days. Identical-code failures are
+listed but do not feed the flaky classifier yet. PRs 2 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**

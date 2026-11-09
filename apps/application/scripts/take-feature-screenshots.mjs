@@ -4775,6 +4775,16 @@ const SCENES = [
     viewport: { width: 1280, height: 800 },
   },
   {
+    name: 'reuse-forecast',
+    description:
+      'Selections tab: the pass reuse forecast, the test time that ran code identical to an earlier pass and the tests that failed anyway',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5/selections',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="reuse-forecast"]',
+  },
+  {
     name: 'test-functions',
     description:
       'Test functions catalog: the page-object methods and helpers extracted from the suite, with their parameters',

@@ -178,6 +178,7 @@ Coverage here means the routes a test was _seen_ to hit on recent runs, not inst
 ## Related
 
 - [Impact from a diff](/features/change-impact): the tests a change affects, down to the changed lines
+- [Reuse forecast](/features/reuse-forecast): the test time that ran code identical to an earlier pass
 - [Piwi CLI](/reference/cli#select-run): every flag of `select` and `run`
 - [CI & sharding](/guide/ci): the gate in a CI job
 - [Analytics](/features/analytics#test-filter): filter every number by a selection

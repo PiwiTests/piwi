@@ -380,6 +380,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/change-impact',
       },
       {
+        title: 'Reuse forecast',
+        summary:
+          'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',
+        needs: ['fixtures'],
+        where: 'Project → Selections; MCP get_reuse_forecast',
+        doc: 'features/reuse-forecast',
+      },
+      {
         title: 'AI steps',
         summary: 'Author and replay natural-language test steps an LLM turns into Playwright actions.',
         needs: ['llm'],
