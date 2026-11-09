@@ -485,7 +485,7 @@ describe('HttpClient (against fake http.Server)', () => {
       ['proves it with another token', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 200],
       ['proves it for another port', (c: string) => desktopTokenProof(TOKEN, 1, c), 200],
       ['gives no proof', async () => null, 200],
-      ['answers the check with an error', honest, 503],
+      ['proves it with another token and an error status', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 503],
     ])('sends no token to a server that %s', async (_name, proofOf, status) => {
       const { server, url, requests } = await desktopServer(proofOf, status);
       try {
@@ -494,6 +494,34 @@ describe('HttpClient (against fake http.Server)', () => {
           /token is not sent to http:\/\/127\.0\.0\.1:\d+/,
         );
         await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health']);
+        expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends the token to a server that proved it while its health check answered an error, and gives that error to the request', async () => {
+      const { server, url, requests } = await desktopServer(honest, 503);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await expect(client.postJSON('/api/a', {}, TOKEN)).resolves.toEqual({});
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/health', undefined],
+          ['/api/a', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends no token when the check gets an error and no proof, and asks again with the next request', async () => {
+      const { server, url, requests } = await desktopServer(async () => null, 503);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        const first = await client.postJSON('/api/a', {}, TOKEN).catch((error) => error);
+        expect((first as { code?: string }).code).toBe('ECONNREFUSED');
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow('did not answer');
         expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health']);
         expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
       } finally {

@@ -56,7 +56,8 @@ function sameHex(a: string, b: string): boolean {
 
 /**
  * Whether the program at `baseUrl` is the app that holds `token`: its `/api/health` answers a new random challenge
- * with 200 and the proof for the port of `baseUrl`. Sends no credential. A client calls this before its first request
+ * with the proof for the port of `baseUrl`, whatever the status. A response with no proof is `'unproven'` at 200 and
+ * `'unreachable'` at any other status. Sends no credential. A client calls this before its first request
  * that carries the token, and sends the token only on `'proven'`.
  */
 export async function proveDesktopServer(
@@ -82,7 +83,7 @@ export async function proveDesktopServer(
     return 'unreachable';
   }
   const proof = res.headers.get(DESKTOP_PROOF_HEADER);
-  if (res.status !== 200 || !proof) return 'unproven';
+  if (!proof) return res.status === 200 ? 'unproven' : 'unreachable';
   const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
   return sameHex(proof, await desktopTokenProof(token, port, challenge)) ? 'proven' : 'unproven';
 }

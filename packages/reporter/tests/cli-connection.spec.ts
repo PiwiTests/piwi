@@ -266,7 +266,6 @@ describe('cliFetch', () => {
   it.each([
     ['proves it with another key', () => (answer = (c) => desktopTokenProof('pd_other', port, c ?? ''))],
     ['sends no proof', () => (answer = async () => null)],
-    ['answers the check with an error', () => (status = 503)],
   ])('sends no key to a server that %s', async (_name, break_) => {
     break_();
     const connection = desktopConnection();
@@ -275,6 +274,26 @@ describe('cliFetch', () => {
     ).rejects.toThrow(/token is not sent to http:\/\/127\.0\.0\.1:\d+/);
     expect(seen.every((r) => r.key === undefined)).toBe(true);
     expect(seen.map((r) => r.url)).toEqual(['/api/health']);
+  });
+
+  it('sends the key to a server that proved it while its health check answered an error', async () => {
+    status = 503;
+    const connection = desktopConnection();
+    expect((await cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } })).status).toBe(200);
+    expect(seen.map((r) => [r.url, r.key])).toEqual([
+      ['/api/health', undefined],
+      ['/api/a', 'pd_desktop'],
+    ]);
+  });
+
+  it('sends no key when the check answers an error with no proof', async () => {
+    status = 503;
+    answer = async () => null;
+    const connection = desktopConnection();
+    await expect(
+      cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
+    ).rejects.toThrow('did not answer');
+    expect(seen.every((r) => r.key === undefined)).toBe(true);
   });
 
   it("proves a key the desktop app's run marks, and a key the user named only on a flag needs no proof", async () => {

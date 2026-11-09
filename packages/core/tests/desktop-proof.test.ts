@@ -69,9 +69,23 @@ describe('proving the desktop server', () => {
     ['another token', answering(3000, 'pd_other')],
     ['a proof for another port', answering(3001, token)],
     ['no proof header', answering(3000, null)],
-    ['a status that is not 200', answering(3000, token, 503)],
+    ['a wrong proof at a status that is not 200', answering(3000, 'pd_other', 503)],
   ])('does not prove %s', async (_name, request) => {
     expect(await proveDesktopServer('http://127.0.0.1:3000', token, { request })).toBe('unproven');
+  });
+
+  test('proves a server whose correct proof comes with a status that is not 200', async () => {
+    for (const status of [500, 503]) {
+      expect(
+        await proveDesktopServer('http://127.0.0.1:3000', token, { request: answering(3000, token, status) }),
+      ).toBe('proven');
+    }
+  });
+
+  test('says unreachable for a status that is not 200 with no proof', async () => {
+    expect(await proveDesktopServer('http://127.0.0.1:3000', token, { request: answering(3000, null, 503) })).toBe(
+      'unreachable',
+    );
   });
 
   test('says unreachable when nothing answers or the address is not a URL', async () => {
