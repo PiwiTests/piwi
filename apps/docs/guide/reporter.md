@@ -8,7 +8,7 @@ lang: en-US
 
 The `@piwitests/reporter` package is a Playwright reporter that uploads test results, traces, attachments and reports
 to the dashboard while your tests run. [Getting started](./getting-started#fast-path-one-command) sets it up with one
-command, `npx @piwitests/reporter init`; this page covers manual setup and the switches that matter.
+command, `npx @piwitests/reporter init`; this page covers manual setup.
 
 ## Installation
 
@@ -17,7 +17,7 @@ npm install --save-dev @piwitests/reporter
 ```
 
 It needs `@playwright/test` 1.59 or later and Node.js 20 or later. A feature needing a later Playwright names the
-version on its page, and its behavior on an older one.
+version on its page.
 
 ### Try it without editing your config
 
@@ -124,7 +124,8 @@ The token goes only to a server that proves it holds it: before each request tha
 sends a one-time challenge to `/api/health` and checks the answer's proof. With no proof, or the wrong one, no
 token is sent, nothing is uploaded and the reporter says so; an app before 0.56 gives none: update it.
 A run the app starts itself (a reproduction or flake lab) exports `PIWI_DESKTOP_KEY=1` beside `PIWI_API_KEY`, marking
-the key as the app's, as does a `PIWI_API_KEY` equal to the token in `desktop.json`. Any other key is sent as before.
+the key as the app's, as does a `PIWI_API_KEY` equal to the token in `desktop.json`, while that file exists, also after a crash (the app
+deletes it on a clean quit). Any other key is sent as before.
 
 ### Local runs to the desktop app, CI to a team server
 
@@ -138,7 +139,7 @@ overrides the option: `off` sends one local run to `serverUrl`. `init --desktop-
 
 ## Sharding
 
-Playwright's `--shard` jobs merge into one dashboard run automatically when every shard uses the same
+Playwright's `--shard` jobs merge into one dashboard run when every shard uses the same
 `projectName`. `runLabel` is the manual override when your CI isn't detected. See
 [CI & sharding](./ci#sharding).
 

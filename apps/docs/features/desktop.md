@@ -19,7 +19,7 @@ bundles the Docker image's server in a native window and adds what only a local 
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config.
 
-Everything binds to `127.0.0.1`; nothing is exposed to the network.
+Everything binds to `127.0.0.1`.
 
 ## Where it is
 
@@ -43,8 +43,8 @@ Closing the window quits the app unless **Run in background** is on in the tray 
 hidden in the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
 holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
 use Ctrl. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
-While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the window's tray does not list (a `piwi flake` from a terminal or an
-editor, a probe, another window's, or one from before a reload) never does. In the background,
+While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the tray does not list (a `piwi flake` from a terminal or an
+editor, a probe, another window's, or from before a reload) never does. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
 
@@ -59,7 +59,7 @@ redirected, and sends the token only to a server that proves it holds it
 ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite reporting to a shared dashboard sends its
 local runs here with
 [`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the
-**Connect a suite** snippets carry once you turn on **CI reports to a team server**.
+**Connect a suite** snippets carry with **CI reports to a team server** on.
 
 <figure>
   <img src="/screenshots/setup-connect-desktop.png" alt="The connect wizard in the desktop app: the one init command with no server URL, the fixtures import and the test command, and the CI reports to a team server switch, off">
@@ -69,7 +69,7 @@ local runs here with
 When the tests run as another user or in a container, **Settings → Desktop app** gives the
 address and token to configure by hand. Keep the token in `PIWI_API_KEY`.
 
-A dashboard link opened in your browser opens in the app and its tab closes. A `piwi://open/<page>` link opens its
+A dashboard link opened in your browser opens in the app, closing its tab. A `piwi://open/<page>` link opens its
 page there, starting the app if needed (macOS: from Applications; Linux: after one run).
 
 ## Projects from local folders
@@ -134,11 +134,11 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 
 **Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
 connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
-(`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start and sends the token only
-to a server that proves it holds it, so the app must run. It writes only its own entry, keeps the first backup beside
-the config, and writes nothing from a disk image or dev build. When the app moves, it points that entry at
-itself again at startup, as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**, and **Update**
-replaces it. Restart the client after the entry changes. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
+(`piwi-desktop mcp-stdio`). No address or token is copied; the bridge finds the app at start, so the app must run, and sends the token only
+to a server that proves it holds it. It writes only its own entry and keeps the first backup beside
+the config. A disk image (DMG), a translocated copy or a dev build writes nothing, for Connect, Disconnect and the
+startup repair alike; each client shows **Manual setup** with the reason. After a move, startup points that entry at the app again,
+as it does for an earlier version's address-and-token entry. One you edited shows **Needs update**; **Update** replaces it. Restart the client afterwards. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates
 
