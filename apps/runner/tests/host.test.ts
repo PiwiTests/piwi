@@ -15,6 +15,7 @@ import { isLoopbackHost, runnerHandler } from '../server/host';
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
 const SHELL = { 'x-piwi-token': TOKEN };
+const SHELL_HEADERS = { ...SHELL, 'content-type': 'application/json' };
 const DESKTOP_CHALLENGE_HEADER = 'x-piwi-desktop-challenge';
 const DESKTOP_PROOF_HEADER = 'x-piwi-desktop-proof';
 
@@ -106,15 +107,39 @@ describe('the readiness probe', () => {
   });
 });
 
+/** A session code, as the shell gets one over its own request. */
+async function sessionCode(): Promise<string> {
+  const answer = await call('POST', '/api/desktop/run-target/session-code', SHELL_HEADERS, '{}');
+  expect(answer.status).toBe(200);
+  return (JSON.parse(answer.text) as { code: string }).code;
+}
+
 describe('the window session', () => {
-  test('refuses a token that is missing, wrong or sent twice', async () => {
+  test('refuses a code that is missing, wrong or sent twice', async () => {
+    const code = await sessionCode();
     expect((await call('GET', '/__piwi/session')).status).toBe(403);
-    expect((await call('GET', '/__piwi/session?token=wrong')).status).toBe(403);
-    expect((await call('GET', `/__piwi/session?token=${TOKEN}&token=${TOKEN}`)).status).toBe(403);
+    expect((await call('GET', '/__piwi/session?code=wrong')).status).toBe(403);
+    expect((await call('GET', `/__piwi/session?code=${code}&code=${code}`)).status).toBe(403);
   });
 
-  test('exchanges the token for the cookie that opens the streams', async () => {
-    const answer = await call('GET', `/__piwi/session?token=${TOKEN}`);
+  test('refuses the access token on the URL, and a code that was already used', async () => {
+    expect((await call('GET', `/__piwi/session?token=${TOKEN}`)).status).toBe(403);
+    expect((await call('GET', `/__piwi/session?code=${TOKEN}`)).status).toBe(403);
+    const code = await sessionCode();
+    expect((await call('GET', `/__piwi/session?code=${code}`)).status).toBe(302);
+    expect((await call('GET', `/__piwi/session?code=${code}`)).status).toBe(403);
+  });
+
+  test('gives a code to the shell only', async () => {
+    const route = '/api/desktop/run-target/session-code';
+    const json = { 'content-type': 'application/json' };
+    expect((await call('POST', route, json, '{}')).status).toBe(401);
+    const browser = await call('POST', route, { ...SHELL_HEADERS, origin: 'http://127.0.0.1:3000' }, '{}');
+    expect(browser.status).toBe(403);
+  });
+
+  test('exchanges the code for the cookie that opens the streams', async () => {
+    const answer = await call('GET', `/__piwi/session?code=${await sessionCode()}`);
     expect(answer.status).toBe(302);
     expect(answer.headers.location).toBe('/');
     const cookie = String(answer.headers['set-cookie']);

@@ -6,6 +6,7 @@
  * the same.
  */
 import { isBrowserRequest, type HostRequest } from './host-guard';
+import { mintSessionCode } from './run-target-session';
 import {
   answerRunRequest,
   connectRunTarget,
@@ -87,6 +88,13 @@ export const RUN_TARGET_ROUTES = {
       const kept = keyToKeep();
       return kept ? ok(kept) : refused(404, 'No key to keep');
     },
+  },
+  /** The code the window's session bootstrap takes once (`./run-target-session.ts`), for the shell to put in its URL. */
+  sessionCode: {
+    method: 'POST',
+    path: '/session-code',
+    shellOnly: true,
+    handle: () => ok({ code: mintSessionCode() }),
   },
   /** The kept key and the linked folders, from the shell after each start. */
   useKey: {

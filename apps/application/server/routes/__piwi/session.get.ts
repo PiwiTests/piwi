@@ -2,8 +2,10 @@ import { answerSession } from '@piwitests/editor/run-target-session';
 
 // Desktop (Tauri) bootstrap endpoint.
 //
-// The shell navigates the webview here exactly once at startup, exchanging the
-// desktop token (passed on the query string) for an httpOnly cookie. Every
+// The shell navigates the webview here at startup, exchanging a session code
+// (single-use, short-lived, given to the shell over its proven connection by
+// `POST /api/desktop/run-target/session-code`; the desktop token is never in
+// the URL) for an httpOnly cookie. Every
 // subsequent request — the SSR HTML load, its internal /api fetches, and the
 // notification/live-run EventSource streams — then carries the cookie and is
 // authorized by server/middleware/desktop-guard.ts. It then shows the page

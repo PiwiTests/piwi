@@ -1,5 +1,5 @@
 /**
- * The window's session bootstrap (`GET /__piwi/session`) and the shell's stream (`GET /api/desktop/notifications`) as
+ * The window's session bootstrap (`GET /__piwi/session`, with a session code) and the shell's stream (`GET /api/desktop/notifications`) as
  * Nitro routes: they answer what the editor service's own host answers
  * (`packages/editor/tests/run-target-routes.test.ts`), the stream passes the run target's stops on, and it ends them
  * when the shell leaves.
@@ -7,6 +7,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
+import { mintSessionCode, SESSION_CODE_TTL_MS } from '@piwitests/editor/run-target-session';
 import { apiError } from '../../server/utils/api-error';
 
 const TOKEN = `pd_${'d'.repeat(64)}`;
@@ -74,34 +75,59 @@ const visit = (query: Record<string, unknown>) => session({ query });
 describe('the window session', () => {
   test('answers 404 on the server build, which has no token', async () => {
     delete process.env.PIWI_DESKTOP_TOKEN;
-    await expect(Promise.resolve().then(() => visit({ token: TOKEN }))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(Promise.resolve().then(() => visit({ code: mintSessionCode() }))).rejects.toMatchObject({
+      statusCode: 404,
+    });
   });
 
-  test('answers 403 to a token that is missing, wrong or sent twice', async () => {
-    for (const token of [undefined, '', `${TOKEN}0`, [TOKEN, TOKEN], { 0: TOKEN }]) {
+  test('answers 403 to a code that is missing, unknown or sent twice', async () => {
+    const code = mintSessionCode();
+    for (const value of [undefined, '', `${code}0`, [code, code], { 0: code }]) {
       await expect(
-        Promise.resolve().then(() => visit({ token })),
-        String(token),
+        Promise.resolve().then(() => visit({ code: value })),
+        String(value),
       ).rejects.toMatchObject({
         statusCode: 403,
-        statusMessage: 'Invalid desktop token',
+        statusMessage: 'Invalid session code',
       });
     }
     expect(set).toEqual([]);
   });
 
-  test('exchanges the token for the cookie and redirects to the home page', async () => {
-    await visit({ token: TOKEN });
+  test('opens nothing for the access token on the URL', async () => {
+    for (const query of [{ token: TOKEN }, { code: TOKEN }]) {
+      await expect(Promise.resolve().then(() => visit(query))).rejects.toMatchObject({ statusCode: 403 });
+    }
+    expect(set).toEqual([]);
+  });
+
+  test('exchanges the code for the cookie and redirects to the home page', async () => {
+    await visit({ code: mintSessionCode() });
     expect(set).toEqual([
       { name: TOKEN_COOKIE, value: TOKEN, options: { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 31536000 } },
     ]);
     expect(redirected).toEqual(['/']);
   });
 
+  test('takes a code once, and refuses it after its lifetime', async () => {
+    const code = mintSessionCode();
+    await visit({ code });
+    await expect(Promise.resolve().then(() => visit({ code }))).rejects.toMatchObject({ statusCode: 403 });
+    const expired = mintSessionCode();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + SESSION_CODE_TTL_MS);
+      await expect(Promise.resolve().then(() => visit({ code: expired }))).rejects.toMatchObject({ statusCode: 403 });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(set).toHaveLength(1);
+  });
+
   test('redirects to the dashboard page `to` names, and to the home page for anything else', async () => {
     const to = async (page: unknown) => {
       redirected.length = 0;
-      await visit({ token: TOKEN, to: page });
+      await visit({ code: mintSessionCode(), to: page });
       return redirected[0];
     };
     expect(await to('/projects/3/runs?tab=failed#top')).toBe('/projects/3/runs?tab=failed');
