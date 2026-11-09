@@ -74,16 +74,17 @@ export class DesktopNotProvenError extends Error {
 const proofsInFlight = shareInFlight<DesktopProof>();
 
 /**
- * Resolves when the server at `serverUrl` proved it holds `token`, when `token` is the desktop app's; rejects with
- * {@link DesktopNotProvenError} when it did not. Each request that carries the token asks for its own proof; requests
+ * Resolves `true` when the server at `serverUrl` proved it holds `token`, when `token` is the desktop app's, and `false`
+ * for any other token; rejects with {@link DesktopNotProvenError} when it did not. Each request that carries the token asks for its own proof; requests
  * that arrive while a proof is being asked share it, and a proof that has arrived is never used for a later request.
  */
-export async function requireDesktopProof(serverUrl: string, token: string): Promise<void> {
+export async function requireDesktopProof(serverUrl: string, token: string): Promise<boolean> {
   const key = tokenKey(serverUrl, token);
-  if (!key || !desktopTokens.has(key)) return;
+  if (!key || !desktopTokens.has(key)) return false;
   const origin = key.slice(0, key.indexOf('\n'));
   const result = await proofsInFlight(key, () => proveDesktopServer(origin, token));
   if (result !== 'proven') throw new DesktopNotProvenError(origin, result);
+  return true;
 }
 
 /** The keys a request carries, in `X-API-Key` and as a bearer token. */
@@ -96,11 +97,14 @@ function carriedKeys(headers: RequestInit['headers'] | undefined): string[] {
 
 /**
  * `fetch` for an instance: through the environment's proxy when it names one and the instance is off this machine.
- * A request that carries the desktop app's token waits for the server's proof first.
+ * A request that carries the desktop app's token waits for the server's proof first, and follows no redirect.
  */
 export async function instanceFetch(url: string, init: RequestInit = {}, env = process.env): Promise<Response> {
-  for (const key of carriedKeys(init.headers)) await requireDesktopProof(url, key);
-  return send(url, init, env);
+  let carriesDesktopToken = false;
+  for (const key of carriedKeys(init.headers)) {
+    if (await requireDesktopProof(url, key)) carriesDesktopToken = true;
+  }
+  return send(url, carriesDesktopToken ? { ...init, redirect: 'error' } : init, env);
 }
 
 function send(url: string, init: RequestInit, env: Record<string, string | undefined>): Promise<Response> {

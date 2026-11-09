@@ -225,6 +225,7 @@ export function namedInstance(
   const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
   if (env.PIWI_DASHBOARD_URL || dotEnv.PIWI_DASHBOARD_URL) {
     const found = resolvePiwiConnection({ env, dotEnv, desktop })!;
+    if (found.desktop && found.apiKey) holdDesktopToken(found.serverUrl, found.apiKey);
     // The key saved in the editor belongs to the server it was saved for: a URL
     // from the environment or a workspace `.env` never gets another's.
     const editorUrl = editor.serverUrl?.replace(/\/+$/, '');

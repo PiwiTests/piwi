@@ -137,17 +137,19 @@ function keyAt(serverUrl: string, key: string): string {
 /**
  * `fetch` for the commands. A request that carries the desktop app's key, in `X-API-Key` or as a bearer token, goes
  * out only after the server behind the URL proved it holds that key, a proof of its own for each request; otherwise it
- * throws and nothing is sent. Any other request is `fetch`.
+ * throws and nothing is sent, and a redirect is not followed. Any other request is `fetch`.
  */
 export async function cliFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   const keys = [headers.get('x-api-key'), /^Bearer\s+(.+)$/i.exec(headers.get('authorization') ?? '')?.[1]];
+  let carriesDesktopKey = false;
   for (const key of new Set(keys.filter((value): value is string => !!value))) {
     const target = keyAt(String(input), key);
     if (!desktopKeys.has(target)) continue;
+    carriesDesktopKey = true;
     const serverUrl = new URL(input).origin;
     const proof = await proofsInFlight(target, () => proveDesktopServer(serverUrl, key));
     if (proof !== 'proven') throw new DesktopNotProvenError(serverUrl, proof);
   }
-  return fetch(input, init);
+  return fetch(input, carriesDesktopKey ? { ...init, redirect: 'error' } : init);
 }

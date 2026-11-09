@@ -103,8 +103,14 @@ export class ServerStepResolver implements StepResolver {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.apiKey) headers['X-API-Key'] = this.apiKey;
     const url = `${this.serverUrl.replace(/\/+$/, '')}/api/ai/step-resolution`;
-    if (this.desktopToken && this.apiKey === this.desktopToken) await this.requireProof();
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(request) });
+    const carriesDesktopToken = !!this.desktopToken && this.apiKey === this.desktopToken;
+    if (carriesDesktopToken) await this.requireProof();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+      ...(carriesDesktopToken ? { redirect: 'error' as const } : {}),
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(body.message || `piwi AI: step resolution failed (${res.status})`);

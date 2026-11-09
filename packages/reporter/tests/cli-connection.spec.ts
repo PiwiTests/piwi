@@ -296,6 +296,39 @@ describe('cliFetch', () => {
     expect(seen.every((r) => r.key === undefined)).toBe(true);
   });
 
+  it('follows no redirect of a request that carries the desktop key, and follows one of any other', async () => {
+    const reached: Array<string | undefined> = [];
+    const elsewhere = http.createServer((req, res) => {
+      reached.push(req.headers['x-api-key'] as string | undefined);
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => elsewhere.listen(0, '127.0.0.1', resolve));
+    const target = `http://127.0.0.1:${(elsewhere.address() as AddressInfo).port}/landing`;
+    server.removeAllListeners('request');
+    server.on('request', async (req, res) => {
+      const challenge = req.headers['x-piwi-desktop-challenge'] as string | undefined;
+      seen.push({ url: req.url ?? '', key: req.headers['x-api-key'] as string | undefined, challenge });
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'x-piwi-desktop-proof': (await answer(challenge)) ?? '' });
+        res.end('{}');
+        return;
+      }
+      res.writeHead(302, { Location: target });
+      res.end();
+    });
+    try {
+      const connection = desktopConnection();
+      await expect(
+        cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
+      ).rejects.toThrow();
+      expect(reached).toEqual([]);
+      expect((await cliFetch(`${connection.serverUrl}/api/b`, { headers: { 'X-API-Key': 'pd_other' } })).status).toBe(200);
+      expect(reached).toEqual(['pd_other']);
+    } finally {
+      await new Promise((resolve) => elsewhere.close(resolve));
+    }
+  });
+
   it("proves a key the desktop app's run marks, and a key the user named only on a flag needs no proof", async () => {
     const file = path.join(dir, 'desktop.json');
     fs.writeFileSync(file, JSON.stringify({ url: 'http://127.0.0.1:1', token: 'pd_unrelated' }));

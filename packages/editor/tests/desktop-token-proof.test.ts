@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { desktopTokenProof, DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER } from '@piwitests/core/desktop-proof';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { readDesktopDiscovery } from '../src/context.js';
+import { namedInstance, readDesktopDiscovery } from '../src/context.js';
 import { DesktopNotProvenError, forgetDesktopTokens, instanceFetch } from '../src/http.js';
 import { PiwiClient } from '../src/piwi-client.js';
 
@@ -172,6 +172,54 @@ describe("the desktop app's token", () => {
     stop.push(() => new Promise<void>((resolve) => again.close(() => resolve())));
     const res = await instanceFetch(`${url}/api/projects`, { headers: { 'X-API-Key': desktop.token } });
     expect(res.status).toBe(200);
+  });
+
+  test('is the one in the environment when the app marked it, and then waits for a proof', async () => {
+    const other = await serve(null);
+    stop.push(other.close);
+    const env = { PIWI_DASHBOARD_URL: other.url, PIWI_API_KEY: TOKEN, PIWI_DESKTOP_KEY: '1' };
+    const connection = namedInstance(home, home, env, {}, null)!;
+    expect(connection.apiKey).toBe(TOKEN);
+    await expect(
+      instanceFetch(`${other.url}/api/projects`, { headers: { 'X-API-Key': connection.apiKey! } }),
+    ).rejects.toBeInstanceOf(DesktopNotProvenError);
+    expect(other.carried).toEqual([]);
+  });
+
+  test('is a key of the environment that nothing marked, and then needs no proof', async () => {
+    const other = await serve(null);
+    stop.push(other.close);
+    const env = { PIWI_DASHBOARD_URL: other.url, PIWI_API_KEY: TOKEN };
+    const connection = namedInstance(home, home, env, {}, null)!;
+    await instanceFetch(`${other.url}/api/projects`, { headers: { 'X-API-Key': connection.apiKey! } });
+    expect(other.carried).toEqual([TOKEN]);
+  });
+
+  test('follows no redirect of a request that carries it', async () => {
+    const elsewhere = await serve(null);
+    stop.push(elsewhere.close);
+    const app = http.createServer(async (req, res) => {
+      const challenge = req.headers[DESKTOP_CHALLENGE_HEADER];
+      if (req.url === '/api/health' && typeof challenge === 'string') {
+        const port = (app.address() as AddressInfo).port;
+        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(TOKEN, port, challenge));
+        res.end('{}');
+        return;
+      }
+      res.writeHead(307, { Location: `${elsewhere.url}/landing` });
+      res.end();
+    });
+    await new Promise<void>((resolve) => app.listen(0, '127.0.0.1', resolve));
+    stop.push(() => new Promise<void>((resolve) => app.close(() => resolve())));
+    const url = `http://127.0.0.1:${(app.address() as AddressInfo).port}`;
+    discover(url);
+    await expect(instanceFetch(`${url}/api/projects`, { headers: { 'X-API-Key': TOKEN } })).rejects.toThrow();
+    expect(elsewhere.carried).toEqual([]);
+    const own = await instanceFetch(`${url}/api/projects`, { headers: { 'X-API-Key': 'pd_a_users_own_key' } }).catch(
+      () => null,
+    );
+    expect(own?.status).toBe(200);
+    expect(elsewhere.carried).toEqual(['pd_a_users_own_key']);
   });
 
   test('is the only key that waits for a proof', async () => {

@@ -415,6 +415,41 @@ describe('ServerStepResolver', () => {
       }
     });
 
+    it('follows no redirect of a step that carries the token', async () => {
+      const reached: string[] = [];
+      const elsewhere = http.createServer((req, res) => {
+        reached.push(req.url ?? '');
+        req.resume();
+        res.end('{"done":true}');
+      });
+      await new Promise<void>((resolve) => elsewhere.listen(0, '127.0.0.1', resolve));
+      const target = `http://127.0.0.1:${(elsewhere.address() as AddressInfo).port}/landing`;
+      const app = http.createServer(async (req, res) => {
+        req.resume();
+        if (req.url === '/api/health') {
+          const proof = await desktopTokenProof(
+            TOKEN,
+            (app.address() as AddressInfo).port,
+            String(req.headers['x-piwi-desktop-challenge']),
+          );
+          res.writeHead(200, { 'x-piwi-desktop-proof': proof });
+          res.end('{}');
+          return;
+        }
+        res.writeHead(307, { Location: target });
+        res.end();
+      });
+      await new Promise<void>((resolve) => app.listen(0, '127.0.0.1', resolve));
+      try {
+        const resolver = new ServerStepResolver(`http://127.0.0.1:${(app.address() as AddressInfo).port}`, TOKEN, TOKEN);
+        await expect(resolver.resolveStep(request)).rejects.toThrow();
+        expect(reached).toEqual([]);
+      } finally {
+        await new Promise<void>((resolve) => app.close(() => resolve()));
+        await new Promise<void>((resolve) => elsewhere.close(() => resolve()));
+      }
+    });
+
     it('sends no token to a server that replaced the app between two steps', async () => {
       const app = await serve(TOKEN);
       const resolver = new ServerStepResolver(app.url, TOKEN, TOKEN);
