@@ -138,7 +138,7 @@ connects each in one click, writing a `piwi-desktop` entry that runs the app's b
 (`piwi-desktop mcp-stdio`) as a local command. No address or token is copied; the bridge finds the app at start and
 sends the token only to a server that proves it holds it. The app must run. It keeps a backup and rewrites only that
 entry. An entry from an earlier version, with the address and token, is rewritten to the bridge at startup, the backup
-kept; one you edited is left, shows **Needs update**, and **Update** replaces it. Restart the client after the entry
+kept; one you edited, even by one field, is left, shows **Needs update**, and **Update** replaces it. Restart the client after the entry
 changes. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates

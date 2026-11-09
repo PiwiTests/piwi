@@ -25,11 +25,14 @@
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
 //     everything else in the file is preserved as parsed.
 //
-// `heal_configured_clients` runs at startup and rewrites two kinds of entry under
-// `piwi-desktop`: one of the bridge shape that no longer matches what this app
-// would write today (the app moved), and one in exactly the shape older builds
-// wrote, a loopback `/mcp` URL with this app's own token as a bearer header. Both
-// keep the backup. Any other entry, including one the user edited, is left alone.
+// `heal_configured_clients` runs at startup and touches only the `piwi-desktop`
+// entry, and only an entry that is ours to rewrite: a bridge entry with exactly the
+// keys this app writes whose only difference is the command (the app moved), or
+// exactly the shape older builds wrote, a loopback `/mcp` URL with this app's own
+// token as a bearer header. It removes no other entry, and it writes a file only if
+// that file is unchanged since it was read. A bridge entry with any other field, or
+// any other edit, is left as it is and reads as stale until the person connects
+// again. Both rewrites keep the backup.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -334,10 +337,9 @@ fn is_bridge_entry(value: &Value) -> bool {
     }
 }
 
-/// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`), preserving everything
-/// else, and drop a stale loopback `piwi` an older build left behind. `entry:
-/// None` removes ours. Returns the new document.
-fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
+/// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`) in `root`'s `container`, preserving everything else.
+/// `entry: None` removes ours. Returns the new document.
+fn set_own_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
     let mut root = match existing {
         Value::Object(map) => map,
         // A non-object root would be a broken config; start over rather than
@@ -351,11 +353,6 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> V
         *servers = Value::Object(Map::new());
     }
     let map = servers.as_object_mut().expect("container is an object");
-    // Retire the pre-`piwi-desktop` entry, but only when it is unmistakably ours
-    // — never a hosted Piwi a user keeps under `piwi`.
-    if map.get(LEGACY_ENTRY_KEY).is_some_and(is_local_piwi_entry) {
-        map.remove(LEGACY_ENTRY_KEY);
-    }
     match entry {
         Some(value) => {
             map.insert(PIWI_ENTRY_KEY.to_string(), value);
@@ -365,6 +362,18 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> V
         }
     }
     Value::Object(root)
+}
+
+/// `set_own_entry` for an explicit Connect or Disconnect, which also drops a loopback `piwi` an older build left
+/// behind, but only when it is unmistakably ours — never a hosted Piwi a user keeps under `piwi`.
+fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
+    let mut doc = existing;
+    if let Some(map) = doc.get_mut(container).and_then(Value::as_object_mut) {
+        if map.get(LEGACY_ENTRY_KEY).is_some_and(is_local_piwi_entry) {
+            map.remove(LEGACY_ENTRY_KEY);
+        }
+    }
+    set_own_entry(doc, container, entry)
 }
 
 fn read_config(path: &PathBuf) -> Result<Option<Value>, String> {
@@ -478,11 +487,46 @@ fn is_old_url_entry(id: &str, value: &Value, token: &str) -> bool {
         && *value == old_url_entry_for(id, url, token)
 }
 
+/// Whether `ours` is `expected` with a different command and nothing else different: the same keys, and every
+/// value but the command equal. For Opencode the command is the first item of its list.
+fn differs_only_in_command(ours: &Value, expected: &Value) -> bool {
+    let (Some(ours_map), Some(expected_map)) = (ours.as_object(), expected.as_object()) else {
+        return false;
+    };
+    if ours_map.len() != expected_map.len() || ours == expected {
+        return false;
+    }
+    expected_map.iter().all(|(key, want)| {
+        let Some(have) = ours_map.get(key) else {
+            return false;
+        };
+        if key != "command" {
+            return have == want;
+        }
+        match (have, want) {
+            (Value::String(_), Value::String(_)) => true,
+            (Value::Array(have), Value::Array(want)) => {
+                have.len() == want.len() && have.len() > 1 && have[1..] == want[1..] && have[0].is_string()
+            }
+            _ => false,
+        }
+    })
+}
+
 /// Rewrite the `piwi-desktop` entry of client `id` in the config at `path` when it is ours to heal: a bridge entry
-/// that no longer matches what this app writes, or exactly the entry older builds wrote (see `is_old_url_entry`).
-/// Writes through `write_config`, which keeps the backup. Returns whether it rewrote; false for anything unreadable,
-/// manual, absent or of another shape.
+/// that is what this app writes except for its command (see `differs_only_in_command`), or exactly the entry older
+/// builds wrote (see `is_old_url_entry`). Nothing else in the file changes, and it is written only if it still holds
+/// what was read. Writes through `write_config`, which keeps the backup. Returns whether it rewrote; false for
+/// anything unreadable, manual, absent, edited or changed meanwhile.
 fn heal_client_file(id: &str, path: &PathBuf, token: &str) -> bool {
+    heal_client_file_checked(id, path, token, || {})
+}
+
+/// `heal_client_file`, running `before_write` between the read and the check that the file is unchanged.
+fn heal_client_file_checked(id: &str, path: &PathBuf, token: &str, before_write: impl FnOnce()) -> bool {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
     let Ok(Some(doc)) = read_config(path) else {
         return false;
     };
@@ -490,11 +534,15 @@ fn heal_client_file(id: &str, path: &PathBuf, token: &str) -> bool {
         return false;
     };
     let expected = entry_for(id);
-    let drifted = is_bridge_entry(ours) && *ours != expected;
-    if !drifted && !is_old_url_entry(id, ours, token) {
+    if !differs_only_in_command(ours, &expected) && !is_old_url_entry(id, ours, token) {
         return false;
     }
-    let merged = merge_piwi_entry(doc, container_key(id), Some(expected));
+    let merged = set_own_entry(doc, container_key(id), Some(expected));
+    before_write();
+    // Another app may write this file while this one runs; its update wins.
+    if std::fs::read_to_string(path).ok().as_deref() != Some(raw.as_str()) {
+        return false;
+    }
     write_config(path, &merged).is_ok()
 }
 
@@ -858,6 +906,90 @@ mod tests {
         std::fs::write(&none, "{ \"mcpServers\": {} }").unwrap();
         assert!(!heal_client_file("cursor", &none, TOKEN));
         assert!(!heal_client_file("cursor", &dir.join("missing.json"), TOKEN));
+    }
+
+    /// A bridge entry with any field this app does not write is the person's edit (a disabled server, an
+    /// environment, a timeout, a trust setting): startup leaves the file as it was, and the entry reads as stale.
+    #[test]
+    fn a_bridge_entry_with_an_extra_field_is_left_alone_and_reads_as_stale() {
+        let dir = TempDir::new("heal-extra");
+        for id in CLIENT_IDS {
+            for (field, value) in [
+                ("enabled", json!(false)),
+                ("env", json!({ "DEBUG": "1" })),
+                ("timeout", json!(30)),
+                ("disabled", json!(true)),
+                ("trust", json!(true)),
+            ] {
+                let mut entry = stdio_entry_for(id, "/old/place/piwi-desktop");
+                entry[field] = value;
+                let (path, before) = config_with(&dir, id, entry.clone());
+                assert!(!heal_client_file(id, &path, TOKEN), "{id} with {field} was rewritten");
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "{id} with {field}");
+                assert!(!backup_of(&path).exists(), "{id} with {field} wrote a backup");
+                assert_eq!(classify(Some(&json!({ container_key(id): { "piwi-desktop": entry } })), container_key(id), &entry_for(id)), "stale");
+            }
+        }
+    }
+
+    /// Only the command may differ: another argument or type is an edit too, while a moved app is still healed.
+    #[test]
+    fn only_a_changed_command_makes_a_bridge_entry_ours_to_heal() {
+        for id in CLIENT_IDS {
+            let moved = stdio_entry_for(id, "/old/place/piwi-desktop");
+            assert!(differs_only_in_command(&moved, &entry_for(id)), "{id} moved");
+            assert!(!differs_only_in_command(&entry_for(id), &entry_for(id)), "{id} current");
+        }
+        let mut more_args = stdio_entry_for("cursor", "/old/piwi-desktop");
+        more_args["args"] = json!(["mcp-stdio", "--verbose"]);
+        assert!(!differs_only_in_command(&more_args, &entry_for("cursor")));
+        let mut other_type = stdio_entry_for("claude-code", "/old/piwi-desktop");
+        other_type["type"] = json!("sse");
+        assert!(!differs_only_in_command(&other_type, &entry_for("claude-code")));
+        let longer = json!({ "type": "local", "command": ["/old/piwi-desktop", "mcp-stdio", "--x"] });
+        assert!(!differs_only_in_command(&longer, &entry_for("opencode")));
+    }
+
+    /// The startup heal does not remove a loopback `piwi` entry the person keeps (a self-hosted server on
+    /// localhost); the same entry is still retired by an explicit Connect.
+    #[test]
+    fn the_startup_heal_keeps_the_users_own_loopback_piwi_entry() {
+        let dir = TempDir::new("heal-keeps-piwi");
+        let own = json!({ "type": "http", "url": "http://localhost:3000/mcp" });
+        let path = dir.join("cursor.json");
+        let doc = json!({ "mcpServers": {
+            "piwi": own,
+            "piwi-desktop": stdio_entry_for("cursor", "/old/place/piwi-desktop"),
+        } });
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+        assert!(heal_client_file("cursor", &path, TOKEN));
+        let after: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(after["mcpServers"]["piwi"], own);
+        assert_eq!(after["mcpServers"]["piwi-desktop"], entry_for("cursor"));
+
+        let connected = merge_piwi_entry(doc, "mcpServers", Some(entry_for("cursor")));
+        assert!(connected["mcpServers"].get("piwi").is_none());
+    }
+
+    /// A file is written only if it still holds what was read: a client that saved it in between keeps its update.
+    #[test]
+    fn a_file_changed_after_it_was_read_is_not_written() {
+        let dir = TempDir::new("heal-changed");
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", "/old/place/piwi-desktop"));
+        assert!(heal_client_file_checked("cursor", &path, TOKEN, || {}));
+        let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(doc["mcpServers"]["piwi-desktop"], entry_for("cursor"));
+
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", "/old/place/piwi-desktop"));
+        let _ = std::fs::remove_file(backup_of(&path));
+        let concurrent = json!({ "mcpServers": {
+            "piwi-desktop": stdio_entry_for("cursor", "/old/place/piwi-desktop"),
+            "added-by-the-client": { "command": "uvx" },
+        } });
+        let text = serde_json::to_string_pretty(&concurrent).unwrap();
+        assert!(!heal_client_file_checked("cursor", &path, TOKEN, || std::fs::write(&path, &text).unwrap()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(!backup_of(&path).exists());
     }
 
     #[test]

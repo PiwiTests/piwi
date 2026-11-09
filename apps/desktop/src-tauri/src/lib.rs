@@ -3113,9 +3113,9 @@ pub fn run() {
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
-            // MCP client configs written on earlier launches embed the URL and
-            // token — bring any that drifted (a different port this launch)
-            // back in line before a client tries the dead address.
+            // Rewrite this app's own `piwi-desktop` entry in a client config
+            // when it is the bridge entry with a different command or exactly
+            // the older URL-and-token shape; any other entry is left as is.
             mcp_clients::heal_configured_clients(app.handle());
 
             // --- publish connection details for the Playwright reporter ---
