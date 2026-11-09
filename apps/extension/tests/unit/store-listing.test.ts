@@ -35,6 +35,12 @@ describe('store listing', () => {
       expect(existsSync(path.join(root, 'store', `amo-description.${locale}.md`))).toBe(true);
   });
 
+  it('keeps the AMO reviewer notes within 3,000 characters, AMO’s limit for approval_notes', () => {
+    // `scripts/amo-metadata.mjs` sends the file trimmed; AMO rejects the whole submission over the limit.
+    const notes = readFileSync(path.join(root, 'store', 'amo-reviewer-notes.md'), 'utf8').trim();
+    expect([...notes].length).toBeLessThanOrEqual(3000);
+  });
+
   it.each(SHIPPED_LANGUAGES)('says in its first paragraph whether $code is a draft', ({ code, draft }) => {
     // A draft opens with a note, in its language, and the form for translation fixes; a reviewed language has none.
     const description = readFileSync(path.join(root, 'store', `amo-description.${code}.md`), 'utf8');

@@ -95,7 +95,7 @@ Expect 0 errors. The warnings it leaves are known: `service_worker` ignored by F
 | Name, summary, homepage | the manifest and `public/_locales/<code>/messages.json` (in the zip) |
 | Description | `store/amo-description.<code>.md`, one per language (AMO's Markdown subset: bold, italic, links, lists; no headings) |
 | Add-on URL, category, support website, license, experimental, payment, platforms | `store/amo-listing.json` (`piwi-picker`, Web Development, the GitHub issues page, MIT, no, no, Firefox desktop only) |
-| Notes to reviewer | `store/amo-reviewer-notes.md`: source build, network use, permissions, the `innerHTML` warnings, how to test |
+| Notes to reviewer | `store/amo-reviewer-notes.md`: source build, network use, permissions, the `innerHTML` warnings, how to test; 3,000 characters at most, or AMO refuses the submission (`store-listing.test.ts`) |
 | Screenshots | not pre-fillable: upload `picker-pick.png`, `picker-popup.png`, `picker-lint.png` and `picker-record.png` of `apps/docs/public/screenshots/` (1280 × 800, the size every store takes; `picker-devtools.png` is the docs' own, smaller) in the listing editor; `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots` recaptures them |
 
 `npm run extension:zip` merges all of it into `piwi-picker-v<version>-amo-metadata.json`, in the shape AMO's add-on API takes. A new language is one more `public/_locales/<lang>/` directory plus `store/amo-description.<lang>.md`; `tests/unit/store-listing.test.ts` checks every language has both, and that each summary stays within 132 characters, the Chrome Web Store's limit.
