@@ -15,7 +15,7 @@ import { createWriteStream, readFileSync, unlinkSync, existsSync, writeFileSync 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { buildAmoMetadata } from './amo-metadata.mjs';
 import { isReleaseBuild } from './build.mjs';
 
@@ -45,7 +45,7 @@ async function writeZip(fileName, fill) {
   if (existsSync(outPath)) unlinkSync(outPath);
 
   const output = createWriteStream(outPath);
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const archive = new ZipArchive({ zlib: { level: 9 } });
   const done = new Promise((resolve, reject) => {
     output.on('close', resolve);
     archive.on('error', reject);
