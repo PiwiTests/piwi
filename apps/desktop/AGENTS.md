@@ -22,7 +22,9 @@ shell and are feature-equivalent.
     proof gets no token on a new one.
   - When the sidecar exits, every window on its origin leaves it (`session.rs`): the main window goes to the bundled
     splash and the others close. The session bootstrap loads again only after the restarted process proves the token;
-    a proof that never comes leaves the window on the splash with its status set.
+    a proof that never comes leaves the window on the splash with its status set. A load whose sidecar exited
+    again, or whose supervisor gave up, after the proof passed is dropped on the thread that navigates
+    (`proof_holds`), and a restart's splash text never shows a hidden window.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
   - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's

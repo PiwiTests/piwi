@@ -332,6 +332,8 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             // splash says, and ends when the supervisor gives up or the app quits.
             let nav_handle = app.handle().clone();
             let quitting = shutting_down.clone();
+            // Read before the wait: a host that exits after its proof passes makes the load below stale.
+            let generation = session::generation_of(&nav_handle);
             std::thread::spawn(move || {
                 let ready = session::wait_for_proof(
                     port,
@@ -340,7 +342,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
                     || {
                         append_log(&log_path, "host not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
                     },
                 );
                 append_log(
@@ -353,15 +355,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 );
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
+                let holds = session::proof_holds(&nav_handle, generation, quitting.clone());
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
                 if let Some(session) = nav_handle.try_state::<Session>() {
                     session.mark_opened();
                 }
-                nav_handle.load_session(bootstrap_url(port, &token, None));
+                nav_handle.load_session(bootstrap_url(port, &token, None), holds);
             });
 
             #[cfg(target_os = "macos")]

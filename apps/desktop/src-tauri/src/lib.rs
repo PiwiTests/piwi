@@ -1525,9 +1525,10 @@ fn splash_status_script(text: &str) -> String {
     )
 }
 
-/// Write `text` in the splash's status line and bring the window up: a launch
-/// to the tray hides it.
-fn show_splash_status(app: &AppHandle, text: &'static str) {
+/// Write `text` in the splash's status line. With `reveal`, bring the window up too: a launch to the tray hides
+/// it, and a server that does not start is news the person has to see. Without it the window stays as it was, so
+/// a restart after a crash does not open a window the person closed to the tray.
+fn show_splash_status(app: &AppHandle, text: &'static str, reveal: bool) {
     if let Some(session) = app.try_state::<session::Session>() {
         session.set_status(Some(text));
     }
@@ -1535,7 +1536,9 @@ fn show_splash_status(app: &AppHandle, text: &'static str) {
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
             let _ = w.eval(&splash_status_script(text));
-            let _ = w.show();
+            if reveal {
+                let _ = w.show();
+            }
         }
     });
 }
@@ -3233,6 +3236,8 @@ pub fn run() {
             let nav_handle = app.handle().clone();
             let ready_log = log_path.clone();
             let quitting = shutting_down.clone();
+            // Read before the wait: a sidecar that exits after its proof passes makes the load below stale.
+            let generation = session::generation_of(&nav_handle);
             std::thread::spawn(move || {
                 let ready = session::wait_for_proof(
                     port,
@@ -3241,7 +3246,7 @@ pub fn run() {
                     || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
                     || {
                         append_log(&ready_log, "server not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
                     },
                 );
                 append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
@@ -3250,7 +3255,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
@@ -3261,7 +3266,8 @@ pub fn run() {
                 if let Some(session) = nav_handle.try_state::<session::Session>() {
                     session.mark_opened();
                 }
-                session::SessionWindows::load_session(&nav_handle, bootstrap_url(port, &token, page.as_deref()));
+                let holds = session::proof_holds(&nav_handle, generation, quitting.clone());
+                session::SessionWindows::load_session(&nav_handle, bootstrap_url(port, &token, page.as_deref()), holds);
             });
 
             // --- tray ---

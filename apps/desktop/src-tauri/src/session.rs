@@ -46,6 +46,44 @@ impl Session {
     pub(crate) fn status(&self) -> Option<&'static str> {
         *self.status.lock().unwrap()
     }
+
+    /// The number of sidecar exits so far: a proof belongs to the generation read before it was asked for.
+    pub(crate) fn generation(&self) -> u64 {
+        self.restarts.load(Ordering::SeqCst)
+    }
+
+    /// Whether no sidecar exit came after `generation` was read.
+    fn unchanged_since(&self, generation: u64) -> bool {
+        self.generation() == generation
+    }
+}
+
+/// Whether a proof still stands, asked on the thread that navigates the window: false once the sidecar exited after
+/// the proof's generation was read, the supervisor gave up, or the app is quitting.
+pub(crate) type ProofHolds = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// Run `then` only if `holds` still says the proof stands: the check the thread that navigates makes just before it
+/// does.
+pub(crate) fn when_proof_holds(holds: &ProofHolds, then: impl FnOnce()) {
+    if holds() {
+        then();
+    }
+}
+
+/// The generation to read before waiting for a proof (see `proof_holds`); 0 without a session.
+pub(crate) fn generation_of(app: &AppHandle) -> u64 {
+    app.try_state::<Session>().map_or(0, |session| session.generation())
+}
+
+/// A proof of the sidecar that ran at `generation` stands until it exits again, the supervisor gives up, or the app
+/// quits.
+pub(crate) fn proof_holds(app: &AppHandle, generation: u64, quitting: Arc<AtomicBool>) -> ProofHolds {
+    let app = app.clone();
+    Arc::new(move || {
+        app.try_state::<Session>().is_some_and(|session| session.unchanged_since(generation))
+            && !app.state::<ServerGaveUp>().0.load(Ordering::SeqCst)
+            && !quitting.load(Ordering::SeqCst)
+    })
 }
 
 /// Whether `url` is one of the app's own pages the window can wait on: not a sidecar page, `about:` or a
@@ -60,8 +98,9 @@ pub(crate) trait SessionWindows {
     fn leave_server(&self, text: &'static str);
     /// The splash shows `text`.
     fn show_splash(&self, text: &'static str);
-    /// The dashboard window loads the sidecar's session from `bootstrap_url`.
-    fn load_session(&self, bootstrap_url: String);
+    /// The dashboard window loads the sidecar's session from `bootstrap_url`, unless `holds` says on the thread that
+    /// navigates that the proof no longer stands: the sidecar may have exited since it passed.
+    fn load_session(&self, bootstrap_url: String, holds: ProofHolds);
 }
 
 impl SessionWindows for AppHandle {
@@ -81,22 +120,24 @@ impl SessionWindows for AppHandle {
                 let _ = window.navigate(splash);
             }
         });
-        show_splash_status(self, text);
+        show_splash_status(self, text, false);
     }
 
     fn show_splash(&self, text: &'static str) {
-        show_splash_status(self, text);
+        show_splash_status(self, text, false);
     }
 
-    fn load_session(&self, bootstrap_url: String) {
-        if let Some(session) = self.try_state::<Session>() {
-            session.set_status(None);
-        }
+    fn load_session(&self, bootstrap_url: String, holds: ProofHolds) {
         let handle = self.clone();
         let _ = self.run_on_main_thread(move || {
-            if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval(&format!("window.location.replace('{bootstrap_url}')"));
-            }
+            when_proof_holds(&holds, || {
+                if let Some(session) = handle.try_state::<Session>() {
+                    session.set_status(None);
+                }
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.eval(&format!("window.location.replace('{bootstrap_url}')"));
+                }
+            });
         });
     }
 }
@@ -176,30 +217,31 @@ pub(crate) fn server_restarted(app: &AppHandle, server: ServerSession, restart: 
         let Some(session) = app.try_state::<Session>() else {
             return;
         };
-        let superseded = || session.restarts.load(Ordering::SeqCst) != restart;
+        let superseded = || !session.unchanged_since(restart);
         let gave_up = || app.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-        let proved = resume_session(
-            &app,
-            &server,
-            |windows| windows.show_splash(server.texts.slow),
-            || superseded() || gave_up() || quitting.load(Ordering::SeqCst),
-        );
+        let holds = proof_holds(&app, restart, quitting.clone());
+        let proved = resume_session(&app, &server, |windows| windows.show_splash(server.texts.slow), holds);
         if !proved && !superseded() && !quitting.load(Ordering::SeqCst) && gave_up() {
             app.show_splash(server.texts.stopped);
         }
     });
 }
 
-/// Wait for the restarted server's proof, then load its session. A server that never proves gets no session.
+/// Wait for the restarted server's proof, then load its session. A server that never proves gets no session, and the
+/// wait ends once `holds` says the proof it waits for no longer can stand.
 pub(crate) fn resume_session<W: SessionWindows>(
     windows: &W,
     server: &ServerSession,
     on_slow: impl Fn(&W),
-    stop: impl Fn() -> bool,
+    holds: ProofHolds,
 ) -> bool {
+    let stop = {
+        let holds = holds.clone();
+        move || !holds()
+    };
     let proved = wait_for_proof(server.port, &server.token, server.pace, stop, || on_slow(windows));
     if proved {
-        windows.load_session(bootstrap_url(server.port, &server.token, None));
+        windows.load_session(bootstrap_url(server.port, &server.token, None), holds);
     }
     proved
 }
@@ -228,19 +270,35 @@ mod tests {
         }
     }
 
-    /// Records what the windows were told, in order.
+    /// Records what the windows were told, in order. A session load waits in `loads` until `run_main_thread`, as
+    /// the real one waits for the thread that navigates the window.
     #[derive(Default)]
-    struct Recorder(RefCell<Vec<String>>);
+    struct Recorder {
+        told: RefCell<Vec<String>>,
+        loads: RefCell<Vec<(String, ProofHolds)>>,
+    }
+
+    impl Recorder {
+        fn run_main_thread(&self) {
+            for (url, holds) in self.loads.borrow_mut().drain(..) {
+                when_proof_holds(&holds, || self.told.borrow_mut().push(format!("session: {url}")));
+            }
+        }
+    }
+
+    fn always() -> ProofHolds {
+        Arc::new(|| true)
+    }
 
     impl SessionWindows for Recorder {
         fn leave_server(&self, text: &'static str) {
-            self.0.borrow_mut().push(format!("leave: {text}"));
+            self.told.borrow_mut().push(format!("leave: {text}"));
         }
         fn show_splash(&self, text: &'static str) {
-            self.0.borrow_mut().push(format!("splash: {text}"));
+            self.told.borrow_mut().push(format!("splash: {text}"));
         }
-        fn load_session(&self, bootstrap_url: String) {
-            self.0.borrow_mut().push(format!("session: {bootstrap_url}"));
+        fn load_session(&self, bootstrap_url: String, holds: ProofHolds) {
+            self.loads.borrow_mut().push((bootstrap_url, holds));
         }
     }
 
@@ -271,30 +329,71 @@ mod tests {
     fn the_session_loads_after_the_restarted_server_proves_the_token() {
         let port = serve_health("pd_token", true);
         let windows = Recorder::default();
-        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow"), || false);
+        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow"), always());
         assert!(proved);
+        windows.run_main_thread();
         assert_eq!(
-            *windows.0.borrow(),
+            *windows.told.borrow(),
             vec![format!("session: http://127.0.0.1:{port}/__piwi/session?token=pd_token")]
         );
+    }
+
+    /// The sidecar can exit between its proof and the navigation the main thread makes: that load is dropped, and
+    /// the window stays where the exit left it.
+    #[test]
+    fn a_proof_does_not_load_a_session_after_the_sidecar_exited_again() {
+        let port = serve_health("pd_token", true);
+        let session = Arc::new(Session::new(None, None));
+        let generation = session.generation();
+        let holds: ProofHolds = {
+            let session = session.clone();
+            Arc::new(move || session.unchanged_since(generation))
+        };
+        let windows = Recorder::default();
+        assert!(resume_session(&windows, &server(port, "pd_token"), |_| {}, holds));
+        session.restarts.fetch_add(1, Ordering::SeqCst);
+        windows.run_main_thread();
+        assert!(windows.told.borrow().is_empty());
+    }
+
+    /// A proof ends its wait too once it can no longer stand, as when the supervisor gave up or the app quits.
+    #[test]
+    fn the_wait_ends_when_the_proof_cannot_stand_any_more() {
+        let port = serve_health("pd_token", false);
+        let windows = Recorder::default();
+        let checks = Arc::new(AtomicU64::new(0));
+        let holds: ProofHolds = {
+            let checks = checks.clone();
+            Arc::new(move || checks.fetch_add(1, Ordering::SeqCst) < 8)
+        };
+        assert!(!resume_session(&windows, &server(port, "pd_token"), |_| {}, holds));
+        windows.run_main_thread();
+        assert!(windows.loads.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_session_counts_the_exits_after_the_generation_read() {
+        let session = Session::new(None, None);
+        let generation = session.generation();
+        assert!(session.unchanged_since(generation));
+        session.restarts.fetch_add(1, Ordering::SeqCst);
+        assert!(!session.unchanged_since(generation));
+        assert!(session.unchanged_since(session.generation()));
     }
 
     #[test]
     fn a_server_that_cannot_prove_the_token_gets_no_session() {
         let port = serve_health("pd_token", false);
         let windows = Recorder::default();
-        let stops_after = std::cell::Cell::new(0);
-        let proved = resume_session(
-            &windows,
-            &server(port, "pd_token"),
-            |w| w.show_splash("slow"),
-            || {
-                stops_after.set(stops_after.get() + 1);
-                stops_after.get() > 8
-            },
-        );
+        let checks = Arc::new(AtomicU64::new(0));
+        let holds: ProofHolds = {
+            let checks = checks.clone();
+            Arc::new(move || checks.fetch_add(1, Ordering::SeqCst) < 8)
+        };
+        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow"), holds);
         assert!(!proved);
-        let told = windows.0.borrow();
+        windows.run_main_thread();
+        let told = windows.told.borrow();
         assert_eq!(*told, vec!["splash: slow".to_string()]);
         assert!(told.iter().all(|line| !line.starts_with("session")));
     }
@@ -303,9 +402,10 @@ mod tests {
     fn nothing_answering_leaves_the_windows_without_a_session() {
         let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let windows = Recorder::default();
-        let proved = resume_session(&windows, &server(free, "pd_token"), |_| {}, || true);
+        let proved = resume_session(&windows, &server(free, "pd_token"), |_| {}, Arc::new(|| false));
         assert!(!proved);
-        assert!(windows.0.borrow().is_empty());
+        windows.run_main_thread();
+        assert!(windows.told.borrow().is_empty());
     }
 
     #[test]
