@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../../database';
 import { requireAuth } from '../../../../utils/auth';
 import { clearWebhookToken, getConnectionRow } from '../../../../utils/integrations/connections';
+import { providerHasCapability } from '#shared/integrations/registry';
 import { requireRouteId } from '../../../../utils/project-access';
 
 defineRouteMeta({
@@ -8,7 +9,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Disable the inbound webhook',
     description:
-      'Clear the connection webhook secret, turning the inbound webhook off. Requires `connections:manage` (administrators only).',
+      'Clear the connection webhook secret, turning the inbound webhook off. A provider with no inbound webhook answers HTTP 400. Requires `connections:manage` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'connections:manage',
   },
@@ -21,6 +22,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const row = await getConnectionRow(db, id);
   if (!row) throw apiError({ statusCode: 404, message: 'Connection not found' });
+  if (!providerHasCapability(row.provider, 'webhook')) {
+    throw apiError({ statusCode: 400, message: 'This provider has no inbound webhook' });
+  }
 
   await clearWebhookToken(db, id);
   return { success: true };

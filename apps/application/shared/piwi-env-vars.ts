@@ -230,7 +230,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Integrations',
     order: 13,
     intro:
-      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection; otherwise connections are managed from **Settings → Integrations**.',
+      'Connect an issue tracker so pinned links unfurl and stay in sync. Setting `PIWI_JIRA_BASE_URL`, `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` creates a read-only, environment-managed Jira Cloud connection, and `PIWI_ZEPHYR_API_TOKEN` one for Zephyr Scale Cloud; otherwise connections are managed from **Settings → Integrations**.',
     note: 'A connection base URL is administrator-supplied and trusted, so a self-hosted Jira on a private host works. See [Integrations](/operate/integrations).',
   },
   clustering: {
@@ -1379,6 +1379,24 @@ export const PIWI_ENV_VARS = {
     since: '0.29.0',
     relevantWhen: { PIWI_JIRA_BASE_URL: '*' },
     requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
+  },
+  PIWI_ZEPHYR_API_TOKEN: {
+    description:
+      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection. Never returned by the API.',
+    category: 'integrations',
+    secret: true,
+    since: '0.68.0',
+    docs: 'operate/integrations#connecting-zephyr-scale-cloud',
+  },
+  PIWI_ZEPHYR_REGION: {
+    description: 'Region of the Zephyr Scale Cloud host the token belongs to: "us", "eu", "au" or "de".',
+    category: 'integrations',
+    type: 'enum',
+    enum: ['us', 'eu', 'au', 'de'],
+    default: 'us',
+    since: '0.68.0',
+    relevantWhen: { PIWI_ZEPHYR_API_TOKEN: '*' },
+    notes: 'Any other value is logged and ignored, and the region stays `us`.',
   },
   PIWI_INTEGRATIONS_SYNC_MINUTES: {
     description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',

@@ -1,0 +1,5 @@
+{
+  "_spec": "ProjectNotFoundOrDeactivatedError",
+  "errorCode": 404,
+  "message": "The project ZZZ does not exist or is currently deactivated."
+}

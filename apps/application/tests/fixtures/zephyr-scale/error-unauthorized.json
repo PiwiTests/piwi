@@ -1,0 +1,5 @@
+{
+  "_spec": "UnauthorizedError",
+  "errorCode": 401,
+  "message": "Authentication credentials are missing or invalid."
+}

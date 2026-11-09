@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: "Connect Jira Cloud to the dashboard: the token and permissions it needs, trusted hosts, status sync and the inbound webhook."
+description: "Connect Jira Cloud and Zephyr Scale Cloud to the dashboard: the token and permissions, trusted hosts, status sync and the inbound webhook."
 lang: en-US
 ---
 
@@ -59,16 +59,11 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Edit Issues | `EDIT_ISSUES` | [Description updates](/features/issue-automation#comments-and-description-updates). |
-| Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
+| Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker (or **Browse users and groups**, `USER_PICKER`). |
 | Create Attachments | `CREATE_ATTACHMENTS` | Attach a bug report's screenshots to the issue filed from it. |
 
-For the **full integration**, grant all seven on each bound project. You can drop the ones whose feature you do not
-use: `CREATE_ATTACHMENTS` without bug reports, `ASSIGN_ISSUES` without assignees, `ADD_COMMENTS`, `TRANSITION_ISSUES`
-and `EDIT_ISSUES` while the [write-back policies](/features/issue-tracking#keep-the-ticket-honest) stay off.
+For the **full integration**, grant all seven on each bound project. Drop the ones whose feature you do not use;
 `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
-
-The assignable-user picker (`GET /rest/api/3/user/assignable/search`) is satisfied by `ASSIGN_ISSUES` on the
-project, or by the **Browse users and groups** global permission (`USER_PICKER`).
 
 The [inbound webhook](#registering-the-inbound-webhook) does **not** use this token. A Jira admin registers it in
 Jira, and it can only ever refresh a link, so it needs no permission from the Piwi account.
@@ -78,13 +73,27 @@ Jira, and it can only ever refresh a link, so it needs no permission from the Pi
 Both work. A **classic** token authenticates directly against your site (`https://your-team.atlassian.net`). A
 **scoped** ("granular") token authenticates only through Atlassian's `https://api.atlassian.com/ex/jira/{cloudId}`
 gateway, so Piwi detects that on the first `401`, resolves your site's cloud id from its public `_edge/tenant_info`
-endpoint, and routes REST calls through the gateway from then on, with no extra configuration (browse links and link
-detection keep using the site URL). The resolved cloud id is stored on the connection once a sign-in check or
-**Test connection** finds a scoped token.
+endpoint, and routes REST calls through the gateway from then on, with no extra configuration.
 
 A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
 **`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
 assignable-user picker), on top of the account permissions above.
+
+## Connecting Zephyr Scale Cloud
+
+A Zephyr Scale connection holds the credentials the results sync will use to send runs to Zephyr. That sync is not
+available yet: today the connection can be created, checked and tested, and nothing is written to Zephyr.
+
+1. In Zephyr Scale, open **API access tokens** and create a token. Use a dedicated account, so the token does not
+   end with a person's access.
+2. **Settings → Integrations → Connect Zephyr Scale Cloud** (administrator only): pick the **Region** your Zephyr
+   Scale Cloud runs in (US, EU, AU or DE), paste the token, and choose **Check**. Then **Save**.
+
+**Check** calls `GET /projects` on the regional API, so it needs only a valid token. The address comes from the
+region; Piwi never takes a host from the form. Changing the region needs the token again. Set `PIWI_ZEPHYR_API_TOKEN`
+and `PIWI_ZEPHYR_REGION` to manage the connection from the environment instead, see
+[Environment-managed vs dashboard-managed](#environment-managed-vs-dashboard-managed). Zephyr is never offered as an
+issue tracker.
 
 ## Environment-managed vs dashboard-managed
 
@@ -97,31 +106,27 @@ A connection can live in either place:
   `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` are all set. It shows a lock badge and is read-only in the
   dashboard: change it by editing the environment and restarting. The token stays in the environment and
   never enters the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
-  shows these variables filled in from what you typed.
+  shows these variables filled in from what you typed. `PIWI_ZEPHYR_API_TOKEN` (and optionally `PIWI_ZEPHYR_REGION`)
+  does the same for Zephyr Scale.
 
 See the [configuration reference](/reference/configuration#integrations) for the variables.
 
 ## Trusted base URLs and private hosts
 
-A connection base URL is supplied by an administrator, so Piwi trusts it: a private host such as
-`https://jira.internal.example.com` or an RFC 1918 address is reachable without extra configuration. The client speaks
-Jira Cloud's REST v3 only. A URL a non-administrator supplies (a pinned link) goes through the SSRF guard that blocks
-private hosts. Moving a connection to another site drops its stored credentials.
+An administrator supplies a connection base URL, so Piwi trusts it: a private host such as
+`https://jira.internal.example.com` or an RFC 1918 address works without extra configuration. A URL a non-administrator
+supplies (a pinned link) goes through the SSRF guard that blocks private hosts. Moving a connection to another site
+drops its stored credentials.
 
 ## Creating issues from a failure
 
-Once a connection exists, Piwi can **file the ticket for you** — a Jira issue whose body is the failure's fix plan,
-linked back as the cluster's known issue. See [Issue tracking (Jira)](/features/issue-tracking) for the create flow,
-the fields, and how the key travels back into the inbox, notifications and pull-request comments.
-
-A connection carries a **default language** for the tickets filed against it (a French Atlassian site can default them
-to French); a project binding overrides it, and the create modal offers a per-issue choice — see
-[Language](/features/issue-tracking#language).
+Once a connection exists, Piwi can **file the ticket for you**, a Jira issue whose body is the failure's fix plan. See
+[Issue tracking (Jira)](/features/issue-tracking) for the create flow and how the key travels back.
 
 ## Who can do what
 
 With [authentication](./authentication) on, connections are administrator-only. Binding a project to Jira takes the
-Project admin role on it (`project:manage`), or an administrator. Filing an issue takes the
+Project admin role (`project:manage`), or an administrator. Filing an issue takes the
 [Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`), and goes through
 the connection the project is bound to: a request naming another is refused. Contributors and Maintainers list Jira's
 projects, users and issues through that connection only; Project admins, through any.
@@ -131,18 +136,15 @@ projects, users and issues through that connection only; Project admins, through
 A background task reads every tracked issue back through its project's connection and caches the status, title and
 assignee, so a closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
 [`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
-rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
-a resolved or ignored cluster refresh at most once a day. A connection that fails to
-answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
-demand with **Sync now** on the Jira card, which says how many links it refreshed and how many it could not read.
-
-The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
-on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
+rounded to whole hours. Each sweep refreshes up to 100 links: those on an open cluster every sweep, those on a resolved or ignored cluster
+at most once a day. A connection that fails to answer records the error on its card and does not stop the sweep.
+**Sync now** on the Jira card runs one sweep on demand. The two-way **policies** are set per project on the binding, see
+[Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
 
 ## Registering the inbound webhook
 
 Polling is the baseline because Atlassian Cloud usually cannot reach a self-hosted Piwi. When it can, a Jira admin can
-register a webhook so a close or reopen reflects immediately instead of within the sync interval:
+register a webhook so a close or reopen shows immediately:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
    secret, keeps only its digest, and shows the full URL **once**, with a link to the site's webhooks page. Set
@@ -160,4 +162,3 @@ webhook off.
 
 - [Issue tracking (Jira)](/features/issue-tracking): filing issues from a failure and keeping them in sync
 - [Production checklist](./production-checklist): `PIWI_SECRET_KEY`, which encrypts the stored token
-- [Configuration reference](/reference/configuration): the integration variables

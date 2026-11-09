@@ -1,0 +1,33 @@
+{
+  "_spec": "TestCaseList",
+  "next": null,
+  "startAt": 2,
+  "maxResults": 2,
+  "total": 3,
+  "isLast": true,
+  "values": [
+    {
+      "id": 30003,
+      "key": "SHOP-T3",
+      "name": "Cart keeps items after sign-in",
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "priority": {
+        "id": 10002,
+        "self": "https://api.zephyrscale.smartbear.com/v2/priorities/10002"
+      },
+      "status": {
+        "id": 99999,
+        "self": "https://api.zephyrscale.smartbear.com/v2/statuses/99999"
+      },
+      "createdOn": "2026-10-01T08:00:00Z",
+      "labels": ["smoke"],
+      "folder": {
+        "id": 40002,
+        "self": "https://api.zephyrscale.smartbear.com/v2/folders/40002"
+      }
+    }
+  ]
+}

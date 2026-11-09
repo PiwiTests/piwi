@@ -1,0 +1,53 @@
+{
+  "_spec": "TestCaseList",
+  "next": "https://api.zephyrscale.smartbear.com/v2/testcases?projectKey=SHOP&maxResults=2&startAt=2",
+  "startAt": 0,
+  "maxResults": 2,
+  "total": 3,
+  "isLast": false,
+  "values": [
+    {
+      "id": 30001,
+      "key": "SHOP-T1",
+      "name": "Checkout with a saved card",
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "priority": {
+        "id": 10002,
+        "self": "https://api.zephyrscale.smartbear.com/v2/priorities/10002"
+      },
+      "status": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/statuses/10001"
+      },
+      "createdOn": "2026-10-01T08:00:00Z",
+      "labels": ["smoke"],
+      "folder": {
+        "id": 40001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/folders/40001"
+      }
+    },
+    {
+      "id": 30002,
+      "key": "SHOP-T2",
+      "name": "Search finds a product",
+      "project": {
+        "id": 10001,
+        "self": "https://api.zephyrscale.smartbear.com/v2/projects/10001"
+      },
+      "priority": {
+        "id": 10002,
+        "self": "https://api.zephyrscale.smartbear.com/v2/priorities/10002"
+      },
+      "status": {
+        "id": 10000,
+        "self": "https://api.zephyrscale.smartbear.com/v2/statuses/10000"
+      },
+      "createdOn": "2026-10-01T08:00:00Z",
+      "labels": ["smoke"],
+      "folder": null
+    }
+  ]
+}

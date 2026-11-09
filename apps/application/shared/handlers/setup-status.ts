@@ -47,6 +47,7 @@ import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
 import { compareVersions } from '#shared/piwi-env-vars';
+import { providersOfKind } from '#shared/integrations/registry';
 import {
   CAPABILITIES,
   CAPABILITY_BY_ID,
@@ -329,7 +330,15 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           : db.select({ id: prFeedbackPosts.id }).from(prFeedbackPosts).limit(1),
       ),
     'auto-heal': async () => (await getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY))?.enabled === true,
-    integrations: () => exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
+    integrations: () =>
+      exists(
+        db,
+        db
+          .select({ id: integrationConnections.id })
+          .from(integrationConnections)
+          .where(inArray(integrationConnections.provider, providersOfKind('tracker')))
+          .limit(1),
+      ),
     scm: () =>
       exists(
         db,
