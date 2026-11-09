@@ -555,6 +555,22 @@ What the package does to a user's run, process by process.
   `/__piwi/coverage/run`, and reads the covered files from the checkout for their blob
   ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
 
+## The desktop app's discovery file
+
+- **The token is proven first.** The token that `~/.piwi/desktop.json` gives, and the `PIWI_API_KEY` of a run the
+  shell starts with `PIWI_DESKTOP_KEY=1`, is sent only after `proveDesktopServer` (`@piwitests/core/desktop-proof`)
+  returns `proven` for the address (the proof header decides, whatever the status of `/api/health`). Each request gets
+  a proof of its own (requests that start together share one, never one that has arrived), and the request follows no
+  redirect. `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the commands;
+  any new request that carries the token goes through one of them.
+- **A copy of the token stays held.** A key equal to the file's token is held to the proof while the file exists,
+  whether or not its `pid` is alive (`readDesktopToken`): the app deletes the file only on a clean quit, so a copy of
+  the token never goes unproven to whatever holds the port. The URL still comes from the pid-checked file, so an
+  ordinary run makes no extra request.
+- **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
+  service's: this package reads them for a run started in a terminal (`internal/config/editors.ts`), from a folder
+  this user alone can enter, and never deletes one.
+
 ## Two processes, two paths
 
 Playwright runs the **reporter** in the main process and **fixtures** in each test

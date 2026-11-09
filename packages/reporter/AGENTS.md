@@ -130,16 +130,8 @@ responsibilities.
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
-   release cycles, so a path or shape change must land in both. The token that file gives, and the `PIWI_API_KEY` of a
-   run the shell starts with `PIWI_DESKTOP_KEY=1`, is sent only after `proveDesktopServer` (`@piwitests/core/desktop-proof`)
-   returns `proven` for the address (the proof header decides, whatever the status of `/api/health`), a proof of its own
-   for each request (requests that start together share one, never one that has arrived), and the request follows no
-   redirect: `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the
-   commands. Any new request that carries it goes through one of them. A key equal to the file's token is held to the
-   proof while the file exists, whether or not its `pid` is alive (`readDesktopToken`). The editors' discovery files
-   (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor service's: this package reads
-   them for a run started in a terminal (`internal/config/editors.ts`), from a folder this user alone can enter, and
-   never deletes one.
+   release cycles, so a path or shape change must land in both, and a request that carries the token goes through the
+   proof described in [`ARCHITECTURE.md`](ARCHITECTURE.md#the-desktop-apps-discovery-file).
 5. **The dogfooded capture modules.** The dashboard's E2E fixtures (`apps/application/tests/fixtures.ts`) import five
    capture modules from `dist/internal/capture/`, each its own entry in `tsup.config.ts`. Renaming or moving one, or
    changing what it exports, breaks the dashboard's suite.
