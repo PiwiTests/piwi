@@ -332,6 +332,12 @@ export class MetadataCollector {
       } catch {
         /* optional */
       }
+      try {
+        // Whether the checkout matches its commit: only a clean one can vouch for a commit's code (pass reuse).
+        scm.worktree = execSync('git status --porcelain', execOpts).trim() === '' ? 'clean' : 'dirty';
+      } catch {
+        /* optional */
+      }
     } catch (error) {
       this.logger.debug(`Git info not available: ${errorMessage(error)}`);
     }

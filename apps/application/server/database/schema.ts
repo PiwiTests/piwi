@@ -75,6 +75,7 @@ export const {
   casePayloads,
   testFunctions,
   testSelections,
+  runPlans,
   shareLinks,
   graphNodes,
   graphEdges,

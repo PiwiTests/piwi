@@ -1709,6 +1709,33 @@ export const testSelections = sqliteTable(
   }),
 );
 
+// Run plans: which tests of a selection a run executes and which it reuses from
+// an earlier pass whose code has not changed (pass reuse). Created once by
+// `piwi plan`; every shard of a CI matrix reads the same stored plan. A plan
+// expires after a day; creating a plan deletes the project's expired ones.
+export const runPlans = sqliteTable(
+  'run_plans',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    selectionKey: text('selection_key').notNull(), // the selection planned: a saved key, a built-in, or 'full'
+    commit: text('commit'), // the commit the plan was made at; null outside a git checkout
+    branch: text('branch'),
+    plan: text('plan', { mode: 'json' }).notNull(), // StoredRunPlan: the tests to run, the reused tests and the reasons
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  },
+  (table) => ({
+    projectExpiresIdx: index('idx_run_plans_project_expires').on(table.projectId, table.expiresAt),
+    createdByIdx: index('idx_run_plans_created_by').on(table.createdBy),
+  }),
+);
+
 // Share links — read-only capability tokens for handing one execution or one
 // failure cluster to someone without a dashboard account. The token itself is
 // never stored: only its SHA-256 hash (unguessable 256-bit secrets need no

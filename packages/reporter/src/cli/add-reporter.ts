@@ -80,7 +80,7 @@ function readConfigSource(configPath: string | null): string | null {
 }
 
 /** Read the Playwright version installed in the target project, or null. */
-function readInstalledPlaywrightVersion(cwd: string): string | null {
+export function readInstalledPlaywrightVersion(cwd: string): string | null {
   try {
     const require = createRequire(path.join(cwd, 'noop.js'));
     for (const id of ['@playwright/test/package.json', 'playwright/package.json']) {

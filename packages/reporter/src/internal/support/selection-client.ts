@@ -150,3 +150,110 @@ export async function fetchCodeIndex(
   if (!res.ok) throw new Error(`Dashboard returned ${res.status} fetching the code index`);
   return (await res.json()) as CodeIndex;
 }
+
+/** Why a planned test runs, or that it is reused. */
+export type PlanReason =
+  | 'reused'
+  | 'no-source'
+  | 'quarantined'
+  | 'open-cluster'
+  | 'flaky'
+  | 'no-reuse-tag'
+  | 'commit-unavailable'
+  | 'widened'
+  | 'changed';
+
+/** What every plan answer carries. */
+export interface PlanSummary {
+  selection: { key: string; version: number | null };
+  counts: { candidates: number; run: number; reused: number };
+  reasons: Partial<Record<PlanReason, number>>;
+}
+
+export interface CreatedPlan extends PlanSummary {
+  id: number;
+  expiresAt: string;
+  estimate: { runDurationMs: number; reusedDurationMs: number };
+}
+
+export interface StoredPlan extends PlanSummary {
+  id: number;
+  commit: string | null;
+  expiresAt: string;
+  reused: Array<{ testCaseId: number; sourceRunId: number; sourceCommit: string }>;
+  /** The tests to run, materialized; null when the plan runs none. */
+  resolution: SelectionResolution | null;
+}
+
+/** One source commit's change to the working tree, as `piwi run impact` computes it. */
+export interface PlanDiff {
+  commit: string;
+  changedFiles: string[];
+  changes: BaseLineChange[];
+}
+
+async function planRequest<T>(url: string, init: RequestInit, apiKey: string | null | undefined, what: string) {
+  const res = await fetch(url, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(apiKey) },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message || `Dashboard returned ${res.status} ${what}`);
+  }
+  return (await res.json()) as T;
+}
+
+/** The source commits a plan of `selection` diffs against. */
+export function fetchPlanSources(
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
+  projectId: number,
+  selection: string,
+  playwrightVersion: string | null,
+): Promise<{ candidates: number; commits: Array<{ commit: string; tests: number }> }> {
+  return planRequest(
+    `${options.serverUrl}/api/projects/${projectId}/plans/sources`,
+    { method: 'POST', body: JSON.stringify({ selection, playwrightVersion }) },
+    options.apiKey,
+    'finding the passes to reuse',
+  );
+}
+
+/** Store a plan of `selection` from the diffs against its source commits. */
+export function createPlan(
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
+  projectId: number,
+  body: {
+    selection: string;
+    playwrightVersion: string | null;
+    commit: string | null;
+    branch: string | null;
+    diffs: PlanDiff[];
+  },
+): Promise<CreatedPlan> {
+  return planRequest(
+    `${options.serverUrl}/api/projects/${projectId}/plans`,
+    { method: 'POST', body: JSON.stringify(body) },
+    options.apiKey,
+    'planning the run',
+  );
+}
+
+/** A stored plan, with the arguments of its tests to run, or of one shard of them. */
+export function fetchPlan(
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey' | 'format' | 'shard' | 'order'>,
+  projectId: number,
+  planId: number,
+): Promise<StoredPlan> {
+  const query = new URLSearchParams();
+  if (options.format) query.set('format', options.format);
+  if (options.shard) query.set('shard', options.shard);
+  if (options.order) query.set('order', options.order);
+  const suffix = query.size > 0 ? `?${query}` : '';
+  return planRequest(
+    `${options.serverUrl}/api/projects/${projectId}/plans/${planId}${suffix}`,
+    { method: 'GET' },
+    options.apiKey,
+    `reading plan ${planId}`,
+  );
+}

@@ -238,8 +238,8 @@ describe('decision parsing and patching', () => {
 describe('an opt-in capability', () => {
   const machineRuns = CAPABILITY_BY_ID['machine-runs'];
 
-  test('machine-runs is the only one, so every other capability resolves from its evidence and decisions', () => {
-    expect(CAPABILITIES.filter((c) => c.optIn).map((c) => c.id)).toEqual(['machine-runs']);
+  test('machine-runs and pass-reuse are the only ones, so every other capability resolves from its evidence and decisions', () => {
+    expect(CAPABILITIES.filter((c) => c.optIn).map((c) => c.id)).toEqual(['machine-runs', 'pass-reuse']);
   });
 
   test.each<[string, CapabilityInput, CapabilityState]>([

@@ -20,6 +20,12 @@ const COPY: Partial<Record<CapabilityId, OptInCopy>> = {
       'A signed-in person asks the desktop app on their own machine to run tests from the dashboard; the app asks them before every run. The run is theirs alone and stays out of everything the team sees.',
     doc: 'features/run-on-my-machine',
   },
+  'pass-reuse': {
+    title: 'Pass reuse',
+    summary:
+      'A run asked with --reuse or --plan skips each test whose recorded coverage shows its code has not changed since it last passed. Experimental: the skipped tests are not recorded in the run.',
+    doc: 'features/reuse-forecast',
+  },
 };
 
 const isDesktop = useIsDesktop();
