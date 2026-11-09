@@ -59,10 +59,50 @@ pub(crate) fn write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
 /// Replace another app's file with `contents`, keeping the permissions it has,
 /// or owner-only for a new file. A symlink is followed: the link stays and its
 /// target is rewritten.
+#[cfg(test)]
 pub(crate) fn write_keeping_mode(path: &Path, contents: &[u8]) -> io::Result<()> {
+    write_keeping_mode_checked(path, contents, || Ok(true)).map(|_| ())
+}
+
+/// `write_keeping_mode`, asking `before_rename` once the new content sits in its temporary file, just before it
+/// replaces `path`. The file is replaced only if that returns true; the result says whether it was.
+pub(crate) fn write_keeping_mode_checked(
+    path: &Path,
+    contents: &[u8],
+    before_rename: impl FnOnce() -> io::Result<bool>,
+) -> io::Result<bool> {
     let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mode = existing_mode(&target).unwrap_or(PRIVATE_FILE_MODE);
-    replace_file(&target, contents, mode)
+    replace_file_checked(&target, contents, mode, before_rename)
+}
+
+/// Create `path` with `contents`, readable and writable by its owner only, if no file is there. Returns whether it
+/// created the file: an existing one is left as it is.
+pub(crate) fn create_private_new(path: &Path, contents: &[u8]) -> io::Result<bool> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, PRIVATE_FILE_MODE);
+    let mut file = match options.open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let written = (|| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(std::fs::Permissions::from_mode(PRIVATE_FILE_MODE))?;
+        }
+        file.write_all(contents)?;
+        file.sync_all()
+    })();
+    drop(file);
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(true)
 }
 
 #[cfg(unix)]
@@ -79,6 +119,16 @@ fn existing_mode(_path: &Path) -> Option<u32> {
 /// Write `contents` to a new temporary file next to `path`, created with
 /// `mode`, then rename it over `path`. The temporary file is removed on failure.
 fn replace_file(path: &Path, contents: &[u8], mode: u32) -> io::Result<()> {
+    replace_file_checked(path, contents, mode, || Ok(true)).map(|_| ())
+}
+
+/// `replace_file`, renaming only if `before_rename` returns true once the temporary file is written.
+fn replace_file_checked(
+    path: &Path,
+    contents: &[u8],
+    mode: u32,
+    before_rename: impl FnOnce() -> io::Result<bool>,
+) -> io::Result<bool> {
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a file path"))?;
@@ -101,9 +151,12 @@ fn replace_file(path: &Path, contents: &[u8], mode: u32) -> io::Result<()> {
         file.write_all(contents)?;
         file.sync_all()?;
         drop(file);
-        std::fs::rename(&temp, path)
+        if !before_rename()? {
+            return Ok(false);
+        }
+        std::fs::rename(&temp, path).map(|()| true)
     })();
-    if result.is_err() {
+    if !matches!(result, Ok(true)) {
         let _ = std::fs::remove_file(&temp);
     }
     result
