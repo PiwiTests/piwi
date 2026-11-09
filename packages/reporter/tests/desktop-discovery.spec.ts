@@ -10,7 +10,7 @@ import {
   usedDesktopDiscovery,
   usedDesktopToken,
 } from '../src/internal/config/env.js';
-import { defaultDesktopConfigPath, readDesktopConfig } from '../src/internal/config/desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from '../src/internal/config/desktop.js';
 
 const DESKTOP_URL = 'http://127.0.0.1:3000';
 const DESKTOP_TOKEN = `pd_${'a'.repeat(64)}`;
@@ -98,6 +98,18 @@ describe('desktop discovery', () => {
       expect(readDesktopConfig(configPath)).toBe(null);
     });
 
+    it('reads the token of a file whose app is gone, and none from a file that is absent or malformed', () => {
+      const exited = spawnSync(process.execPath, ['-e', '']).pid;
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
+      expect(readDesktopConfig(configPath)).toBe(null);
+      expect(readDesktopToken(configPath)).toBe(DESKTOP_TOKEN);
+
+      publishDesktopConfig('{ truncated');
+      expect(readDesktopToken(configPath)).toBe(null);
+      fs.rmSync(configPath);
+      expect(readDesktopToken(configPath)).toBe(null);
+    });
+
     it('defaults to ~/.piwi/desktop.json', () => {
       expect(defaultDesktopConfigPath()).toBe(path.join(os.homedir(), '.piwi', 'desktop.json'));
     });
@@ -141,6 +153,18 @@ describe('desktop discovery', () => {
 
       delete process.env.PIWI_API_KEY;
       resolveOptions({ apiKey: DESKTOP_TOKEN, serverUrl: TEAM_URL });
+      expect(usedDesktopToken()).toBe(true);
+    });
+
+    it("holds a key equal to the token of a file whose app is gone, for the URL the app had", () => {
+      const exited = spawnSync(process.execPath, ['-e', '']).pid;
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      const opts = resolveOptions({});
+      expect(opts.serverUrl).toBe(DESKTOP_URL);
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+      expect(usedDesktopDiscovery()).toBe(false);
       expect(usedDesktopToken()).toBe(true);
     });
 

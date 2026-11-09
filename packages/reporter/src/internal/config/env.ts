@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
-import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
 import { applyRequestedRunEnv, namesRequestedRun, readRequestedRun } from './requested-run.js';
@@ -517,7 +517,8 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
       desktopDiscovered = true;
     }
   }
-  // A key equal to the token in the discovery file is the app's, wherever it was set: it is held to the proof too.
+  // A key equal to the token in the discovery file is the app's, wherever it was set: it is held to the proof too,
+  // also when the pid in the file is gone, since something else may hold the port by then.
   desktopTokenHeld =
     desktopDiscovered ||
     (env[PIWI_ENV_KEYS.desktopKey] === '1' &&
@@ -525,7 +526,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
       mergedRaw.apiKey === env[PIWI_ENV_KEYS.apiKey]) ||
     (typeof mergedRaw.apiKey === 'string' &&
       mergedRaw.apiKey !== '' &&
-      readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath())?.token === mergedRaw.apiKey);
+      readDesktopToken(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) === mergedRaw.apiKey);
 
   // Coverage is nested, so each of its variables fills the member the options leave unset.
   type CoverageOptions = NonNullable<PiwiDashboardOptions['coverage']>;

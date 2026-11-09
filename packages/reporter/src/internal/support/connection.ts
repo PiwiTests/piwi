@@ -3,8 +3,10 @@
  * workspace `.env` files, then the desktop app's discovery file, in that order
  * (`resolvePiwiConnection` in `@piwitests/core/dotenv` keeps each key with the
  * URL it came with). `PIWI_DESKTOP_APP` places the desktop app with the
- * reporter's three modes: `off` never reads it, `prefer` puts it before the
- * environment and the `.env` outside CI (a `--server-url` flag still wins), and
+ * reporter's three modes: `off` never adopts it (the file is still read for its
+ * token when a key is set, so a key equal to it is held to the proof), `prefer`
+ * puts it before the environment and the `.env` outside CI (a `--server-url`
+ * flag still wins), and
  * `fallback`, the default, uses it only when no flag, variable or `.env` names
  * a URL or an API key. The `desktopApp` option of the Playwright config is not
  * read: the mode comes from `PIWI_DESKTOP_APP` alone.
@@ -14,7 +16,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
-import { defaultDesktopConfigPath, readDesktopConfig } from '../config/desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from '../config/desktop.js';
 import { readDotEnv } from '../config/dotenv.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_ENV_KEYS, desktopAppMode } from '../config/env.js';
 import { DesktopNotProvenError } from '../transport/http-client.js';
@@ -105,14 +107,15 @@ export function resolveCliConnection(
   const urlSet = Boolean(flags.serverUrl || env[PIWI_ENV_KEYS.serverUrl] || dotEnv[PIWI_ENV_KEYS.serverUrl]);
   const keySet = Boolean(flags.apiKey || env[PIWI_ENV_KEYS.apiKey] || anyKey);
   const readDesktop = mode !== 'off' && (preferLocally || urlSet || !keySet);
-  const discovery =
-    readDesktop || keySet ? readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) : null;
-  const desktop = readDesktop ? discovery : null;
+  const discoveryPath = env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath();
+  const desktop = readDesktop ? readDesktopConfig(discoveryPath) : null;
+  // A key equal to the file's token is the app's even when the app that wrote it is gone.
+  const desktopToken = keySet ? readDesktopToken(discoveryPath) : (desktop?.token ?? null);
   const preferDesktop = desktop !== null && preferLocally;
   const connection = resolvePiwiConnection(
     preferDesktop
-      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop, desktopToken: discovery?.token }
-      : { flags, env, dotEnv, desktop, desktopToken: discovery?.token },
+      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop, desktopToken }
+      : { flags, env, dotEnv, desktop, desktopToken },
   );
   if (connection && flags.apiKey && connection.apiKey !== flags.apiKey) {
     const from = !preferDesktop && dotEnv[PIWI_ENV_KEYS.serverUrl] ? 'a .env file' : 'the desktop app';

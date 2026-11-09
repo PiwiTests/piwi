@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -378,6 +378,22 @@ describe('cliFetch', () => {
     const other = resolveCliConnection({}, { ...env, PIWI_API_KEY: 'pd_other' }, [])!;
     await cliFetch(`${url}/api/b`, { headers: { 'X-API-Key': other.apiKey! } });
     expect(seen.map((r) => [r.url, r.key])).toEqual([['/api/b', 'pd_other']]);
+  });
+
+  it("holds a key equal to the token of a file whose app is gone to the proof of a local server", async () => {
+    answer = async () => null;
+    const exited = spawnSync(process.execPath, ['-e', '']).pid;
+    const url = `http://127.0.0.1:${port}`;
+    const file = path.join(dir, 'desktop.json');
+    fs.writeFileSync(file, JSON.stringify({ url, token: 'pd_desktop', pid: exited }));
+    const env = { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off', PIWI_DASHBOARD_URL: url };
+
+    const connection = resolveCliConnection({}, { ...env, PIWI_API_KEY: 'pd_desktop' }, [])!;
+    expect(connection.desktop).toBe(true);
+    await expect(
+      cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
+    ).rejects.toThrow(/token is not sent/);
+    expect(seen.every((r) => r.key === undefined)).toBe(true);
   });
 
   it('makes no check for a request that does not carry the desktop key', async () => {

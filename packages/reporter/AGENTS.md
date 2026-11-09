@@ -135,7 +135,8 @@ responsibilities.
    returns `proven` for the address (the proof header decides, whatever the status of `/api/health`), a proof of its own
    for each request (requests that start together share one, never one that has arrived), and the request follows no
    redirect: `HttpClient` holds it for the reporter, `ServerStepResolver` for its steps, `cliFetch` for the
-   commands. Any new request that carries it goes through one of them. The editors' discovery files
+   commands. Any new request that carries it goes through one of them. A key equal to the file's token is held to the
+   proof while the file exists, whether or not its `pid` is alive (`readDesktopToken`). The editors' discovery files
    (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor service's: this package reads
    them for a run started in a terminal (`internal/config/editors.ts`), from a folder this user alone can enter, and
    never deletes one.
