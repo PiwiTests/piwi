@@ -156,7 +156,7 @@ describe('desktop discovery', () => {
       expect(usedDesktopToken()).toBe(true);
     });
 
-    it("holds a key equal to the token of a file whose app is gone, for the URL the app had", () => {
+    it('holds a key equal to the token of a file whose app is gone, for the URL the app had', () => {
       const exited = spawnSync(process.execPath, ['-e', '']).pid;
       publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
       process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;

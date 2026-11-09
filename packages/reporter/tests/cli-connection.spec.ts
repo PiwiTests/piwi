@@ -279,7 +279,9 @@ describe('cliFetch', () => {
   it('sends the key to a server that proved it while its health check answered an error', async () => {
     status = 503;
     const connection = desktopConnection();
-    expect((await cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } })).status).toBe(200);
+    expect(
+      (await cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } })).status,
+    ).toBe(200);
     expect(seen.map((r) => [r.url, r.key])).toEqual([
       ['/api/health', undefined],
       ['/api/a', 'pd_desktop'],
@@ -322,7 +324,9 @@ describe('cliFetch', () => {
         cliFetch(`${connection.serverUrl}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
       ).rejects.toThrow();
       expect(reached).toEqual([]);
-      expect((await cliFetch(`${connection.serverUrl}/api/b`, { headers: { 'X-API-Key': 'pd_other' } })).status).toBe(200);
+      expect((await cliFetch(`${connection.serverUrl}/api/b`, { headers: { 'X-API-Key': 'pd_other' } })).status).toBe(
+        200,
+      );
       expect(reached).toEqual(['pd_other']);
     } finally {
       await new Promise((resolve) => elsewhere.close(resolve));
@@ -368,9 +372,9 @@ describe('cliFetch', () => {
       resolveCliConnection({}, { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off' }, [folder])!,
       resolveCliConnection({ apiKey: 'pd_desktop' }, env, [])!,
     ]) {
-      await expect(
-        cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
-      ).rejects.toThrow(/token is not sent/);
+      await expect(cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } })).rejects.toThrow(
+        /token is not sent/,
+      );
     }
     expect(seen.every((r) => r.key === undefined)).toBe(true);
 
@@ -380,7 +384,7 @@ describe('cliFetch', () => {
     expect(seen.map((r) => [r.url, r.key])).toEqual([['/api/b', 'pd_other']]);
   });
 
-  it("holds a key equal to the token of a file whose app is gone to the proof of a local server", async () => {
+  it('holds a key equal to the token of a file whose app is gone to the proof of a local server', async () => {
     answer = async () => null;
     const exited = spawnSync(process.execPath, ['-e', '']).pid;
     const url = `http://127.0.0.1:${port}`;
@@ -390,9 +394,9 @@ describe('cliFetch', () => {
 
     const connection = resolveCliConnection({}, { ...env, PIWI_API_KEY: 'pd_desktop' }, [])!;
     expect(connection.desktop).toBe(true);
-    await expect(
-      cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
-    ).rejects.toThrow(/token is not sent/);
+    await expect(cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } })).rejects.toThrow(
+      /token is not sent/,
+    );
     expect(seen.every((r) => r.key === undefined)).toBe(true);
   });
 
