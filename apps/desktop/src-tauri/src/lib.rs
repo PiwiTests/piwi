@@ -772,7 +772,9 @@ const MAX_PROOF_RESPONSE: usize = 16 * 1024;
 /// connection is kept open and returned, so the request with the token goes to the process that
 /// proved it, never to one that took the port after the proof. A server that answers the proof
 /// and ends the connection gets nothing: the caller opens no other. Every request the shell makes
-/// with the token goes through here.
+/// with the token goes through here. The webview's session bootstrap (`/__piwi/session?token=…`)
+/// is the one token request that does not: it goes on the webview's own connection, and a
+/// single-use bootstrap code is planned.
 pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
     use std::io::{Read, Write};
     const NOT_ANSWERING: &str = "the local server is not answering";
