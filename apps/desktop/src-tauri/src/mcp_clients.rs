@@ -759,7 +759,9 @@ fn heal_client_file_checked(id: &str, path: &Path, token: &str, command: &str, b
 }
 
 /// Heal the clients at `clients`, `(id, config path)`, to run `command`: none from a development build or a temporary
-/// location (see `location_problem`). Returns the number of files rewritten.
+/// location (see `location_problem`). Returns the number of files rewritten. Whether or not a config is rewritten, the
+/// backup an older build left beside it is scrubbed of the token (`scrub_backup`): the config may be one this build
+/// never writes, such as a client disconnected under an older build or an entry already connected exactly.
 fn heal_clients(
     clients: impl IntoIterator<Item = (&'static str, PathBuf)>,
     token: &str,
@@ -769,7 +771,14 @@ fn heal_clients(
     if problem.is_some() {
         return 0;
     }
-    clients.into_iter().filter(|(id, path)| heal_client_file(id, path, token, command)).count()
+    clients
+        .into_iter()
+        .filter(|(id, path)| {
+            let healed = heal_client_file(id, path, token, command);
+            scrub_backup(path, token);
+            healed
+        })
+        .count()
 }
 
 /// Heal every already-configured client whose `piwi-desktop` entry is ours to rewrite (see `heal_client_file`). An
@@ -1519,6 +1528,44 @@ mod tests {
         assert!(problem(installed, true).is_some());
         // Only a root volume folder named like a disk image counts.
         assert_eq!(problem("/Users/me/Volumes/Piwi.app/Contents/MacOS/piwi-desktop", false), None);
+    }
+
+    /// A backup an older build left holding the token is scrubbed at startup beside a config this build does not
+    /// rewrite: an entry already connected exactly, a client disconnected under an older build, and a backup with no
+    /// config beside it.
+    #[cfg(unix)]
+    #[test]
+    fn a_backup_from_an_older_build_is_scrubbed_beside_a_config_that_is_not_rewritten() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = TempDir::new("heal-scrub");
+        let url = "http://127.0.0.1:3000/mcp";
+        let (connected, connected_text) = config_with(&dir, "claude-desktop", entry_for("claude-desktop"));
+        let disconnected = dir.join("cursor.json");
+        let disconnected_text = "{\n  \"mcpServers\": { \"other\": { \"command\": \"npx\" } }\n}\n";
+        std::fs::write(&disconnected, disconnected_text).unwrap();
+        let orphan = dir.join("windsurf.json");
+        let old_backup = |config: &Path| {
+            let doc = json!({ "mcpServers": { "piwi-desktop": old_url_entry_for("cursor", url, TOKEN) } });
+            std::fs::write(backup_of(config), serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+            std::fs::set_permissions(backup_of(config), std::fs::Permissions::from_mode(0o644)).unwrap();
+        };
+        for config in [&connected, &disconnected, &orphan] {
+            old_backup(config);
+        }
+
+        let clients = vec![("claude-desktop", connected.clone()), ("cursor", disconnected.clone()), ("windsurf", orphan.clone())];
+        assert_eq!(heal_clients(clients, TOKEN, &here(), None), 0);
+
+        for config in [&connected, &disconnected, &orphan] {
+            let backup = std::fs::read_to_string(backup_of(config)).unwrap();
+            assert!(!backup.contains(TOKEN), "{}", config.display());
+            assert!(backup.contains(url), "{}: the rest of the backup stays", config.display());
+            assert_eq!(std::fs::metadata(backup_of(config)).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // The configs themselves are untouched.
+        assert_eq!(std::fs::read_to_string(&connected).unwrap(), connected_text);
+        assert_eq!(std::fs::read_to_string(&disconnected).unwrap(), disconnected_text);
+        assert!(!orphan.exists());
     }
 
     /// Nothing is rewritten from such a place, however drifted the entry is; from the installed app it is.
