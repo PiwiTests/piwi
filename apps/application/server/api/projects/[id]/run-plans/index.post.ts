@@ -16,7 +16,7 @@ defineRouteMeta({
     tags: ['Selections'],
     summary: 'Plan a run that reuses the passes whose code has not changed',
     description:
-      'The second step of `piwi plan`. For each test of the selection, decides whether the run executes it or reuses its newest pass (see `POST /api/projects/{id}/run-plans/sources`): reused when the impact of the change from that pass’s commit to the working tree, sent in `diffs` as `piwi run impact` sends one, does not select the test and does not widen to the whole suite, and no file the pass’s coverage names changed. A test runs when it is quarantined, in an open failure cluster, failed or was retried in its last 20 executions, is tagged `@no-reuse`, has no pass to reuse, or its pass’s commit has no diff. Stores the plan for 24 hours, so every shard of a CI matrix reads the same answer, and returns its id, the counts and how many tests each reason accounts for. Needs the experimental pass reuse capability.',
+      'The second step of `piwi plan`. For each test of the selection, decides whether the run executes it or reuses its newest pass (see `POST /api/projects/{id}/run-plans/sources`): reused when the impact of the change from that pass’s commit to the working tree, sent in `diffs` as `piwi run impact` sends one, does not select the test and does not widen to the whole suite, and no file the pass’s coverage names changed. A test runs when it is quarantined, in an open failure cluster, failed or was retried in its last 20 executions of the last 90 days, is tagged `@no-reuse`, belongs to a spec file holding a serial group, has no pass to reuse, has a name a Playwright test list cannot state exactly, or its pass’s commit has no diff. Stores the plan for 24 hours, so every shard of a CI matrix reads the same answer, and returns its id, the counts and how many tests each reason accounts for. Needs the experimental pass reuse capability.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -28,6 +28,12 @@ defineRouteMeta({
               selection: { type: 'string', description: 'A saved or built-in selection key, or "full"' },
               playwrightVersion: { type: 'string' },
               commit: { type: 'string', description: 'The commit the working tree is at' },
+              worktree: {
+                type: 'string',
+                enum: ['clean', 'dirty'],
+                description:
+                  'Whether the working tree matched its commit; `piwi run --plan` uses a plan of a clean one only',
+              },
               branch: { type: 'string' },
               diffs: {
                 type: 'array',
@@ -63,7 +69,16 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   await requirePassReuseOn(db, projectId);
   try {
-    const { plan, resolved } = await decideRunPlan(db, projectId, key, parseFingerprint(body.playwrightVersion), diffs);
+    const worktree = body.worktree === 'clean' || body.worktree === 'dirty' ? body.worktree : null;
+    const { plan, resolved } = await decideRunPlan(
+      db,
+      projectId,
+      key,
+      parseFingerprint(body.playwrightVersion),
+      diffs,
+      new Date(),
+      worktree,
+    );
     const durations = new Map(resolved.tests.map((t) => [t.testCaseId, t.avgDurationMs ?? 0]));
     const sum = (ids: number[]) => ids.reduce((total, id) => total + (durations.get(id) ?? 0), 0);
     const userId = (user as { id?: number } | null)?.id;

@@ -61,7 +61,8 @@ export type PlanReason =
   | 'no-reuse-tag'
   | 'commit-unavailable'
   | 'widened'
-  | 'changed';
+  | 'changed'
+  | 'serial';
 
 /** What the planned run must match in a source: its Playwright version; null finds no source. */
 export interface ReuseFingerprint {
@@ -80,6 +81,8 @@ export interface TestSource {
   projects: string[];
   /** Playwright's root in its run, relative to the folder test paths are stored from: what test lists name files from. */
   rootDir: string;
+  /** The spec files of its run holding a serial group, whose tests are never skipped one by one. */
+  serialFiles: ReadonlySet<string>;
   /** The files its coverage names, over every result. */
   files: string[];
 }
@@ -113,6 +116,8 @@ export interface StoredRunPlan {
   /** How many tests each reason accounts for. */
   reasons: Partial<Record<PlanReason, number>>;
   fingerprint: ReuseFingerprint;
+  /** Whether the checkout the plan was made in matched its commit; a run elsewhere uses a plan of a clean one only. */
+  worktree: 'clean' | 'dirty' | null;
 }
 
 export class PassReuseError extends Error {
@@ -242,14 +247,21 @@ async function payloadFiles(db: DrizzleDB, payloadIds: number[]): Promise<Map<nu
   return out;
 }
 
+interface SourceRun {
+  commit: string;
+  startedAt: number;
+  rootDir: string;
+  serialFiles: ReadonlySet<string>;
+}
+
 /** The project's runs that may hold sources: the last 14 days, clean, at a commit, with the planned Playwright version. */
 async function sourceRuns(
   db: DrizzleDB,
   projectId: number,
   fingerprint: ReuseFingerprint,
   now: Date,
-): Promise<Map<number, { commit: string; startedAt: number; rootDir: string }>> {
-  const runs = new Map<number, { commit: string; startedAt: number; rootDir: string }>();
+): Promise<Map<number, SourceRun>> {
+  const runs = new Map<number, SourceRun>();
   if (!fingerprint.playwrightVersion) return runs;
   const rows = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata })
@@ -268,8 +280,14 @@ async function sourceRuns(
     const config =
       meta.htmlReport && typeof meta.htmlReport === 'object' ? (meta.htmlReport as Record<string, unknown>) : {};
     const commit = runCommit(row.metadata);
-    if (scm.worktree === 'clean' && commit && typeof config.rootDir === 'string') {
-      runs.set(row.id, { commit, startedAt: row.startTime.getTime(), rootDir: config.rootDir });
+    const serial = config.serialFiles;
+    if (scm.worktree === 'clean' && commit && typeof config.rootDir === 'string' && Array.isArray(serial)) {
+      runs.set(row.id, {
+        commit,
+        startedAt: row.startTime.getTime(),
+        rootDir: config.rootDir,
+        serialFiles: new Set(serial.filter((f): f is string => typeof f === 'string').map(normalizePath)),
+      });
     }
   }
   return runs;
@@ -352,6 +370,7 @@ export async function findReuseSources(
       executionIds: finals.map((r) => r.id),
       projects: [...new Set(finals.map((r) => r.browserName!))],
       rootDir: run.rootDir,
+      serialFiles: run.serialFiles,
       files: [...new Set(covered.flat() as string[])],
     });
   }
@@ -369,16 +388,24 @@ export function chooseSourceCommits(sources: Iterable<TestSource>): Array<{ comm
 }
 
 /** A test's title path in a Playwright test list: its describes and title. */
-function titlePath(test: ResolvedTest): string[] {
+function titlePath(test: Pick<ResolvedTest, 'suitePath' | 'title'>): string[] {
   return [...splitSuitePath(test.suitePath), test.title];
+}
+
+/** A name part a test list line cannot hold exactly: empty, padded (Playwright trims each part), or with a separator. */
+function badListPart(part: string): boolean {
+  return !part.trim() || part !== part.trim() || /[›>\r\n]/.test(part);
 }
 
 /**
  * The tests a test list cannot name exactly: a name holding a list separator or
- * a line break, or a title path that is also the start of another test's (a
- * describe named like a test beside it), which a list line would skip too.
+ * a line break or padded with spaces, or a title path that is also the start of
+ * another test's (a describe named like a test beside it), which a list line
+ * would skip too.
  */
-export function unnameable(tests: ResolvedTest[]): Set<number> {
+export function unnameable(
+  tests: Array<Pick<ResolvedTest, 'testCaseId' | 'filePath' | 'suitePath' | 'title'>>,
+): Set<number> {
   const prefixes = new Set<string>();
   for (const test of tests) {
     const path = [normalizePath(test.filePath), ...titlePath(test)];
@@ -387,7 +414,7 @@ export function unnameable(tests: ResolvedTest[]): Set<number> {
   const out = new Set<number>();
   for (const test of tests) {
     const path = [normalizePath(test.filePath), ...titlePath(test)];
-    const unsafe = path.some((part) => !part.trim() || /[›>\r\n]/.test(part));
+    const unsafe = path.some(badListPart);
     if (unsafe || prefixes.has(path.join('\x1f'))) out.add(test.testCaseId);
   }
   return out;
@@ -395,7 +422,12 @@ export function unnameable(tests: ResolvedTest[]): Set<number> {
 
 /** The test list lines that skip a test in each of `projects`, its file named from Playwright's root `rootDir`. */
 export function skipLines(test: ResolvedTest, projects: string[], rootDir: string): string[] {
-  const file = path.posix.relative(normalizePath(rootDir) || '.', normalizePath(test.filePath));
+  // Both under one deep base, so a `..` never climbs past the filesystem root.
+  const base = `/${'d/'.repeat(32)}`;
+  const file = path.posix.relative(
+    path.posix.join(base, normalizePath(rootDir)),
+    path.posix.join(base, normalizePath(test.filePath)),
+  );
   const rest = [file, ...titlePath(test)].join(TEST_LIST_SEP);
   return projects.map((project) => `[${project}]${TEST_LIST_SEP}${rest}`);
 }
@@ -436,10 +468,22 @@ export async function decideRunPlan(
   fingerprint: ReuseFingerprint,
   diffs: SourceDiff[],
   now: Date = new Date(),
+  worktree: 'clean' | 'dirty' | null = null,
 ): Promise<{ plan: StoredRunPlan; resolved: ResolvedSelection }> {
   const { resolved, version, excluded, sources } = await planInputs(db, projectId, key, fingerprint, now);
   const chosen = new Set(chooseSourceCommits(sources.values()).map((c) => c.commit));
-  const unnamed = unnameable(resolved.tests);
+  // Over every test of the project: a selection's arguments can run tests beyond it that a line would also skip.
+  const unnamed = unnameable(
+    await db
+      .select({
+        testCaseId: testCases.id,
+        filePath: testCases.filePath,
+        suitePath: testCases.suitePath,
+        title: testCases.title,
+      })
+      .from(testCases)
+      .where(eq(testCases.projectId, projectId)),
+  );
 
   // Per source commit: the tests its change impacts, or null when the change widens to the whole suite.
   const impactByCommit = new Map<string, { impacted: Set<number>; changed: string[] } | null>();
@@ -457,11 +501,13 @@ export async function decideRunPlan(
     );
   }
 
+  const fileOf = new Map(resolved.tests.map((t) => [t.testCaseId, t.filePath]));
   function decide(testCaseId: number): PlanReason {
     const exclusion = excluded.get(testCaseId);
     if (exclusion) return exclusion;
     const source = sources.get(testCaseId);
-    if (!source || unnamed.has(testCaseId)) return 'no-source';
+    if (!source || unnamed.has(testCaseId) || source.projects.some(badListPart)) return 'no-source';
+    if (source.serialFiles.has(normalizePath(fileOf.get(testCaseId)!))) return 'serial';
     if (!impactByCommit.has(source.commit)) return 'commit-unavailable';
     const impact = impactByCommit.get(source.commit);
     if (!impact) return 'widened';
@@ -492,7 +538,7 @@ export async function decideRunPlan(
   }
 
   const args = key === FULL_SELECTION_KEY ? [] : resolved.materialization.args;
-  return { plan: { selection: { key, version }, args, run, reused, reasons, fingerprint }, resolved };
+  return { plan: { selection: { key, version }, args, run, reused, reasons, fingerprint, worktree }, resolved };
 }
 
 /** Store a plan, deleting the project's expired ones; returns its id and expiry. */

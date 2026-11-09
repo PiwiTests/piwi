@@ -16,7 +16,9 @@ carry no coverage, so they never serve as sources without a rule of their own. P
 the `run_plans` table, the rule in `server/utils/pass-reuse.ts`, the routes under `/api/projects/:id/run-plans`, and
 `piwi plan` with `piwi run --reuse` and `--plan`. A plan names the tests to skip, as Playwright test list lines passed to
 `--test-list-invert`, one per Playwright project the source passed in, so a test the dashboard has not seen runs and a
-shard uses Playwright's own `--shard`. It departs from the design in four places: the fingerprint is the Playwright
+shard uses Playwright's own `--shard`. A test in a spec file holding a serial group (`describe.serial`, `configure({ mode: 'serial' })`) is never skipped, and
+a plan made in one job is used by another only when both checkouts are clean at its commit. It departs from the design
+in four places: the fingerprint is the Playwright
 version alone (the browser revisions, the operating system and the environment wait for the wire's `reuse` object of
 PR 3); the check against the source's own coverage is at file level (a changed file the source ran keeps the test);
 a source's coverage blobs are not compared with its commit's, so an application built from another tree than the

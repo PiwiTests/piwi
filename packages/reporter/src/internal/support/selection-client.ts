@@ -161,7 +161,8 @@ export type PlanReason =
   | 'no-reuse-tag'
   | 'commit-unavailable'
   | 'widened'
-  | 'changed';
+  | 'changed'
+  | 'serial';
 
 /** What every plan answer carries. */
 export interface PlanSummary {
@@ -180,6 +181,8 @@ export interface StoredPlan extends PlanSummary {
   id: number;
   /** The commit the plan was made at; null outside a git checkout. */
   commit: string | null;
+  /** Whether the checkout the plan was made in matched its commit. */
+  worktree: 'clean' | 'dirty' | null;
   expiresAt: string;
   /** The selection's Playwright arguments; none for the whole suite. */
   args: string[];
@@ -231,6 +234,8 @@ export function createPlan(
     playwrightVersion: string | null;
     commit: string | null;
     branch: string | null;
+    /** Whether the working tree matched its commit; a plan of a dirty one is run only where it was made. */
+    worktree: 'clean' | 'dirty' | null;
     diffs: PlanDiff[];
   },
 ): Promise<CreatedPlan> {

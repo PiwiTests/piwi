@@ -617,3 +617,33 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect(metadata.playwrightConfig).toEqual({ custom: true });
   });
 });
+
+describe('MetadataCollector.collect — what pass reuse reads', () => {
+  it('records Playwright’s root from the config folder and the spec files holding a serial group', () => {
+    const root = '/repo';
+    const file = (name: string, mode?: string) => ({
+      type: 'file',
+      title: name,
+      _parallelMode: mode,
+      parent: undefined,
+      project: () => undefined,
+    });
+    const test = (parent: any, name: string) => ({ parent, location: { file: `${root}/tests/${name}` } });
+    const serialFile = file('a.spec.ts', 'serial');
+    const plainFile = file('b.spec.ts');
+    const anonymousSerial = { type: 'describe', title: '', _parallelMode: 'serial', parent: file('c.spec.ts') };
+    const suite = {
+      allTests: () => [
+        test(serialFile, 'a.spec.ts'),
+        test(plainFile, 'b.spec.ts'),
+        test(anonymousSerial, 'c.spec.ts'),
+      ],
+    };
+    const config = { ...fakeConfig(), configFile: `${root}/playwright.config.ts`, rootDir: `${root}/tests` };
+    const metadata = new MetadataCollector().collect(config as FullConfig, suite as any, {});
+    expect(metadata.htmlReport).toMatchObject({
+      rootDir: 'tests',
+      serialFiles: ['tests/a.spec.ts', 'tests/c.spec.ts'],
+    });
+  });
+});

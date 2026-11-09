@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import type * as ChildProcess from 'node:child_process';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { formatPlanReasons, isPlannedRun, runPlanCommand, runPlannedRun } from '../src/cli/plan.js';
@@ -40,10 +40,14 @@ describe('planned runs', () => {
   const SKIP = ['[chromium] › tests/a.spec.ts › adds to cart', '[firefox] › tests/a.spec.ts › adds to cart'];
   let dir: string;
   let cwd: string;
+  /** The commit of the test's checkout. */
+  let head: string;
   let requests: Array<{ url: string; body: unknown }>;
 
   /** A dashboard that plans `full`, serves plan 9, or answers `status` to every plan route. */
-  function dashboard(options: { up?: boolean; skip?: string[]; commit?: string | null; status?: number } = {}): void {
+  function dashboard(
+    options: { up?: boolean; skip?: string[]; commit?: string | null; worktree?: string; status?: number } = {},
+  ): void {
     requests = [];
     vi.stubGlobal(
       'fetch',
@@ -77,7 +81,8 @@ describe('planned runs', () => {
         if (url.includes('/api/projects/7/run-plans/9')) {
           const plan = {
             id: 9,
-            commit: options.commit ?? null,
+            commit: options.commit === undefined ? head : options.commit,
+            worktree: options.worktree ?? 'clean',
             expiresAt: '',
             ...SUMMARY,
             args: [],
@@ -102,10 +107,15 @@ describe('planned runs', () => {
   }
 
   beforeEach(() => {
-    // A folder outside any git checkout: no commit can be read there.
+    // A clean checkout of one commit, which the source commit of the stub dashboard is not in.
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-plan-')));
     cwd = process.cwd();
     process.chdir(dir);
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf-8' }).trim();
+    git('init', '-q');
+    git('commit', '-q', '--allow-empty', '-m', 'init');
+    head = git('rev-parse', 'HEAD');
     lists = [];
     vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
       const at = args.indexOf('--test-list-invert');
@@ -142,11 +152,22 @@ describe('planned runs', () => {
     expect(spawned()[0]!.args).toEqual([]);
   });
 
-  it('falls back to the full suite when the checkout is not at the plan’s commit', async () => {
+  it('runs the whole suite in a shard whose checkout is not at the plan’s commit', async () => {
     dashboard({ commit: 'b'.repeat(40) });
     expect(await runPlannedRun(['--plan', '9', '--shard', '1/2'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual(['--shard=1/2']);
+    expect(spawned()[0]!.args).toEqual([]);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('was made at bbbbbbbbbbbb'));
+  });
+
+  it('does not use a plan made in a dirty checkout, nor one in a dirty checkout', async () => {
+    dashboard({ worktree: 'dirty' });
+    await runPlannedRun(['--plan', '9'], env);
+    expect(spawned()[0]!.args).toEqual([]);
+
+    dashboard();
+    fs.writeFileSync(path.join(dir, 'new.spec.ts'), '');
+    await runPlannedRun(['--plan', '9'], env);
+    expect(spawned()[1]!.args).toEqual([]);
   });
 
   it('refuses --plan without an id', async () => {
@@ -155,10 +176,10 @@ describe('planned runs', () => {
     expect(spawned()).toEqual([]);
   });
 
-  it('runs the full suite, sharded by Playwright, when the plan cannot be read', async () => {
+  it('runs the whole suite, not a shard of it, when the plan cannot be read', async () => {
     dashboard({ up: false });
     expect(await runPlannedRun(['--plan', '9', '--shard', '2/3'], env)).toBe(0);
-    expect(spawned()[0]!.args).toEqual(['--shard=2/3']);
+    expect(spawned()[0]!.args).toEqual([]);
   });
 
   it('exits 2 instead with --strict', async () => {
@@ -171,7 +192,7 @@ describe('planned runs', () => {
     dashboard();
     expect(await runPlannedRun(['full', '--reuse'], env)).toBe(0);
     const created = requests.find((r) => r.url.endsWith('/run-plans'))!;
-    expect(created.body).toMatchObject({ selection: 'full', diffs: [] });
+    expect(created.body).toMatchObject({ selection: 'full', diffs: [], commit: head, worktree: 'clean' });
     expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
   });
 

@@ -209,6 +209,7 @@ export class MetadataCollector {
     }
 
     const htmlMeta = this.extractPlaywrightConfigMetadata(config);
+    if (suite) htmlMeta.serialFiles = this.serialFiles(suite, configDirFromConfig(config));
     if (htmlMeta && Object.keys(htmlMeta).length > 0) metadata.htmlReport = htmlMeta;
     if (config.metadata) metadata.playwrightConfig = config.metadata;
 
@@ -422,6 +423,23 @@ export class MetadataCollector {
     }
 
     return Object.keys(ci).length > 0 ? ci : undefined;
+  }
+
+  /**
+   * The spec files, relative to `base`, holding a test in a serial group: a file or describe in serial mode, anonymous
+   * ones included, whose tests depend on the ones before them (pass reuse never skips one of them).
+   */
+  private serialFiles(suite: Suite, base: string): string[] {
+    const files = new Set<string>();
+    for (const test of suite.allTests()) {
+      for (let s: Suite | undefined = test.parent; s; s = s.parent) {
+        if ((s as any)._parallelMode === 'serial') {
+          files.add(relativeTestPath(test.location.file, base));
+          break;
+        }
+      }
+    }
+    return [...files].sort();
   }
 
   private extractPlaywrightConfigMetadata(config: FullConfig): Record<string, unknown> {

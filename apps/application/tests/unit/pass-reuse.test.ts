@@ -78,7 +78,7 @@ async function addRun(
     playwrightVersion: PW,
     metadata: {
       scm: { commit, branch: 'main', worktree },
-      htmlReport: { rootDir: 'tests' },
+      htmlReport: { rootDir: 'tests', serialFiles: [] },
       piwiOrigin: { kind: 'ci' },
     },
     totalTests: cases.length,
@@ -213,6 +213,37 @@ describe('pass reuse plans', () => {
     });
   });
 
+  test('a test of a spec file holding a serial group always runs', async () => {
+    await db
+      .update(schema.testRuns)
+      .set({
+        metadata: {
+          scm: { commit: C1, branch: 'main', worktree: 'clean' },
+          htmlReport: { rootDir: 'tests', serialFiles: ['tests/shop.spec.ts'] },
+          piwiOrigin: { kind: 'ci' },
+        },
+      })
+      .where(eq(schema.testRuns.id, 2));
+    try {
+      const { plan } = await reuse.decideRunPlan(db as never, 1, 'full', FINGERPRINT, [
+        { commit: C1, changedFiles: [], changes: [] },
+      ]);
+      expect(plan.reused).toEqual([]);
+      expect(plan.reasons).toMatchObject({ serial: 2 });
+    } finally {
+      await db
+        .update(schema.testRuns)
+        .set({
+          metadata: {
+            scm: { commit: C1, branch: 'main', worktree: 'clean' },
+            htmlReport: { rootDir: 'tests', serialFiles: [] },
+            piwiOrigin: { kind: 'ci' },
+          },
+        })
+        .where(eq(schema.testRuns.id, 2));
+    }
+  });
+
   test('a stored plan reads back until it expires, in its own project only', async () => {
     const { plan } = await reuse.decideRunPlan(db as never, 1, 'full', FINGERPRINT, []);
     const now = new Date();
@@ -241,7 +272,8 @@ describe('pass reuse plans', () => {
     const arrow = { ...test('a > b'), testCaseId: 2 };
     const shadowing = { ...test('Cart'), testCaseId: 3 };
     const inside = { ...test('pays', 'Cart'), testCaseId: 4 };
-    expect([...reuse.unnameable([plain, arrow, shadowing, inside])].sort()).toEqual([2, 3]);
+    const padded = { ...test('refunds '), testCaseId: 5 };
+    expect([...reuse.unnameable([plain, arrow, shadowing, inside, padded])].sort()).toEqual([2, 3, 5]);
   });
 
   test('an unknown selection is a 404', async () => {

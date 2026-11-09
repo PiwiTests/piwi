@@ -82,6 +82,7 @@ const REASON_LABELS: Record<Exclude<PlanReason, 'reused'>, string> = {
   'open-cluster': 'open failure',
   quarantined: 'quarantined',
   'no-reuse-tag': '@no-reuse',
+  serial: 'serial group',
 };
 
 function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string): PlanArgs {
@@ -150,6 +151,15 @@ function ensureCommit(commit: string): boolean {
   return commitExists(commit);
 }
 
+/** Whether the working tree matches its commit, untracked files counted; null outside a git checkout. */
+function worktreeState(): 'clean' | 'dirty' | null {
+  try {
+    return git(['status', '--porcelain', '--untracked-files=normal']).trim() === '' ? 'clean' : 'dirty';
+  } catch {
+    return null;
+  }
+}
+
 function commitExists(commit: string): boolean {
   try {
     execFileSync('git', ['cat-file', '-e', `${commit}^{commit}`], { stdio: 'ignore' });
@@ -172,7 +182,9 @@ async function makePlan(args: PlanArgs, projectId: number, key: string): Promise
   const playwrightVersion = readInstalledPlaywrightVersion(process.cwd());
   const sources = await fetchPlanSources(args, projectId, key, playwrightVersion);
   // Files git does not track yet are part of the change: a diff against a commit never names them.
-  const untracked = (tryGit(['ls-files', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean);
+  const untracked = (tryGit(['ls-files', '--others', '--exclude-standard', '--full-name', '--', ':/']) ?? '')
+    .split('\n')
+    .filter(Boolean);
   const diffs: PlanDiff[] = [];
   for (const { commit } of sources.commits) {
     if (!ensureCommit(commit)) {
@@ -201,6 +213,7 @@ async function makePlan(args: PlanArgs, projectId: number, key: string): Promise
     playwrightVersion,
     commit: tryGit(['rev-parse', 'HEAD']),
     branch: branch && branch !== 'HEAD' ? branch : null,
+    worktree: worktreeState(),
     diffs,
   });
 }
@@ -253,16 +266,29 @@ function withoutReuse(argv: string[]): string[] {
 /**
  * Run a plan: its selection, less the tests it reuses, through Playwright's
  * `--test-list-invert`, sharded by Playwright's own `--shard` so every shard
- * filters the same list. A checkout at another commit than the plan's would
- * skip tests on a diff of another tree: that throws, and the caller falls back.
+ * filters the same list. A plan read by another job than the one that made it
+ * is used only when both checkouts are clean at one commit, since it skips
+ * tests on the diff of the tree it was made in: otherwise this throws, and the
+ * caller falls back.
  */
-async function runStoredPlan(args: PlanArgs, projectId: number, planId: number, env: NodeJS.ProcessEnv) {
+async function runStoredPlan(
+  args: PlanArgs,
+  projectId: number,
+  planId: number,
+  env: NodeJS.ProcessEnv,
+  madeHere: boolean,
+) {
   const plan = await fetchPlan(args, projectId, planId);
-  const head = tryGit(['rev-parse', 'HEAD']);
-  if (plan.commit !== head) {
-    throw new Error(
-      `plan ${planId} was made at ${plan.commit?.slice(0, 12) ?? 'no commit'}, this checkout is at ${head?.slice(0, 12) ?? 'no commit'}`,
-    );
+  if (!madeHere) {
+    const head = tryGit(['rev-parse', 'HEAD']);
+    if (!plan.commit || plan.commit !== head) {
+      throw new Error(
+        `plan ${planId} was made at ${plan.commit?.slice(0, 12) ?? 'no commit'}, this checkout is at ${head?.slice(0, 12) ?? 'no commit'}`,
+      );
+    }
+    if (plan.worktree !== 'clean' || worktreeState() !== 'clean') {
+      throw new Error(`plan ${planId} and this checkout must both match their commit to skip tests in another job`);
+    }
   }
   const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
   console.error(
@@ -321,7 +347,7 @@ export async function runPlannedRun(argv: string[], env: NodeJS.ProcessEnv = pro
   }
 
   try {
-    return await runStoredPlan(args, projectId, planId, env);
+    return await runStoredPlan(args, projectId, planId, env, args.planId === null);
   } catch (e) {
     if (args.strict) {
       console.error(`piwi run: ${(e as Error).message}`);
@@ -333,14 +359,17 @@ export async function runPlannedRun(argv: string[], env: NodeJS.ProcessEnv = pro
 
 /**
  * The run when no plan can be used: the selection without reuse for `--reuse`,
- * else the whole suite, sharded by Playwright when the job is a shard.
+ * else the whole suite. A shard of a matrix runs the whole suite, not a
+ * Playwright shard of it: the other shards may be filtering the plan, whose
+ * shards do not line up with the unfiltered suite's.
  */
 function fallBack(args: PlanArgs, argv: string[], env: NodeJS.ProcessEnv, reason: string): Promise<number> {
   if (args.reuse && args.key && args.key !== 'full') {
     console.error(`piwi run: ${reason} — running "${args.key}" without reuse`);
     return runRun(withoutReuse(argv), env);
   }
-  console.error(`piwi run: ${reason} — running the full suite`);
-  const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
-  return spawnPlaywrightForRun(args.pkgRunner, [...shardArgs, ...args.extra], env);
+  console.error(
+    `piwi run: ${reason} — running the full suite${args.shard ? ` (all of it, not shard ${args.shard})` : ''}`,
+  );
+  return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
 }

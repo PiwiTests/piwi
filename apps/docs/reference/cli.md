@@ -255,9 +255,10 @@ npx @piwitests/reporter run --plan 42 --shard 2/4
 In a CI matrix, one job runs `plan` and hands the id to the shard jobs. `run --plan` runs the plan's selection with
 Playwright's `--test-list-invert` naming the reused tests, so a test the dashboard has not seen yet runs, and each
 shard passes Playwright's own `--shard`. A test is skipped only in the Playwright projects its reused pass ran it in.
-A plan is kept for 24 hours. `run --plan` runs the full suite (sharded by Playwright) when the dashboard cannot be
-reached or the checkout is at another commit than the plan's, or exits `2` under `--strict`. `plan` diffs untracked
-files too.
+A plan is kept for 24 hours. A job other than the one that made the plan uses it only when both checkouts are clean
+at the same commit. When a shard cannot use the plan (the dashboard is unreachable, the plan expired, the checkout
+differs), it runs the whole suite, not a shard of it, or exits `2` under `--strict`. `plan` diffs untracked files
+too.
 
 | Flag | Description |
 |---|---|

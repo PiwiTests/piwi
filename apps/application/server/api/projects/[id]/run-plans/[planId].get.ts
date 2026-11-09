@@ -31,6 +31,7 @@ export default eventHandler(async (event) => {
   return {
     id: stored.id,
     commit: stored.commit,
+    worktree: stored.plan.worktree ?? null,
     expiresAt: stored.expiresAt.toISOString(),
     ...planSummary(stored.plan),
     args: stored.plan.args,
