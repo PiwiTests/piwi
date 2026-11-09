@@ -5,7 +5,8 @@ executed has changed since it last passed, and records that earlier pass in the 
 coverage Piwi already stores per execution (every file a test ran, with the git blob id of the version it ran) is the
 evidence; impact-from-diff, applied with each test's own base, is the rule.
 
-**Status.** Proposed 2026-11-09. Nothing is built. The contracts it would add are entry D66 of
+**Status.** Proposed 2026-11-09; D9 to D12 and the defaults (14-day sources, 5% verification, a 0.1% false-reuse
+switch-off, reused results passing the gate) settled with the maintainer the same day. Nothing is built. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**
@@ -65,7 +66,8 @@ evidence; impact-from-diff, applied with each test's own base, is the rule.
 Coverage at `functions` or `lines` is what makes a pass usable: a fragment keeps its blob only with line numbers
 (`fileEntry` in `@piwitests/core/coverage`), so `coverage.browser: 'files'` records reach without the version it
 reached. Server coverage ([server coverage](../apps/docs/features/server-coverage.md)) adds the backend files; without
-it, a changed server file maps to no test, and the rule below runs every test.
+it, a changed server file maps to no test, and the rule below runs every test. The test code itself has no coverage
+yet: section 5 adds it.
 
 ## The rule
 
@@ -74,10 +76,12 @@ A **source** is an execution _E_ of test _T_ that may stand in for a later one. 
 1. It passed on its first attempt, in a run that was neither private, imported, a Flake Lab run nor a `piwi bug` run.
 2. Its coverage is complete (not in `incompleteCoverageTests`) and every file of it carries a blob.
 3. Its run came from a clean checkout of a commit _C_ (the reporter records whether the tree was dirty; a dirty tree
-   has no commit to diff from).
-4. Its run's fingerprint equals the current one: `@playwright/test` version, the browser revisions, the Playwright
-   project's name and resolved `use` options (the `browser` field already captured per test case), and the target
-   environment (the run's `environment`, or the `baseURL` origin when none is set).
+   has no commit to diff from). CI runs and local runs (terminal, desktop, editor) both qualify: the fingerprint, not
+   the origin, decides whether a pass applies.
+4. Its run's fingerprint equals the current one: `@playwright/test` version, the browser revisions, the operating
+   system and architecture, the Playwright project's name and resolved `use` options (the `browser` field already
+   captured per test case), and the target environment (the run's `environment`, or the `baseURL` origin when none is
+   set). A local pass against `localhost` never stands in for a CI run against staging.
 5. It is younger than `maxAge` (14 days by default).
 
 _T_ is **reused** in a run at working tree _W_ when it has a source _E_ at commit _C_ and:
@@ -87,18 +91,20 @@ _T_ is **reused** in a run at working tree _W_ when it has a source _E_ at commi
 2. That impact did not widen: every changed file maps to some test, or is documentation, or matches the project's
    `inertPaths`. A lockfile, the Playwright config, a `.env` file, an added file that no test reaches: each maps to no
    test, so each runs everything, as it does for impact.
-3. _T_ is not excluded: quarantined, in an open failure cluster, flaky (any failed or retried execution in its last 20
-   on any branch), new or renamed (no source), tagged `@no-reuse` (or the project's `noReuseTags`), or drawn for
-   verification (below).
+3. _T_ is not excluded: quarantined, in an open failure cluster, flaky, new or renamed (no source), tagged `@no-reuse`
+   (or the project's `noReuseTags`), or drawn for verification (below). Flaky means any failed or retried execution
+   in its last 20 on any branch, a window each project's forecast tunes; a test with an identical-code failure in
+   that window (below) is always flaky here.
 
 The rule inherits impact's assumption, stated in the same words in the docs: a line a test did not run cannot change
-that test's path. Three inputs sit outside it, and the design answers each:
+that test's path. Four inputs sit outside today's coverage, and the design answers each:
 
 | Input the coverage does not see | Answer |
 | --- | --- |
-| Test-side code (spec helpers, page objects, fixtures) | Today a changed support file maps through failure frames only, which widens. The test-side reach capture (delivery step 5) maps it per test. Until then, a change to a helper runs everything: safe, fewer hits. |
+| Test-side code (specs, page objects, fixtures, data builders) | Coverage records two runtimes, `browser` and `server`. The Node side, where the test code runs, is seen only through the call sites of its Playwright steps and locators (`test_runs_cases.steps`, `locator_usages.call_site`), which say a test reached a line but never that it did not. Section 5 adds a third runtime, `node`, with lines and blobs. Until it ships, a changed support file maps through failure frames only, which widens: safe, fewer hits. |
+| Screenshot baselines | A test compares images it reads, not code it runs. A changed file under a spec's snapshot directory (Playwright's `snapshotPathTemplate`, resolved by the reporter) maps to the tests of that spec, as a changed spec file does; a template the reporter cannot resolve leaves the image unmapped, which widens. The fingerprint's browser revision and operating system cover the renderer. |
 | Code that runs without a function being called (module top level, auto-registered components, glob imports) | Line-level impact already reads a change outside every function as reaching every test of the file; an added file maps to no test and widens. |
-| State outside the repository (database seeds, third-party services, time) | Not observable by reuse. `maxAge`, the verification share and the audit of full runs bound how long a wrong reuse can stand; a scheduled full run stays the reference. |
+| State outside the repository (database seeds, third-party services, time) | Not observable by reuse. A test that depends on a third-party service is tagged `@no-reuse` by the team that knows it does. `maxAge`, the verification share and the audit of full runs bound how long a wrong reuse can stand; a scheduled full run stays the reference. |
 
 ## Design
 
@@ -172,7 +178,7 @@ stays correct without a filter. The run gains a `reused_count` column beside its
 | Pull-request feedback | the summary line: `1,240 passed · 3,100 reused (code unchanged since they passed)` |
 | Flaky scores, pass rate, durations, analytics | not counted |
 | Fix verification | never verifies a fix |
-| Coverage (change coverage, the Test Map, uncovered changes) | not counted: the partial-run rule applies |
+| Coverage (change coverage, the Test Map, uncovered changes) | carried forward: the source execution's fragments are attached to the run, marked as carried, since none of the files they name changed. A view that counts reach at this commit counts them; a view that counts executions does not |
 | Notifications, issue automation | nothing is sent for a reused result |
 | `is_full_run` | 0 for the run; `GET /api/test-runs/:id` gains `reused` with the count and the plan id, so "the suite is green at this commit" reads executed + reused |
 
@@ -189,27 +195,37 @@ stays correct without a filter. The run gains a `reused_count` column beside its
 - **Off by default, twice.** A `pass-reuse` capability, off until an administrator turns it on, and a per-project
   setting. Reuse never applies to a run that did not ask for it with `--reuse` or `--plan`.
 
-### 5. Test-side reach
+### 5. Test-side coverage: the `node` runtime
 
-Test-side code (spec helpers, page objects, fixtures) is where most suites change most often, and the frames-only edge
-makes every such change widen. The reporter records, per test, the repository files its worker loaded on the Node side:
+Test-side code (specs, page objects, fixtures, data builders) is where most suites change most often, and the
+frames-only edge makes every such change widen. A third coverage runtime, `node`, records it as the other two record
+theirs:
 
-- the in-repository modules the worker had loaded before the test started, attributed to every test of that worker,
-  and those it loaded during the test, attributed to that test (file level, over-approximating, so a test is never
-  missed);
-- excluding `node_modules`, and reading ESM modules through a `module.registerHooks` resolve hook where Node offers it,
-  falling back to `require.cache`.
-
-Stored as `code_reach` rows with `runtime: 'node'`, it is read by impact as well as by reuse: `piwi run impact` and
-`piwi preflight` stop widening on a changed page object. A function-level variant (precise V8 coverage of the worker
-through `node:inspector`) is measured by the bench before it is offered.
+- **Per test, lines and functions.** The capture fixtures start V8 precise coverage in each worker through
+  `node:inspector` (`Profiler.startPreciseCoverage` with block granularity, no call counts) and take it at each test's
+  end (`Profiler.takePreciseCoverage`, which resets the counters), so each test gets the lines it ran. Byte offsets
+  are mapped to lines of the source file through the transform's source maps (Playwright compiles TypeScript), and
+  each file carries its git blob, read once per worker (`blob-ids.ts`).
+- **Module evaluation counts for every test of the worker.** A module evaluated before a test started (an import used
+  only for its constants, a fixture file) ran its top level outside any test. Its file is attributed, at file level,
+  to every test of that worker, so a change to it never goes unseen; a change inside a function a test did not run
+  is still read at line level.
+- **Scope.** Repository files outside `node_modules` and outside the coverage scope's excludes; Playwright's own code
+  and the reporter's are never recorded.
+- **Storage.** The same `coverage_fragments` and `test_coverage` rows, `runtime: 'node'`, with `code_reach` rows for
+  the files. Impact reads them like the others, so `piwi run impact` and `piwi preflight` stop widening on a changed
+  page object, and a change to a helper selects only the tests that ran its changed lines.
+- **Cost.** Block coverage slows the worker's own JavaScript, not the browser's. The bench measures it on a suite
+  heavy with page objects before it is offered; the option (`coverage.node: 'off' | 'functions' | 'lines'`) is off by
+  default, as `coverage.browser` is.
 
 ### 6. Agents and editors
 
 - MCP: `get_reuse_forecast`, and `plan_run` (`{ projectId, selection, reuse }` → the plan's counts, tests to run,
   reasons and command). The `run-the-right-tests` skill offers reuse for a full-suite check after a refactor.
 - The editors' **Run what changed** runs the plan's tests to run, on the developer's machine, with the plan computed
-  against the dirty tree: a local run that is never a source (rule 3), so nothing it reuses leaks back into CI.
+  against the dirty tree. A run of a dirty tree is never a source (rule 3); once committed, a clean local run is, for
+  later runs whose fingerprint matches its own.
 
 ## Decisions
 
@@ -223,6 +239,10 @@ through `node:inspector`) is measured by the bench before it is offered.
 | D6 | A plan is resolved once and stored; shards read it | Shards started minutes apart must agree on what runs |
 | D7 | The forecast ships first and alone | It measures the saving and the risk on the project's own data before any wire change, and its identical-code failures are useful on their own |
 | D8 | Off by default: a capability and a per-project setting, and only for runs that ask | A test tool that skips tests silently loses trust |
+| D9 | Test-side code is covered as a third runtime, `node`, with lines and blobs, not as a list of loaded files | A list of loaded files invalidates every test that imported a helper when any line of it changes; line coverage keeps only the tests that ran the change, for reuse and impact alike |
+| D10 | Clean local runs are sources, guarded by the fingerprint (operating system, browser revision, target environment) | The machine that ran a pass matters only through what the fingerprint records; a team that runs the suite locally before pushing should not run it again in CI |
+| D11 | Third-party dependencies are declared by the team (`@no-reuse`), not inferred from requests | A request to another origin does not mean the test depends on its answer (fonts, analytics); the team knows which ones it does |
+| D12 | A reused test's coverage is carried forward to the run | None of the files it names changed, so it still describes the commit; without it, the Test Map and change coverage would empty out on the runs that reuse most |
 
 ## Delivery
 
@@ -232,24 +252,20 @@ through `node:inspector`) is measured by the bench before it is offered.
 | 2 | The engine: sources, the fingerprint and clean-tree flag on the wire, per-source-commit impact against the source's coverage, `plans` storage, `POST /api/projects/:id/plans`, `piwi plan`, `piwi run --plan` and `--reuse`, the capability and project setting | a full run that executes only what changed |
 | 3 | Recording and surfaces: `reused_results`, `reused_count`, the run page section, the gate flags, the pull-request summary line, the demo's handlers | reuse visible and enforceable |
 | 4 | Safety: verification share, the audit of full runs, false-reuse exclusion, the rate and the automatic switch-off | reuse that checks itself |
-| 5 | Test-side reach (`runtime: 'node'`), read by impact and reuse | fewer widened plans; `piwi run impact` stops widening on helpers |
+| 5 | Test-side coverage: the `node` runtime, `coverage.node`, read by impact and reuse; the bench's measure of its cost | fewer widened plans; `piwi run impact` stops widening on helpers |
 | 6 | `--shards-for`, `plan_run`, the editors' Run what changed, the docs page `features/pass-reuse.md` | the plan as the entry point of every run |
 
 PRs 2 to 4 ship together behind the capability: reuse without its safety loop is not offered.
 
 ## Open questions
 
-1. **The flaky exclusion window.** Twenty executions on any branch is a guess; the forecast's identical-code failures
-   should set it per project.
-2. **Third-party hosts.** A test whose requests leave the `baseURL` origin depends on a service the coverage cannot
-   see. Exclude such tests by default, or leave it to `noReuseTags`?
-3. **Carrying coverage forward.** A reused test's coverage still describes the new commit for every file it ran
-   (none changed). Counting it for the Test Map and change coverage would keep those views full on reuse runs, at the
-   cost of a second meaning for "reached in recent runs".
-4. **Sources from local runs.** A desktop or editor run on a clean checkout qualifies under the rules above, but it ran
-   on a developer's machine against a developer's environment. Restrict sources to CI runs at first?
-5. **Visual comparisons.** A `toHaveScreenshot` test depends on the browser revision and the fonts of the machine;
-   the fingerprint covers the first. Exclude snapshot tests by default?
+1. **Node coverage under ESM.** Precise coverage sees ESM modules as well, but Playwright's ESM loader transforms them
+   in a loader thread; whether its source maps reach the worker for the byte-to-line mapping is to be checked in the
+   spike.
+2. **How the forecast tunes the flaky window.** The smallest window that would have excluded every identical-code
+   failure of the last 30 days, floored at 20? Or a window per test, from its own failure history?
+3. **Carried coverage and retention.** A run that carries forward a source's fragments keeps them referenced after the
+   source run is pruned; does the carried copy count toward the retention budget of the run that carries it?
 
 ## Not in this plan
 
