@@ -36,7 +36,7 @@ function scopeHint(scope: ReuseScopeForecast): string {
 
 const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 const total = computed(() => forecast.value?.total ?? null);
-const hasComparable = computed(() => (total.value?.comparable ?? 0) > 0);
+const hasComparable = computed(() => (total.value?.comparable ?? 0) > 0 || (total.value?.reusable ?? 0) > 0);
 const uncomparable = computed(() => (total.value ? total.value.results - total.value.comparable : 0));
 const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.results > 0));
 </script>
@@ -45,7 +45,7 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
   <SectionCard
     title="Pass reuse forecast"
     icon="i-lucide-recycle"
-    :subtitle="`The test time of the ${forecast?.windowDays ?? 30} days before the latest run that ran code identical to an earlier first-attempt pass, at most ${forecast?.maxSourceAgeDays ?? 14} days old: what a run could have skipped.`"
+    :subtitle="`What a run could have skipped: the test time spent re-running code that an earlier first-attempt pass, at most ${forecast?.maxSourceAgeDays ?? 14} days older, had already run unchanged, over the ${forecast?.windowDays ?? 30} days before the project's latest run.`"
     data-shot="reuse-forecast"
   >
     <LoadingState v-if="loading && !forecast" />
@@ -79,10 +79,10 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
       <div class="space-y-1">
         <p class="text-sm text-highlighted leading-relaxed">
           {{ share(total.reusableDurationMs, total.durationMs) }} of the test time (<span
-            :title="`${total.reusableDurationMs} ms`"
+            :title="`${total.reusableDurationMs.toLocaleString()} ms`"
             >{{ formatLongDuration(total.reusableDurationMs) }}</span
           >
-          of <span :title="`${total.durationMs} ms`">{{ formatLongDuration(total.durationMs) }}</span
+          of <span :title="`${total.durationMs.toLocaleString()} ms`">{{ formatLongDuration(total.durationMs) }}</span
           >) ran code identical to an earlier pass.
           <template v-if="total.failed + total.flaky === 0">None of those results failed.</template>
           <template v-else>
@@ -94,7 +94,8 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
           Results from <ClientDate :date="forecast!.from" date-only /> to <ClientDate :date="forecast!.to" date-only />.
           An upper bound: the comparison covers the application files coverage records, not test code or configuration.
           <template v-if="uncomparable > 0">
-            {{ uncomparable }} of {{ total.results }} results recorded no coverage with file versions and count as run.
+            {{ uncomparable }} of {{ total.results }} results recorded no coverage with file versions: only a pass at
+            the same CI commit can stand in for them.
           </template>
           <template v-if="forecast?.truncated"
             >The project has more results than the forecast reads at once, so it covers the most recent runs

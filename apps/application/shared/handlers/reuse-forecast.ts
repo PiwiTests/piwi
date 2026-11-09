@@ -76,6 +76,8 @@ interface AttemptRow {
   passedAfterFailure: boolean;
   duration: number | null;
   payloadId: number | null;
+  /** When the attempt started, in milliseconds; null from an older reporter. */
+  startedAt: number | null;
   startTime: Date;
   branch: string | null;
   commit: string | null;
@@ -102,7 +104,8 @@ async function loadPayloadVersions(
     const payload = parseCoveragePayload(contents.get(id));
     parsed.set(id, payload && !payload.incomplete && payload.fragmentIds.length > 0 ? payload.fragmentIds : null);
   }
-  const fragmentIds = [...new Set([...parsed.values()].flatMap((ids) => ids ?? []))];
+  // In storage order, so a version's interned number grows with the age of its fragment.
+  const fragmentIds = [...new Set([...parsed.values()].flatMap((ids) => ids ?? []))].sort((a, b) => a - b);
   const interned = new Map<string, number>();
   const versions = new Map<number, number | null>();
   for (let i = 0; i < fragmentIds.length; i += ID_CHUNK) {
@@ -114,7 +117,8 @@ async function loadPayloadVersions(
         blob: coverageFragments.blob,
       })
       .from(coverageFragments)
-      .where(inArray(coverageFragments.id, fragmentIds.slice(i, i + ID_CHUNK)));
+      .where(inArray(coverageFragments.id, fragmentIds.slice(i, i + ID_CHUNK)))
+      .orderBy(coverageFragments.id);
     for (const row of rows) {
       if (!row.blob) {
         versions.set(row.id, null);
@@ -155,9 +159,10 @@ async function loadPayloadVersions(
 export async function getReuseForecast(
   db: DrizzleDB,
   projectId: number,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; maxAttempts?: number } = {},
 ): Promise<ReuseForecast> {
   const now = opts.now ?? new Date();
+  const maxAttempts = opts.maxAttempts ?? MAX_ATTEMPTS;
   const projectRuns = and(
     eq(testRuns.projectId, projectId),
     lte(testRuns.startTime, now),
@@ -184,6 +189,7 @@ export async function getReuseForecast(
       passedAfterFailure: testRunsCases.passedAfterFailure,
       duration: testRunsCases.duration,
       payloadId: testRunsCases.coveragePayloadId,
+      startedAt: testRunsCases.startedAt,
       startTime: testRuns.startTime,
       branch: testRuns.branch,
       commit: testRuns.commit,
@@ -192,12 +198,12 @@ export async function getReuseForecast(
     .from(testRuns)
     .innerJoin(testRunsCases, eq(testRunsCases.testRunId, testRuns.id))
     .where(and(projectRuns, gte(testRuns.startTime, new Date(windowFrom - maxSourceAgeMs))))
-    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(MAX_ATTEMPTS + 1);
-  const truncated = fetched.length > MAX_ATTEMPTS;
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id), desc(testRunsCases.id))
+    .limit(maxAttempts + 1);
+  const truncated = fetched.length > maxAttempts;
   // A truncated read keeps whole runs: the last run it reached is dropped, being partly read, unless it is the only one.
   const wholeRuns = truncated ? fetched.filter((row) => row.runId !== fetched[fetched.length - 1]!.runId) : fetched;
-  const attempts = wholeRuns.length > 0 ? wholeRuns : fetched.slice(0, MAX_ATTEMPTS);
+  const attempts = wholeRuns.length > 0 ? wholeRuns : fetched.slice(0, maxAttempts);
 
   const byRun = new Map<number, AttemptRow[]>();
   for (const row of attempts) {
@@ -206,37 +212,43 @@ export async function getReuseForecast(
     else byRun.set(row.runId, [row]);
   }
 
-  const defaultBranch = await projectDefaultBranch(db, projectId);
-  const payloadIds = [...new Set(attempts.flatMap((row) => (row.payloadId == null ? [] : [row.payloadId])))];
-  const versions = await loadPayloadVersions(db, payloadIds);
-
-  const forecastResults: ForecastResult[] = [];
+  // Each result: its final attempt, and the time of all its attempts.
+  const results: Array<{ final: AttemptRow; outcome: ReuseOutcome; durationMs: number }> = [];
   for (const rows of byRun.values()) {
     const durations = new Map<string, number>();
     for (const row of rows) durations.set(attemptKey(row), (durations.get(attemptKey(row)) ?? 0) + (row.duration ?? 0));
     for (const final of finalAttempts(rows)) {
       const outcome = outcomeOf(final);
-      if (!outcome) continue;
-      forecastResults.push({
-        executionId: final.id,
-        runId: final.runId,
-        testCaseId: final.testCaseId,
-        browserName: final.browserName ?? '',
-        at: final.startTime.getTime(),
-        scope: !final.branch || final.branch === defaultBranch ? 'default-branch' : 'other-branches',
-        outcome,
-        durationMs: durations.get(attemptKey(final)) ?? 0,
-        versions: final.payloadId == null ? null : (versions.get(final.payloadId) ?? null),
-        ciCommit: final.commit && CI_ORIGINS.has(final.origin) ? final.commit : null,
-      });
+      if (outcome) results.push({ final, outcome, durationMs: durations.get(attemptKey(final)) ?? 0 });
     }
   }
 
-  // A truncated read counts only the runs with a full source window behind them, or, when even one run fills the
-  // read, every run it holds.
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  const payloadIds = [...new Set(results.flatMap((r) => (r.final.payloadId == null ? [] : [r.final.payloadId])))];
+  const versions = await loadPayloadVersions(db, payloadIds);
+
+  const forecastResults: ForecastResult[] = results.map(({ final, outcome, durationMs }) => ({
+    executionId: final.id,
+    runId: final.runId,
+    testCaseId: final.testCaseId,
+    browserName: final.browserName ?? '',
+    at: final.startedAt ?? final.startTime.getTime(),
+    scope: !final.branch || final.branch === defaultBranch ? 'default-branch' : 'other-branches',
+    outcome,
+    durationMs,
+    versions: final.payloadId == null ? null : (versions.get(final.payloadId) ?? null),
+    ciCommit: final.commit && CI_ORIGINS.has(final.origin) ? final.commit : null,
+  }));
+
+  // A truncated read counts the results with a full source window read behind them; when the read is shorter than a
+  // source window, the second half of it, whose results have at least the first half behind them.
   const oldest = attempts.length > 0 ? attempts[attempts.length - 1]!.startTime.getTime() : windowFrom;
   const withSources = Math.max(windowFrom, oldest + maxSourceAgeMs);
-  const from = truncated ? (withSources <= end ? withSources : oldest) : windowFrom;
+  const from = truncated
+    ? withSources <= end
+      ? withSources
+      : Math.max(windowFrom, oldest + (end - oldest) / 2)
+    : windowFrom;
   const core = forecastReuse(forecastResults, { from, maxSourceAgeMs });
 
   const listed = core.tests.slice(0, MAX_LISTED_TESTS);

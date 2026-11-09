@@ -44,7 +44,8 @@ with the failing execution and the pass it matched, which is strong evidence whe
 
 - **Coverage with file versions**: [code reach](/features/code-reach) at `coverage.browser: 'functions'` or
   `'lines'`, or [server coverage](/features/server-coverage). With `'files'` a test records which files it ran but
-  not their version, so its results are never comparable and count as run.
+  not their version. A pass stands in for a later result only when it recorded file versions; a result that recorded
+  none is reusable only at the same CI commit as such a pass.
 - **An upper bound.** The comparison sees the application files coverage records. A change to the test code itself,
   to the Playwright configuration or to a dependency is not part of it, and would make more tests run.
 - **Runs that do not count**: Flake Lab, probe, bisect, reproduction, `piwi bug` and private runs, and runs flagged

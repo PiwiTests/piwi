@@ -6,14 +6,13 @@ coverage Piwi already stores per execution (every file a test ran, with the git 
 evidence; impact-from-diff, applied with each test's own base, is the rule.
 
 **Status.** Proposed 2026-11-09; D9 to D12 and the defaults (14-day sources, 5% verification, a 0.1% false-reuse
-switch-off, reused results passing the gate) settled with the maintainer the same day. PR 1 is built: the forecast
-(`shared/reuse-forecast.ts`, `getReuseForecast` in `shared/handlers/reuse-forecast.ts`, the `pass-reuse` run use),
-`GET /api/projects/:id/selections/reuse-forecast` and its demo mirror, the Selections tab's card, `get_reuse_forecast`,
-and the [Reuse forecast](../apps/docs/features/reuse-forecast.md) page. Its window ends at the project's latest run, so
-a project that stopped running keeps its last 30 days, and a result also matches a pass at the same CI commit, so a
-failure that stopped before reaching the code its pass ran still counts. One piece of PR 1 remains: identical-code
-failures are listed, but do not feed the flaky classifier. Imported runs carry no coverage, so they never serve as
-sources without a rule of their own. PRs 2 to 6 are not started. The contracts it would add are entry D66 of
+switch-off, reused results passing the gate) settled with the maintainer the same day. PR 1 is built except one piece, the flaky-classifier signal: identical-code failures are listed but do not feed the
+flaky score. Built: the forecast (`shared/reuse-forecast.ts`, `getReuseForecast` in `shared/handlers/reuse-forecast.ts`,
+the `pass-reuse` run use), `GET /api/projects/:id/selections/reuse-forecast` and its demo mirror, the Selections tab's
+card, `get_reuse_forecast`, and the [Reuse forecast](../apps/docs/features/reuse-forecast.md) page. Its window ends at
+the project's latest run, so a project that stopped running keeps its last 30 days, and a result also matches a pass
+at the same CI commit, so a failure that stopped before reaching the code its pass ran still counts. Imported runs
+carry no coverage, so they never serve as sources without a rule of their own. PRs 2 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**
