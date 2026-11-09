@@ -190,7 +190,8 @@ describe('CONNECTION_CHECKS', () => {
     accepted = [TOKEN];
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
-      sent.push({ url, token: (init?.headers as Record<string, string>).Authorization.replace('Bearer ', '') });
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      sent.push({ url, token: (headers.Authorization ?? '').replace('Bearer ', '') });
       return json(url.searchParams.get('maxResults') === '1' ? fixture('projects-first') : fixture('projects-page-2'));
     });
     const result = await CONNECTION_CHECKS['zephyr-scale'](db as never, {

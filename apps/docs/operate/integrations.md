@@ -84,8 +84,8 @@ assignable-user picker), on top of the account permissions above.
 A Zephyr Scale connection holds the credentials the results sync will use to send runs to Zephyr. That sync is not
 available yet: today the connection can be created, checked and tested, and nothing is written to Zephyr.
 
-1. In Zephyr Scale, open **API access tokens** and create a token. Use a dedicated account, so the token does not
-   end with a person's access.
+1. In Jira, open your profile picture, then **Zephyr API keys**, and create a token. Use a dedicated account, so
+   the token does not end with a person's access.
 2. **Settings → Integrations → Connect Zephyr Scale Cloud** (administrator only): pick the **Region** your Zephyr
    Scale Cloud runs in (US, EU, AU or DE), paste the token, and choose **Check**. Then **Save**.
 

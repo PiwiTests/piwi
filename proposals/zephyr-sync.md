@@ -17,7 +17,12 @@ to that moment. Rollout step 2 built: `normalizeTestTagsWithDropped` counts the 
 warns once in `onBegin` and sends `metadata.tagsTruncated` (`collectTagsTruncated`), the server records the same from
 the raw tags of a payload sent without the reporter or imported from a blob report (`recordTagsTruncated`), a resent
 report counts once and each shard's adds up (`keepTagsTruncated`, `addTagsTruncated`), and the run page shows "Tags
-cut at 20 on N tests" with the tests in its Details. Steps 3 to 7 remain. Revised after the review on #1161: provider
+cut at 20 on N tests" with the tests in its Details. Rollout step 4 built: the `test-management` kind and the
+Zephyr Scale Cloud connection (registry entry with its four regions, the read-only client with `whoAmI`,
+`listProjects`, `listCases`, `listStatuses` and `caseUrl`, the connection card and form, `PIWI_ZEPHYR_API_TOKEN` and
+`PIWI_ZEPHYR_REGION`), tested against a stubbed `fetch` with fixtures written from the OpenAPI spec; nothing has been
+run against the real Zephyr API. `uploadRun`, `findRun` and `linkRun` are optional in the interface, and the client does
+not implement them. Steps 5 to 7 remain. Revised after the review on #1161: provider
 dispatch in the outbox and the connection endpoints, a provider-neutral interface and tables, one binding table per
 integration kind, and a warning when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
 twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
@@ -520,8 +525,9 @@ Environment variables, registered in `PIWI_ENV_VARS` with `since`: `PIWI_ZEPHYR_
 Read from SmartBear's OpenAPI spec (`https://support.smartbear.com/zephyr-scale-cloud/api-docs/api.cloud.stripped.yml`):
 the four regional hosts, the custom upload creating a new cycle, the 10 MB zip limit, the `testCycle` part fields,
 `TestExecutionInput`, `PUT /testexecutions/{id}`, `maxResults` up to 1,000, cycle web links, and no delete operation for
-test cases, cycles or executions. Not in the spec, so checked against a throwaway Zephyr project in the Zephyr pull
-request, before any code depends on them:
+test cases, cycles or executions. Not in the spec, so each has to be checked against a throwaway Zephyr project. They are
+**not checked yet**: no Zephyr project was available for step 4, which only reads. Check them before step 6, the first step that uploads,
+depends on them:
 
 1. The JSON schema of the custom format (`version`, `executions[].result`, `executions[].testCase.key`), the accepted
    `result` values, and whether an execution can carry a comment.
@@ -531,7 +537,9 @@ request, before any code depends on them:
    results carry only the status, and the cycle's description and web link carry the rest; `findRun` then cannot use
    `actualEndDateAfter`, and an unknown outcome stays with a person.
 4. The rate limit and its headers. The spec documents none; the client assumes a conservative default (20 requests a
-   minute per connection, `PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE`) and honors `Retry-After` when sent.
+   minute per connection, `PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE`) and honors `Retry-After` when sent. Step 4's client has no limiter: it
+   only reports a `Retry-After` on an error. The limiter comes with the first caller that loops, the catalog task in
+   step 5.
 5. Large uploads: a community report describes a gateway timeout on an upload of about a thousand executions, which is
    the unknown-outcome case of [8](#8-the-sync-action).
 
@@ -559,7 +567,7 @@ run page's test run link all work there.
    first.
 4. **Test management kind and the Zephyr Scale client** (`feat(app)`). The interface, the registry entry, the client
    (`whoAmI`, `listProjects`, `listCases`, `listStatuses`), the connection card with Provider and Region, the
-   env-managed connection, the assumptions above checked and recorded here.
+   env-managed connection. The assumptions above stay unchecked here: step 4 only reads.
 5. **Binding and catalog** (`feat(app)`, `feat(db)` for the migration). `project_test_management`,
    `test_management_cases`, the daily catalog task, the binding form with dry run, the mapping summary, the hover card
    on `TestIdChip` and on matching tags.
