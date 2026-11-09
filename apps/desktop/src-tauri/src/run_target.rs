@@ -154,7 +154,7 @@ fn server_info(app: &AppHandle) -> Option<ServerInfo> {
 /// parts only. Answers the JSON body of a 2xx, or the server's message. The token
 /// goes only to a server that first proves it holds it
 /// ([`crate::connect_proving_token`]).
-fn local_call(
+pub(crate) fn local_call(
     server: &ServerInfo,
     method: &str,
     path: &str,

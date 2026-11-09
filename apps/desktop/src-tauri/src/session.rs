@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
+use crate::mcp_clients::ServerInfo;
 use crate::{bootstrap_url, health_ok, main_window_may_navigate, show_splash_status, ServerGaveUp};
 
 /// What the dashboard window shows and when, for the sidecar behind it. Managed by the app.
@@ -335,9 +336,37 @@ pub(crate) fn resume_session<W: SessionWindows>(
     };
     let proved = wait_for_proof(server.port, &server.token, server.pace, stop, || on_slow(windows));
     if proved {
-        windows.load_session(bootstrap_url(server.port, &server.token, None), holds);
+        // The session code is asked over a connection that proved the token; no code, no session.
+        return match session_url(server.port, &server.token, None) {
+            Ok(url) => {
+                windows.load_session(url, holds);
+                true
+            }
+            Err(_) => false,
+        };
     }
     proved
+}
+
+/// The path the shell asks a session code from.
+const SESSION_CODE_PATH: &str = "/api/desktop/run-target/session-code";
+
+/// The URL that signs the window in: the server gives the shell a single-use session code over a
+/// connection that proved the token (`connect_proving_token`), and the URL holds that code, never the token.
+pub(crate) fn session_url(port: u16, token: &str, page: Option<&str>) -> Result<String, String> {
+    let server = ServerInfo { port, token: token.to_string() };
+    let answer = crate::run_target::local_call(&server, "POST", SESSION_CODE_PATH, Some(&serde_json::json!({})))?;
+    let code = answer
+        .get("code")
+        .and_then(|code| code.as_str())
+        .filter(|code| is_session_code(code))
+        .ok_or("the local server gave no session code")?;
+    Ok(bootstrap_url(port, code, page))
+}
+
+/// A session code is `pds_` and 64 hex digits.
+fn is_session_code(code: &str) -> bool {
+    code.strip_prefix("pds_").is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 #[cfg(test)]
@@ -396,7 +425,11 @@ mod tests {
         }
     }
 
-    /// A server that answers every request on its port with `token`'s proof for that request, or a wrong one.
+    /// The session code the test servers give.
+    const CODE: &str = "pds_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    /// A server that answers every request on its port with `token`'s proof for that request, or a wrong one, and
+    /// gives `CODE` to the request after a proof it keeps the connection for.
     fn serve_health(token: &'static str, honest: bool) -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -404,7 +437,19 @@ mod tests {
         port
     }
 
+    /// A server that holds `token` and refuses every request for a session code.
+    fn serve_without_codes(token: &'static str) -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || answer_proofs_with(listener, token, true, false));
+        port
+    }
+
     fn answer_proofs(listener: std::net::TcpListener, token: &'static str, honest: bool) {
+        answer_proofs_with(listener, token, honest, true);
+    }
+
+    fn answer_proofs_with(listener: std::net::TcpListener, token: &'static str, honest: bool, codes: bool) {
         let port = listener.local_addr().unwrap().port();
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { return };
@@ -415,6 +460,23 @@ mod tests {
                 .unwrap_or_default()
                 .to_string();
             let proof = if honest { proof_of(token, port, &challenge) } else { proof_of("other", port, &challenge) };
+            if request.starts_with("GET /api/health HTTP/1.1") {
+                // The proof the shell keeps its connection for, then the session code asked on it.
+                let _ = stream.write_all(
+                    format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}")
+                        .as_bytes(),
+                );
+                read_request_from(&mut stream);
+                let answer = if codes {
+                    let body = format!("{{\"code\":\"{CODE}\"}}");
+                    format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
+                } else {
+                    let body = "{\"message\":\"no\"}";
+                    format!("HTTP/1.1 403 Forbidden\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
+                };
+                let _ = stream.write_all(answer.as_bytes());
+                continue;
+            }
             let _ = stream.write_all(
                 format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}")
                     .as_bytes(),
@@ -431,8 +493,19 @@ mod tests {
         windows.run_main_thread();
         assert_eq!(
             *windows.told.borrow(),
-            vec![format!("session: http://127.0.0.1:{port}/__piwi/session?token=pd_token")]
+            vec![format!("session: http://127.0.0.1:{port}/__piwi/session?code={CODE}")]
         );
+    }
+
+    #[test]
+    fn a_server_that_gives_no_session_code_gets_no_session() {
+        let port = serve_without_codes("pd_token");
+        let windows = Recorder::default();
+        let proved = resume_session(&windows, &server(port, "pd_token"), |_| {}, always());
+        assert!(!proved);
+        windows.run_main_thread();
+        assert!(windows.told.borrow().is_empty());
+        assert!(windows.loads.borrow().is_empty());
     }
 
     /// The sidecar can exit between its proof and the navigation the main thread makes: that load is dropped, and
@@ -660,5 +733,60 @@ mod tests {
         assert!(Session::new(Some(page("tauri://localhost/index.html")), None).splash.is_some());
         assert!(Session::new(Some(page("http://127.0.0.1:3000/")), None).splash.is_none());
         assert!(Session::new(None, None).splash.is_none());
+    }
+
+    /// What a server that holds the token answers a request for a session code with.
+    fn code_answer(body: &str) -> Vec<u8> {
+        format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).into_bytes()
+    }
+
+    #[test]
+    fn the_session_url_holds_the_code_and_never_the_token() {
+        let (port, seen) = crate::tests::serve_as_holder_of("pd_token", code_answer(&format!("{{\"code\":\"{CODE}\"}}")));
+        let url = session_url(port, "pd_token", Some("/runs?tab=failed")).unwrap();
+        assert_eq!(
+            url,
+            format!("http://127.0.0.1:{port}/__piwi/session?code={CODE}&to=%2Fruns%3Ftab%3Dfailed")
+        );
+        assert!(!url.contains("pd_token"), "{url}");
+        let request = seen.join().unwrap();
+        assert!(request.starts_with(&format!("POST {SESSION_CODE_PATH} HTTP/1.0\r\n")), "{request}");
+        assert!(request.contains("x-piwi-token: pd_token"), "{request}");
+        assert!(request.contains("Content-Type: application/json"), "{request}");
+        assert!(!request.to_ascii_lowercase().contains("sec-fetch"), "{request}");
+        assert!(!request.to_ascii_lowercase().contains("origin"), "{request}");
+    }
+
+    #[test]
+    fn the_session_url_refuses_an_answer_that_is_not_a_session_code() {
+        let token = "pd_aaaaaaaa";
+        for body in [
+            "{}".to_string(),
+            "{\"code\":7}".to_string(),
+            "{\"code\":\"pds_short\"}".to_string(),
+            format!("{{\"code\":\"{token}\"}}"),
+            format!("{{\"code\":\"{}\"}}", CODE.replace("pds_", "pdq_")),
+            format!("{{\"code\":\"{}z\"}}", &CODE[..CODE.len() - 1]),
+            "not json".to_string(),
+        ] {
+            let (port, seen) = crate::tests::serve_as_holder_of("pd_aaaaaaaa", code_answer(&body));
+            assert!(session_url(port, token, None).is_err(), "{body}");
+            seen.join().unwrap();
+        }
+        let (port, seen) = crate::tests::serve_as_holder_of(
+            "pd_aaaaaaaa",
+            b"HTTP/1.1 403 Forbidden\r\ncontent-length: 17\r\nconnection: close\r\n\r\n{\"message\":\"no\"}".to_vec(),
+        );
+        assert!(session_url(port, token, None).is_err());
+        seen.join().unwrap();
+    }
+
+    #[test]
+    fn a_process_that_took_the_port_gets_no_token_and_no_session_url() {
+        let (port, seen) = crate::tests::serve_as_squatter();
+        assert!(session_url(port, "pd_token", None).is_err());
+        let request = seen.join().unwrap();
+        assert!(!request.contains("pd_token"), "{request}");
+        assert!(!request.contains("session-code"), "{request}");
     }
 }

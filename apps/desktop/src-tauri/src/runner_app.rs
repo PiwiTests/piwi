@@ -4,7 +4,7 @@
 //   1. creates a per-user data folder for the folder links, the log and the settings,
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
 //   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
-//   4. points the window at the host through the one-time token bootstrap (`/__piwi/session`).
+//   4. points the window at the host through a single-use session code (`/__piwi/session?code=…`).
 // There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
 // this machine may take it for one. Everything binds 127.0.0.1.
 
@@ -22,7 +22,7 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications,
+    app_menu_action, append_log, bring_to_front, follow_notifications,
     hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
     random_hex_32, reapply_splash_status, run_app_menu_action, show_splash_status, shut_down, supervise_server,
     LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
@@ -361,8 +361,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     return;
                 }
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
-                follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
-                nav_handle.load_session(bootstrap_url(port, &token, None), holds);
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
+                match session::session_url(port, &token, None) {
+                    Ok(url) => nav_handle.load_session(url, holds),
+                    Err(error) => {
+                        append_log(&log_path, &format!("no session code: {error}"));
+                        if !quitting.load(Ordering::SeqCst) {
+                            show_splash_status(&nav_handle, SPLASH_STOPPED, true);
+                        }
+                    }
+                }
             });
 
             #[cfg(target_os = "macos")]

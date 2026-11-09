@@ -354,11 +354,12 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     }
 }
 
-/// The URL that signs the window in to the server (`/__piwi/session`), then
-/// shows `page`, or the home page.
-fn bootstrap_url(port: u16, token: &str, page: Option<&str>) -> String {
+/// The URL that signs the window in to the server (`/__piwi/session`) with the
+/// single-use session `code`, then shows `page`, or the home page. The access
+/// token is never in it.
+fn bootstrap_url(port: u16, code: &str, page: Option<&str>) -> String {
     let mut url = tauri::Url::parse(&format!("http://127.0.0.1:{port}/__piwi/session")).expect("a valid URL");
-    url.query_pairs_mut().append_pair("token", token);
+    url.query_pairs_mut().append_pair("code", code);
     if let Some(page) = page {
         url.query_pairs_mut().append_pair("to", page);
     }
@@ -772,9 +773,8 @@ const MAX_PROOF_RESPONSE: usize = 16 * 1024;
 /// connection is kept open and returned, so the request with the token goes to the process that
 /// proved it, never to one that took the port after the proof. A server that answers the proof
 /// and ends the connection gets nothing: the caller opens no other. Every request the shell makes
-/// with the token goes through here. The webview's session bootstrap (`/__piwi/session?token=…`)
-/// is the one token request that does not: it goes on the webview's own connection, and a
-/// single-use bootstrap code is planned.
+/// with the token goes through here, the request for the webview's session code
+/// (`session::session_url`) included: the webview's own request carries the code, never the token.
 pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
     use std::io::{Read, Write};
     const NOT_ANSWERING: &str = "the local server is not answering";
@@ -3276,7 +3276,16 @@ pub fn run() {
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
-                session::SessionWindows::load_session(&nav_handle, bootstrap_url(port, &token, page.as_deref()), holds);
+                // The session code is asked over a connection that proved the token; no code, no session.
+                match session::session_url(port, &token, page.as_deref()) {
+                    Ok(url) => session::SessionWindows::load_session(&nav_handle, url, holds),
+                    Err(error) => {
+                        append_log(&ready_log, &format!("no session code: {error}"));
+                        if !quitting.load(Ordering::SeqCst) {
+                            show_splash_status(&nav_handle, SPLASH_STOPPED, true);
+                        }
+                    }
+                }
             });
 
             // --- tray ---
@@ -3677,10 +3686,10 @@ mod tests {
 
     #[test]
     fn the_bootstrap_carries_the_page_to_show() {
-        assert_eq!(bootstrap_url(3000, "pd_x", None), "http://127.0.0.1:3000/__piwi/session?token=pd_x");
+        assert_eq!(bootstrap_url(3000, "pds_x", None), "http://127.0.0.1:3000/__piwi/session?code=pds_x");
         assert_eq!(
-            bootstrap_url(3000, "pd_x", Some("/test-runs/146?tab=changes&x='")),
-            "http://127.0.0.1:3000/__piwi/session?token=pd_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
+            bootstrap_url(3000, "pds_x", Some("/test-runs/146?tab=changes&x='")),
+            "http://127.0.0.1:3000/__piwi/session?code=pds_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
         );
     }
 

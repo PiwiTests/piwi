@@ -6,7 +6,7 @@ works, the build prerequisites, the end-to-end tests, signing and the update cha
 
 The shell is a [Tauri](https://tauri.app) window around **the same built Nuxt/Nitro server** shipped as the Docker
 image and `@piwitests/server`. The Rust code (`src-tauri/src/`) spawns that server as a **Node sidecar** on a loopback
-port, waits for `GET /api/health`, then points the window at it through a one-time token bootstrap (`/__piwi/session`).
+port, waits for `GET /api/health`, then points the window at it through a single-use session code (`/__piwi/session?code=…`).
 The installers (Windows `.msi` and `.exe`, macOS `.dmg`, Linux `.deb` / `.rpm` / `.AppImage`) are built from the same
 shell and are feature-equivalent.
 
@@ -112,8 +112,10 @@ shell and are feature-equivalent.
   only an entry that runs this app's own executable, never from a place that does not last
   ([how](ARCHITECTURE.md#mcp-client-configs)). The bridge sends the token only through `connect_proving_token` and
   only to `127.0.0.1`.
-- **The webview's session bootstrap is not on the proven connection.** `/__piwi/session?token=…` goes on the
-  webview's own connection, the one token request that does not; a single-use bootstrap code is planned.
+- **The token is never in a URL.** The shell asks the server for a session code on the proven connection
+  (`POST /api/desktop/run-target/session-code`, shell-only), and `/__piwi/session?code=…` takes it once, within 30
+  seconds, to set the cookie. A used, expired or unknown code, and the token itself, open nothing; a server that gives
+  no code gets no session.
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install

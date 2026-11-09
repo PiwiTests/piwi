@@ -29,7 +29,7 @@ channel, so a per-user install pulls a per-user update.
    answers the probe's fresh challenge with the proof of the desktop token
    (`X-Piwi-Desktop-Proof`), so another process that took the port never
    receives the token, then points the window
-   at the server via a one-time token bootstrap (`/__piwi/session`). The
+   at the server via a single-use session code (`/__piwi/session?code=…`). The
    window may only navigate to its bundled pages and that server's exact origin,
    and the app's IPC commands are granted to that origin alone
    (`src-tauri/runtime-capabilities/remote.json`, added at startup for the port).
