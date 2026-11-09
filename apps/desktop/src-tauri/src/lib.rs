@@ -292,7 +292,8 @@ impl LinkedPage {
         inner.waiting.take()
     }
 
-    /// The window loads another document: links wait until it listens again.
+    /// The window loads another document, or the sidecar the page belongs to exits: links wait until the next
+    /// dashboard page listens.
     fn page_unloads(&self) {
         self.0.lock().unwrap().page_listens = false;
     }
@@ -3709,6 +3710,35 @@ mod tests {
         assert_eq!(linked.take_as_page_listens(), None);
         // The window loads another document: links wait again.
         linked.page_unloads();
+        assert!(linked.hold("/test-runs/146"));
+        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
+    }
+
+    #[test]
+    fn a_link_that_comes_after_the_server_exits_waits_for_the_next_page() {
+        let linked = LinkedPage::default();
+        // The dashboard page listens, then the server exits: the page is dying, so the link waits.
+        assert_eq!(linked.take_as_page_listens(), None);
+        assert!(!linked.hold("/settings"));
+        linked.page_unloads();
+        assert!(linked.hold("/settings"));
+        assert!(linked.hold("/test-runs/146"));
+        // The restarted session's page takes the last link, once; the bootstrap has nothing left to open.
+        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
+        assert_eq!(linked.take_waiting(), None);
+        assert_eq!(linked.take_as_page_listens(), None);
+        // Once it listens, a link goes to the window again.
+        assert!(!linked.hold("/settings"));
+    }
+
+    #[test]
+    fn a_link_that_comes_when_the_server_gave_up_stays_held() {
+        let linked = LinkedPage::default();
+        assert_eq!(linked.take_as_page_listens(), None);
+        linked.page_unloads();
+        assert!(linked.hold("/settings"));
+        // Nothing opens it while no page listens; a later page still can.
+        assert_eq!(linked.take_waiting().as_deref(), Some("/settings"));
         assert!(linked.hold("/test-runs/146"));
         assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
     }

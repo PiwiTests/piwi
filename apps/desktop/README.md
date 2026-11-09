@@ -157,9 +157,11 @@ channel, so a per-user install pulls a per-user update.
     none. A link that launched the app (its one argument on Windows and Linux)
     or came while the server started waits in `LinkedPage` and reaches the
     session bootstrap as `to`, which redirects to it once `desktopPagePath`
-    accepts it. One that comes while the dashboard page loads waits until the
-    page listens and takes it (`desktop_take_linked_page`); after that, a link
-    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
+    accepts it. One that comes while the dashboard page loads, or after the
+    server exits (`SessionWindows::hold_links`), waits until the page listens
+    and takes it (`desktop_take_linked_page`), the restarted session's page
+    included; after that, a link goes to the window as `piwi:open-page`
+    (`open_links`). A second launch hands
     its link to the running app through single-instance's `deep-link` feature.
     Only the `open` host is read, so a link shows a page and never acts, and a
     launch whose first argument is a link acts on no other argument
