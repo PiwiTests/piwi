@@ -90,8 +90,8 @@ function badgeOf(client: McpClientStatus): { label: string; color: 'success' | '
 <template>
   <SectionCard v-if="available" icon="i-lucide-plug-zap" title="Connect a client on this machine">
     <template #subtitle>
-      One click writes the <code>piwi-desktop</code> entry into the client's own config file (a backup is kept next to
-      it), and entries are kept current when this app's address changes. Restart the client after connecting.
+      One click writes the <code>piwi-desktop</code> entry into the client's own config file (the first backup is kept
+      next to it) and keeps that entry pointing at this app when the app moves. Restart the client after connecting.
     </template>
 
     <div v-if="loading" class="flex items-center gap-2 text-sm text-muted">

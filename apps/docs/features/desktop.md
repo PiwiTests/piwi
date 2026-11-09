@@ -42,9 +42,8 @@ folder** show it. Back up the parent folder while the app is closed: its `secret
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
 hidden in the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
 holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
-take the same keys with Ctrl. The tray lists the tests running from the app, each with Stop. While tests run from
-the app, the machine stays awake, and while you look away a failed run bounces the Dock icon or flashes the taskbar button, a
-bisect or a lab only at its verdict; a run the window's tray does not list (a `piwi flake` from a terminal or an
+use Ctrl. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the window's tray does not list (a `piwi flake` from a terminal or an
 editor, a probe, another window's, or one from before a reload) never does. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or tray tooltip.
@@ -136,10 +135,10 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 **Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
 connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
 (`piwi-desktop mcp-stdio`) as a local command. No address or token is copied; the bridge finds the app at start and
-sends the token only to a server that proves it holds it. The app must run. It keeps a backup and rewrites only that
-entry. An entry from an earlier version, with the address and token, is rewritten to the bridge at startup, the backup
-kept; one you edited, even by one field, is left, shows **Needs update**, and **Update** replaces it. Restart the client after the entry
-changes. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
+sends the token only to a server that proves it holds it. The app must run. It writes only its own entry and keeps the first backup (`<file>.piwi-backup.json` beside the
+config). When the app moves, it points that entry at itself again at startup, as it does for an earlier version's
+address-and-token entry; nothing else is touched. One you edited, even by one field, shows **Needs update**, and
+**Update** replaces it. Restart the client after the entry changes. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates
 
