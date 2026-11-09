@@ -95,4 +95,14 @@ describe('resolvePiwiConnection', () => {
       })!.desktop,
     ).toBeUndefined();
   });
+
+  test("a key equal to the app's token is the app's, wherever it was set", () => {
+    const base = { PIWI_DASHBOARD_URL: 'https://piwi.example', PIWI_API_KEY: 'pd_desk' };
+    const desktopToken = 'pd_desk';
+    expect(resolvePiwiConnection({ env: base, desktopToken })!.desktop).toBe(true);
+    expect(resolvePiwiConnection({ dotEnv: base, desktopToken })!.desktop).toBe(true);
+    expect(resolvePiwiConnection({ flags: { apiKey: 'pd_desk' }, env: base, desktopToken })!.desktop).toBe(true);
+    expect(resolvePiwiConnection({ env: base, desktopToken: 'pd_unrelated' })!.desktop).toBeUndefined();
+    expect(resolvePiwiConnection({ env: base, desktopToken: null })!.desktop).toBeUndefined();
+  });
 });

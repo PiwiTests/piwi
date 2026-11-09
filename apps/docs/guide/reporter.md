@@ -122,9 +122,8 @@ overrides the path. A CI job or a project pointed elsewhere is never redirected 
 
 The token goes only to a server that proves it holds it: before each request that carries it, the reporter
 sends a one-time challenge to `/api/health` and checks the answer's proof. With no proof, or the wrong one, no
-token is sent, nothing is uploaded and the reporter says so in one line. A run the app starts itself (a reproduction or
-flake lab) exports `PIWI_DESKTOP_KEY=1` beside `PIWI_API_KEY`, marking the key as the app's and holding it to the
-same proof; a key you set yourself, with or without a server URL, is sent as before.
+token is sent, nothing is uploaded and the reporter says so in one line; an app before 0.68 gives none: update it. A run the app starts itself (a reproduction or flake lab) exports `PIWI_DESKTOP_KEY=1` beside `PIWI_API_KEY`,
+marking the key as the app's, as does a `PIWI_API_KEY` equal to its token. Any other key you set is sent as before.
 
 ### Local runs to the desktop app, CI to a team server
 

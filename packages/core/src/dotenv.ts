@@ -53,6 +53,8 @@ export function resolvePiwiConnection(sources: {
   env?: Record<string, string | undefined>;
   dotEnv?: Record<string, string>;
   desktop?: { url: string; token: string } | null;
+  /** The token of the desktop app's discovery file, read only to recognize a key that equals it. */
+  desktopToken?: string | null;
 }): PiwiConnection | null {
   const own = {
     serverUrl: sources.flags?.serverUrl || sources.env?.PIWI_DASHBOARD_URL,
@@ -74,5 +76,8 @@ export function resolvePiwiConnection(sources: {
     !sources.flags?.apiKey &&
     apiKey === sources.env?.PIWI_API_KEY &&
     sources.env?.[DESKTOP_KEY_ENV] === '1';
-  return { serverUrl, apiKey, project, ...((fromFile || fromRun) && { desktop: true as const }) };
+  // A key equal to the app's token is the app's, wherever it was set.
+  const knownToken = desktop?.token ?? sources.desktopToken ?? null;
+  const byValue = apiKey !== null && knownToken !== null && apiKey === knownToken;
+  return { serverUrl, apiKey, project, ...((fromFile || fromRun || byValue) && { desktop: true as const }) };
 }

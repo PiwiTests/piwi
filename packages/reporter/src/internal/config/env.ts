@@ -517,11 +517,15 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
       desktopDiscovered = true;
     }
   }
+  // A key equal to the token in the discovery file is the app's, wherever it was set: it is held to the proof too.
   desktopTokenHeld =
     desktopDiscovered ||
     (env[PIWI_ENV_KEYS.desktopKey] === '1' &&
       !!env[PIWI_ENV_KEYS.apiKey] &&
-      mergedRaw.apiKey === env[PIWI_ENV_KEYS.apiKey]);
+      mergedRaw.apiKey === env[PIWI_ENV_KEYS.apiKey]) ||
+    (typeof mergedRaw.apiKey === 'string' &&
+      mergedRaw.apiKey !== '' &&
+      readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath())?.token === mergedRaw.apiKey);
 
   // Coverage is nested, so each of its variables fills the member the options leave unset.
   type CoverageOptions = NonNullable<PiwiDashboardOptions['coverage']>;

@@ -105,12 +105,14 @@ export function resolveCliConnection(
   const urlSet = Boolean(flags.serverUrl || env[PIWI_ENV_KEYS.serverUrl] || dotEnv[PIWI_ENV_KEYS.serverUrl]);
   const keySet = Boolean(flags.apiKey || env[PIWI_ENV_KEYS.apiKey] || anyKey);
   const readDesktop = mode !== 'off' && (preferLocally || urlSet || !keySet);
-  const desktop = readDesktop ? readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) : null;
+  const discovery =
+    readDesktop || keySet ? readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) : null;
+  const desktop = readDesktop ? discovery : null;
   const preferDesktop = desktop !== null && preferLocally;
   const connection = resolvePiwiConnection(
     preferDesktop
-      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop }
-      : { flags, env, dotEnv, desktop },
+      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop, desktopToken: discovery?.token }
+      : { flags, env, dotEnv, desktop, desktopToken: discovery?.token },
   );
   if (connection && flags.apiKey && connection.apiKey !== flags.apiKey) {
     const from = !preferDesktop && dotEnv[PIWI_ENV_KEYS.serverUrl] ? 'a .env file' : 'the desktop app';

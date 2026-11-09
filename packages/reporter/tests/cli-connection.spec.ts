@@ -353,6 +353,33 @@ describe('cliFetch', () => {
     ]);
   });
 
+  it("holds a key equal to the desktop app's token to the proof wherever it was set", async () => {
+    answer = async () => null;
+    const file = path.join(dir, 'desktop.json');
+    fs.writeFileSync(file, JSON.stringify({ url: 'http://127.0.0.1:1', token: 'pd_desktop' }));
+    const url = `http://127.0.0.1:${port}`;
+    const env = { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off', PIWI_DASHBOARD_URL: url };
+    const folder = path.join(dir, 'project');
+    fs.mkdirSync(folder);
+    fs.writeFileSync(path.join(folder, '.env'), `PIWI_DASHBOARD_URL=${url}\nPIWI_API_KEY=pd_desktop\n`);
+
+    for (const connection of [
+      resolveCliConnection({}, { ...env, PIWI_API_KEY: 'pd_desktop' }, [])!,
+      resolveCliConnection({}, { PIWI_DESKTOP_CONFIG: file, PIWI_DESKTOP_APP: 'off' }, [folder])!,
+      resolveCliConnection({ apiKey: 'pd_desktop' }, env, [])!,
+    ]) {
+      await expect(
+        cliFetch(`${url}/api/a`, { headers: { 'X-API-Key': connection.apiKey! } }),
+      ).rejects.toThrow(/token is not sent/);
+    }
+    expect(seen.every((r) => r.key === undefined)).toBe(true);
+
+    seen.length = 0;
+    const other = resolveCliConnection({}, { ...env, PIWI_API_KEY: 'pd_other' }, [])!;
+    await cliFetch(`${url}/api/b`, { headers: { 'X-API-Key': other.apiKey! } });
+    expect(seen.map((r) => [r.url, r.key])).toEqual([['/api/b', 'pd_other']]);
+  });
+
   it('makes no check for a request that does not carry the desktop key', async () => {
     desktopConnection();
     await cliFetch(`http://127.0.0.1:${port}/api/plain`, { headers: { 'X-API-Key': 'pd_someone_else' } });

@@ -128,6 +128,22 @@ describe('desktop discovery', () => {
       expect(usedDesktopToken()).toBe(true);
     });
 
+    it("holds a key equal to the desktop app's token wherever it was set, and no other key", () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_DASHBOARD_URL = TEAM_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      process.env.PIWI_API_KEY = 'pd_other';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+
+      delete process.env.PIWI_API_KEY;
+      resolveOptions({ apiKey: DESKTOP_TOKEN, serverUrl: TEAM_URL });
+      expect(usedDesktopToken()).toBe(true);
+    });
+
     it('holds no desktop token for a run a team instance asked for, whatever key the environment marks', () => {
       const tokenFile = path.join(tmpDir, 'request-token');
       fs.writeFileSync(tokenFile, `pdq_${'c'.repeat(64)}\n`, { mode: 0o600 });
