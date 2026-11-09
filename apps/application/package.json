@@ -78,7 +78,7 @@
     "fflate": "^0.8.2",
     "marked": "^18.1.1",
     "nodemailer": "^10.2.1",
-    "nuxt": "^4.6.3",
+    "nuxt": "^4.6.4",
     "pdf-lib": "^1.17.1",
     "pixelmatch": "^8.0.0",
     "postgres": "^3.4.9",
