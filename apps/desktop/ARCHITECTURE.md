@@ -50,5 +50,6 @@ The window signs in with a session code, never the token. After the proof, the s
 (`session::session_url`, `POST /api/desktop/run-target/session-code`) over `connect_proving_token`; the route refuses a
 browser. The window loads `/__piwi/session?code=…`, which takes the code once and sets the `piwi_token` cookie. A code
 lives 30 seconds, at most eight wait at a time, and a used, expired or unknown code is refused, as is the token on the
-URL (`packages/editor/src/run-target-session.ts`, shared by the app and Piwi Runner). A server that gives no code gets
-no session: startup shows the stopped splash, and a restart does not load one.
+URL (`packages/editor/src/run-target-session.ts`, shared by the app and Piwi Runner). A code that fails is asked for
+again a few times (`session_url_retrying`, at startup, in Piwi Runner and after a restart); a server that still gives no
+code gets no session, and the window shows the stopped splash.

@@ -362,7 +362,8 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 }
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
-                match session::session_url(port, &token, None) {
+                let stop = || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst);
+                match session::session_url_retrying(port, &token, None, &PROOF_PACE, stop) {
                     Ok(url) => nav_handle.load_session(url, holds),
                     Err(error) => {
                         append_log(&log_path, &format!("no session code: {error}"));

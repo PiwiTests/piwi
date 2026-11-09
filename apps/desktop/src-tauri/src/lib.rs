@@ -3122,8 +3122,10 @@ pub fn run() {
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
             // Rewrite this app's own `piwi-desktop` entry in a client config
-            // when it is the bridge entry with a different command or exactly
-            // the older URL-and-token shape; any other entry is left as is.
+            // when it is the bridge entry whose command names this app and no
+            // longer exists, or exactly the older URL-and-token shape; any other
+            // entry is left as is. Nothing is written from a dev build or a
+            // place that does not last (a disk image, a translocated copy).
             mcp_clients::heal_configured_clients(app.handle());
 
             // --- publish connection details for the Playwright reporter ---
@@ -3277,8 +3279,10 @@ pub fn run() {
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
-                // The session code is asked over a connection that proved the token; no code, no session.
-                match session::session_url(port, &token, page.as_deref()) {
+                // The session code is asked over a connection that proved the token; no code, no session. A few
+                // tries, then the stopped splash.
+                let stop = || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst);
+                match session::session_url_retrying(port, &token, page.as_deref(), &PROOF_PACE, stop) {
                     Ok(url) => session::SessionWindows::load_session(&nav_handle, url, holds),
                     Err(error) => {
                         append_log(&ready_log, &format!("no session code: {error}"));

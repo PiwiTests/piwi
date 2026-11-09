@@ -337,7 +337,9 @@ fn say_stopped<W: SessionWindows>(
 }
 
 /// Wait for the restarted server's proof, then load its session. A server that never proves gets no session, and the
-/// wait ends once `holds` says the proof it waits for no longer can stand.
+/// wait ends once `holds` says the proof it waits for no longer can stand. A server that proved the token but gives
+/// no session code after a few tries (`session_url_retrying`) leaves the window on the stopped splash, shown, while
+/// the proof still holds.
 pub(crate) fn resume_session<W: SessionWindows>(
     windows: &W,
     server: &ServerSession,
@@ -351,15 +353,53 @@ pub(crate) fn resume_session<W: SessionWindows>(
     let proved = wait_for_proof(server.port, &server.token, server.pace, stop, || on_slow(windows));
     if proved {
         // The session code is asked over a connection that proved the token; no code, no session.
-        return match session_url(server.port, &server.token, None) {
+        let stop = {
+            let holds = holds.clone();
+            move || !holds()
+        };
+        return match session_url_retrying(server.port, &server.token, None, server.pace, stop) {
             Ok(url) => {
                 windows.load_session(url, holds);
                 true
             }
-            Err(_) => false,
+            Err(_) => {
+                if holds() {
+                    windows.show_splash(server.texts.stopped, true);
+                }
+                false
+            }
         };
     }
     proved
+}
+
+/// How many times a session code is asked for before the server is taken to give none: a server that proved the
+/// token can still fail one request.
+const SESSION_CODE_TRIES: usize = 4;
+
+/// `session_url`, asked again after `pace.poll` when the server gave no code, up to `SESSION_CODE_TRIES` times in
+/// all, and not again once `stop` says so. The last error is returned. Each ask is over a connection that proves
+/// the token, so a process that took the port gets none.
+pub(crate) fn session_url_retrying(
+    port: u16,
+    token: &str,
+    page: Option<&str>,
+    pace: &ProofPace,
+    stop: impl Fn() -> bool,
+) -> Result<String, String> {
+    let mut tries = 0;
+    loop {
+        match session_url(port, token, page) {
+            Ok(url) => return Ok(url),
+            Err(error) => {
+                tries += 1;
+                if tries >= SESSION_CODE_TRIES || stop() {
+                    return Err(error);
+                }
+            }
+        }
+        std::thread::sleep(pace.poll);
+    }
 }
 
 /// The path the shell asks a session code from.
@@ -387,6 +427,7 @@ fn is_session_code(code: &str) -> bool {
 mod tests {
     use std::cell::RefCell;
     use std::io::Write;
+    use std::sync::atomic::AtomicUsize;
 
     use super::*;
     use crate::tests::read_request_from;
@@ -453,19 +494,28 @@ mod tests {
         port
     }
 
-    /// A server that holds `token` and refuses every request for a session code.
-    fn serve_without_codes(token: &'static str) -> u16 {
+    /// A server that refuses the first `refusals` requests for a session code and gives `CODE` to the rest; the
+    /// count is the number of requests for a code it has seen.
+    fn serve_codes_after(token: &'static str, refusals: usize) -> (u16, Arc<AtomicUsize>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || answer_proofs_with(listener, token, true, false));
-        port
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counted = asked.clone();
+        std::thread::spawn(move || answer_proofs_with(listener, token, true, refusals, counted));
+        (port, asked)
     }
 
     fn answer_proofs(listener: std::net::TcpListener, token: &'static str, honest: bool) {
-        answer_proofs_with(listener, token, honest, true);
+        answer_proofs_with(listener, token, honest, 0, Arc::new(AtomicUsize::new(0)));
     }
 
-    fn answer_proofs_with(listener: std::net::TcpListener, token: &'static str, honest: bool, codes: bool) {
+    fn answer_proofs_with(
+        listener: std::net::TcpListener,
+        token: &'static str,
+        honest: bool,
+        refusals: usize,
+        asked: Arc<AtomicUsize>,
+    ) {
         let port = listener.local_addr().unwrap().port();
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { return };
@@ -483,7 +533,7 @@ mod tests {
                         .as_bytes(),
                 );
                 read_request_from(&mut stream);
-                let answer = if codes {
+                let answer = if asked.fetch_add(1, Ordering::SeqCst) >= refusals {
                     let body = format!("{{\"code\":\"{CODE}\"}}");
                     format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
                 } else {
@@ -513,15 +563,68 @@ mod tests {
         );
     }
 
+    /// A server that proved the token and gives no code after the tries leaves the window on the stopped splash,
+    /// shown, with no session; the supervisor need not have given up.
     #[test]
-    fn a_server_that_gives_no_session_code_gets_no_session() {
-        let port = serve_without_codes("pd_token");
+    fn a_server_that_gives_no_session_code_gets_no_session_and_the_stopped_splash() {
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
         let windows = Recorder::default();
         let proved = resume_session(&windows, &server(port, "pd_token"), |_| {}, always());
         assert!(!proved);
         windows.run_main_thread();
-        assert!(windows.told.borrow().is_empty());
+        assert_eq!(*windows.told.borrow(), vec!["splash: stopped (revealed)".to_string()]);
         assert!(windows.loads.borrow().is_empty());
+        assert_eq!(asked.load(Ordering::SeqCst), SESSION_CODE_TRIES);
+    }
+
+    /// A code that fails once or twice after a good restart is asked for again, and the session loads.
+    #[test]
+    fn a_session_code_that_fails_after_a_good_restart_is_asked_for_again() {
+        let (port, asked) = serve_codes_after("pd_token", 2);
+        let windows = Recorder::default();
+        assert!(resume_session(&windows, &server(port, "pd_token"), |_| {}, always()));
+        windows.run_main_thread();
+        assert_eq!(
+            *windows.told.borrow(),
+            vec![format!("session: http://127.0.0.1:{port}/__piwi/session?code={CODE}")]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 3);
+    }
+
+    /// The tries stop when the proof can no longer stand, and then nothing is said: a later restart or the quit owns
+    /// the splash.
+    #[test]
+    fn the_session_code_tries_stop_when_the_proof_no_longer_holds() {
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
+        let windows = Recorder::default();
+        let seen = Arc::new(AtomicUsize::new(0));
+        let holds: ProofHolds = {
+            let seen = seen.clone();
+            // Holds for the proof wait and the first ask, then not.
+            Arc::new(move || seen.fetch_add(1, Ordering::SeqCst) < 2)
+        };
+        assert!(!resume_session(&windows, &server(port, "pd_token"), |_| {}, holds));
+        windows.run_main_thread();
+        assert!(windows.told.borrow().is_empty());
+        assert!(asked.load(Ordering::SeqCst) < SESSION_CODE_TRIES);
+    }
+
+    /// The startup path asks the same way: a code that fails once comes on the next ask; one that never comes ends
+    /// in an error after the tries, or at once when told to stop.
+    #[test]
+    fn the_startup_asks_for_the_session_code_more_than_once() {
+        let (port, asked) = serve_codes_after("pd_token", 2);
+        let url = session_url_retrying(port, "pd_token", Some("/projects"), &PACE, || false).unwrap();
+        assert!(url.starts_with(&format!("http://127.0.0.1:{port}/__piwi/session?code={CODE}")), "{url}");
+        assert_eq!(asked.load(Ordering::SeqCst), 3);
+
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
+        assert!(session_url_retrying(port, "pd_token", None, &PACE, || false).is_err());
+        assert_eq!(asked.load(Ordering::SeqCst), SESSION_CODE_TRIES);
+
+        let (port, asked) = serve_codes_after("pd_token", usize::MAX);
+        assert!(session_url_retrying(port, "pd_token", None, &PACE, || true).is_err());
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
     }
 
     /// The sidecar can exit between its proof and the navigation the main thread makes: that load is dropped, and
