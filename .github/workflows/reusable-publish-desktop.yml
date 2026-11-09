@@ -257,10 +257,18 @@ jobs:
               return;
             }
             const signature = fs.readFileSync(path.join(bundleDir, sig), 'utf8');
+            // Both apps attach a -setup.exe to this release (Piwi Runner's too), so the installer is the asset
+            // named as the one this leg built: tauri-action's name for an upload, with every character outside
+            // [a-zA-Z0-9_-] a dot (ghAssetName in its utils.ts), or its label, which keeps the file's own name.
+            function findSetup(assets, built) {
+              const name = built.replace(/[^a-zA-Z0-9_-]/g, '.').replace(/\.\./g, '.');
+              return assets.find((a) => a.label === built || a.name === name);
+            }
             const { owner, repo } = context.repo;
             const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
-            const setup = release.data.assets.find((a) => a.name.endsWith('-setup.exe'));
-            if (!setup) throw new Error('tauri-action did not upload the NSIS -setup.exe');
+            const built = sig.slice(0, -'.sig'.length);
+            const setup = findSetup(release.data.assets, built);
+            if (!setup) throw new Error(`tauri-action did not upload the NSIS installer ${built}`);
             const manifest = {
               version: tag.replace(/^v/, ''),
               pub_date: new Date().toISOString(),
