@@ -178,11 +178,14 @@ export interface CreatedPlan extends PlanSummary {
 
 export interface StoredPlan extends PlanSummary {
   id: number;
+  /** The commit the plan was made at; null outside a git checkout. */
   commit: string | null;
   expiresAt: string;
-  reused: Array<{ testCaseId: number; sourceRunId: number; sourceCommit: string }>;
-  /** The tests to run, materialized; null when the plan runs none. */
-  resolution: SelectionResolution | null;
+  /** The selection's Playwright arguments; none for the whole suite. */
+  args: string[];
+  /** The Playwright test list lines of the reused tests, for `--test-list-invert`. */
+  skip: string[];
+  reused: Array<{ testCaseId: number; sourceRunId: number; sourceCommit: string; projects: string[] }>;
 }
 
 /** One source commit's change to the working tree, as `piwi run impact` computes it. */
@@ -239,19 +242,14 @@ export function createPlan(
   );
 }
 
-/** A stored plan, with the arguments of its tests to run, or of one shard of them. */
+/** A stored plan: the selection's arguments and the tests to skip. */
 export function fetchPlan(
-  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey' | 'format' | 'shard' | 'order'>,
+  options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
   projectId: number,
   planId: number,
 ): Promise<StoredPlan> {
-  const query = new URLSearchParams();
-  if (options.format) query.set('format', options.format);
-  if (options.shard) query.set('shard', options.shard);
-  if (options.order) query.set('order', options.order);
-  const suffix = query.size > 0 ? `?${query}` : '';
   return planRequest(
-    `${options.serverUrl}/api/projects/${projectId}/run-plans/${planId}${suffix}`,
+    `${options.serverUrl}/api/projects/${projectId}/run-plans/${planId}`,
     { method: 'GET' },
     options.apiKey,
     `reading plan ${planId}`,

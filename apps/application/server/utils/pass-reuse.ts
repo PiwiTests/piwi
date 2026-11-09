@@ -1,29 +1,34 @@
 /**
- * Pass reuse: plan which tests of a selection a run executes, and which it
- * reuses from an earlier pass whose code has not changed.
+ * Pass reuse: plan which tests of a selection a run skips, because an earlier
+ * pass ran their code and the code has not changed since.
  *
- * A **source** of a test is its newest run, at most 14 days old, in which every
- * one of its results (each Playwright project and repetition) passed on its
- * first attempt with complete coverage naming its file versions, from a clean
- * checkout of a commit, with the same Playwright version as the planned run.
- * A test is **reused** when it has a source at commit _C_, the impact of the
- * change _C_ → working tree does not select it and does not widen to the whole
- * suite, and no file the source's coverage names is among the changed files. A
- * test that is quarantined, in an open failure cluster, failed or was retried
- * in its last 20 executions on any branch, or tagged `@no-reuse`, always runs.
+ * A **source** of a test is its newest run, at most 14 days old, from a clean
+ * checkout of a commit with the planned run's Playwright version, in which every
+ * one of its results passed on its first attempt with complete coverage naming
+ * its file versions. A test is **reused** when it has a source at commit _C_,
+ * the impact of the change _C_ → working tree does not select it and does not
+ * widen to the whole suite, and no file the source's coverage names is among
+ * the changed files. It is skipped only in the Playwright projects its source
+ * ran it in; every other project runs it. A test that is quarantined, in an open
+ * failure cluster, failed or was retried in its last 20 executions of the last
+ * 90 days on any branch, or tagged `@no-reuse`, always runs.
  *
- * Uncertainty runs the test: no source, a source commit the client could not
- * diff, an unmapped change.
+ * A plan names the tests to skip, never the tests to run, so a test the
+ * dashboard has not seen yet (new, renamed, moved) runs. Uncertainty runs the
+ * test: no source, a source commit the client could not diff, an unmapped
+ * change, a name a test list cannot state exactly.
  */
-import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import path from 'node:path';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { sameFilePath } from '@piwitests/core/locator-break';
 import { coverageFragments, failureClusters, runPlans, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { eligibleRunSql, runCommit } from '#shared/run-eligibility';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
+import { splitSuitePath } from '#shared/utils/suites';
 import { finalAttempts, isFailedStatus } from '#shared/utils/test-counts';
-import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
+import type { ResolvedSelection, ResolvedTest, SelectionDefinition } from '#shared/selection';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseCoveragePayload } from './coverage';
 import { resolveImpact, type ImpactChange } from './selection-impact';
@@ -35,12 +40,15 @@ export const MAX_SOURCE_AGE_MS = 14 * DAY_MS;
 export const PLAN_TTL_MS = DAY_MS;
 /** Source commits a plan diffs against at most; tests whose source is on another commit run. */
 export const MAX_SOURCE_COMMITS = 8;
-/** Executions of a test read for the flaky exclusion, on any branch. */
+/** Executions of a test read for the flaky exclusion, on any branch, within `FLAKY_LOOKBACK_MS`. */
 export const FLAKY_WINDOW = 20;
+export const FLAKY_LOOKBACK_MS = 90 * DAY_MS;
 /** The tag that keeps a test out of reuse. */
 export const NO_REUSE_TAG = 'no-reuse';
 /** The selection key that plans the whole suite. */
 export const FULL_SELECTION_KEY = 'full';
+/** The separator of a Playwright test list line. */
+const TEST_LIST_SEP = ' › ';
 const ID_CHUNK = 500;
 
 /** Why a test of a plan runs, or that it is reused. */
@@ -55,7 +63,7 @@ export type PlanReason =
   | 'widened'
   | 'changed';
 
-/** What the planned run must match in a source: the Playwright version, when the client knows it. */
+/** What the planned run must match in a source: its Playwright version; null finds no source. */
 export interface ReuseFingerprint {
   playwrightVersion: string | null;
 }
@@ -68,6 +76,10 @@ export interface TestSource {
   startedAt: number;
   /** Its final attempts, one per Playwright project and repetition. */
   executionIds: number[];
+  /** The Playwright projects it passed in. */
+  projects: string[];
+  /** Playwright's root in its run, relative to the folder test paths are stored from: what test lists name files from. */
+  rootDir: string;
   /** The files its coverage names, over every result. */
   files: string[];
 }
@@ -84,12 +96,18 @@ export interface ReusedTest {
   sourceRunId: number;
   sourceCommit: string;
   sourceExecutionIds: number[];
+  /** The Playwright projects it is skipped in. */
+  projects: string[];
+  /** Its lines of the Playwright test list to skip, one per project. */
+  skip: string[];
 }
 
 /** A plan as stored in `run_plans.plan`. */
 export interface StoredRunPlan {
   selection: { key: string; version: number | null };
-  /** The tests the run executes. */
+  /** The Playwright arguments of the selection; none for the whole suite. */
+  args: string[];
+  /** The selection's tests that run. */
   run: number[];
   reused: ReusedTest[];
   /** How many tests each reason accounts for. */
@@ -123,7 +141,12 @@ async function planDefinition(
 }
 
 /** The candidate tests that always run, each with its reason. */
-async function exclusions(db: DrizzleDB, projectId: number, testCaseIds: number[]): Promise<Map<number, PlanReason>> {
+async function exclusions(
+  db: DrizzleDB,
+  projectId: number,
+  testCaseIds: number[],
+  now: Date,
+): Promise<Map<number, PlanReason>> {
   const out = new Map<number, PlanReason>();
   const quarantined = await getQuarantinedCaseIds(db, projectId);
   for (const id of testCaseIds) if (quarantined.has(id)) out.set(id, 'quarantined');
@@ -160,15 +183,17 @@ async function exclusions(db: DrizzleDB, projectId: number, testCaseIds: number[
         })
         .from(testRunsCases)
         .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-        .where(and(inArray(testRunsCases.testCaseId, chunk), eligibleRunSql('pass-reuse'))),
+        .where(
+          and(
+            inArray(testRunsCases.testCaseId, chunk),
+            gte(testRunsCases.createdAt, new Date(now.getTime() - FLAKY_LOOKBACK_MS)),
+            eligibleRunSql('pass-reuse'),
+          ),
+        ),
     );
     const recent = await db
       .with(ranked)
-      .select({
-        testCaseId: ranked.testCaseId,
-        status: ranked.status,
-        passedAfterFailure: ranked.passedAfterFailure,
-      })
+      .select({ testCaseId: ranked.testCaseId, status: ranked.status, passedAfterFailure: ranked.passedAfterFailure })
       .from(ranked)
       .where(sql`${ranked.rn} <= ${FLAKY_WINDOW}`);
     for (const row of recent) {
@@ -177,29 +202,6 @@ async function exclusions(db: DrizzleDB, projectId: number, testCaseIds: number[
     }
   }
   return out;
-}
-
-interface SourceRow {
-  id: number;
-  runId: number;
-  testCaseId: number;
-  browserName: string | null;
-  repeatEachIndex: number;
-  retries: number | null;
-  status: string;
-  passedAfterFailure: boolean;
-  payloadId: number | null;
-  startTime: Date;
-  metadata: unknown;
-}
-
-/** Whether a run came from a clean checkout of a commit, with the Playwright version of the planned run. */
-function runQualifies(metadata: unknown, fingerprint: ReuseFingerprint): boolean {
-  const meta = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
-  const scm = meta.scm && typeof meta.scm === 'object' ? (meta.scm as Record<string, unknown>) : {};
-  if (scm.worktree !== 'clean') return false;
-  if (fingerprint.playwrightVersion && meta.playwrightVersion !== fingerprint.playwrightVersion) return false;
-  return true;
 }
 
 /** The files a coverage payload names, or null when it cannot vouch for a test: missing, incomplete, or without blobs. */
@@ -240,7 +242,40 @@ async function payloadFiles(db: DrizzleDB, payloadIds: number[]): Promise<Map<nu
   return out;
 }
 
-/** Each candidate test's newest source, among the project's runs of the last 14 days. */
+/** The project's runs that may hold sources: the last 14 days, clean, at a commit, with the planned Playwright version. */
+async function sourceRuns(
+  db: DrizzleDB,
+  projectId: number,
+  fingerprint: ReuseFingerprint,
+  now: Date,
+): Promise<Map<number, { commit: string; startedAt: number; rootDir: string }>> {
+  const runs = new Map<number, { commit: string; startedAt: number; rootDir: string }>();
+  if (!fingerprint.playwrightVersion) return runs;
+  const rows = await db
+    .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        gte(testRuns.startTime, new Date(now.getTime() - MAX_SOURCE_AGE_MS)),
+        eq(testRuns.playwrightVersion, fingerprint.playwrightVersion),
+        eligibleRunSql('pass-reuse'),
+      ),
+    );
+  for (const row of rows) {
+    const meta = row.metadata && typeof row.metadata === 'object' ? (row.metadata as Record<string, unknown>) : {};
+    const scm = meta.scm && typeof meta.scm === 'object' ? (meta.scm as Record<string, unknown>) : {};
+    const config =
+      meta.htmlReport && typeof meta.htmlReport === 'object' ? (meta.htmlReport as Record<string, unknown>) : {};
+    const commit = runCommit(row.metadata);
+    if (scm.worktree === 'clean' && commit && typeof config.rootDir === 'string') {
+      runs.set(row.id, { commit, startedAt: row.startTime.getTime(), rootDir: config.rootDir });
+    }
+  }
+  return runs;
+}
+
+/** Each candidate test's newest source. */
 export async function findReuseSources(
   db: DrizzleDB,
   projectId: number,
@@ -248,64 +283,75 @@ export async function findReuseSources(
   fingerprint: ReuseFingerprint,
   now: Date = new Date(),
 ): Promise<Map<number, TestSource>> {
-  const rows: SourceRow[] = [];
-  for (let i = 0; i < testCaseIds.length; i += ID_CHUNK) {
-    rows.push(
-      ...(await db
-        .select({
-          id: testRunsCases.id,
-          runId: testRunsCases.testRunId,
-          testCaseId: testRunsCases.testCaseId,
-          browserName: testRunsCases.browserName,
-          repeatEachIndex: testRunsCases.repeatEachIndex,
-          retries: testRunsCases.retries,
-          status: testRunsCases.status,
-          passedAfterFailure: testRunsCases.passedAfterFailure,
-          payloadId: testRunsCases.coveragePayloadId,
-          startTime: testRuns.startTime,
-          metadata: testRuns.metadata,
-        })
-        .from(testRuns)
-        .innerJoin(testRunsCases, eq(testRunsCases.testRunId, testRuns.id))
-        .where(
-          and(
-            eq(testRuns.projectId, projectId),
-            gte(testRuns.startTime, new Date(now.getTime() - MAX_SOURCE_AGE_MS)),
-            eligibleRunSql('pass-reuse'),
-            inArray(testRunsCases.testCaseId, testCaseIds.slice(i, i + ID_CHUNK)),
-          ),
-        )
-        .orderBy(desc(testRuns.startTime), desc(testRuns.id))),
-    );
+  const runs = await sourceRuns(db, projectId, fingerprint, now);
+  const wanted = new Set(testCaseIds);
+  const runIds = [...runs.keys()];
+  const rows: Array<{
+    id: number;
+    runId: number;
+    testCaseId: number;
+    browserName: string | null;
+    repeatEachIndex: number;
+    retries: number | null;
+    status: string;
+    passedAfterFailure: boolean;
+    payloadId: number | null;
+  }> = [];
+  for (let i = 0; i < runIds.length; i += ID_CHUNK) {
+    const found = await db
+      .select({
+        id: testRunsCases.id,
+        runId: testRunsCases.testRunId,
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
+        retries: testRunsCases.retries,
+        status: testRunsCases.status,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
+        payloadId: testRunsCases.coveragePayloadId,
+      })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.testRunId, runIds.slice(i, i + ID_CHUNK)));
+    for (const row of found) if (wanted.has(row.testCaseId)) rows.push(row);
   }
 
-  const byTestRun = new Map<string, SourceRow[]>();
+  // Each test's results per run, then its newest run.
+  const byTest = new Map<number, Map<number, typeof rows>>();
   for (const row of rows) {
-    const key = `${row.testCaseId}\x00${row.runId}`;
-    const list = byTestRun.get(key);
+    const perRun = byTest.get(row.testCaseId) ?? new Map<number, typeof rows>();
+    const list = perRun.get(row.runId);
     if (list) list.push(row);
-    else byTestRun.set(key, [row]);
+    else perRun.set(row.runId, [row]);
+    byTest.set(row.testCaseId, perRun);
   }
-  const files = await payloadFiles(db, [...new Set(rows.flatMap((r) => (r.payloadId == null ? [] : [r.payloadId])))]);
-
-  const sources = new Map<number, TestSource>();
-  for (const attempts of byTestRun.values()) {
-    const first = attempts[0]!;
-    const known = sources.get(first.testCaseId);
-    if (known && known.startedAt >= first.startTime.getTime()) continue;
-    const commit = runCommit(first.metadata);
-    if (!commit || !runQualifies(first.metadata, fingerprint)) continue;
+  const newest = new Map<number, { runId: number; finals: typeof rows }>();
+  for (const [testCaseId, perRun] of byTest) {
+    const [runId, attempts] = [...perRun].sort((a, b) => runs.get(b[0])!.startedAt - runs.get(a[0])!.startedAt)[0]!;
     const finals = finalAttempts(attempts);
-    const passedFirst = finals.every((r) => r.status === 'passed' && !r.passedAfterFailure && (r.retries ?? 0) === 0);
-    if (!passedFirst) continue;
+    const passedFirst = finals.every(
+      (r) => r.status === 'passed' && !r.passedAfterFailure && (r.retries ?? 0) === 0 && r.browserName,
+    );
+    if (passedFirst) newest.set(testCaseId, { runId, finals });
+  }
+
+  const files = await payloadFiles(db, [
+    ...new Set(
+      [...newest.values()].flatMap((n) => n.finals.flatMap((r) => (r.payloadId == null ? [] : [r.payloadId]))),
+    ),
+  ]);
+  const sources = new Map<number, TestSource>();
+  for (const [testCaseId, { runId, finals }] of newest) {
     const covered = finals.map((r) => (r.payloadId == null ? null : (files.get(r.payloadId) ?? null)));
     if (covered.some((f) => f == null || f.length === 0)) continue;
-    sources.set(first.testCaseId, {
-      testCaseId: first.testCaseId,
-      runId: first.runId,
-      commit,
-      startedAt: first.startTime.getTime(),
+    const run = runs.get(runId)!;
+    sources.set(testCaseId, {
+      testCaseId,
+      runId,
+      commit: run.commit,
+      startedAt: run.startedAt,
       executionIds: finals.map((r) => r.id),
+      projects: [...new Set(finals.map((r) => r.browserName!))],
+      rootDir: run.rootDir,
       files: [...new Set(covered.flat() as string[])],
     });
   }
@@ -322,12 +368,44 @@ export function chooseSourceCommits(sources: Iterable<TestSource>): Array<{ comm
     .slice(0, MAX_SOURCE_COMMITS);
 }
 
+/** A test's title path in a Playwright test list: its describes and title. */
+function titlePath(test: ResolvedTest): string[] {
+  return [...splitSuitePath(test.suitePath), test.title];
+}
+
+/**
+ * The tests a test list cannot name exactly: a name holding a list separator or
+ * a line break, or a title path that is also the start of another test's (a
+ * describe named like a test beside it), which a list line would skip too.
+ */
+export function unnameable(tests: ResolvedTest[]): Set<number> {
+  const prefixes = new Set<string>();
+  for (const test of tests) {
+    const path = [normalizePath(test.filePath), ...titlePath(test)];
+    for (let i = 1; i < path.length; i++) prefixes.add(path.slice(0, i).join('\x1f'));
+  }
+  const out = new Set<number>();
+  for (const test of tests) {
+    const path = [normalizePath(test.filePath), ...titlePath(test)];
+    const unsafe = path.some((part) => !part.trim() || /[›>\r\n]/.test(part));
+    if (unsafe || prefixes.has(path.join('\x1f'))) out.add(test.testCaseId);
+  }
+  return out;
+}
+
+/** The test list lines that skip a test in each of `projects`, its file named from Playwright's root `rootDir`. */
+export function skipLines(test: ResolvedTest, projects: string[], rootDir: string): string[] {
+  const file = path.posix.relative(normalizePath(rootDir) || '.', normalizePath(test.filePath));
+  const rest = [file, ...titlePath(test)].join(TEST_LIST_SEP);
+  return projects.map((project) => `[${project}]${TEST_LIST_SEP}${rest}`);
+}
+
 /** The candidate tests of a selection, the ones that always run, and the sources of the others. */
 async function planInputs(db: DrizzleDB, projectId: number, key: string, fingerprint: ReuseFingerprint, now: Date) {
   const { definition, version } = await planDefinition(db, projectId, key);
-  const resolved = await resolveSelectionDefinition(db, projectId, definition, { key, version });
+  const resolved = await resolveSelectionDefinition(db, projectId, definition, { key, version, format: 'args' });
   const candidates = resolved.tests.map((t) => t.testCaseId);
-  const excluded = await exclusions(db, projectId, candidates);
+  const excluded = await exclusions(db, projectId, candidates, now);
   const sources = await findReuseSources(
     db,
     projectId,
@@ -359,8 +437,9 @@ export async function decideRunPlan(
   diffs: SourceDiff[],
   now: Date = new Date(),
 ): Promise<{ plan: StoredRunPlan; resolved: ResolvedSelection }> {
-  const { resolved, version, candidates, excluded, sources } = await planInputs(db, projectId, key, fingerprint, now);
+  const { resolved, version, excluded, sources } = await planInputs(db, projectId, key, fingerprint, now);
   const chosen = new Set(chooseSourceCommits(sources.values()).map((c) => c.commit));
+  const unnamed = unnameable(resolved.tests);
 
   // Per source commit: the tests its change impacts, or null when the change widens to the whole suite.
   const impactByCommit = new Map<string, { impacted: Set<number>; changed: string[] } | null>();
@@ -378,31 +457,11 @@ export async function decideRunPlan(
     );
   }
 
-  const run: number[] = [];
-  const reused: ReusedTest[] = [];
-  const reasons: Partial<Record<PlanReason, number>> = {};
-  const count = (reason: PlanReason) => (reasons[reason] = (reasons[reason] ?? 0) + 1);
-  for (const testCaseId of candidates) {
-    const reason = decide(testCaseId);
-    count(reason);
-    if (reason !== 'reused') {
-      run.push(testCaseId);
-      continue;
-    }
-    const source = sources.get(testCaseId)!;
-    reused.push({
-      testCaseId,
-      sourceRunId: source.runId,
-      sourceCommit: source.commit,
-      sourceExecutionIds: source.executionIds,
-    });
-  }
-
   function decide(testCaseId: number): PlanReason {
     const exclusion = excluded.get(testCaseId);
     if (exclusion) return exclusion;
     const source = sources.get(testCaseId);
-    if (!source) return 'no-source';
+    if (!source || unnamed.has(testCaseId)) return 'no-source';
     if (!impactByCommit.has(source.commit)) return 'commit-unavailable';
     const impact = impactByCommit.get(source.commit);
     if (!impact) return 'widened';
@@ -411,7 +470,29 @@ export async function decideRunPlan(
     return 'reused';
   }
 
-  return { plan: { selection: { key, version }, run, reused, reasons, fingerprint }, resolved };
+  const run: number[] = [];
+  const reused: ReusedTest[] = [];
+  const reasons: Partial<Record<PlanReason, number>> = {};
+  for (const test of resolved.tests) {
+    const reason = decide(test.testCaseId);
+    reasons[reason] = (reasons[reason] ?? 0) + 1;
+    if (reason !== 'reused') {
+      run.push(test.testCaseId);
+      continue;
+    }
+    const source = sources.get(test.testCaseId)!;
+    reused.push({
+      testCaseId: test.testCaseId,
+      sourceRunId: source.runId,
+      sourceCommit: source.commit,
+      sourceExecutionIds: source.executionIds,
+      projects: source.projects,
+      skip: skipLines(test, source.projects, source.rootDir),
+    });
+  }
+
+  const args = key === FULL_SELECTION_KEY ? [] : resolved.materialization.args;
+  return { plan: { selection: { key, version }, args, run, reused, reasons, fingerprint }, resolved };
 }
 
 /** Store a plan, deleting the project's expired ones; returns its id and expiry. */
@@ -453,20 +534,4 @@ export async function getRunPlan(
     .where(and(eq(runPlans.id, planId), eq(runPlans.projectId, projectId)));
   if (!row || row.expiresAt.getTime() < now.getTime()) return null;
   return { id: row.id, plan: row.plan as StoredRunPlan, commit: row.commit, expiresAt: row.expiresAt };
-}
-
-/** The Playwright arguments of a plan's tests to run, or of one shard of them; null when the plan runs no test. */
-export async function materializePlan(
-  db: DrizzleDB,
-  projectId: number,
-  plan: StoredRunPlan,
-  opts: { format?: SelectionFormat; shard?: { index: number; total: number }; order?: SelectionRankBy } = {},
-): Promise<ResolvedSelection | null> {
-  if (plan.run.length === 0) return null;
-  return resolveSelectionDefinition(
-    db,
-    projectId,
-    { include: [{ ids: plan.run }] },
-    { key: plan.selection.key, version: plan.selection.version, ...opts },
-  );
 }

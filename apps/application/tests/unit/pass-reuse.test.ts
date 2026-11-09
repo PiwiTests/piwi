@@ -75,7 +75,12 @@ async function addRun(
     branch: 'main',
     origin: 'ci',
     commit,
-    metadata: { scm: { commit, branch: 'main', worktree }, playwrightVersion: PW, piwiOrigin: { kind: 'ci' } },
+    playwrightVersion: PW,
+    metadata: {
+      scm: { commit, branch: 'main', worktree },
+      htmlReport: { rootDir: 'tests' },
+      piwiOrigin: { kind: 'ci' },
+    },
     totalTests: cases.length,
   });
   await persistRunCases(db as never, 1, id, cases);
@@ -140,10 +145,16 @@ describe('pass reuse plans', () => {
     expect(sources.has(ids[2]!)).toBe(false);
   });
 
-  test('another Playwright version finds no source', async () => {
+  test('another Playwright version, or an unknown one, finds no source', async () => {
     const id = await idOf('adds to cart');
-    const sources = await reuse.findReuseSources(db as never, 1, [id], { playwrightVersion: '1.50.0' });
-    expect(sources.size).toBe(0);
+    expect((await reuse.findReuseSources(db as never, 1, [id], { playwrightVersion: '1.50.0' })).size).toBe(0);
+    expect((await reuse.findReuseSources(db as never, 1, [id], { playwrightVersion: null })).size).toBe(0);
+  });
+
+  test('a source names the Playwright projects it passed in', async () => {
+    const id = await idOf('adds to cart');
+    const sources = await reuse.findReuseSources(db as never, 1, [id], FINGERPRINT);
+    expect(sources.get(id)?.projects).toEqual(['chromium']);
   });
 
   test('the sources step names the commits to diff', async () => {
@@ -191,20 +202,46 @@ describe('pass reuse plans', () => {
     expect(plan.reasons).toMatchObject({ reused: 2 });
   });
 
-  test('a stored plan reads back until it expires, and materializes only the tests to run', async () => {
+  test('a plan skips each reused test by its test list line, in the projects its source ran, and runs the rest', async () => {
     const { plan } = await reuse.decideRunPlan(db as never, 1, 'full', FINGERPRINT, [
       { commit: C1, changedFiles: ['src/auth.ts'], changes: [] },
     ]);
+    expect(plan.args).toEqual([]);
+    expect(plan.reused[0]).toMatchObject({
+      projects: ['chromium'],
+      skip: ['[chromium] › shop.spec.ts › adds to cart'],
+    });
+  });
+
+  test('a stored plan reads back until it expires, in its own project only', async () => {
+    const { plan } = await reuse.decideRunPlan(db as never, 1, 'full', FINGERPRINT, []);
     const now = new Date();
     const { id } = await reuse.storeRunPlan(db as never, 1, plan, { commit: C1, branch: 'main', createdBy: null }, now);
-    const stored = await reuse.getRunPlan(db as never, 1, id, now);
-    expect(stored?.plan.run).toEqual(plan.run);
+    expect((await reuse.getRunPlan(db as never, 1, id, now))?.plan.run).toEqual(plan.run);
     expect(await reuse.getRunPlan(db as never, 2, id, now)).toBeNull();
     expect(await reuse.getRunPlan(db as never, 1, id, new Date(now.getTime() + 25 * HOUR))).toBeNull();
+  });
 
-    const resolution = await reuse.materializePlan(db as never, 1, stored!.plan);
-    expect(resolution?.tests.map((t) => t.testCaseId).sort()).toEqual([...plan.run].sort());
-    expect(await reuse.materializePlan(db as never, 1, { ...plan, run: [] })).toBeNull();
+  test('skip lines name the describes, and a name a test list cannot state is never reused', () => {
+    const test = (title: string, suitePath = '') => ({
+      testCaseId: 1,
+      filePath: './tests/a.spec.ts',
+      suitePath,
+      title,
+      line: 1,
+      avgDurationMs: null,
+      locks: [],
+    });
+    expect(reuse.skipLines(test('pays', 'Cart\x1fCheckout'), ['chromium', 'firefox'], 'tests')).toEqual([
+      '[chromium] › a.spec.ts › Cart › Checkout › pays',
+      '[firefox] › a.spec.ts › Cart › Checkout › pays',
+    ]);
+    expect(reuse.skipLines(test('pays'), ['chromium'], '')).toEqual(['[chromium] › tests/a.spec.ts › pays']);
+    const plain = { ...test('refunds'), testCaseId: 1 };
+    const arrow = { ...test('a > b'), testCaseId: 2 };
+    const shadowing = { ...test('Cart'), testCaseId: 3 };
+    const inside = { ...test('pays', 'Cart'), testCaseId: 4 };
+    expect([...reuse.unnameable([plain, arrow, shadowing, inside])].sort()).toEqual([2, 3]);
   });
 
   test('an unknown selection is a 404', async () => {

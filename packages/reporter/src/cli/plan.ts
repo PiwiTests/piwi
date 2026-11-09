@@ -12,6 +12,8 @@
  * reuse. `--strict` makes it exit 2 instead.
  */
 import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   createPlan,
   fetchPlan,
@@ -21,7 +23,7 @@ import {
   type PlanDiff,
   type PlanReason,
 } from '../internal/support/selection-client.js';
-import { PIWI_SHARD_ENV } from '../internal/config/env.js';
+import { privateTempDir, writePrivateFile } from '../internal/support/private-file.js';
 import { resolveCliConnection } from '../internal/support/connection.js';
 import { readInstalledPlaywrightVersion } from './add-reporter.js';
 import { findKey, git, gitChange, readOption, runRun, spawnPlaywrightForRun } from './select.js';
@@ -30,6 +32,8 @@ const EXIT_OK = 0;
 const EXIT_ERROR = 2;
 /** How long fetching one source commit into a shallow clone may take. */
 const FETCH_TIMEOUT_MS = 120_000;
+/** Changed files one diff may carry, as the dashboard takes them; a larger diff is not sent and its tests run. */
+const MAX_CHANGED_FILES = 5000;
 
 const USAGE = `
 piwi plan — plan a run that reuses the passes whose code has not changed (experimental)
@@ -63,7 +67,6 @@ interface PlanArgs {
   planId: number | null;
   reuse: boolean;
   shard: string | null;
-  format: string;
   strict: boolean;
   json: boolean;
   pkgRunner: string;
@@ -97,7 +100,10 @@ function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string):
   if (!connection)
     throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
   const planRaw = readOption(own, '--plan');
-  if (planRaw !== undefined && !/^\d+$/.test(planRaw)) throw new Error(`--plan expects a plan id, got "${planRaw}"`);
+  const planGiven = own.some((arg) => arg === '--plan' || arg.startsWith('--plan='));
+  if (planGiven && (planRaw === undefined || !/^\d+$/.test(planRaw))) {
+    throw new Error(`--plan expects a plan id, got "${planRaw ?? ''}"`);
+  }
   const shard = readOption(own, '--shard') ?? null;
   if (shard !== null && !/^\d+\s*\/\s*\d+$/.test(shard)) {
     throw new Error(`--shard expects an "i/n" spec like 2/4, got "${shard}"`);
@@ -110,7 +116,6 @@ function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string):
     planId: planRaw === undefined ? null : Number(planRaw),
     reuse: own.includes('--reuse'),
     shard,
-    format: readOption(own, '--format') ?? 'args',
     strict: own.includes('--strict'),
     json: own.includes('--json'),
     pkgRunner: readOption(own, '--pkg-runner') ?? 'npx',
@@ -133,7 +138,7 @@ function tryGit(args: string[]): string | null {
 
 /** Whether a commit is in the local repository, fetching it from `origin` when a shallow clone lacks it. */
 function ensureCommit(commit: string): boolean {
-  if (tryGit(['cat-file', '-e', `${commit}^{commit}`]) !== null || commitExists(commit)) return true;
+  if (commitExists(commit)) return true;
   try {
     execFileSync('git', ['fetch', '--quiet', '--no-tags', '--depth=1', 'origin', commit], {
       stdio: ['ignore', 'ignore', 'ignore'],
@@ -166,6 +171,8 @@ export function formatPlanReasons(reasons: Partial<Record<PlanReason, number>>):
 async function makePlan(args: PlanArgs, projectId: number, key: string): Promise<CreatedPlan> {
   const playwrightVersion = readInstalledPlaywrightVersion(process.cwd());
   const sources = await fetchPlanSources(args, projectId, key, playwrightVersion);
+  // Files git does not track yet are part of the change: a diff against a commit never names them.
+  const untracked = (tryGit(['ls-files', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean);
   const diffs: PlanDiff[] = [];
   for (const { commit } of sources.commits) {
     if (!ensureCommit(commit)) {
@@ -173,7 +180,15 @@ async function makePlan(args: PlanArgs, projectId: number, key: string): Promise
       continue;
     }
     try {
-      diffs.push({ commit, ...gitChange(commit) });
+      const change = gitChange(commit);
+      const changedFiles = [...new Set([...change.changedFiles, ...untracked])];
+      if (changedFiles.length > MAX_CHANGED_FILES) {
+        console.error(
+          `piwi plan: ${changedFiles.length} files changed since ${commit.slice(0, 12)}; its tests will run`,
+        );
+        continue;
+      }
+      diffs.push({ commit, changedFiles, changes: change.changes });
     } catch (e) {
       console.error(
         `piwi plan: could not diff against ${commit.slice(0, 12)} (${(e as Error).message}); its tests will run`,
@@ -235,29 +250,49 @@ function withoutReuse(argv: string[]): string[] {
   return [...own.filter((arg) => arg !== '--reuse'), ...(dashIndex === -1 ? [] : argv.slice(dashIndex))];
 }
 
-/** Run a plan's tests, or one shard of them. */
+/**
+ * Run a plan: its selection, less the tests it reuses, through Playwright's
+ * `--test-list-invert`, sharded by Playwright's own `--shard` so every shard
+ * filters the same list. A checkout at another commit than the plan's would
+ * skip tests on a diff of another tree: that throws, and the caller falls back.
+ */
 async function runStoredPlan(args: PlanArgs, projectId: number, planId: number, env: NodeJS.ProcessEnv) {
   const plan = await fetchPlan(args, projectId, planId);
-  const shard = args.shard ? ` (shard ${args.shard})` : '';
-  if (!plan.resolution || plan.resolution.estimate.count === 0) {
-    console.error(`piwi run: plan ${planId}${shard} has nothing to run — ${plan.counts.reused} test(s) reused`);
-    return EXIT_OK;
+  const head = tryGit(['rev-parse', 'HEAD']);
+  if (plan.commit !== head) {
+    throw new Error(
+      `plan ${planId} was made at ${plan.commit?.slice(0, 12) ?? 'no commit'}, this checkout is at ${head?.slice(0, 12) ?? 'no commit'}`,
+    );
   }
+  const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
   console.error(
-    `piwi run: plan ${planId}${shard} → ${plan.resolution.estimate.count} test(s) to run, ${plan.counts.reused} reused`,
+    `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
-  const runEnv: NodeJS.ProcessEnv = { ...env, ...(args.shard ? { [PIWI_SHARD_ENV]: args.shard } : {}) };
-  return spawnPlaywrightForRun(args.pkgRunner, [...plan.resolution.materialization.args, ...args.extra], runEnv);
+  if (plan.skip.length === 0) {
+    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], env);
+  }
+  const dir = fs.mkdtempSync(path.join(privateTempDir(), 'plan-'));
+  const list = path.join(dir, 'skip.txt');
+  try {
+    writePrivateFile(list, `${plan.skip.join('\n')}\n`);
+    return await spawnPlaywrightForRun(
+      args.pkgRunner,
+      [...plan.args, '--test-list-invert', list, ...shardArgs, ...args.extra],
+      env,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 export async function runPlannedRun(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   let args: PlanArgs;
   try {
     args = parsePlanArgs(argv, env, 'piwi run');
-    if (args.format === 'json') throw new Error('--format json cannot be run; use args, grep or files');
     if (args.planId !== null && args.reuse) throw new Error('--plan runs a stored plan; drop --reuse');
-    if (args.planId === null && !args.key)
+    if (args.planId === null && !args.key) {
       throw new Error('--reuse needs a selection key ("full" for the whole suite)');
+    }
     if (args.key === 'impact') throw new Error('--reuse plans a selection; impact already runs only what changed');
     if (args.reuse && args.shard) {
       throw new Error('--reuse plans once per job; in a sharded job, run piwi plan once and pass --plan to each shard');

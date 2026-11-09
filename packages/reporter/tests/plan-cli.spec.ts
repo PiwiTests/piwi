@@ -37,21 +37,13 @@ describe('planned runs', () => {
     counts: { candidates: 5, run: 2, reused: 3 },
     reasons: { reused: 3, changed: 2 },
   };
-  const RESOLUTION = {
-    key: 'full',
-    version: null,
-    tests: [],
-    resolvedHash: 'h',
-    estimate: { count: 2, totalDurationMs: null },
-    warnings: [],
-    materialization: { format: 'args', args: ['a.spec.ts:3', 'b.spec.ts:9'], command: '' },
-  };
+  const SKIP = ['[chromium] › tests/a.spec.ts › adds to cart', '[firefox] › tests/a.spec.ts › adds to cart'];
   let dir: string;
   let cwd: string;
   let requests: Array<{ url: string; body: unknown }>;
 
   /** A dashboard that plans `full`, serves plan 9, or answers `status` to every plan route. */
-  function dashboard(options: { up?: boolean; resolution?: unknown; status?: number } = {}): void {
+  function dashboard(options: { up?: boolean; skip?: string[]; commit?: string | null; status?: number } = {}): void {
     requests = [];
     vi.stubGlobal(
       'fetch',
@@ -83,15 +75,24 @@ describe('planned runs', () => {
           );
         }
         if (url.includes('/api/projects/7/run-plans/9')) {
-          const resolution = 'resolution' in options ? options.resolution : RESOLUTION;
-          return new Response(JSON.stringify({ id: 9, commit: null, expiresAt: '', ...SUMMARY, reused: [], resolution }), {
-            status: 200,
-          });
+          const plan = {
+            id: 9,
+            commit: options.commit ?? null,
+            expiresAt: '',
+            ...SUMMARY,
+            args: [],
+            skip: options.skip ?? SKIP,
+            reused: [],
+          };
+          return new Response(JSON.stringify(plan), { status: 200 });
         }
         return new Response('{}', { status: 404 });
       }),
     );
   }
+
+  /** The content of each run's skip list, read while Playwright would be running. */
+  let lists: string[];
 
   function spawned(): Array<{ args: string[]; env: NodeJS.ProcessEnv }> {
     return vi.mocked(spawn).mock.calls.map((c) => {
@@ -105,7 +106,10 @@ describe('planned runs', () => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-plan-')));
     cwd = process.cwd();
     process.chdir(dir);
-    vi.mocked(spawn).mockImplementation((() => {
+    lists = [];
+    vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
+      const at = args.indexOf('--test-list-invert');
+      if (at !== -1) lists.push(fs.readFileSync(args[at + 1]!, 'utf-8'));
       const child = new EventEmitter();
       setImmediate(() => child.emit('exit', 0));
       return child;
@@ -121,18 +125,33 @@ describe('planned runs', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('runs one shard of a stored plan, telling the reporter its shard', async () => {
+  it('runs the selection less the reused tests, sharded by Playwright, and removes the list after', async () => {
     dashboard();
     expect(await runPlannedRun(['--plan', '9', '--shard', '2/3', '--', '--workers=1'], env)).toBe(0);
-    expect(requests[requests.length - 1]!.url).toBe('https://dash.example/api/projects/7/run-plans/9?format=args&shard=2%2F3');
+    expect(requests[requests.length - 1]!.url).toBe('https://dash.example/api/projects/7/run-plans/9');
     const [run] = spawned();
-    expect(run!.args).toEqual(['a.spec.ts:3', 'b.spec.ts:9', '--workers=1']);
-    expect(run!.env.PIWI_SHARD).toBe('2/3');
+    const listPath = run!.args[run!.args.indexOf('--test-list-invert') + 1]!;
+    expect(run!.args).toEqual(['--test-list-invert', listPath, '--shard=2/3', '--workers=1']);
+    expect(lists).toEqual([`${SKIP.join('\n')}\n`]);
+    expect(fs.existsSync(listPath)).toBe(false);
   });
 
-  it('starts no run when the plan reuses every test', async () => {
-    dashboard({ resolution: null });
+  it('runs the selection plain when the plan reuses nothing', async () => {
+    dashboard({ skip: [] });
     expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual([]);
+  });
+
+  it('falls back to the full suite when the checkout is not at the plan’s commit', async () => {
+    dashboard({ commit: 'b'.repeat(40) });
+    expect(await runPlannedRun(['--plan', '9', '--shard', '1/2'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual(['--shard=1/2']);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('was made at bbbbbbbbbbbb'));
+  });
+
+  it('refuses --plan without an id', async () => {
+    dashboard();
+    expect(await runPlannedRun(['smoke', '--plan'], env)).toBe(2);
     expect(spawned()).toEqual([]);
   });
 
@@ -153,7 +172,7 @@ describe('planned runs', () => {
     expect(await runPlannedRun(['full', '--reuse'], env)).toBe(0);
     const created = requests.find((r) => r.url.endsWith('/run-plans'))!;
     expect(created.body).toMatchObject({ selection: 'full', diffs: [] });
-    expect(spawned()[0]!.args).toEqual(['a.spec.ts:3', 'b.spec.ts:9']);
+    expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
   });
 
   it('runs the selection without reuse when the dashboard refuses to plan', async () => {

@@ -14,7 +14,7 @@ import {
 } from '@piwitests/core/wire';
 import { RUN_REF_ENV } from '@piwitests/core/run-channel';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
-import { configDirFromConfig } from '../support/test-paths.js';
+import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
 
 type Env = Record<string, string | undefined>;
@@ -334,7 +334,8 @@ export class MetadataCollector {
       }
       try {
         // Whether the checkout matches its commit: only a clean one can vouch for a commit's code (pass reuse).
-        scm.worktree = execSync('git status --porcelain', execOpts).trim() === '' ? 'clean' : 'dirty';
+        scm.worktree =
+          execSync('git status --porcelain --untracked-files=normal', execOpts).trim() === '' ? 'clean' : 'dirty';
       } catch {
         /* optional */
       }
@@ -425,6 +426,8 @@ export class MetadataCollector {
 
   private extractPlaywrightConfigMetadata(config: FullConfig): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
+    // Playwright's root, which test lists name files from, relative to the folder test paths are stored from.
+    if (config.rootDir) meta.rootDir = relativeTestPath(config.rootDir, configDirFromConfig(config));
     if (config.projects?.length > 0) {
       meta.projects = config.projects.map((p: any) => ({
         name: p.name,

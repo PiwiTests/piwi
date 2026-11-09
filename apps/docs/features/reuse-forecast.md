@@ -59,7 +59,8 @@ checkout of a commit, with the same Playwright version, and every result of the 
 attempt with coverage naming its file versions. The working tree is diffed against that commit: the test runs when
 [impact from that diff](/features/change-impact) selects it, when a changed file maps to no test, or when a file the
 pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
-executions, or tagged `@no-reuse` always runs. The skipped tests are not recorded in the run. Commands:
+executions, or tagged `@no-reuse` always runs. A run skips only the tests the plan names, in the Playwright projects
+their pass ran them in, so a new or renamed test runs. The skipped tests are not recorded in the run. Commands:
 [`plan`](/reference/cli#plan). Design record: [pass reuse](https://github.com/PiwiTests/piwi/blob/main/proposals/pass-reuse.md).
 
 ## Related
