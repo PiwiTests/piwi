@@ -257,7 +257,8 @@ fn link_page(url: &tauri::Url) -> Option<String> {
 /// The page a link asked for while the dashboard page could not open it: the
 /// session bootstrap opens it (`bootstrap_url`), or the page takes it once it
 /// listens (`desktop_take_linked_page`). From then on, until the window loads
-/// another document, the window opens a link's page itself.
+/// another document, the window opens a link's page itself. While the session
+/// is not live, a link waits and no page takes it.
 #[derive(Default)]
 struct LinkedPage(Mutex<LinkedPageInner>);
 
@@ -269,10 +270,11 @@ struct LinkedPageInner {
 
 impl LinkedPage {
     /// Keep `page` until the dashboard page can open it: `false` while it
-    /// listens, when the window opens it instead. The last link wins.
-    fn hold(&self, page: &str) -> bool {
+    /// listens and the session is `live`, when the window opens it instead.
+    /// The last link wins.
+    fn hold(&self, page: &str, live: impl FnOnce() -> bool) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if inner.page_listens {
+        if inner.page_listens && live() {
             return false;
         }
         inner.waiting = Some(page.to_string());
@@ -285,14 +287,20 @@ impl LinkedPage {
     }
 
     /// The dashboard page listens: the page a link asked for so far, if any.
-    /// Links that come after go to the window.
-    fn take_as_page_listens(&self) -> Option<String> {
+    /// Links that come after go to the window. A page that asks while the
+    /// session is not `live` belongs to a sidecar that exited: it gets
+    /// nothing, and links keep waiting.
+    fn take_as_page_listens(&self, live: impl FnOnce() -> bool) -> Option<String> {
         let mut inner = self.0.lock().unwrap();
+        if !live() {
+            return None;
+        }
         inner.page_listens = true;
         inner.waiting.take()
     }
 
-    /// The window loads another document: links wait until it listens again.
+    /// The window loads another document, or the sidecar the page belongs to exits: links wait until the next
+    /// dashboard page listens.
     fn page_unloads(&self) {
         self.0.lock().unwrap().page_listens = false;
     }
@@ -302,7 +310,12 @@ impl LinkedPage {
 /// window hears of each link (`OPEN_PAGE_EVENT`).
 #[tauri::command]
 fn desktop_take_linked_page(app: tauri::AppHandle) -> Option<String> {
-    app.try_state::<LinkedPage>().and_then(|linked| linked.take_as_page_listens())
+    app.try_state::<LinkedPage>().and_then(|linked| linked.take_as_page_listens(|| session_is_live(&app)))
+}
+
+/// Whether the dashboard window's session is live (`session::Session::is_live`).
+fn session_is_live(app: &AppHandle) -> bool {
+    app.try_state::<session::Session>().is_some_and(|session| session.is_live())
 }
 
 /// The command-line arguments the app acts on: all of them, or only its own
@@ -344,7 +357,7 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
         }
         return;
     };
-    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page));
+    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page, || session_is_live(app)));
     if held {
         if let Some(w) = app.get_webview_window("main") {
             bring_to_front(&w);
@@ -3698,19 +3711,40 @@ mod tests {
     #[test]
     fn a_link_waits_while_the_page_cannot_open_it() {
         let linked = LinkedPage::default();
+        let live = || true;
         // Before the dashboard shows: the session bootstrap opens the last one.
-        assert!(linked.hold("/settings"));
-        assert!(linked.hold("/test-runs/146"));
+        assert!(linked.hold("/settings", live));
+        assert!(linked.hold("/test-runs/146", live));
         assert_eq!(linked.take_waiting().as_deref(), Some("/test-runs/146"));
         // While the dashboard page loads: the page takes it once it listens.
-        assert!(linked.hold("/settings"));
-        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/settings"));
-        assert!(!linked.hold("/test-runs/146"));
-        assert_eq!(linked.take_as_page_listens(), None);
+        assert!(linked.hold("/settings", live));
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/settings"));
+        assert!(!linked.hold("/test-runs/146", live));
+        assert_eq!(linked.take_as_page_listens(live), None);
         // The window loads another document: links wait again.
         linked.page_unloads();
-        assert!(linked.hold("/test-runs/146"));
-        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
+        assert!(linked.hold("/test-runs/146", live));
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/test-runs/146"));
+    }
+
+    #[test]
+    fn a_link_that_comes_after_the_server_exits_waits_for_the_next_page() {
+        let linked = LinkedPage::default();
+        let (live, ended) = (|| true, || false);
+        // The dashboard page listens, then the server exits: the page is dying, so the link waits.
+        assert_eq!(linked.take_as_page_listens(live), None);
+        assert!(linked.hold("/settings", ended));
+        linked.page_unloads();
+        assert!(linked.hold("/test-runs/146", ended));
+        // A page of the exited server that only now listens takes nothing, and links keep waiting.
+        assert_eq!(linked.take_as_page_listens(ended), None);
+        assert!(linked.hold("/test-runs/146", ended));
+        // The restarted session's page takes the last link, once; the bootstrap has nothing left to open.
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/test-runs/146"));
+        assert_eq!(linked.take_waiting(), None);
+        assert_eq!(linked.take_as_page_listens(live), None);
+        // Once it listens, a link goes to the window again.
+        assert!(!linked.hold("/settings", live));
     }
 
     #[test]

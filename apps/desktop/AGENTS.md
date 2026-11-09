@@ -39,7 +39,8 @@ shell and are feature-equivalent.
     (`is_known_launcher`).
 - **A `piwi://` link only shows a page.** Anyone can send one, so the shell reads only `piwi://open/<page>`
   (`link_page`), the page passes `desktopPagePath` again in the window and at the session bootstrap, and a launch whose
-  first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`).
+  first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`). A link that comes
+  after the sidecar exits waits for the next dashboard page (`SessionWindows::hold_links`), never the dying one.
 - **Piwi Runner answers `piwi-runner://connect` and no other link.** It only brings the window forward (`is_connect_link`
   in `runner_app.rs`), so no host, instance or key can arrive on a link; the desktop app keeps `piwi`.
 - **A new Tauri command is wired in three places**: `tauri::generate_handler!` in `src-tauri/src/lib.rs`, the

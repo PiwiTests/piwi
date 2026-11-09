@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 use crate::mcp_clients::ServerInfo;
-use crate::{bootstrap_url, health_ok, main_window_may_navigate, show_splash_status, ServerGaveUp};
+use crate::{bootstrap_url, health_ok, main_window_may_navigate, show_splash_status, LinkedPage, ServerGaveUp};
 
 /// What the dashboard window shows and when, for the sidecar behind it. Managed by the app.
 pub(crate) struct Session {
@@ -152,6 +152,8 @@ fn is_splash_page(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
 
 /// What the dashboard window and its siblings do for the session.
 pub(crate) trait SessionWindows {
+    /// A `piwi://` link waits for the next dashboard page from now on, not for the page of the sidecar that exited.
+    fn hold_links(&self);
     /// Every window on the sidecar's origin leaves it, and the splash shows `text`.
     fn leave_server(&self, text: &'static str);
     /// The splash shows `text`; with `reveal`, the window comes up too.
@@ -162,6 +164,12 @@ pub(crate) trait SessionWindows {
 }
 
 impl SessionWindows for AppHandle {
+    fn hold_links(&self) {
+        if let Some(linked) = self.try_state::<LinkedPage>() {
+            linked.page_unloads();
+        }
+    }
+
     fn leave_server(&self, text: &'static str) {
         let handle = self.clone();
         let _ = self.run_on_main_thread(move || {
@@ -280,12 +288,17 @@ pub(crate) struct ServerSession {
 /// The sidecar exited and will be restarted: windows on its origin leave it, once a session was opened. Returns
 /// the number of this restart.
 pub(crate) fn server_stopped(app: &AppHandle, server: &ServerSession) -> u64 {
-    let Some(session) = app.try_state::<Session>() else {
-        return 0;
-    };
-    let restart = session.exited();
-    if session.opened.load(Ordering::SeqCst) {
-        app.leave_server(server.texts.restarting);
+    let session = app.try_state::<Session>();
+    stopped_for_restart(app, session.as_deref(), server.texts.restarting)
+}
+
+/// The session ends first, so no page of the sidecar that exited takes a link or is sent one; then links wait for the
+/// next dashboard page, and the windows leave the sidecar's origin once a session was opened.
+fn stopped_for_restart<W: SessionWindows>(windows: &W, session: Option<&Session>, text: &'static str) -> u64 {
+    let restart = session.map_or(0, Session::exited);
+    windows.hold_links();
+    if session.is_some_and(|session| session.opened.load(Ordering::SeqCst)) {
+        windows.leave_server(text);
     }
     restart
 }
@@ -297,9 +310,10 @@ pub(crate) fn server_gave_up(app: &AppHandle, server: &ServerSession) {
     stopped_for_good(app, opened, server.texts.stopped);
 }
 
-/// Every window on the sidecar's origin leaves it when a session was opened, and the splash says `text` with the
-/// window up.
+/// Links wait, every window on the sidecar's origin leaves it when a session was opened, and the splash says `text`
+/// with the window up.
 fn stopped_for_good<W: SessionWindows>(windows: &W, opened: bool, text: &'static str) {
+    windows.hold_links();
     if opened {
         windows.leave_server(text);
     }
@@ -488,6 +502,8 @@ mod tests {
     struct Recorder {
         told: RefCell<Vec<String>>,
         loads: RefCell<Vec<(String, ProofHolds)>>,
+        /// When set, the session whose state a hold of links records.
+        session: Option<Arc<Session>>,
     }
 
     impl Recorder {
@@ -505,6 +521,13 @@ mod tests {
     }
 
     impl SessionWindows for Recorder {
+        fn hold_links(&self) {
+            let told = match &self.session {
+                Some(session) => format!("hold links, live: {}", session.is_live()),
+                None => "hold links".to_string(),
+            };
+            self.told.borrow_mut().push(told);
+        }
         fn leave_server(&self, text: &'static str) {
             self.told.borrow_mut().push(format!("leave: {text}"));
         }
@@ -867,14 +890,43 @@ mod tests {
     fn giving_up_leaves_the_sidecar_origin_and_reveals_the_stopped_splash() {
         let windows = Recorder::default();
         stopped_for_good(&windows, true, "stopped");
-        assert_eq!(*windows.told.borrow(), vec!["leave: stopped".to_string(), "splash: stopped (revealed)".to_string()]);
+        assert_eq!(
+            *windows.told.borrow(),
+            vec!["hold links".to_string(), "leave: stopped".to_string(), "splash: stopped (revealed)".to_string()]
+        );
     }
 
     #[test]
     fn giving_up_before_any_session_only_says_the_server_stopped() {
         let windows = Recorder::default();
         stopped_for_good(&windows, false, "stopped");
-        assert_eq!(*windows.told.borrow(), vec!["splash: stopped (revealed)".to_string()]);
+        assert_eq!(*windows.told.borrow(), vec!["hold links".to_string(), "splash: stopped (revealed)".to_string()]);
+    }
+
+    /// A link that comes after the sidecar exited is held before the window leaves its page, whether or not a
+    /// session was opened, and only once the session ended, so no page of that sidecar takes one in between.
+    #[test]
+    fn the_sidecar_exiting_holds_links_before_the_window_leaves_it() {
+        let session = Session::new(None, None);
+        let windows = Recorder::default();
+        assert_eq!(stopped_for_restart(&windows, Some(&session), "restarting"), 1);
+        assert_eq!(*windows.told.borrow(), vec!["hold links".to_string()]);
+
+        session.opened.store(true, Ordering::SeqCst);
+        let windows = Recorder::default();
+        assert_eq!(stopped_for_restart(&windows, Some(&session), "restarting"), 2);
+        assert_eq!(*windows.told.borrow(), vec!["hold links".to_string(), "leave: restarting".to_string()]);
+
+        let windows = Recorder::default();
+        assert_eq!(stopped_for_restart(&windows, None, "restarting"), 0);
+        assert_eq!(*windows.told.borrow(), vec!["hold links".to_string()]);
+
+        let session = Arc::new(Session::new(None, None));
+        session.opened.store(true, Ordering::SeqCst);
+        assert!(session.go_live_if(&always()));
+        let windows = Recorder { session: Some(session.clone()), ..Recorder::default() };
+        assert_eq!(stopped_for_restart(&windows, Some(&session), "restarting"), 1);
+        assert_eq!(*windows.told.borrow(), vec!["hold links, live: false".to_string(), "leave: restarting".to_string()]);
     }
 
     /// The dashboard window reaches the sidecar's origin only while a proof held for the session it loaded.
