@@ -338,7 +338,8 @@ fn is_bridge_entry(value: &Value) -> bool {
 }
 
 /// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`) in `root`'s `container`, preserving everything else.
-/// `entry: None` removes ours. Returns the new document.
+/// `entry: None` removes ours. Keys stay in the order the file had (`serde_json` `preserve_order`, and `shift_remove`).
+/// Returns the new document.
 fn set_own_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
     let mut root = match existing {
         Value::Object(map) => map,
@@ -358,7 +359,7 @@ fn set_own_entry(existing: Value, container: &str, entry: Option<Value>) -> Valu
             map.insert(PIWI_ENTRY_KEY.to_string(), value);
         }
         None => {
-            map.remove(PIWI_ENTRY_KEY);
+            map.shift_remove(PIWI_ENTRY_KEY);
         }
     }
     Value::Object(root)
@@ -370,7 +371,7 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> V
     let mut doc = existing;
     if let Some(map) = doc.get_mut(container).and_then(Value::as_object_mut) {
         if map.get(LEGACY_ENTRY_KEY).is_some_and(is_local_piwi_entry) {
-            map.remove(LEGACY_ENTRY_KEY);
+            map.shift_remove(LEGACY_ENTRY_KEY);
         }
     }
     set_own_entry(doc, container, entry)
@@ -990,6 +991,33 @@ mod tests {
         assert!(!heal_client_file_checked("cursor", &path, TOKEN, || std::fs::write(&path, &text).unwrap()));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
         assert!(!backup_of(&path).exists());
+    }
+
+    /// A heal and a Connect write the user's own file back with its keys in the order it had, the entry in its place.
+    #[test]
+    fn a_write_keeps_the_order_of_the_keys_in_the_file() {
+        let dir = TempDir::new("heal-order");
+        let path = dir.join("claude.json");
+        let text = format!(
+            "{{\n  \"zeta\": 1,\n  \"mcpServers\": {{\n    \"zz\": {{ \"command\": \"npx\" }},\n    \"piwi-desktop\": {},\n    \"piwi\": {{ \"type\": \"http\", \"url\": \"http://127.0.0.1:3000/mcp\" }},\n    \"aa\": {{ \"command\": \"uvx\" }},\n    \"bb\": {{ \"command\": \"uvx\" }}\n  }},\n  \"alpha\": 2\n}}\n",
+            stdio_entry_for("claude-code", "/old/place/piwi-desktop")
+        );
+        std::fs::write(&path, &text).unwrap();
+        let positions = |written: &str, keys: &[&str]| -> Vec<usize> {
+            keys.iter().map(|key| written.find(&format!("\"{key}\": ")).unwrap()).collect()
+        };
+        let in_order = |written: &str, keys: &[&str]| positions(written, keys).windows(2).all(|pair| pair[0] < pair[1]);
+
+        assert!(heal_client_file("claude-code", &path, TOKEN));
+        let healed = std::fs::read_to_string(&path).unwrap();
+        assert!(in_order(&healed, &["zeta", "mcpServers", "zz", "piwi-desktop", "piwi", "aa", "bb", "alpha"]));
+        assert!(!healed.contains("/old/place/piwi-desktop"));
+
+        let doc: Value = serde_json::from_str(&healed).unwrap();
+        let connected = merge_piwi_entry(doc, "mcpServers", Some(entry_for("claude-code")));
+        let written = serde_json::to_string_pretty(&connected).unwrap();
+        assert!(in_order(&written, &["zeta", "mcpServers", "zz", "piwi-desktop", "aa", "bb", "alpha"]));
+        assert!(!written.contains("\"piwi\": "));
     }
 
     #[test]

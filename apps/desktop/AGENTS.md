@@ -112,7 +112,7 @@ shell and are feature-equivalent.
   startup heal (`heal_configured_clients`) touches only the `piwi-desktop` entry and removes no other. It rewrites an
   entry with exactly the keys the app writes whose only difference is the command (`differs_only_in_command`), and an
   entry that is exactly the older shape (loopback `/mcp` URL, this app's token as the only header; `is_old_url_entry`),
-  keeping the backup, and only if the file is unchanged since it was read. Any other entry, an edited one or one with
+  keeping the backup and the order of the keys in the file (`serde_json` `preserve_order`; remove with `shift_remove`), and only if the file is unchanged since it was read. Any other entry, an edited one or one with
   an added field included, reads as stale and is replaced only when the user
   connects the client again. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
