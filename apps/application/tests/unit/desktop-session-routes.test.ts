@@ -5,6 +5,7 @@
  * when the shell leaves.
  */
 import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { TOKEN_COOKIE } from '@piwitests/editor/host-guard';
 import { mintSessionCode, SESSION_CODE_TTL_MS } from '@piwitests/editor/run-target-session';
@@ -44,16 +45,21 @@ vi.stubGlobal('getQuery', (event: { query: Record<string, unknown> }) => event.q
 vi.stubGlobal('setCookie', (_event: unknown, name: string, value: string, options: unknown) => {
   set.push({ name, value, options });
 });
+vi.stubGlobal('setResponseHeader', () => {});
+vi.stubGlobal('getRouterParam', () => undefined);
 vi.stubGlobal('sendRedirect', (_event: unknown, location: string) => {
   redirected.push(location);
   return location;
 });
 
 let session: (event: unknown) => Promise<unknown> | unknown;
+let mintCode: (event: unknown) => Promise<unknown>;
 let notifications: (event: unknown) => Promise<Response>;
 
 beforeAll(async () => {
   session = (await import('../../server/routes/__piwi/session.get')).default as unknown as typeof session;
+  mintCode = (await import('../../server/api/desktop/run-target/session-code.post'))
+    .default as unknown as typeof mintCode;
   notifications = (await import('../../server/api/desktop/notifications.get'))
     .default as unknown as typeof notifications;
 });
@@ -71,6 +77,17 @@ afterEach(() => {
 });
 
 const visit = (query: Record<string, unknown>) => session({ query });
+
+/** The shell's `POST` for a session code, as the Nitro route reads it. */
+const shellAsks = (headers: Record<string, string> = {}) => ({
+  context: {},
+  node: {
+    req: Object.assign(Readable.from([Buffer.from('{}')]), {
+      headers: { 'content-type': 'application/json', ...headers },
+    }),
+    res: {},
+  },
+});
 
 describe('the window session', () => {
   test('answers 404 on the server build, which has no token', async () => {
@@ -107,6 +124,20 @@ describe('the window session', () => {
       { name: TOKEN_COOKIE, value: TOKEN, options: { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 31536000 } },
     ]);
     expect(redirected).toEqual(['/']);
+  });
+
+  test('exchanges a code the Nitro route gave the shell, once, and refuses a code a browser asked for', async () => {
+    const { code } = (await mintCode(shellAsks())) as { code: string };
+    expect(code).toMatch(/^pds_[0-9a-f]{64}$/);
+    await visit({ code });
+    expect(set).toEqual([
+      { name: TOKEN_COOKIE, value: TOKEN, options: { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 31536000 } },
+    ]);
+    expect(redirected).toEqual(['/']);
+    await expect(Promise.resolve().then(() => visit({ code }))).rejects.toMatchObject({ statusCode: 403 });
+
+    await expect(mintCode(shellAsks({ origin: 'http://127.0.0.1:3000' }))).rejects.toMatchObject({ statusCode: 403 });
+    expect(set).toHaveLength(1);
   });
 
   test('takes a code once, and refuses it after its lifetime', async () => {
