@@ -1086,9 +1086,10 @@ each says; the host only carries it:
   here only with the desktop token.
 - The shell's stream (`GET /api/desktop/notifications`) carries `requested-run-stop` (`openShellStream`), next to the
   app's notifications.
-- The session (`GET /__piwi/session?token=…&to=…`, `src/run-target-session.ts`) sits outside the guard, as it
-  exchanges the token, and checks the token itself: it answers 404 on a host without one, 403 for a token that differs
-  or is sent twice, else sets the `piwi_token` cookie (httpOnly, `SameSite=Lax`, a year) and redirects to `to` when
+- The session (`GET /__piwi/session?code=…&to=…`, `src/run-target-session.ts`) sits outside the guard and checks the
+  code itself. The shell gets the code from `POST /api/desktop/run-target/session-code` (shell only), and it is good
+  once, for 30 seconds. The session answers 404 on a host without a token, 403 for a code that is unknown, expired or
+  used, else sets the `piwi_token` cookie (httpOnly, `SameSite=Lax`, a year) and redirects to `to` when
   `desktopPagePath` takes it (`src/desktop-page.ts`: a path on the host that is no API route and no file), or to `/`.
 - A host that writes to the response itself counts what the reader has not read (`StreamSink`, `limitedSend`): past
   `STREAM_HOLD_BYTES` (1 MB) a message waits, in order, and the stream is cut past `STREAM_CUT_BYTES` (32 MB), counting
