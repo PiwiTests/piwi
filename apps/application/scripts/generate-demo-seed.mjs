@@ -5543,6 +5543,7 @@ const REBASE_SQL = [
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
   `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE reused_results SET created_at = created_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   // kept_at is nullable; NULL + delta stays NULL.
@@ -6763,6 +6764,72 @@ for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null
   }
 }
 
+// ── Pass reuse (rng-free) ─────────────────────────────────────────────────
+// A web-dashboard run whose pass reuse plan skipped every test: Playwright ran
+// none, and each test stands in through its newest first-attempt pass in an
+// earlier run, so the run page shows its Reused row. It runs on a feature
+// branch an hour before the project's newest run, so the default branch's
+// analyses (the Test Map's drift among them) never read it.
+const REUSED_RESULTS = [];
+{
+  const PLAN_ID = 1;
+  const runs = TEST_RUNS.filter((r) => r.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  const [newest] = runs;
+  if (newest) {
+    const id = Math.max(...TEST_RUNS.map((r) => r.id)) + 1;
+    const startTime = newest.start_time - 3600;
+    const runById = new Map(runs.map((r) => [r.id, r]));
+    for (const testCase of TEST_CASES.filter((c) => c.project_id === 5)) {
+      const [pass] = TEST_RUNS_CASES.filter(
+        (c) =>
+          c.test_case_id === testCase.id &&
+          c.status === 'passed' &&
+          !c.retries &&
+          runById.has(c.test_run_id) &&
+          runById.get(c.test_run_id).start_time < startTime,
+      ).sort((a, b) => runById.get(b.test_run_id).start_time - runById.get(a.test_run_id).start_time);
+      if (!pass) continue;
+      const source = runById.get(pass.test_run_id);
+      REUSED_RESULTS.push({
+        id: REUSED_RESULTS.length + 1,
+        run_id: id,
+        test_case_id: testCase.id,
+        projects: [pass.browser_name ?? 'Chromium'],
+        source_run_id: source.id,
+        source_execution_ids: [pass.id],
+        source_commit: source.commit_sha ?? '0'.repeat(40),
+        plan_id: PLAN_ID,
+        created_at: startTime,
+      });
+    }
+    if (REUSED_RESULTS.length > 0) {
+      TEST_RUNS.push({
+        ...newest,
+        id,
+        start_time: startTime,
+        duration: 9000,
+        status: 'passed',
+        total_tests: 0,
+        passed_tests: 0,
+        failed_tests: 0,
+        skipped_tests: 0,
+        flaky_tests: 0,
+        did_not_run_tests: 0,
+        is_full_run: 0,
+        reused_count: REUSED_RESULTS.length,
+        label: 'Plan: full, every test reused',
+        branch: 'feature/pass-reuse',
+        metadata: {
+          ...newest.metadata,
+          scm: { ...newest.metadata?.scm, branch: 'feature/pass-reuse' },
+          htmlReport: { ...newest.metadata?.htmlReport, projects: [] },
+          piwiPlan: { id: PLAN_ID },
+        },
+      });
+    }
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -6871,6 +6938,9 @@ const lines = [
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
+  '',
+  '-- Reused results of a pass reuse plan (reference test_runs and test_cases)',
+  insert('reused_results', REUSED_RESULTS),
   '',
   '-- Files (screenshot/trace/video attachments — reference test_runs_cases, so must come after)',
   insert('files', ATTACHMENTS),

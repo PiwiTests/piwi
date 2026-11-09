@@ -647,3 +647,18 @@ describe('MetadataCollector.collect — what pass reuse reads', () => {
     });
   });
 });
+
+describe('MetadataCollector.collect — the pass reuse plan', () => {
+  const saved = process.env.PIWI_PLAN;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.PIWI_PLAN;
+    else process.env.PIWI_PLAN = saved;
+  });
+
+  it('records the plan piwi run set, and ignores a value that is not a plan id', () => {
+    process.env.PIWI_PLAN = '9';
+    expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).piwiPlan).toEqual({ id: 9 });
+    process.env.PIWI_PLAN = 'nine';
+    expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).piwiPlan).toBeUndefined();
+  });
+});

@@ -60,7 +60,16 @@ attempt with coverage naming its file versions. The working tree is diffed again
 [impact from that diff](/features/change-impact) selects it, when a changed file maps to no test, or when a file the
 pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
 executions, tagged `@no-reuse`, or in a spec file holding a serial group always runs. A run skips only the tests the plan names, in the Playwright projects
-their pass ran them in, so a new or renamed test runs. The skipped tests are not recorded in the run. Commands:
+their pass ran them in, so a new or renamed test runs. The run records the tests it skipped and did not execute as its
+reused results: the run page's **Reused** row lists them with the pass each one reuses, the pull-request comment
+counts them, and the `get_run` MCP tool returns their count. They count as passed for the run's verdict and the
+[CI gate](/reference/cli#gate), where `--max-reused` and `--require-executed` limit them, and nowhere else: flaky
+scores, pass rates, durations and fix verification read executions only.
+
+<figure>
+  <img src="/screenshots/run-reused-tests.png" alt="Reused tests of a run: each test with its file and Playwright project, and a link to the earlier pass at its commit">
+  <figcaption>A run whose plan skipped every test: each reused test with the pass that stood in for it.</figcaption>
+</figure> Commands:
 [`plan`](/reference/cli#plan). Design record: [pass reuse](https://github.com/PiwiTests/piwi/blob/main/proposals/pass-reuse.md).
 
 ## Related

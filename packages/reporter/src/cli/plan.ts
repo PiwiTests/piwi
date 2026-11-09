@@ -24,6 +24,7 @@ import {
   type PlanReason,
 } from '../internal/support/selection-client.js';
 import { privateTempDir, writePrivateFile } from '../internal/support/private-file.js';
+import { PIWI_PLAN_ENV } from '../internal/config/env.js';
 import { resolveCliConnection } from '../internal/support/connection.js';
 import { readInstalledPlaywrightVersion } from './add-reporter.js';
 import { findKey, git, gitChange, readOption, runRun, spawnPlaywrightForRun } from './select.js';
@@ -294,8 +295,10 @@ async function runStoredPlan(
   console.error(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
+  // The reporter records the plan, and the dashboard the tests it skipped as the run's reused results.
+  const planEnv: NodeJS.ProcessEnv = { ...env, [PIWI_PLAN_ENV]: String(planId) };
   if (plan.skip.length === 0) {
-    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], env);
+    return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], planEnv);
   }
   const dir = fs.mkdtempSync(path.join(privateTempDir(), 'plan-'));
   const list = path.join(dir, 'skip.txt');
@@ -304,7 +307,7 @@ async function runStoredPlan(
     return await spawnPlaywrightForRun(
       args.pkgRunner,
       [...plan.args, '--test-list-invert', list, ...shardArgs, ...args.extra],
-      env,
+      planEnv,
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

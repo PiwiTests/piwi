@@ -1,4 +1,4 @@
-import { PIWI_SELECTION_ENV } from '../config/env.js';
+import { PIWI_PLAN_ENV, PIWI_SELECTION_ENV } from '../config/env.js';
 import type { SelectionStamp } from '../../types.js';
 
 /**
@@ -16,4 +16,10 @@ export function readSelectionStamp(env: NodeJS.ProcessEnv = process.env): Select
   if (!Number.isFinite(version) || !Number.isFinite(resolvedCount) || !resolvedHash) return null;
 
   return { key, version, resolvedHash, resolvedCount };
+}
+
+/** The pass reuse plan `piwi run` left in the environment, or null unless it is a plan id. */
+export function readPlanStamp(env: NodeJS.ProcessEnv = process.env): { id: number } | null {
+  const raw = env[PIWI_PLAN_ENV];
+  return raw && /^\d+$/.test(raw) ? { id: Number(raw) } : null;
 }

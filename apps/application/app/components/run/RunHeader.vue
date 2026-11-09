@@ -74,6 +74,7 @@ const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 
 const environmentOpen = ref(false);
+const reusedOpen = ref(false);
 /** The runner's time zone, locale and OS in one line; null when the run recorded no environment. */
 const environmentSummary = computed(() => {
   const env = props.testRun?.environments;
@@ -500,6 +501,27 @@ function onLabelKeydown(e: KeyboardEvent) {
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
+      </template>
+      <template v-if="testRun?.reusedCount">
+        <span class="text-dimmed">·</span>
+        <button
+          type="button"
+          class="hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+          title="The tests this run skipped because an earlier pass ran their unchanged code"
+          data-reused-open
+          @click="reusedOpen = true"
+        >
+          {{ testRun.reusedCount }} reused
+        </button>
+        <UModal v-model:open="reusedOpen" title="Reused tests" :ui="{ content: 'max-w-3xl' }">
+          <template #body>
+            <RunReusedTests
+              :run-id="testRun.id"
+              :project-key="testRun.projectId"
+              :project-name="testRun.project?.name"
+            />
+          </template>
+        </UModal>
       </template>
       <template v-if="ingestNotes.length">
         <span class="text-dimmed">·</span>

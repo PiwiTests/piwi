@@ -4775,6 +4775,20 @@ const SCENES = [
     viewport: { width: 1280, height: 800 },
   },
   {
+    name: 'run-reused-tests',
+    description: 'Run page: the Reused row of a run whose pass reuse plan skipped every test, and the list it opens',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-runs/75',
+    viewport: { width: 1280, height: 900 },
+    run: async ({ page, shoot, settle }) => {
+      await page.locator('[data-reused-open]').click();
+      await page.locator('[data-shot="run-reused-tests"] li').first().waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'reuse-forecast',
     description:
       'Selections tab: the pass reuse forecast, the test time that ran code identical to an earlier pass and the tests that failed anyway',

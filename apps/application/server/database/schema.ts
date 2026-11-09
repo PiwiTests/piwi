@@ -76,6 +76,7 @@ export const {
   testFunctions,
   testSelections,
   runPlans,
+  reusedResults,
   shareLinks,
   graphNodes,
   graphEdges,

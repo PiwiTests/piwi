@@ -46,6 +46,12 @@ export interface GatePolicy {
   maxLeaks?: number;
   /** Maximum of those leaks that no earlier run of the base branch showed. */
   maxNewLeaks?: number;
+  /** Maximum tests the run reused from earlier passes instead of executing them (pass reuse). */
+  maxReused?: number;
+  /** Maximum share of the run's tests, executed or reused, that it reused, in percent. */
+  maxReusedPercent?: number;
+  /** Every test carrying each of these tags must have executed in this run, not been reused from an earlier pass. */
+  requireExecuted?: string[];
 }
 
 /** A leak named in a gate result: where it was opened and how many tests it spans. */
@@ -103,6 +109,12 @@ export interface GateFacts {
    * environment under test, so no policy can say whether the change is good.
    */
   incident?: GateIncident;
+  /** The tests the run reused from earlier passes (pass reuse); absent when it reused none. */
+  reused?: {
+    count: number;
+    /** Reused tests carrying each tag of `requireExecuted`, keyed by tag. */
+    byRequiredTag: Record<string, Array<{ title: string; filePath: string }>>;
+  };
 }
 
 /** Why a run is an environment incident, as the gate reports it. */
@@ -130,7 +142,9 @@ interface GateViolation {
     | 'max-leaks'
     | 'max-new-leaks'
     | 'no-resource-report'
-    | 'resources-declined';
+    | 'resources-declined'
+    | 'max-reused'
+    | 'reused-required';
   message: string;
   /** Observed value and the limit it exceeded, when the rule is a threshold. */
   actual?: number;
@@ -165,7 +179,10 @@ export function isEmptyPolicy(policy: GatePolicy): boolean {
     !policy.failOnFlaky &&
     !policy.requireSelection &&
     policy.maxLeaks == null &&
-    policy.maxNewLeaks == null
+    policy.maxNewLeaks == null &&
+    policy.maxReused == null &&
+    policy.maxReusedPercent == null &&
+    (policy.requireExecuted?.length ?? 0) === 0
   );
 }
 
@@ -234,6 +251,35 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
     policy.maxQuarantined,
   );
   if (quarantineViolation) violations.push(quarantineViolation);
+
+  const reused = facts.reused?.count ?? 0;
+  const reusedViolation = overLimit('max-reused', ['reused test', 'reused tests'], reused, policy.maxReused);
+  if (reusedViolation) violations.push(reusedViolation);
+  if (policy.maxReusedPercent != null) {
+    const all = facts.totalTests + reused;
+    const percent = all > 0 ? Math.round((reused / all) * 1000) / 10 : 0;
+    if (percent > policy.maxReusedPercent) {
+      violations.push({
+        rule: 'max-reused',
+        message: `${percent}% of the tests were reused from earlier passes (limit ${policy.maxReusedPercent}%)`,
+        actual: percent,
+        limit: policy.maxReusedPercent,
+      });
+    }
+  }
+  for (const tag of policy.requireExecuted ?? []) {
+    const skipped = facts.reused?.byRequiredTag[tag] ?? [];
+    if (skipped.length === 0) continue;
+    const names = skipped
+      .slice(0, 3)
+      .map((entry) => entry.title)
+      .join(', ');
+    const more = skipped.length > 3 ? ` and ${skipped.length - 3} more` : '';
+    violations.push({
+      rule: 'reused-required',
+      message: `${skipped.length} test${skipped.length === 1 ? '' : 's'} tagged @${tag} ${skipped.length === 1 ? 'was' : 'were'} reused instead of executed: ${names}${more}`,
+    });
+  }
 
   if (policy.failOnNewCluster && facts.newClusters > 0) {
     violations.push({

@@ -69,6 +69,7 @@ export const testRuns = sqliteTable(
     shardIndex: integer('shard_index'), // Reporting shard index (1-based) of the shard that created this run; null = not sharded
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
     isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
+    reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`
     filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
@@ -1706,6 +1707,35 @@ export const testSelections = sqliteTable(
     projectIdIdx: index('idx_test_selections_project_id').on(table.projectId),
     createdByIdx: index('idx_test_selections_created_by').on(table.createdBy),
     keyUnique: uniqueIndex('idx_test_selections_project_key').on(table.projectId, table.key),
+  }),
+);
+
+// Reused results: the tests a run skipped under its pass reuse plan, each with the
+// earlier pass that stood in for it. Not executions: they count toward the run's
+// verdict and the CI gate only. Written once, when the run is finalized, for the
+// tests the run did not execute in any of the projects the plan skipped them in.
+export const reusedResults = sqliteTable(
+  'reused_results',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    projects: text('projects', { mode: 'json' }).notNull(), // string[] — the Playwright projects it was skipped in
+    sourceRunId: integer('source_run_id'), // the run of the pass it reuses; not a foreign key, runs are pruned apart
+    sourceExecutionIds: text('source_execution_ids', { mode: 'json' }).notNull(), // number[] — that pass's final attempts
+    sourceCommit: text('source_commit').notNull(),
+    planId: integer('plan_id').notNull(), // the plan, kept after the plan row expires
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runCaseUnique: uniqueIndex('idx_reused_results_run_case').on(table.runId, table.testCaseId),
+    testCaseIdx: index('idx_reused_results_test_case').on(table.testCaseId),
   }),
 );
 

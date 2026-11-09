@@ -305,3 +305,38 @@ describe('an environment incident', () => {
     expect(output).not.toContain('✖');
   });
 });
+
+describe('the pass reuse rules', () => {
+  const reused = (count: number, byRequiredTag: Record<string, Array<{ title: string; filePath: string }>> = {}) => ({
+    reused: { count, byRequiredTag },
+  });
+
+  test('caps the reused tests by count and by share of every test, executed or reused', () => {
+    expect(isEmptyPolicy({ maxReused: 0 })).toBe(false);
+    expect(evaluateGatePolicy(facts(reused(300)), { maxReused: 300 }).passed).toBe(true);
+    expect(evaluateGatePolicy(facts(reused(301)), { maxReused: 300 }).violations[0]).toMatchObject({
+      rule: 'max-reused',
+      actual: 301,
+      limit: 300,
+    });
+    // 100 executed and 300 reused: 75%.
+    expect(evaluateGatePolicy(facts(reused(300)), { maxReusedPercent: 75 }).passed).toBe(true);
+    expect(evaluateGatePolicy(facts(reused(300)), { maxReusedPercent: 50 }).violations[0]).toMatchObject({
+      rule: 'max-reused',
+      actual: 75,
+    });
+    expect(evaluateGatePolicy(facts(), { maxReusedPercent: 0 }).passed).toBe(true);
+  });
+
+  test('fails when a test of a required tag was reused instead of executed', () => {
+    const result = evaluateGatePolicy(facts(reused(1, { critical: [{ title: 'pays', filePath: 'a.spec.ts' }] })), {
+      requireExecuted: ['critical', 'smoke'],
+    });
+    expect(result.violations).toEqual([
+      expect.objectContaining({
+        rule: 'reused-required',
+        message: '1 test tagged @critical was reused instead of executed: pays',
+      }),
+    ]);
+  });
+});

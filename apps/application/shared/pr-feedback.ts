@@ -102,6 +102,8 @@ export interface PrSummaryInput {
   passedTests: number;
   failedTests: number;
   flakyTests: number;
+  /** Tests the run reused from earlier passes under a pass reuse plan, instead of executing them. */
+  reusedTests?: number;
   durationMs: number | null;
   /** Failures that did not fail in the baseline — the ones this change caused. */
   newRegressions: PrFailureEntry[];
@@ -542,6 +544,7 @@ export function buildPrComment(input: PrSummaryInput): string {
     `**${input.passedTests}** passed`,
     `**${input.failedTests}** failed`,
     input.flakyTests > 0 ? `**${input.flakyTests}** flaky` : null,
+    input.reusedTests ? `**${input.reusedTests}** reused (code unchanged since they passed)` : null,
     `${input.durationMs == null ? '—' : durationShort(input.durationMs)}`,
   ].filter(Boolean);
   sections.push(`${counters.join(' · ')} — [full run](${input.runUrl})`);
@@ -724,6 +727,7 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
   const parts = [`${input.passedTests}/${input.totalTests} passed`];
   if (input.newRegressions.length > 0) parts.push(`${input.newRegressions.length} new`);
   if (input.flakyTests > 0) parts.push(`${input.flakyTests} flaky`);
+  if (input.reusedTests) parts.push(`${input.reusedTests} reused`);
   if (quarantined > 0) parts.push(`${quarantined} quarantined`);
 
   return {

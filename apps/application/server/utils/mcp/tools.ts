@@ -106,6 +106,7 @@ import { createTestFunctionSchema } from '#shared/test-function-schemas';
 import { listSelections, getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import { runPlanId } from '#shared/run-plan';
 import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import {
   validateSelectionDefinition,
@@ -715,6 +716,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         flakyTests: testRuns.flakyTests,
         skippedTests: testRuns.skippedTests,
         didNotRunTests: testRuns.didNotRunTests,
+        reusedCount: testRuns.reusedCount,
         environment: testRuns.environment,
         label: testRuns.label,
         metadata: testRuns.metadata,
@@ -797,6 +799,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       flaky: run.flakyTests || null,
       skipped: run.skippedTests || null,
       didNotRun: run.didNotRunTests || null,
+      reused: run.reusedCount ? { count: run.reusedCount, planId: runPlanId(run.metadata) } : null,
       env: run.environment || null,
       label: run.label || null,
       branch: meta?.scm?.branch || null,

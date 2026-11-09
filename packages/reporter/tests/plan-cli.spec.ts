@@ -143,6 +143,7 @@ describe('planned runs', () => {
     const listPath = run!.args[run!.args.indexOf('--test-list-invert') + 1]!;
     expect(run!.args).toEqual(['--test-list-invert', listPath, '--shard=2/3', '--workers=1']);
     expect(lists).toEqual([`${SKIP.join('\n')}\n`]);
+    expect(run!.env.PIWI_PLAN).toBe('9');
     expect(fs.existsSync(listPath)).toBe(false);
   });
 

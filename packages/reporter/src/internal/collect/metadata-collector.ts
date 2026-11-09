@@ -14,6 +14,7 @@ import {
 } from '@piwitests/core/wire';
 import { RUN_REF_ENV } from '@piwitests/core/run-channel';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { readPlanStamp } from '../support/selection-env.js';
 import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
 
@@ -207,6 +208,9 @@ export class MetadataCollector {
       const ci = this.collectCiInfo();
       if (ci) metadata.ci = ci;
     }
+
+    const plan = readPlanStamp();
+    if (plan) metadata.piwiPlan = plan;
 
     const htmlMeta = this.extractPlaywrightConfigMetadata(config);
     if (suite) htmlMeta.serialFiles = this.serialFiles(suite, configDirFromConfig(config));

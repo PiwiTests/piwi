@@ -21,9 +21,18 @@
 import path from 'node:path';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { sameFilePath } from '@piwitests/core/locator-break';
-import { coverageFragments, failureClusters, runPlans, testCases, testRuns, testRunsCases } from '../database/schema';
+import {
+  coverageFragments,
+  failureClusters,
+  reusedResults,
+  runPlans,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { eligibleRunSql, runCommit } from '#shared/run-eligibility';
+import { runPlanId } from '#shared/run-plan';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { splitSuitePath } from '#shared/utils/suites';
@@ -580,4 +589,62 @@ export async function getRunPlan(
     .where(and(eq(runPlans.id, planId), eq(runPlans.projectId, projectId)));
   if (!row || row.expiresAt.getTime() < now.getTime()) return null;
   return { id: row.id, plan: row.plan as StoredRunPlan, commit: row.commit, expiresAt: row.expiresAt };
+}
+
+/**
+ * Record the tests a finished run skipped under its plan as its reused results,
+ * and their count on the run. A test counts only when the run executed it in
+ * none of the projects the plan skipped it in, and only when the run is at the
+ * plan's commit: a run elsewhere, or a list Playwright did not apply, records
+ * nothing. Idempotent: a run finalized again keeps one row per test.
+ */
+export async function attachRunPlan(
+  db: DrizzleDB,
+  runId: number,
+  run: { projectId: number; metadata?: unknown },
+): Promise<number> {
+  const planId = runPlanId(run.metadata);
+  if (planId === null) return 0;
+  const [row] = await db
+    .select({ plan: runPlans.plan, commit: runPlans.commit })
+    .from(runPlans)
+    .where(and(eq(runPlans.id, planId), eq(runPlans.projectId, run.projectId)));
+  if (!row?.commit || row.commit !== runCommit(run.metadata)) return 0;
+  const plan = row.plan as StoredRunPlan;
+  if (plan.reused.length === 0) return 0;
+
+  const executed = new Set(
+    (
+      await db
+        .selectDistinct({ testCaseId: testRunsCases.testCaseId, browserName: testRunsCases.browserName })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.testRunId, runId))
+    ).map((r) => `${r.testCaseId}\x00${r.browserName ?? ''}`),
+  );
+  const skipped = plan.reused.filter(
+    (r) => !r.projects.some((project) => executed.has(`${r.testCaseId}\x00${project}`)),
+  );
+  for (let i = 0; i < skipped.length; i += ID_CHUNK) {
+    await db
+      .insert(reusedResults)
+      .values(
+        skipped.slice(i, i + ID_CHUNK).map((r) => ({
+          runId,
+          testCaseId: r.testCaseId,
+          projects: r.projects,
+          sourceRunId: r.sourceRunId,
+          sourceExecutionIds: r.sourceExecutionIds,
+          sourceCommit: r.sourceCommit,
+          planId,
+        })),
+      )
+      .onConflictDoNothing({ target: [reusedResults.runId, reusedResults.testCaseId] });
+  }
+  const [counted] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(reusedResults)
+    .where(eq(reusedResults.runId, runId));
+  const count = Number(counted?.count ?? 0);
+  await db.update(testRuns).set({ reusedCount: count }).where(eq(testRuns.id, runId));
+  return count;
 }

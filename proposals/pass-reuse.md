@@ -24,7 +24,13 @@ PR 3); the check against the source's own coverage is at file level (a changed f
 a source's coverage blobs are not compared with its commit's, so an application built from another tree than the
 checkout goes unnoticed; and it ships before the safety loop of PR 4 and the recording of PR 3, so nothing yet measures
 a wrong reuse: the capability stays experimental until they land. Changes to documentation files never widen, as in
-impact. PRs 3 to 6 are not started. The contracts it would add are entry D66 of
+impact. PR 3 is built but for carried coverage: `piwi run --plan` sets `PIWI_PLAN`, which
+the reporter records as `metadata.piwiPlan`; at finalization the run records each reused test it did not execute, at
+the plan's commit only, in `reused_results` with `test_runs.reused_count`; the run page's **Reused** row,
+`GET /api/test-runs/:id/reused`, the pull-request comment and commit status, `get_run`, and the gate's `--max-reused`
+and `--require-executed` read them, and a reused test counts as passed for `--require-tag` and `--require-selection`.
+The plan id travels in the run's metadata rather than a `reuse` wire object, and the fingerprint is still the
+Playwright version alone. Carried coverage (D12) is not built. PRs 4 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**

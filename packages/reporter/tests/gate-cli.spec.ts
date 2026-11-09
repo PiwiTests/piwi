@@ -33,6 +33,17 @@ describe('parseGateArgs', () => {
     expect(args.runId).toBe(42);
   });
 
+  it('reads --max-reused as a count or a percentage, and --require-executed as tags', () => {
+    const base = ['--server-url', 'https://piwi.example.com', '--run-id', '1'];
+    expect(parseGateArgs([...base, '--max-reused', '300'], EMPTY_ENV).policy).toMatchObject({ maxReused: 300 });
+    expect(parseGateArgs([...base, '--max-reused', '25%'], EMPTY_ENV).policy).toMatchObject({ maxReusedPercent: 25 });
+    expect(() => parseGateArgs([...base, '--max-reused', '120%'], EMPTY_ENV)).toThrow(/percentage/);
+    expect(parseGateArgs([...base, '--require-executed', '@critical, smoke'], EMPTY_ENV).policy.requireExecuted).toEqual([
+      'critical',
+      'smoke',
+    ]);
+  });
+
   it('accepts the --flag=value form', () => {
     const args = parseGateArgs(['--server-url=https://piwi.example.com', '--run-id=7'], EMPTY_ENV);
     expect(args.serverUrl).toBe('https://piwi.example.com');
