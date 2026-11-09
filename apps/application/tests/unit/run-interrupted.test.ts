@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 const runFinalizeSideEffects = vi.fn(async () => {});
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects }));
@@ -23,7 +22,7 @@ const stale = new Date(now - STALE_TIMEOUT_MS - 60_000);
 // run 2 is a quiet probe run, run 3 a quiet run of one test from an editor.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([{ id: 1, name: 'checkout', defaultBranch: 'main' }]);
   const run = (id: number, metadata: Record<string, unknown>) => ({
     id,

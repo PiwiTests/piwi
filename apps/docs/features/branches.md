@@ -30,7 +30,7 @@ Each project has a **Default branch** setting in the **Source control** section 
 
 On a project page, the **Filters** block carries a **branch** multi-select (the git-branch icon) next to the environment filter. It appears once any of the project's runs carries a branch. With no branch picked, the page reads the project's default branch and the runs that report no branch, like [Analytics](./analytics#branch-policy); **All branches** beside it reads every branch, and the branches you pick read exactly those. The header, the runs list, the test catalog, the failure clusters, the flaky leaderboard, the Flake Lab and the performance trends all follow it; a note under the filters counts the runs on other branches they hide.
 
-The branch is an indexed column, so every project tab, Analytics and the MCP `list_runs` tool filter by it in the database; the project's runs list filters its latest 200 runs in the browser. Runs reported before the column existed fall back to the branch recorded in their metadata, so old history still filters.
+The branch is an indexed column, so every project tab (the runs list included), Analytics and the MCP `list_runs` tool filter by it in the database. Runs reported before the column existed carry the branch recorded in their metadata, so old history still filters.
 
 ## The project status
 
@@ -50,6 +50,11 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 
 **Baselines are chosen within an environment and a branch.**
 
+<figure>
+  <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment">
+  <figcaption>The run a branch's run is compared with.</figcaption>
+</figure>
+
 - **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then the same branch, the base branch, any branch. Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).
 - **Choosing the base branch** — the Changes tab lets you take the baseline from any branch with an earlier full run, so a long-lived branch can be compared against `release/2` rather than `main`; the choice is in the URL (`?baseBranch=`) and on the API and MCP tool. See [What changed in a run](./run-changes#the-baseline).
 - **The visual-diff baseline** follows the same rule for one execution.
@@ -67,7 +72,7 @@ Notification subscriptions can filter by branch and alert only on the default br
 ## Limits
 
 - **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it, but only once the project's default branch is known (set on its Settings tab, or resolved from the SCM provider); until then it reads every branch.
-- **Branches are a run dimension, not yet entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class yet — those are the "branches as entities" work still under *Exploring* in the [roadmap](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md).
+- **Branches are a run dimension, not entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class.
 - **A run needs a resolvable branch.** A purely local run with no CI variables, a detached `HEAD`, and no `PIWI_BRANCH` records no branch at all, so it will not appear under any branch filter.
 
 ## Related

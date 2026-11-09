@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '#shared/latest-execution';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Whether an execution is the latest of its test: the pure summary over the
@@ -27,6 +26,7 @@ function row(overrides: Partial<NewerExecutionRow> & { runId: number }): NewerEx
     status: 'failed',
     repeatEachIndex: 0,
     retries: 0,
+    passedAfterFailure: false,
     browserName: 'chromium',
     failureClusterId: 1,
     startTime: new Date(T0 + overrides.runId * hour),
@@ -139,13 +139,13 @@ describe('summarizeNewerExecutions', () => {
 
   test("a repetition's retries are its own: a retry pass of one does not clear another's failure", () => {
     const repeated = [
-      row({ runId: 6, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 6, repeatEachIndex: 0, retries: 1, status: 'passed', passedAfterFailure: true }),
       row({ runId: 6, repeatEachIndex: 0, retries: 0, status: 'failed' }),
       row({ runId: 6, repeatEachIndex: 1, retries: 0, status: 'failed' }),
     ];
     expect(summarizeNewerExecutions(current, repeated).newest).toMatchObject({ status: 'failed', retries: 0 });
     const flaky = [
-      row({ runId: 7, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 7, repeatEachIndex: 0, retries: 1, status: 'passed', passedAfterFailure: true }),
       row({ runId: 7, repeatEachIndex: 0, retries: 0, status: 'failed' }),
       row({ runId: 7, repeatEachIndex: 1, retries: 0, status: 'passed' }),
     ];
@@ -162,9 +162,7 @@ describe('getNewerExecutions', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'shop' });
     await db.insert(schema.testCases).values([
       { id: 1, projectId: 1, title: 'pays by card', filePath: 'tests/checkout.spec.ts' },

@@ -17,7 +17,6 @@
  */
 import { and, asc, eq, gt, inArray, isNotNull, or } from 'drizzle-orm';
 import { flakeExperiments, testRuns, testRunsCases } from '../../server/database/schema';
-import { isFailedStatus } from '../utils/test-counts';
 import { eligibleRunSql } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
@@ -51,6 +50,8 @@ export interface ExecutionAfter {
   runStartedAt: Date;
   browserKey: string;
   status: string;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
 }
 
 function toDate(value: unknown): Date | null {
@@ -87,22 +88,15 @@ export function markingExperiments(experiments: DecisiveExperiment[]): Map<numbe
 }
 
 /**
- * The start of the first run after `after` in which the test retry-passed: a
- * failed and a passed attempt in the same run and browser. Pure.
+ * The start of the first run after `after` in which the test retry-passed: an
+ * attempt passed after an earlier attempt of its result failed or timed out
+ * (`passedAfterFailure`). Pure.
  */
 export function firstRetryPassAfter(executions: ExecutionAfter[], after: Date): Date | null {
-  const groups = new Map<string, { startedAt: Date; failed: boolean; passed: boolean }>();
-  for (const e of executions) {
-    if (e.runStartedAt.getTime() <= after.getTime()) continue;
-    const key = `${e.runId}\u0000${e.browserKey}`;
-    const group = groups.get(key) ?? { startedAt: e.runStartedAt, failed: false, passed: false };
-    if (isFailedStatus(e.status)) group.failed = true;
-    if (e.status === 'passed') group.passed = true;
-    groups.set(key, group);
-  }
   let first: Date | null = null;
-  for (const g of groups.values()) {
-    if (g.failed && g.passed && (!first || g.startedAt < first)) first = g.startedAt;
+  for (const e of executions) {
+    if (e.runStartedAt.getTime() <= after.getTime() || !e.passedAfterFailure) continue;
+    if (!first || e.runStartedAt < first) first = e.runStartedAt;
   }
   return first;
 }
@@ -148,6 +142,7 @@ export async function getVerifiedFixes(db: DrizzleDB, testCaseIds: number[]): Pr
       testCaseId: testRunsCases.testCaseId,
       runId: testRunsCases.testRunId,
       status: testRunsCases.status,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       browser: testRunsCases.browser,
       runStartedAt: testRuns.startTime,
     })
@@ -172,6 +167,7 @@ export async function getVerifiedFixes(db: DrizzleDB, testCaseIds: number[]): Pr
       runStartedAt,
       browserKey: browser?.projectName ?? browser?.browserName ?? '',
       status: r.status,
+      passedAfterFailure: Boolean(r.passedAfterFailure),
     };
     const list = executionsByTest.get(r.testCaseId);
     if (list) list.push(execution);

@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 declare global {
   // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
@@ -31,15 +30,17 @@ let tmpDir: string;
 let client: ReturnType<typeof createClient>;
 let runSeq = 0;
 
-async function seedRun(): Promise<number> {
+async function seedRun(startTime?: Date): Promise<number> {
   const id = ++runSeq;
-  await db.insert(schema.testRuns).values({ id, projectId: 1, status: 'failed', startTime: new Date(id * 1000) });
+  await db
+    .insert(schema.testRuns)
+    .values({ id, projectId: 1, status: 'failed', startTime: startTime ?? new Date(id * 1000) });
   return id;
 }
 
 /** Ingest one run where each given test fails with ERROR, as persistRunCases does. */
-async function ingestFailures(testCaseIds: number[]): Promise<Map<number, number | null>> {
-  const runId = await seedRun();
+async function ingestFailures(testCaseIds: number[], startTime?: Date): Promise<Map<number, number | null>> {
+  const runId = await seedRun(startTime);
   const fp = await computeErrorFingerprint(ERROR);
   const pending = new Map([[fp.fingerprint, { fp, sampleError: ERROR, count: testCaseIds.length }]]);
   const rows = testCaseIds.map((testCaseId) => ({
@@ -74,9 +75,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-cluster-split-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
   await db.insert(schema.projects).values({ id: 1, name: 'p1' });
   await db.insert(schema.testCases).values([
@@ -121,6 +120,17 @@ describe('moving tests to a new cluster', () => {
     expect(source!.triageNote).toBe(`Seen on staging only.\nMoved 1 test to cluster #${newId}.`);
     const moved = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 2));
     expect(moved.map((r) => r.failureClusterId)).toEqual([newId]);
+  });
+
+  test('a cluster split from an announced one is announced too', async () => {
+    const first = await ingestFailures([1, 2]);
+    const sourceId = first.get(1)!;
+    const announcedAt = new Date('2026-10-01T00:00:00Z');
+    await db.update(schema.failureClusters).set({ announcedAt });
+
+    const result = await extractClusterCases(db as never, sourceId, [2], null);
+
+    expect((await readCluster(result!.clusterId!))!.announcedAt).toEqual(announcedAt);
   });
 
   test('later failures of a moved test join the new cluster, the others the source', async () => {
@@ -172,6 +182,19 @@ describe('moving tests to a new cluster', () => {
     await mergeFailureClusters(dbc as never, otherId, newId);
 
     expect((await ingestFailures([2])).get(2)).toBe(otherId);
+  });
+
+  test('each cluster is then seen in the runs of the failures it holds, in the order they started', async () => {
+    const sourceId = (await ingestFailures([1, 2])).get(1)!;
+    await ingestFailures([2]);
+    // Run 3 was imported from before run 1.
+    await ingestFailures([2], new Date(0));
+    expect(await readCluster(sourceId)).toMatchObject({ firstSeenRunId: 3, lastSeenRunId: 2, occurrences: 4 });
+
+    const newId = (await extractClusterCases(db as never, sourceId, [2]))!.clusterId!;
+
+    expect(await readCluster(sourceId)).toMatchObject({ firstSeenRunId: 1, lastSeenRunId: 1, occurrences: 1 });
+    expect(await readCluster(newId)).toMatchObject({ firstSeenRunId: 3, lastSeenRunId: 2, occurrences: 3 });
   });
 
   test('returns no cluster when none of the tests failed in the source', async () => {

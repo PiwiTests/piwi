@@ -3,13 +3,15 @@
  * A file's place in the Test Map, on its coverage page: the nodes the file is
  * or serves (its route handler, the routes the handler serves, the page or
  * route its file name gives it, the file itself), each with the tests that
- * reach it, its feature and its open scenario gaps, and a link that opens the
- * Gaps tab's graph on it. Coverage says which lines ran; this says which user
- * paths reach the file and which tests are still to write. Renders nothing
+ * reach it, its feature and its open scenario gaps with their verbs (accept,
+ * snooze, covered-by, dismiss), and a link that opens the Map view's graph on
+ * it. Coverage says which lines ran; this says which user paths reach the
+ * file and which tests are still to write. Renders nothing
  * where the project declined the Test Map, or the map holds nothing for the
  * file. Self-contained: it reads `GET /api/projects/:id/gaps/file` when the
  * file changes.
  */
+import { coverageTabLink } from '~/utils/coverage-tab';
 import type { FileNodeVia, FileTestMap, FileTestMapNode } from '~~/server/utils/feature-graph';
 import { SENTENCE_LINK_CLASS } from '~/utils';
 
@@ -19,17 +21,22 @@ const { isHidden } = await useProjectCapabilities(props.projectId);
 
 const map = ref<FileTestMap | null>(null);
 let request = 0;
+/** Read the file's nodes; a verdict on one of its gaps reads them again, in place. */
+async function load(clear: boolean) {
+  const token = ++request;
+  if (clear) map.value = null;
+  if (isHidden('test-map') || !props.path) {
+    map.value = null;
+    return;
+  }
+  const read = await $fetch<FileTestMap>(`/api/projects/${props.projectId}/gaps/file`, {
+    query: { path: props.path },
+  }).catch(() => null);
+  if (token === request) map.value = read;
+}
 watch(
   () => [props.projectId, props.path, isHidden('test-map')] as const,
-  async ([projectId, path, hidden]) => {
-    const token = ++request;
-    map.value = null;
-    if (hidden || !path) return;
-    const read = await $fetch<FileTestMap>(`/api/projects/${projectId}/gaps/file`, { query: { path } }).catch(
-      () => null,
-    );
-    if (token === request) map.value = read;
-  },
+  () => load(true),
   { immediate: true },
 );
 
@@ -45,9 +52,9 @@ const VIA_LABEL: Record<FileNodeVia, string> = {
   convention: 'by its file name',
 };
 
-/** The Gaps tab, its graph open on the node. */
+/** The Coverage tab's Map view, its graph open on the node. */
 function nodeLink(node: FileTestMapNode) {
-  return { path: `/projects/${props.projectId}`, query: { tab: 'gaps', node: `${node.kind}:${node.key}` } };
+  return coverageTabLink(props.projectId, 'map', { node: `${node.kind}:${node.key}` });
 }
 
 function factsOf(node: FileTestMapNode): string {
@@ -98,12 +105,13 @@ const subtitle = computed(() =>
           >
         </p>
         <p class="text-xs text-muted">{{ factsOf(node) }}</p>
-        <ul v-if="node.gaps.length > 0" class="space-y-0.5" data-test-map-gaps>
-          <li v-for="gap in node.gaps" :key="gap.id" class="text-xs text-muted">
-            <span class="text-default">{{ gap.title }}</span> · {{ gap.class }}
+        <ul v-if="node.gaps.length > 0" class="space-y-2 pt-1" data-test-map-gaps>
+          <li v-for="gap in node.gaps" :key="gap.id" :data-test-map-gap="gap.id">
+            <GapRow compact :project-id="projectId" :gap="gap" @changed="load(false)" />
           </li>
           <li v-if="node.openGaps > node.gaps.length" class="text-xs text-muted">
-            and {{ node.openGaps - node.gaps.length }} more open
+            and {{ node.openGaps - node.gaps.length }} more open,
+            <NuxtLink :to="nodeLink(node)" :class="SENTENCE_LINK_CLASS">in the Map view</NuxtLink>
           </li>
         </ul>
       </li>

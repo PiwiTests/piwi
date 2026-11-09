@@ -82,6 +82,8 @@ async function openInitializingRun(page: Page, runId: number) {
   await waitForHydration(page);
   const header = page.locator('[data-shot="run-header"]');
   await expect(header).toContainText(/initializing/i);
+  // The Tests tab says the run is in its global setup, not that it recorded no test.
+  await expect(page.getByTestId('before-first-test')).toContainText(/^Global setup · /);
   await page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true));
   return header;
 }
@@ -163,6 +165,12 @@ test.describe('Run page of an initializing run', () => {
       });
       expect(step.ok()).toBeTruthy();
       await expect(page.getByTestId('live-step')).toContainText('Click');
+      // Whoever opens the run after sees the step the worker is in, though it began before they listened.
+      const later = await page.context().newPage();
+      await later.goto(`/test-runs/${runId}`);
+      await waitForHydration(later);
+      await expect(later.getByTestId('live-step')).toContainText('Click');
+      await later.close();
       await expect(page.getByRole('button', { name: 'Watch worker 0 live' })).toBeVisible({ timeout: 15_000 });
 
       expect(await sameDocument(page)).toBe(true);
@@ -204,4 +212,147 @@ test.describe('Run page of an initializing run', () => {
       await endRun(request, runId, setupToken, streamToken);
     }
   });
+});
+
+test('shows each shard’s step on its own row, though both shards run worker 0', async ({ page, request }) => {
+  test.setTimeout(60_000);
+  const start = async (shardIndex: number) => {
+    const started = await request.post('/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.RUN_GOES_LIVE,
+        startTime: new Date().toISOString(),
+        instanceId: 'run-goes-live-two-shards',
+        shardIndex,
+        shardTotal: 2,
+        totalTests: 1,
+      },
+    });
+    expect(started.ok()).toBeTruthy();
+    return (await started.json()) as { runId: number; streamToken: string };
+  };
+  const shards = [await start(1), await start(2)];
+  const runId = shards[0]!.runId;
+  expect(shards[1]!.runId).toBe(runId);
+  /** Worker 0 of the shard sends an event. */
+  const send = async (shard: number, event: Record<string, unknown>) => {
+    const sent = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken: shards[shard - 1]!.streamToken,
+        testCases: [{ workerIndex: 0, shardIndex: shard, startedAt: Date.now(), ...event }],
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  try {
+    await send(1, { type: 'begin', title: 'pays by card', location: 'tests/checkout.spec.ts:3:1' });
+    await send(2, { type: 'begin', title: 'searches', location: 'tests/search.spec.ts:3:1' });
+    const stream = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(`/${runId}/stream`));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await stream;
+    const step = { stepCategory: 'pw:api', location: 'tests/x.spec.ts:5:3' };
+    await send(1, { ...step, type: 'step-begin', title: 'Click', parentTitle: 'pays by card' });
+    await send(2, { ...step, type: 'step-begin', title: 'Fill', parentTitle: 'searches' });
+
+    // The page that heard the steps, and one that opens after them, show each on its own shard's row.
+    const later = await page.context().newPage();
+    await later.goto(`/test-runs/${runId}`);
+    await waitForHydration(later);
+    for (const viewer of [page, later]) {
+      await expect
+        .poll(async () => (await viewer.getByTestId('live-step').allInnerTexts()).map((text) => text.trim()).sort())
+        .toEqual(['Click', 'Fill']);
+    }
+    await later.close();
+  } finally {
+    for (const [index, shard] of shards.entries()) {
+      await request.post(`/api/test-runs/${runId}/finish`, {
+        data: { streamToken: shard.streamToken, status: 'passed', totalTests: 1, shardIndex: index + 1, shardTotal: 2 },
+      });
+    }
+  }
+});
+
+test('a retry reads as one while it runs, the list stays put, and its tags are searchable', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: {
+      projectName: PROJECT.RUN_GOES_LIVE,
+      startTime: new Date().toISOString(),
+      instanceId: 'run-goes-live-retry',
+      totalTests: 2,
+    },
+  });
+  expect(started.ok()).toBeTruthy();
+  const { runId, streamToken } = (await started.json()) as { runId: number; streamToken: string };
+  const send = async (event: Record<string, unknown>) => {
+    const sent = await request.post(`/api/test-runs/${runId}/events`, {
+      data: { streamToken, testCases: [{ location: 'tests/checkout.spec.ts:3:1', startedAt: Date.now(), ...event }] },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  const first = { title: 'pays by card', tags: ['smoke'], maxRetries: 2 };
+  try {
+    await send({ ...first, type: 'begin', retries: 0, workerIndex: 0 });
+    await send({ type: 'begin', title: 'searches', location: 'tests/search.spec.ts:3:1', retries: 0, workerIndex: 1 });
+    const stream = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(`/${runId}/stream`));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await stream;
+
+    // The first attempt fails: the list opened green stays flat in run order.
+    await send({
+      type: 'complete',
+      title: 'searches',
+      location: 'tests/search.spec.ts:3:1',
+      status: 'failed',
+      duration: 40,
+      error: 'Error: no results',
+      retries: 0,
+      workerIndex: 1,
+    });
+    await expect(page.locator(':is(a, span)[title="searches"]:visible')).toHaveCount(1);
+    await expect(page.locator('[data-tour="run-tests-group-by"]')).toContainText('None');
+    // One batch of the reporter carries a test's failed attempt and its retry's begin: one row, the retry's.
+    const batch = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [
+          {
+            ...first,
+            type: 'complete',
+            location: 'tests/checkout.spec.ts:3:1',
+            status: 'failed',
+            duration: 50,
+            error: 'Error: boom',
+            retries: 0,
+            workerIndex: 0,
+            startedAt: Date.now() - 100,
+          },
+          {
+            ...first,
+            type: 'begin',
+            location: 'tests/checkout.spec.ts:3:1',
+            retries: 1,
+            workerIndex: 2,
+            startedAt: Date.now(),
+          },
+        ],
+      },
+    });
+    expect(batch.ok()).toBeTruthy();
+    await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
+    await expect(page.locator(':is(a, span)[title="pays by card"]:visible')).toHaveCount(1);
+
+    // A row that streamed in answers the search's qualifiers.
+    await page.getByRole('combobox', { name: 'Search tests' }).fill('tag:smoke');
+    await expect(page.getByRole('option', { name: 'tag:smoke 1' })).toBeVisible();
+    await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
+    await expect(page.locator(':is(a, span)[title="searches"]:visible')).toHaveCount(0);
+  } finally {
+    await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 2 } });
+  }
 });

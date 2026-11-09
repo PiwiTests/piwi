@@ -4,22 +4,23 @@
  * When a fix lands (or a recorded fix regresses) Piwi resolves the fixing
  * commit's author through the SCM provider and puts it on the event payload.
  * On top of the normal subscription routing, the event is then delivered to
- * that person directly:
+ * that person directly, when the commit's email belongs to a *registered* Piwi
+ * user who can open the event's project:
  *
- * - **Email** through the existing outbox — but only when the commit's email
- *   belongs to a *registered* Piwi user. The message goes to that user's
+ * - **Email** through the existing outbox. The message goes to that user's
  *   account email (their `personal_email` channel), never to the raw commit
  *   address, so a fix by an outside contributor never turns into an email to a
  *   stranger.
  * - **A browser notification** for that user, delivered by the SSE stream even
  *   when they have no matching subscription (per-user targeting).
  *
- * The recipient decision is a pure function so the "registered users only" rule
- * is unit-testable without a database or SMTP.
+ * Matching the email is a pure function, so the "registered users only" rule is
+ * unit-testable without a database or SMTP.
  */
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { notificationChannels, notificationDeliveries, users } from '../../database/schema';
 import { isEmailConfigured } from '../email';
+import { getProjectScope, scopeAllows, type DrizzleDB } from '../project-access';
 import { sweepOutbox } from './dispatch';
 import { emailDestinationVerified } from './email-verified';
 import {
@@ -66,16 +67,23 @@ export function selectFixAuthorRecipient(
   return match?.email ? { userId: match.id, email: match.email } : null;
 }
 
-/** The registered user for a fix author's commit email, or null. */
-async function resolveRecipient(db: Db, fixAuthor: FixAuthor | undefined): Promise<FixAuthorRecipient | null> {
+/** The registered user for a fix author's commit email, when they can open `projectId`; else null. */
+async function resolveRecipient(
+  db: Db,
+  fixAuthor: FixAuthor | undefined,
+  projectId: number | undefined,
+): Promise<FixAuthorRecipient | null> {
   const email = fixAuthor?.email?.trim();
-  if (!email) return null;
+  if (!email || typeof projectId !== 'number') return null;
   const rows = await db
-    .select({ id: users.id, email: users.email })
+    .select()
     .from(users)
     .where(and(isNotNull(users.email), sql`lower(${users.email}) = ${email.toLowerCase()}`))
     .limit(1);
-  return selectFixAuthorRecipient(fixAuthor, rows);
+  const recipient = selectFixAuthorRecipient(fixAuthor, rows);
+  const user = rows.find((row) => row.id === recipient?.userId);
+  if (!recipient || !user) return null;
+  return scopeAllows(await getProjectScope(db as unknown as DrizzleDB, user), projectId) ? recipient : null;
 }
 
 /** Find the user's auto-managed personal_email channel, creating it if absent. */
@@ -96,9 +104,10 @@ async function personalEmailChannelId(db: Db, userId: number): Promise<number> {
 
 /**
  * Deliver a fix outcome to its author. Returns the user id to target the browser
- * notification at (null when the author is not a registered user), and enqueues
- * the personal email when SMTP is configured. Best-effort: any failure is
- * swallowed, because the run is already stored and the normal routing still ran.
+ * notification at (null when the author is not a registered user who can open
+ * the event's project), and enqueues the personal email when SMTP is
+ * configured. Best-effort: any failure is swallowed, because the run is already
+ * stored and the normal routing still ran.
  */
 export async function notifyFixAuthor(
   db: Db,
@@ -106,8 +115,8 @@ export async function notifyFixAuthor(
   payload: NotificationPayload,
 ): Promise<{ targetUserId: number | null }> {
   try {
-    const fixAuthor = (payload as { fixAuthor?: FixAuthor }).fixAuthor;
-    const recipient = await resolveRecipient(db, fixAuthor);
+    const { fixAuthor, projectId } = payload as { fixAuthor?: FixAuthor; projectId?: number };
+    const recipient = await resolveRecipient(db, fixAuthor, projectId);
     if (!recipient) return { targetUserId: null };
 
     // Email is best-effort on top of the targeted browser notification: a

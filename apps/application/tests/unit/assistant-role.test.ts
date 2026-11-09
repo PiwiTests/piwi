@@ -5,13 +5,12 @@
  * clamped like the AI-step limits, and their registry entries match the code.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY ||= 'assistant-role-test-secret-key-0123456789';
@@ -30,9 +29,7 @@ let db: DbClient;
 
 beforeAll(async () => {
   const sqlite = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(sqlite, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(sqlite);
   db = sqlite as unknown as DbClient;
 });
 

@@ -1,15 +1,14 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 declare global {
   // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
@@ -88,6 +87,7 @@ interface ClusterSeed {
   sampleError?: string | null;
   embedding?: number[] | null;
   embeddingModel?: string | null;
+  values?: Partial<typeof schema.failureClusters.$inferInsert>;
 }
 
 async function seedCluster(c: ClusterSeed): Promise<number> {
@@ -105,6 +105,7 @@ async function seedCluster(c: ClusterSeed): Promise<number> {
       occurrences: 1,
       embedding: c.embedding ? JSON.stringify(c.embedding) : null,
       embeddingModel: c.embeddingModel ?? null,
+      ...c.values,
     })
     .returning({ id: schema.failureClusters.id });
   return inserted[0]!.id;
@@ -121,9 +122,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-reconcile-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
   await db.insert(schema.projects).values({ id: 1, name: 'p1' });
   run1 = await seedRun();
@@ -222,6 +221,85 @@ describe('reconcileNewClusters', () => {
     const rows = await db.select().from(schema.failureClusters);
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.embeddingModel).toBe(TAG);
+  });
+
+  test('re-embeds the stale vectors "Fixed before" compares against, without merging or suggesting them', async () => {
+    const run2 = await seedRun();
+    const resolvedAt = new Date('2026-10-01T00:00:00Z');
+    // Their stored vectors are of an older recipe; re-embedded, the first two are identical to the open
+    // cluster's, which a merge or a suggestion would act on.
+    embedder.book.set('sig-open', BASE);
+    embedder.book.set('sig-resolved', BASE);
+    embedder.book.set('sig-held', NEAR);
+    embedder.book.set('sig-regressed', BASE);
+    const stale = { embedding: FAR, embeddingModel: 'test-embed#v2' };
+    const open = await seedCluster({ fingerprint: 'fp-open', signature: 'sig-open', firstSeenRunId: run2 });
+    const resolved = await seedCluster({
+      fingerprint: 'fp-resolved',
+      signature: 'sig-resolved',
+      firstSeenRunId: run1,
+      ...stale,
+      values: { status: 'resolved', updatedAt: resolvedAt },
+    });
+    const held = await seedCluster({
+      fingerprint: 'fp-held',
+      signature: 'sig-held',
+      firstSeenRunId: run1,
+      ...stale,
+      values: { status: 'ignored', fixLandedRunId: run1, fixVerification: 'stopped-failing', updatedAt: resolvedAt },
+    });
+    const regressed = await seedCluster({
+      fingerprint: 'fp-regressed',
+      signature: 'sig-regressed',
+      firstSeenRunId: run1,
+      ...stale,
+      values: { status: 'ignored', fixLandedRunId: run1, fixVerification: 'regressed' },
+    });
+
+    const stats = await reconcileNewClusters(dbc, 1, run2, { embeddingRole, reasoningRole });
+
+    expect(stats).toEqual({ embedded: 3, merged: 0, suggested: 0 });
+    expect(adjudicator.calls).toHaveLength(0);
+    const rows = new Map((await db.select().from(schema.failureClusters)).map((row) => [row.id, row]));
+    expect([open, resolved, held, regressed].map((id) => rows.get(id)!.embeddingModel)).toEqual([
+      TAG,
+      TAG,
+      TAG,
+      'test-embed#v2',
+    ]);
+    expect(JSON.parse(rows.get(resolved)!.embedding!)).toEqual(BASE);
+    expect(rows.get(resolved)!.updatedAt).toEqual(resolvedAt);
+    expect(rows.get(held)!.updatedAt).toEqual(resolvedAt);
+  });
+
+  test("re-embeds a resolved cluster with what the open clusters leave of the pass's cap", async () => {
+    // One-hot vectors: no two clusters are alike.
+    const oneHot = (i: number) => Array.from({ length: 64 }, (_, j) => (j === i ? 1 : 0));
+    for (let i = 0; i < 50; i++) {
+      embedder.book.set(`sig-open-${i}-`, oneHot(i));
+      await seedCluster({ fingerprint: `fp-open-${i}`, signature: `sig-open-${i}-`, firstSeenRunId: run1 });
+    }
+    embedder.book.set('sig-resolved', oneHot(50));
+    const resolved = await seedCluster({
+      fingerprint: 'fp-resolved',
+      signature: 'sig-resolved',
+      firstSeenRunId: run1,
+      embedding: FAR,
+      embeddingModel: 'test-embed#v2',
+      values: { status: 'resolved' },
+    });
+    const model = async () =>
+      (
+        await db
+          .select({ model: schema.failureClusters.embeddingModel })
+          .from(schema.failureClusters)
+          .where(eq(schema.failureClusters.id, resolved))
+      )[0]!.model;
+
+    expect((await reconcileNewClusters(dbc, 1, await seedRun(), { embeddingRole })).embedded).toBe(50);
+    expect(await model()).toBe('test-embed#v2');
+    expect((await reconcileNewClusters(dbc, 1, await seedRun(), { embeddingRole })).embedded).toBe(1);
+    expect(await model()).toBe(TAG);
   });
 
   test('backfill converges a pre-existing near-duplicate backlog without new clusters', async () => {

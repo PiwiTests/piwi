@@ -8,6 +8,7 @@
  * change saves at once.
  */
 import { PROJECT_ROLE_LABELS, ProjectRole } from '#shared/permissions';
+import { foldText } from '#shared/utils/fold-text';
 import {
   accessSubjectKey,
   directProjectMemberEntries,
@@ -28,7 +29,7 @@ import {
 const props = defineProps<{ projectId: number }>();
 
 const toast = useToast();
-const { refreshDemoAccess } = useAuth();
+const { can, refreshDemoAccess } = useAuth();
 const response = ref<ProjectMembersResponse | null>(null);
 const loadError = ref<unknown>(null);
 const loading = ref(true);
@@ -135,6 +136,24 @@ async function loadPickers() {
   groups.value = sortProjectAccessGroups(groupList?.groups ?? []);
 }
 
+/** What the add picker's search box holds. */
+const addSearch = ref('');
+
+/**
+ * A project admin's list holds the users who share a project with them; anyone
+ * else is found by their whole username, looked up as it is typed.
+ * Administrators already list everyone.
+ */
+const lookUpUsername = useDebounceFn(async (term: string) => {
+  const username = term.trim();
+  if (!username || can('users:manage') || users.value.some((user) => user.username === username)) return;
+  const found = await $fetch<UsersListResponse>('/api/users', { query: { lookup: username } }).catch(() => null);
+  const listed = new Set(users.value.map((user) => user.id));
+  const added: UserSummary[] = [...(found?.items ?? [])].filter((user) => !listed.has(user.id));
+  if (added.length > 0) users.value = sortProjectAccessUsers([...users.value, ...added]);
+}, 300);
+watch(addSearch, lookUpUsername);
+
 watch(() => props.projectId, load, { immediate: true });
 
 // ── Saving: every change replaces the direct roles at once ─────────────────
@@ -184,10 +203,16 @@ const unavailable = computed(
 );
 
 const addItems = computed(() => {
+  // A username is often pasted, surrounding spaces included.
+  const term = foldText(addSearch.value.trim());
+  const matches = (...texts: (string | null)[]) =>
+    !term || texts.some((text) => text !== null && foldText(text).includes(term));
   const groupItems = groups.value
+    .filter((group) => matches(group.name))
     .map((group) => ({ label: group.name, value: `group:${group.id}`, description: 'Group' }))
     .filter((item) => !unavailable.value.has(item.value));
   const userItems = users.value
+    .filter((user) => matches(user.name, user.username))
     .map((user) => ({
       label: projectAccessUserName(user),
       value: `user:${user.id}`,
@@ -209,7 +234,12 @@ function add() {
   if (!subject) return;
   const item = addItems.value.flat().find((i) => i.value === addKey.value);
   const name = item?.label ?? '';
-  const entries = [...directProjectMemberEntries(members.value), { subject, role: addRole.value }];
+  // A user goes with their username, which names someone the viewer's own list leaves out.
+  const username = subject.type === 'user' ? users.value.find((user) => user.id === subject.id)?.username : undefined;
+  const entries = [
+    ...directProjectMemberEntries(members.value),
+    { subject: { ...subject, username }, role: addRole.value },
+  ];
   addKey.value = undefined;
   void save(entries, `${name} is now ${PROJECT_ROLE_LABELS[addRole.value]} on this project`);
 }
@@ -236,13 +266,23 @@ function add() {
       <div v-if="canManage" class="flex flex-col gap-2 sm:flex-row sm:items-center">
         <USelectMenu
           v-model="addKey"
+          v-model:search-term="addSearch"
           :items="addItems"
+          ignore-filter
           value-key="value"
           placeholder="Add a user or a group…"
-          :search-input="{ placeholder: 'Filter users and groups…' }"
+          :search-input="{ placeholder: 'Filter, or type a whole username…' }"
           aria-label="User or group to add"
           class="w-full sm:w-72"
-        />
+        >
+          <template #empty="{ searchTerm }">
+            <template v-if="!searchTerm">Nobody to add.</template>
+            <template v-else-if="can('users:manage')">No match.</template>
+            <template v-else>
+              No match. Someone who shares no project with you is found by their whole username.
+            </template>
+          </template>
+        </USelectMenu>
         <USelect v-model="addRole" :items="roleItems" aria-label="Role to give" class="w-full sm:w-44" />
         <UButton label="Add" icon="i-lucide-plus" :disabled="!addKey || saving" @click="add" />
       </div>

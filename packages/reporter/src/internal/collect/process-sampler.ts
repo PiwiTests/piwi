@@ -13,7 +13,7 @@ import {
   type CpuTicks,
   type ProcessRole,
 } from '../support/system-readers.js';
-import type { RoleUsage, SeriesPoint, WireRunProfile } from '@piwitests/core/wire';
+import type { SeriesPoint, WireRunProfile } from '@piwitests/core/wire';
 
 /**
  * The run sampler: what the run cost the machine, read from the operating

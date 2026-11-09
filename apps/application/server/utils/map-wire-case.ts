@@ -63,6 +63,7 @@ export function mapWireCaseToRunCase(tc: WireCase): RunCaseInput {
     testSource: tc.testSource ?? null,
     testSourceFrames: tc.testSourceFrames ?? null,
     workerIndex: tc.workerIndex ?? null,
+    parallelIndex: tc.parallelIndex ?? null,
     shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,
@@ -70,5 +71,7 @@ export function mapWireCaseToRunCase(tc: WireCase): RunCaseInput {
     didNotRunReason: tc.didNotRunReason ?? null,
     expectedStatus: tc.expectedStatus ?? null,
     blockedBy: tc.blockedBy ?? null,
+    stdout: tc.stdout ?? null,
+    stderr: tc.stderr ?? null,
   };
 }

@@ -14,16 +14,21 @@ channel, so a per-user install pulls a per-user update.
 
 ## How it works
 
-1. On launch the Rust shell picks a free loopback port, resolves a per-user data
+1. On launch the Rust shell takes the loopback port its settings name
+   (`serverPort` in the app's `settings.json`, 3000 by default; a free port
+   when that one is taken), resolves a per-user data
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
    sidecar** (`src-tauri/binaries/node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
    compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
-   other versions' folders are deleted in the background).
+   other versions' folders are deleted in the background). The retention the
+   user picks on Settings › Storage (`retentionDays` in `settings.json`, set by
+   `desktop_set_retention_days`) reaches the server as `PIWI_RETENTION_DAYS`;
+   until one is picked, the server follows the environment the app started in.
 2. It polls `GET /api/health` (200 = database migrated) until the answer
-   carries the random nonce the shell gave this launch's sidecar
-   (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
-   process that took the port never receives the token, then points the window
+   answers the probe's fresh challenge with the proof of the desktop token
+   (`X-Piwi-Desktop-Proof`), so another process that took the port never
+   receives the token, then points the window
    at the server via a one-time token bootstrap (`/__piwi/session`). The
    window may only navigate to its bundled pages and that server's exact origin,
    and the app's IPC commands are granted to that origin alone
@@ -32,15 +37,26 @@ channel, so a per-user install pulls a per-user update.
    it says the server stopped once the supervisor, which restarts a crashed server
    with a backoff, gives up. The dashboard shows the restarts as a toast
    (`server-status` events).
-3. The tray offers **Run in background** (keep serving after the window closes),
-   **Start on login**, and **Open data folder**.
+3. The tray offers **Run in background** (keep serving after the window closes;
+   on macOS a click on the Dock icon brings the window back), **Start on login**,
+   **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
+   app data folder. The log rotates at 10 MB, keeping `server.1.log` and
+   `server.2.log`. While local runs are going, the tray lists them under
+   Open, each with a Stop item (`refresh_tray_runs`, kept current once a second
+   by `watch_local_runs`). A Stop goes to the dashboard window as
+   `piwi:tray-stop`, which stops the run as its own Stop does (`stopRun`, so a
+   run of several steps ends as stopped); a process no window run owns is
+   stopped by the shell directly.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
    and streams output back to the webview as `piwi:local-run` events. Those
    processes die with the shell, so every way out — closing the window, the
-   tray's Quit, or an update restart — asks for confirmation first while any
-   of them is still running. Every such run, reproductions, bisect steps and
+   tray's Quit, Cmd+Q on macOS, or an update restart — asks for confirmation
+   first while any of them is still running. The ways out that cannot be held
+   (the Dock's Quit on macOS, logging out or shutting down on macOS and
+   Windows) still run the quit cleanup (`shut_down` on `RunEvent::Exit`); on
+   Linux the session's end stops the app without it. Every such run, reproductions, bisect steps and
    Flake Lab included, names the bundled server as its hub
    (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`): each worker keeps a connection to
    the server's run channel, so the window and the paired Piwi Picker (over
@@ -59,13 +75,31 @@ channel, so a per-user install pulls a per-user update.
    Picker's bug reports (`.piwibug`, the app's own file type, associated in
    `tauri.conf.json` with a macOS exported type) through
    `/api/desktop/import-bug-report`.
-6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
+6. The dashboard's Settings → MCP server page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.
-7. Native notifications shown while the window is hidden bump an unread badge
-   on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
-   when the window regains focus.
+7. The shell shows the server's notifications itself, page or no page: once
+   the server is ready it follows `GET /api/desktop/notifications`
+   (`follow_notifications`), whose messages the server renders from its
+   notification events (`server/utils/desktop-notifications.ts`), and connects
+   again whenever the stream ends. It shows one when the dashboard window is
+   not in front and the window's choices want it: the window gives the shell
+   each project's bell events (the `piwi-browser-notify` cookie) and the
+   events off everywhere (`desktop_set_notification_choices`), which the shell
+   keeps in `settings.json` for the next start; a project with no choice
+   notifies on the events the server marks `defaultOn`. The page's own
+   notifications go through `desktop_notify`. Each one shown while the window
+   is not in front bumps an unread badge on the dock icon and the tray
+   tooltip, which focusing the window clears. The main window is not
+   suspended in the background (`backgroundThrottling: "disabled"`, which
+   macOS 14 and later honor; the Windows and Linux web views have no such
+   policy). On Windows and Linux a click on a notification brings the window
+   forward and opens its page, or, for one the page showed, hands its id back
+   (`piwi:notification-click`), which runs the `onclick` the page set; on
+   Windows a click counts only while the toast is on screen. On macOS clicks
+   are not reported: the notification plugin would hold a thread and a
+   main-loop timer for each notification until it leaves Notification Center.
 8. A dashboard link opened in the system browser (the reporter's `View run:`
    URL clicked in a terminal) shows in the app window instead: the server
    answers the tab with a notice that closes the tab where the browser allows
@@ -75,6 +109,61 @@ channel, so a per-user install pulls a per-user update.
    navigates to it and calls `desktop_bring_to_front`, which restores, shows
    and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
    qualify, so a web page cannot drive the window.
+9. A download the dashboard offers (a trace, an export, a report) goes through
+   `desktop_download`: the shell requests the URL, which must be on the
+   sidecar's origin, from its own server with the app's token and streams it
+   into the Downloads folder (never replacing a file), then reveals it. A file
+   the page builds itself (a workbook, an image) goes through
+   `desktop_save_download` instead.
+10. The windows open where they were last left (`tauri-plugin-window-state`,
+    `.window-state.json` in the app config folder): the dashboard window by
+    itself, the trace and output windows by kind (`window_state_key`); with
+    nothing saved yet, the dashboard opens maximized. Cmd/Ctrl with +, - or 0
+    zooms the dashboard (its capability grants `set_webview_zoom`, which
+    Tauri's shortcut script calls on macOS and Linux); the trace and output
+    windows hold no IPC grant, so they zoom on Windows only, where the web view
+    does it itself.
+11. A run reported into the app that ends with failures while the window is
+    not focused asks for attention once (`request_user_attention`, on the
+    dashboard's "Run failed" flash, never for a failed attempt while a run
+    goes): the Dock icon bounces, the taskbar button flashes, or Linux sets the
+    urgency hint, which focusing the window withdraws. While a local run or job
+    is going, a run in UI mode or paused at a stop included, the machine does
+    not idle-sleep (`watch_local_runs`, the `keepawake` crate, on a
+    thread of its own since Windows ties the request to the thread that made
+    it; on Linux with logind's sleep inhibitor too, which GNOME's idle suspend
+    respects). The display still turns off, closing a laptop's lid still sleeps
+    it, and a refused request is logged.
+12. On macOS the app menu is Tauri's default with Piwi's items (`app_menu`,
+    run by `run_app_menu_action`): Settings… (Cmd+,), which shows the page
+    through a `piwi:open-page` event; a Quit (Cmd+Q) that asks while local runs
+    are going; File › Import Playwright report… (Cmd+O), whose files the
+    dashboard receives as the ones the OS opens with the app
+    (`queue_open_files`); View › Back and Forward (Cmd+[ and Cmd+]); Help ›
+    Piwi documentation, Report an issue and Show logs. Windows and Linux show
+    no menu bar: the dashboard window takes the same keys with Ctrl, outside a
+    field being typed in (`DESKTOP_SHORTCUTS` in
+    `app/utils/desktop-shortcuts.ts`), Ctrl+O through
+    `desktop_pick_files_to_open`, which opens one picker at a time, in front of
+    the window.
+13. A `piwi://open/<page>` link shows that dashboard page in the window
+    (`tauri-plugin-deep-link`, `plugins.deep-link` in `tauri.conf.json`). The
+    `.msi` and `.exe` register the scheme as they install, and macOS reads it
+    from the bundle once the app is in `/Applications`. On Linux the shell
+    registers it each time it starts, off the main thread (`register_all`: a
+    handler entry with `%u` in the user's applications folder), since the
+    `.deb` and `.rpm` menu entry passes the app no URL and an AppImage installs
+    none. A link that launched the app (its one argument on Windows and Linux)
+    or came while the server started waits in `LinkedPage` and reaches the
+    session bootstrap as `to`, which redirects to it once `desktopPagePath`
+    accepts it. One that comes while the dashboard page loads waits until the
+    page listens and takes it (`desktop_take_linked_page`); after that, a link
+    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
+    its link to the running app through single-instance's `deep-link` feature.
+    Only the `open` host is read, so a link shows a page and never acts, and a
+    launch whose first argument is a link acts on no other argument
+    (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
+    it can split.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other
@@ -142,6 +231,22 @@ launch the app and run `npm run app:test:desktop` from `apps/application/`
 (`PIWI_DESKTOP_E2E=1`); it adopts the app's URL + token from `~/.piwi/desktop.json`.
 See [`apps/application/tests/README.md`](../application/tests/README.md#against-the-running-desktop-app).
 
+## The Windows installers
+
+The `.exe` (NSIS) and the `.msi` (WiX) show the Piwi artwork:
+`src-tauri/windows/*.bmp`, rendered from the logos in
+`apps/application/public/` by `npm run installer-art` (run it again after a
+logo changes; it needs the repository root's `npm ci`). Both installers carry
+the app icon.
+
+The `.exe`'s welcome page asks for the port the dashboard listens on
+(`src-tauri/windows/installer-hooks.nsh`), filled with the one the app will use.
+The confirmed port goes to `installer.json` in the app data folder, which the
+app moves into `settings.json` on its next start. Silent and passive installs,
+the updater's among them, skip the page and keep the setting. Everywhere else,
+the **Desktop app** card of Settings → Desktop app changes the port. Ports below 1024 and the
+ones browsers refuse (6000, 10080…) are not accepted.
+
 ## Signing
 
 Installers carry no publisher signature unless code-signing secrets are
@@ -196,6 +301,13 @@ keeps the previous release the latest when it creates one, and the `latest` job 
 `reusable-publish-desktop.yml` promotes the new one after the four legs pass. While
 a release builds, or when one of its legs failed, the app keeps finding the
 previous release and its complete manifests.
+
+When a check finds an update, the card asks the shell for the notes of every
+release after the installed version up to the offered one
+(`desktop_get_release_notes`): the shell reads GitHub's public releases API
+(`api.github.com/repos/PiwiTests/piwi/releases`, anonymous, up to two pages of
+100) and keeps the answer for that version. GitHub allows 60 anonymous requests
+an hour per address; past that, the card links to the releases page instead.
 
 The `.exe` channel installs **quietly**: its overlay sets the updater's
 `windows.installMode` to `quiet`, so the plugin starts the NSIS installer with

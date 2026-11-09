@@ -112,6 +112,7 @@ describe('the facts an export states', () => {
       ['Commit', 'a1b2c3d Paginate on the server (Eva)'],
       ['CI build', 'GitHub Actions #1192'],
       ['Playwright', '1.51.0'],
+      ['Runner', null],
     ]);
   });
 
@@ -165,7 +166,8 @@ describe('the facts an export states', () => {
 
   it('colors a status as the dashboard does', () => {
     const tones = (statuses: string[]) => statuses.map((status) => statusTone(status));
-    expect(tones(['failed', 'timedOut', 'interrupted', 'open'])).toEqual(['failed', 'failed', 'failed', 'failed']);
+    expect(tones(['failed', 'timedOut', 'open'])).toEqual(['failed', 'failed', 'failed']);
+    expect(statusTone('interrupted')).toBe('interrupted');
     expect(tones(['passed', 'resolved', 'flaky', 'didNotRun', 'running'])).toEqual([
       'passed',
       'passed',
@@ -173,7 +175,8 @@ describe('the facts an export states', () => {
       'didnotrun',
       'running',
     ]);
-    expect(statusTone('passed', 2)).toBe('flaky');
+    expect(statusTone('passed', true)).toBe('flaky');
+    expect(statusTone('passed', false)).toBe('passed');
     expect(tones(['skipped', 'unknown', 'cancelled', ''])).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
   });
 
@@ -287,6 +290,17 @@ function pdfText(bytes: Uint8Array): string[] {
   }
   return out;
 }
+
+describe('the PDF export of what a test wrote', () => {
+  it('draws each stream the test wrote to under its name', async () => {
+    const detail = { ...exportCase().detail, stdout: 'order 4521 created\n', stderr: 'sandbox answered 502\n' };
+    const text = pdfText(await renderExportPdf(bundle({ cases: [exportCase({ detail })] }), { imageFor: () => null }));
+    expect(text).toContain('Output (stdout)');
+    expect(text).toContain('order 4521 created');
+    expect(text).toContain('Output (stderr)');
+    expect(text).toContain('sandbox answered 502');
+  });
+});
 
 describe('the PDF export, at its limits', () => {
   it('wraps a long row of labels onto more rows and draws every one', async () => {

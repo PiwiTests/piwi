@@ -4,10 +4,13 @@ import com.intellij.icons.AllIcons
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.ExternalAnnotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.project.DumbAware
@@ -22,7 +25,8 @@ import javax.swing.Icon
  * details as the tooltip and a click opening it in the dashboard, a background over a failing
  * test, and a stronger one on the line it failed at, with why as the tooltip, and whether that
  * line changed since the run. While a run the service follows runs a test, the icon says so, then gives that run's
- * result. The summary is fetched outside the read action, shared with Code Vision, and drawn while the IDE indexes.
+ * result. The icon's right-click menu runs the test with Piwi: **Run with Piwi** and **Verify ×3 with Piwi**. The
+ * summary is fetched outside the read action, shared with Code Vision, and drawn while the IDE indexes.
  */
 class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>(), DumbAware {
     class Target(val project: Project, val file: VirtualFile, val stamp: Long)
@@ -47,6 +51,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
 
     override fun apply(file: PsiFile, lines: List<SummaryLine>?, holder: AnnotationHolder) {
         val document = file.viewProvider.document ?: return
+        val uri = runCatching { file.virtualFile?.toNioPath()?.toUri()?.toString() }.getOrNull()
         val text = document.charsSequence
         for (line in lines.orEmpty()) {
             if (line.line !in 0 until document.lineCount) continue
@@ -57,7 +62,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             if (first == end) continue
             holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                 .range(TextRange(first, end))
-                .gutterIconRenderer(TestResultGutter(file.project, line))
+                .gutterIconRenderer(TestResultGutter(file.project, line, uri, document.createRangeMarker(first, end)))
                 .create()
             val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
             val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), document.getLineEndOffset(it.line)) }
@@ -84,8 +89,16 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
         }
     }
 
-    /** A test's latest result in the gutter; a click runs what its line names (it opens the test in the dashboard). */
-    private class TestResultGutter(private val project: Project, private val line: SummaryLine) : GutterIconRenderer(), DumbAware {
+    /**
+     * A test's latest result in the gutter; a click runs what its line names (it opens the test in the dashboard), and
+     * the right-click menu runs the test with Piwi, at the line its `test(…)` call stands on now (`at`).
+     */
+    private class TestResultGutter(
+        private val project: Project,
+        private val line: SummaryLine,
+        private val uri: String?,
+        private val at: RangeMarker,
+    ) : GutterIconRenderer(), DumbAware {
         override fun getIcon(): Icon = when (line.status) {
             "failed" -> AllIcons.RunConfigurations.TestFailed
             "flaky" -> AllIcons.General.Warning
@@ -107,7 +120,25 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             }
         }
 
-        override fun equals(other: Any?): Boolean = other is TestResultGutter && other.line == line
+        override fun getPopupMenuActions(): ActionGroup? {
+            val file = uri ?: return null
+            /** The 0-based line of the test's `test(…)` call as the file stands; null once its text was deleted. */
+            fun lineNow(): Int? = at.takeIf { it.isValid }?.let { it.document.getLineNumber(it.startOffset) }
+            return DefaultActionGroup(
+                object : AnAction("Run with Piwi", "Run this test as Piwi runs it, its results on the instance", AllIcons.Actions.Execute), DumbAware {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        PiwiCommands.runTestAt(project, file, lineNow() ?: return, 0, wholeSpec = false)
+                    }
+                },
+                object : AnAction("Verify ×3 with Piwi", "Run this test three times without retries", AllIcons.Actions.Rerun), DumbAware {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        PiwiCommands.runTestAt(project, file, lineNow() ?: return, 0, wholeSpec = false, repeat = 3)
+                    }
+                },
+            )
+        }
+
+        override fun equals(other: Any?): Boolean = other is TestResultGutter && other.line == line && other.uri == uri
 
         override fun hashCode(): Int = line.hashCode()
     }

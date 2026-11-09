@@ -31,15 +31,23 @@ with the browser: [Editor connection](./editor-connection).
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 
+
 ## Where things are
 
-The IDE's LSP client shows warnings, quick fixes (Alt+Enter) and hover in open files; the rest is native, and every
-action is under **Tools → Piwi**:
+The IDE's LSP client shows warnings, quick fixes (Alt+Enter) and hover in open files.
+
+<figure>
+  <img src="/screenshots/jetbrains-heal.png" alt="WebStorm: a broken locator's failure at its line, and Alt+Enter offering the heal that replaces it">
+  <figcaption>The heal of a broken locator, offered with Alt+Enter.</figcaption>
+</figure>
+
+The rest is native, and every action is under **Tools → Piwi**:
 
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
   since the IDE highlights open files only.
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter, and a
-  click on its icon opens the test in the dashboard.
+  click on its icon opens the test in the dashboard. Its right-click menu holds **Run with Piwi** and **Verify ×3 with
+  Piwi**, which report to the instance as Piwi's own runs do.
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
   icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
   item calls for: [the status bar](./editor-runs#the-status-bar).
@@ -47,12 +55,13 @@ action is under **Tools → Piwi**:
   **Run This Spec**.
 - **[Recording](./editor-recording)** starts from **Record Here**, Alt+Enter or Alt+Insert, and **File → New → Record
   a New Test File…**; its controls are in a banner above the editor.
-- **[A paused run](./editor-run-control)**: the line a run Piwi started is stopped at has an arrow in the gutter and an
-  inlay above it with **Resume**, **Step**, **Run to Caret**, **Finish** and **End Test**; they are also first in the
-  status bar item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page
-  shows in the Piwi tool window's **Paused Page** tab, where a click on the image picks the locator of the element under
-  it. On a JetBrains Gateway backend, forward the ports **Pair with Piwi Picker** names: [Remote
-  development](/guide/remote-development#jetbrains-gateway).
+- **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
+  started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
+  Caret**, **Finish** and **End Test**; they are also in the status bar item's menu, after each stop to go to, and
+  under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in the Piwi tool window's **Paused Page**
+  tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
+  Gateway backend, forward the ports **Pair with Piwi Picker** names:
+  [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
@@ -73,7 +82,8 @@ action is under **Tools → Piwi**:
 
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
 shortcuts of your keymap while they apply: in the default keymap `F9` pauses and resumes, `F8` steps, `Alt+F9` runs
-to the caret and `Shift+F8` finishes. **Settings → Keymap** changes them (search `Piwi`).
+to the caret and `Shift+F8` finishes. Where your keymap gives one to another action too, Piwi's comes first while it
+applies. **Settings → Keymap** changes them (search `Piwi`).
 
 ## Related
 

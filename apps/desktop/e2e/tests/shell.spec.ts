@@ -126,12 +126,80 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   expect(updateSettings.supported).toBe(false);
   expect(updateSettings.pending).toBeNull();
 
-  // The ambient badge/tooltip command is granted and accepts a set + clear.
-  const activity = (await tauriPage.evaluate(`
-    window.__TAURI__.core.invoke('desktop_set_activity', { count: 2, status: 'e2e' })
-      .then(() => window.__TAURI__.core.invoke('desktop_set_activity', { count: 0, status: null }))
+  // The notification choices command is granted and takes the page's choices; a project id that is not one is
+  // dropped rather than refused. The linked page command is granted, and holds no page on a launch with no link.
+  const choices = (await tauriPage.evaluate(`
+    window.__TAURI__.core.invoke('desktop_set_notification_choices', {
+      choices: { projects: { 3: ['cluster.new'], 'x/y': ['run.failed'] }, muted: ['diagnosis.completed'] },
+    })
+      .then(() => window.__TAURI__.core.invoke('desktop_set_notification_choices', { choices: { projects: {}, muted: [] } }))
+      .then(() => window.__TAURI__.core.invoke('desktop_take_linked_page'))
+      .then((page) => ({ ok: page === null, error: page === null ? undefined : 'a linked page was held: ' + page }))
+      .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+  `)) as { ok: boolean; error?: string };
+  expect(choices.ok, `the notification choices or the linked page failed: ${choices.error ?? 'unknown'}`).toBe(true);
+
+  // A run's output opens in a window of its own on the dashboard's run output page, which the dashboard window feeds
+  // over a BroadcastChannel: the page says it is ready, then shows the state it is sent (its title becomes the
+  // window's). The shell closes the window by its name and says when it is gone; an unknown name is refused. Each
+  // step is a short evaluation in the main window, polled from here: with another window open, an unscoped one can
+  // run in it, and one that waits across the opening of a window may never answer.
+  const main = tauriPage.window('main');
+  const onDashboard = `!!document.getElementById('__nuxt') && !document.getElementById('splash-status')`;
+  await expect.poll(() => main.evaluate(onDashboard).catch(() => false), { timeout: 60_000 }).toBe(true);
+  await main.evaluate(`
+    (() => {
+      const channel = new BroadcastChannel('piwi:run-output');
+      window.__piwiE2eChannel = channel;
+      window.__piwiE2eHeard = [];
+      channel.onmessage = (event) => window.__piwiE2eHeard.push(event.data);
+      window.__piwiE2eClosed = [];
+      window.__TAURI__.event.listen('piwi:output-window-closed', (event) => window.__piwiE2eClosed.push(event.payload));
+      return true;
+    })()
+  `);
+  const opened = (await main.evaluate(`
+    window.__TAURI__.core.invoke('desktop_open_output_window', { name: 'piwi-e2e-output' })
+      .then((label) => ({ ok: true, label }))
+      .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+  `)) as { ok: boolean; label?: string; error?: string };
+  expect(opened.ok, `desktop_open_output_window rejected: ${opened.error ?? 'unknown'}`).toBe(true);
+  expect(opened.label).toMatch(/^output-piwi-e2e-output_\d+$/);
+  const heardReady = `window.__piwiE2eHeard.some((m) => m.type === 'ready' && m.name === 'piwi-e2e-output')`;
+  await expect
+    .poll(() => main.evaluate(heardReady), {
+      message: 'the run output page must say it is ready over the BroadcastChannel',
+      timeout: 30_000,
+    })
+    .toBe(true);
+
+  await main.evaluate(`
+    (window.__piwiE2eChannel.postMessage({
+      type: 'state', name: 'piwi-e2e-output', title: 'Piwi e2e run', status: { label: 'Passed', color: 'success' },
+      detail: 'e2e', startedAt: Date.now(), finishedAt: Date.now(), running: false, stopRequested: false,
+      lines: [{ id: 1, text: 'rendered by the dashboard', error: false }],
+    }), true)
+  `);
+  await tauriPage.waitForWindow((w) => w.label === opened.label && w.title === 'Piwi e2e run · Piwi Dashboard', {
+    timeout: 15_000,
+  });
+
+  const refused = (await main.evaluate(`
+    window.__TAURI__.core.invoke('desktop_open_output_window', { name: '../main' })
+      .then(() => ({ rejected: false, error: '' }))
+      .catch((e) => ({ rejected: true, error: String((e && e.message) || e) }))
+  `)) as { rejected: boolean; error: string };
+  expect(refused.rejected).toBe(true);
+  expect(refused.error).toContain('invalid');
+
+  const closed = (await main.evaluate(`
+    window.__TAURI__.core.invoke('desktop_close_output_window', { name: 'piwi-e2e-output' })
       .then(() => ({ ok: true }))
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
   `)) as { ok: boolean; error?: string };
-  expect(activity.ok, `desktop_set_activity rejected: ${activity.error ?? 'unknown'}`).toBe(true);
+  expect(closed.ok, `desktop_close_output_window rejected: ${closed.error ?? 'unknown'}`).toBe(true);
+  await expect.poll(() => main.evaluate(`window.__piwiE2eClosed`), { timeout: 15_000 }).toEqual([opened.label]);
+  await expect
+    .poll(async () => (await tauriPage.listWindows()).filter((w) => w.label.startsWith('output-')).length)
+    .toBe(0);
 });

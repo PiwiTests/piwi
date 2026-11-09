@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { FullConfig, FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import { RunSampler } from '../../src/internal/collect/process-sampler.js';
 import { CoverageCollection } from '../../src/internal/collect/test-coverage.js';
+import { privateTempDir } from '../../src/internal/support/private-file.js';
 import type { CollectedTestCase } from '../../src/types/collected.js';
 import type { ResourceCensus } from '../../src/internal/capture/resource-ledger.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../../src/internal/config/env.js';
@@ -75,7 +75,7 @@ export default class VerifyCaptureReporter implements Reporter {
   private apiCoverage: Array<{ title: string; testCase: CollectedTestCase }> = [];
   private censuses: ResourceCensus[] = [];
   private censusByTitle = new Map<string, ResourceCensus>();
-  private resourcesFile = path.join(os.tmpdir(), `piwi-resources-verify-${process.pid}.jsonl`);
+  private resourcesFile = path.join(privateTempDir(), `piwi-resources-verify-${process.pid}.jsonl`);
 
   private sampler: RunSampler | null = null;
 
@@ -542,7 +542,32 @@ export default class VerifyCaptureReporter implements Reporter {
           f.kind === 'context' &&
           f.where.endsWith(at('context')) &&
           f.pages === 1 &&
-          (f.afterTestCpuMs ?? 0) > 0,
+          (f.afterTestCpuMs ?? 0) > 0 &&
+          !!f.lastUse?.endsWith(at('context-last-use')),
+      ],
+      [
+        'the context a test fixture with a timeout of its own never closes',
+        (f) =>
+          f.verdict === 'leaked' &&
+          f.kind === 'context' &&
+          f.where.startsWith('fixture "slowContext" at ') &&
+          f.where.endsWith(at('timed-fixture')) &&
+          f.count === 2 &&
+          f.pages === 2,
+      ],
+      [
+        'a persistent context, with its page',
+        (f) => f.verdict === 'leaked' && f.kind === 'context' && f.where.endsWith(at('persistent')) && f.pages === 1,
+      ],
+      [
+        'a popup open long after its last use',
+        (f) =>
+          f.verdict === 'lingering' &&
+          f.kind === 'page' &&
+          f.where.startsWith('popup after locator.click') &&
+          f.where.endsWith(at('linger')) &&
+          !!f.lastUse?.endsWith(at('linger-last-use')) &&
+          (f.heldMs ?? 0) >= 2000,
       ],
       [
         'the page of browser.newPage()',
@@ -613,6 +638,18 @@ export default class VerifyCaptureReporter implements Reporter {
     for (const finding of report.findings) {
       check(matched.has(finding), `unexpected finding: ${JSON.stringify(finding)}`);
     }
+
+    // ── The spans the timeline draws ─────────────────────────────────────────
+    const contextSpan = report.spans.find((span) => span.verdict === 'leaked' && span.where.endsWith(at('context')));
+    check(
+      !!contextSpan && contextSpan.untilWorkerEnd && contextSpan.to > contextSpan.from && contextSpan.pages === 1,
+      `the leaked context's span: ${JSON.stringify(contextSpan)}`,
+    );
+    const lingerSpan = report.spans.find((span) => span.verdict === 'lingering');
+    check(
+      !!lingerSpan && lingerSpan.to - lingerSpan.from >= 2000 && !!lingerSpan.lastUse?.endsWith(at('linger-last-use')),
+      `the lingering popup's span: ${JSON.stringify(lingerSpan)}`,
+    );
   }
 
   /** The run sampler against the run's real processes: Playwright's workers, Chromium's browser and renderers. */

@@ -6,7 +6,16 @@ import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../src/internal/config/env.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js';
-import { startServer, jsonRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
+import {
+  startServer,
+  jsonRes,
+  fakeConfig,
+  fakeSuite,
+  fakeTestCase,
+  fakeResult,
+  stubPlatform,
+  type FakeServer,
+} from './_helpers.js';
 
 const SPEC = path.resolve('tests/cart.spec.ts');
 
@@ -37,7 +46,7 @@ describe('the resource summary', () => {
 
   async function run(
     options: Record<string, unknown>,
-    result: ReturnType<typeof fakeResult>,
+    result: ReturnType<typeof fakeResult> | Array<ReturnType<typeof fakeResult>>,
     shutdown?: ResourceCensus,
     onBody?: (body: any) => void,
   ): Promise<string[]> {
@@ -61,9 +70,11 @@ describe('the resource summary', () => {
     suite.allTests = () => [testCase];
     reporter.onBegin(fakeConfig(), suite);
     const resultsFile = process.env[PIWI_RESOURCES_RESULTS_ENV];
-    if (shutdown && resultsFile) fs.appendFileSync(resultsFile, `${JSON.stringify(shutdown)}\n`);
-    reporter.onTestBegin(testCase, result);
-    reporter.onTestEnd(testCase, result);
+    if (shutdown && resultsFile) fs.appendFileSync(resultsFile, `${JSON.stringify(shutdown)}\n`, { mode: 0o600 });
+    for (const attempt of Array.isArray(result) ? result : [result]) {
+      reporter.onTestBegin(testCase, attempt);
+      reporter.onTestEnd(testCase, attempt);
+    }
     await reporter.onEnd({ status: 'passed' } as any);
     if (resultsFile) expect(fs.existsSync(resultsFile)).toBe(false);
     return logged.filter((line) => line.startsWith('[Piwi Dashboard] ')).map((line) => line.slice(17));
@@ -84,8 +95,33 @@ describe('the resource summary', () => {
     const lines = await run({}, fakeResult({ attachments }), shutdown);
     expect(lines).toContain('Resources: 1 leak');
     expect(lines).toContain(
-      '  leaked   context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
+      '  leaked    context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
     );
+  });
+
+  it("names the workers' shutdown file in the private temp folder, on Windows in this user's own", async () => {
+    const local = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-resources-local-'));
+    const realPlatform = stubPlatform('win32');
+    vi.stubEnv('LOCALAPPDATA', local);
+    try {
+      const shutdown: ResourceCensus = {
+        ...leakyCensus(),
+        at: 3000,
+        test: null,
+        born: [],
+        open: [],
+        closed: [{ id: 1, at: 3000, phase: 'worker', test: null }],
+      };
+      const census = Buffer.from(JSON.stringify(leakyCensus()));
+      const attachments = [{ name: ATTACHMENT_NAMES.resources, contentType: 'application/json', body: census }];
+      const lines = await run({}, fakeResult({ attachments }), shutdown);
+      expect(path.dirname(process.env[PIWI_RESOURCES_RESULTS_ENV]!)).toBe(path.join(local, 'piwi', 'tmp'));
+      expect(lines.some((line) => line.includes('open until the worker shut down'))).toBe(true);
+    } finally {
+      realPlatform();
+      vi.unstubAllEnvs();
+      fs.rmSync(local, { recursive: true, force: true });
+    }
   });
 
   it('counts probable leaks from the steps of a test that ran without the fixtures', async () => {
@@ -94,7 +130,54 @@ describe('the resource summary', () => {
     ];
     const lines = await run({}, fakeResult({ steps }));
     expect(lines).toContain('Resources: 1 probable leak');
-    expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · 1 opened, 0 closed in tests/cart.spec.ts');
+    expect(lines).toContain('  probable  context     tests/cart.spec.ts:7 · left open by its test');
+  });
+
+  it('pairs only the attempts of one worker, and judges nothing a failed attempt opened', async () => {
+    const step = (title: string, line: number) => ({ title, category: 'pw:api', location: { file: SPEC, line, column: 3 }, steps: [] });
+    const lines = await run({}, [
+      fakeResult({ workerIndex: 0, steps: [step('Create context', 7)] }),
+      fakeResult({ workerIndex: 1, steps: [step('Close context', 8)] }),
+      fakeResult({ workerIndex: 2, status: 'failed', steps: [step('Create context', 9)] }),
+    ]);
+    expect(lines.filter((line) => line.startsWith('  probable'))).toEqual(['  probable  context     tests/cart.spec.ts:7 · left open by its test']);
+  });
+
+  it('reads the spec file to count a page `browser.newPage()` left open, and never counts an API context', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-probable-'));
+    const spec = path.join(dir, 'cart.spec.ts');
+    fs.writeFileSync(
+      spec,
+      [
+        "test('adds to cart', async ({ browser, context }) => {",
+        '  const page = await browser.newPage();',
+        '  const api = await request.newContext();',
+        '  const other = await context.newPage();',
+        '});',
+      ].join('\n'),
+    );
+    const step = (title: string, line: number, column: number) => ({
+      title,
+      category: 'pw:api',
+      location: { file: spec, line, column },
+      steps: [],
+    });
+    const steps = [step('Create page', 2, 30), step('Create request context', 3, 29), step('Create page', 4, 31)];
+    const bodies: any[] = [];
+    try {
+      const lines = await run({}, fakeResult({ steps }), undefined, (body) => bodies.push(body));
+      const site = `${path.relative(process.cwd(), spec).split(path.sep).join('/')}:2`;
+      expect(lines.filter((line) => line.startsWith('Resources:') || line.startsWith('  probable') || line.startsWith('Probable'))).toEqual([
+        'Resources: 1 probable leak',
+        `  probable  page        ${site} · left open by its test`,
+        'Probable leaks are read from the steps and the lines they point at, without API request contexts (their dispose() leaves no step); the capture fixtures (extendPiwiFixtures) make them exact.',
+      ]);
+      expect(bodies.find((body) => body.testCases).resourceReport.findings).toEqual([
+        { verdict: 'probable', kind: 'page', where: site, site, tests: 1, count: 1, detail: 'left open by its test' },
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('prints what the run cost the machine, with the artifacts the tests attached', async () => {

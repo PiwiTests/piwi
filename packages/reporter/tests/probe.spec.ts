@@ -1,6 +1,7 @@
 import { gzipSync } from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { computeFault, isFaultAllowed, SLOW_FAULT_DELAY_MS } from '../src/internal/probe/faults.js';
+import { probePlaywrightArgs } from '../src/cli/probe.js';
 import { fulfillHeaders, parseProbeTrace } from '../src/internal/probe/interception.js';
 import {
   matchProbeItem,
@@ -11,7 +12,12 @@ import {
   shouldAct,
   type ProbePlan,
 } from '../src/internal/probe/plan.js';
-import { classifyProbeHandled, outcomeFromStatus } from '../src/internal/probe/mode.js';
+import {
+  classifyProbeHandled,
+  faultIsTheError,
+  outcomeFromStatus,
+  probeConsoleErrors,
+} from '../src/internal/probe/mode.js';
 
 describe('computeFault (fault application)', () => {
   const input = { status: 200, body: '{"total":42,"currency":"USD"}', contentType: 'application/json' };
@@ -46,6 +52,14 @@ describe('computeFault (fault application)', () => {
     const out = computeFault('drop-field', { status: 200, body: '[{"a":1,"b":2},{"a":3,"b":4}]' });
     expect(JSON.parse(out.body)).toEqual([{ b: 2 }, { b: 4 }]);
     expect(out.changed).toBe(true);
+  });
+
+  it('drop-field records no change for JSON with no field to drop, however it is formatted', () => {
+    for (const body of ['[\n  "admin",\n  "editor"\n]', '[1.0]', '[ ]', '{ }', '"text"', '["a\\/b"]']) {
+      const out = computeFault('drop-field', { status: 200, body });
+      expect(out.body).toBe(body);
+      expect(out.changed).toBe(false);
+    }
   });
 
   it('drop-field leaves non-JSON untouched and records no change', () => {
@@ -94,6 +108,9 @@ describe('probe run stamp', () => {
     // An unapplied fault is inconclusive regardless of status.
     expect(outcomeFromStatus('passed', false)).toBe('inconclusive');
     expect(outcomeFromStatus('failed', false)).toBe('inconclusive');
+    // A skipped test and an interrupted run say nothing about the fault.
+    expect(outcomeFromStatus('skipped', true)).toBe('inconclusive');
+    expect(outcomeFromStatus('interrupted', true)).toBe('inconclusive');
   });
 });
 
@@ -176,6 +193,30 @@ describe('classifyProbeHandled (server-fault resilience)', () => {
       'unhandled',
     );
   });
+
+  it('reads the error a thrown or error-status fault injects as the fault, not as a degradation', () => {
+    expect(faultIsTheError('throw')).toBe(true);
+    expect(faultIsTheError('status')).toBe(true);
+    expect(faultIsTheError('dependency')).toBe(false);
+    const injected = { consoleErrors: 0, dialogs: 0, backendError: true, faultIsTheError: true };
+    expect(classifyProbeHandled(injected)).toBe('graceful');
+    // The page still has to cope: blank after the injected error is unhandled.
+    expect(classifyProbeHandled({ ...injected, blankPage: true })).toBe('unhandled');
+    // A dependency failure the handler turned into a 5xx is the application's error.
+    expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: true, faultIsTheError: false })).toBe(
+      'degraded',
+    );
+  });
+
+  it("leaves the browser's failed-resource lines out of the console errors", () => {
+    expect(
+      probeConsoleErrors([
+        { type: 'error', text: 'Failed to load resource: the server responded with a status of 500 ()' },
+        { type: 'warning', text: 'slow' },
+        { type: 'error', text: 'TypeError: orders is undefined' },
+      ]),
+    ).toBe(1);
+  });
 });
 
 describe('isFaultAllowed (reporter-side allow-list)', () => {
@@ -198,8 +239,24 @@ describe('matchProbeItem', () => {
   const plan: ProbePlan = {
     budget: 50,
     items: [
-      { testCaseId: 1, testTitle: 'checkout › happy path', filePath: 'tests/checkout.spec.ts', suitePath: [], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
-      { testCaseId: 2, testTitle: 'cart › coupon', filePath: 'tests/cart.spec.ts', suitePath: [], routeKey: 'POST /api/coupons', fault: 'empty-body', nth: 1 },
+      {
+        testCaseId: 1,
+        testTitle: 'checkout › happy path',
+        filePath: 'tests/checkout.spec.ts',
+        suitePath: [],
+        routeKey: 'POST /api/orders',
+        fault: 'status-500',
+        nth: 1,
+      },
+      {
+        testCaseId: 2,
+        testTitle: 'cart › coupon',
+        filePath: 'tests/cart.spec.ts',
+        suitePath: [],
+        routeKey: 'POST /api/coupons',
+        fault: 'empty-body',
+        nth: 1,
+      },
     ],
   };
 
@@ -213,8 +270,24 @@ describe('matchProbeItem', () => {
     const shared: ProbePlan = {
       budget: 50,
       items: [
-        { testCaseId: 10, testTitle: 'loads', filePath: 'tests/orders.spec.ts', suitePath: [], routeKey: 'GET /api/orders', fault: 'status-500', nth: 1 },
-        { testCaseId: 20, testTitle: 'loads', filePath: 'tests/invoices.spec.ts', suitePath: [], routeKey: 'GET /api/invoices', fault: 'status-500', nth: 1 },
+        {
+          testCaseId: 10,
+          testTitle: 'loads',
+          filePath: 'tests/orders.spec.ts',
+          suitePath: [],
+          routeKey: 'GET /api/orders',
+          fault: 'status-500',
+          nth: 1,
+        },
+        {
+          testCaseId: 20,
+          testTitle: 'loads',
+          filePath: 'tests/invoices.spec.ts',
+          suitePath: [],
+          routeKey: 'GET /api/invoices',
+          fault: 'status-500',
+          nth: 1,
+        },
       ],
     };
     expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/orders.spec.ts' })?.testCaseId).toBe(10);
@@ -227,11 +300,29 @@ describe('matchProbeItem', () => {
     const tie: ProbePlan = {
       budget: 50,
       items: [
-        { testCaseId: 30, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Orders'], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
-        { testCaseId: 40, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'], routeKey: 'POST /api/invoices', fault: 'status-500', nth: 1 },
+        {
+          testCaseId: 30,
+          testTitle: 'saves',
+          filePath: 'tests/app.spec.ts',
+          suitePath: ['Orders'],
+          routeKey: 'POST /api/orders',
+          fault: 'status-500',
+          nth: 1,
+        },
+        {
+          testCaseId: 40,
+          testTitle: 'saves',
+          filePath: 'tests/app.spec.ts',
+          suitePath: ['Invoices'],
+          routeKey: 'POST /api/invoices',
+          fault: 'status-500',
+          nth: 1,
+        },
       ],
     };
-    expect(matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId).toBe(40);
+    expect(
+      matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId,
+    ).toBe(40);
   });
 
   it('returns null when nothing matches', () => {
@@ -248,6 +339,41 @@ describe('requestMatchesRoute', () => {
   it('does not match a different path', () => {
     expect(requestMatchesRoute('POST', 'https://app.example.com/api/coupons', 'POST /api/orders')).toBe(false);
   });
+
+  it('matches what the regular expression the pattern stands for matches', () => {
+    // Each `:name` stands for `[^/]+`, every other character for itself.
+    const reference = (pattern: string) =>
+      new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z0-9_]+/g, '[^/]+')}$`);
+    let state = 20261103;
+    const random = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const text = (units: string[], max: number) =>
+      Array.from({ length: Math.floor(random() * (max + 1)) }, () => units[Math.floor(random() * units.length)]).join(
+        '',
+      );
+    let matched = 0;
+    for (let n = 0; n < 3000; n++) {
+      const pattern = `/${text(['a', 'b', '/', ':id', ':x_1', ':', '.', '-', '*', '\\'], 7)}`;
+      const path = `/${text(['a', 'b', '/', '.', '-', ':', '*', '\\', '\n'], 9)}`;
+      const expected = reference(pattern).test(path);
+      expect(requestMatchesRoute('GET', path, `GET ${pattern}`), `${pattern} against ${JSON.stringify(path)}`).toBe(
+        expected,
+      );
+      if (expected) matched++;
+    }
+    expect(matched).toBeGreaterThan(100);
+  });
+
+  it('matches a segment of many parameters in linear steps', () => {
+    const route = `GET /x/a${':p'.repeat(16)}-z`;
+    const started = performance.now();
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(29)}`, route)).toBe(false);
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(2000)}`, route)).toBe(false);
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(200)}-z`, route)).toBe(true);
+    // A path of 20,000 characters: about 10 ms in linear steps, a few hundred under coverage on a slow runner; seconds
+    // for a matcher that backtracks, or whose steps grow with the square of the path's length times the pattern's.
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(20_000)}`, route)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe('shouldAct (after first navigation, Nth match)', () => {
@@ -262,5 +388,27 @@ describe('shouldAct (after first navigation, Nth match)', () => {
     expect(shouldAct(state, 2)).toBe(false); // 1st match
     expect(shouldAct(state, 2)).toBe(true); // 2nd match
     expect(shouldAct(state, 2)).toBe(false); // 3rd match
+  });
+});
+
+describe('probePlaywrightArgs', () => {
+  it('runs the planned tests with retries and the failure limit off', () => {
+    expect(probePlaywrightArgs(['--project=chromium'], ['adds a user', null, 'pays (card)'])).toEqual([
+      '--project=chromium',
+      '--grep',
+      'adds a user|pays \\(card\\)',
+      '--retries=0',
+      '--max-failures=0',
+    ]);
+  });
+
+  it('keeps a grep, retries and a failure limit given after --', () => {
+    expect(probePlaywrightArgs(['-g', 'checkout', '--retries=1', '-x'], ['adds a user'])).toEqual([
+      '-g',
+      'checkout',
+      '--retries=1',
+      '-x',
+    ]);
+    expect(probePlaywrightArgs(['--max-failures', '3'], [])).toEqual(['--max-failures', '3', '--retries=0']);
   });
 });

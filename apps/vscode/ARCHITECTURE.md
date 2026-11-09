@@ -328,22 +328,42 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
   terminates the ref's task), while a run is live;
 - **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
   `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped;
-- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`, the
-  `piwi.runCanEnd` context key), with no key.
+- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`), else,
+  while no stop can end and the command names none, where a Pause waits for the call a test runs (`give-up`, to the
+  worker `endChoice` gives, naming no stop); the `piwi.runCanEnd` context key holds in both cases; with no key. The
+  status bar shows the call a Pause waits in beside Pause and Stop, with how long it has run, and End the test there.
 
 All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
 as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
-**A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
-`media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
-stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
-(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
-Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says `the test went
-on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused
-page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line, else the only
-one, else asks (`stopsFor`).
+**A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
+`OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the focus,
+decided as it opens, only as a stop of the worker slot (`parallelIndex`, which a worker restarted after a failure keeps)
+the person is on, or while no other stop held had its file opened by the extension (its tab closed since or not) and no
+Step or Run to the cursor from the editor waits for its slot's next stop (`RESERVED_MS` at most, while a worker of the
+run holds the slot; another stop of that slot opening ends the wait, the stepped one not). The slot the person is on is
+the one whose stop last took the focus, or that they last acted on: a control from the editor (counted as it is sent; a
+refusal, `ok: false`, undoes what nothing changed since, each answer by its token, and no answer undoes nothing:
+`refused`, `taken`), a code action (`piwi/stopAction`), or a press, a key, text, the wheel or a pick on the paused page
+or the worker panel (`acted`, `actsOnPage`; a pointer moving or a release is not acting). Acting that ends a wait, and a
+refusal, show the stops again (`changed`). A slot the worker panel watches is not the person's for that: the panel shows
+its page whatever the focus, while the focus chooses the stop the keys and the cursor act on. A file that never opened
+counts as none. It never opens over a panel in sight (the paused page view, the worker panel). With the focus, it opens
+as a debugger's does, where the file shows already, else in the active group. Without it, the editor in use is left
+alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and another opens
+with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the right
+(`asideColumn`). It is drawn as the execution point: `media/execution-point.svg` in the gutter, and the line's
+background in `piwi.executionPointBackground` (the debugger's stack frame color by default), with a hover that holds the
+controls. A CodeLens above it reads `pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after
+`$(debug-pause)`, then Resume, Step, Run to cursor, Finish and, where `canEnd`, End test, each naming its worker and its
+stop; one whose stop went on says `the test went on.` (`targetStop`). The choice among several stops shows the same text
+after `$(debug-pause)`; the hover and the paused page's caption show it as plain text. A key or a palette command, for a
+control within `RESUMED_KEY_MS` of an answer and until another stop of that slot opens, acts on a stop of the answered
+slot or on none, whatever the caret or another worker's new stop say, so a key pressed again answers no other worker;
+else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks
+(`stopsFor`, `StopsShown.choose`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -352,14 +372,40 @@ the line it stands on now (the mark, the lens, the caret's match), and the caret
 the cursor, which is refused on a line written since. An event of several changes (the code a stop made, its undo) is
 read change by change in the document after them all (`linesAbove`), so the mark follows it.
 
-**The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
-**Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The webview takes images from `data:` only (`img-src data:`) and its one style by nonce
-(`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a click on the
-image picks the element under it: a script by the same nonce, the webview's only one, posts the click's offset and the
-size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the page's CSS pixels
-(`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
-click on an image the view no longer shows picks nothing.
+**The paused page.** A stop with no pause bar (`bar: false`) that the worker panel does not show asks
+`piwi/pausedPage` and shows the JPEG in the **Piwi: paused page** webview beside the editor, as **Piwi: Show the
+paused page** (`piwi.showPausedPage`) does at any stop. The view keeps the stop it shows while that stop is held
+(`StopsShown`). Once it went on after a Step or a Run to the cursor from the editor, the view says so and waits for
+that slot's next stop while a worker of the run holds the slot, `RESERVED_MS` at most (`waitsUntil`: a timer asks
+again then); otherwise it opens the first new stop no pause bar or worker panel shows, else the first such stop held.
+A view already shown stays in its group. The webview takes images from `data:` only (`img-src data:`) and its one
+style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a
+click on the image picks the element under it: a script by the same nonce, the webview's only one, posts the click's
+offset and the size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the
+page's CSS pixels (`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under
+the caption. A click on an image the view no longer shows picks nothing.
+
+When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
+`piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
+`dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
+replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
+and typing, batched through the Runs window's input helper. Escape releases held input and focuses Watch live;
+Shift+click still picks. Help is collapsed. Hiding, closing, showing another stop or resuming ends the watch; another
+worker's new stop does not. The panel remembers Watch live until closed, but each watch starts with Interact off.
+
+**The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
+**Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
+`watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
+HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
+not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is drawn
+anew (`shown`), so Interact starts off and a message of the view before reaches nothing; at a stop, Interact and the
+pick on a click name that stop, as on the paused page. A headless stop of the slot the panel watches, in sight, opens no
+paused page, and no stop's file opens over the panel. A press, a key, text, the wheel or a pick there make the slot the
+person's; hiding or closing the panel, or its watch ending (Watch off, a refused watch), shows the stops again
+(`WorkerPanelHooks`), a held headless stop it showed offered to the paused page as a new stop is, the view closed or
+not. Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
+(`pausedPageViewChange`).
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
@@ -387,7 +433,9 @@ have not said anything of yet included; a run known not to be shareable is asked
 Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
 Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
 counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
-(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key).
+(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key). Beside it, `progressItem` counts the tests the runs ran
+out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
+run's own process tells the service: so it counts offline and with the desktop app.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
@@ -497,6 +545,9 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
   Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
   does. Which port it takes: [Breakpoints](#breakpoints).
+- One window holds the saved port. A window with no listener tries it as it starts and every 10 s after
+  (`takeSavedPort`, `SAVED_PORT_RETRY_MS`), so it takes the port once the window holding it closes, and Piwi Picker's
+  pairing reaches every window's hub through it. A window listening on another port for a run's pairing keeps it.
 
 **Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1` or `localhost` at its port, or
 at the port of the browser's machine a remote window forwards to it (`forwarded`, set as the pairing address goes
@@ -734,6 +785,12 @@ every code action (`RUN_TAKES`), answers a count at the cursor with one match an
 `run-control-code` shows in Mock a request's list. The paused page is the fixture shop's page, rendered by Playwright's
 Chromium. The window keeps its secrets in a file (`--password-store=basic`): without an OS keyring, `SecretStorage`
 never answers and no run starts.
+
+`scripts/record-loop.mjs` films the docs' loop of a recording, `apps/docs/public/videos/editor-recording-loop.mp4`, on
+the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, copied into its
+`node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from the loop's
+Playwright config (`--window-position`, `--window-size`), and the script drives it over its debugging port, as a
+person's trusted input. The stub instance lists the page object method the coupon's steps fold into.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in

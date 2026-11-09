@@ -750,14 +750,29 @@ export function connectChoices(
   return choices;
 }
 
-/** A VS Code `mcp.json` holding Piwi's servers, for editors without the MCP provider API. */
-export function mcpConfiguration(servers: McpServerDefinition[]): string {
-  const entries = servers.map((s, i) => [
-    i === 0 ? 'piwi' : `piwi-${i + 1}`,
-    { type: 'http', url: s.url, ...(Object.keys(s.headers).length ? { headers: s.headers } : {}) },
-  ]);
-  return JSON.stringify({ servers: Object.fromEntries(entries) }, null, 2);
+/**
+ * Piwi's servers in `format`: VS Code's `mcp.json` (`servers`), for an editor without the MCP provider API, or the
+ * `mcpServers` entry Cursor and Claude Code read.
+ */
+export function mcpConfiguration(servers: McpServerDefinition[], format: RunsMcpFormat = 'vscode'): string {
+  const entries = Object.fromEntries(
+    servers.map((s, i) => [
+      i === 0 ? 'piwi' : `piwi-${i + 1}`,
+      { type: 'http', url: s.url, ...(Object.keys(s.headers).length ? { headers: s.headers } : {}) },
+    ]),
+  );
+  return JSON.stringify(format === 'vscode' ? { servers: entries } : { mcpServers: entries }, null, 2);
 }
+
+/** The formats Piwi's MCP configuration is copied in (`mcpConfiguration`), as the copy command offers them. */
+export const MCP_FORMATS: ReadonlyArray<{ format: RunsMcpFormat; label: string; detail: string }> = [
+  {
+    format: 'vscode',
+    label: "VS Code's mcp.json",
+    detail: "A servers entry, for an editor without VS Code's MCP provider",
+  },
+  { format: 'mcpServers', label: 'Cursor, Claude Code and other agents', detail: 'An mcpServers entry of type http' },
+];
 
 /** How the editor's agent lists the MCP server of the runs this window starts. */
 export const RUNS_MCP_LABEL = 'Piwi runs';
@@ -1147,24 +1162,6 @@ export function testAtRun(uri: string, found: TestAtResult | null, repeat?: numb
   if (found?.test && !repeat) return { uri, testIds: [found.test.id] };
   if (!found?.location) return null;
   return { uri, testIds: [], locations: [found.location], ...(repeat ? { repeat } : {}) };
-}
-
-/** A Playwright test file's name: `.spec` or `.test`, then a JavaScript or TypeScript extension. */
-export const TEST_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/;
-
-/** The `testDir` a Playwright config names as a string literal; null when it names none that way. */
-export function configTestDir(config: string): string | null {
-  return /\btestDir\s*:\s*(['"`])([^'"`]+)\1/.exec(config)?.[2] ?? null;
-}
-
-/**
- * The name offered for a new test file, with the suffix of `sample`: a test file's own (`.test.js`), else `.spec.js`
- * beside a JavaScript Playwright config, else `.spec.ts`.
- */
-export function newTestFileName(sample: string | null): string {
-  const suffix =
-    (sample && TEST_FILE.exec(sample)?.[0]) || (sample && /\.[cm]?js$/.test(sample) ? '.spec.js' : '.spec.ts');
-  return `recorded${suffix}`;
 }
 
 /**

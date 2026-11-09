@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
@@ -9,6 +7,7 @@ import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -92,9 +91,7 @@ async function seedRun(runId: number, projectId: number, startTime: Date, total:
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   state.db = db;
   state.caller = { user: { id: 0, role: InstanceRole.ADMINISTRATOR, name: 'System' } as User, access: ADMIN_ACCESS };
   executionId = 1;

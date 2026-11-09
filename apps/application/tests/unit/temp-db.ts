@@ -1,10 +1,9 @@
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
-import { createClient } from '@libsql/client';
+import { createClient, type Client } from '@libsql/client';
+import { inject } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 
 declare global {
@@ -12,7 +11,26 @@ declare global {
   var gc: (() => void) | undefined;
 }
 
+declare module 'vitest' {
+  export interface ProvidedContext {
+    /** The statements that rebuild a SQLite database holding every migration (`global-setup.ts`). */
+    migratedSchema: string[];
+  }
+}
+
 export type TempDb = ReturnType<typeof drizzle<typeof schema>>;
+
+/**
+ * Gives an empty SQLite database the schema and rows every migration leaves, as Drizzle's `migrate` does, and in
+ * the same connection state: one transaction with foreign keys off, then foreign keys on. Tests of the migrations
+ * themselves run Drizzle's `migrate`.
+ */
+export async function migrateToLatest(db: { $client: Client }): Promise<void> {
+  const statements = inject('migratedSchema');
+  if (!statements)
+    throw new Error('migrateToLatest needs the global setup of vitest.config.ts (tests/unit/global-setup.ts)');
+  await db.$client.migrate(statements);
+}
 
 /**
  * A migrated SQLite database in a temporary file. Code that opens a transaction
@@ -23,9 +41,7 @@ export async function openTempDb(): Promise<{ db: TempDb; close: () => Promise<v
   const dir = mkdtempSync(join(tmpdir(), 'piwi-unit-db-'));
   const client = createClient({ url: `file:${join(dir, 'test.db')}` });
   const db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
 
   async function close() {
     // The native libsql binding releases the file handles from a V8 finalizer, so

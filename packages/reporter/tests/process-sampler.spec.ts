@@ -142,6 +142,7 @@ describe('system readers', () => {
 
   it('names each process the run starts by its command line', () => {
     expect(roleOf('node', 'node /x/playwright/lib/worker/workerProcessEntry.js')).toBe('worker');
+    expect(roleOf('node', 'node C:\\x\\playwright\\lib\\common\\process.js')).toBe('worker');
     expect(roleOf('chrome', '/ms-playwright/chromium/chrome --headless --remote-debugging-pipe')).toBe('browser');
     expect(roleOf('chrome', '/ms-playwright/chromium/chrome --type=renderer --lang=en')).toBe('renderer');
     expect(roleOf('chrome', '/chromium/chrome --type=gpu-process')).toBe('gpu');

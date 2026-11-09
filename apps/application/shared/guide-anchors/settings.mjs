@@ -7,10 +7,22 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings'],
     describes:
-      'The Settings menu beside every settings page: the Instance and Analysis pages you may open, then About.',
+      'The Settings menu beside every settings page: the Instance, Analysis and Setup pages you may open, then About.',
     shownWhen: 'On a wide screen; a narrow one picks the page from a list above it instead.',
     doc: 'features/ui-overview#settings',
     sample: { route: '/settings' },
+  },
+
+  // Desktop app
+  {
+    id: 'desktop-settings-page',
+    kind: 'page',
+    pages: ['/settings/desktop'],
+    describes:
+      'Settings → Desktop app: this app’s address and access token, Piwi Picker pairing, where its data lives and its background service.',
+    requires: { permission: 'settings:manage', desktop: true },
+    doc: 'features/desktop',
+    sample: { route: '/settings/desktop', surface: 'desktop' },
   },
 
   // Account
@@ -19,7 +31,18 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/account'],
     describes:
-      'Settings → Account: your display name, email address, password and API keys, which you manage once authentication is on.',
+      'Settings → Account: your profile picture, display name, email address, password and API keys, once authentication is on.',
+    doc: 'operate/authentication#user-management',
+    sample: { route: '/settings/account' },
+  },
+  {
+    id: 'account-profile-picture',
+    kind: 'field',
+    pages: ['/settings/account'],
+    describes:
+      "The Profile picture card: upload a picture shown in place of your sign-in provider's, or remove the one you uploaded.",
+    shownWhen: 'When authentication is on.',
+    help: 'account.profile-picture',
     doc: 'operate/authentication#user-management',
     sample: { route: '/settings/account' },
   },
@@ -52,6 +75,17 @@ export const SETTINGS_ANCHORS = [
     shownWhen: 'When authentication is on and the account has a password, not only a Google or GitHub sign-in.',
     help: 'account.password',
     doc: 'operate/authentication#user-management',
+    sample: { route: '/settings/account' },
+  },
+  {
+    id: 'account-connected-apps',
+    kind: 'field',
+    pages: ['/settings/account'],
+    describes:
+      'The apps you connected from their own window, each with when it connected and, for one that runs tests, whether it is online, and Revoke.',
+    shownWhen: 'When authentication is on.',
+    help: 'settings.connected-apps',
+    doc: 'features/run-on-my-machine#connected-apps',
     sample: { route: '/settings/account' },
   },
   {
@@ -145,7 +179,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/users'],
     describes:
-      'A user’s actions in the Users table: send an invite, edit their project roles, manage their API keys or delete them.',
+      'A user’s actions in the Users table: send an invite, edit their project roles, manage their API keys, remove their profile picture or delete them.',
     shownWhen: 'When the instance has at least one user.',
     requires: { permission: 'users:manage' },
     help: 'settings.api-keys',
@@ -488,7 +522,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/storage'],
     describes:
-      'The Cleanup old test runs card: deletes the runs older than an age you pick, with their reports and traces, skipping kept runs.',
+      "The Cleanup old test runs card: deletes runs older than an age you pick, skipping kept runs; the desktop app's also deletes them automatically.",
     requires: { permission: 'storage:manage' },
     help: 'settings.cleanup',
     doc: 'operate/storage#storage-management',
@@ -620,9 +654,18 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/ai'],
     describes:
-      'Settings → AI: the model behind each AI role, usage, the repository token, instructions, language and context limits.',
+      'Settings → AI: whether AI is on, the provider it runs on, the features it runs, how it writes, what the model receives, and usage.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider',
+    sample: { route: '/settings/ai' },
+  },
+  {
+    id: 'ai-status',
+    kind: 'block',
+    pages: ['/settings/ai'],
+    describes: 'The AI status: whether AI is on, its provider and model, and the model each feature runs on, as saved.',
+    requires: { capability: 'ai', permission: 'settings:manage' },
+    doc: 'guide/ai-provider#enabling-ai-diagnosis',
     sample: { route: '/settings/ai' },
   },
   {
@@ -630,10 +673,10 @@ export const SETTINGS_ANCHORS = [
     kind: 'block',
     pages: ['/settings/ai'],
     describes:
-      'The Model providers card: the diagnosis, research, embedding and assistant models, then auto-diagnose and diagnosis notifications.',
+      'The Provider card: the cloud API, self-hosted server or command-line tool the AI runs on, then the connection to it.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.ai-provider',
-    doc: 'guide/ai-provider#model-roles',
+    doc: 'guide/ai-provider#providers',
     sample: { route: '/settings/ai' },
   },
   {
@@ -641,9 +684,20 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Diagnosis model: the provider, API key and model that write the final diagnosis, required before any AI feature works.',
+      'The connection to the chosen provider: the API key, server address and model it needs, and a test whose answer stays in view.',
+    shownWhen: 'When a provider is chosen.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.ai-provider',
+    doc: 'guide/ai-provider#providers',
+    sample: { route: '/settings/ai' },
+  },
+  {
+    id: 'ai-features',
+    kind: 'block',
+    pages: ['/settings/ai'],
+    describes:
+      'The Features card: failure diagnosis with auto-diagnose and notifications, then two-stage diagnosis, semantic clustering and the assistant.',
+    requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider#model-roles',
     sample: { route: '/settings/ai' },
   },
@@ -652,7 +706,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Research model: an optional cheaper model that pre-analyzes a failure before the diagnosis model, and names and merges clusters.',
+      'Two-stage diagnosis: a cheaper model that reads a failure before the diagnosis model and names clusters, on the same provider or another.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.ai-research',
     doc: 'guide/ai-provider#model-roles',
@@ -663,7 +717,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Embedding model: an optional OpenAI-compatible embeddings model that groups failures with similar errors into one cluster.',
+      'Semantic clustering: an embeddings model that groups failures with similar errors, on the diagnosis provider when it has one.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.embedding-model',
     doc: 'guide/ai-provider#model-roles',
@@ -674,7 +728,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Assistant model: an optional model the in-app assistant answers with, such as a faster, cheaper one; off, it uses the diagnosis model.',
+      'The Assistant feature: the model the in-app assistant answers with, the diagnosis model or a different one, such as a faster, cheaper one.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.ai-assistant',
     doc: 'features/assistant#the-model',
@@ -685,8 +739,8 @@ export const SETTINGS_ANCHORS = [
     kind: 'action',
     pages: ['/settings/ai'],
     describes:
-      'A model role’s Test connection button, which calls its provider with the model and key entered and says whether it answered.',
-    shownWhen: 'When the role has a provider of its own or reuses one.',
+      'A Test connection button, which calls the provider with the key and model entered and keeps its answer, or its error, in view.',
+    shownWhen: 'When a provider is chosen.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider#providers',
     sample: { route: '/settings/ai' },
@@ -718,7 +772,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'action',
     pages: ['/settings/ai'],
     describes:
-      'The Save button of the Model providers card, which stores every role’s provider, key and model, and auto-diagnose.',
+      'The Save button kept at the bottom of Settings → AI, which names the sections with unsaved changes and saves them all at once.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
     sample: { route: '/settings/ai' },
@@ -738,7 +792,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Repository access card: the GitHub, GitLab or Bitbucket token diagnosis reads commit diffs with, which a project’s own token overrides.',
+      'The Repository access token: the GitHub, GitLab or Bitbucket token diagnosis reads commit diffs with, which a project’s own token overrides.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'project.scm-token',
     doc: 'guide/source-control',
@@ -760,7 +814,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'block',
     pages: ['/settings/ai'],
     describes:
-      'The Response language card: the language the AI writes its prose in, with code, locators and error text kept verbatim; blank is English.',
+      'The Response language: the language the AI writes its prose in, with code, locators and error text kept verbatim; blank is English.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     doc: 'guide/ai-provider#response-language',
     sample: { route: '/settings/ai' },
@@ -770,7 +824,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Diagnosis context limits: caps on how much evidence goes into a diagnosis, trading what the model sees against tokens spent.',
+      'The Diagnosis context limits, one folded group per kind of evidence: how much goes into a diagnosis, against the tokens spent.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.ai-limits',
     doc: 'guide/ai-provider#context-limits-and-token-cost',
@@ -781,7 +835,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/ai'],
     describes:
-      'The Privacy notice: what a diagnosis sends to the model provider, from the error and test steps to diffs, and how API keys are stored.',
+      'The What the model receives card: where the evidence of a diagnosis goes, the repository token, and the context limits.',
     requires: { capability: 'ai', permission: 'settings:manage' },
     help: 'settings.privacy',
     doc: 'features/ai-diagnosis#what-a-diagnosis-contains',

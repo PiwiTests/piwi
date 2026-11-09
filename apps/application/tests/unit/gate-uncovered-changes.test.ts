@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
@@ -9,6 +7,7 @@ import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole } from '#shared/permissions';
 import type { ChangeCoverage } from '#shared/handlers/change-coverage';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -74,7 +73,7 @@ function changeCoverage(over: Partial<ChangeCoverage> = {}): ChangeCoverage {
 
 beforeEach(async () => {
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'gate-uncovered-changes' });
   await db
     .insert(schema.testRuns)
@@ -92,6 +91,24 @@ describe('the gate’s warn-only uncovered changes', () => {
       '3 uncovered changes (threshold 2): changed files no test reached — warn-only.',
       'Patch coverage 75%: 30 of the 40 changed lines ran (minimum 80%) — warn-only.',
     ]);
+  });
+
+  test('names the files no test reached, and stores the warnings with the evaluation', async () => {
+    const file = (filePath: string, reach: ChangeCoverage['files'][number]['reach']) =>
+      ({ filePath, additions: 1, deletions: 0, reach, ticket: null }) as ChangeCoverage['files'][number];
+    coverage.value = changeCoverage({
+      uncoveredFiles: 7,
+      files: [
+        file('src/ok.ts', 'reached'),
+        ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n) => file(`src/${n}.ts`, 'unreached')),
+      ],
+    });
+    const result = await gate({ params: { id: '1' }, body: { maxUncoveredChanges: 0 } });
+    const warning =
+      '7 uncovered changes (threshold 0): changed files no test reached (src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts, and 2 more) — warn-only.';
+    expect(result.warnings).toEqual([warning]);
+    const [stored] = await state.db.select({ warnings: schema.gateEvaluations.warnings }).from(schema.gateEvaluations);
+    expect(stored?.warnings).toEqual([warning]);
   });
 
   test('says nothing when the change meets both', async () => {

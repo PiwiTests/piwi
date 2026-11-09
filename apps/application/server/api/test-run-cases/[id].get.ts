@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { getTestRunCase } from '#shared/handlers/test-cases';
 import { testRunsCases } from '../../database/schema';
-import { requireResolvedProjectAccess, requireRouteId, resolveTestRunCaseProjectId } from '../../utils/project-access';
+import {
+  holdsProjectPermission,
+  requireResolvedProjectAccess,
+  requireRouteId,
+  resolveTestRunCaseProjectId,
+} from '../../utils/project-access';
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
@@ -27,15 +32,17 @@ export default eventHandler(async (event) => {
   const wasted = await resolveWastedSettings(db);
 
   // The next-step policy needs whether AI diagnosis, a CI re-run and a Flake Lab
-  // CI target are configured — signals only the server can resolve.
+  // CI target are configured — signals only the server can resolve. A CI run is
+  // offered only to a viewer who may start one.
+  const mayDispatch = await holdsProjectPermission(event, projectId, ['run:control']);
   const [row] = await db
     .select({ testRunId: testRunsCases.testRunId, testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
     .where(eq(testRunsCases.id, id));
   const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
-    row ? ciRerunAvailability(db, projectId, row.testRunId).catch(() => null) : Promise.resolve(null),
-    row?.testCaseId != null
+    row && mayDispatch ? ciRerunAvailability(db, projectId, row.testRunId).catch(() => null) : Promise.resolve(null),
+    row?.testCaseId != null && mayDispatch
       ? flakeLabCiAvailability(db, projectId, row.testCaseId).catch(() => null)
       : Promise.resolve(null),
   ]);

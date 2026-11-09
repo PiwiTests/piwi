@@ -9,6 +9,7 @@ import {
   VSCODE_EXTENSION_URL,
 } from '#shared/companion-links';
 import { DOCS_BASE_URL } from '#shared/docs';
+import { SETTINGS_PAGES } from '~/utils/settings-metadata';
 
 defineProps<{
   collapsed?: boolean;
@@ -38,14 +39,16 @@ const appearances = [
   { label: 'Dark', icon: 'i-lucide-moon', preference: 'dark' },
 ];
 
-const user = computed(() => {
+const user = computed<{
+  name: string;
+  icon?: string;
+  account?: { id: number; name: string | null; username: string };
+}>(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
-    const avatarUrl = authState.value.user.avatarUrl;
+    const account = authState.value.user;
     return {
-      name: authState.value.user.name || authState.value.user.username,
-      icon: avatarUrl ? undefined : 'i-lucide-user',
-      avatar: avatarUrl ? { src: avatarUrl } : undefined,
-      role: authState.value.user.role,
+      name: account.name || account.username,
+      account: { id: account.id, name: account.name ?? null, username: account.username },
     };
   }
   return {
@@ -60,8 +63,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
   // API keys, Notifications… Nav items are reused as dropdown items (both are
   // link items); the cast bridges the slightly different `type` union between
   // the two Nuxt UI types. `settingsNav` is grouped into sections — this menu
-  // wants one flat list.
-  const configurationMenuItems = settingsNav.value.flat() as unknown as DropdownMenuItem[];
+  // wants one flat list, with the Setup section folded into one submenu.
+  const configurationMenuItems: DropdownMenuItem[] = [];
+  for (const section of settingsNav.value as unknown as DropdownMenuItem[][]) {
+    const group = SETTINGS_PAGES.find((page) => page.to === section[0]?.to)?.group;
+    if (group === 'setup') configurationMenuItems.push({ label: 'Setup', icon: 'i-lucide-rocket', children: section });
+    else configurationMenuItems.push(...section);
+  }
 
   const baseItems: DropdownMenuItem[][] = [
     configurationMenuItems,
@@ -141,8 +149,8 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
     [
       {
-        // The tools that install outside the dashboard, for every user: the
-        // Setup page's companion-tools card is for admins only.
+        // The tools that install outside the dashboard, as Settings → Companion
+        // tools lists them, one click away.
         label: 'Piwi tools',
         icon: 'i-lucide-blocks',
         ui: { content: 'w-80' },
@@ -242,11 +250,10 @@ const items = computed<DropdownMenuItem[][]>(() => {
     <UButton
       data-shot="user-menu"
       data-tour="user-menu"
-      v-bind="{
-        ...user,
-        label: collapsed ? undefined : user?.name,
-        trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down',
-      }"
+      :icon="user.icon"
+      :label="collapsed ? undefined : user.name"
+      :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
+      :aria-label="collapsed ? user.name : undefined"
       color="neutral"
       variant="ghost"
       block
@@ -255,7 +262,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
       :ui="{
         trailingIcon: 'text-dimmed',
       }"
-    />
+    >
+      <template v-if="user.account" #leading>
+        <UserAvatar :account="user.account" size="2xs" />
+      </template>
+    </UButton>
 
     <template #chip-leading="{ item }">
       <div class="inline-flex items-center justify-center shrink-0 size-5">

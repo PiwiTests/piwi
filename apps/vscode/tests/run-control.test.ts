@@ -14,6 +14,11 @@ import {
   CaretCounts,
   EditLog,
   MAX_IMAGE_DATA,
+  RESERVED_MS,
+  RESUMED_KEY_MS,
+  StopsShown,
+  actsOnPage,
+  asideColumn,
   breakpointUpdates,
   canEnd,
   canShare,
@@ -26,11 +31,21 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  progressItem,
+  frameIsCurrent,
+  waitedFor,
+  waitingWorkers,
+  endChoice,
+  laneShown,
+  watchTargetsFor,
+  watchableWorkers,
   liveTarget,
   liveText,
   PICK_HINT,
+  RUN_COMMANDS,
   pagePoint,
   pausedPageHtml,
+  pausedPageViewChange,
   picksOnImage,
   pausedText,
   remember,
@@ -92,7 +107,9 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   test: state === 'between' ? null : runTest(),
   stop: null,
   pausing: false,
+  waiting: null,
   takes: [],
+  watchable: false,
   ...extra,
 });
 
@@ -164,6 +181,8 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
@@ -201,6 +220,8 @@ describe('what the controls offer', () => {
         actions: [],
         shareable: false,
         liveShared: false,
+        watchable: false,
+        waiting: null,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -218,11 +239,74 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
     ]);
+    // While it waits in a call it can end at: how long it has waited, and End the test.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: spec,
+      line: 4,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
+    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, waiting });
+    expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
+      {
+        text: '$(loading~spin) Pausing… 1 min 5 s',
+        tooltip:
+          "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
+        command: null,
+      },
+      {
+        key: 'give-up',
+        text: '$(circle-slash)',
+        tooltip:
+          "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
+        command: 'piwi.endTest',
+      },
+      { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: 'piwi.stopRun' },
+    ]);
+    const unknown = controlState(
+      sessionsOf(
+        session('ed-1', [
+          worker(0, 'running', { pausing: true, waiting: { ...waiting, since: null, endable: false } }),
+        ]),
+      ),
+    );
+    expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
+      "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
+      "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
+      'Piwi: Stop the run (Shift+F5)',
+    ]);
+    // Beside Pause for another worker, and in place of End at a stop that cannot end.
+    const keys = (sessions: ReturnType<typeof sessionsOf>) =>
+      controlItems(controlState(sessions)).map((i) => i.key ?? i.command);
+    expect(
+      keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')]))),
+    ).toEqual(['piwi.pauseRun', null, 'give-up', 'piwi.stopRun']);
+    const failed = worker(1, 'stopped', { stop: { ...stopAt(spec, 5), reason: 'failure' } });
+    expect(keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed])))).toContain(
+      'give-up',
+    );
+    const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
+    expect(endChoice(waitingSessions, true, null)).toBe('stop');
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    expect(waitedFor(null, 0)).toBeNull();
+    expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
+    expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(
+      "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+    );
     const ci = controlState(
       sessionsOf(session('ed-1', [worker(0, 'running', { test: runTest(0, 'running under CI') })])),
     );
@@ -244,11 +328,13 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
       ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
-      ['piwi.finishRun', 'Piwi: Finish the test without stopping again (Shift+F11)'],
+      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)'],
       ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
     ]);
   });
@@ -284,6 +370,21 @@ describe('what the controls offer', () => {
     const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
     expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
   });
+
+  test('no Stop for a run the editor’s own test runner started, which says so where it stops', () => {
+    const stopped = [worker(0, 'stopped', { stop: stopAt(spec, 5) })];
+    const runner = { ...session('terminal-42-1', stopped), terminal: true, runner: true };
+    expect(controlState(sessionsOf(runner)).stoppable).toBe(false);
+    const [stop] = stopsOf(sessionsOf(runner));
+    expect(stop).toMatchObject({ terminal: true, runner: true });
+    expect(pausedText(stop!.stop, stop!.test, stop!.terminal, stop!.runner)).toBe(
+      "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+    );
+    expect(stopPick(stop!).label).toContain("· run by the editor's test runner");
+    // Said of a run the editor started, it says nothing.
+    const [own] = stopsOf(sessionsOf({ ...session('ed-1', stopped), runner: true }));
+    expect(own).not.toHaveProperty('runner');
+  });
 });
 
 describe('Share live', () => {
@@ -306,6 +407,79 @@ describe('Share live', () => {
     expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
     // A run whose workers have not said yet how it stands is warned of too.
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
+  });
+
+  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+    expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
+    const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      command: null,
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      text: '$(beaker) 4 of 10 · $(error) 1',
+      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      command: null,
+    });
+    // A worker whose reporter shows its running test: a click watches it.
+    const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
+    expect(progressItem(sessionsOf(watched))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: "Piwi: the run ran 3 of 9 tests. Click to watch a worker's test.",
+      command: RUN_COMMANDS.watch,
+    });
+  });
+
+  test('lists the workers a panel can watch, and those Pause and watch can pause', () => {
+    const sessions = sessionsOf(
+      session('ed-1', [
+        worker(0, 'running', { watchable: true }),
+        worker(1, 'stopped', { watchable: true, parallelIndex: 1 }),
+        worker(2, 'running', { parallelIndex: 2 }),
+        worker(3, 'between', { watchable: true, parallelIndex: 3 }),
+      ]),
+    );
+    expect(watchableWorkers(sessions)).toEqual([
+      { ref: 'ed-1', worker: 0, lane: 0, label: 'Worker 1', description: 'running checkout › pays' },
+      { ref: 'ed-1', worker: 1, lane: 1, label: 'Worker 2', description: 'stopped in checkout › pays' },
+      { ref: 'ed-1', worker: 3, lane: 3, label: 'Worker 4', description: 'between tests' },
+    ]);
+    expect(watchableWorkers(sessions, true).map((t) => t.worker)).toEqual([0, 3]);
+    expect(controlState(sessions).watchable).toBe(true);
+    const all = watchableWorkers(sessions);
+    expect(watchTargetsFor(all, null)).toHaveLength(3);
+    expect(watchTargetsFor(all, { ref: 'ed-1', worker: 1 }).map((t) => t.lane)).toEqual([1]);
+    expect(watchTargetsFor(all, { ref: 'ed-2' })).toEqual([]);
+  });
+
+  test('says what the worker panel’s slot does, and whether its image is of now', () => {
+    const uri = 'file:///work/shop/tests/cart.spec.ts';
+    const running = worker(5, 'running', { parallelIndex: 1 });
+    const stopped = worker(5, 'stopped', { parallelIndex: 1, stop: stopAt(uri, 7, false), takes: ['input'] });
+    expect(laneShown(undefined, 1, []).caption).toBe('Worker 2 · the run ended.');
+    expect(laneShown(session('ed-1', []), 1, []).caption).toBe('Worker 2 · starting…');
+    expect(laneShown(session('ed-1', [worker(5, 'between', { parallelIndex: 1 })]), 1, []).caption).toBe(
+      'Worker 2 · between tests',
+    );
+    expect(laneShown(session('ed-1', [running]), 1, []).caption).toBe('Worker 2 · Running · checkout › pays');
+    expect(laneShown(session('ed-1', [{ ...running, pausing: true }]), 1, []).caption).toBe(
+      'Worker 2 · Pausing · checkout › pays',
+    );
+    const at = stopsOf(sessionsOf(session('ed-1', [stopped])));
+    const shown = laneShown(session('ed-1', [stopped]), 1, at);
+    expect(shown.stop).toEqual(at[0]);
+    expect(shown.caption).toBe('Worker 2 · Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8');
+    const test = running.test!.id;
+    expect(frameIsCurrent({ worker: 5, test, since: null }, running)).toBe(true);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, stopped)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: stopped.stop!.since }, stopped)).toBe(true);
+    expect(frameIsCurrent({ worker: 4, test, since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test: 'other', since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, null)).toBe(false);
   });
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
@@ -392,9 +566,441 @@ describe('a stop', () => {
   });
 });
 
+describe('what the editor shows of the stops', () => {
+  /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`. */
+  const at = (index: number, line: number, extra: Partial<RunStop> = {}, slot = index) =>
+    worker(index, 'stopped', { parallelIndex: slot, stop: { ...stopAt(spec, line, false), ...extra } });
+  const running = (index: number) => worker(index, 'running');
+  /**
+   * The pushes of run `ed-1` as the service sends them, 100 ms apart, through `StopsShown` as the extension takes them:
+   * each new stop's file opened in its turn (none for a line in `unopened`), and the page the view opens shown there,
+   * while the worker panel watches the slots in `watched`. Each push says which workers' files opened with the focus or
+   * without, and the page opened, as `[worker, line]`.
+   */
+  const editor = (unopened: number[] = []) => {
+    const shown = new StopsShown();
+    const watched = new Set<number>();
+    let now = 0;
+    const push = (...workers: RunWorker[]) => {
+      now += 100;
+      const sessions = sessionsOf(session('ed-1', workers));
+      const change = shown.changed(sessions, stopsOf(sessions), { now, watched: (s) => watched.has(s.slot) });
+      const opened = change.open
+        .filter((stop) => !unopened.includes(stop.stop.line))
+        .map((stop) => {
+          const focus = shown.focusFor(stop, now);
+          shown.opened(stop, focus);
+          return [stop.worker, focus];
+        });
+      if (change.page) shown.view(change.page);
+      return { opened, page: change.page && [change.page.worker, change.page.stop.line] };
+    };
+    const stopOf = (index: number, line: number) => stopsOf(sessionsOf(session('ed-1', [at(index, line)])))[0]!;
+    /** A control from the editor answers the stop of worker `index` at `line`, as it is sent. */
+    const answer = (action: 'resume' | 'step' | 'run-to', index: number, line: number) =>
+      shown.answered(stopOf(index, line), action, now);
+    const wait = (ms: number) => {
+      now += ms;
+    };
+    return { shown, watched, push, answer, stopOf, wait, now: () => now };
+  };
+
+  test('opens the first stop with the focus, and its page', () => {
+    const { push } = editor();
+    expect(push(at(0, 3), running(1))).toEqual({ opened: [[0, true]], page: [0, 3] });
+  });
+
+  test('opens a second worker’s stop without the focus while the person is on the first, the view keeping its stop', () => {
+    const { push } = editor();
+    push(at(0, 3), running(1));
+    expect(push(at(0, 3), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
+    // A failure held for another worker leaves them alone too.
+    expect(push(at(0, 3), at(1, 5), at(2, 7, { reason: 'failure' }))).toEqual({ opened: [[2, false]], page: null });
+  });
+
+  test('gives the focus and the view to the first stop of a Pause with three workers, in one push or in three', () => {
+    const together = editor();
+    expect(together.push(running(0), running(1), running(2))).toEqual({ opened: [], page: null });
+    expect(together.push(at(0, 3), at(1, 5), at(2, 7))).toEqual({
+      opened: [
+        [0, true],
+        [1, false],
+        [2, false],
+      ],
+      page: [0, 3],
+    });
+    const apart = editor();
+    expect(apart.push(at(0, 3), running(1), running(2))).toEqual({ opened: [[0, true]], page: [0, 3] });
+    expect(apart.push(at(0, 3), at(1, 5), running(2))).toEqual({ opened: [[1, false]], page: null });
+    expect(apart.push(at(0, 3), at(1, 5), at(2, 7))).toEqual({ opened: [[2, false]], page: null });
+  });
+
+  test('waits for the next stop of a worker stepped from the editor, through the push where it runs', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [], page: null });
+    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
+  });
+
+  test('hands the view to a stop held once the worker it shows is resumed, then follows that one’s Step', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 0, 3);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [], page: [1, 5] });
+    answer('step', 1, 5);
+    expect(push(running(0), running(1))).toEqual({ opened: [], page: null });
+    expect(push(running(0), at(1, 6))).toEqual({ opened: [[1, true]], page: [1, 6] });
+  });
+
+  test('hands the view on after a control from elsewhere, and opens a lone worker’s next stop', () => {
+    const { push } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    const lone = editor();
+    lone.push(at(0, 3));
+    expect(lone.push(running(0)).page).toBeNull();
+    expect(lone.push(at(0, 4)).page).toEqual([0, 4]);
+  });
+
+  test('stops waiting for a stepped worker’s next stop once its worker left the run', () => {
+    const { shown, push, answer } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+    expect(push(at(1, 5))).toEqual({ opened: [], page: [1, 5] });
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('waits for a stepped worker’s next stop RESERVED_MS at most, saying when to ask again', () => {
+    const { shown, push, answer, wait, now } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    expect(shown.waitsUntil()).toBeNull();
+    answer('run-to', 0, 3);
+    expect(shown.waitsUntil()).toBe(now() + RESERVED_MS);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+    // Asked again when the wait is over, with no push since: the stop held takes the view.
+    wait(RESERVED_MS);
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('gives the focus to the next stop of the slot whose stop took it, moved on from elsewhere', () => {
+    const { push } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    // Piwi Picker steps worker 0.
+    push(running(0), at(1, 5));
+    expect(push(at(0, 4), at(1, 5)).opened).toEqual([[0, true]]);
+  });
+
+  test('moves the focus to the worker a control answered', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 1, 5);
+    push(at(0, 3), running(1));
+    expect(push(at(0, 3), at(1, 6))).toEqual({ opened: [[1, true]], page: null });
+  });
+
+  test('keeps the focus on the slot of a worker restarted after a failure', () => {
+    const { push, answer } = editor();
+    push(at(0, 3, { reason: 'failure' }), at(1, 5));
+    answer('resume', 0, 3);
+    push(at(1, 5));
+    expect(push(at(2, 4, {}, 0), at(1, 5))).toEqual({ opened: [[2, true]], page: null });
+  });
+
+  test('counts a stop whose file never opened as none shown', () => {
+    const { push } = editor([3]);
+    push(at(0, 3), running(1));
+    expect(push(at(0, 3), at(1, 5)).opened).toEqual([[1, true]]);
+  });
+
+  test('opens no page at a stop with a pause bar, and a new stop’s page in a view that is closed', () => {
+    const { shown, push } = editor();
+    expect(push(at(0, 3, { bar: true }), running(1)).page).toBeNull();
+    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toEqual([1, 5]);
+    shown.view(null);
+    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toBeNull();
+    expect(push(at(0, 3, { bar: true }), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
+  });
+
+  test('leaves the stops of the slot the worker panel watches to it, a slot no person is on for that', () => {
+    const { watched, push, answer } = editor();
+    watched.add(1);
+    push(at(0, 3), running(1));
+    // The panel's stop opens its file without the focus while the person is on worker 0, and takes no page.
+    expect(push(at(0, 3), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
+    answer('resume', 0, 3);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [], page: null });
+    // Out of the panel's sight, the stop held takes the view.
+    watched.clear();
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    // Alone, the panel's stop takes the focus as any first stop does.
+    const alone = editor();
+    alone.watched.add(0);
+    expect(alone.push(at(0, 3))).toEqual({ opened: [[0, true]], page: null });
+  });
+
+  test('keeps the focus off another worker’s stop while a stepped worker’s next stop is awaited', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    // No other stop's file is open, and worker 1's stop still leaves the caret to worker 0.
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
+    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
+    // In one push, worker 1's stop first.
+    const together = editor();
+    together.push(at(0, 3), running(1));
+    together.answer('step', 0, 3);
+    together.push(running(0), running(1));
+    expect(together.push(at(1, 5), at(0, 4))).toEqual({
+      opened: [
+        [1, false],
+        [0, true],
+      ],
+      page: [0, 4],
+    });
+  });
+
+  test('ends the wait as the stepped worker’s next stop opens, with the focus or, past its turn, without', () => {
+    const { shown, push, answer, stopOf } = editor([4]);
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    push(at(0, 4), running(1));
+    expect(shown.waitsUntil()).not.toBeNull();
+    shown.opened(stopOf(0, 4), false);
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('lets another worker’s stop take the focus once the wait for a stepped worker is over', () => {
+    const { push, answer, wait } = editor();
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    push(running(0), running(1));
+    wait(RESERVED_MS);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, true]], page: [1, 5] });
+  });
+
+  test('makes the slot the person acted on theirs: a code action, input or a pick on a page', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 0, 3);
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    // The person types on worker 1's page: worker 0's next stop leaves them there.
+    shown.acted(stopOf(1, 5));
+    expect(push(at(0, 4), at(1, 5)).opened).toEqual([[0, false]]);
+    push(at(0, 4), running(1));
+    expect(push(at(0, 4), at(1, 6)).opened).toEqual([[1, true]]);
+    // Acting on another worker ends the wait for a stepped one.
+    answer('step', 0, 4);
+    shown.acted(stopOf(1, 6));
+    expect(shown.waitsUntil()).toBeNull();
+  });
+
+  test('forgets an answer the run refused: no wait, and the slot the person was on', () => {
+    const { shown, push, answer } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    shown.taken(answer('resume', 1, 5));
+    push(at(0, 3), running(1));
+    // A Step on worker 0's stop, which went on meanwhile.
+    expect(shown.refused(answer('step', 0, 3))).toBe(true);
+    expect(shown.waitsUntil()).toBeNull();
+    expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
+    // An answer taken, or settled already, undoes nothing.
+    const taken = answer('step', 0, 3);
+    shown.taken(taken);
+    expect(shown.refused(taken)).toBe(false);
+    expect(shown.waitsUntil()).not.toBeNull();
+  });
+
+  test('undoes each of two refused answers in flight, in either order', () => {
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const { shown, push, answer, stopOf, now } = editor();
+      push(at(0, 3), at(1, 5));
+      const tokens = [answer('step', 0, 3), answer('step', 1, 5)];
+      for (const i of order) shown.refused(tokens[i]!);
+      expect(shown.waitsUntil()).toBeNull();
+      // Neither answer holds the run keys: the only stop shown is answered.
+      expect(shown.choose([stopOf(0, 3)], null, true, now())).toEqual(stopOf(0, 3));
+    }
+  });
+
+  test('gives a run key the stop at the caret, else none but the one just answered, else the only one shown', () => {
+    const { shown, push, answer, stopOf } = editor([5]);
+    push(at(0, 3), at(1, 5), at(2, 7));
+    const caret = (line: number) => ({ uri: spec, line });
+    const [a, b, c] = [stopOf(0, 3), stopOf(1, 5), stopOf(2, 7)];
+    expect(shown.choose([a, b, c], caret(5), true)).toEqual(b);
+    expect(shown.choose([a, b, c], caret(1), true)).toBe('ask');
+    // The only stop left: one whose file never opened is asked for.
+    expect(shown.choose([b], caret(1), true)).toBe('ask');
+    expect(shown.choose([c], caret(1), true)).toEqual(c);
+    // Worker 0 resumed from the caret: a second press before the next stop answers no other stop, but a code action
+    // takes the only one shown.
+    answer('resume', 0, 3);
+    expect(shown.choose([a], caret(9), true, 150)).toEqual(a);
+    expect(shown.choose([c], caret(3), true, 150)).toBeNull();
+    expect(shown.choose([c], caret(3), false, 150)).toEqual(c);
+    expect(shown.choose([c], caret(3), true, 100 + RESUMED_KEY_MS)).toEqual(c);
+    // A stop whose page shows is one the person was shown.
+    shown.view(b);
+    expect(shown.choose([b], caret(3), true, 5_000)).toEqual(b);
+    expect(shown.choose([], caret(3), true)).toBeNull();
+  });
+
+  test('ends the moments after an answer once no worker of its run holds the slot', () => {
+    const shown = new StopsShown();
+    const first = sessionsOf(session('ed-1', [at(0, 3)]));
+    shown.changed(first, stopsOf(first), { now: 100 });
+    const a = stopsOf(first)[0]!;
+    shown.opened(a, true);
+    shown.answered(a, 'resume', 100);
+    // The run ends, and another run's worker stops within the moments after the answer.
+    const second = sessionsOf(session('ed-2', [at(0, 5)]));
+    shown.changed(second, stopsOf(second), { now: 200 });
+    const b = stopsOf(second)[0]!;
+    shown.opened(b, true);
+    expect(shown.choose([b], { uri: spec, line: 5 }, true, 300)).toEqual(b);
+  });
+
+  test('ends the moments after an answer at the next stop', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    push(running(0), at(1, 5));
+    expect(shown.choose([stopOf(1, 5)], null, true, 400)).toBeNull();
+    push(at(0, 4), at(1, 5));
+    expect(shown.choose([stopOf(1, 5)], null, true, 500)).toEqual(stopOf(1, 5));
+  });
+
+  test('keeps a run key on the answered worker until its next stop opens, whatever the caret and other stops say', () => {
+    const { shown, push, answer, stopOf } = editor([4]);
+    // Two workers stopped at the same line: a key asks which, and the person steps worker 0.
+    push(at(0, 3), at(1, 3), running(2));
+    const line = (n: number) => ({ uri: spec, line: n });
+    expect(shown.choose([stopOf(0, 3), stopOf(1, 3)], line(3), true)).toBe('ask');
+    answer('step', 0, 3);
+    expect(shown.choose([stopOf(0, 3), stopOf(1, 3)], line(3), true, 150)).toEqual(stopOf(0, 3));
+    // Worker 0 runs and worker 2 stops: a key pressed again answers neither worker 1 nor worker 2.
+    push(running(0), at(1, 3), at(2, 7));
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 250)).toBeNull();
+    expect(shown.choose([stopOf(2, 7)], line(7), true, 250)).toBeNull();
+    // Worker 0's next stop, heard but its file not open yet, has not moved the caret: the key still waits for it.
+    push(at(0, 4), at(1, 3), at(2, 7));
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 350)).toBeNull();
+    // Its file open, the moments after the answer end.
+    shown.opened(stopOf(0, 4), true);
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 350)).toEqual(stopOf(1, 3));
+  });
+
+  test('offers a held stop the worker panel showed to a closed paused page once the panel no longer shows it', () => {
+    const { shown, watched, push } = editor();
+    watched.add(1);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, true]], page: null });
+    watched.clear();
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    // Offered once: closed again, the view opens no more.
+    shown.view(null);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+  });
+
+  test('says when acting ended a wait, for the page to be shown again, as after a refusal', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+    expect(shown.acted(stopOf(1, 5))).toBe(true);
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    expect(shown.acted(stopOf(1, 5))).toBe(false);
+    // A refused Step says it ended the wait: the page shown again opens the stop held.
+    const refused = editor();
+    refused.push(at(0, 3), running(1));
+    refused.push(at(0, 3), at(1, 5));
+    const step = refused.answer('step', 0, 3);
+    expect(refused.push(running(0), at(1, 5)).page).toBeNull();
+    expect(refused.shown.refused(step)).toBe(true);
+    expect(refused.push(running(0), at(1, 5)).page).toEqual([1, 5]);
+  });
+
+  test('undoes of a refused answer only what nothing changed since', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), at(1, 5));
+    const step = answer('step', 0, 3);
+    // The person types on worker 1's page before the refusal comes.
+    shown.acted(stopOf(1, 5));
+    shown.refused(step);
+    push(at(0, 3), running(1));
+    expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
+    // Worker 1 answered, then worker 0 stepped and typed on: the slot the person is on stays worker 0's.
+    const again = editor();
+    again.push(at(0, 3), at(1, 5));
+    again.shown.taken(again.answer('resume', 1, 5));
+    again.push(at(0, 3), running(1));
+    const stepped = again.answer('step', 0, 3);
+    again.shown.acted(again.stopOf(0, 3));
+    again.shown.refused(stepped);
+    expect(again.push(at(0, 3), at(1, 6)).opened).toEqual([[1, false]]);
+  });
+
+  test('keeps waiting when the stepped stop’s own file opens after the Step', () => {
+    const { shown, push, answer, stopOf } = editor([3]);
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    shown.opened(stopOf(0, 3), false);
+    expect(shown.waitsUntil()).not.toBeNull();
+  });
+
+  test('counts a press, a click, a key, text or the wheel on a page as acting, not a pointer moving or a release', () => {
+    const at = { x: 1, y: 2 };
+    expect(actsOnPage([{ type: 'mouse', action: 'move', ...at }])).toBe(false);
+    expect(actsOnPage([{ type: 'mouse', action: 'up', ...at, button: 'left' }])).toBe(false);
+    expect(actsOnPage([{ type: 'key', action: 'up', key: 'a' }])).toBe(false);
+    expect(actsOnPage([])).toBe(false);
+    expect(actsOnPage([{ type: 'mouse', action: 'down', ...at, button: 'left' }])).toBe(true);
+    expect(actsOnPage([{ type: 'mouse', action: 'click', ...at, button: 'left', clickCount: 1 }])).toBe(true);
+    expect(actsOnPage([{ type: 'key', action: 'press', key: 'Enter' }])).toBe(true);
+    expect(actsOnPage([{ type: 'key', action: 'down', key: 'a' }])).toBe(true);
+    expect(actsOnPage([{ type: 'text', text: 'MORNING10' }])).toBe(true);
+    expect(actsOnPage([{ type: 'wheel', ...at, deltaX: 0, deltaY: 40 }])).toBe(true);
+    expect(
+      actsOnPage([
+        { type: 'mouse', action: 'move', ...at },
+        { type: 'key', action: 'press', key: 'Tab' },
+      ]),
+    ).toBe(true);
+  });
+
+  test('opens a file aside in a group neither active nor a panel’s, else in a new one at the right', () => {
+    const groups = (active: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({ viewColumn: i + 1, isActive: i + 1 === active }));
+    expect(asideColumn(groups(1, 1))).toBe(2);
+    expect(asideColumn(groups(1, 2), [2])).toBe(3);
+    expect(asideColumn(groups(1, 3), [2])).toBe(3);
+    expect(asideColumn(groups(1, 3), [2, 3])).toBe(4);
+    expect(asideColumn(groups(2, 2), [2])).toBe(1);
+    expect(asideColumn(groups(9, 9), [8])).toBe(1);
+    expect(asideColumn([{ viewColumn: 9, isActive: true }])).toBe(9);
+  });
+});
+
 describe('the stop a control acts on', () => {
-  const one: ShownStop = { ref: 'ed-1', worker: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
-  const two: ShownStop = { ref: 'ed-1', worker: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
+  const one: ShownStop = { ref: 'ed-1', worker: 0, slot: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
+  const two: ShownStop = { ref: 'ed-1', worker: 1, slot: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
 
   test('is the only one, wherever the caret is', () => {
     expect(stopsFor([one], { uri: pageObject, line: 1 })).toEqual([one]);
@@ -583,6 +1189,16 @@ describe('the breakpoints sent to a run', () => {
 });
 
 describe('the paused page view', () => {
+  test('ends its watch as it hides and starts it again as it shows, and a focus change does neither', () => {
+    // A focus change fires the view state change with the panel visible before and after.
+    expect(pausedPageViewChange(true, true, true)).toBe('none');
+    expect(pausedPageViewChange(false, false, true)).toBe('none');
+    expect(pausedPageViewChange(true, false, true)).toBe('end');
+    expect(pausedPageViewChange(true, false, false)).toBe('end');
+    expect(pausedPageViewChange(false, true, true)).toBe('watch');
+    expect(pausedPageViewChange(false, true, false)).toBe('none');
+  });
+
   test('shows the JPEG under its caption, with no script and data images only', () => {
     const html = pausedPageHtml({ image: { mime: 'image/jpeg', data: '/9j/4AAQ+w==' }, caption: 'Click <b>' }, 'n0nce');
     expect(html).toContain(
@@ -592,6 +1208,28 @@ describe('the paused page view', () => {
     expect(html).toContain('<p>Click &#60;b&#62;</p>');
     expect(html).toContain('<img src="data:image/jpeg;base64,/9j/4AAQ+w==" alt="The page of the paused test">');
     expect(html).not.toContain('<script');
+  });
+
+  test('offers live watching only for a capable stop, with interaction disabled and help collapsed', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: '<test>',
+        live: { shown: 7, on: false, input: true, interacting: false, clickCounts: true },
+      },
+      'secure',
+      'https://webview/paused-page.js?a=1&b=2',
+    );
+    expect(html).toContain("script-src 'nonce-secure'");
+    expect(html).toContain('src="https://webview/paused-page.js?a=1&#38;b=2"');
+    expect(html).toContain('data-shown="7"');
+    expect(html).toContain('id="interact" type="checkbox" disabled');
+    expect(html).toContain('<details><summary>');
+    expect(html).not.toContain('<details open');
+    expect(html).not.toContain('<test>');
+    expect(
+      pausedPageHtml({ image: null, caption: 'Still image' }, 'n', 'https://webview/paused-page.js'),
+    ).not.toContain('Watch live');
   });
 
   test('runs one script, by the style’s nonce, only where a click on the image picks', () => {
@@ -680,6 +1318,7 @@ const ALL_TAKES: RunTake[] = ['pick', 'record', 'assert', 'assert-region', 'requ
 const shown = (stop: RunStop, takes: RunTake[] = ALL_TAKES, test: RunTest | null = runTest()): ShownStop => ({
   ref: 'ed-1',
   worker: 0,
+  slot: 0,
   stop,
   test,
   takes,

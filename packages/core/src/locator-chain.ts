@@ -57,6 +57,11 @@ const NARROWING_METHODS: ReadonlySet<string> = new Set([
 /** Every method a chain may contain. */
 const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([...LOCATING_METHODS, ...NARROWING_METHODS]);
 
+/** Whether a call of `name` locates, narrows or combines a locator: a link of a chain, which acts on nothing. */
+export function isLocatorChainMethod(name: string): boolean {
+  return LOCATOR_CHAIN_METHODS.has(name);
+}
+
 /** Raised for any expression outside the supported grammar; the message says where. */
 class LocatorParseError extends Error {
   constructor(message: string) {

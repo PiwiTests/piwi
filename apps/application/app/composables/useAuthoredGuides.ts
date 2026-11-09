@@ -25,6 +25,7 @@ export async function useAuthoredGuides() {
   /** Starts `authored` at its first stop, its stops' entities found first. */
   async function start(authored: AuthoredGuide): Promise<void> {
     if (import.meta.server) return;
+    guide.preload();
     const get: GuideApiGet = <T>(path: string, query?: Record<string, string | number>) => $fetch<T>(path, { query });
     const ids = await resolveGuideIds(guideResolvers(authored), get);
     await guide.start(authoredGuideRun(authored, ids, isDesktop));

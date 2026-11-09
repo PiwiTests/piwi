@@ -8,14 +8,17 @@
  * passed on retry in it are classified (`classifyRunFlakyTests`), and a flaky
  * list read fills in the tests that still have none (`withFlakyRootCauses`).
  */
-import { eq, and, desc, gt, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { runnerOfShard } from '../environment-snapshots';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
 import { notLabRun } from './probes';
 import { isOrderDependent } from './coverage-insights';
 import type { DrizzleDB } from './db';
+import { flakyResultSql } from './test-case-aggregates';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
 const ATTEMPT_DIFF_SAMPLE = 10;
@@ -72,6 +75,8 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
         steps: testRunsCases.steps,
         browser: testRunsCases.browser,
         coveragePayloadId: testRunsCases.coveragePayloadId,
+        runId: testRunsCases.testRunId,
+        shardIndex: testRunsCases.shardIndex,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -115,6 +120,8 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     else outcomes.failed++;
   }
 
+  const runnerDistributions = await runnerOutcomes(db, [...recentFailures, ...recentPasses]);
+
   // Count the failed requests actually captured across the recent failing
   // attempts.
   let networkErrorCount = 0;
@@ -139,14 +146,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     .select({ id: testRunsCases.id })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(
-      and(
-        eq(testRunsCases.testCaseId, testCaseId),
-        eq(testRunsCases.status, 'passed'),
-        gt(testRunsCases.retries, 0),
-        notLabRun(testRuns.origin),
-      ),
-    )
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), flakyResultSql(), notLabRun(testRuns.origin)))
     .orderBy(desc(testRunsCases.createdAt))
     .limit(ATTEMPT_DIFF_SAMPLE);
   for (const exec of flakyExecutions) {
@@ -169,8 +169,34 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     status5xxCount,
     attemptDiffNetworkVotes,
     browserDistribution,
+    runnerDistributions,
     orderDependent,
   });
+}
+
+/** The runner fields an environment cause is read from. */
+const RUNNER_CAUSE_FIELDS = ['timeZone', 'locale'] as const;
+
+/** Per runner field, the attempts' outcomes by the value their shard's runner recorded; attempts without one are left out. */
+async function runnerOutcomes(
+  db: DrizzleDB,
+  rows: ReadonlyArray<{ status: string; runId: number; shardIndex: number | null }>,
+): Promise<Array<Record<string, BrowserOutcomes>>> {
+  const snapshots = await loadRunsSnapshots(db, [...new Set(rows.map((r) => r.runId))], ['runner']);
+  const distributions = RUNNER_CAUSE_FIELDS.map(() => ({}) as Record<string, BrowserOutcomes>);
+  for (const row of rows) {
+    const runners = (snapshots.get(row.runId) ?? []).filter((s) => s.kind === 'runner');
+    const runner = runnerOfShard(runners, row.shardIndex);
+    if (!runner || runner.imported) continue;
+    RUNNER_CAUSE_FIELDS.forEach((field, i) => {
+      const value = runner[field];
+      if (!value) return;
+      const outcomes = (distributions[i]![value] ??= { passed: 0, failed: 0 });
+      if (row.status === 'passed') outcomes.passed++;
+      else outcomes.failed++;
+    });
+  }
+  return distributions;
 }
 
 /** Classify the cases one after another; a case that fails is logged and skipped. */
@@ -187,14 +213,14 @@ async function classifyEach(db: DrizzleDB, projectId: number, testCaseIds: numbe
 }
 
 /**
- * Classify the tests that passed on retry in a finished run, so a category
+ * Classify the tests that passed after a failed attempt in a finished run, so a category
  * follows every new flake and stays current as the evidence grows.
  */
 export async function classifyRunFlakyTests(db: DrizzleDB, projectId: number, runId: number): Promise<void> {
   const flaky = await db
     .selectDistinct({ testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
-    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+    .where(and(eq(testRunsCases.testRunId, runId), flakyResultSql()))
     .limit(FINALIZE_CLASSIFY_LIMIT);
   await classifyEach(
     db,

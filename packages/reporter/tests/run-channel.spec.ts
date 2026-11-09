@@ -93,6 +93,7 @@ function handlers() {
   const asked: string[] = [];
   const control: RunControl = {
     pause: () => void asked.push('pause'),
+    giveUp: (testId: string) => void asked.push(`give-up ${testId}`),
     breakpoints: (places: Place[]) => void asked.push(`breakpoints ${places.map((p) => p.line).join(',')}`),
     runTo: (place: Place) => void asked.push(`run-to ${place.file}:${place.line}`),
   };
@@ -271,8 +272,26 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
+        takes: [
+          'pick',
+          'record',
+          'assert',
+          'assert-region',
+          'requests',
+          'mock',
+          'locator',
+          'view',
+          'input',
+          'input-clicks',
+          'pick-at',
+          'agent',
+          'events',
+          'bind',
+          'end',
+          'share',
+        ],
         holds: ['failure'],
+        features: ['view-lane', 'give-up'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
@@ -287,8 +306,9 @@ describe('the worker’s run connection', () => {
         bar: false,
       });
       const stop = (stopped as { stop: number }).stop;
-      // A pause while stopped, and an answer to another stop, change nothing.
+      // A pause or End the test while a Pause waits, while stopped, and an answer to another stop, change nothing.
       hub.send({ type: 'control', action: 'pause' });
+      hub.send({ type: 'control', action: 'give-up', testId: 't1' });
       hub.send({ type: 'control', action: 'resume', stop: stop + 1 });
       hub.send({ type: 'run-to', stop, place: { file: 'tests/a.spec.ts', line: 9 } });
       hub.send({ type: 'control', action: 'step', stop });
@@ -300,9 +320,10 @@ describe('the worker’s run connection', () => {
       expect(await until(() => hub.heard.find((m) => m.type === 'running'))).toEqual({ type: 'running', stop });
 
       hub.send({ type: 'control', action: 'pause' });
+      hub.send({ type: 'control', action: 'give-up', testId: 't1' });
       hub.send({ type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 3 }] });
-      await until(() => (asked.length === 3 ? true : undefined));
-      expect(asked.slice(1)).toEqual(['pause', 'breakpoints 3']);
+      await until(() => (asked.length === 4 ? true : undefined));
+      expect(asked.slice(1)).toEqual(['pause', 'give-up t1', 'breakpoints 3']);
     } finally {
       await hub.close();
     }
@@ -316,6 +337,13 @@ describe('the worker’s run connection', () => {
     expect(workerTakes({ PIWI_RECORD_CHANNEL: channel, PIWI_EDITOR_SEND: 'http://127.0.0.1:1/piwi/send#t' })).toEqual(
       RUN_TAKES,
     );
+  });
+
+  it('takes Pick on the image only on a Playwright whose snapshots give the boxes it reads', () => {
+    const env = { PIWI_RUN_CHANNEL: 'x' };
+    expect(workerTakes(env, '1.59.1')).not.toContain('pick-at');
+    expect(workerTakes(env, '1.60.0')).toContain('pick-at');
+    expect(workerTakes(env, '1.62.0-next')).toContain('pick-at');
   });
 
   it('hands End the test to the stop it names, and to no other', async () => {
@@ -340,7 +368,10 @@ describe('the worker’s run connection', () => {
     try {
       expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
       const intents: string[] = [];
-      const held = holdStop({ ...STOP, bar: true, intent: (what) => (intents.push(what), { ok: true, message: `${what} started` }) }, () => {});
+      const held = holdStop(
+        { ...STOP, bar: true, intent: (what) => (intents.push(what), { ok: true, message: `${what} started` }) },
+        () => {},
+      );
       const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
       const answers = () => hub.heard.filter((m) => m.type === 'answer');
       hub.send({ type: 'request', request: 1, what: 'pick', stop });
@@ -365,7 +396,8 @@ describe('the worker’s run connection', () => {
         what: 'record',
         value: {
           ok: false,
-          message: "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+          message:
+            "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
         },
       });
     } finally {
@@ -458,7 +490,9 @@ describe('the worker’s run connection', () => {
       hub.send({ type: 'control', action: 'stop', stop: 1 });
       expect(await until(() => hub.heard.find((m) => m.type === 'notice'))).toEqual({
         type: 'notice',
-        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/),
+        message: expect.stringMatching(
+          /^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/,
+        ),
       });
     } finally {
       await hub.close();

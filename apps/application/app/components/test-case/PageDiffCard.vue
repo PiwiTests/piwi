@@ -50,7 +50,7 @@ const emptyState = computed<EvidenceState | null>(() => {
         state: 'not-captured',
         title: 'Page diff',
         description: 'The failing page was not captured for this run — add the capture fixtures.',
-        to: '/setup',
+        to: '/settings/connect',
         toLabel: 'Open setup',
       };
     case 'no-green-sample':

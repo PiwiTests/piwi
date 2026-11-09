@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs" ADD COLUMN "live_view_key_digests" jsonb;

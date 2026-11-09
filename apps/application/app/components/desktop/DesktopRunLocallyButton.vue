@@ -15,7 +15,7 @@
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
+import { buildLocalRunPlan, localRunCopyOptions, type LocalRunOptions } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
@@ -295,7 +295,13 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         label: 'Copy as command',
         icon: 'i-lucide-clipboard',
         onSelect: () =>
-          void copy(buildRetryCommand(props.cases, { mode: options.value.mode }), { toast: 'Command copied' }),
+          void copy(
+            buildRetryCommand(props.cases, {
+              mode: options.value.mode,
+              options: localRunCopyOptions(options.value),
+            }),
+            { toast: 'Command copied' },
+          ),
       },
       {
         label: 'Project defaults…',

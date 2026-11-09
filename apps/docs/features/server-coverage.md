@@ -53,7 +53,8 @@ With `functions` and `lines`, each file names the git blob its line numbers refe
 reporter also sends each backend's run-level coverage, attributed to no test, with each file's executable lines at
 `lines`: the lines no test runs, in every assembly or every Nitro server file built with coverage, including those
 whose code never ran. A test
-whose coverage the backend no longer held, or that could not be collected, is marked incomplete.
+whose coverage the backend held only in part, or that could only partly be collected, is marked incomplete; one whose
+collection failed outright records no backend coverage at all.
 
 <figure>
   <img src="/screenshots/server-coverage.png" alt="The backend files one test ran, recorded by line">
@@ -83,10 +84,13 @@ answers it is the one that served the run's first requests.
   coverage; what the earlier process ran outside a request (startup, background work) is lost, and a test whose
   requests it served but the reporter had not yet collected is marked incomplete. The reporter warns, the run's header
   reads *Coverage incomplete: the backend restarted during the run*, and the run's coverage in the
-  [API](https://piwitests.dev/demo/docs) names the origin and about when it restarted. A backend unreachable at the
+  [API](https://piwitests.dev/demo/settings/api) names the origin and about when it restarted. A backend unreachable at the
   end of the run is flagged the same way, with only the tests' lines kept. The commit's
   [combined coverage](./combined-coverage) notes the run, and its `e2e` suite reads as incomplete unless a complete
   run of the commit counts beside it. A Nitro development server restarts on every rebuild.
+- **The backend's whole life:** the run-level coverage holds everything the process ran since it started, so with a
+  server Playwright reuses (`reuseExistingServer`), a shared staging backend, health checks or clicks by hand, code no
+  test ran counts as run by the end-to-end suite. A backend started for the run reads true.
 - **Run level only:** work outside a request (hosted services, timers started at startup), and work a request started
   that still runs once the reporter collected its coverage. On ASP.NET Core, lambdas created at startup too (inline
   minimal API handlers, inline middleware, DI factory lambdas); the methods they call count normally. On Nitro, a
@@ -103,7 +107,7 @@ answers it is the one that served the run's first requests.
 
 - **The server's own code only:** the files the build bundles, under the repository, outside `node_modules`. A
   dependency Nitro keeps external is not covered. A Nuxt application's `server/` code is; its pages and components
-  rendered on the server are not yet.
+  rendered on the server are not.
 - **Lines are the statements' first lines**, as Istanbul and Vitest count them: a statement spanning several lines
   counts its first one. A class field's initializer is not instrumented.
 - **Callbacks that lose the request's async context**, such as those a library queues without `AsyncResource`, count

@@ -8,6 +8,8 @@
  * directory of the machine that produced the archive.
  */
 
+import { hideSecretsInError } from './mask';
+
 /**
  * Concatenate a result's errors into one text, deduped by the first 200
  * characters of each trimmed message.
@@ -16,24 +18,47 @@
  * only the bare `Test timeout of 30000ms exceeded.` — the interrupted action's
  * actual error (with its call log, the single most diagnostic fact) lives in
  * the remaining entries. Joining them all ensures the call log survives, so the
- * locator can be extracted and the failure clustered correctly.
+ * locator can be extracted and the failure clustered correctly. The text a
+ * fill or a typing typed, and what else may be a secret, is hidden in each (`hideSecretsInError`).
+ *
+ * A value thrown that is not an `Error` (`throw 'boom'`, `throw { code: 42 }`)
+ * has no message: Playwright gives it as `value`, the value inspected, which
+ * stands in for the message.
  */
-export function joinErrorMessages(errors: ReadonlyArray<{ message?: string }> | null | undefined): string | null {
+export function joinErrorMessages(
+  errors: ReadonlyArray<{ message?: string; value?: string }> | null | undefined,
+): string | null {
   if (!errors || errors.length === 0) return null;
 
   const seen = new Set<string>();
   const parts: string[] = [];
 
   for (const err of errors) {
-    const msg = err.message ?? '';
+    const msg = err.message || err.value || '';
     if (!msg) continue;
     const dedupeKey = msg.trim().slice(0, 200);
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
-    parts.push(msg);
+    parts.push(hideSecretsInError(msg));
   }
 
   return parts.join('\n---\n') || null;
+}
+
+/**
+ * The first of a result's errors that names the place it was thrown, whose
+ * location the error text's frame gives. A test timeout's first error, the bare
+ * `Test timeout of 30000ms exceeded.`, names none; the error of the call it
+ * interrupted, which follows it, names the line the test stood at.
+ */
+export function locatedError<E extends { location?: unknown }>(
+  errors: ReadonlyArray<E | null | undefined> | null | undefined,
+): E | undefined {
+  for (const error of errors ?? []) {
+    const file = (error?.location as { file?: unknown } | null | undefined)?.file;
+    if (error && typeof file === 'string' && file.length > 0) return error;
+  }
+  return undefined;
 }
 
 /**

@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { matchInsertedRunCases } from '../../server/utils/inserted-run-cases';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set;
 // clear it before the modules that import the barrel load.
@@ -24,9 +23,7 @@ beforeEach(() => {
 
 async function freshRun(): Promise<{ db: Db; runId: number }> {
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'links-project' });
   const [run] = await db
     .insert(schema.testRuns)

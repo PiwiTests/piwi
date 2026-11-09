@@ -13,6 +13,7 @@ import { demoHttpError } from './http-error';
 import { isRunKept, keptRunDeleteMessage } from '#shared/handlers/run-keep';
 import { recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
+import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 
 /** DELETE /api/test-runs/:id */
 export async function apiDeleteTestRun(id: number) {
@@ -53,5 +54,6 @@ export async function apiDeleteTestRun(id: number) {
   for (const clusterId of affectedClusterIds) {
     await recomputeClusterOccurrences(db, clusterId);
   }
+  dropProjectTestFilters(runRows[0].projectId);
   return { success: true };
 }

@@ -21,6 +21,8 @@ export interface NewerExecutionRow {
   /** Playwright's `repeatEachIndex`: each repetition of a test retries on its own. */
   repeatEachIndex: number;
   retries: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
   browserName: string | null;
   failureClusterId: number | null;
   /** The run's start time. */
@@ -46,6 +48,8 @@ export interface LatestExecution {
     runId: number;
     status: string;
     retries: number;
+    /** Passed after an earlier attempt of its result failed or timed out. */
+    passedAfterFailure: boolean;
     /** The run's start time. */
     at: string | number | Date | null;
     /** A later attempt of the execution's own run. */
@@ -127,6 +131,7 @@ export function summarizeNewerExecutions(
           runId: top.runId,
           status: top.status,
           retries: top.retries ?? 0,
+          passedAfterFailure: Boolean(top.passedAfterFailure),
           at: top.startTime,
           sameRun: top.runId === current.runId,
           sameCluster: sameCluster(top),

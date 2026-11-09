@@ -7,10 +7,17 @@
  * the copyable command: a `--project` filter and a `file:line` filter must pair
  * up, so mixed-project retries become sequential steps.
  */
-import { escapeGrep, toPosixPath, type RetryCase, type RetryMode } from './retry-command';
+import {
+  escapeGrep,
+  specPattern,
+  type RetryCase,
+  type RetryMode,
+  type RetryRunMode,
+  type RetryRunOptions,
+} from './retry-command';
 
 /** How the browser runs. `debug` opens the inspector, `ui` opens UI mode. */
-export type LocalRunMode = 'normal' | 'headed' | 'debug' | 'ui';
+export type LocalRunMode = RetryRunMode;
 
 export interface LocalRunOptions {
   mode?: RetryMode;
@@ -53,7 +60,7 @@ function specArgs(cases: RetryCase[], mode: RetryMode): string[] {
   const seen = new Set<string>();
   const specs: string[] = [];
   for (const c of cases) {
-    const spec = mode === 'file-line' && c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath);
+    const spec = mode === 'file-line' && c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath);
     if (seen.has(spec)) continue;
     seen.add(spec);
     specs.push(spec);
@@ -87,7 +94,7 @@ export function buildReproduceArgs(cases: RetryCase[]): string[] {
  * be read as an option and is left out.
  */
 export function buildBisectArgs(cases: RetryCase[]): string[] {
-  const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].filter((f) => f && !f.startsWith('-'));
+  const files = [...new Set(cases.map((c) => specPattern(c.filePath)))].filter((f) => f && !f.startsWith('-'));
   const titles = [...new Set(cases.map((c) => c.title).filter(Boolean))].map(escapeGrep);
   const args = [...files];
   if (titles.length > 0) args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);
@@ -95,6 +102,15 @@ export function buildBisectArgs(cases: RetryCase[]): string[] {
     args.push(`--project=${project}`);
   }
   return args;
+}
+
+/** The options of a local run as a copied command carries them, so the copy runs what Run locally runs. */
+export function localRunCopyOptions(options: LocalRunOptions): RetryRunOptions {
+  return {
+    runMode: options.runMode ?? 'normal',
+    trace: options.trace ? 'on' : null,
+    repeatEach: Math.min(1000, Math.max(1, Math.floor(options.repeatEach ?? 1))),
+  };
 }
 
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
@@ -109,7 +125,8 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
     if (project) args.push(`--project=${project}`);
     args.push(...RUN_MODE_FLAGS[runMode]);
     if (options.trace) args.push('--trace=on');
-    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`);
+    // Each repetition reports its own result, as the editors' repeat does.
+    if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
     steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
   }
   return steps;

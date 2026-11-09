@@ -4,9 +4,12 @@
  * {@link ingestProjectManifest}. Server only: it makes the outbound request.
  */
 
+import { and, eq, isNull } from 'drizzle-orm';
+import { graphNodes } from '../database/schema';
 import { safeFetch } from './safe-fetch';
 import { ingestProjectManifest } from './surface-manifest';
 import { parseOpenApiSpec, MAX_OPENAPI_ROUTES } from '#shared/openapi';
+import { buildManifestGraph } from '#shared/graph';
 import type { AppManifest } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -70,7 +73,11 @@ export async function fetchOpenApiManifest(url: string): Promise<AppManifest | n
   }
 }
 
-/** Fetch a project's OpenAPI URL and ingest it as declared surface. No-op when unset. */
+/**
+ * Fetch a project's OpenAPI URL and ingest it as declared surface, the routes
+ * an earlier document declared and this one does not included
+ * ({@link undeclareOpenApiRoutes}). No-op when unset or unreadable.
+ */
 export async function refreshOpenApiSurface(
   db: DrizzleDB,
   projectId: number,
@@ -79,5 +86,42 @@ export async function refreshOpenApiSurface(
   if (!openApiUrl?.trim()) return false;
   const manifest = await fetchOpenApiManifest(openApiUrl.trim());
   if (!manifest) return false;
-  return ingestProjectManifest(db, projectId, manifest, 'openapi');
+  if (!(await ingestProjectManifest(db, projectId, manifest, 'openapi'))) return false;
+  await undeclareOpenApiRoutes(db, projectId, manifest);
+  return true;
+}
+
+/**
+ * Stop reading as declared the canonical nodes an OpenAPI document declared
+ * that `manifest` does not (every one of them when `manifest` is null, the URL
+ * cleared): each becomes an observed node without its declared attributes, so
+ * its *declared, never hit* gap closes on the next recompute and a node no test
+ * reaches retires as any unseen node does. Returns how many changed.
+ */
+export async function undeclareOpenApiRoutes(
+  db: DrizzleDB,
+  projectId: number,
+  manifest: AppManifest | null,
+): Promise<number> {
+  const declared = new Set(
+    manifest ? buildManifestGraph(manifest, 'openapi').nodes.map((n) => `${n.kind}\x00${n.key}`) : [],
+  );
+  const rows = await db
+    .select({ id: graphNodes.id, kind: graphNodes.kind, key: graphNodes.key, attrs: graphNodes.attrs })
+    .from(graphNodes)
+    .where(and(eq(graphNodes.projectId, projectId), isNull(graphNodes.branch), eq(graphNodes.origin, 'openapi')));
+  const stale = rows.filter((r) => !declared.has(`${r.kind}\x00${r.key}`));
+  for (const row of stale) {
+    const {
+      declared: _declared,
+      responses: _responses,
+      patterns: _patterns,
+      ...rest
+    } = (row.attrs ?? {}) as Record<string, unknown>;
+    await db
+      .update(graphNodes)
+      .set({ origin: 'observed', attrs: Object.keys(rest).length > 0 ? rest : null })
+      .where(eq(graphNodes.id, row.id));
+  }
+  return stale.length;
 }

@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -91,7 +91,7 @@ describe('the project’s lab', () => {
     const rows = [1, 2, 3].flatMap((id) =>
       retryPassTests.includes(id) ? [attempt(id, 'failed', 0), attempt(id, 'passed', 1)] : [attempt(id, 'passed', 0)],
     );
-    await db.insert(schema.testRunsCases).values(rows);
+    await db.insert(schema.testRunsCases).values(withStoredVerdicts(rows));
   }
 
   /** A finished experiment with a control and one arm, the arm reproducing when the verdict says so. */
@@ -135,9 +135,7 @@ describe('the project’s lab', () => {
 
   beforeEach(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
     await db.insert(schema.testCases).values([
       { id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' },

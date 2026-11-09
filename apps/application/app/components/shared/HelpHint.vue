@@ -4,7 +4,7 @@
  * with a short explanation, an optional "Learn more" docs link and, for a
  * registry topic, an optional link to the recipe it raises. Resolve copy
  * from the shared registry via `topic`, or pass `title`/`text`/`doc` inline for
- * one-offs.
+ * one-offs. The actions slot adds contextual controls inside the popover.
  *
  * The text is Markdown (see `renderHelpMarkdown`): a long hint reads as a lead
  * sentence and a list. Such a hint gets a wider popover that scrolls when it
@@ -49,7 +49,7 @@ const html = computed(() => (open.value ? renderHelpMarkdown(text.value) : ''));
 const wide = computed(() => /^\s*(?:[-*]|\d+\.)\s/m.test(text.value) || text.value.length > 400);
 const contentClass = computed(() => [
   'p-3 text-sm overflow-y-auto max-h-(--reka-popover-content-available-height)',
-  wide.value ? 'max-w-md' : 'max-w-xs',
+  wide.value ? 'max-w-[min(28rem,calc(100vw-2rem))]' : 'max-w-xs',
 ]);
 
 // Names both the trigger and the popover it opens, so assistive tech announces
@@ -100,7 +100,8 @@ const contentAttrs = computed(() => ({ side: 'bottom' as const, 'aria-label': ar
           </button>
         </div>
       </div>
-      <div v-if="doc || recipe || envVars?.length" class="mt-2 flex flex-col gap-1">
+      <div v-if="doc || recipe || envVars?.length || $slots.actions" class="mt-2 flex flex-col gap-1">
+        <slot name="actions" />
         <DocLink v-if="doc" :to="doc">Learn more</DocLink>
         <DocLink v-if="recipe" :to="recipe.doc">{{ recipe.question }}</DocLink>
         <DocLink v-if="envVars?.length" to="reference/configuration">Configuration reference</DocLink>

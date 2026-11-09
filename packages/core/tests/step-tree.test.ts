@@ -10,7 +10,15 @@ import {
   stepPhases,
   type TreeStepLike,
 } from '../src/step-tree';
-import { categorizeStep, collectStepMetrics, flattenSteps, markRecoveredSteps } from '../src/step-analysis';
+import {
+  categorizeStep,
+  collectStepMetrics,
+  extractTestStepEvents,
+  flattenSteps,
+  hideTypedStepTitle,
+  markRecoveredSteps,
+} from '../src/step-analysis';
+import { HIDDEN_VALUE } from '../src/mask';
 import {
   afterAllFailure,
   beforeAllFailure,
@@ -296,6 +304,34 @@ describe('markRecoveredSteps', () => {
     expect(collectStepMetrics([probe(10)], []).steps[0]!.recovered).toBe(true);
     expect(collectStepMetrics([probe(10)]).steps[0]!.recovered).toBeUndefined();
   });
+
+  test('reads a step error and the test error alike when a credential in its first line is hidden', () => {
+    const message = `Error: 401 for ${['pd_', 'a3'.repeat(32)].join('')}`;
+    const steps = flattenSteps([{ ...probe(10), error: { message, location: location(10) } }]);
+    expect(steps[0]!.error!.message).toBe(`Error: 401 for ${HIDDEN_VALUE}`);
+    markRecoveredSteps(steps, [{ message, location: location(10) }]);
+    expect(steps[0]!.recovered).toBeUndefined();
+  });
+});
+
+describe('the error of a hook or a fixture event', () => {
+  test('has a credential in its first line hidden', () => {
+    const key = ['pd_', 'a3'.repeat(32)].join('');
+    const [event] = extractTestStepEvents(
+      [
+        {
+          title: 'Before Hooks',
+          category: 'hook',
+          startTime: new Date(0),
+          duration: 5,
+          error: { message: `\u001b[31mError: seeding failed with \u001b[1m${key}\u001b[22m\u001b[39m\n    at seed` },
+          steps: [],
+        },
+      ],
+      new Date(0),
+    );
+    expect(event!.error).toBe(`Error: seeding failed with ${HIDDEN_VALUE}`);
+  });
 });
 
 describe('failureHookContext', () => {
@@ -345,6 +381,8 @@ describe('isCaptureStep', () => {
   test('recognizes the capture’s attachments and its probes through the reporter bundle', () => {
     expect(isCaptureStep({ title: 'Attach "piwi-locators"' })).toBe(true);
     expect(isCaptureStep({ title: 'Fixture "piwiCapture"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResources"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResourcesOfMine"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Fixture "page"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Attach "screenshot"' })).toBe(false);
     expect(
@@ -395,5 +433,78 @@ describe('flattenSteps and categorizeStep', () => {
     expect(categorizeStep('POST', 'pw:api', { url: '/api/seed', method: 'POST' })).toBe('api');
     expect(categorizeStep('Navigate', 'pw:api', { url: '/login' })).toBe('navigation');
     expect(categorizeStep('Attach "trace"', 'test.attach')).toBe('attach');
+  });
+});
+
+describe('the text a fill or a typing typed, in the stored steps', () => {
+  test('goes from the title, the params and the error of a step into a field that may hold a secret', () => {
+    const steps = flattenSteps([
+      {
+        title: 'Fill "S3cr3t!Passw0rd"',
+        subtitle: "getByLabel('Password')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Password')", value: 'S3cr3t!Passw0rd' },
+      },
+      {
+        title: 'Type "123456"',
+        subtitle: "getByLabel('Code de vérification')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Code de vérification')", text: '123456' },
+      },
+      { title: 'Type "hunter2"', category: 'pw:api', duration: 5, params: { text: 'hunter2' } },
+      {
+        title: 'Fill "S3cr3t"',
+        subtitle: "getByLabel('Mot de passe')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Mot de passe')", value: 'S3cr3t' },
+        error: {
+          message: 'locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - fill("S3cr3t")\n  - attempting fill action',
+        },
+      },
+    ]);
+    expect(JSON.stringify(steps)).not.toMatch(/S3cr3t|hunter2/);
+    expect(steps[0]).toMatchObject({
+      title: 'Fill "<hidden>"',
+      params: { locator: "getByLabel('Password')", value: '<hidden>' },
+    });
+    expect(steps[2]).toMatchObject({ title: 'Type "<hidden>"', params: { text: '<hidden>' } });
+    expect(steps[3]!.error!.message).toContain('fill("<hidden>")');
+  });
+
+  test('stays in the step of a field no locator names as a secret, for a bug report to replay it', () => {
+    const [step] = flattenSteps([
+      {
+        title: 'Fill "WELCOME10"',
+        subtitle: "getByLabel('Coupon')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Coupon')", value: 'WELCOME10' },
+      },
+    ]);
+    expect(step).toMatchObject({ title: 'Fill "WELCOME10"', params: { value: 'WELCOME10' } });
+  });
+
+  test('goes from a typing Playwright titles bare, into the element it was called on', () => {
+    // `elementHandle.type`, as Playwright 1.64 titles it: its text in its params alone.
+    const [step] = flattenSteps([{ title: 'Type', category: 'pw:api', duration: 5, params: { text: 'hunter2' } }]);
+    expect(step).toMatchObject({ title: 'Type', params: { text: '<hidden>' } });
+  });
+
+  test('goes when the locator names a secret past the length its param is cut at', () => {
+    const locator = `locator('main').locator('section.account-settings').${"locator('div.row')".repeat(8)}.getByLabel('Current password')`;
+    const [step] = flattenSteps([
+      { title: 'Fill "hunter2"', category: 'pw:api', duration: 5, params: { locator, value: 'hunter2' } },
+    ]);
+    expect(JSON.stringify(step)).not.toContain('hunter2');
+  });
+
+  test('stays in the title of a step the test names itself', () => {
+    const [step] = flattenSteps([{ title: 'Fill "Shipping address"', category: 'test.step', duration: 5 }]);
+    expect(step!.title).toBe('Fill "Shipping address"');
+    expect(hideTypedStepTitle('Fill "Shipping address"', 'test.step')).toBe('Fill "Shipping address"');
+    expect(hideTypedStepTitle('Fill "hunter2"', 'pw:api')).toBe('Fill "<hidden>"');
   });
 });

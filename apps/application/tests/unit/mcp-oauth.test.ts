@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The OAuth authorization server MCP clients sign in through: registration,
@@ -36,9 +35,7 @@ beforeEach(async () => {
   // Revoking a grant deletes its API key and relies on the cascade, as the server's connections do.
   await client.execute('PRAGMA foreign_keys=ON');
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   const [user] = await db
     .insert(schema.users)
     .values({ username: 'tester', password: 'x', role: 'member', name: 'Test User' })

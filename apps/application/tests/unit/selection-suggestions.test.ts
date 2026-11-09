@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { getSelectionSuggestions } = await import('../../shared/handlers/selection-suggestions');
@@ -51,7 +50,7 @@ async function seedExec(
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'suggestions-project' });
   caseSeq = 0;
   runSeq = 0;
@@ -128,10 +127,15 @@ describe('smoke mining', () => {
     const flaky = await seedCase('flaky');
     await seedExec(flaky, 'passed', { duration: 100, routes: ['/only-here'] });
     await seedExec(flaky, 'passed', { duration: 100, routes: ['/only-here'] });
-    // Make it flaky: a retry-pass.
+    // Make it flaky: a run where it failed, then passed on its retry.
+    const runId = ++runSeq;
     await db
-      .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: flaky, status: 'passed', retries: 1, createdAt: new Date(++clock) });
+      .insert(schema.testRuns)
+      .values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: runId, testCaseId: flaky, status: 'failed', retries: 0, createdAt: new Date(++clock) },
+      { testRunId: runId, testCaseId: flaky, status: 'passed', retries: 1, createdAt: new Date(++clock) },
+    ]);
 
     const { smoke } = await getSelectionSuggestions(db, 1, { budgetMs: 60_000 });
     // The only route belongs to a flaky test, so the candidate pool is empty.

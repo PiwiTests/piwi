@@ -5,6 +5,7 @@ import type { TestRun } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type { RunBaselineMatch } from '#shared/run-baseline';
 import { notLabRun } from '#shared/handlers/probes';
+import { eligibleRunSql, type RunUse } from '#shared/run-eligibility';
 
 export interface BaselineQuery {
   projectId: number;
@@ -27,6 +28,8 @@ export interface BaselineQuery {
   baseBranch?: string | null;
   /** Restrict the baseline to full-suite runs (partial/--grep runs skew a diff). */
   fullRunOnly?: boolean;
+  /** Restrict the baseline to the runs this use may read (`#shared/run-eligibility`). */
+  use?: RunUse;
   /**
    * When no rung finds a passing run, walk the same rungs again for the last
    * failed run. Timed-out and interrupted runs stopped before the suite ended,
@@ -45,14 +48,15 @@ interface Rung {
   match: Omit<RunBaselineMatch, 'outcome'>;
 }
 
-/** The runs any baseline is taken from: earlier runs of the project, never a lab run. */
-function eligibleRuns(q: Pick<BaselineQuery, 'projectId' | 'before' | 'fullRunOnly'>): SQL[] {
+/** The runs any baseline is taken from: earlier runs of the project, never a lab run, and those `use` reads. */
+function eligibleRuns(q: Pick<BaselineQuery, 'projectId' | 'before' | 'fullRunOnly' | 'use'>): SQL[] {
   const conditions: SQL[] = [
     eq(testRuns.projectId, q.projectId),
     lt(testRuns.startTime, q.before),
     notLabRun(testRuns.origin),
   ];
   if (q.fullRunOnly) conditions.push(eq(testRuns.isFullRun, 1));
+  if (q.use) conditions.push(eligibleRunSql(q.use));
   return conditions;
 }
 

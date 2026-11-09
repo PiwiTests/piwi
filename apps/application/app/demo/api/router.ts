@@ -38,9 +38,10 @@ import {
   type RoutePermission,
 } from '#shared/permissions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
 import {
   accessRefusal,
@@ -69,6 +70,15 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
+import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
+import {
+  apiCreateRunRequest,
+  apiGetRunRequest,
+  apiListRunRequests,
+  apiStopRunRequest,
+  demoReadRunRequestBody,
+} from './run-requests';
 import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
@@ -93,6 +103,7 @@ import {
   exportCommitCoverage,
   getCoverageSummary,
   getCoverageTree,
+  getGapCode,
   recountProjectCoverage,
   invalidateCommitCoverage,
   parseCoverageExportFormat,
@@ -157,7 +168,7 @@ import {
   apiSaveDashboard,
   apiSetDefaultDashboard,
 } from './dashboards';
-import { DEMO_CHANNEL } from './demo-channel';
+import { createDemoChannel, deleteDemoChannel, demoReportChannels, listDemoChannels } from './channels';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -179,8 +190,10 @@ import {
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
+  INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidTagKeysError,
   updateProject,
   createProject,
   getProjectMenu,
@@ -208,10 +221,8 @@ import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test
 import {
   addQuarantine,
   dismissQuarantineProposal,
-  listQuarantine,
-  markDismissedProposals,
+  getProjectQuarantine,
   releaseQuarantine,
-  RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
@@ -235,8 +246,9 @@ import {
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, getFeatureMap, getFileTestMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
+import { parseGapIds } from '#shared/gap-ids';
 import { getMapHealth } from '#shared/handlers/map-health';
-import { parseRouteNodeKey } from '#shared/graph';
+import { manifestLimitError, parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
 import type { AppManifest, ManifestSource } from '#shared/types';
 import {
@@ -298,6 +310,7 @@ import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
+  countLocalOnlyClusters,
   getOpenFailureClusters,
   patchClusterStatus,
   patchClusterAssignee,
@@ -312,7 +325,14 @@ import {
   getClusterOccurrenceTrend,
   CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
-import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
+import {
+  CLUSTER_STATUSES,
+  isClusterStatus,
+  isTriageLineInput,
+  isTriageNoteInput,
+  parseBulkIds,
+  isSnoozeOption,
+} from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
 import { getDemoSourceAtBlob } from '../demo-scm';
 import { getTimeoutThresholds } from '~~/server/utils/timeout-thresholds';
@@ -352,23 +372,28 @@ import {
   demoTransitionSample,
   demoAssignable,
   demoIssuePicker,
+  demoConnectionBoundProjects,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
   demoAutoCreatePreview,
   generateDemoWebhookToken,
   disableDemoWebhookToken,
 } from './integrations';
-import type { ConnectionInput } from '#shared/integrations/types';
+import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
+import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
+import { isSubmissionId, MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
+  countRunsLast24h,
   patchTestRun,
   parseTestRunPatch,
   getNetworkRequests,
   getFailureGroups,
   getProjectLatestRun,
+  parseLatestRunNames,
 } from '#shared/handlers/test-runs';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
@@ -377,7 +402,7 @@ import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/han
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
-import { listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
+import { listConnectedApps, listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
 import {
@@ -396,6 +421,9 @@ import {
   apiHeartbeatTestRun,
   apiLiveResourcesTestRun,
 } from './reporter';
+import { demoLiveSteps, demoRunningCases } from './stuck-tests';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
 import {
@@ -429,6 +457,7 @@ import {
   apiUndoAssistantNudgeDismissal,
 } from './assistant-nudges';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
+import { apiListProjectStars, apiStarProject, apiUnstarProject } from './project-stars';
 import { demoHttpError } from './http-error';
 import {
   addProjectUrlPattern,
@@ -444,6 +473,7 @@ import { apiDeleteTestRun } from './test-runs';
 import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
+import { parseRouteId } from '#shared/route-id';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -457,6 +487,16 @@ import {
   updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
+import {
+  assertDemoCiServerTarget,
+  demoCiServerCheck,
+  demoCiServerTokenMarker,
+  demoCiServerTokenUrl,
+  demoClusterRerunInfo,
+  demoExecutionRerunInfo,
+  demoRerunCluster,
+  demoRerunExecution,
+} from './ci-rerun';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -558,6 +598,14 @@ type DemoEntity =
  */
 async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntity, id: number): Promise<number | null> {
   if (!ctx || isAdministrator(ctx.access)) return null;
+  const projectId = await demoEntityProjectId(entity, id);
+  if (projectId === null) throw demoHttpError(404, 'Not found');
+  assertDemoScope(ctx, projectId);
+  return projectId;
+}
+
+/** The project an entity belongs to, or null when it does not exist. */
+async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<number | null> {
   const db = await getDemoDb();
   let projectId: number | null = null;
   if (entity === 'project') {
@@ -596,8 +644,6 @@ async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntit
       .where(eq(testRunsCases.id, id));
     projectId = row?.projectId ?? null;
   }
-  if (projectId === null) throw demoHttpError(404, 'Not found');
-  assertDemoScope(ctx, projectId);
   return projectId;
 }
 
@@ -623,6 +669,21 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
   }
 }
 
+/** The person a run request belongs to: the acting persona, as the server's routes need a signed-in caller. */
+function demoRequester(ctx: DemoCtx | undefined): number {
+  if (!ctx?.actingUserId) {
+    throw demoHttpError(403, 'Run on my machine needs sign-in turned on: a request belongs to the person who made it');
+  }
+  return ctx.actingUserId;
+}
+
+function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
+  return ctx?.access ?? ADMIN_ACCESS;
+}
+
+/** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
+const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
+
 /** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
   test_run: 'run',
@@ -642,6 +703,41 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/** The name a demo issue gives the person filing it: the acting persona's. */
+async function demoFiledByName(
+  db: Awaited<ReturnType<typeof getDemoDb>>,
+  ctx: DemoCtx | undefined,
+): Promise<string | null> {
+  if (!ctx?.actingUserId) return null;
+  const [row] = await db
+    .select({ name: users.name, username: users.username })
+    .from(users)
+    .where(eq(users.id, ctx.actingUserId));
+  return row ? row.name?.trim() || row.username : null;
+}
+
+/**
+ * The issue routes' entity check, as the server's: 404 when the entity does not
+ * exist, whoever asks, then the route's permission on its project.
+ */
+async function assertDemoIssueEntity(ctx: DemoCtx | undefined, entityType: IssueEntityType, entityId: number) {
+  if ((await demoEntityProjectId(LINK_TARGET_ENTITY[entityType]!, entityId)) === null) {
+    throw demoHttpError(404, 'Entity not found');
+  }
+  await assertDemoLinkTargetScope(ctx, entityType, entityId);
+}
+
+/**
+ * Refuse a connection the acting user may not read through, and one that does
+ * not exist, with the 404 of the server's `requireConnectionAccess`.
+ */
+async function assertDemoConnectionAccess(ctx: DemoCtx | undefined, connectionId: number): Promise<void> {
+  const bound = await demoConnectionBoundProjects(await getDemoDb(), connectionId);
+  if (!bound || (ctx && !canReadThroughConnection(ctx.access, bound))) {
+    throw demoHttpError(404, CONNECTION_NOT_FOUND);
+  }
 }
 
 /** Check the route's permission on the project of an existing link's target (the server's `resolveLinkProjectId`). */
@@ -800,7 +896,11 @@ const routes: RouteEntry[] = [
       // rows carry it); do the same so a demo visitor's stored token never comes
       // back over the wire.
       const items = rows.map((p) => {
-        const { scmToken: _scm, ...rest } = p as { scmToken?: string | null } & typeof p;
+        const {
+          scmToken: _scm,
+          ciServerToken: _ciServerToken,
+          ...rest
+        } = p as { scmToken?: string | null; ciServerToken?: string | null } & typeof p;
         return rest;
       });
       return { items };
@@ -822,6 +922,27 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/stars$/,
+    handler: async (_, __, ___, ctx) => apiListProjectStars(ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiStarProject(ctx?.actingUserId ?? null, +m[1]!);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiUnstarProject(ctx?.actingUserId ?? null, +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/menu$/,
     handler: async (_, __, ___, ctx) => ({ items: await getProjectMenu(await getDemoDb(), ctx?.scope) }),
   },
@@ -832,10 +953,15 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawLimit = Number(q?.get('limit'));
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit });
+      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
-      const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
-      return rest;
+      const {
+        scmToken: _scm,
+        ciServerToken,
+        ...rest
+      } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
+      const ciServerTokenUrl = demoCan(ctx, 'project:manage', +m[1]!) ? demoCiServerTokenUrl(ciServerToken) : null;
+      return { ...rest, ciServerTokenUrl, ciServerInstanceUrl: null };
     },
   },
   {
@@ -845,11 +971,15 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the token is stored as-is —
-      // but every GET strips it, so it never leaves the browser's own DB.
+      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
+      // and every GET strips it. A CI server token is never stored: only the
+      // base URL it would be bound to.
       try {
+        const db = await getDemoDb();
         const update = body as Parameters<typeof updateProject>[2];
-        const project = await updateProject(await getDemoDb(), +m[1]!, update);
+        assertDemoCiServerTarget(update);
+        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
+        const project = await updateProject(db, +m[1]!, { ...update, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -859,9 +989,11 @@ const routes: RouteEntry[] = [
           e instanceof Error &&
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
+            e.message === INVALID_LIVE_VIEW_MASKS ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
+        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -1052,11 +1184,19 @@ const routes: RouteEntry[] = [
       if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
         throw demoHttpError(400, 'origin needs a known run origin and a ref');
       }
-      return getProjectLatestRun(
-        await getDemoDb(),
-        +m[1]!,
-        isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
-      );
+      const names = q?.getAll('run') ?? [];
+      const runs = parseLatestRunNames(names.length > 0 ? names : undefined);
+      if (runs === null) throw demoHttpError(400, 'run needs up to 64 valid run names');
+      try {
+        return await getProjectLatestRun(
+          await getDemoDb(),
+          +m[1]!,
+          isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')!, runs } : null,
+        );
+      } catch (e) {
+        if ((e as Error)?.message === 'Project not found') throw demoHttpError(404, 'Project not found');
+        throw e;
+      }
     },
   },
   {
@@ -1074,6 +1214,31 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const days = Math.min(90, Math.max(1, parseInt(q?.get('days') || '30')));
       return getProjectAiStepCoverage(await getDemoDb(), +m[1]!, days);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/tag-key-overlaps$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const [project] = await db
+        .select({ tagKeys: projects.tagKeys })
+        .from(projects)
+        .where(eq(projects.id, +m[1]!))
+        .limit(1);
+      if (!project) throw demoHttpError(404, 'Project not found');
+      return lastCompleteRunTagOverlap(db, +m[1]!, resolveTagKeyPatterns(project.tagKeys));
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/ci-server-check$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiServerCheck(body as { ciServer?: unknown } | null);
     },
   },
   {
@@ -1128,7 +1293,7 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/demo\/cancel-stale-runs$/,
-    handler: (_, body) => apiCancelStaleSimulatorRuns(body as Parameters<typeof apiCancelStaleSimulatorRuns>[0]),
+    handler: () => apiCancelStaleSimulatorRuns(),
   },
   {
     method: 'POST',
@@ -1145,7 +1310,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/recent$/,
-    handler: async (_, __, ___, ctx) => ({ items: await getRecentTestRuns(await getDemoDb(), ctx?.scope) }),
+    handler: async (_, __, ___, ctx) => {
+      const db = await getDemoDb();
+      return {
+        items: await getRecentTestRuns(db, ctx?.scope),
+        runsLast24h: await countRunsLast24h(db, ctx?.scope),
+      };
+    },
   },
   {
     method: 'GET',
@@ -1323,9 +1494,13 @@ const routes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
-    permission: 'run:delete',
+    permission: ['run:delete', 'run:request'],
     handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      // The demo holds no requested run: every run it deletes takes `run:delete`.
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      if (projectId !== null && !demoCan(ctx, 'run:delete', projectId)) {
+        throw demoHttpError(403, 'Insufficient permissions');
+      }
       return apiDeleteTestRun(+m[1]!);
     },
   },
@@ -1401,7 +1576,14 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters$/,
     handler: async (_m, _b, q, ctx) => {
       const limit = Math.min(200, Math.max(1, Number(q?.get('limit')) || 50));
-      return { items: await getOpenFailureClusters(await getDemoDb(), ctx?.scope, limit) };
+      const local = q?.get('local') === 'exclude' ? 'exclude' : 'include';
+      const db = await getDemoDb();
+      const now = new Date();
+      const [items, localOnlyHidden] = await Promise.all([
+        getOpenFailureClusters(db, ctx?.scope, limit, now, { localOnly: local }),
+        local === 'exclude' ? countLocalOnlyClusters(db, ctx?.scope, now) : 0,
+      ]);
+      return { items, localOnlyHidden };
     },
   },
   {
@@ -1435,8 +1617,21 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { status?: string; triageNote?: string | null };
-      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status ?? '', b.triageNote);
+      const b = body as { status?: unknown; triageNote?: unknown; appendTriageNote?: unknown };
+      if (b.status !== undefined && !isClusterStatus(b.status)) {
+        throw demoHttpError(400, `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}`);
+      }
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string or null');
+      if (!isTriageLineInput(b.appendTriageNote)) {
+        throw demoHttpError(400, 'appendTriageNote must be a non-empty string');
+      }
+      if (b.triageNote !== undefined && b.appendTriageNote !== undefined) {
+        throw demoHttpError(400, 'Send a triageNote or an appendTriageNote, not both');
+      }
+      if (b.status === undefined && b.triageNote === undefined && b.appendTriageNote === undefined) {
+        throw demoHttpError(400, 'Send a status, a note or both');
+      }
+      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote, b.appendTriageNote);
     },
   },
   {
@@ -1467,8 +1662,9 @@ const routes: RouteEntry[] = [
     permission: 'quarantine:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = (body ?? {}) as { reason?: string };
-      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason: b.reason });
+      const b = (body ?? {}) as { reason?: unknown };
+      const reason = typeof b.reason === 'string' ? b.reason.slice(0, 500) : undefined;
+      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason });
     },
   },
   {
@@ -1659,8 +1855,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { testCaseIds: number[]; triageNote?: string };
-      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
+      const b = body as { testCaseIds: number[]; triageNote?: unknown };
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string');
+      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote ?? undefined);
     },
   },
   {
@@ -1674,29 +1871,22 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run availability — always off in the browser demo (no server, token
-    // or CI to dispatch to), so the button renders disabled with a clear reason.
+    // CI re-run availability: on for a project that dispatches to a CI server,
+    // off with a clear reason for every other project.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoClusterRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunCluster(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -1881,8 +2071,32 @@ const routes: RouteEntry[] = [
     handler: (_, body) => apiPutLocale(body as Parameters<typeof apiPutLocale>[0]),
   },
 
-  // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
+  // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
+  // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution,
+  // each test still running and the step each worker is in.
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
+    handler: async (m, _b, _q, ctx) => {
+      const id = +m[1]!;
+      await assertDemoEntityScope(ctx, 'run', id);
+      const db = await getDemoDb();
+      const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+      if (!run) throw demoHttpError(404, 'Test run not found');
+      const event = (type: string, data: Record<string, unknown>) => ({ type, data, seq: 0, timestamp: Date.now() });
+      // An initializing run is still to come: the demo's run page listens to it before its tests begin.
+      if (!(UNFINISHED_RUN_STATUSES as readonly string[]).includes(run.status)) {
+        return { events: [event('run-finished', runFinishedEventData(run))] };
+      }
+      return {
+        events: [
+          ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
+          ...demoRunningCases(id).map((data) => event('test-begin', data)),
+          ...demoLiveSteps(id).map((step) => event(step.type, step.data)),
+        ],
+      };
+    },
+  },
 
   // Notification SSE (handled via BroadcastChannel in demo mode)
   { method: 'GET', pattern: /^\/api\/notifications\/stream$/, handler: () => Promise.resolve({ ok: true }) },
@@ -1893,7 +2107,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return getTestCase(await getDemoDb(), +m[1]!);
+      return getTestCase(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -2243,28 +2457,21 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run of one execution's test — always off in the browser demo, like a cluster's.
+    // CI re-run of one execution's test, available as a cluster's is.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoExecutionRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunExecution(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -2669,22 +2876,14 @@ const routes: RouteEntry[] = [
     },
   },
 
-  // Quarantine. The demo has no CI to gate, so candidates are omitted — the
-  // proposal query is derived from flaky analysis and would only add work the
-  // browser cannot act on.
+  // Quarantine, with the candidates the flaky analysis proposes unless `?candidates=false`.
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const db = await getDemoDb();
-      const { entries, debt } = await listQuarantine(db, +m[1]!);
-      return {
-        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
-        debt,
-        candidates: [],
-        releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
-      };
+      const flag = query?.get('candidates');
+      return getProjectQuarantine(await getDemoDb(), +m[1]!, { candidates: flag !== 'false' && flag !== '0' });
     },
   },
   {
@@ -2849,7 +3048,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!, {
+        readSource: async (path, blob) => (await getDemoSourceAtBlob(+m[1]!, path, blob))?.content ?? null,
+      });
       return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
     },
   },
@@ -2889,6 +3090,8 @@ const routes: RouteEntry[] = [
       const payload = (body ?? {}) as { source?: ManifestSource; manifest?: AppManifest };
       const source: ManifestSource = payload.source ?? 'committed';
       const manifest: AppManifest = payload.manifest ?? {};
+      const limit = manifestLimitError(manifest);
+      if (limit) throw demoHttpError(400, limit);
       const ingested = await ingestProjectManifest(await getDemoDb(), +m[1]!, manifest, source);
       return {
         success: ingested,
@@ -2957,6 +3160,20 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/code$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const ids = parseGapIds(q?.get('ids'));
+      if ('error' in ids) throw demoHttpError(400, ids.error);
+      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), undefined);
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const code = await getGapCode(await getDemoDb(), +m[1]!, ids, parsed);
+      if (!code) throw demoHttpError(404, 'No coverage for this commit');
+      return code;
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/gaps\/precision$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -2995,7 +3212,8 @@ const routes: RouteEntry[] = [
       const nodeParam = (query?.get('node') ?? '').trim();
       const sep = nodeParam.indexOf(':');
       if (sep <= 0) throw demoHttpError(400, 'node must be "kind:key"');
-      const rawDepth = Number(query?.get('depth'));
+      const depthParam = query?.get('depth');
+      const rawDepth = depthParam ? Number(depthParam) : NaN;
       const depth = Number.isFinite(rawDepth) ? Math.min(MAX_GRAPH_DEPTH, Math.max(1, rawDepth)) : 2;
       return getFeatureGraph(
         await getDemoDb(),
@@ -3028,18 +3246,23 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/gaps$/,
     handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      // An absent parameter is no filter: `Number(null)` would read it as 0.
       const num = (v: string | null | undefined) => {
+        if (v == null || v === '') return undefined;
         const n = Number(v);
         return Number.isFinite(n) ? n : undefined;
       };
       return {
         items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
+          gapId: num(query?.get('gap')),
+          key: query?.get('key') ?? undefined,
           kind: query?.get('kind') ?? undefined,
           class: query?.get('class') ?? undefined,
           detector: query?.get('detector') ?? undefined,
           status: query?.get('status') ?? undefined,
           prNumber: num(query?.get('pr')),
           limit: num(query?.get('limit')),
+          mutedLast: true,
         }),
       };
     },
@@ -3122,10 +3345,12 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/users$/,
     permission: ['users:manage', 'project:members'],
-    handler: async (_m, _b, _q, ctx) => {
+    handler: async (_m, _b, query, ctx) => {
       const db = await getDemoDb();
       // The early check let in an administrator or someone holding project:members on a project.
-      const items = demoCan(ctx, 'users:manage') ? await listUserItems(db) : await listUserSummaries(db);
+      const items = demoCan(ctx, 'users:manage')
+        ? await listUserItems(db)
+        : await listUserSummaries(db, demoScope(ctx), query?.get('lookup'));
       return { items, authEnabled: true };
     },
   },
@@ -3164,6 +3389,41 @@ const routes: RouteEntry[] = [
       assertDemoSelfOrAdmin(ctx, +m[1]!);
       return { items: (await listUserApiKeys(await getDemoDb(), +m[1]!)).apiKeys };
     },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/connected-apps$/,
+    handler: async (m, _b, _q, ctx) => {
+      assertDemoSelfOrAdmin(ctx, +m[1]!);
+      // The demo's simulated desktop app holds its stream open for as long as the demo runs.
+      return { items: await listConnectedApps(await getDemoDb(), +m[1]!, () => true) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests$/,
+    handler: async (_m, _b, q, ctx) => apiListRunRequests(demoRequester(ctx), demoAccess(ctx), q),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests$/,
+    permission: 'run:request',
+    handler: async (_m, body, _q, ctx) => {
+      const requesterId = demoRequester(ctx);
+      const input = await demoReadRunRequestBody(body, requesterId);
+      assertDemoScope(ctx, input.projectId);
+      return apiCreateRunRequest(requesterId, input);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiGetRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests\/([^/]+)\/stop$/,
+    handler: async (m, _b, _q, ctx) => apiStopRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
   },
   {
     method: 'POST',
@@ -3416,14 +3676,19 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/issue-draft$/,
     permission: 'issue:create',
     handler: async (_, __, q, ctx) => {
-      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityType = (q?.get('entityType') ?? '') as IssueEntityType;
       const entityId = Number(q?.get('entityId') ?? 0);
-      await assertDemoLinkTargetScope(ctx, entityType, entityId);
+      if (!ISSUE_ENTITY_TYPES.includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+        throw demoHttpError(400, 'entityType and entityId are required');
+      }
+      await assertDemoIssueEntity(ctx, entityType, entityId);
+      const db = await getDemoDb();
       const draft = await demoIssueDraft(
-        await getDemoDb(),
+        db,
         entityType,
         entityId,
         toIssueLocale(q?.get('locale')) ?? undefined,
+        await demoFiledByName(db, ctx),
       );
       if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
       return draft;
@@ -3435,17 +3700,37 @@ const routes: RouteEntry[] = [
     permission: 'issue:create',
     handler: async (_, body, _q, ctx) => {
       const b = body as {
-        entityType: 'failure_cluster' | 'test_runs_case';
+        entityType: IssueEntityType;
         entityId: number;
+        connectionId?: number;
         title?: string;
         issueType?: string;
         fields?: unknown;
+        comment?: string;
+        submissionId?: string;
       };
-      await assertDemoLinkTargetScope(ctx, b.entityType, b.entityId);
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+      const commentOk =
+        b.comment === undefined || (typeof b.comment === 'string' && b.comment.length <= MAX_ISSUE_COMMENT_LENGTH);
+      const submissionOk = b.submissionId === undefined || isSubmissionId(b.submissionId);
+      if (!commentOk || !submissionOk) throw demoHttpError(400, 'Invalid request body');
+      if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      await assertDemoIssueEntity(ctx, b.entityType, b.entityId);
+      // Like the server, a project's issues go through the connection it is bound to.
+      if (b.connectionId !== getDemoProjectIntegration().connectionId) {
+        throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
+      }
+      const db = await getDemoDb();
+      const created = await demoCreateIssue(db, b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,
+        comment: b.comment ?? null,
+        filedBy: await demoFiledByName(db, ctx),
+        submissionId: b.submissionId ?? null,
       });
+      if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
+      return created;
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
@@ -3459,19 +3744,28 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
     permission: 'issue:create',
-    handler: async () => demoConnectionProjects(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoConnectionProjects();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
     permission: 'issue:create',
-    handler: async () => demoConnectionIssueTypes(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoConnectionIssueTypes();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
     permission: 'issue:create',
-    handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoCreateFields(decodeURIComponent(m[3]!));
+    },
   },
   {
     method: 'GET',
@@ -3483,13 +3777,19 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
-    handler: async () => demoAssignable(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoAssignable();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/issue-picker$/,
     permission: 'issue:create',
-    handler: async (_m, _body, query) => demoIssuePicker(query?.get('q') ?? ''),
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoIssuePicker(query?.get('q') ?? '');
+    },
   },
   {
     method: 'POST',
@@ -3543,7 +3843,7 @@ const routes: RouteEntry[] = [
   },
 
   // Setup status — the same evidence probes as the server, run against the
-  // in-browser demo DB, so the Setup page's checklist reflects the seeded data.
+  // in-browser demo DB, so the capability ladder reflects the seeded data.
   {
     method: 'GET',
     pattern: /^\/api\/setup-status$/,
@@ -3809,6 +4109,8 @@ routes.push(
           role: ctx.access.instanceRole,
           name: user.name,
           avatarUrl: user.avatarUrl,
+          avatarVersion: accountPictureVersion(user),
+          avatarUploaded: Boolean(user.avatarKey),
           email: user.email,
           emailVerified: user.emailVerified,
           oauthProvider: user.oauthProvider,
@@ -3832,10 +4134,26 @@ routes.push(
   { method: 'POST', pattern: /^\/api\/auth\/logout$/, handler: () => Promise.resolve({ success: true }) },
   // Account management stubs — not functional in demo, return graceful no-ops
   { method: 'POST', pattern: /^\/api\/auth\/forgot-password$/, handler: () => Promise.resolve({ success: true }) },
-  { method: 'POST', pattern: /^\/api\/auth\/reset-password$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'POST',
+    pattern: /^\/api\/auth\/reset-password$/,
+    handler: () => Promise.resolve({ success: true, username: '' }),
+  },
   { method: 'POST', pattern: /^\/api\/auth\/change-password$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/auth\/avatar$/,
+    handler: () => Promise.reject(demoHttpError(403, 'Uploading a profile picture is not available in the demo')),
+  },
+  { method: 'DELETE', pattern: /^\/api\/auth\/avatar$/, handler: () => Promise.resolve({ removed: false }) },
   { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
   { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/users\/(\d+)\/avatar$/,
+    permission: 'users:manage',
+    handler: () => Promise.resolve({ removed: false }),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/users\/(\d+)\/invite$/,
@@ -3970,18 +4288,28 @@ let _nextSubId = 1;
 const _demoSubs: DemoSubscription[] = [];
 
 routes.push(
-  // Channels
+  // Channels — stored in the in-browser database
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
+    handler: async () => ({ items: await listDemoChannels(await getDemoDb()), canStoreSecrets: true }),
   },
   {
     method: 'POST',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ success: true, channel: DEMO_CHANNEL }),
+    handler: async (_, body) => createDemoChannel(await getDemoDb(), body),
   },
-  { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/channels\/(\d+)$/,
+    handler: async (m) => {
+      const id = parseInt(m[1]!);
+      const result = await deleteDemoChannel(await getDemoDb(), id);
+      // Like the server, a channel's subscriptions go with it.
+      for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
+      return result;
+    },
+  },
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
@@ -4007,7 +4335,7 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/subscriptions$/,
-    handler: (_, body) => {
+    handler: async (_, body) => {
       const b = body as {
         channelId?: number;
         projectId?: number | null;
@@ -4017,17 +4345,26 @@ routes.push(
         digestAt?: string | null;
       };
       const events = b.events ?? [];
-      if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+      if (
+        events.length === 0 ||
+        events.length > NOTIFICATION_EVENTS.length ||
+        events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+      ) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
       const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
-      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+      const digest = digestAtSchema.optional().safeParse(b.digestAt);
+      if (!filters.success) throw demoHttpError(400, subscriptionFiltersError(filters.error));
+      if (!digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
+      const digestAt = digest.data ?? null;
+      const channelId = b.channelId ?? 1;
+      const channel = (await listDemoChannels(await getDemoDb())).find((c) => c.id === channelId);
+      if (!channel) throw demoHttpError(404, 'Channel not found');
       const sub: DemoSubscription = {
         id: _nextSubId++,
         userId: null,
-        channelId: b.channelId ?? 1,
+        channelId,
         projectId: b.projectId ?? null,
         events,
         filters: filters.data ?? null,
@@ -4035,12 +4372,12 @@ routes.push(
         digestAt,
         mutedUntil: null,
         active: true,
-        channel: { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type },
+        channel: { id: channel.id, name: channel.name, type: channel.type },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       _demoSubs.push(sub);
-      return Promise.resolve({ success: true, subscription: sub });
+      return { success: true, subscription: sub };
     },
   },
   {
@@ -4051,7 +4388,11 @@ routes.push(
       if (!sub) throw demoHttpError(404, 'Subscription not found');
       const b = body as Partial<DemoSubscription>;
       if (b.events) {
-        if (b.events.length === 0 || b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+        if (
+          b.events.length === 0 ||
+          b.events.length > NOTIFICATION_EVENTS.length ||
+          b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+        ) {
           throw demoHttpError(400, 'events must contain at least one valid event');
         }
         sub.events = b.events;
@@ -4059,10 +4400,14 @@ routes.push(
       if (b.mode !== undefined) sub.mode = b.mode === 'digest' ? 'digest' : 'realtime';
       if (b.filters !== undefined) {
         const filters = subscriptionFiltersSchema.nullable().safeParse(b.filters);
-        if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+        if (!filters.success) throw demoHttpError(400, subscriptionFiltersError(filters.error));
         sub.filters = filters.data;
       }
-      if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
+      if (b.digestAt !== undefined) {
+        const digest = digestAtSchema.nullable().safeParse(b.digestAt);
+        if (!digest.success) throw demoHttpError(400, 'Invalid request body');
+        sub.digestAt = digest.data;
+      }
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
       sub.updatedAt = new Date().toISOString();
@@ -4082,28 +4427,20 @@ routes.push(
 
 // Report schedules and snapshots — stored in the in-browser database; the demo
 // has no scheduler, so a schedule never fires by itself.
-const demoReportChannels = () => [
-  {
-    id: DEMO_CHANNEL.id,
-    name: DEMO_CHANNEL.name,
-    type: DEMO_CHANNEL.type,
-    userId: DEMO_CHANNEL.userId,
-    address: DEMO_CHANNEL.config.address,
-  },
-];
-
 routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, _b, _q, ctx) =>
+      apiListReportSchedules(await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, body, _q, ctx) =>
+      apiCreateReportSchedule(body, await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
@@ -4115,14 +4452,19 @@ routes.push(
     method: 'GET',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+    handler: async (m) => apiGetReportSchedule(+m[1]!, await demoReportChannels(await getDemoDb())),
   },
   {
     method: 'PATCH',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m, body, _q, ctx) =>
-      apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (m, body, _q, ctx) =>
+      apiUpdateReportSchedule(
+        +m[1]!,
+        body,
+        await demoReportChannels(await getDemoDb()),
+        demoScope(ctx, 'report:write'),
+      ),
   },
   {
     method: 'DELETE',
@@ -4182,6 +4524,21 @@ routes.push(
   },
 );
 
+/** The groups of `pattern` written `(\d+)`, by their index in a match: the ids of its path. */
+function idGroupsOf(pattern: RegExp): number[] {
+  const source = pattern.source;
+  const groups: number[] = [];
+  let group = 0;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === '\\') i++;
+    else if (source[i] === '(' && source[i + 1] !== '?') {
+      group++;
+      if (source.startsWith('(\\d+)', i)) groups.push(group);
+    }
+  }
+  return groups;
+}
+
 /**
  * Attempt to handle a request with the in-browser demo router.
  *
@@ -4201,6 +4558,10 @@ export async function handleDemoRequest(
     if (route.method !== method) continue;
     const m = path.match(route.pattern);
     if (m) {
+      // A path's ids read as the server routes read them (`requireRouteId`): `012` is refused, never read as 12.
+      if (idGroupsOf(route.pattern).some((group) => parseRouteId(m[group]) === null)) {
+        throw demoHttpError(400, 'Invalid ID');
+      }
       const access = await resolveDemoAccess(actingUserId);
       const permission = routePermissionList(route.permission);
       if (!passesEarlyCheck(access, permission)) throw demoHttpError(403, 'Insufficient permissions');

@@ -33,7 +33,7 @@ It follows the [resource leaks](./resource-leaks) summary when the run has any.
 | **Disk** | The files the tests attached (traces, videos, screenshots), the most disk the run's output folders and browser profiles took at once, and the lowest free space on their disks. Profiles and artifact folders earlier runs left in the temp folder are named from 10 MB. |
 | **Workers** | With the [capture fixtures](/guide/capture-fixtures): how busy each worker's event loop was, the worst p99 delay, and how often the worker was switched out of a CPU it still needed. A worker that drives the browser late makes actions slow and timeouts flaky. |
 
-The roles come from each process's command line: Playwright's **workers**, the **browsers** they launch with their
+The roles come from each command line: Playwright's **workers**, the **browsers** they launch with their
 **renderers** (the processes pages run in), **GPU** process and **browser utilities**, **ffmpeg** when videos are recorded,
 the **runner** (Playwright's main process, with the reporters), and the **web server**: whatever the runner starts that
 is none of these, `webServer` and `globalSetup` servers alike.
@@ -47,8 +47,7 @@ is none of these, `webServer` and `globalSetup` servers alike.
   the tests leave open.
 - **Most of the CPU in the GPU process or ffmpeg**: tracing screenshots and video frames are rendered in software on a
   machine without a GPU. `trace: 'on-first-retry'` and `video: 'on-first-retry'` record only what a retry needs.
-- **Disk in use far above the artifacts**: traces are written and zipped in place; a green `retain-on-failure` run
-  writes them all, then deletes them.
+- **Disk in use far above the artifacts**: a green `retain-on-failure` run writes every trace, then deletes them.
 - **A large web server share**: a development server compiles on demand; serve a production build in CI.
 
 ## Platforms
@@ -75,8 +74,12 @@ browser processes used the most CPU.
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
-workers. Hover a track for its values and the tests running then; the **Resources** menu turns each track off, a
-choice kept per browser. A sharded run draws one set of tracks per shard, each from its own machine.
+workers. Hover a track for its values and the tests running then; the **Resources** menu turns each track off. A sharded run draws one set of tracks per shard, each from its own machine.
+
+<figure>
+  <img src="/screenshots/run-timeline-resources-hover.png" alt="A run's workers timeline with the CPU, memory and open-pages tracks above the rows, one moment hovered with its values">
+  <figcaption>The resource tracks above a run's timeline, one moment hovered.</figcaption>
+</figure>
 
 While someone watches a running run, the tracks fill in **live** every five seconds; leak verdicts wait for its end.
 
@@ -89,6 +92,7 @@ With the capture fixtures, each execution's Performance tab shows what its test 
 its browser processes, the largest of those, the worker's event loop, and the pages it found and left open. A
 failed execution's **Timeline** tab draws, behind its **Resources** switch, the CPU, memory and open pages of the
 test's worker under its lanes, with the failure line across them.
+
 
 ## Cost
 

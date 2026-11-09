@@ -15,20 +15,25 @@ For the same signals aggregated across every project, see [Analytics](./analytic
 
 ## Flaky test detection
 
-A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (0–100) per test from two signals, weighted 60/40:
+A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (1–100) per test from two signals, weighted 60/40:
 
 - **Retry passes** — failed, then passed on retry (each `--repeat-each` repetition on its own).
-- **Status alternation** — flips between pass and fail across runs.
+- **Status alternation** — flips between pass and fail; other outcomes ignored.
 
 The **failure rate** is shown but not scored.
 
-The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and carries a **Quarantine** action.
+<figure>
+  <img src="/diagrams/flakiness-score.svg" alt="A test's last 10 runs with 2 retry passes and 4 flips give a score of 30; its impact is 0.7 times 3 wasted CI minutes plus 0.3 times a fixed weight of 30 times 2 retry passes, 20">
+  <figcaption>The score and the impact ranking, computed for one test.</figcaption>
+</figure>
+
+The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and, unless already quarantined, offers **Quarantine**.
 
 **Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored, ranked by impact, filterable by root-cause category, with its top suspect.</figcaption>
+  <figcaption>The Flaky view: each intermittent test scored and ranked by impact, with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
@@ -73,6 +78,11 @@ The flaky list names each test's top suspect (a reproduced one first), the [Atte
 requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
 returns it. The [Flake Lab](./flake-lab) tests each suspect against a control run.
 
+<figure>
+  <img src="/screenshots/flakiness-tab.png" alt="A flaky test's Flakiness tab: two suspects with their counts among failures and passes, the lab condition and result of each, the context a lab cannot apply, and the experiment that reproduced the flake">
+  <figcaption>A flaky test's suspects, and the experiments run on them.</figcaption>
+</figure>
+
 ### Verified fixed
 
 When a [`piwi flake verify`](./flake-lab#verify-a-fix) experiment holds, the test reads **verified fixed on
@@ -91,8 +101,8 @@ Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries
 
 ### Per-test stability trend
 
-The **Trend** tab of a test's page draws its pass rate, flaky rate and average duration over the last
-30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
+The **Trend** tab of a test's page draws its pass rate, [flaky rate](/guide/concepts#flaky-rate) and average duration over its
+[runs](/guide/concepts#test-case) of the last 30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
 see whether a fix actually stuck. The same series is the MCP `get_test_stability_trend` tool.
 
 ## Quarantine, with a way out
@@ -106,32 +116,31 @@ list only grows.
 `--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
 [commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
 
-- Passing executions after quarantine (one per attempt per browser project) accumulate as a **streak**; one failure
-  resets it.
-- After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
-  to be asked.
-- A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
-  click.
+- Each run started after the quarantine counts once toward a **streak**: a pass adds one, a failure or a pass on retry
+  resets it, a skip does neither.
+- After five consecutive passes the test is flagged **ready to release**: you're told, not asked.
+- A fix [verified](#verified-fixed) after the quarantine flags it at once, until the test fails again. Release stays
+  yours to click.
 - **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score
   of 40+, ranked by impact; a high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake
   costs nothing; one burning a four-minute timeout weekly hurts.
-- **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
-  been in, and how many still have no passing streak at all.
+- **Debt** is reported in aggregate: how many are quarantined, ready to release or failing in their latest run, and how
+  long the oldest has been in.
 
-**Dismiss** turns down either proposal, with an optional reason, and changes nothing else; a dismissed candidate
-returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
+**Dismiss** turns down either proposal, with an optional reason, and moves no test: a dismissed release stops counting
+as ready, and a dismissed candidate returns once the flaky analysis reads a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
 and [`set_test_quarantine`](/reference/mcp-tools#set_test_quarantine).
 
-The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
-worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.
+The gate always states how many failures quarantine excluded, and `--max-quarantined` sets a ceiling on the list.
 
-Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
+Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/settings/api)).
 
 ## Regression signals
 
-Individual test cases in a run carry at-a-glance badges:
+A run's tests carry badges:
 
-- **New regression** (red) — failing here but passing in the baseline (the last passing run)
+- **New regression** (red) — failing here, passing in the baseline: the same Playwright project in the last complete
+  passing run
 - **Newly flaky** (fuchsia) — the first run in which the test was flaky
 - **Passed on retry** (fuchsia) — failed at least once in this run, then passed
 
@@ -141,11 +150,15 @@ An [execution](./evidence#one-execution-diagnosis-first) shows them in its statu
 
 ## Spec health by file
 
-The project's **Tests** tab has a **Group by File** view that groups tests by their first two path segments (`tests/admin` for `tests/admin/users.spec.ts`) and carries that group's pass rate, flaky rate, failure count, execution count and average time over the last 90 days in its header, so an unhealthy area of the suite jumps out.
+With **Group by: File** on the project's **Tests** tab, each spec file's header carries its tests' pass rate, flaky rate, failure count, run count and average time over the list's window (the last 30 days by default), so an unhealthy file jumps out. The **Spec health** [Analytics](./analytics) widget gives them per spec directory.
 
 ## Across every project
 
 Everything above is scoped to one project; [Analytics](./analytics) lifts the same signals across every project.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 - [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?

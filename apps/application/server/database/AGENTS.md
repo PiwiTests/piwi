@@ -67,6 +67,10 @@ merge keeps the branch's history as stable as it can:
   stepped once, it frees a single page and holds the write lock until the statement is garbage-collected, and every
   write on another connection fails with `SQLITE_BUSY` meanwhile (`reclaimSpace`, `server/utils/retention.ts`).
   `executeMultiple` waits for an open transaction, as writes do (`server/database/sqlite-connections.ts`).
+- **A select from one table renders the columns of its fields' own `sql` without their table**, so a correlated
+  subquery written there compares the subquery's own columns. Nest the subquery in a `sql` of its own (as
+  `latestRunStatusSql` and `loadSelectionCatalog`'s `lastLine` do) or spell the outer column out;
+  `tests/unit/selection-resolve.test.ts` reads the catalog both ways.
 - **Dates are Unix timestamps in SQLite**, in seconds (`mode: 'timestamp'`) or in milliseconds
   (`mode: 'timestamp_ms'`) depending on the column: check its mode before comparing it in raw SQL.
 - **Large per-case text goes through `case_payloads`** (content-addressed, deduplicated per project), never a new
@@ -78,12 +82,33 @@ merge keeps the branch's history as stable as it can:
 ## `test_runs_cases`: one row per attempt, project and repetition
 
 A row is one attempt of a test, in one Playwright project and one `--repeat-each` repetition: the unique key is
-`(test_run_id, test_case_id, repeat_each_index, retries, browser_name)`. A repetition is a test result of its own with
-its own retries, as in Playwright, and a row without one reads `repeat_each_index` 0.
+`(test_run_id, test_case_id, repeat_each_index, retries, browser_name)`, with a NULL `browser_name` (an execution
+without a project) read as `''`, so a batch sent again stores no row twice. A repetition is a test result of its own
+with its own retries, as in Playwright, and a row without one reads `repeat_each_index` 0.
 
 - **Read the rows through `shared/utils/test-counts.ts`**: a run's counters with `distinctRunCountsFromAttempts` (each
   repetition counts once), each repetition's last attempt with `finalAttempts`, a test's outcome in a run with
-  `testOutcomes` or `decidesOutcome` (failed when one of its repetitions failed).
+  `testOutcomes` or `decidesOutcome` (failed when one of its repetitions failed), and its flaky results with
+  `flakyFinalAttempts` (all the rows) or `isFlakyExecution` (one row and its attempt history), never with
+  `retries > 0`: a `describe.serial` retry runs tests that passed again. A query, and a reader of stored rows, reads
+  the verdict stored with each result's final attempt instead (`passed_after_failure`, false on every earlier
+  attempt): through `flakyResultSql` in SQL, which the partial index `idx_trc_passed_after_failure` repeats, and by
+  selecting the column for `flakyFinalAttempts`.
 - **A test's attempts are the rows of one repetition.** Never take the highest retry across repetitions as its last
   attempt, nor a pass in one repetition as a retry pass of another. `lastAttempts` (`@piwitests/core/status-classify`)
   and the SQL of `latestRunStatusSql` (`shared/handlers/latest-run-status.ts`) follow the same rule.
+- **A test's own pages count its runs, one result per run, project and repetition: its final attempt.** In SQL through
+  `shared/handlers/test-case-aggregates.ts` (`finalAttemptSql`, `testCaseAggregates`, `recentFlakySql`), on both
+  dialects; in memory through `finalAttemptsOfRuns`. `tests/unit/test-case-results.test.ts`, `test-case-runs-pg.test.ts`.
+- **Every insert into `test_runs_cases` is followed by `settleFinalAttempts`** with every row of its batch, inserted or
+  already stored, so a batch sent again repairs a request that failed past its insert: a row is stored as its result's
+  final attempt (`final_attempt`), which `finalAttemptSql` reads, until a later attempt arrives (`persistRunCases` and
+  its demo mirror; the seed generator and the perf dataset write the flag themselves). A fixture that inserts attempts
+  directly sets `finalAttempt: false` on the earlier ones. `tests/unit/final-attempt.test.ts`.
+- **Every insert into `test_runs_cases` is preceded by `fillAttemptHistories`**, whose rows without a history go to
+  `settleFinalAttempts`: a retry that came without an attempt history gets the one its stored and earlier attempts make,
+  and every row its verdict (`passed_after_failure`, `isFlakyExecution`), both completed by an earlier attempt stored
+  after it; `settleFinalAttempts` clears the verdict of an attempt a later one supersedes. A path that writes `attempts` again writes the verdict with it (`backfillAttemptHistories`); the seed
+  generator and the perf dataset set it themselves, and a fixture that inserts executions directly through
+  `withStoredVerdicts` (`tests/unit/stored-verdicts.ts`). `tests/unit/final-attempt.test.ts` fails on a file that
+  inserts executions without `fillAttemptHistories`.

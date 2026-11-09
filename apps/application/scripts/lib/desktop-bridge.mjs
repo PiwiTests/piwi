@@ -23,10 +23,21 @@ export const READY_INSPECTION = {
  * shell build. Mirrors the real shell's commands. `shape` sets what the mock
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
+ * `requestFolders` (`desktop_request_folders`, the folders linked to a team
+ * instance's projects by project id, else none),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
- * native import picker returns, else none), and `localRunId` (the shell's id
- * of a local run `desktop_run_local_tests` starts, which then goes on until
- * the scene ends; else none starts).
+ * native import picker returns, else none), `localRunId` (the shell's id of a
+ * local run `desktop_run_local_tests` starts, which then goes on until the
+ * scene ends; else none starts), and `serverPort` and `activePort` (the port
+ * the settings name and the one the server listens on, else both 3000), and
+ * `update` (`{ check, releaseNotes }`: the update the startup check found and
+ * the release notes `desktop_get_release_notes` answers; else the build has
+ * no update channel).
+ * `window.__emitTauri(name, payload)` plays an event of the shell, such as a
+ * `piwi:local-run` output line, `window.__outputWindowName` is the name of
+ * the last run output window opened, and `window.__runArgs` what the last
+ * local run was started with (its `originRef`, which links it to the Piwi run
+ * it reports).
  */
 export function bridgeScript(shape = {}) {
   const inspection = shape.inspection ?? READY_INSPECTION;
@@ -34,8 +45,16 @@ export function bridgeScript(shape = {}) {
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
   const localRunId = shape.localRunId ?? null;
+  const requestFolders = shape.requestFolders ?? {};
+  const serverPort = shape.serverPort ?? 3000;
+  const activePort = shape.activePort ?? serverPort;
+  const update = shape.update ?? null;
   return `
     window.__mockLink = ${JSON.stringify(link)};
+    const listeners = {};
+    window.__emitTauri = (name, payload) => {
+      for (const cb of listeners[name] ?? []) cb({ payload });
+    };
     window.__TAURI__ = {
       core: {
         invoke: (cmd, args) => {
@@ -58,19 +77,43 @@ export function bridgeScript(shape = {}) {
             case 'desktop_save_download':
               return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
             case 'desktop_get_service_settings':
-              return Promise.resolve({ run_in_background: false, start_on_login: false });
+              return Promise.resolve({
+                run_in_background: false,
+                start_on_login: false,
+                server_port: ${serverPort},
+                active_port: ${activePort},
+              });
+            case 'desktop_set_server_port':
+              return Promise.resolve(null);
             case 'desktop_check_update':
-              return Promise.resolve({ state: 'unsupported' });
+              return Promise.resolve(${JSON.stringify(update?.check ?? { state: 'unsupported' })});
+            case 'desktop_get_update_settings':
+              return Promise.resolve(${JSON.stringify(
+                update ? { supported: true, notify_on_startup: true, pending: update.check } : null,
+              )});
+            case 'desktop_get_release_notes':
+              return ${update ? `Promise.resolve(${JSON.stringify(update.releaseNotes)})` : `Promise.reject('no update found, run a check first')`};
+            case 'desktop_request_folders':
+              return Promise.resolve(${JSON.stringify(requestFolders)});
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
             case 'desktop_run_local_tests':
+              window.__runArgs = args;
               return Promise.resolve(${JSON.stringify(localRunId)});
+            case 'desktop_open_output_window':
+              window.__outputWindowName = args.name;
+              return Promise.resolve('output-' + args.name + '_0');
             default:
               return Promise.resolve(null);
           }
         },
       },
-      event: { listen: () => Promise.resolve(() => {}) },
+      event: {
+        listen: (name, cb) => {
+          (listeners[name] ??= []).push(cb);
+          return Promise.resolve(() => {});
+        },
+      },
       window: { getCurrentWindow: () => ({ label: 'main' }) },
     };
   `;

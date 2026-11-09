@@ -14,6 +14,8 @@ export interface BreakpointLike {
   /** The editor's id for it, which a move keeps (`vscode.Breakpoint.id`). */
   id: string;
   enabled: boolean;
+  /** A logpoint's message (`vscode.SourceBreakpoint.logMessage`): it logs and never stops. */
+  logMessage?: string;
   location?: {
     uri: { scheme: string; fsPath: string; toString(): string };
     range: { start: { line: number } };
@@ -31,13 +33,13 @@ export function isUnder(root: string, file: string): boolean {
 
 /**
  * The enabled line breakpoints in script files under one of `roots` (the Playwright configs' folders), 0-based, each
- * with its id.
+ * with its id; a logpoint, which never stops, is none of them.
  */
 export function runBreakpoints(breakpoints: readonly BreakpointLike[], roots: readonly string[]): RunBreakpoint[] {
   const out: RunBreakpoint[] = [];
   for (const b of breakpoints) {
     const location = b.location;
-    if (!b.enabled || !location || location.uri.scheme !== 'file') continue;
+    if (!b.enabled || b.logMessage || !location || location.uri.scheme !== 'file') continue;
     const file = location.uri.fsPath;
     if (!SCRIPT_FILE.test(file) || !roots.some((root) => isUnder(root, file))) continue;
     out.push({ id: b.id, uri: location.uri.toString(), line: location.range.start.line });

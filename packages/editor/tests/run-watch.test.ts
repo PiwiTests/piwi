@@ -61,7 +61,7 @@ describe('the verdict of a run of each test several times', () => {
   test('is read from the exit code when the run reached no instance', () => {
     expect(exitVerdict(3, 0, 'tests/checkout.spec.ts:42')).toEqual({
       severity: 'information',
-      message: 'Passed 3 of 3: tests/checkout.spec.ts:42',
+      message: 'None of 3 runs failed: tests/checkout.spec.ts:42',
     });
     expect(exitVerdict(3, 1, 'tests/checkout.spec.ts:42')).toEqual({
       severity: 'warning',

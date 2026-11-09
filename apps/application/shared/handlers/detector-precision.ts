@@ -1,9 +1,13 @@
 /**
  * Detector precision from triage verdicts — the learning loop. Every triage is a
- * labeled example: accepted and covered-by count for the detector, dismissed-as-
- * wrong counts against. A detector below the threshold on a project with enough
+ * labeled example: accepted and covered-by count for the detector, a gap dismissed
+ * as wrong or as covered elsewhere (no test was missing) counts against, and a
+ * dismissal with no reason or as not worth testing counts for nothing. A
+ * detector below the threshold on a project with enough
  * verdicts mutes itself there: its rows drop out of the pull-request comment
- * first, and the Gaps tab says so.
+ * first, and the Gaps view says so. Beside the verdicts, the outcome no one
+ * triages: how many of the gaps a detector raised on a pull request that pull
+ * request acted on (a test it added answered the gap before it merged).
  *
  * The scoring core is pure so the demo and the tests run it; the loader reads the
  * gaps and the manual reaches edges a covered-by wrote.
@@ -32,6 +36,12 @@ export interface DetectorVerdict {
   verdict: 'for' | 'against';
 }
 
+/** One gap a detector raised on a pull request, and whether that pull request acted on it. */
+export interface DetectorOutcome {
+  detector: string;
+  actedOn: boolean;
+}
+
 /** A detector's precision on a project, and whether it has muted itself. */
 export interface DetectorPrecision {
   detector: string;
@@ -41,6 +51,10 @@ export interface DetectorPrecision {
   /** for / (for + against), or null when there are no verdicts. */
   precision: number | null;
   muted: boolean;
+  /** The gaps it raised on a pull request. */
+  pullRequestGaps: number;
+  /** Of those, the ones closed as acted on: answered while the pull request was open. */
+  actedOn: number;
 }
 
 /** True when a detector's precision is low enough, with enough verdicts, to mute. */
@@ -49,22 +63,43 @@ export function isDetectorMuted(precision: number | null, verdicts: number): boo
 }
 
 /**
- * Fold triage verdicts into per-detector precision. Pure: the loader turns gap
- * rows and covered-by edges into the verdict list this scores.
+ * Fold triage verdicts into per-detector precision, with the pull-request
+ * outcomes beside it. Pure: the loader turns gap rows into the lists this scores.
  */
-export function computeDetectorPrecision(verdicts: DetectorVerdict[]): DetectorPrecision[] {
-  const byDetector = new Map<string, { for: number; against: number }>();
+export function computeDetectorPrecision(
+  verdicts: DetectorVerdict[],
+  outcomes: DetectorOutcome[] = [],
+): DetectorPrecision[] {
+  const byDetector = new Map<string, { for: number; against: number; pullRequestGaps: number; actedOn: number }>();
+  const entryOf = (detector: string) => {
+    const entry = byDetector.get(detector) ?? { for: 0, against: 0, pullRequestGaps: 0, actedOn: 0 };
+    byDetector.set(detector, entry);
+    return entry;
+  };
   for (const v of verdicts) {
-    const entry = byDetector.get(v.detector) ?? { for: 0, against: 0 };
+    const entry = entryOf(v.detector);
     if (v.verdict === 'for') entry.for++;
     else entry.against++;
-    byDetector.set(v.detector, entry);
+  }
+  for (const o of outcomes) {
+    const entry = entryOf(o.detector);
+    entry.pullRequestGaps++;
+    if (o.actedOn) entry.actedOn++;
   }
   return [...byDetector.entries()]
-    .map(([detector, { for: forCount, against }]) => {
+    .map(([detector, { for: forCount, against, pullRequestGaps, actedOn }]) => {
       const total = forCount + against;
       const precision = total > 0 ? forCount / total : null;
-      return { detector, for: forCount, against, verdicts: total, precision, muted: isDetectorMuted(precision, total) };
+      return {
+        detector,
+        for: forCount,
+        against,
+        verdicts: total,
+        precision,
+        muted: isDetectorMuted(precision, total),
+        pullRequestGaps,
+        actedOn,
+      };
     })
     .sort((a, b) => (a.precision ?? 1) - (b.precision ?? 1));
 }
@@ -74,30 +109,38 @@ export function computeDetectorPrecision(verdicts: DetectorVerdict[]): DetectorP
  * the action a human took, recorded durably on the gap, not a reading of its
  * current status: a gap that was **accepted** or marked **covered-by** counts
  * *for* its detector even after it later closes, and a gap **dismissed as wrong**
- * counts *against*. A covered-by credits only the gap it was given on (its own
- * `covered_at`), never every detector that happens to share the subject node.
+ * or as **covered elsewhere** counts *against*. A covered-by credits only the
+ * gap it was given on (its own `covered_at`), never every detector that happens
+ * to share the subject node. Every gap raised on a pull request is an outcome,
+ * acted on when it closed as `acted-on`.
  */
 export async function loadDetectorPrecision(db: DrizzleDB, projectId: number): Promise<DetectorPrecision[]> {
   const rows = await db
     .select({
       detector: scenarioGaps.detector,
+      kind: scenarioGaps.kind,
       status: scenarioGaps.status,
       dismissReason: scenarioGaps.dismissReason,
       acceptedAt: scenarioGaps.acceptedAt,
       coveredAt: scenarioGaps.coveredAt,
+      prNumber: scenarioGaps.prNumber,
+      closeReason: scenarioGaps.closeReason,
     })
     .from(scenarioGaps)
     .where(and(eq(scenarioGaps.projectId, projectId), notInArray(scenarioGaps.detector, RETIRED_DETECTORS)));
 
   const verdicts: DetectorVerdict[] = [];
+  const outcomes: DetectorOutcome[] = [];
   for (const r of rows) {
-    if (r.status === 'dismissed' && r.dismissReason === 'wrong') {
+    if (r.prNumber != null) outcomes.push({ detector: r.detector, actedOn: r.closeReason === 'acted-on' });
+    const noTestMissing = r.dismissReason === 'covered-elsewhere' && r.kind !== 'finding';
+    if (r.status === 'dismissed' && (r.dismissReason === 'wrong' || noTestMissing)) {
       verdicts.push({ detector: r.detector, verdict: 'against' });
     } else if (r.status === 'accepted' || r.acceptedAt != null || r.coveredAt != null) {
       verdicts.push({ detector: r.detector, verdict: 'for' });
     }
   }
-  return computeDetectorPrecision(verdicts);
+  return computeDetectorPrecision(verdicts, outcomes);
 }
 
 /** The set of detectors muted on a project — read by the PR comment and the tab. */

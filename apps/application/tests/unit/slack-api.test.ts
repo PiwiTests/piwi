@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A Slack channel posting through the Web API: `chat.postMessage` with the bot
@@ -194,9 +193,7 @@ describe('the outbox delivering to a Web API channel', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     const [channel] = await db
       .insert(schema.notificationChannels)
       .values({

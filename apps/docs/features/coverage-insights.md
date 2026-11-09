@@ -17,7 +17,7 @@ agents and, for a failure, the AI diagnosis.
 
 The insights read the coverage your runs already record: set up [server coverage](./server-coverage) with
 `coverage: { server: 'lines' }` in the reporter options, or `PIWI_COVERAGE_SERVER=lines`. Line answers need the
-`lines` granularity; `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
+`lines` granularity (`coverage.browser: 'lines'` in the browser); `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
 answers, and `files` gives file answers. A run without coverage changes nothing, so a nightly job with coverage on is
 enough for the comparisons across runs.
 
@@ -109,8 +109,9 @@ summary to their answer.
 Given a test, a file and target lines, Piwi reads the test's latest execution with coverage, or the execution you
 name, and splits the target lines into those that **ran**, those that **did not run** (from a complete capture
 only) and those it **cannot tell** (file granularity, or an incomplete capture). At function granularity a line ran
-when a function around it ran. When a run recorded the file's executable lines for that version, target lines that
-cannot run (blank lines, comments) are set apart.
+when the innermost function around it ran: a callback nested in a function that ran, and never called, did not. When
+a run recorded the file's executable lines for that version, target lines that cannot run (blank lines, comments) are
+set apart.
 
 When a target line did not run, the answer names the **nearest test**: the one running most of the function around
 the first target line at that version, else of the target lines, else, at another version, of the file. It is the
@@ -120,7 +121,7 @@ checks its target lines this way until they run.
 ## For agents
 
 Three read-only MCP tools, listed with the rest on [MCP tools](/reference/mcp-tools), carry these answers. They
-belong to the `core` module and depend on the **Coverage** capability: declining it for the instance on the Setup page
+belong to the `core` module and depend on the **Coverage** capability: declining it for the instance in **Settings → Capabilities**
 drops them.
 For a project with no coverage, each answers one sentence saying how to turn it on.
 
@@ -131,7 +132,7 @@ For a project with no coverage, each answers one sentence saying how to turn it 
   that explains them.
 - `get_coverage_loss`: what quarantining, skipping or deleting tests would leave uncovered.
 
-The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/docs) (`/docs` on your
+The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/settings/api) (`/settings/api` on your
 instance).
 
 ## Limits

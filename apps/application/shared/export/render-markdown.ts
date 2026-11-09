@@ -27,6 +27,7 @@ import {
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
+  outputStreams,
   projectLabel,
   runFacts,
   runFailureGroups,
@@ -133,6 +134,12 @@ function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###', withRu
 
   if (Array.isArray(d.consoleLogs) && d.consoleLogs.length) {
     out.push(`${sub} Console`, '', fence((d.consoleLogs as Record<string, any>[]).map(consoleLine).join('\n')), '');
+  }
+
+  const streams = outputStreams(d);
+  if (streams.length) {
+    out.push(`${sub} Output`, '');
+    for (const stream of streams) out.push(`**${stream.name}**`, '', fence(stream.text), '');
   }
 
   if (Array.isArray(d.networkRequests) && d.networkRequests.length) {

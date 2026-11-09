@@ -123,7 +123,7 @@ test.describe.serial('Integrations — connection, test and link unfurl', () => 
     expect(result.ok).toBe(true);
   });
 
-  test('a pinned Jira link unfurls through the connection', async ({ request }) => {
+  test('a pinned Jira link unfurls through the connection its project is bound to', async ({ request }) => {
     const submit = await request.post('/api/test-runs/submit', {
       data: {
         projectName: PROJECT.INTEGRATIONS,
@@ -138,23 +138,36 @@ test.describe.serial('Integrations — connection, test and link unfurl', () => 
       },
     });
     expect(submit.ok()).toBeTruthy();
-    const { runId } = (await submit.json()) as { runId: number };
+    const { runId, projectId } = (await submit.json()) as { runId: number; projectId: number };
 
-    const linkRes = await request.post('/api/links', {
-      data: { entityType: 'test_run', entityId: runId, url: `${mockBaseUrl}/browse/TEST-1` },
-    });
-    expect(linkRes.ok()).toBeTruthy();
-    const { link } = (await linkRes.json()) as {
-      link: {
-        provider: string;
-        key: string | null;
-        connectionId: number | null;
-        externalId: string | null;
-        title: string | null;
-        statusText: string | null;
-        statusColor: string | null;
-      };
+    const pin = async () => {
+      const linkRes = await request.post('/api/links', {
+        data: { entityType: 'test_run', entityId: runId, url: `${mockBaseUrl}/browse/TEST-1` },
+      });
+      expect(linkRes.ok()).toBeTruthy();
+      return (
+        (await linkRes.json()) as {
+          link: {
+            provider: string;
+            key: string | null;
+            connectionId: number | null;
+            externalId: string | null;
+            title: string | null;
+            statusText: string | null;
+            statusColor: string | null;
+          };
+        }
+      ).link;
     };
+
+    // A project bound to no tracker keeps the link plain: nothing is read through the connection.
+    const plain = await pin();
+    expect(plain.connectionId).toBeNull();
+    expect(plain.statusText).toBeNull();
+
+    const bound = await request.put(`/api/projects/${projectId}/integrations`, { data: { connectionId } });
+    expect(bound.ok()).toBeTruthy();
+    const link = await pin();
     expect(link.provider).toBe('jira');
     expect(link.key).toBe('TEST-1');
     expect(link.connectionId).toBe(connectionId);

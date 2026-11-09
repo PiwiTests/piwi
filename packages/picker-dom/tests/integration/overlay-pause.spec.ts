@@ -62,6 +62,47 @@ test.describe('showPauseBar', () => {
     expect(await page.evaluate(takePauseState)).toBe('resume');
   });
 
+  test('leaves Escape to a dialog and an open list of the page', async ({ page }) => {
+    await page.setContent(
+      '<!doctype html><html><body><input aria-label="Coupon">' +
+        '<input role="combobox" aria-label="Country" aria-expanded="true">' +
+        '<button aria-expanded="true" aria-controls="faq">Details</button><div id="faq">Answer</div>' +
+        '<div role="dialog" aria-label="Cart"><button>Close</button></div>' +
+        '<dialog id="modal"><button>OK</button></dialog></body></html>',
+    );
+    await page.evaluate(showPauseBar, ARG);
+    await page.getByRole('combobox', { name: 'Country' }).press('Escape');
+    await page.getByRole('dialog', { name: 'Cart' }).getByRole('button', { name: 'Close' }).press('Escape');
+    expect(await page.evaluate(pauseAnswered)).toBe(false);
+    // A modal dialog the page shows takes Escape, wherever the focus is: it closes, and the test stays paused.
+    await page.evaluate(() => {
+      (document.getElementById('modal') as HTMLDialogElement).showModal();
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#modal')).not.toHaveAttribute('open');
+    expect(await page.evaluate(pauseAnswered)).toBe(false);
+    // On an open disclosure, which has no popup to close, Escape resumes.
+    await page.getByRole('button', { name: 'Details' }).press('Escape');
+    expect(await page.evaluate(takePauseState)).toBe('resume');
+    // So it does in a field the test left the focus in.
+    await page.evaluate(showPauseBar, ARG);
+    await page.getByLabel('Coupon').press('Escape');
+    expect(await page.evaluate(takePauseState)).toBe('resume');
+  });
+
+  test('leaves Escape to the page while the bar is inert, and resumes on it again once it is not', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body><input aria-label="Coupon"></body></html>');
+    await page.evaluate(showPauseBar, ARG);
+    const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
+    await bar.evaluate((el) => ((el as HTMLElement).inert = true));
+    await page.getByLabel('Coupon').press('Escape');
+    expect(await page.evaluate(pauseAnswered)).toBe(false);
+    await bar.evaluate((el) => ((el as HTMLElement).inert = false));
+    await page.getByLabel('Coupon').press('Escape');
+    expect(await page.evaluate(takePauseState)).toBe('resume');
+  });
+
   test('counts as answered once the page navigated away, with no answer to take', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, ARG);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * "What do you want Piwi for?" — the coarse capability presets, shown on the
- * Setup page and in the Home wizard. Seeing why tests fail is always on; the
+ * "What do you want Piwi for?" — the coarse capability presets, shown on
+ * Settings → Capabilities and in the Home wizard. Seeing why tests fail is always on; the
  * other three modules are opt-out checkboxes. Unchecking a module declines
  * every capability in it at instance level; re-checking clears those decisions.
  * A module whose capabilities are only partly declined shows indeterminate.
@@ -15,6 +15,7 @@ import {
   CAPABILITY_PRESETS,
   DESKTOP_HIDDEN_CAPABILITIES,
   capabilitiesForModule,
+  isOptInCapability,
   type CapabilityModule,
 } from '#shared/capabilities';
 
@@ -28,9 +29,11 @@ const { state, canDecide, decideMany } = await useInstanceCapabilities();
 
 const busy = ref(false);
 
-/** The module's capabilities this build offers. */
+/** The module's capabilities this build offers; one that is off until turned on is never part of a preset. */
 function moduleCapabilities(module: CapabilityModule): CapabilityId[] {
-  return capabilitiesForModule(module).filter((id) => !(isDesktop && DESKTOP_HIDDEN_CAPABILITIES.has(id)));
+  return capabilitiesForModule(module).filter(
+    (id) => !isOptInCapability(id) && !(isDesktop && DESKTOP_HIDDEN_CAPABILITIES.has(id)),
+  );
 }
 
 function declinedCount(module: CapabilityModule): number {

@@ -36,12 +36,12 @@ function processAlive(pid: number): boolean {
  * Read the desktop app's published connection details, or `null` when the app
  * is not running and the file is absent, unreadable or malformed.
  *
- * The app rewrites this file on every launch (its loopback port can change when
- * 3000 is taken) and deletes it on quit, so a readable file means "there is a
- * local app to talk to right now". A file that names the app's `pid` and whose
- * process is gone was left by a crash, and reads as no app. Never throws —
- * discovery is a convenience, and a truncated or hand-edited file must not take
- * a test run down.
+ * The app rewrites this file on every launch (its loopback port is a setting,
+ * and changes when that port is taken) and deletes it on quit, so a readable
+ * file means "there is a local app to talk to right now". A file that names the
+ * app's `pid` and whose process is gone was left by a crash, and reads as no
+ * app. Never throws — discovery is a convenience, and a truncated or
+ * hand-edited file must not take a test run down.
  */
 export function readDesktopConfig(filePath: string): DesktopConfig | null {
   try {

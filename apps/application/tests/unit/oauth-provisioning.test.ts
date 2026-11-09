@@ -9,6 +9,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { OAuthProfile } from '../../server/utils/oauth-helpers';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before oauth.ts (which imports the barrel) loads.
@@ -21,9 +22,10 @@ const MIGRATIONS = fileURLToPath(new URL('../../server/database/migrations', imp
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
 
-async function freshDb(migrationsFolder = MIGRATIONS): Promise<Db> {
+async function freshDb(migrationsFolder?: string): Promise<Db> {
   const next = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(next, { migrationsFolder });
+  if (migrationsFolder) await migrate(next, { migrationsFolder });
+  else await migrateToLatest(next);
   return next;
 }
 
@@ -159,21 +161,29 @@ describe('upgrading a database whose users share an address that differs only by
     return folder;
   }
 
+  /** A user as an older schema holds them: the columns added since are not there yet. */
+  async function addOlderUser(username: string, email: string) {
+    await db.$client.execute({
+      sql: "INSERT INTO users (username, password, role, email, created_at, updated_at) VALUES (?, 'hash', 'member', ?, 0, 0)",
+      args: [username, email],
+    });
+  }
+
   test('stops with an error that names the problem and keeps both accounts', async () => {
     db = await freshDb(migrationsBefore('_check_email_case_duplicates'));
-    await addUser({ username: 'bob', email: 'Bob@corp.com' });
-    await addUser({ username: 'bob2', email: 'bob@corp.com' });
+    await addOlderUser('bob', 'Bob@corp.com');
+    await addOlderUser('bob2', 'bob@corp.com');
 
     await expect(migrate(db, { migrationsFolder: MIGRATIONS })).rejects.toThrow(
       /same email address written with different letter case/,
     );
-    expect(await db.select().from(schema.users)).toHaveLength(2);
+    expect(await db.select({ id: schema.users.id }).from(schema.users)).toHaveLength(2);
   });
 
   test('goes through once each address belongs to one account', async () => {
     db = await freshDb(migrationsBefore('_check_email_case_duplicates'));
-    await addUser({ username: 'bob', email: 'Bob@corp.com' });
-    await addUser({ username: 'alice', email: 'alice@corp.com' });
+    await addOlderUser('bob', 'Bob@corp.com');
+    await addOlderUser('alice', 'alice@corp.com');
 
     await migrate(db, { migrationsFolder: MIGRATIONS });
 

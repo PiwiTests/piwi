@@ -21,8 +21,9 @@ builder.Services.AddSingleton(new PageFiles(Path.Combine(web, "pages")));
 var app = builder.Build();
 
 // First in the pipeline, so it wraps every request: the X-Piwi-Logs header, the route manifest at /__piwi/manifest,
-// the server probes (PIWI_PROBE_SECRET, PIWI_SERVER_PROBES) and, in a coverage build (-p:PiwiCoverage=true), the
-// X-Piwi-Coverage header and the /__piwi/coverage endpoints. Active in the Development and Test environments.
+// the process's runtime facts at /__piwi/environment, the server probes (PIWI_PROBE_SECRET, PIWI_SERVER_PROBES) and,
+// in a coverage build (-p:PiwiCoverage=true), the X-Piwi-Coverage header and the /__piwi/coverage endpoints. Active in
+// the Development and Test environments.
 app.UsePiwiTestLogs();
 
 app.UseStaticFiles(new StaticFileOptions

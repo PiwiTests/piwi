@@ -544,8 +544,11 @@ const SCREENSHOT = path.join(
   'checkout-error-banner.png',
 );
 
-/** Serves what the editor service reads of a Piwi instance, on a free loopback port. */
-export function startStub(commit) {
+/**
+ * Serves what the editor service reads of a Piwi instance, on a free loopback port; `testFunctions` is the project's
+ * catalog of page object methods and helpers.
+ */
+export function startStub(commit, { testFunctions = [] } = {}) {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://stub');
     const json = (body) => {
@@ -580,7 +583,8 @@ export function startStub(commit) {
         ],
       });
     if (p === `/api/projects/${PROJECT.id}/branch-failures`) return json(branchFailures(commit));
-    if (p === `/api/projects/${PROJECT.id}/test-functions`) return json({ testFunctions: [] });
+    if (p === `/api/projects/${PROJECT.id}/test-functions`)
+      return json({ testFunctions: testFunctions.map((entry) => ({ entry })) });
     if (p === `/api/projects/${PROJECT.id}/selections/preview`)
       return json({
         materialization: { args: [SPEC_FILE], command: `npx playwright test ${SPEC_FILE}` },

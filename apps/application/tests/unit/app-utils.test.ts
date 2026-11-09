@@ -20,15 +20,15 @@ import {
   getFileApiPath,
   fileApiUrl,
   getTraceViewerUrl,
-  errorMessage,
   filterCommits,
   scmFileStatusMeta,
   parsePatchLines,
   patchLineClass,
   renderAnsi,
-  copyPreview,
   reportIcon,
+  browserIconName,
   getBrowserIcon,
+  runPassRate,
 } from '../../app/utils/index';
 
 describe('formatBytes', () => {
@@ -136,6 +136,11 @@ describe('formatRelativeTime', () => {
   test('renders a past date with an "ago" suffix', () => {
     expect(formatRelativeTime(new Date(Date.now() - 60_000))).toContain('ago');
   });
+
+  test('returns N/A for a value that is no date, rather than throwing', () => {
+    expect(formatRelativeTime('not a date')).toBe('N/A');
+    expect(formatRelativeTime(new Date(Number.NaN))).toBe('N/A');
+  });
 });
 
 describe('getStatusColor', () => {
@@ -150,14 +155,27 @@ describe('getStatusColor', () => {
     expect(getStatusColor('never-run')).toBe('neutral');
   });
 
-  test('reads timed-out and interrupted as failed, like the run counters', () => {
+  test('reads timed-out as failed, like the run counters, and interrupted as neutral, in no outcome', () => {
     expect(getStatusColor('timedout')).toBe('error');
     expect(getStatusColor('timedOut')).toBe('error');
-    expect(getStatusColor('interrupted')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('neutral');
+    expect(getStatusIcon('interrupted')).toBe('i-lucide-circle-pause');
   });
 
   test('falls back to neutral for unknown statuses', () => {
     expect(getStatusColor('whatever')).toBe('neutral');
+  });
+});
+
+describe('runPassRate', () => {
+  test('reads the passed tests of a run over the ones that passed or failed', () => {
+    // 1 passed and 26 did not run: the run stopped, its one decided test passed.
+    expect(runPassRate({ passedTests: 1, failedTests: 0 })).toBe(100);
+    expect(runPassRate({ passedTests: 7, failedTests: 3 })).toBe(70);
+  });
+
+  test('has none when no test passed or failed', () => {
+    expect(runPassRate({ passedTests: 0, failedTests: 0 })).toBeNull();
   });
 });
 
@@ -339,22 +357,6 @@ describe('file path helpers', () => {
   });
 });
 
-describe('errorMessage (fetch error unwrapping)', () => {
-  test('unwraps the { data: { message } } shape', () => {
-    expect(errorMessage({ data: { message: 'Boom' } })).toBe('Boom');
-  });
-
-  test('falls back to the top-level message', () => {
-    expect(errorMessage({ message: 'Plain' })).toBe('Plain');
-  });
-
-  test('returns the fallback for non-object / empty values', () => {
-    expect(errorMessage('a string')).toBe('Unknown error');
-    expect(errorMessage(null)).toBe('Unknown error');
-    expect(errorMessage({}, 'custom fallback')).toBe('custom fallback');
-  });
-});
-
 describe('filterCommits', () => {
   const commits = [
     { sha: 'aaa111bbb', shortSha: 'aaa111b', message: 'Fix login bug', author: 'Alice' },
@@ -418,17 +420,27 @@ describe('renderAnsi', () => {
   test('wraps colored segments in styled spans and resets on code 0', () => {
     expect(renderAnsi('\u001B[31mred\u001B[0m')).toBe('<span style="color:#dc2626">red</span>');
   });
-});
 
-describe('copyPreview', () => {
-  test('returns empty string for nullish input', () => {
-    expect(copyPreview(null)).toBe('');
-    expect(copyPreview(undefined)).toBe('');
+  test('renders the bright colors, as Playwright grays its code frames', () => {
+    expect(renderAnsi('\u001B[90m 3 |\u001B[39m')).toBe('<span style="color:#6b7280"> 3 |</span>');
   });
 
-  test('joins newlines with a middot and truncates past the cap', () => {
-    expect(copyPreview('a\nb')).toBe('a · b');
-    expect(copyPreview('x'.repeat(200), 10)).toBe('xxxxxxxxxx…');
+  test('drops escape sequences that move the cursor or erase a line', () => {
+    expect(renderAnsi('\u001B[1A\u001B[2K\u001B[?25ldone')).toBe('done');
+  });
+
+  test('reads the 256-color and RGB forms of 38 and 48 whole, never as separate codes', () => {
+    expect(renderAnsi('\u001B[38;2;255;0;0mx')).toBe('<span style="color:rgb(255,0,0)">x</span>');
+    expect(renderAnsi('\u001B[38;5;1mx')).toBe('<span style="color:#dc2626">x</span>');
+    expect(renderAnsi('\u001B[38;5;9mx')).toBe('<span style="color:#ef4444">x</span>');
+    expect(renderAnsi('\u001B[38;5;196mx')).toBe('<span style="color:rgb(255,0,0)">x</span>');
+    expect(renderAnsi('\u001B[38;5;244mx')).toBe('<span style="color:rgb(128,128,128)">x</span>');
+    expect(renderAnsi('\u001B[48;5;31mx')).toBe('<span style="background:rgb(0,135,175)">x</span>');
+  });
+
+  test('picks lighter foreground colors on a dark background', () => {
+    expect(renderAnsi('\u001B[31mred', { onDark: true })).toBe('<span style="color:#f87171">red</span>');
+    expect(renderAnsi('\u001B[90mgray', { onDark: true })).toBe('<span style="color:#a1a1aa">gray</span>');
   });
 });
 
@@ -444,5 +456,19 @@ describe('icon helpers', () => {
     expect(getBrowserIcon('firefox')).toBe('i-simple-icons-firefoxbrowser');
     expect(getBrowserIcon('webkit')).toBe('i-simple-icons-safari');
     expect(getBrowserIcon(null)).toBe('i-lucide-globe');
+  });
+
+  test('browserIconName reads the channel, then the engine, then the project name', () => {
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium' })).toBe('chromium');
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium', channel: 'msedge' })).toBe('msedge');
+    expect(browserIconName({ projectName: 'webkit' })).toBe('webkit');
+    expect(browserIconName({ projectName: 'Polaris', browserName: null, channel: null })).toBe('Polaris');
+    expect(browserIconName(null)).toBeNull();
+    expect(getBrowserIcon(browserIconName({ projectName: 'Polaris', browserName: 'chromium' }))).toBe(
+      'i-simple-icons-googlechrome',
+    );
+    expect(getBrowserIcon(browserIconName({ projectName: 'Edge', browserName: 'chromium', channel: 'msedge' }))).toBe(
+      'i-simple-icons-microsoftedge',
+    );
   });
 });

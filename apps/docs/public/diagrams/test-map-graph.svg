@@ -1,113 +1,141 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 512" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 584" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
   <style>
   .bg{fill:#fcfcfd;stroke:#e4e7ec}
-  .t{fill:#101828;font-weight:700;font-size:16px}
-  .s{fill:#475467;font-size:12.5px}
-  .h{fill:#667085;font-size:10.5px;font-weight:600;letter-spacing:.06em}
-  .l{fill:#344054;font-size:12px}
-  .lb{fill:#344054;font-size:12.5px;font-weight:600}
-  .m{fill:#667085;font-size:11px}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px}
-  .bst,.fct,.frt,.okt{font-size:11px}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
   .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
   .hd{fill:#f2f4f7}
-  .dash{fill:none;stroke:#98a2b3;stroke-dasharray:4 3}
-  .edge{fill:none;stroke:#98a2b3;stroke-width:1.3}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
   .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
-  .acct{fill:#4353ff;font-size:11px}
-  .arr{fill:#98a2b3} .arra{fill:#4353ff}
-  .bs{fill:#fffaeb;stroke:#f79009} .bst{fill:#b54708}
-  .fc{fill:#fef3f2;stroke:#f04438} .fct{fill:#b42318}
-  .fr{fill:#fff6ed;stroke:#fb6514} .frt{fill:#c4320a}
-  .ok{fill:#ecfdf3;stroke:#12b76a} .okt{fill:#067647}
-  .chip{stroke-width:1}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
   @media (prefers-color-scheme: dark){
     .bg{fill:#161b26;stroke:#333741}
     .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
-    .l,.lb{fill:#cecfd2} .m{fill:#85888e}
-    .box{fill:#1f242f;stroke:#333741} .hd{fill:#262b36}
-    .dash{stroke:#61646c} .edge{stroke:#61646c} .arr{fill:#61646c}
-    .acc{stroke:#8098f9} .acct{fill:#8098f9} .arra{fill:#8098f9}
-    .bs{fill:#2b1d07;stroke:#dc6803} .bst{fill:#fec84b}
-    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
     .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
-    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
   }
 </style>
   <defs>
-    <marker id="tmgA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
-    <marker id="tmgB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="tmgn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="tmgd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="tmga" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
-  <rect class="bg" x="0.5" y="0.5" width="919" height="511" rx="12"/>
-  <text class="t" x="24" y="36">The Test Map</text>
-  <text class="s" x="24" y="56">One graph per project: what the application exposes, which tests reach it, and whether a probe showed they would notice it breaking.</text>
-  <text class="h" x="24" y="92">TESTS</text>
-  <text class="h" x="204" y="92">PAGES</text>
-  <text class="h" x="400" y="92">ROUTES</text>
-  <text class="h" x="610" y="92">HANDLERS</text>
-  <text class="h" x="816" y="92">DEPENDENCIES</text>
-  <rect class="box chip" x="24" y="140" width="160" height="30" rx="7"/>
-  <text class="l" x="34" y="159">invites a user by email</text>
-  <rect class="ok chip" x="204" y="140" width="176" height="30" rx="7"/>
-  <text class="l mono" x="214" y="159">/users</text>
-  <text class="m" x="204" y="186">contains 6 controls, loads 3 routes</text>
-  <rect class="fc chip" x="400" y="140" width="190" height="30" rx="7"/>
-  <text class="l mono" x="410" y="159">POST /api/invitations</text>
-  <text class="fct" x="400" y="186">probe status-500: not noticed</text>
-  <rect class="box chip" x="610" y="140" width="186" height="30" rx="7"/>
-  <text class="l mono" x="620" y="159">invitations/index.post.ts</text>
-  <rect class="box chip" x="816" y="140" width="80" height="30" rx="7"/>
-  <text class="l mono" x="826" y="159">postgres</text>
-  <rect class="fc chip" x="816" y="184" width="80" height="30" rx="7"/>
-  <text class="l mono" x="826" y="203">sendgrid</text>
-  <text class="fct" x="816" y="230">degraded</text>
-  <path class="edge" d="M 184 155 L 202 155" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 184 148 C 254 104, 328 104, 398 148" marker-end="url(#tmgA)"/>
-  <text class="m" x="292.0" y="109" text-anchor="middle">reaches</text>
-  <path class="edge" d="M 590 155 L 608 155" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 796 155 L 814 155" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 796 155 C 805.0 155, 805.0 199, 814 199" marker-end="url(#tmgA)"/>
-  <rect class="box chip" x="24" y="262" width="160" height="30" rx="7"/>
-  <text class="l" x="34" y="281">rotates the API token</text>
-  <rect class="fr chip" x="204" y="262" width="176" height="30" rx="7"/>
-  <text class="l mono" x="214" y="281">/settings/api</text>
-  <text class="frt" x="204" y="308">one test reaches it</text>
-  <rect class="fr chip" x="400" y="262" width="190" height="30" rx="7"/>
-  <text class="l mono" x="410" y="281">POST /api/tokens/:id/rotate</text>
-  <text class="okt" x="400" y="308">probe drop-field: noticed</text>
-  <rect class="box chip" x="610" y="262" width="186" height="30" rx="7"/>
-  <text class="l mono" x="620" y="281">tokens/[id]/rotate.post.ts</text>
-  <rect class="bs chip" x="816" y="262" width="80" height="30" rx="7"/>
-  <text class="l mono" x="826" y="281">vault</text>
-  <text class="bst" x="816" y="308">never probed</text>
-  <path class="edge" d="M 184 277 L 202 277" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 184 270 C 254 226, 328 226, 398 270" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 590 277 L 608 277" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 796 277 L 814 277" marker-end="url(#tmgA)"/>
-  <path class="edge" d="M 796 274 C 805.0 274, 805.0 162, 814 162" marker-end="url(#tmgA)"/>
-  <rect class="dash chip" x="24" y="388" width="160" height="30" rx="7"/>
-  <text class="m" x="104.0" y="407" text-anchor="middle">no test</text>
-  <rect class="bs chip" x="204" y="388" width="176" height="30" rx="7"/>
-  <text class="l mono" x="214" y="407">/billing</text>
-  <text class="bst" x="204" y="434">linked from 4 pages,</text>
-  <text class="bst" x="204" y="448">never visited</text>
-  <rect class="bs chip" x="400" y="388" width="190" height="30" rx="7"/>
-  <text class="l mono" x="410" y="407">GET /api/billing/invoices</text>
-  <text class="bst" x="400" y="434">declared in OpenAPI,</text>
-  <text class="bst" x="400" y="448">never requested</text>
-  <path class="edge" stroke-dasharray="4 3" d="M 292 316 L 292 386" marker-end="url(#tmgA)"/>
-  <text class="m" x="298" y="348">links</text>
-  <text class="m" x="610" y="400">handled-by and calls: from server spans</text>
-  <text class="m" x="610" y="416">reaches: from each run</text>
-  <text class="m" x="610" y="432">probe outcomes: checks edges</text>
-  <rect class="bs chip" x="24" y="474" width="80" height="22" rx="6"/>
-  <text class="bst" x="64.0" y="489" text-anchor="middle">blind spot</text>
-  <rect class="fc chip" x="114" y="474" width="96" height="22" rx="6"/>
-  <text class="fct" x="162.0" y="489" text-anchor="middle">false comfort</text>
-  <rect class="fr chip" x="220" y="474" width="62" height="22" rx="6"/>
-  <text class="frt" x="251.0" y="489" text-anchor="middle">fragile</text>
-  <rect class="ok chip" x="292" y="474" width="158" height="22" rx="6"/>
-  <text class="okt" x="371.0" y="489" text-anchor="middle">reached by several tests</text>
-  <text class="m" x="466" y="489">Rows from the demo’s Web Dashboard project.</text>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="583" rx="12"/>
+  <text class="t" x="24" y="38">The Test Map</text>
+  <text class="s" x="24" y="62">One graph per project: what the app exposes, which tests reach it, and whether a probe showed they would notice.</text>
+  <text class="h" x="22" y="92">TESTS</text>
+  <text class="h" x="172" y="92">PAGES</text>
+  <text class="h" x="328" y="92">ROUTES</text>
+  <text class="h" x="574" y="92">HANDLERS</text>
+  <text class="h" x="812" y="92">DEPS</text>
 
+  <!-- A route its test reaches but would not notice breaking -->
+  <rect class="box" x="22" y="145" width="130" height="46" rx="7"/>
+  <text class="l" x="34" y="164">invites a user</text>
+  <text class="l" x="34" y="181">by email</text>
+  <rect class="ok" x="172" y="152" width="136" height="32" rx="7"/>
+  <text class="mono ink" x="182" y="172.5">/users</text>
+  <text class="m" x="172" y="202">contains 6 controls,</text>
+  <text class="m" x="172" y="218">loads 3 routes</text>
+  <rect class="fc" x="328" y="152" width="226" height="32" rx="7"/>
+  <text class="mono ink" x="338" y="172.5">POST /api/invitations</text>
+  <text class="m fct" x="328" y="202">probe status-500: not noticed</text>
+  <rect class="box" x="574" y="152" width="218" height="32" rx="7"/>
+  <text class="mono ink" x="584" y="172.5">invitations/index.post.ts</text>
+  <rect class="bs" x="812" y="152" width="86" height="32" rx="7"/>
+  <text class="mono ink" x="822" y="172.5">sendgrid</text>
+  <text class="m bst" x="812" y="202">degraded</text>
+  <rect class="box" x="812" y="226" width="86" height="32" rx="7"/>
+  <text class="mono ink" x="822" y="246.5">postgres</text>
+  <path class="edge" d="M 152 174 L 170 174" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 152 158 C 212 106, 258 106, 326 160" marker-end="url(#tmgn)"/>
+  <text class="m" x="256" y="108" text-anchor="middle">reaches</text>
+  <path class="edge" d="M 554 168 L 572 168" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 792 168 L 810 168" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 792 174 C 804 174, 796 238, 810 238" marker-end="url(#tmgn)"/>
+
+  <!-- A route one test reaches, and a probe showed it would notice -->
+  <rect class="box" x="22" y="293" width="130" height="46" rx="7"/>
+  <text class="l" x="34" y="312">rotates the</text>
+  <text class="l" x="34" y="329">API token</text>
+  <rect class="fr" x="172" y="300" width="136" height="32" rx="7"/>
+  <text class="mono ink" x="182" y="320.5">/settings/api</text>
+  <text class="m frt" x="172" y="350">one test reaches it</text>
+  <rect class="fr" x="328" y="300" width="226" height="32" rx="7"/>
+  <text class="mono ink" x="338" y="320.5">POST /api/tokens/:id/rotate</text>
+  <text class="m okt" x="328" y="350">probe drop-field: noticed</text>
+  <rect class="box" x="574" y="300" width="218" height="32" rx="7"/>
+  <text class="mono ink" x="584" y="320.5">tokens/[id]/rotate.post.ts</text>
+  <rect class="bs" x="812" y="300" width="86" height="32" rx="7"/>
+  <text class="mono ink" x="822" y="320.5">vault</text>
+  <text class="m bst" x="812" y="350">never probed</text>
+  <path class="edge" d="M 152 322 L 170 322" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 152 306 C 212 254, 258 254, 326 308" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 554 316 L 572 316" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 792 316 L 810 316" marker-end="url(#tmgn)"/>
+  <path class="edge" d="M 792 310 C 804 310, 796 246, 810 246" marker-end="url(#tmgn)"/>
+
+  <!-- What no test reaches -->
+  <rect class="dbx" x="22" y="436" width="130" height="32" rx="7"/>
+  <text class="m" x="87" y="457" text-anchor="middle">no test</text>
+  <rect class="bs" x="172" y="436" width="136" height="32" rx="7"/>
+  <text class="mono ink" x="182" y="456.5">/billing</text>
+  <text class="m bst" x="172" y="486">linked from 4 pages,</text>
+  <text class="m bst" x="172" y="502">never visited</text>
+  <rect class="bs" x="328" y="436" width="226" height="32" rx="7"/>
+  <text class="mono ink" x="338" y="456.5">GET /api/billing/invoices</text>
+  <text class="m bst" x="328" y="486">declared in OpenAPI,</text>
+  <text class="m bst" x="328" y="502">never requested</text>
+  <path class="dash" d="M 242 362 L 242 434" marker-end="url(#tmgd)"/>
+  <text class="m" x="250" y="404">links</text>
+  <text class="m" x="574" y="442">handled-by and calls: from server spans</text>
+  <text class="m" x="574" y="459">reaches: from each run</text>
+  <text class="m" x="574" y="476">probe outcomes: checks edges</text>
+
+  <!-- Legend -->
+  <rect class="bs" x="22" y="534" width="160" height="26" rx="6"/>
+  <text class="m bst" x="102" y="551.5" text-anchor="middle">blind spot, degraded</text>
+  <rect class="fc" x="192" y="534" width="111.7" height="26" rx="6"/>
+  <text class="m fct" x="247.85" y="551.5" text-anchor="middle">false comfort</text>
+  <rect class="fr" x="313.7" y="534" width="70.30000000000001" height="26" rx="6"/>
+  <text class="m frt" x="348.85" y="551.5" text-anchor="middle">fragile</text>
+  <rect class="ok" x="394" y="534" width="187.60000000000002" height="26" rx="6"/>
+  <text class="m okt" x="487.8" y="551.5" text-anchor="middle">reached by several tests</text>
+  <text class="m" x="597.6" y="551.5">Rows from the demo’s Web Dashboard project.</text>
 </svg>

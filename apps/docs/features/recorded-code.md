@@ -15,12 +15,15 @@ repository.
 
 - **Locators** come from the same converter as Piwi Picker's recordings and [`piwi codegen`](/reference/cli#codegen):
   each is verified to find the element alone on the page, the stable ones first and those your tests already use
-  preferred. A `getByTestId` uses the attribute your config sets.
+  preferred. A check of the element's text takes a locator that does not find it by that text, when one is not
+  brittle. A `getByTestId` uses the attribute your config sets.
 - **Pages**: an address on the project's `baseURL` is written as a path, and the step that leads to another page is
   followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
 - **Imports**: a call to your own code, and `expect` when a step checks something, are imported at the top of the file
   when it lacks them: `expect` from `@playwright/test`, or from your fixtures module when the file or a spec beside it
-  imports `expect` from there. A spec that loads `test` with `require` gets `require` lines after its last one.
+  imports `expect` from there. A new test in a file that imports no `test` imports it as the specs beside it do. A spec
+  that loads `test` with `require` gets `require` lines after its last one.
+- **Titles**: a new test is titled `recorded flow`, numbered (`recorded flow 2`) when the file has one already.
 - **Your own code**: when the editor is connected to an instance or the [desktop app](./desktop), steps that match one
   of your [test functions](./test-functions) become a call to it, as soon as the last of those steps is recorded.
 - **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as
@@ -29,8 +32,8 @@ repository.
 ## Code options in the Playwright config
 
 How the recorded code looks is set for the whole repository in `playwright.config.ts`, under the `'@piwi'` key at the
-top level, next to `testDir` and `use`. Everyone who records in the repository gets the same code, with or without an
-instance:
+top level, next to `testDir` and `use`. Everyone who records in the repository from the editor gets the same code,
+with or without an instance; [`piwi codegen`](/reference/cli#codegen) reads its own flags instead:
 
 ```ts
 import { defineConfig } from '@playwright/test';

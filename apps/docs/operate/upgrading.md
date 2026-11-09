@@ -29,7 +29,8 @@ On boot, before any request can touch the database (requests that need it wait f
    [A database that ran another build](#a-database-that-ran-another-build)).
 2. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
-   merged rather than dropped, so your triage statuses and notes survive.
+   merged into the one first seen earliest rather than dropped, so your triage statuses and notes
+   survive. Clusters merged earlier stay merged, and tests moved to a cluster of their own stay there.
 
 Step 2 logs an error and continues if it fails. **Step 1 does not.** If a migration fails, the
 process keeps running but every database call fails with the migration error and `GET /api/health`
@@ -38,8 +39,8 @@ That's deliberate: a loud failure you can restore from beats silent corruption.
 
 On the upgrade that adds project roles, a migration turns each Reporter account into a Member with the Maintainer role
 on the projects it could open, and each User account into a Member with the Viewer role, so nobody gains or loses a
-right (see [Upgrading from the three roles](./project-access#upgrading-from-the-three-roles)). A database from before
-project access existed gets the same roles on all projects, as that upgrade granted.
+right (see [Project access](./project-access#project-roles)). A database from before project access existed gets the
+same roles on all projects, as that upgrade granted.
 
 On the upgrade that makes email addresses unique ignoring case, a migration first looks for users whose addresses
 differ only by letter case (`Bob@corp.com` and `bob@corp.com`), such as a second account an OAuth sign-in created for
@@ -166,6 +167,10 @@ the logs for `Migration error`. The schema is mid-flight or incompatible; restor
 `Migration history repair failed`, the database ran another build and could not be brought in line
 automatically ([details](#a-database-that-ran-another-build)); it was left as it was.
 
+**Every page answers `403` and lists the dashboard's local addresses.** With authentication off, name the hosts
+clients use, a container's name included, in `PIWI_SITE_URL` or `PIWI_ALLOWED_HOSTS`, or turn authentication on
+([why](./authentication#disabling-authentication)).
+
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
 report what you saw. Downgrading on a migrated database compounds the problem.
 
@@ -177,7 +182,9 @@ leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe`
 **Open file location** is that folder, then choose **Retry**.
 
 **Failure clusters look reorganized.** Expected after a fingerprint-algorithm change: clusters that now
-share a root cause have merged. Triage state is carried across the merge.
+share a root cause have merged. Triage state is carried across the merge. A cluster that held unrelated
+failures under one [generic error](/guide/concepts#error-fingerprint-failure-cluster) keeps them, and their next
+failures join a cluster per file they fail in.
 
 ## Related
 - [Backup & restore](./backup-restore) — what to back up and how

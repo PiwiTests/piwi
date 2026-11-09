@@ -25,7 +25,7 @@ import {
 } from '@piwitests/core/execution-steps';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { files, locatorSnapshots, networkRequests, testCases, testRunsCases } from '../../server/database/schema';
-import { failurePageScreenshot, isScreenshotFileRow } from '#shared/file-classify';
+import { executionFailed, failurePageScreenshot, isScreenshotFileRow } from '#shared/file-classify';
 import { buildExportZip } from '#shared/export/zip';
 import type { ExportAssetReader } from '#shared/export/types';
 import type { BrowserConfig } from '#shared/types';
@@ -111,6 +111,7 @@ function bugReportTextFiles(report: BugReport): Array<{ name: string; data: stri
 export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<ExecutionBugReport | null> {
   const [row] = await db
     .select({
+      status: testRunsCases.status,
       steps: testRunsCases.steps,
       error: testRunsCases.error,
       consoleLogs: testRunsCases.consoleLogs,
@@ -152,7 +153,7 @@ export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<
   ]);
 
   const shots = fileRows.filter(isScreenshotFileRow);
-  const shot = failurePageScreenshot(shots, (s) => s.subtype);
+  const shot = failurePageScreenshot(shots, (s) => s.subtype, { failed: executionFailed(row.status) });
   const screenshotPath =
     shot && (shot.label?.toLowerCase() === 'image/png' || shot.path.toLowerCase().endsWith('.png')) ? shot.path : null;
 
@@ -186,7 +187,7 @@ export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<
     console: consoleEntries(row.consoleLogs),
     requests: requests.map((r) => ({ method: r.method, url: r.url ?? '', status: r.status, time: r.startTime })),
     viewport: browser?.viewport ?? null,
-    browser: browser?.browserName ?? browser?.projectName ?? null,
+    browser: browser?.projectName ?? browser?.browserName ?? null,
     time: typeof row.startedAt === 'number' ? row.startedAt : null,
     screenshot: screenshotPath != null,
   });

@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helper.
@@ -17,8 +17,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 // helper scopes its count to the run it is asked about.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
-  await migrate(db, { migrationsFolder });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([{ id: 1, name: 'Alpha' }]);
   await db.insert(schema.testRuns).values([
@@ -55,7 +54,7 @@ beforeAll(async () => {
   // Run 2: a single failure, only to confirm run-scoping.
   add(2, 13, 'failed', 0);
 
-  await db.insert(schema.testRunsCases).values(rows);
+  await db.insert(schema.testRunsCases).values(withStoredVerdicts(rows));
 });
 
 describe('computeRunCountsFromRows', () => {

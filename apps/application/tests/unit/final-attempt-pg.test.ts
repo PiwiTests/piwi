@@ -1,0 +1,226 @@
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import {
+  HISTORIES,
+  REPEATED_ATTEMPTS,
+  REPEATED_HISTORY,
+  STORED_ATTEMPTS,
+  dedupeExecutionsSql,
+  expectedFinalFlags,
+  finalAttemptBackfillSql,
+} from './final-attempt-fixture';
+
+/**
+ * Each execution's `final_attempt` on PostgreSQL: set by the migration on the
+ * executions stored before it, and kept right by ingest when a later attempt
+ * arrives, or an attempt after a later one. Runs against
+ * `PIWI_POSTGRES_TEST_URL`, in a database of its own.
+ */
+
+const postgresUrl = process.env.PIWI_POSTGRES_TEST_URL;
+const databaseName = `piwi_final_attempt_${process.pid}`;
+// The schema barrel picks the PostgreSQL schema at import time.
+if (postgresUrl) {
+  const url = new URL(postgresUrl);
+  url.pathname = `/${databaseName}`;
+  process.env.PIWI_DATABASE_URL = url.toString();
+}
+
+// The feature graph is written after the ingest returns; it plays no part here.
+vi.mock('../../server/utils/graph-ingest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../server/utils/graph-ingest')>()),
+  ingestRunGraph: async () => {},
+  ingestRequestGraph: async () => {},
+  upsertGraphSpecs: async () => {},
+  ingestPageInventoryGraph: async () => {},
+}));
+
+const MIGRATIONS = fileURLToPath(new URL('../../server/database/migrations-pg', import.meta.url));
+
+describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
+  const { default: postgres } = await import('postgres');
+  const { drizzle } = await import('drizzle-orm/postgres-js');
+  const { migrate } = await import('drizzle-orm/postgres-js/migrator');
+  const { asc, eq } = await import('drizzle-orm');
+  const schema = await import('../../server/database/schema.pg');
+  const { persistRunCases } = await import('../../server/utils/persist-run-cases');
+  const { mapWireCaseToRunCase } = await import('../../server/utils/map-wire-case');
+  const { getTestCase } = await import('#shared/handlers/test-cases');
+
+  const admin = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
+  let client: ReturnType<typeof postgres>;
+  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let projectId: number;
+
+  beforeAll(async () => {
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
+    await admin.unsafe(`CREATE DATABASE ${databaseName}`);
+    client = postgres(process.env.PIWI_DATABASE_URL!, { onnotice: () => {}, max: 4 });
+    db = drizzle(client, { schema });
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+    const [project] = await db.insert(schema.projects).values({ name: 'final-attempts' }).returning();
+    projectId = project!.id;
+  });
+
+  afterAll(async () => {
+    await client?.end();
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
+    await admin.end();
+  });
+
+  /** One attempt of a test as the reporter sends it, with its attempt history up to it. */
+  const attempt = (title: string, statuses: string[]) =>
+    mapWireCaseToRunCase({
+      title,
+      location: `tests/checkout.spec.ts:${title.length}:5`,
+      status: statuses.at(-1)!,
+      duration: 100,
+      retries: statuses.length - 1,
+      repeatEachIndex: 0,
+      attempts: statuses.map((status, retry) => ({ retry, status, duration: 100, startedAt: null })),
+      browser: { projectName: 'chromium' },
+    } as never);
+
+  test('ingest settles an attempt once its retry arrives, and an attempt that arrives after its retry', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: 'running', startTime: new Date() })
+      .returning();
+    const store = (tc: ReturnType<typeof attempt>) => persistRunCases(db as never, projectId, run!.id, [tc]);
+    await store(attempt('pays', ['failed']));
+    await store(attempt('pays', ['failed', 'passed']));
+    await store(attempt('refunds', ['failed', 'passed']));
+    await store(attempt('refunds', ['failed']));
+
+    const rows = await db
+      .select({
+        title: schema.testCases.title,
+        retries: schema.testRunsCases.retries,
+        finalAttempt: schema.testRunsCases.finalAttempt,
+      })
+      .from(schema.testRunsCases)
+      .innerJoin(schema.testCases, eq(schema.testCases.id, schema.testRunsCases.testCaseId))
+      .where(eq(schema.testRunsCases.testRunId, run!.id))
+      .orderBy(asc(schema.testCases.title), asc(schema.testRunsCases.retries));
+    expect(rows).toEqual([
+      { title: 'pays', retries: 0, finalAttempt: false },
+      { title: 'pays', retries: 1, finalAttempt: true },
+      { title: 'refunds', retries: 0, finalAttempt: false },
+      { title: 'refunds', retries: 1, finalAttempt: true },
+    ]);
+    const [pays] = await db.select().from(schema.testCases).where(eq(schema.testCases.title, 'pays'));
+    expect(await getTestCase(db as never, pays!.id)).toMatchObject({ totalRuns: 1, flakyRuns: 1 });
+  });
+
+  test('ingest stores an execution without a project sent again once, and lists it once in the history of its retry', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: 'running', startTime: new Date() })
+      .returning();
+    const bare = (statuses: string[]) => ({ ...attempt('ships', statuses), browser: null, attempts: null });
+    const store = (tc: ReturnType<typeof bare>) => persistRunCases(db as never, projectId, run!.id, [tc as never]);
+    await store(bare(['failed']));
+    await store(bare(['failed']));
+    await store(bare(['failed', 'passed']));
+
+    const rows = await db
+      .select({
+        retries: schema.testRunsCases.retries,
+        browserName: schema.testRunsCases.browserName,
+        finalAttempt: schema.testRunsCases.finalAttempt,
+        attempts: schema.testRunsCases.attempts,
+      })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, run!.id))
+      .orderBy(asc(schema.testRunsCases.retries));
+    expect(rows.map(({ attempts: _history, ...row }) => row)).toEqual([
+      { retries: 0, browserName: null, finalAttempt: false },
+      { retries: 1, browserName: null, finalAttempt: true },
+    ]);
+    expect((rows[1]!.attempts as Array<{ retry: number; status: string }>).map((a) => [a.retry, a.status])).toEqual([
+      [0, 'failed'],
+      [1, 'passed'],
+    ]);
+  });
+
+  test('ingest completes the history and the verdict of a retry stored before an earlier attempt that came with one', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: 'running', startTime: new Date() })
+      .returning();
+    const store = (tc: ReturnType<typeof attempt>) => persistRunCases(db as never, projectId, run!.id, [tc]);
+    await store({ ...attempt('ships', ['passed', 'passed']), attempts: null });
+    await store(attempt('ships', ['passed']));
+
+    const rows = await db
+      .select({
+        retries: schema.testRunsCases.retries,
+        attempts: schema.testRunsCases.attempts,
+        passedAfterFailure: schema.testRunsCases.passedAfterFailure,
+      })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, run!.id))
+      .orderBy(asc(schema.testRunsCases.retries));
+    expect(rows).toEqual([
+      {
+        retries: 0,
+        attempts: [{ retry: 0, status: 'passed', duration: 100, startedAt: null }],
+        passedAfterFailure: false,
+      },
+      {
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'passed', duration: 100, startedAt: null },
+          { retry: 1, status: 'passed', duration: 100, startedAt: null },
+        ],
+        passedAfterFailure: false,
+      },
+    ]);
+  });
+
+  test('the migrations mark the executions stored before them as finalAttempts reads them, and delete the repeats', async () => {
+    const session = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
+    try {
+      // A temporary table of the same name is the one the migration's UPDATE reaches in this session.
+      await session`CREATE TEMP TABLE test_runs_cases (
+          id integer PRIMARY KEY, test_run_id integer NOT NULL, test_case_id integer NOT NULL,
+          repeat_each_index integer NOT NULL DEFAULT 0, retries integer DEFAULT 0, browser_name text,
+          final_attempt boolean NOT NULL DEFAULT true, attempts jsonb)`;
+      for (const [i, row] of STORED_ATTEMPTS.entries()) {
+        await session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
+          VALUES (${i + 1}, ${row.testRunId}, ${row.testCaseId}, ${row.repeatEachIndex}, ${row.retries}, ${row.browserName})`;
+      }
+      await session.unsafe(finalAttemptBackfillSql(MIGRATIONS));
+      const rows = await session<
+        Array<{ final_attempt: boolean }>
+      >`SELECT final_attempt FROM test_runs_cases ORDER BY id`;
+      expect(rows.map((row) => row.final_attempt)).toEqual(expectedFinalFlags());
+
+      await session`UPDATE test_runs_cases SET attempts = ${session.json(HISTORIES.stored)} WHERE id = ${REPEATED_HISTORY + 1}`;
+      const { dedupe, uniqueIndex } = dedupeExecutionsSql(MIGRATIONS);
+      await session.unsafe(dedupe);
+      await session.unsafe(uniqueIndex);
+      const kept = await session<
+        Array<{ id: number; final_attempt: boolean }>
+      >`SELECT id, final_attempt FROM test_runs_cases ORDER BY id`;
+      expect(kept).toEqual(
+        expectedFinalFlags()
+          .map((final_attempt, i) => ({ id: i + 1, final_attempt }))
+          .filter((_, i) => !REPEATED_ATTEMPTS.includes(i)),
+      );
+      const [history] = await session<
+        Array<{ attempts: unknown }>
+      >`SELECT attempts FROM test_runs_cases WHERE id = ${REPEATED_HISTORY + 1}`;
+      expect(history!.attempts).toEqual(HISTORIES.deduped);
+      for (const i of REPEATED_ATTEMPTS) {
+        const repeated = STORED_ATTEMPTS[i]!;
+        await expect(
+          session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
+            VALUES (${100 + i}, ${repeated.testRunId}, ${repeated.testCaseId}, ${repeated.repeatEachIndex}, ${repeated.retries}, ${repeated.browserName})`,
+        ).rejects.toThrow(/idx_test_runs_cases_run_browser/);
+      }
+    } finally {
+      await session.end();
+    }
+  });
+});

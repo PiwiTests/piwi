@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { ADMIN_ACCESS } from '#shared/permissions';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -24,7 +23,7 @@ const stillFailsIn = (browserName: string) => ({ status: 'passed', expectedStatu
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop' },
     { id: 2, name: 'other' },
@@ -197,6 +196,22 @@ describe('the bug.looks_fixed notification', () => {
     // Another branch has no earlier run: everything that looks fixed is new there.
     const elsewhere = await loadNewlyLooksFixedTests(db as never, { id: 2, projectId: 1 }, 'feature/x');
     expect(elsewhere.map((t) => t.testCaseId)).toEqual([1, 2]);
+  });
+
+  test('compares with the previous run of the branch that sends notifications, never a Flake Lab run', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 4, projectId: 1, status: 'passed', branch: 'main', startTime: new Date(4000_000), origin: 'flake-lab' },
+      { id: 5, projectId: 1, status: 'passed', branch: 'main', startTime: new Date(5000_000), totalTests: 1 },
+    ]);
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 2, testCaseId: 1, ...stillFailsIn('chromium') },
+      // The lab replayed the test under its own conditions, where it passed.
+      { testRunId: 4, testCaseId: 1, ...fixedIn('chromium') },
+      { testRunId: 5, testCaseId: 1, ...fixedIn('chromium') },
+    ]);
+
+    const tests = await loadNewlyLooksFixedTests(db as never, { id: 5, projectId: 1 }, 'main');
+    expect(tests.map((t) => t.testCaseId)).toEqual([1]);
   });
 });
 

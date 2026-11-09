@@ -1,24 +1,35 @@
 import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
+import { migrateToLatest } from './temp-db';
 
 /**
  * First-admin setup through its routes: it stays open while no administrator
  * exists, and with `PIWI_SETUP_TOKEN` set the form says it needs the token and
- * the setup refuses a request without it.
+ * the setup refuses a request without it. A setup a busy server refuses takes
+ * no rate-limit slot.
  */
 
 delete process.env.PIWI_DATABASE_URL;
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
+vi.mock('../../server/utils/auth', async (importOriginal) => {
+  const auth = await importOriginal<typeof import('../../server/utils/auth')>();
+  return {
+    ...auth,
+    createUser: (...args: Parameters<typeof auth.createUser>) =>
+      state.hashBusy ? Promise.reject(Object.assign(new Error('busy'), { statusCode: 503 })) : auth.createUser(...args),
+  };
+});
 
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-vi.stubGlobal('readBody', async (event: { body: unknown }) => event.body);
+vi.stubGlobal('readBody', async (event: { body: unknown }) =>
+  typeof event.body === 'function' ? event.body() : event.body,
+);
 vi.stubGlobal('apiError', apiError);
 
 type Handler = (event: unknown) => Promise<any>;
@@ -35,7 +46,7 @@ const request = (body: Record<string, unknown> = {}) => ({
 beforeEach(async () => {
   address += 1;
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   vi.stubEnv('PIWI_AUTH_ENABLED', 'true');
 });
@@ -84,5 +95,51 @@ describe('first-admin setup without a token', () => {
   test('the form asks for none, and the first request creates the admin', async () => {
     expect(await setupStatus(request())).toEqual({ needsSetup: true, setupTokenRequired: false });
     expect(await setup(request())).toMatchObject({ success: true });
+  });
+
+  test('takes a username of 200 characters at most', async () => {
+    await expect(setup(request({ username: 'a'.repeat(201) }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(await setup(request({ username: 'a'.repeat(200) }))).toMatchObject({ success: true });
+  });
+
+  test('a request whose body arrives after another setup finished creates no administrator', async () => {
+    let bodyRequested!: () => void;
+    const requested = new Promise<void>((resolve) => (bodyRequested = resolve));
+    let sendBody!: () => void;
+    const sent = new Promise<void>((resolve) => (sendBody = resolve));
+    const slow = request();
+    const slowBody = slow.body;
+    const slowRequest = setup({
+      ...slow,
+      body: async () => {
+        bodyRequested();
+        await sent;
+        return { ...slowBody, username: 'second' };
+      },
+    });
+
+    await requested;
+    address += 1;
+    expect(await setup(request())).toMatchObject({ success: true, user: { username: 'admin' } });
+    sendBody();
+    await expect(slowRequest).rejects.toMatchObject({ statusCode: 400 });
+
+    const db = state.db as ReturnType<typeof drizzle<typeof schema>>;
+    const administrators = await db
+      .select({ username: schema.users.username })
+      .from(schema.users)
+      .where(eq(schema.users.role, 'administrator'));
+    expect(administrators).toEqual([{ username: 'admin' }]);
+  });
+});
+
+describe('first-admin setup on a busy server', () => {
+  beforeEach(() => vi.stubEnv('PIWI_SETUP_TOKEN', ''));
+
+  test('a setup refused while the server is busy gives back its rate-limit slot', async () => {
+    state.hashBusy = true;
+    for (let i = 0; i < 6; i++) await expect(setup(request())).rejects.toMatchObject({ statusCode: 503 });
+    state.hashBusy = false;
+    expect(await setup(request())).toMatchObject({ success: true, user: { role: 'administrator' } });
   });
 });

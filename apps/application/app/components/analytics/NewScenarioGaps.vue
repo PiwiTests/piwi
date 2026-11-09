@@ -41,7 +41,7 @@ const s = sentencesFor('en');
         <ul class="divide-y divide-default">
           <li v-for="g in p.gaps" :key="g.id" class="py-1.5 flex gap-2 min-w-0">
             <NuxtLink
-              :to="`/projects/${p.projectId}?tab=gaps`"
+              :to="`/projects/${p.projectId}?tab=coverage`"
               class="text-sm text-highlighted min-w-0 break-words underline decoration-dotted underline-offset-2 hover:decoration-solid"
             >
               {{ g.title }}

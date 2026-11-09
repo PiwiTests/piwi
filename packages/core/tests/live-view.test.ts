@@ -12,11 +12,19 @@ import {
   liveShareRefusal,
   liveWorkerKey,
   parseInstanceToWorker,
+  parseLiveMasks,
+  liveMaskProblem,
+  MAX_LIVE_MASKS,
+  MAX_LIVE_MASK_LENGTH,
   parseLiveViewEnv,
   parseLiveViewMissing,
   readLiveCall,
+  liveLaneKey,
+  readLiveTestOutcome,
   readLiveWorkerId,
   readWorkerToInstance,
+  compressCallLog,
+  MAX_LIVE_CALL_LOG_LINES,
 } from '../src/live-view';
 import { LatestPacer, fitViewSize } from '../src/run-view';
 
@@ -65,7 +73,7 @@ describe('the live view address', () => {
   });
 
   test('a run outside CI without a key names why, which no address reads as one', () => {
-    for (const why of ['no-instance', 'unregistered', 'off'] as const) {
+    for (const why of ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'] as const) {
       const value = formatLiveViewMissing(why);
       expect(value).toBe(`none:${why}`);
       expect(parseLiveViewMissing(value)).toBe(why);
@@ -79,7 +87,9 @@ describe('the live view address', () => {
 
   test('says why a shared stream was given up, by the instance’s answer', () => {
     expect(liveShareRefusal(404)).toMatch(/live view was turned off/);
-    expect(liveShareRefusal(401)).toBe(liveShareRefusal(403));
+    expect(liveShareRefusal(404)).toMatch(/Share the run again once it is back on/);
+    expect(liveShareRefusal(401)).toMatch(/Share the run again to try once more/);
+    expect(liveShareRefusal(403)).not.toMatch(/Share the run again/);
     expect(liveShareRefusal(410)).toMatch(/no longer live/);
     expect(liveShareRefusal(409)).toMatch(/holds the run as interrupted/);
     expect(liveShareRefusal(null)).toMatch(/did not answer/);
@@ -113,6 +123,23 @@ describe('the messages', () => {
     }
     expect(liveWorkerKey({ shard: null, worker: 3 })).toBe(':3');
     expect(liveWorkerKey({ shard: 2, worker: 3 })).toBe('2:3');
+  });
+
+  test('a worker names its lane, from 0, which the instance keys apart from the worker', () => {
+    expect(readLiveWorkerId('2', '5', '1')).toEqual({ shard: 2, worker: 5, slot: 1 });
+    expect(readLiveWorkerId(null, 5, -1)).toEqual({ shard: null, worker: 5 });
+    expect(readLiveWorkerId(null, 5, 'one')).toEqual({ shard: null, worker: 5 });
+    expect(liveLaneKey({ shard: null, slot: 1 })).toBe('#1');
+    expect(liveLaneKey({ shard: 2, slot: 0 })).toBe('2#0');
+  });
+
+  test('a call names no text a fill or a typing typed, from a reporter that hid it or not', () => {
+    expect(readLiveCall({ title: 'Fill "S3cr3t!Passw0rd"', file: 'tests/a.spec.ts', line: 4 })?.title).toBe(
+      'Fill "<hidden>"',
+    );
+    expect(readLiveCall({ title: `Type "abc" getByLabel('Password')`, file: null, line: null })?.title).toBe(
+      `Type "<hidden>" getByLabel('Password')`,
+    );
   });
 
   test('a call keeps its title, and its place only when both are one', () => {
@@ -163,6 +190,13 @@ describe('the messages', () => {
       call: null,
       test: null,
     });
+    // When the page looked so, in the worker's clock, kept when it is a time and left out when not.
+    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at: 1_760_000_000_000.4 })).toMatchObject({
+      at: 1_760_000_000_000,
+    });
+    for (const at of ['soon', -1, 5, Number.NaN, null]) {
+      expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at })).not.toHaveProperty('at');
+    }
     expect(readWorkerToInstance({ type: 'frame', worker: 1, refused: 'Too heavy.' })).toEqual({
       type: 'frame',
       shard: null,
@@ -212,6 +246,21 @@ describe('the messages', () => {
       expect(typeof readWorkerToInstance(value), JSON.stringify(value)).toBe('string');
     }
     expect(readWorkerToInstance({ type: 'ended', worker: 4 })).toEqual({ type: 'ended', shard: null, worker: 4 });
+    const outcome = { test: 'pays', status: 'failed', ms: 1200 };
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, slot: 0, outcome })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+      slot: 0,
+      outcome,
+    });
+    // An outcome this version cannot read leaves the end alone.
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, outcome: { status: 'done', ms: 1 } })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+    });
+    expect(readLiveTestOutcome({ test: 'pays', status: 'passed', ms: -1 })).toBeNull();
     expect(readWorkerToInstance({ type: 'unshared', shard: 2, worker: 1 })).toEqual({
       type: 'unshared',
       shard: 2,
@@ -229,6 +278,38 @@ describe('the messages', () => {
       '{"type":"input","events":[]}',
     ]) {
       expect(parseInstanceToWorker(data), data).toBeNull();
+    }
+  });
+
+  test('reads the elements a project masks: Playwright locators, trimmed, each once, 20 at most', () => {
+    expect(
+      parseInstanceToWorker(
+        JSON.stringify({ type: 'masks', locators: [" getByLabel('IBAN') ", "getByLabel('IBAN')", "locator('#card')"] }),
+      ),
+    ).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "locator('#card')"] });
+    expect(parseLiveMasks([])).toEqual([]);
+    expect(parseLiveMasks(Array.from({ length: MAX_LIVE_MASKS + 1 }, (_, i) => `getByTestId('f${i}')`))).toBeNull();
+    expect(parseLiveMasks([`getByLabel('${'x'.repeat(MAX_LIVE_MASK_LENGTH)}')`])).toBeNull();
+    expect(liveMaskProblem("getByRole('textbox', { name: 'IBAN' })")).toBeNull();
+    expect(liveMaskProblem('#iban')).toBe("`#iban` is not a Playwright locator, such as getByLabel('IBAN').");
+    expect(liveMaskProblem('  ')).toBe('A masked element needs a locator.');
+    // The worker looks for each mask in every frame: a mask names elements, without entering a frame.
+    expect(liveMaskProblem("frameLocator('#card')")).toBe(
+      "`frameLocator('#card')` enters a frame: masks are looked for in every frame of the page, so name the element alone, such as getByLabel('Card number'), or the iframe, such as locator('iframe#card').",
+    );
+    expect(liveMaskProblem("frameLocator('#card').getByLabel('Card number')")).toMatch(/enters a frame/);
+    expect(liveMaskProblem("locator('iframe').contentFrame()")).toMatch(/enters a frame/);
+    expect(liveMaskProblem('first()')).toMatch(/is not a Playwright locator/);
+    expect(liveMaskProblem("locator('iframe#card')")).toBeNull();
+    expect(liveMaskProblem("getByRole('row').filter({ hasText: 'IBAN' }).first()")).toBeNull();
+  });
+
+  test('says a list of masks it cannot read is one, so the worker masks nothing it could trust', () => {
+    for (const locators of ["getByLabel('IBAN')", ['#iban'], [7]]) {
+      expect(parseInstanceToWorker(JSON.stringify({ type: 'masks', locators }))).toEqual({
+        type: 'masks',
+        locators: null,
+      });
     }
   });
 });
@@ -262,5 +343,107 @@ describe('the pace of frames', () => {
     const bytes = sent.reduce((sum, [, b]) => sum + b, 0);
     const seconds = (sent[sent.length - 1]![0] - start) / 1000 + 1;
     expect(bytes / seconds).toBeLessThanOrEqual(LIVE_FRAME_BYTE_RATE * 1.5);
+  });
+});
+
+describe('the call log a worker posts', () => {
+  const log = {
+    id: 'call@42',
+    call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 12 },
+    status: 'running',
+    lines: [
+      "waiting for getByRole('button', { name: 'Pay' })",
+      '  locator resolved to <button id="pay" disabled>Pay</button>',
+      '  element is not enabled',
+      'retrying click action',
+    ],
+    point: null,
+    target: { count: 1, box: { x: 271, y: 18.5, width: 48, height: 24 }, enabled: false },
+    viewport: { width: 1280, height: 800 },
+    ms: 7400,
+    error: null,
+  };
+
+  test('is read field by field, with its test’s title, and is refused without a log', () => {
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log, test: 'pays' })).toEqual({
+      type: 'call-log',
+      shard: null,
+      worker: 1,
+      log,
+      test: 'pays',
+    });
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log })).toMatchObject({ test: null });
+    expect(typeof readWorkerToInstance({ type: 'call-log', worker: 1, log: null })).toBe('string');
+  });
+
+  test('keeps its last lines, each cut, and drops a field that is not one', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i} ${'x'.repeat(400)}`);
+    const read = readWorkerToInstance({
+      type: 'call-log',
+      worker: 0,
+      log: { ...log, lines, point: { x: 'a', y: 2 }, target: { count: -1 }, viewport: { width: 0, height: 9 }, ms: -5 },
+    });
+    if (typeof read === 'string' || read.type !== 'call-log' || !read.log) throw new Error('not read');
+    expect(read.log.lines).toHaveLength(MAX_LIVE_CALL_LOG_LINES);
+    expect(read.log.lines[0]).toMatch(new RegExp(`^line ${40 - MAX_LIVE_CALL_LOG_LINES} `));
+    expect(read.log.lines.every((line) => line.length <= 300)).toBe(true);
+    expect(read.log).toMatchObject({ point: null, target: null, viewport: null, ms: 0 });
+  });
+
+  test('names no text a call typed and no credential, from a worker that hid them or not', () => {
+    const read = readWorkerToInstance({
+      type: 'call-log',
+      worker: 0,
+      log: {
+        ...log,
+        call: { title: 'Fill "S3cr3t!Passw0rd"', file: null, line: null },
+        lines: [
+          '  fill("S3cr3t!Passw0rd")',
+          'navigating to "https://shop.test/?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"',
+        ],
+        status: 'failed',
+        error: 'locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - fill("S3cr3t!Passw0rd")',
+      },
+    });
+    expect(JSON.stringify(read)).not.toMatch(/S3cr3t|eyJhbGci/);
+    if (typeof read === 'string' || read.type !== 'call-log' || !read.log) throw new Error('not read');
+    expect(read.log.error).toBe('locator.fill: Timeout 1500ms exceeded.');
+  });
+
+  test('is refused without a call, a status or an id', () => {
+    for (const bad of [
+      { ...log, id: '' },
+      { ...log, call: null },
+      { ...log, status: 'done' },
+    ]) {
+      expect(typeof readWorkerToInstance({ type: 'call-log', worker: 0, log: bad })).toBe('string');
+    }
+  });
+
+  test('folds the lines a retried action repeats, as Playwright writes a failed call’s log', () => {
+    // As Playwright 1.64 logs a click on a disabled button, retried every half second.
+    const retry = [
+      '  waiting for element to be visible, enabled and stable',
+      '  element is not enabled',
+      'retrying click action',
+      '  waiting 500ms',
+    ];
+    const lines = [
+      "waiting for getByRole('button', { name: 'Pay' })",
+      '  locator resolved to <button disabled>Pay</button>',
+      'attempting click action',
+      ...Array.from({ length: 6 }, () => retry).flat(),
+    ];
+    expect(compressCallLog(lines)).toEqual([
+      "- waiting for getByRole('button', { name: 'Pay' })",
+      '  - locator resolved to <button disabled>Pay</button>',
+      '- attempting click action',
+      '  6 × waiting for element to be visible, enabled and stable',
+      '    - element is not enabled',
+      '  - retrying click action',
+      '    - waiting 500ms',
+    ]);
+    expect(compressCallLog(['a', 'b', 'a', 'b', 'c'])).toEqual(['2 × a', '  - b', '- c']);
+    expect(compressCallLog([])).toEqual([]);
   });
 });

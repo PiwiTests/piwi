@@ -199,7 +199,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Gap detectors & exposure', link: '/reference/gap-detectors' },
       { text: 'Notification events & webhooks', link: '/reference/notification-events' },
       { text: 'Keyboard shortcuts', link: '/reference/keyboard-shortcuts' },
-      { text: 'API docs (interactive)', link: 'https://piwitests.dev/demo/docs' },
+      { text: 'API docs (interactive)', link: 'https://piwitests.dev/demo/settings/api' },
     ],
   },
 ];

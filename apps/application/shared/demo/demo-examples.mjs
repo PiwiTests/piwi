@@ -243,7 +243,7 @@ export const DEMO_EXAMPLES = [
     doc: 'features/scenario-gaps',
     title: 'Web Dashboard › Gaps',
     shows:
-      'Ten tests against a whole admin console: routes never seen failing, pages linked and never visited, declared routes nothing requests, a save that passed while the backend logged an error, page-object methods no test calls, and the team’s verdicts on them. Under the list, map health shows probes short at 7 of 16 routes.',
+      'Ten tests against a whole admin console: routes never seen failing, pages linked and never visited, declared routes nothing requests, a save that passed while the backend logged an error, page-object methods no test calls, and the team’s verdicts on them. In the Map view, map health shows probes short at 7 of 16 routes.',
     route: '/projects/5?tab=gaps',
     expect: {
       project: { id: 5, name: 'web-dashboard' },
@@ -267,6 +267,73 @@ export const DEMO_EXAMPLES = [
       'Client probes the tests did not notice (an empty revenue response, a failed invitation, a stale organization name), an invite form that degraded when sendgrid failed, and a revenue page that threw when clickhouse failed.',
     route: '/projects/5?tab=gaps',
     expect: { project: { id: 5, name: 'web-dashboard' }, gaps: { detectors: ['not-noticed', 'not-handled'] } },
+  },
+  {
+    id: 'first-failure-checkout',
+    doc: 'guide/first-failure',
+    title: 'E2E Checkout › should complete checkout with credit card',
+    shows:
+      'The Pay click times out: the situation block says since when, ties it to the quote request still in flight, and offers the diagnosed patch.',
+    route: '/test-run-cases/37',
+    expect: { execution: { id: 37, title: 'should complete checkout with credit card' } },
+  },
+  {
+    id: 'evidence-checkout-timeout',
+    doc: 'features/evidence',
+    title: 'E2E Checkout › should complete checkout with credit card',
+    shows:
+      'Every tab of the evidence card filled: the timeline marks the failing click, the Page diff shows the Pay button renamed and disabled.',
+    route: '/test-run-cases/37',
+    expect: { execution: { id: 37, title: 'should complete checkout with credit card' } },
+  },
+  {
+    id: 'cluster-checkout-pay',
+    doc: 'features/failure-clusters',
+    title: 'E2E Checkout › the Pay button times out',
+    shows:
+      'Two checkout tests failing for one reason, in one cluster with its owner; a fix landed once and did not hold.',
+    route: '/failure-clusters/1',
+    expect: { cluster: { id: 1, story: 'checkout-pay-timeout' } },
+  },
+  {
+    id: 'flaky-tests-checkout',
+    doc: 'features/flaky-tests',
+    title: 'E2E Checkout › Flaky tests',
+    shows: 'The project’s flaky tests, each scored, with its root cause, top suspect and Quarantine button.',
+    route: '/projects/1?tab=flaky-tests',
+    expect: { project: { id: 1, name: 'e2e-checkout' } },
+  },
+  {
+    id: 'flaky-test-suspects',
+    doc: 'features/flaky-tests',
+    title: 'E2E Checkout › should apply discount code',
+    shows: 'A flaky test’s suspects: a slower cart request in all 7 failures, and the experiment that reproduced it.',
+    route: '/test-cases/9?tab=flakiness',
+    expect: { testCase: { id: 9, title: 'should apply discount code' }, lab: 'reproduced' },
+  },
+  {
+    id: 'run-changes-checkout',
+    doc: 'features/run-changes',
+    title: 'E2E Checkout › a run’s Changes tab',
+    shows: 'A run read against its baseline: what failed, what passed only on retry, and the commits landed since.',
+    route: '/test-runs/2?tab=changes',
+    expect: { run: { id: 2, project: 'e2e-checkout' } },
+  },
+  {
+    id: 'slow-tests-checkout',
+    doc: 'features/slow-tests',
+    title: 'E2E Checkout › Performance',
+    shows: 'Duration trends with their markers, the slowest tests, and the timeouts worth tightening.',
+    route: '/projects/1?tab=performance',
+    expect: { project: { id: 1, name: 'e2e-checkout' } },
+  },
+  {
+    id: 'locator-healing-strict-mode',
+    doc: 'features/locator-healing',
+    title: 'UI Components › Button primary variant renders correctly',
+    shows: 'A strict-mode violation: the locator matched several buttons, and the ranked replacements match one.',
+    route: '/test-run-cases/533',
+    expect: { execution: { id: 533, title: 'Button primary variant renders correctly' } },
   },
 ];
 

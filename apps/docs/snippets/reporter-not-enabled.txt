@@ -1,0 +1,1 @@
+[Piwi Dashboard] Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.

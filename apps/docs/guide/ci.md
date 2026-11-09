@@ -15,8 +15,15 @@ env:
   PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}   # only if authentication is enabled
 ```
 
+With authentication off, the server's `PIWI_SITE_URL` or `PIWI_ALLOWED_HOSTS` must name the domain or container name
+in that URL ([why](/operate/authentication#disabling-authentication)).
+
 Everything else — branch, commit, author, workflow, build URL, shard index — is
 [detected automatically](#what-gets-detected).
+
+A `serverUrl` written in the Playwright config wins over `PIWI_DASHBOARD_URL`. `init` writes it as
+`process.env.PIWI_DASHBOARD_URL || '<the URL you gave>'`, so the variable takes over in CI; a config that names the URL
+alone keeps sending to that URL.
 
 ## GitHub Actions
 
@@ -40,14 +47,16 @@ jobs:
           PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
-The shallow clone `actions/checkout` makes is fine: Piwi reads diffs from your Git host's API
-([Source control](./source-control)), not from the checkout.
+The shallow clone `actions/checkout` makes is enough for the reporter: Piwi reads diffs from your Git host's API
+([Source control](./source-control)). [`run impact --base`](/reference/cli#select-run) and
+[`preflight --base`](/reference/cli#preflight) diff the checkout itself and need the base commit: set
+`fetch-depth: 0` on `actions/checkout`.
 
 ## GitLab CI
 
 ```yaml
 e2e:
-  image: mcr.microsoft.com/playwright:v1.61.1-noble   # at or above the reporter's peer range
+  image: mcr.microsoft.com/playwright:v1.64.1-noble   # the version of your @playwright/test
   script:
     - npm ci
     - npx playwright test
@@ -70,7 +79,7 @@ Unconfigured, the reporter records:
   [baselines](/guide/concepts#baseline-last-green-run) fall back to when the branch has no history of its own.
 - **CI**: provider, workflow or job name, build number, and a link back to the CI build.
 - **Origin**: [what launched it](/reference/test-metadata#run-origin).
-- **Environment**: the Playwright version, and each test's browser and viewport.
+- **Environment**: Playwright version, browser and viewport, [run environment](/features/run-environment).
 - **Shard index**: from Playwright's own `--shard` config.
 
 [Test metadata](/reference/test-metadata#scm-information-git) lists the variables each field comes from.
@@ -97,12 +106,19 @@ How the merge works:
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
    (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
    systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
-2. Shards sharing a run label **and** a `projectName` resolve to the same run, streamed or batched.
-3. The run stays `running` until the **last** shard reports; batched shards may arrive an hour apart.
-4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
-   shard progress badge (`2/3`) while shards are arriving.
+2. Shards sharing a run label, a `projectName` **and** a shard count (the `3` of `--shard=1/3`) resolve to the same
+   run, streamed or batched.
+3. The run stays `running` until the **last** shard reports. While none of its shards is running, it waits up to an
+   hour for the next one, streamed or batched, so a shard may start an hour after the others ended. It also waits up
+   to an hour for a shard still in its global setup.
+4. Counters accumulate across shards, and the run page shows a shard progress badge (`2/3`) while shards are arriving.
+   A shard counts once, even when it reports its end twice (its `/finish` answer lost, then its batch upload).
+   The run takes the most severe status its shards reported, as Playwright's `merge-reports` does: `failed`, then
+   `timedout`, then `interrupted`. It is `failed` whenever a test failed.
+5. The run lasts from the first shard's start to the last shard's end, whether the shards run side by side or one
+   after another. Its metadata keeps each shard's start, end, worker count and status under `shards`.
 
-**All shards must use the same `projectName`.** That's the one requirement.
+**All shards must use the same `projectName`.**
 
 Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
 
@@ -121,11 +137,19 @@ If your CI isn't detected, set the label yourself to anything common to all shar
 A job that is not sharded adds the CI job's id (`GITHUB_JOB`, `CI_JOB_ID`, …) to its run label, so a GitLab
 `e2e:chrome` and `e2e:firefox` reporting to one `projectName` stay two runs. The legs of a GitHub Actions matrix
 share one job id, and Jenkins, TeamCity and Drone expose none: give each leg its own label, or its own `projectName`.
-A configured label is used as it is, so the shards of a leg still merge:
+On GitHub Actions, `strategy.job-index` numbers the jobs of a matrix, whatever its keys:
 
 ```yaml
-PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
+PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
 ```
+
+A configured label is used as it is, so each job of the matrix gets a run of its own, a shard too. When the legs are
+themselves sharded (`shard: [1, 2, 3]` beside `browser`), put the leg's keys in the label instead (`matrix.browser`):
+the shards of a leg share them, and merge into one run. Two matrix jobs of one workflow that report to one
+`projectName` also need `github.job` in the label, since each numbers its jobs from 0.
+
+Jobs left sharing a label cancel each other's live runs: the reporter of a cancelled run stops streaming and sends its
+results in one batch at the end of its job, so each job still ends in one complete run, without its live view.
 
 ## Watching a run while CI is still going
 
@@ -134,8 +158,8 @@ ends ([Live streaming](./reporter#live-streaming)).
 
 ## Getting the run URL back out of CI
 
-Later pipeline steps can pick up the run URL. Every channel is best-effort: a failure is logged and never fails
-your run.
+Later pipeline steps can pick up the run URL. Every channel is best-effort: a failure is logged, never
+fatal.
 
 **Always** — one line per failed test, printed the moment its final attempt fails, then a
 `View run: <url>` line once the run lands:
@@ -190,8 +214,9 @@ url }`, with `url` the per-test link the log prints.
 
 ## Pull-request feedback
 
-Piwi can post a summary comment and a commit status on the pull request, and re-run a failure cluster's tests in CI:
-see [Pull-request feedback & re-run](/features/pr-feedback).
+Piwi can post a summary comment and a commit status on the pull request: see
+[Pull-request feedback](/features/pr-feedback). To re-run a failure cluster's tests in CI, see
+[Re-run in CI](/features/ci-rerun).
 
 ## Blocking a merge
 
@@ -213,16 +238,14 @@ the run history, so the dashboard evaluates it.
 
 The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`) and prints each violation.
 
-| Rule | Fails the build when |
-|---|---|
-| `--require-tag <tags>` | Any test carrying one of these tags failed |
-| `--max-failed <n>` | More than `n` tests failed |
-| `--max-new-regressions <n>` | More than `n` tests newly started failing versus the last green run |
-| `--max-new-flaky <n>` | More than `n` tests newly started passing only on retry |
-| `--max-quarantined <n>` | More than `n` tests are [quarantined](/features/flaky-tests#quarantine-with-a-way-out) — a ceiling on quarantine debt |
-| `--fail-on-new-cluster` | This run introduced a failure cluster never seen before |
-| `--fail-on-flaky` | Any test passed only after a retry — stricter than `--max-new-flaky`, which counts tests *newly* flaky |
-| `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
+A failed gate exits 1 and prints:
+
+<<< @/snippets/gate-output.txt
+
+Its rules bound the failing tests, the new regressions and newly flaky tests, the tests a tag or a
+[selection](/features/test-selection) requires, the [quarantine](/features/flaky-tests#quarantine-with-a-way-out)
+debt (`--max-quarantined`), new clusters and [leaks](/features/leak-history): every flag is in the
+[CLI reference](/reference/cli#gate).
 
 At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
 of the contract:
@@ -234,7 +257,7 @@ Worth knowing:
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
 
-- **A test that passed on retry satisfies `--require-tag`.** `--max-new-flaky` covers flakiness.
+- **A test that passed on retry satisfies `--require-tag`.**
 - **A required tag that matches no test is a violation**, so a typo cannot pass.
 - **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
   are counted; a read-only key gets the verdict only.
@@ -243,8 +266,8 @@ Worth knowing:
 
 ## Notifying people instead
 
-To tell the team when main goes red, use a [notification subscription](/features/notifications): the rules live
-in one place, not in every pipeline.
+To tell the team when main goes red, use a [notification subscription](/features/notifications), whose rules
+live in one place.
 
 ## Troubleshooting
 
@@ -260,13 +283,15 @@ reach, or a missing API key while authentication is on.
 [`wrapConfig`](./reporter#installing-via-wrapconfig), which sets both when they are unset.
 
 **A run is stuck as `interrupted`.** A run silent for two minutes (a cancelled job, a killed runner, a dropped
-network) is marked `interrupted` until its next event revives it. A run still uploading its report (`finalizing`) waits
-ten minutes, then keeps the status the reporter sent. [Analytics](/features/analytics#scope) counts interrupted runs as
-failing; **full runs only** drops only partial runs.
+network) is marked `interrupted` until its next event revives it. A run still in its global setup (`initializing`), or
+a sharded run with a shard still in its own, waits an hour for its reporter to begin it. A run still uploading its
+files or its reports (`finalizing`) waits ten minutes after the last one arrived, then keeps the status the reporter
+sent.
+[Analytics](/features/analytics#scope) counts interrupted runs as failing; **full runs only** drops only partial runs.
 
 ## Related
 
 - [Reporter](./reporter): setup, streaming and authentication
-- [Pull-request feedback & re-run](/features/pr-feedback): the result on the pull request
+- [Pull-request feedback](/features/pr-feedback): the result on the pull request
 - [Test tags](/reference/test-metadata#test-tags): what `--require-tag` matches on
 - [API keys](/operate/api-keys): the key CI uses

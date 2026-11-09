@@ -48,6 +48,11 @@ export interface EmitOptions {
 }
 
 export const DEFAULT_IMAGE = 'phenx/piwitests-server:latest';
+
+/** The default image pinned to one release's tag, e.g. `phenx/piwitests-server:0.61.0`. */
+export function imageForVersion(version: string): string {
+  return DEFAULT_IMAGE.replace(/:[^:/]+$/, `:${version}`);
+}
 export const DEFAULT_NAME = 'piwi';
 
 /** Where the container's persistent data (SQLite DB + report/trace storage) must be mounted. */

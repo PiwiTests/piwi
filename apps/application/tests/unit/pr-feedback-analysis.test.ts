@@ -1,9 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 const fix = { clusterId: 9, title: 'Cart row not found' };
 const coverage = { coverage: {}, pr: null, locatorBreaks: null };
@@ -36,7 +35,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([{ id: 1, name: 'shop' }]);
   await db
     .insert(schema.testRuns)
@@ -170,5 +169,35 @@ describe('refreshing a commit’s feedback once its coverage changed', () => {
     } finally {
       warnings.mockRestore();
     }
+  });
+
+  test('leaves alone a run whose pull request a later push commented on under another form of the repository', async () => {
+    const D = 'd'.repeat(40);
+    await db.insert(schema.testRuns).values([
+      { id: 5, projectId: 1, status: 'passed', branch: 'fix', commit: D, startTime: new Date(), isFullRun: 1 },
+      {
+        id: 6,
+        projectId: 1,
+        status: 'passed',
+        branch: 'fix',
+        commit: 'e'.repeat(40),
+        startTime: new Date(),
+        isFullRun: 1,
+      },
+    ]);
+    await recordPrFeedbackPost(db as never, {
+      projectId: 1,
+      runId: 5,
+      repositoryUrl: 'https://ssh.github.com/acme/shop',
+      prNumber: 10,
+    });
+    await recordPrFeedbackPost(db as never, {
+      projectId: 1,
+      runId: 6,
+      repositoryUrl: 'https://github.com/Acme/Shop',
+      prNumber: 10,
+    });
+    await refreshCommitPrFeedback(db as never, 1, D);
+    expect(computeRunChangeCoverage).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler module (which imports the barrel) loads.
@@ -35,9 +34,7 @@ async function seedRunCase(runId: number, caseId: number, aiUsage: unknown): Pro
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values({ id: 1, name: 'ai-project' });
   await db.insert(schema.projects).values({ id: 2, name: 'other-project' });

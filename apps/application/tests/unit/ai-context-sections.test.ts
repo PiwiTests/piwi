@@ -9,6 +9,7 @@ import {
   resolveImportPath,
   candidateFilePaths,
   nearestAriaNamesSection,
+  runContextSection,
 } from '../../server/utils/ai-context';
 import type { ContextLimits } from '#shared/ai-context-limits';
 import {
@@ -386,5 +387,15 @@ describe('nearestAriaNamesSection', () => {
       ariaSnapshot: aria,
     })!;
     expect(section).toContain('Present:   button "Checkout" — the only button on the page');
+  });
+});
+
+describe('runContextSection', () => {
+  test('names the worker by its lane from 1, in its shard, as the run page does', () => {
+    expect(runContextSection(makeRep({ workerIndex: 4, parallelIndex: 1, shardIndex: 3 }))).toContain(
+      '- Ran on worker 2 of shard 3 —',
+    );
+    expect(runContextSection(makeRep({ workerIndex: 4, parallelIndex: 1 }))).toContain('- Ran on worker 2 —');
+    expect(runContextSection(makeRep({ workerIndex: 4, parallelIndex: null }))).toContain('- Ran on worker 4 —');
   });
 });

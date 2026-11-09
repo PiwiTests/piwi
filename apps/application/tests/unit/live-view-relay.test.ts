@@ -1,7 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { createHash } from 'node:crypto';
+import { describe, expect, test, vi } from 'vitest';
 import { LIVE_VIEW_KEY_PREFIX, type WorkerToInstance } from '@piwitests/core/live-view';
 import type { LiveWorkerState } from '#shared/live-view';
 import {
+  LANE_RESTARTING,
+  LANE_WAIT_MS,
   LIVE_KEY_TTL_MS,
   LiveViewRelay,
   MAX_LIVE_KEYS,
@@ -18,7 +21,8 @@ import { runEventBus } from '../../server/utils/run-events';
  * The relay between a live run's workers and the people watching them: a key opens its own run's view alone and not
  * after it expired or the run ended, survives the run's interruption, and no project's keys push another's out;
  * frames reach the viewers of their worker and nobody else, are kept nowhere, the latest alone while a viewer reads
- * slowly; workers, viewers (per run and per person) and frames a second are bounded; a stop reaches the run page and
+ * slowly; a key whose digest its run stores is taken back by a relay that does not hold it, as one started again;
+ * workers, viewers (per run and per person) and frames a second are bounded; a stop reaches the run page and
  * survives the worker's new stream; and the run page hears each worker leave, whatever ends it.
  */
 
@@ -121,6 +125,50 @@ describe('the live view key', () => {
     expect(live.holdsKey(9)).toBe(true);
     now += LIVE_KEY_TTL_MS;
     expect(live.holdsKey(9)).toBe(false);
+  });
+
+  test('is taken back from the digest its run stores by a relay that does not hold it, until a day after the run began', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    const key = `${LIVE_VIEW_KEY_PREFIX}${'a'.repeat(43)}`;
+    const digest = createHash('sha256').update(key).digest('hex');
+    const stored = { digests: [`${digest.slice(0, -1)}0`, digest], createdAt: new Date(now - 1000) };
+    expect(live.authorize(7, key)).toBeNull();
+    expect(live.holdsKey(7)).toBe(false);
+    expect(live.holdsKey(7, stored)).toBe(true);
+    expect(live.holdsKey(7, { digests: null, createdAt: stored.createdAt })).toBe(false);
+    // A wrong key, the digest itself, or a run that stores none take nothing back.
+    expect(live.restoreKey(7, 1, `${key.slice(0, -1)}b`, stored)).toBeNull();
+    expect(live.restoreKey(7, 1, digest, stored)).toBeNull();
+    expect(live.restoreKey(7, 1, key, { digests: 'nothing', createdAt: stored.createdAt })).toBeNull();
+    expect(live.restoreKey(7, 1, key, stored)).toMatchObject({ runId: 7, projectId: 1, streamed: false });
+    // Taken back, it opens its own run alone, as long as a key minted with the run would.
+    expect(live.authorize(7, key)).not.toBeNull();
+    expect(live.authorize(8, key)).toBeNull();
+    now += LIVE_KEY_TTL_MS - 1000;
+    expect(live.authorize(7, key)).toBeNull();
+    expect(live.restoreKey(7, 1, key, stored)).toBeNull();
+    expect(live.holdsKey(7, stored)).toBe(false);
+  });
+
+  test('ended as the project turned its view off, is taken back once it is on again, and its end is forgotten', () => {
+    const { live } = relay();
+    const key = live.mintKey(7, 1)!;
+    const stored = { digests: [createHash('sha256').update(key).digest('hex')], createdAt: new Date(1_000_000) };
+    live.endProject(1);
+    expect(live.endedWhy(7, key)).toBe('off');
+    expect(live.restoreKey(7, 1, key, stored)).not.toBeNull();
+    expect(live.endedWhy(7, key)).toBeNull();
+    expect(live.authorize(7, key)).not.toBeNull();
+  });
+
+  test('is taken back within its run’s bound', () => {
+    const { live } = relay();
+    for (let i = 0; i < 64; i++) live.mintKey(3, 2);
+    const key = `${LIVE_VIEW_KEY_PREFIX}${'c'.repeat(43)}`;
+    const stored = { digests: [createHash('sha256').update(key).digest('hex')], createdAt: new Date(1_000_000) };
+    expect(live.restoreKey(3, 2, key, stored)).toBeNull();
+    expect(live.authorize(3, key)).toBeNull();
   });
 
   test('ends with its run, as the run finishes or is cancelled', () => {
@@ -248,7 +296,10 @@ describe('the relay', () => {
     const workers = [new FakeSink(), new FakeSink()];
     expect(live.connectWorker(entry, { shard: null, worker: 0 }, () => workers[0]!)).toBeNull();
     expect(live.connectWorker(entry, { shard: null, worker: 1 }, () => workers[1]!)).toBeNull();
-    expect(workers[0]!.sent).toEqual([{ type: 'viewers', count: 0 }]);
+    expect(workers[0]!.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 0 },
+    ]);
     expect(published.map((p) => p.state)).toEqual([
       { shard: null, worker: 0, connected: true, paused: null },
       { shard: null, worker: 1, connected: true, paused: null },
@@ -263,10 +314,18 @@ describe('the relay', () => {
 
     live.receive(7, frame(0, 'BBBB'));
     live.receive(7, frame(1, 'CCCC'));
+    live.receive(7, { ...frame(0, 'DDDD'), at: 1_760_000_000_000 } as WorkerToInstance);
     expect(viewer.sent).toEqual([
       { type: 'frame', data: 'BBBB', call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 }, test: 'pays' },
+      {
+        type: 'frame',
+        data: 'DDDD',
+        call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 },
+        test: 'pays',
+        at: 1_760_000_000_000,
+      },
     ]);
-    expect(live.countsFor(7)).toMatchObject({ frames: 3 });
+    expect(live.countsFor(7)).toMatchObject({ frames: 4 });
 
     viewer.close();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
@@ -285,6 +344,67 @@ describe('the relay', () => {
     expect(viewer.sent).toEqual([expect.objectContaining({ type: 'frame', data: 'CCCC' })]);
     viewer.drain();
     expect(viewer.sent).toHaveLength(1);
+  });
+
+  test('relays a worker’s call log to its viewers alone, at its own rate, a slow viewer keeping its frame too', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    live.connectWorker(entry, { shard: null, worker: 1 }, () => new FakeSink());
+    const log = {
+      id: 'call@1',
+      call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 },
+      status: 'running' as const,
+      lines: ['  element is not enabled'],
+      point: null,
+      target: { count: 1, box: null, enabled: false },
+      viewport: { width: 1280, height: 800 },
+      ms: 1200,
+      error: null,
+    };
+    const callLog = (worker: number): WorkerToInstance => ({
+      type: 'call-log',
+      shard: null,
+      worker,
+      log,
+      test: 'pays',
+    });
+    const viewer = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0 }, () => viewer);
+    expect(live.receive(7, callLog(0))).toBeNull();
+    expect(live.receive(7, callLog(1))).toBeNull();
+    expect(viewer.sent).toEqual([{ type: 'call-log', log, test: 'pays' }]);
+
+    // A viewer that reads slowly gets the latest frame and the latest call log once it drains: neither pushes the other out.
+    viewer.full = true;
+    live.receive(7, frame(0, 'AAAA'));
+    live.receive(7, callLog(0));
+    viewer.drain();
+    expect(viewer.sent.slice(1).map((m) => (m as { type: string }).type)).toEqual(['frame', 'call-log']);
+
+    // A message that comes while older ones still wait goes after them: never a stale one after it.
+    viewer.full = true;
+    live.receive(7, { ...callLog(0), log: { ...log, status: 'passed' } } as WorkerToInstance);
+    viewer.full = false;
+    live.receive(7, callLog(0));
+    expect(viewer.sent).toHaveLength(3);
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([{ type: 'call-log', log, test: 'pays' }]);
+    viewer.sent.splice(3);
+
+    // Why no image shows takes the image's place: the latest of the two alone reaches a slow viewer.
+    viewer.full = true;
+    live.receive(7, frame(0, 'AAAA'));
+    live.receive(7, { type: 'frame', shard: null, worker: 0, refused: 'The page is too heavy.' });
+    live.receive(7, frame(0, 'BBBB'));
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([expect.objectContaining({ type: 'frame', data: 'BBBB' })]);
+
+    // Past the rate of call logs, one more is refused; frames have their own.
+    let refused = null;
+    for (let i = 0; i < 20 && !refused; i++) refused = live.receive(7, callLog(1));
+    expect(refused).toMatchObject({ status: 429 });
+    expect(live.receive(7, frame(1, 'BBBB'))).toBeNull();
   });
 
   test('refuses a worker past the bound, a viewer past the bound, and frames past the rate', () => {
@@ -316,6 +436,29 @@ describe('the relay', () => {
     expect(live.receive(7, frame(999))).toMatchObject({ status: 409 });
   });
 
+  test('tells a worker the elements its project masks as it connects, and each change, to that project’s workers alone', () => {
+    const { live } = relay();
+    const own = new FakeSink();
+    const other = new FakeSink();
+    live.connectWorker(live.authorize(7, live.mintKey(7, 1))!, { shard: null, worker: 0 }, () => own, [
+      "getByLabel('IBAN')",
+    ]);
+    live.connectWorker(live.authorize(8, live.mintKey(8, 2))!, { shard: null, worker: 0 }, () => other);
+    expect(own.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')"] });
+    live.setMasks(1, ["getByLabel('IBAN')", "getByTestId('card')"]);
+    expect(own.sent.at(-1)).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+    expect(other.sent.filter((m) => (m as { type: string }).type === 'masks')).toEqual([
+      { type: 'masks', locators: [] },
+    ]);
+
+    // A worker whose route read the list before that change gets the change.
+    const late = new FakeSink();
+    live.connectWorker(live.authorize(9, live.mintKey(9, 1))!, { shard: null, worker: 0 }, () => late, [
+      "getByLabel('IBAN')",
+    ]);
+    expect(late.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+  });
+
   test('keeps the viewers and the stop of a worker that opens its stream again', () => {
     const { live, published } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;
@@ -327,7 +470,10 @@ describe('the relay', () => {
     const second = new FakeSink();
     live.connectWorker(entry, { shard: null, worker: 0 }, () => second);
     expect(first.closed).toBe(true);
-    expect(second.sent).toEqual([{ type: 'viewers', count: 1 }]);
+    expect(second.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 1 },
+    ]);
     expect(live.workersOf(7)).toEqual([{ shard: null, worker: 0, connected: true, paused: STOP }]);
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: true, paused: STOP });
     live.receive(7, frame(0, 'DDDD'));
@@ -411,6 +557,133 @@ describe('the relay', () => {
     expect(live.authorize(7, 'x')).toBeNull();
     // The run page hears the worker left: no Watch, and no Paused, stays on its row.
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: false, paused: null });
+  });
+
+  test('keeps a view of the worker’s lane through its test’s end, which it hears, and ends a view of the test', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => worker);
+    const lane = new FakeSink();
+    const test = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    live.addViewer(7, { shard: null, worker: 0 }, () => test);
+    const outcome = { test: 'pays', status: 'failed' as const, ms: 1200 };
+    live.receive(7, { type: 'ended', shard: null, worker: 0, slot: 0, outcome });
+    expect(lane.sent).toEqual([{ type: 'test-ended', outcome }]);
+    expect(lane.closed).toBe(false);
+    expect(test.sent).toEqual([{ type: 'end', reason: 'test-ended', outcome }]);
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
+    // The lane's next test: its frames reach the view that stayed.
+    live.receive(7, { ...frame(0), slot: 0, test: 'searches' } as WorkerToInstance);
+    expect(lane.sent.at(-1)).toMatchObject({ type: 'frame', test: 'searches' });
+  });
+
+  test('moves a view of the lane to the worker Playwright starts in it again, which hears it is watched', () => {
+    vi.useFakeTimers();
+    try {
+      const { live } = relay();
+      const entry = live.authorize(7, live.mintKey(7, 1))!;
+      const first = new FakeSink();
+      live.connectWorker(entry, { shard: 2, worker: 0, slot: 1 }, () => first);
+      const lane = new FakeSink();
+      live.addViewer(7, { shard: 2, worker: 0, slot: 1 }, () => lane);
+      // The worker leaves after its test failed: the view waits for the lane's next worker.
+      first.close();
+      expect(lane.sent.at(-1)).toEqual({ type: 'refused', message: LANE_RESTARTING });
+      expect(lane.closed).toBe(false);
+      const second = new FakeSink();
+      live.connectWorker(entry, { shard: 2, worker: 3, slot: 1 }, () => second);
+      expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
+      live.receive(7, { ...frame(3, '/9j/', 2), slot: 1 } as WorkerToInstance);
+      expect(lane.sent.at(-1)).toMatchObject({ type: 'frame' });
+
+      // No worker comes back in the lane: the view ends once it waited long enough.
+      second.close();
+      vi.advanceTimersByTime(LANE_WAIT_MS);
+      expect(lane.sent.at(-1)).toEqual({ type: 'end', reason: 'worker-left' });
+      expect(lane.closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('moves a view of the lane to a new worker in it before the old one’s stream closed', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    expect(first.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+    expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 1 });
+    first.close();
+    expect(lane.closed).toBe(false);
+  });
+
+  test('sends a lane’s viewer how its test ended after nothing of that test, a frame still waiting dropped', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => new FakeSink());
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    lane.full = true;
+    live.receive(7, { ...frame(0), slot: 0 } as WorkerToInstance);
+    live.receive(7, { type: 'ended', shard: null, worker: 0, slot: 0 });
+    lane.drain();
+    expect(lane.sent).toEqual([{ type: 'test-ended', outcome: null }]);
+  });
+
+  test('a lane’s viewer that left while it waited is not handed to the lane’s next worker, which hears nobody watches', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    first.close();
+    lane.close();
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+  });
+
+  test('counts a lane’s waiting viewers toward the run’s bound, and ends them as the run ends', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 1 }, () => new FakeSink());
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    first.close();
+    expect(live.viewersOf(7)).toBe(1);
+    for (let i = 1; i < MAX_LIVE_VIEWERS_PER_RUN; i++) {
+      expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())).toBeNull();
+    }
+    expect(live.viewersOf(7)).toBe(MAX_LIVE_VIEWERS_PER_RUN);
+    expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())?.status).toBe(429);
+    live.endRun(7);
+    expect(lane.sent.at(-1)).toEqual({ type: 'end', reason: 'run-ended' });
+    expect(live.viewersOf(7)).toBe(0);
+  });
+
+  test('keeps a lane with the worker that took it when the one it replaced opens its stream again', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    const again = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => again);
+    expect(again.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+    live.receive(7, { ...frame(1), slot: 0 } as WorkerToInstance);
+    expect(lane.sent.at(-1)).toMatchObject({ type: 'frame' });
   });
 
   test('ends the views of a run its developer stops sharing, each viewer hearing why, before the worker leaves', () => {

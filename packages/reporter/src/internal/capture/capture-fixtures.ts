@@ -69,16 +69,20 @@ import {
   recordProbeOutcome,
   outcomeFromStatus,
   classifyProbeHandled,
+  faultIsTheError,
+  probeConsoleErrors,
 } from '../probe/mode.js';
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
 import {
+  flakeContextOptions,
   flakeResultLine,
   flakeRoleForTest,
   installFlakeConditions,
   isFlakeMode,
   labModeConflict,
   loadFlakePlan,
+  markFlakeContext,
   pageBrowserName,
   recordFlakeResult,
   unappliedReports,
@@ -87,7 +91,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -108,11 +112,13 @@ import {
   contextDebugger,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
   logPauseSkipOnce,
   markPausesWrapped,
   NO_BREAKPOINTS,
   pauseGateFromTestInfo,
+  mayPause,
   pauseHere,
   pauseSkipReason,
   pauseState,
@@ -124,6 +130,7 @@ import {
   steerDebugger,
   stopCallSite,
   stopShown,
+  takesEndSignal,
   testTimeSlot,
   viewHere,
   wantsStops,
@@ -146,7 +153,8 @@ import { watchCalls, watchPageEvents } from './run-events.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
-import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { PIWI_ORIGIN_ENV, PIWI_STOP_NOTES_ENV } from '../config/env.js';
+import { noteStop } from '../support/stop-notes.js';
 import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
@@ -158,8 +166,11 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
+import { trackCalls } from './live-call-log.js';
+import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
+import { stepLabel } from '@piwitests/core/step-analysis';
 import {
   closeRunChannel,
   editorSendAddress,
@@ -176,6 +187,7 @@ import {
 import {
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
+  MAX_WAITING_TITLE,
   RUN_INTENT_NAMES,
   type IntentAnswer,
   type PickAtAnswer,
@@ -187,13 +199,16 @@ import {
   browserFunctionCoverage,
   cssCoverageInWorker,
   newKnownFunctions,
+  newBrowserLines,
   browserFunctionsInWorker,
+  browserLinesInWorker,
   serverCoverageInWorker,
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
-import { configDirFromConfig } from '../support/test-paths.js';
+import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
+import { attachBrowserEnvironment, readBrowserEnvironment } from './browser-environment.js';
 import {
   codeReachRoots,
   pageMapFetcher,
@@ -208,6 +223,7 @@ import {
 import { resolveCssCoverage } from './css-coverage.js';
 import {
   activeResourceLedger,
+  noteResourceClosing,
   noteResourceUse,
   recordResourceCensus,
   startResourceLedger,
@@ -432,6 +448,8 @@ interface CaptureSink {
   // signal (`withEndSignal`), which End aborts, so a call the debugger holds never runs. `skip` is the runner's own
   // error that skips the attempt, taken once (`skipOf`).
   ended: boolean;
+  // While a Pause waits for the call the test runs, the timer that reads that call again (`watchWaiting`).
+  waitingWatch: ReturnType<typeof setInterval> | null;
   end: AbortController;
   skip: unknown;
   // The calls a stop let go when the test ended under it, each settling once its call does (at once for a call
@@ -448,11 +466,15 @@ interface CaptureSink {
   // JavaScript coverage of each page the test has, when code reach is on, and
   // the source files they resolved to once stopped.
   // With `coverage.browser: 'functions'`, every function the scripts declare in those files, run or not.
+  // With `coverage.browser: 'lines'`, also the lines that ran in every file the scripts resolve to, and its
+  // executable lines.
   // With `coverage.css: 'rules'`, the style sheet files the pages' matched rules resolved to, and every rule of them.
   codeReach: {
     sessions: Map<Page, CodeReachSession>;
     files: Map<string, LineRange[]>;
     known: Map<string, LineRange[]>;
+    lines: Map<string, LineRange[]>;
+    executable: Map<string, LineRange[]>;
     cssFiles: Map<string, LineRange[]>;
     cssKnown: Map<string, LineRange[]>;
   };
@@ -462,6 +484,9 @@ interface CaptureSink {
   // The test's `baseURL` option, which Playwright gives every request context
   // created during the test that names none of its own.
   baseURL: string | null;
+  // The test's `headless` fixture, as `test.use`, `launchOptions.headless`
+  // and `--headed` set it: the browser it launches is headed when false.
+  headless: unknown;
 }
 
 function createSink(): CaptureSink {
@@ -501,6 +526,7 @@ function createSink(): CaptureSink {
     ending: false,
     functionEnded: false,
     ended: false,
+    waitingWatch: null,
     end: new AbortController(),
     skip: undefined,
     released: [],
@@ -509,9 +535,18 @@ function createSink(): CaptureSink {
     releasedQuietSince: 0,
     releasedUntil: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: { sessions: new Map(), files: new Map(), known: new Map(), cssFiles: new Map(), cssKnown: new Map() },
+    codeReach: {
+      sessions: new Map(),
+      files: new Map(),
+      known: new Map(),
+      lines: new Map(),
+      executable: new Map(),
+      cssFiles: new Map(),
+      cssKnown: new Map(),
+    },
     serverCoverage: new Map(),
     baseURL: null,
+    headless: undefined,
   };
 }
 
@@ -643,11 +678,17 @@ async function stopPageCodeReach(
       append(sink.codeReach.cssKnown, rules.known);
     }
     if (!scripts) return;
-    const { reached, known } = await resolveCodeReachFunctions(scripts, roots, fetchMap, page.url(), {
-      known: browserFunctionsInWorker(),
-    });
+    const { reached, known, lines, executable } = await resolveCodeReachFunctions(
+      scripts,
+      roots,
+      fetchMap,
+      page.url(),
+      { known: browserFunctionsInWorker(), lines: browserLinesInWorker() },
+    );
     append(sink.codeReach.files, reached);
     append(sink.codeReach.known, known);
+    append(sink.codeReach.lines, lines);
+    append(sink.codeReach.executable, executable);
   } catch {
     /* code reach is best-effort and must never affect the test */
   }
@@ -663,6 +704,9 @@ let currentSink: CaptureSink | null = null;
 
 /** The browser functions this worker named in a `piwi-browser-functions` attachment, by file, as `start:end`. */
 const KNOWN_FUNCTIONS_SENT = new Map<string, Set<string>>();
+/** The executable lines and the lines that ran this worker named in a `piwi-browser-lines` attachment, by file. */
+const EXECUTABLE_LINES_SENT = new Map<string, Set<string>>();
+const RAN_LINES_SENT = new Map<string, Set<string>>();
 /** The style sheet rules this worker named in a `piwi-css-rules` attachment, by file, as `start:end`. */
 const KNOWN_CSS_RULES_SENT = new Map<string, Set<string>>();
 
@@ -1206,6 +1250,35 @@ const ACTION_METHOD_SET = new Set(ACTION_METHODS);
 const LOCATOR_METHOD_SET = new Set(LOCATOR_METHODS);
 
 /**
+ * Actions that can take their element away as they run: a click or a key
+ * press that submits and navigates at once, a click that removes what it
+ * clicked. Their element is also read as the action starts, beside it, for
+ * when it is gone once the action ran.
+ */
+const EARLY_READ_ACTIONS = new Set([
+  'click',
+  'dblclick',
+  'tap',
+  'press',
+  'pressSequentially',
+  'type',
+  'check',
+  'uncheck',
+  'selectOption',
+  'dispatchEvent',
+]);
+
+/** How long an element capture waits for each of its page reads. */
+const CAPTURE_DEADLINE_MS = 500;
+
+/**
+ * How long an action of `EARLY_READ_ACTIONS` may run for the read beside it to
+ * stand for its element. One that ran longer may have waited for its element
+ * while the page replaced it.
+ */
+const EARLY_READ_TRUSTED_MS = 250;
+
+/**
  * Everything the in-page probe needs, serialized into the browser on every
  * action. `tagRoles`/`inputRoles` are the shared role maps (single source of
  * truth in `locator-healing.ts`), and `roleSources` is the CSS selector for
@@ -1260,23 +1333,57 @@ const PROBE_INIT_SCRIPT = `(() => {
  */
 const PROBE_UNSEEDED_PAGES = new WeakSet<Page>();
 
+/** How many times each instrumented page's main frame navigated, client-side routes included. */
+const PAGE_NAVIGATIONS = new WeakMap<Page, number>();
+
+/**
+ * Ready the main world of a page's new document for the element probe, in the
+ * background, while a test runs. Playwright sets up its scripts there on the
+ * first read, which a key press that submits its form at once outruns; on a
+ * readied world, a read beside such a press often ends before the page goes.
+ */
+function readyProbeWorld(page: Page): void {
+  if (!currentSink) return;
+  try {
+    const ready = internalCall(page, () =>
+      page
+        .mainFrame()
+        .locator(':root')
+        .evaluate(() => 0, undefined, { timeout: CAPTURE_DEADLINE_MS }),
+    ).then(
+      () => undefined,
+      () => undefined,
+    );
+    PENDING_PROBES.add(ready);
+    void ready.then(() => PENDING_PROBES.delete(ready));
+  } catch {
+    /* a page event handler must never throw */
+  }
+}
+
 /**
  * Read the element through the seeded probe, falling back to shipping the
  * probe's source when the page has none. The stub returns null rather than
  * throwing when the global is absent, so "not seeded" is distinguishable from
  * a genuine probe failure (a detached element, a closing page), which
- * propagates as it would have anyway.
+ * propagates as it would have anyway. `timeout` bounds the wait for the element
+ * on Playwright's side.
  */
-function probeElement(page: Page | null, target: Locator): Promise<ProbedAttrs> {
-  const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG);
+function probeElement(page: Page | null, target: Locator, timeout?: number): Promise<ProbedAttrs> {
+  const options = timeout != null ? { timeout } : undefined;
+  const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG, options);
   if (!page || PROBE_UNSEEDED_PAGES.has(page)) return internalCall(page, shipSource);
 
   return internalCall(page, () =>
     target
-      .evaluate((el, name) => {
-        const seeded = (globalThis as Record<string, any>)[name];
-        return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
-      }, PROBE_GLOBAL)
+      .evaluate(
+        (el, name) => {
+          const seeded = (globalThis as Record<string, any>)[name];
+          return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
+        },
+        PROBE_GLOBAL,
+        options,
+      )
       .then((attrs) => {
         if (attrs) return attrs;
         PROBE_UNSEEDED_PAGES.add(page);
@@ -1337,15 +1444,98 @@ export async function ariaSnapshotJSONBestEffort(target: Locator, timeout?: numb
 }
 
 /**
- * Fire-and-forget element capture for a locator that just proved it resolves —
- * a successful action or a passing presence assertion. Probes the element,
- * generates ranked alternatives, and replaces the placeholder at `seq`. The
- * snapshot wait is bounded by a 500ms deadline (evaluate can hang when the
- * page navigates), but the probe's underlying protocol call is tracked in
+ * Read the element of a locator into its snapshot: probe it and generate
+ * ranked alternatives. Resolves to null, never rejects, when the element is
+ * detached or the probe misses its deadline (evaluate can hang when the page
+ * navigates). The probe's underlying protocol call is tracked in
  * PENDING_PROBES so the close wrappers can drain it — and in capturePromises
  * so flushSink outwaits it — even when the deadline abandons it. An evaluate
  * still in flight when its page closes crashes the connection dispatcher with
- * a global "not bound" error.
+ * a global "not bound" error. The deadline bounds the probe on Playwright's
+ * side too, so a probe whose element is not there ends by itself.
+ */
+async function readElementSnapshot(
+  sink: CaptureSink,
+  page: Page,
+  target: Locator,
+  callerLocation: string | null,
+  used: LocatorSnapshot['used'],
+): Promise<LocatorSnapshot | null> {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const probe = probeElement(page, target, CAPTURE_DEADLINE_MS);
+    const settledProbe = probe.then(
+      () => undefined,
+      () => undefined,
+    );
+    PENDING_PROBES.add(settledProbe);
+    settledProbe.then(() => PENDING_PROBES.delete(settledProbe));
+    sink.capturePromises.push(settledProbe);
+
+    const attrs = await Promise.race([
+      probe,
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new Error('locator capture timeout')), CAPTURE_DEADLINE_MS);
+      }),
+    ]);
+
+    // The browser-computed accessible name only feeds role-based and
+    // form-field alternatives, so only pay for the extra ARIA
+    // snapshot when the element actually has a role or is a field —
+    // and, within that, only when the probed attributes have not
+    // already settled the name. The snapshot is a second protocol
+    // round trip on the same locator, which costs more than the whole
+    // probe body; skipping it where it cannot change the answer is
+    // the single cheapest saving on this path.
+    const role = resolveAriaRole({ ...attrs, accessibleName: null });
+    const isFormField = FORM_FIELD_TAGS.has(attrs.tagName);
+    const exactName = exactAccessibleName(attrs, role);
+    // Bound with a timeout: without it, ariaSnapshot waits up to the
+    // test timeout when the page is mid-navigation, which hangs the
+    // teardown that drains these capture promises.
+    // ariaSnapshotBestEffort adapts the options to the installed
+    // Playwright version and never throws (see its doc comment).
+    const aria =
+      exactName === null && (role || isFormField)
+        ? await internalCall(page, () => ariaSnapshotBestEffort(target, CAPTURE_DEADLINE_MS))
+        : null;
+
+    const accessibleName =
+      exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
+
+    return {
+      location: callerLocation,
+      used,
+      // hasLabel/selectorCounts inform alternative generation only —
+      // keep the stored element to the wire shape. rolePosition and
+      // ancestors ARE wire fields: the server's renamed-element match
+      // uses them at heal time.
+      element: {
+        tagName: attrs.tagName,
+        attributes: attrs.attributes,
+        textContent: attrs.textContent,
+        accessibleName,
+        center: attrs.center,
+        ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
+        ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
+      },
+      alternatives: generateAlternatives({ ...attrs, accessibleName }),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+/**
+ * Fire-and-forget element capture for a locator that just proved it resolves —
+ * a successful action or a passing presence assertion: replaces the
+ * placeholder at `seq` with the element's snapshot. `early` is the read an
+ * action of `EARLY_READ_ACTIONS` started beside itself: with `earlyFirst` it is
+ * kept, and the element read now only when it found nothing; otherwise the
+ * element is read now, and `early` kept only when that read finds nothing (the
+ * action removed the element).
  */
 function startElementCapture(
   sink: CaptureSink,
@@ -1354,78 +1544,19 @@ function startElementCapture(
   seq: number,
   callerLocation: string | null,
   used: LocatorSnapshot['used'],
+  early: Promise<LocatorSnapshot | null> | null = null,
+  earlyFirst = false,
 ): void {
-  const probe = probeElement(page, target);
-  const settledProbe = probe.then(
-    () => undefined,
-    () => undefined,
-  );
-  PENDING_PROBES.add(settledProbe);
-  settledProbe.then(() => PENDING_PROBES.delete(settledProbe));
-  sink.capturePromises.push(settledProbe);
-
-  const resolveAttrs = (async () => {
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const attrs = await Promise.race([
-        probe,
-        new Promise<never>((_, reject) => {
-          deadline = setTimeout(() => reject(new Error('locator capture timeout')), 500);
-        }),
-      ]);
-
-      // The browser-computed accessible name only feeds role-based and
-      // form-field alternatives, so only pay for the extra ARIA
-      // snapshot when the element actually has a role or is a field —
-      // and, within that, only when the probed attributes have not
-      // already settled the name. The snapshot is a second protocol
-      // round trip on the same locator, which costs more than the whole
-      // probe body; skipping it where it cannot change the answer is
-      // the single cheapest saving on this path.
-      const role = resolveAriaRole({ ...attrs, accessibleName: null });
-      const isFormField = FORM_FIELD_TAGS.has(attrs.tagName);
-      const exactName = exactAccessibleName(attrs, role);
-      // Bound with a timeout: without it, ariaSnapshot waits up to the
-      // test timeout when the page is mid-navigation, which hangs the
-      // teardown that drains these capture promises.
-      // ariaSnapshotBestEffort adapts the options to the installed
-      // Playwright version and never throws (see its doc comment).
-      const aria =
-        exactName === null && (role || isFormField)
-          ? await internalCall(page, () => ariaSnapshotBestEffort(target, 500))
-          : null;
-
-      const accessibleName =
-        exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
-
-      sink.capturedLocators[seq] = {
-        location: callerLocation,
-        used,
-        // hasLabel/selectorCounts inform alternative generation only —
-        // keep the stored element to the wire shape. rolePosition and
-        // ancestors ARE wire fields: the server's renamed-element match
-        // uses them at heal time.
-        element: {
-          tagName: attrs.tagName,
-          attributes: attrs.attributes,
-          textContent: attrs.textContent,
-          accessibleName,
-          center: attrs.center,
-          ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
-          ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
-        },
-        alternatives: generateAlternatives({ ...attrs, accessibleName }),
-      };
-    } catch {
-      // Element detached or timeout — keep the placeholder, and release the
-      // call site so a later action or assertion on the same line can retry.
-      if (callerLocation) sink.probedLocations.delete(callerLocation);
-    } finally {
-      clearTimeout(deadline);
-    }
+  const capture = (async () => {
+    const readNow = () => readElementSnapshot(sink, page, target, callerLocation, used);
+    const snapshot = earlyFirst ? ((await early) ?? (await readNow())) : ((await readNow()) ?? (await early));
+    if (snapshot) sink.capturedLocators[seq] = snapshot;
+    // Element detached or timeout — keep the placeholder, and release the
+    // call site so a later action or assertion on the same line can retry.
+    else if (callerLocation) sink.probedLocations.delete(callerLocation);
   })();
 
-  sink.capturePromises.push(resolveAttrs);
+  sink.capturePromises.push(capture);
 }
 
 // Chain methods that take args and define a new locator scope (not just narrow).
@@ -1459,6 +1590,8 @@ interface LocatorCall {
   picked: boolean;
   /** The call carries the attempt's end signal (`withEndSignal`): End the test at a stop on it gives it up. */
   endable: boolean;
+  /** When it began (`Date.now()`). */
+  startedAt: number;
   /** Settles once the call did, whatever its outcome (`forgetLocatorCall`). */
   settled: Promise<void>;
   settle: () => void;
@@ -1475,7 +1608,17 @@ function knowLocatorCall(
   if (!sink?.pause || !location) return null;
   let settle = (): void => {};
   const settled = new Promise<void>((resolve) => (settle = resolve));
-  const call: LocatorCall = { page, target, location, origin, picked: false, endable: false, settled, settle };
+  const call: LocatorCall = {
+    page,
+    target,
+    location,
+    origin,
+    picked: false,
+    endable: false,
+    startedAt: Date.now(),
+    settled,
+    settle,
+  };
   sink.locatorCalls.set(callSiteLine(location), call);
   return call;
 }
@@ -1711,18 +1854,20 @@ interface FailureStop {
 async function showStop(
   sink: CaptureSink,
   context: BrowserContext,
-  title: string,
+  calledAs: string,
   location: string,
   reason: StopReason,
   call: LocatorCall | undefined,
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
+  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
+  const title = hideSecretsInText(hideTypedText(calledAs));
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
   if (!testInfo) return undefined;
-  const bar = !!page && (testInfo.project?.use as { headless?: unknown } | undefined)?.headless === false;
+  const bar = !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
   const failing = failure?.failed ?? null;
@@ -1755,6 +1900,8 @@ async function showStop(
   const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
   const intents = page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
+  // How long the attempt stood stopped before this stop.
+  const pausedBefore = sink.stops.reduce((sum, earlier) => sum + Math.max(0, earlier.duration), 0);
   sink.stops.push(record);
   // The run page's live view says the worker is paused, until the stop ends.
   const stoppedAt = callSitePlace(location);
@@ -1762,6 +1909,21 @@ async function showStop(
     reason,
     call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
     test: testInfo.title,
+  });
+  // The reporter's process tells the instance, while someone has the run open (`stop-notes.ts`).
+  const noted = { testId: testInfo.testId, retry: testInfo.retry };
+  noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+    kind: 'stopped',
+    ...noted,
+    stop: {
+      reason,
+      title,
+      file: stoppedAt ? stopFile(stoppedAt.file, configDirFromConfig(testInfo.config)) : null,
+      line: stoppedAt?.line ?? null,
+      bar,
+      since: record.startedAt,
+      pausedMs: Math.round(pausedBefore),
+    },
   });
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
   // comes down then.
@@ -1864,6 +2026,7 @@ async function showStop(
       }
       return 'resume';
     }
+    const stoppedOn = call?.page === page ? call : null;
     return internalCall(page, () =>
       pauseHere(
         page,
@@ -1871,7 +2034,17 @@ async function showStop(
           location,
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
-          target: call?.page === page ? call.target : null,
+          target: stoppedOn
+            ? {
+                highlight: () =>
+                  highlightAtStop(
+                    page,
+                    stoppedOn.target,
+                    'call',
+                    locatorSource(stoppedOn.target, stoppedOn.origin.method, stoppedOn.origin.args),
+                  ),
+              }
+            : null,
           ...(failure ? { failure: true } : sink.functionEnded ? {} : { end: true }),
         },
         probe,
@@ -1888,6 +2061,11 @@ async function showStop(
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
     sink.shownStops.delete(end);
     goneOn();
+    noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+      kind: 'resumed',
+      ...noted,
+      pausedMs: Math.round(pausedBefore + Math.max(0, record.duration)),
+    });
     await held?.release();
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
@@ -1912,9 +2090,10 @@ async function showStop(
  * (`end` aborts before the debugger lets the stopped call go, so that call never runs): the test is skipped
  * (`skipOf`) as such a call rejects, before its next locator call, as a `page.pause()` it stopped at goes on, or as
  * its function ends (`skipAtFunctionEnd`). A stopped call the proxy did not delegate (a navigation, a key press, an
- * assertion on the page) runs first, which the editor hears. Once the function ended (an `afterEach` hook, a
- * fixture's teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger
- * goes on: as on `end`, or as on `finish` once the function ended.
+ * assertion on the page) runs first, which the editor hears; so does a delegated one on a Playwright that takes no
+ * signal (`takesEndSignal`), the test skipped as it returns. Once the function ended (an `afterEach` hook, a fixture's
+ * teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger goes on:
+ * as on `end`, or as on `finish` once the function ended.
  */
 function endTest(
   sink: CaptureSink,
@@ -1943,8 +2122,11 @@ function endTest(
   }
   // A call's title may name the address it goes to: its credentials stay in the worker.
   const said = hideSecretsInText(
-    `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
-      'The test is skipped at its next locator call, or as it ends.',
+    call && !takesEndSignal(sink.testInfo.config?.version)
+      ? `${title} at ${line} runs before the test ends: a locator call is given up from Playwright 1.62 on. ` +
+          'The test is skipped as the call returns.'
+      : `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
+          'The test is skipped at its next locator call, or as it ends.',
   );
   console.log(`[piwi] ${said}`);
   tellHub({ type: 'notice', message: said });
@@ -2215,15 +2397,17 @@ export function errorPlace(error: unknown, windows: boolean = process.platform =
 type RunnerStep = {
   category?: unknown;
   title?: unknown;
+  subtitle?: unknown;
   endWallTime?: unknown;
   steps?: unknown;
   stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
+  location?: { file?: unknown; line?: unknown; column?: unknown };
 };
 
 /**
- * The call still running in the test, its title and where the runner placed it in the test's code: the innermost step
- * not ended of a Playwright call, an assertion or a `test.step` (the runner's steps, a Playwright internal,
- * feature-checked). Null for none.
+ * The call still running in the test, its title with its target (`stepLabel`: `Click getByRole('button')`) and where
+ * the runner placed it in the test's code: the innermost step not ended of a Playwright call, an assertion or a
+ * `test.step` (the runner's steps, a Playwright internal, feature-checked). Null for none.
  */
 function callInProgress(testInfo: TestInfo): { title: string | null; place: CodePlace } | null {
   let found: { title: string | null; place: CodePlace } | null = null;
@@ -2231,11 +2415,11 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
     if (!Array.isArray(steps)) return;
     for (const step of steps as RunnerStep[]) {
       if (step.endWallTime) continue;
-      const at = step.stack?.[0];
+      const at = step.stack?.[0] ?? step.location;
       const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
       if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
         found = {
-          title: typeof step.title === 'string' ? step.title : null,
+          title: typeof step.title === 'string' ? stepLabel(step) : null,
           place: { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 },
         };
       }
@@ -2244,6 +2428,16 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
   };
   visit((testInfo as unknown as { _steps?: unknown })._steps);
   return found;
+}
+
+/**
+ * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
+ * failed; any other status as Playwright tells it.
+ */
+function liveOutcomeStatus(testInfo: TestInfo): TestInfo['status'] {
+  if (testInfo.expectedStatus !== 'failed') return testInfo.status;
+  if (testInfo.status === 'failed') return 'passed';
+  return testInfo.status === 'passed' ? 'failed' : testInfo.status;
 }
 
 /** The call still running in the test, where a test timeout cut it short (`callInProgress`). Null for none. */
@@ -2255,7 +2449,7 @@ function stepInProgress(testInfo: TestInfo): CodePlace | null {
  * The call the test is on, as the run page's live view names it beside each frame, its file relative to the working
  * directory. Null for none.
  */
-function runningCall(testInfo: TestInfo): LiveCall | null {
+export function runningCall(testInfo: TestInfo): LiveCall | null {
   const call = callInProgress(testInfo);
   if (!call?.title) return null;
   const file = path.relative(process.cwd(), call.place.file).split(path.sep).join('/');
@@ -2426,7 +2620,7 @@ async function pauseInPlace(page: Page, playwrightPause: PlaywrightPause, locati
   if (!sink || !testInfo || !location || !context || !contextDebugger(context)) {
     return leaveToPlaywright(context, playwrightPause);
   }
-  if (!sink.pause && (!canRecordFromHere() || pauseSkipReason(pauseGateFromTestInfo(testInfo)))) {
+  if (!sink.pause && (!canRecordFromHere() || pauseSkipReason(pauseGateFromTestInfo(testInfo, sink.headless)))) {
     return leaveToPlaywright(context, playwrightPause);
   }
   sink.pause ??= pauseState(NO_BREAKPOINTS);
@@ -2519,7 +2713,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
           const call = knowLocatorCall(sink, page, target, callerLocation, { method: originMethod, args: originArgs });
           // While the attempt can stop, the assertion carries its end signal: End the test gives it up.
-          const ending = sink?.pause && !sink.ended ? withEndSignal(EXPECT_METHOD, callArgs, sink.end.signal) : null;
+          const ending =
+            sink?.pause && !sink.ended && takesEndSignal(sink.testInfo?.config?.version)
+              ? withEndSignal(EXPECT_METHOD, callArgs, sink.end.signal)
+              : null;
           if (call && ending) call.endable = true;
           const expectArgs = ending ?? callArgs;
           try {
@@ -2603,7 +2800,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         };
         const call = knowLocatorCall(sink, page, target, callerLocation, used);
         // While the attempt can stop, the action carries its end signal: End the test gives it up.
-        const ending = sink.pause && !sink.ended ? withEndSignal(String(prop), callArgs, sink.end.signal) : null;
+        const ending =
+          sink.pause && !sink.ended && takesEndSignal(sink.testInfo?.config?.version)
+            ? withEndSignal(String(prop), callArgs, sink.end.signal)
+            : null;
         if (call && ending) call.endable = true;
 
         // One probe per call site (see `probedLocations`). Push a placeholder
@@ -2619,11 +2819,19 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             alternatives: [],
           });
         }
+        // An action that can take its element away also reads it as it starts,
+        // beside the action, for when it is gone once the action succeeded.
+        const early =
+          !alreadyProbed && EARLY_READ_ACTIONS.has(prop as string)
+            ? readElementSnapshot(sink, page, target, callerLocation, used)
+            : null;
 
         // The location is already on record. If the action throws, note the
         // failed locator (so teardown can suggest a fresh one for the element's
         // current identity) and re-throw so the test still fails.
         let result: unknown;
+        const startedAt = Date.now();
+        const navigations = PAGE_NAVIGATIONS.get(page) ?? 0;
         try {
           result = await callMethod(target, prop, ending ?? callArgs);
         } catch (error) {
@@ -2640,7 +2848,11 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // Fire-and-forget: capture element data without blocking the test.
         if (!alreadyProbed && !call?.picked) {
           if (callerLocation) sink.probedLocations.add(callerLocation);
-          startElementCapture(sink, page, target, seq, callerLocation, used);
+          // The read beside the action stands for its element when the page navigated
+          // meanwhile, or when the action was quick.
+          const earlyFirst =
+            (PAGE_NAVIGATIONS.get(page) ?? 0) !== navigations || Date.now() - startedAt < EARLY_READ_TRUSTED_MS;
+          startElementCapture(sink, page, target, seq, callerLocation, used, early, earlyFirst);
         }
 
         return result;
@@ -2693,6 +2905,8 @@ function instrumentPage(page: Page): void {
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
   watchPageEvents(page);
+  // A page the running test opens shows on its lane while it shows no other.
+  laneSawPage(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -2747,6 +2961,7 @@ function instrumentPage(page: Page): void {
   if (typeof page.close === 'function') {
     const originalClose = page.close.bind(page);
     page.close = async (...args: Parameters<Page['close']>): Promise<void> => {
+      noteResourceClosing(page);
       let closed = (): void => {};
       CLOSING_PAGES.set(page, new Promise<void>((resolve) => (closed = resolve)));
       try {
@@ -2796,11 +3011,15 @@ function instrumentPage(page: Page): void {
     // the init script runs for every navigation, so give each new document a
     // fresh chance at the fast path.
     if (typeof page.on === 'function') {
+      page.on('domcontentloaded', () => readyProbeWorld(page));
       page.on('framenavigated', (frame) => {
         PROBE_UNSEEDED_PAGES.delete(page);
         // A new document or a client-side route: locator calls start over "on arrival".
         try {
-          if (frame === page.mainFrame()) noteNavigation(page);
+          if (frame === page.mainFrame()) {
+            PAGE_NAVIGATIONS.set(page, (PAGE_NAVIGATIONS.get(page) ?? 0) + 1);
+            noteNavigation(page);
+          }
         } catch {
           /* a page event handler must never throw */
         }
@@ -3106,7 +3325,7 @@ function instrumentContext(context: BrowserContext): void {
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
   // back to shipping the source for any document this does not reach.
   if (process.env.PIWI_CAPTURE_LOCATORS !== 'false' && typeof context.addInitScript === 'function') {
-    void Promise.resolve(context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
+    void internalCall(context, () => context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
       /* the fallback covers it */
     });
   }
@@ -3128,6 +3347,7 @@ function instrumentContext(context: BrowserContext): void {
   if (typeof context.close === 'function') {
     const originalClose = context.close.bind(context);
     context.close = async (...args: Parameters<BrowserContext['close']>): Promise<void> => {
+      noteResourceClosing(context);
       await settleContextClose(context);
       return originalClose(...args);
     };
@@ -3160,7 +3380,11 @@ function patchBrowser(browser: Browser): void {
 
   const originalNewContext = browser.newContext.bind(browser);
   browser.newContext = async (...args: Parameters<Browser['newContext']>): Promise<BrowserContext> => {
-    const context = await originalNewContext(...args);
+    // A flake-lab arm's time zone and locale, for every context its target test creates.
+    const flake = currentSink?.flake;
+    const emulation = flake?.role === 'target' ? flakeContextOptions(flake.plan) : null;
+    const context = await originalNewContext(...(emulation ? ([{ ...args[0], ...emulation }] as const) : args));
+    if (emulation) markFlakeContext(context);
     instrumentContext(context);
     await armStops([context]);
     return context;
@@ -3172,6 +3396,7 @@ function patchBrowser(browser: Browser): void {
   if (typeof browser.close === 'function') {
     const originalClose = browser.close.bind(browser);
     browser.close = async (...args: Parameters<Browser['close']>): Promise<void> => {
+      noteResourceClosing(browser);
       await drainPendingProbes(1000);
       for (const context of typeof browser.contexts === 'function' ? browser.contexts() : []) {
         await settleContextClose(context);
@@ -3279,6 +3504,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   // A page read live, unless its failure was held: its evidence is what it was as the hold began.
   const live = pageReadable && sink.frozenAt === null;
 
+  await attachBrowserEnvironment(testInfo);
+
   // The stops the pause bar showed.
   if (sink.stops.length > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.pauses, {
@@ -3304,8 +3531,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files.keys()))),
     });
-    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file.
-    const functions = browserFunctionsInWorker() ? browserFunctionCoverage(sink.codeReach.files) : null;
+    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file; with `'lines'`,
+    // the lines that ran in each too.
+    const functions = browserFunctionsInWorker()
+      ? browserFunctionCoverage(sink.codeReach.files, browserLinesInWorker() ? sink.codeReach.lines : undefined)
+      : null;
     if (functions) {
       await testInfo.attach(ATTACHMENT_NAMES.browserCoverage, {
         contentType: 'application/json',
@@ -3318,6 +3548,18 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   const known = browserFunctionsInWorker() ? newKnownFunctions(sink.codeReach.known, KNOWN_FUNCTIONS_SENT) : [];
   for (const part of known) {
     await testInfo.attach(ATTACHMENT_NAMES.browserFunctions, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(part)),
+    });
+  }
+  // With `coverage.browser: 'lines'`, the executable lines of the browser files and the lines that ran in them, every
+  // file the scripts resolve to, whether a function of it ran or not, the first time this worker finds them: the
+  // run's line ratio counts them.
+  const fileLines = browserLinesInWorker()
+    ? newBrowserLines(sink.codeReach.executable, sink.codeReach.lines, EXECUTABLE_LINES_SENT, RAN_LINES_SENT)
+    : [];
+  for (const part of fileLines) {
+    await testInfo.attach(ATTACHMENT_NAMES.browserLines, {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(part)),
     });
@@ -3562,12 +3804,43 @@ const runControl: RunControl = {
       return;
     }
     if (!sink.pause) {
-      const why = sink.testInfo ? pauseSkipReason({ ...pauseGateFromTestInfo(sink.testInfo), channel: true }) : null;
+      const why = sink.testInfo
+        ? pauseSkipReason({ ...pauseGateFromTestInfo(sink.testInfo, sink.headless), channel: true })
+        : null;
       tellHub({ type: 'notice', message: `This test does not stop${why ? `: ${why}` : ''}.` });
       return;
     }
     sink.pause.pause = true;
     void armStops(OPEN_CONTEXTS);
+    watchWaiting(sink);
+  },
+  giveUp(testId) {
+    const sink = currentSink;
+    const waiting = sink?.testInfo ? callInProgress(sink.testInfo) : null;
+    if (!sink?.testInfo || sink.testInfo.testId !== testId || sink.functionEnded || sink.ended) {
+      // As the editor shows it: no test waits for the Pause any more.
+      if (sink?.pause) sink.pause.pause = false;
+      pauseNextTest = false;
+      tellHub({
+        type: 'notice',
+        message: 'The test left the call it waited in before it could be ended: it goes on, and the Pause is dropped.',
+      });
+      return;
+    }
+    const line = waiting ? `${runFile(waiting.place.file)}:${waiting.place.line}` : null;
+    const endable =
+      !!line && [...sink.locatorCalls.values()].some((c) => c.endable && callSiteLine(c.location) === line);
+    sink.ended = true;
+    // Ended in place of the stop the Pause waited for: the next test does not stop for it.
+    if (sink.pause) sink.pause.pause = false;
+    skipAtFunctionEnd(sink);
+    sink.end.abort(new Error(ENDED_REASON));
+    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const said = endable
+      ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
+      : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
+    console.log(`[piwi] ${said}`);
+    tellHub({ type: 'notice', message: said });
   },
   breakpoints(places) {
     const set = replacePauseSet(places);
@@ -3584,7 +3857,55 @@ const runControl: RunControl = {
   },
 };
 
+/** How often the call a Pause waits for is read again, while it waits. */
+const WAITING_WATCH_MS = 250;
+
+/**
+ * Asked to pause, tell the hub the call the test waits in before it can stop (`waiting`), and again each time that
+ * call changes, while the Pause waits and the test's function runs: its title, its place, how long it has run (a
+ * locator call's, which the fixtures know; null for another), and whether End the test gives it up (a locator call on
+ * its line that carries the end signal). A null title once it waits in none.
+ */
+function watchWaiting(sink: CaptureSink): void {
+  if (sink.waitingWatch) return;
+  let said = '';
+  const look = (): void => {
+    const waits = currentSink === sink && !!sink.pause?.pause && !sink.functionEnded && !sink.ended;
+    const call = waits && sink.testInfo ? callInProgress(sink.testInfo) : null;
+    const file = call?.title ? runFile(call.place.file) : '';
+    const key = call?.title ? `${call.title}\n${file}:${call.place.line}` : '';
+    if (key !== said) {
+      said = key;
+      if (!call?.title) tellHub({ type: 'waiting', title: null, place: null, ms: null, endable: false });
+      else {
+        const line = `${file}:${call.place.line}`;
+        const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
+        tellHub({
+          type: 'waiting',
+          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
+          ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
+          endable: !!locatorCall?.endable,
+        });
+      }
+    }
+    if (!waits && sink.waitingWatch) {
+      clearInterval(sink.waitingWatch);
+      sink.waitingWatch = null;
+    }
+  };
+  sink.waitingWatch = setInterval(look, WAITING_WATCH_MS);
+  sink.waitingWatch.unref?.();
+  look();
+}
+
 /** A file of the run as the run channel names it: relative to the working directory, with forward slashes. */
+/** A stop's file as the instance names test files: relative to the config's folder, none on another drive. */
+function stopFile(file: string, base: string): string | null {
+  const relative = relativeTestPath(file, base);
+  return relative && !path.isAbsolute(relative) ? relative : null;
+}
+
 function runFile(file: string): string {
   return path.relative(process.cwd(), file).split(path.sep).join('/') || file;
 }
@@ -3665,6 +3986,8 @@ export const piwiFixtures: Fixtures<
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
       openLiveView(workerInfo);
+      // The selector of the locator call running, for the live view's call log.
+      if (liveViewOpen()) trackCalls(playwright);
       if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();
@@ -3690,12 +4013,22 @@ export const piwiFixtures: Fixtures<
   // Safety net for the standard `page` fixture, in case its page is created
   // through an internal path the browser patch doesn't see. Idempotent, so it
   // never double-wraps a page the browser patch already instrumented.
-  page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
+  page: async (
+    { page, timezoneId, locale, colorScheme }: PlaywrightTestArgs & PlaywrightTestOptions,
+    use: UseFn<Page>,
+    testInfo: TestInfo,
+  ) => {
     instrumentPage(page);
+    // The page is still blank: what the browser reports of itself, once per worker and project, from a test that
+    // runs with the project's own options.
+    if (currentSink?.flake?.role !== 'target') {
+      await readBrowserEnvironment(page, testInfo, { timezoneId, locale, colorScheme });
+    }
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
-    // The page the run page's live view shows, while someone watches this worker.
+    // The page the lane shows, and the run page's live view, while someone watches this worker.
+    lanePage(page);
     liveViewPage(page);
     await use(page);
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
@@ -3709,7 +4042,7 @@ export const piwiFixtures: Fixtures<
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
     async (
-      { screenshot, baseURL }: PlaywrightWorkerOptions & PlaywrightTestOptions,
+      { screenshot, baseURL, headless }: PlaywrightWorkerOptions & PlaywrightTestOptions,
       use: UseFn<void>,
       testInfo: TestInfo,
     ) => {
@@ -3719,10 +4052,11 @@ export const piwiFixtures: Fixtures<
       const sink = createSink();
       sink.testInfo = testInfo;
       sink.baseURL = baseURL ?? null;
+      sink.headless = headless;
       if (keepsFailureScreenshots(screenshot, testInfo.retry)) sink.failureScreenshot = screenshot;
       const pauseSet = currentPauseSet();
       const channel = runChannelOpen();
-      const cannotPause = pauseSkipReason({ ...pauseGateFromTestInfo(testInfo), channel });
+      const cannotPause = pauseSkipReason({ ...pauseGateFromTestInfo(testInfo, headless), channel });
       if (pauseSet.size || channel) {
         if (!cannotPause) sink.pause = pauseState(pauseSet, pauseNextTest);
         else if (pauseSet.size) logPauseSkipOnce(cannotPause);
@@ -3742,7 +4076,8 @@ export const piwiFixtures: Fixtures<
           project: testInfo.project.name,
         });
         if (role) {
-          const browserName = (testInfo.project.use as { browserName?: string } | undefined)?.browserName ?? null;
+          const use = testInfo.project.use as { browserName?: string; defaultBrowserType?: string } | undefined;
+          const browserName = use?.browserName ?? use?.defaultBrowserType ?? null;
           sink.flake = { plan, role, startedAt: Date.now(), browserName, conditions: null };
         }
       }
@@ -3755,7 +4090,8 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
-      liveViewTestBegan(testInfo.title, () => runningCall(testInfo));
+      laneTestBegan(testInfo.testId);
+      liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.
@@ -3768,13 +4104,15 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
-        await liveViewTestEnded();
+        await liveViewTestEnded(liveOutcomeStatus(testInfo));
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.
         if (sink.pause?.pause) pauseNextTest = true;
-        // Record the probe outcome (this test noticed the fault iff it failed)
-        // before flushing the rest of the capture.
+        // Record the probe outcome before flushing the rest of the capture: a
+        // failure noticed the fault, a pass did not, and an applied fault whose
+        // test was skipped or interrupted, or a fault that never applied, says
+        // neither (`outcomeFromStatus`).
         if (sink.probeItem) {
           const applied = sink.probeInterception?.applied() ?? false;
           const level = sink.probeItem.level ?? 'client';
@@ -3786,9 +4124,10 @@ export const piwiFixtures: Fixtures<
           const handled =
             level === 'server' && applied
               ? classifyProbeHandled({
-                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  consoleErrors: probeConsoleErrors(sink.consoleEntries),
                   dialogs: sink.dialogs.length,
                   backendError: sink.probeInterception?.serverError() ?? false,
+                  faultIsTheError: faultIsTheError(sink.probeItem.fault),
                   pageErrors: sink.probePageErrors,
                   blankPage: sink.probeBlankPage,
                 })
@@ -3809,6 +4148,8 @@ export const piwiFixtures: Fixtures<
           await flushSink(sink, testInfo);
         } finally {
           stopKeeping();
+          // The lane shows the test until it ended for the editor, a failure it held while flushing included.
+          await laneTestEnded();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

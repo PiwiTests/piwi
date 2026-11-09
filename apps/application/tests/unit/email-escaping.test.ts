@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest';
-import { renderInviteEmail, renderTestEmail, renderNotificationEmail } from '../../server/utils/email';
+import {
+  renderInviteEmail,
+  renderPasswordResetEmail,
+  renderTestEmail,
+  renderNotificationEmail,
+} from '../../server/utils/email';
 
 const PAYLOAD = '<a href="https://evil.example/reset">Reset password</a>';
 
@@ -11,7 +16,12 @@ describe('email templates escape the values they interpolate', () => {
   });
 
   test('the invite email escapes who sent it', () => {
+    expect(renderInviteEmail('token', 'invitee', PAYLOAD).html).not.toContain(PAYLOAD);
+  });
+
+  test('the invite and reset emails escape the username', () => {
     expect(renderInviteEmail('token', PAYLOAD).html).not.toContain(PAYLOAD);
+    expect(renderPasswordResetEmail('token', PAYLOAD).html).not.toContain(PAYLOAD);
   });
 
   test('the run email escapes the reported status', () => {

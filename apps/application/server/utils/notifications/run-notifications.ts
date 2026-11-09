@@ -1,5 +1,5 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, lt, desc, inArray, isNull, or } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
@@ -30,6 +30,7 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { TERMINAL_RUN_STATUSES } from '#shared/handlers/analytics/common';
 import { getClusterKnownIssue } from '../integrations/known-issue';
+import { ANNOUNCING_RUN_STATUSES } from './cluster-claims';
 import type { DbClient } from '../../database';
 import type {
   FailureSource,
@@ -37,9 +38,11 @@ import type {
   LooksFixedTest,
   RunCommit,
   RunHistoryEntry,
+  TestStuckPayload,
 } from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
 import { readRunIncident } from '#shared/run-incident';
+import { isCurrentlySnoozed } from '#shared/inbox-queues';
 
 /**
  * The run's `test.fail()` tests that passed in every browser project that ran
@@ -91,9 +94,10 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
 
 /**
  * The run's looks-fixed tests (`loadLooksFixedTests`) that did not already look
- * fixed on the previous completed run of the same project and branch: the
- * tests whose bug started looking fixed with this run. Every looks-fixed test
- * counts when the branch has no earlier run.
+ * fixed on the previous completed run of the same project and branch that sends
+ * notifications (the `notifications` use): the tests whose bug started looking
+ * fixed with this run. Every looks-fixed test counts when the branch has no
+ * such earlier run.
  */
 export async function loadNewlyLooksFixedTests(
   db: DbClient,
@@ -110,6 +114,7 @@ export async function loadNewlyLooksFixedTests(
         eq(testRuns.projectId, run.projectId),
         lt(testRuns.id, run.id),
         inArray(testRuns.status, ['passed', 'failed']),
+        eligibleRunSql('notifications'),
       ),
     )
     .orderBy(desc(testRuns.id))
@@ -160,12 +165,12 @@ async function loadRunHistory(
 }
 
 /** A test's outcome in a run, from its deciding attempt there (`testOutcomes`). */
-function historyOutcome(row: { status: string; retries: number | null } | undefined): HistoryOutcome {
+function historyOutcome(row: { status: string; passedAfterFailure: boolean } | undefined): HistoryOutcome {
   if (!row) return null;
   if (isFailedStatus(row.status)) return 'failed';
-  if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 'flaky' : 'passed';
+  if (row.status === 'passed') return row.passedAfterFailure ? 'flaky' : 'passed';
   if (row.status === 'skipped' || row.status === 'didnotrun') return row.status;
-  if (row.status === 'interrupted') return 'didnotrun';
+  if (row.status === 'interrupted') return 'interrupted';
   return null;
 }
 
@@ -185,6 +190,7 @@ async function loadTestHistories(
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       status: testRunsCases.status,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(
@@ -253,6 +259,16 @@ async function loadFailureSources(
     }
   }
   return result;
+}
+
+/** What `load` gives, else `fallback`: a run's notifications go out without an enrichment that failed. */
+async function orWithout<T>(what: string, load: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await load;
+  } catch (error) {
+    console.error(`[notifications] Could not load the ${what} of a run notification; sending it without`, error);
+    return fallback;
+  }
 }
 
 /** The commit a run tested, from its metadata, linked on the project's repository when its host is known. */
@@ -364,13 +380,15 @@ export async function loadRunPayload(db: DbClient, runId: number) {
           .sort((a, b) => a.executionId - b.executionId)
           .map((row) => ({ ...row, title: testTextLabel(row) }));
 
-  const history = await loadRunHistory(db, runRow, branch);
+  const history = await orWithout('run history', loadRunHistory(db, runRow, branch), [
+    { runId: runRow.id, status: runRow.status, failedTests: runRow.failedTests },
+  ]);
   const [resolvedOwners, sources, testHistories] = await Promise.all([
     resolveOwners<{ filePath: string; owner: string | null }>(db, runRow.projectId, [...failedAttempts, ...top]).catch(
       () => new Map(),
     ),
-    loadFailureSources(db, top),
-    loadTestHistories(db, history, top),
+    orWithout('failing code', loadFailureSources(db, top), new Map<number, FailureSource>()),
+    orWithout('test histories', loadTestHistories(db, history, top), new Map<string, HistoryOutcome[]>()),
   ]);
   const topFailures = buildTopFailures(
     top.map((row) => ({
@@ -389,6 +407,11 @@ export async function loadRunPayload(db: DbClient, runId: number) {
 
   const commit = runCommitOf(runRow.metadata, project.repositoryUrl);
   const ciUrl = runCiUrl(runRow.metadata);
+  // The run's counters leave its interrupted tests out: counted here so its outcome bar names them.
+  const [interrupted] = await db
+    .select({ tests: count() })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.status, 'interrupted')));
   const runPayload = {
     runId,
     projectId: runRow.projectId,
@@ -400,6 +423,7 @@ export async function loadRunPayload(db: DbClient, runId: number) {
     flakyTests: runRow.flakyTests,
     skippedTests: runRow.skippedTests,
     didNotRunTests: runRow.didNotRunTests,
+    interruptedTests: Number(interrupted?.tests ?? 0),
     flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
     durationMs: runRow.duration ?? undefined,
     branch,
@@ -430,6 +454,56 @@ export async function emitRunInterrupted(db: DbClient, runId: number): Promise<v
     await emitNotification(db, 'run.interrupted', loaded.runPayload);
   } catch (e) {
     console.error('[notifications] emitRunInterrupted failed', e);
+  }
+}
+
+/** A running attempt said to be stuck (`#shared/stuck-tests`), as the checker knows it. */
+export type StuckTestNotice = Pick<
+  TestStuckPayload,
+  | 'testTitle'
+  | 'suitePath'
+  | 'location'
+  | 'browserName'
+  | 'repeatEachIndex'
+  | 'workerIndex'
+  | 'parallelIndex'
+  | 'shardIndex'
+  | 'startedAt'
+  | 'elapsedMs'
+  | 'usualMs'
+> & { filePath: string; owner: string | null };
+
+/**
+ * Emit `test.stuck` for a running attempt of a live run, once per attempt (its run, its start and its test key its
+ * deliveries): the run must still run, and the `stuck-notifications` use must read it, which leaves out every run
+ * started on a developer's machine.
+ */
+export async function emitTestStuck(db: DbClient, runId: number, stuck: StuckTestNotice): Promise<void> {
+  try {
+    const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+    if (!runRow || runRow.status !== 'running' || !isEligibleRun(runRow, 'stuck-notifications')) return;
+    const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
+    if (!project) return;
+    const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
+    const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
+    const ciUrl = runCiUrl(runRow.metadata);
+    const { owner: declared, filePath, ...attempt } = stuck;
+    const test = { filePath, owner: declared };
+    const owner = (await resolveOwners(db, runRow.projectId, [test])).get(test)?.owner ?? null;
+    await emitNotification(db, 'test.stuck', {
+      ...attempt,
+      runId,
+      projectId: runRow.projectId,
+      projectName: project.label || project.name,
+      branch,
+      environment: runRow.environment ?? undefined,
+      isDefaultBranch: branch ? branch === defaultBranch : false,
+      origin: runRow.origin,
+      ...(ciUrl ? { ciUrl } : {}),
+      ...(owner ? { owners: [owner] } : {}),
+    });
+  } catch (e) {
+    console.error('[notifications] emitTestStuck failed', e);
   }
 }
 
@@ -479,12 +553,87 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 }
 
 /**
+ * The clusters run `runId` announces with `cluster.new`. A run that ran to its
+ * end and sends notifications (an import never sends any) claims each cluster
+ * it failed into that no run claimed yet, in one conditional UPDATE of
+ * `announcedAt`: one run claims a cluster, however runs overlap and whether or
+ * not a channel is subscribed, and the first to end is that run. It announces
+ * the clusters it claimed that are open and not snoozed and whose first seen
+ * run is still stored; a cluster it claims and does not announce (triaged,
+ * snoozed, or its first run deleted) is no longer new to a later run. The
+ * claim and the read of the clusters' first runs are one transaction: when
+ * either fails, nothing is claimed, and the next call claims them again.
+ * The finalize step claims them before the run's verdicts, which may reopen a
+ * cluster a person resolved: the run announces that one as regressed.
+ */
+export async function clustersToAnnounce(db: DbClient, runId: number, now: Date = new Date()): Promise<number[]> {
+  const [run] = await db
+    .select({
+      projectId: testRuns.projectId,
+      status: testRuns.status,
+      origin: testRuns.origin,
+      metadata: testRuns.metadata,
+      isFullRun: testRuns.isFullRun,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (
+    !run ||
+    !ANNOUNCING_RUN_STATUSES.includes(run.status) ||
+    run.origin === 'import' ||
+    !isEligibleRun(run, 'notifications')
+  ) {
+    return [];
+  }
+  return db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(failureClusters)
+      .set({ announcedAt: now })
+      .where(
+        and(
+          eq(failureClusters.projectId, run.projectId),
+          isNull(failureClusters.announcedAt),
+          inArray(
+            failureClusters.id,
+            tx
+              .selectDistinct({ id: testRunsCases.failureClusterId })
+              .from(testRunsCases)
+              .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
+          ),
+        ),
+      )
+      .returning({
+        id: failureClusters.id,
+        status: failureClusters.status,
+        snoozedUntil: failureClusters.snoozedUntil,
+        snoozeMode: failureClusters.snoozeMode,
+        firstSeenRunId: failureClusters.firstSeenRunId,
+      });
+    const open = claimed.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
+    const firstRunIds = [...new Set(open.map((cluster) => cluster.firstSeenRunId))];
+    const stored = new Set(
+      firstRunIds.length
+        ? (await tx.select({ id: testRuns.id }).from(testRuns).where(inArray(testRuns.id, firstRunIds))).map(
+            (r) => r.id,
+          )
+        : [],
+    );
+    return open.filter((cluster) => stored.has(cluster.firstSeenRunId)).map((cluster) => cluster.id);
+  });
+}
+
+/**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
- * for any failure clusters first seen in this run.
+ * for the clusters it announces: `announce`, as the finalize step claimed them
+ * before the run's verdicts, else `clustersToAnnounce` now.
  * Call this after the run status is finalized.
  */
-export async function emitRunNotifications(db: DbClient, runId: number): Promise<void> {
+export async function emitRunNotifications(
+  db: DbClient,
+  runId: number,
+  opts: { announce?: number[] } = {},
+): Promise<void> {
   try {
     const loaded = await loadRunPayload(db, runId);
     if (!loaded) return;
@@ -492,7 +641,8 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
 
     await emitNotification(db, 'run.finished', runPayload);
 
-    if (runRow.status === 'failed' || runRow.failedTests > 0) {
+    // A run that reached Playwright's global timeout failed, whether or not a test did.
+    if (runRow.status === 'failed' || runRow.status === 'timedout' || runRow.failedTests > 0) {
       await emitNotification(db, 'run.failed', runPayload);
       if (isDefaultBranch) {
         await emitNotification(db, 'run.failed.default_branch', runPayload);
@@ -507,7 +657,8 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
     }
 
     // Perf regression: the run is markedly slower than the median of prior
-    // completed runs on the same branch and in the same environment.
+    // complete runs (the `run-baseline` use: the whole suite, no lab run, bisect
+    // step or environment incident) on the same branch and in the same environment.
     if (runRow.duration && runRow.duration > 0) {
       const priorRuns = await db
         .select({
@@ -522,6 +673,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
             eq(testRuns.projectId, runRow.projectId),
             lt(testRuns.id, runId),
             inArray(testRuns.status, ['passed', 'failed']),
+            eligibleRunSql('run-baseline'),
           ),
         )
         .orderBy(desc(testRuns.id))
@@ -544,20 +696,26 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
       }
     }
 
-    // Emit cluster.new for any clusters first seen in this run
-    const newClusters = await db
-      .select({
-        id: failureClusters.id,
-        signature: failureClusters.signature,
-        title: failureClusters.title,
-        errorType: failureClusters.errorType,
-        selector: failureClusters.selector,
-        sampleError: failureClusters.sampleError,
-      })
-      .from(failureClusters)
-      .where(and(eq(failureClusters.firstSeenRunId, runId), eq(failureClusters.projectId, runRow.projectId)));
+    // cluster.new for each cluster the run announces: a cluster first seen by an
+    // editor run, a partial local run or an import is announced by the first run
+    // that sends notifications, naming the run it first appeared in.
+    const announce = opts.announce ?? (await clustersToAnnounce(db, runId));
+    const announcedClusters = announce.length
+      ? await db
+          .select({
+            id: failureClusters.id,
+            signature: failureClusters.signature,
+            title: failureClusters.title,
+            errorType: failureClusters.errorType,
+            selector: failureClusters.selector,
+            sampleError: failureClusters.sampleError,
+            firstSeenRunId: failureClusters.firstSeenRunId,
+          })
+          .from(failureClusters)
+          .where(inArray(failureClusters.id, announce))
+      : [];
 
-    for (const cluster of newClusters) {
+    for (const cluster of announcedClusters) {
       const affected = await db
         .select({ id: testRunsCases.id })
         .from(testRunsCases)
@@ -575,6 +733,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         environment,
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
+        ...(cluster.firstSeenRunId !== runId ? { firstSeenRunId: cluster.firstSeenRunId } : {}),
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
         owners: clusterOwners(cluster.id),
       });

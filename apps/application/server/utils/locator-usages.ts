@@ -31,6 +31,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { locatorUsages, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
@@ -831,7 +832,7 @@ export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchV
           .where(inArray(testRunsCases.id, latestIds))
       : [];
     // Each test's outcome in the run of its latest execution, over every repetition and project
-    // (`decidesOutcome`): a failed one first, then a pass after a retry.
+    // (`decidesOutcome`): a failed one first, then a pass after a failure.
     const latestRunOf = new Map(latestRuns.map((r) => [r.testCaseId, r.testRunId]));
     const attempts = latestRuns.length
       ? await db
@@ -842,6 +843,7 @@ export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchV
             repeatEachIndex: testRunsCases.repeatEachIndex,
             status: testRunsCases.status,
             retries: testRunsCases.retries,
+            passedAfterFailure: testRunsCases.passedAfterFailure,
           })
           .from(testRunsCases)
           .where(
@@ -855,7 +857,7 @@ export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchV
     for (const o of testOutcomes(attempts.filter((a) => latestRunOf.get(a.testCaseId) === a.testRunId))) {
       if (decidesOutcome(o, outcomes.get(o.testCaseId))) outcomes.set(o.testCaseId, o);
     }
-    const statusOf = new Map([...outcomes].map(([id, o]) => [id, indexTestStatus(o.status, o.retries)]));
+    const statusOf = new Map([...outcomes].map(([id, o]) => [id, indexTestStatus(o.status, o.passedAfterFailure)]));
     for (const c of cases) {
       tests.push({
         id: c.id,
@@ -869,9 +871,9 @@ export async function indexTests(db: DrizzleDB, testIds: number[], view: BranchV
   return tests;
 }
 
-/** The index as one latest-outcome word per test: a pass after retries is flaky, a timeout or interruption failed. */
-function indexTestStatus(status: string | null, retries: number | null): LocatorIndexTestStatus | null {
-  if (status === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
+/** The index as one latest-outcome word per test: a pass after a failure is flaky, a timeout or interruption failed. */
+function indexTestStatus(status: string | null, passedAfterFailure: boolean): LocatorIndexTestStatus | null {
+  if (status === 'passed') return passedAfterFailure ? 'flaky' : 'passed';
   if (status === 'failed' || status === 'timedout' || status === 'timedOut' || status === 'interrupted')
     return 'failed';
   if (status === 'skipped') return 'skipped';
@@ -887,7 +889,7 @@ async function projectTestIdAttributes(db: DrizzleDB, projectId: number): Promis
   const runs = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(10);
   const names = new Set<string>();
@@ -913,7 +915,7 @@ async function projectViewports(db: DrizzleDB, projectId: number): Promise<Locat
   const runs = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(10);
   for (const run of runs) {

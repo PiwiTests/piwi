@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set;
 // clear it before the handler modules (which import the barrel) load.
@@ -39,9 +38,7 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshDb(): Promise<Db> {
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   return db;
 }
 
@@ -303,7 +300,13 @@ describe('persistRunCases green-sample dedupe', () => {
       .returning({ id: schema.testRuns.id });
     await persistRunCases(db, 1, run[0]!.id, [
       { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', ariaSnapshot: GREEN_ARIA },
-      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'failed', ariaSnapshot: FAILING_ARIA },
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        status: 'failed',
+        repeatEachIndex: 1,
+        ariaSnapshot: FAILING_ARIA,
+      },
     ]);
     const rows = await db.select().from(schema.testRunsCases);
     const failing = rows.find((r) => r.status === 'failed')!;

@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { runAnalyticsWidget } = await import('../../shared/handlers/analytics');
@@ -56,7 +55,7 @@ async function daily(
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop', defaultBranch: 'main' },
     { id: 2, name: 'admin', defaultBranch: 'main', coverageAreas: [{ name: 'front', include: ['src/'] }] },

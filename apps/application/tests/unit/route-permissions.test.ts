@@ -28,18 +28,6 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'The reporter resolves an AI step from a template and an ARIA snapshot; no project is involved.',
   'server/api/dashboards/[id]/share-links.post.ts':
     'A dashboard spans projects; its live link renders only the projects its minter may share (`share:create`), checked at every view.',
-  'server/api/integrations/connections/[id]/assignable.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/icon.get.ts':
-    'Serves a tracker icon through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/issue-picker.get.ts':
-    'Searches tracker issues through a connection for a create-issue field; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects/[key]/issue-types.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects/[key]/issue-types/[type]/fields.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog and the binding form; no Piwi project in the request.',
   'server/api/integrations/connections/[id]/projects/[key]/transitions.get.ts':
     'A Project admin binds their project to the tracker and picks the transitions; the answer holds no secret (an issue key, its status and the transitions).',
   'server/api/reports/schedules/[id].get.ts':
@@ -48,11 +36,26 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'A schedule spans projects; the handler lets only its owner (or an administrator) delete it.',
   'server/api/reports/schedules/[id]/run.post.ts':
     'A schedule spans projects; the handler lets only its owner (or an administrator) run it, collected with the owner’s project access.',
+  'server/api/run-targets/requests.get.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/answer.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/claim.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/state.post.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/stream.get.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/self.put.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the projects it names are kept only where its owner holds `run:receive`.',
 };
 
-/** The calls that check a permission on one project, or narrow to the projects where it is held. */
+/**
+ * The calls that check a permission on one project, narrow to the projects where it is held, or check it on the
+ * projects bound to the connection a route reads through.
+ */
 const PROJECT_CHECK =
-  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can)\(/;
+  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can|requireConnectionAccess)\(/;
 
 /** Scope helpers and the position of their permission argument (1-based). */
 const SCOPE_HELPERS = { getProjectScope: 3, canAccessProject: 4 } as const;
@@ -236,6 +239,26 @@ describe('route permissions', () => {
       .map(
         (r) =>
           `${r.path}: calls requireProjectPermission without requireAuth before getDatabase — authenticate first, so a caller without credentials gets 401 whether the id exists or not`,
+      );
+    expect(problems).toEqual([]);
+  });
+
+  test('a route that declares a permission authenticates before it reads its body', () => {
+    const READS_BODY =
+      /\b(?:readBody|readRawBody|readMultipartFormData|readFormData|readValidatedBody|getRequestWebStream|readJsonBodyWithin|streamMultipart)(?:<[^()]*>)?\(/;
+    const AUTHENTICATES =
+      /\b(?:requireAuth|requireSessionAuth|requireProjectAccess|requireResolvedProjectAccess|requireMcpAuth|getRequestAccess|requireConnectionAccess|requireRunTarget)\(/;
+    const problems = routes
+      .filter((r) => r.permission)
+      .filter((r) => {
+        const handler = r.src.slice(Math.max(0, r.src.indexOf('eventHandler(')));
+        const body = handler.search(READS_BODY);
+        const auth = handler.search(AUTHENTICATES);
+        return body >= 0 && (auth < 0 || body < auth);
+      })
+      .map(
+        (r) =>
+          `${r.path}: reads its body before it authenticates — authenticate first, so a caller without credentials is refused before any body is read`,
       );
     expect(problems).toEqual([]);
   });

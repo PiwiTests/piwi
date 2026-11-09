@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { and, eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -29,20 +28,34 @@ type RunUse = keyof typeof RUN_USES;
  * test until it is placed here.
  */
 const EXCLUDED: Record<RunUse, string[]> = {
-  baseline: ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'run-baseline': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'fix-verification': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  flakiness: ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'selection-catalog': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'branch-failures': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'editor-overlay': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'change-coverage': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
-  'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
-  notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
-  tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
-  'run-health': ['flake-lab', 'probe'],
+  baseline: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'run-baseline': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'fix-verification': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  flakiness: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'selection-catalog': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'branch-failures': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'editor-overlay': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'change-coverage': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'test-map': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
+  notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'stuck-notifications': [
+    'flake-lab',
+    'probe',
+    'bisect',
+    'reproduce',
+    'request',
+    'local',
+    'desktop',
+    'editor',
+    'preflight',
+    'bug',
+  ],
+  tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
+  'run-health': ['flake-lab', 'probe', 'request'],
 };
 
 /** The uses that leave out an environment incident. */
@@ -54,8 +67,10 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'selection-catalog',
   'branch-failures',
   'editor-overlay',
+  'test-map',
   'auto-heal',
   'notifications',
+  'stuck-notifications',
   'tracker',
 ];
 
@@ -85,6 +100,7 @@ describe('the run eligibility table', () => {
       'bisect',
       'reproduce',
       'import',
+      'request',
     ]);
   });
 
@@ -127,12 +143,14 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('a complete local run counts wherever a CI run does, but an editor run never notifies or writes to a tracker', () => {
-    const outbound: RunUse[] = ['notifications', 'tracker'];
+  test('a complete local run counts wherever a CI run does but in test.stuck, and an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
+    const outbound: RunUse[] = ['notifications', 'tracker', 'cluster-occurrences'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
-        expect(eligible, `${use} ${kind}`).toBe(!outbound.includes(use) || kind !== 'editor');
+        expect(eligible, `${use} ${kind}`).toBe(
+          use !== 'stuck-notifications' && (!outbound.includes(use) || kind !== 'editor'),
+        );
       }
     }
   });
@@ -158,6 +176,25 @@ describe('a developer’s runs and notifications', () => {
   test('a run with no origin stamp reads as local', () => {
     expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...partial }, 'notifications')).toBe(false);
     expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...full }, 'notifications')).toBe(true);
+  });
+
+  test('no run started on a developer’s machine sends test.stuck, complete or not', () => {
+    const running = [
+      { isFullRun: 1, status: 'running' },
+      { isFullRun: 0, status: 'running' },
+    ];
+    for (const shape of running) {
+      for (const kind of ['local', 'desktop', 'editor', 'preflight', 'bug']) {
+        const metadata = { piwiOrigin: { kind } };
+        expect(isEligibleRun({ metadata, ...shape }, 'stuck-notifications'), kind).toBe(false);
+      }
+      expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...shape }, 'stuck-notifications')).toBe(false);
+      for (const kind of ['ci', 'ci-rerun']) {
+        const metadata = { piwiOrigin: { kind } };
+        expect(isEligibleRun({ metadata, ...shape }, 'stuck-notifications'), kind).toBe(true);
+      }
+      expect(isEligibleRun({ metadata: { ci: { provider: 'Jenkins' } }, ...shape }, 'stuck-notifications')).toBe(true);
+    }
   });
 
   test('a partial CI run still feeds them', () => {
@@ -231,9 +268,7 @@ describe('the SQL form of the rule', () => {
 
   async function seed(spelling: (value: unknown) => string) {
     const db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'eligibility' });
     const runs: Array<{ id: number; metadata: Record<string, unknown> | null; isFullRun: number; status: string }> = [];
     let id = 0;

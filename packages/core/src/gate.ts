@@ -28,7 +28,7 @@ export interface GatePolicy {
    * not a solution — this is the ceiling on how much of it a suite may carry.
    */
   maxQuarantined?: number;
-  /** Fail when the run contains any flaky test (passed only after a retry). */
+  /** Fail when the run contains any flaky test (passed after an earlier attempt failed). */
   failOnFlaky?: boolean;
   /**
    * Key of a selection every test of which must have run and passed in this run.
@@ -74,7 +74,7 @@ export interface GateFacts {
   quarantinedFailures: number;
   /** Tests currently quarantined in this project. */
   quarantinedTotal: number;
-  /** Tests that passed only after a retry in this run. */
+  /** Tests that passed in this run after an earlier attempt failed. */
   flakyTests: number;
   /** Set when `requireSelection` was asked: how the named selection fared in this run. */
   selection?: {
@@ -88,8 +88,10 @@ export interface GateFacts {
   };
   /** Set when a leak rule was asked: what the run's resource report holds. */
   resources?: {
-    /** False when the run sent no resource report. */
+    /** False when the run's leaks are not measured: it sent no resource report, or its project declined them. */
     reported: boolean;
+    /** The project declined the `resources` capability: the dashboard keeps no report or history of its leaks. */
+    declined?: boolean;
     leaks: GateLeak[];
     /** Leaks no earlier run of the base branch showed. */
     newLeaks: GateLeak[];
@@ -127,7 +129,8 @@ interface GateViolation {
     | 'selection-failed'
     | 'max-leaks'
     | 'max-new-leaks'
-    | 'no-resource-report';
+    | 'no-resource-report'
+    | 'resources-declined';
   message: string;
   /** Observed value and the limit it exceeded, when the rule is a threshold. */
   actual?: number;
@@ -168,14 +171,14 @@ export function isEmptyPolicy(policy: GatePolicy): boolean {
 
 function overLimit(
   rule: GateViolation['rule'],
-  label: string,
+  [one, many]: [string, string],
   actual: number,
   limit: number | undefined,
 ): GateViolation | null {
   if (limit == null || actual <= limit) return null;
   return {
     rule,
-    message: `${actual} ${label} (limit ${limit})`,
+    message: `${actual} ${actual === 1 ? one : many} (limit ${limit})`,
     actual,
     limit,
   };
@@ -213,15 +216,20 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
   }
 
   const thresholds = [
-    overLimit('max-failed', 'failing tests', facts.failedTests, policy.maxFailed),
-    overLimit('max-new-regressions', 'new regressions', facts.newRegressions, policy.maxNewRegressions),
-    overLimit('max-new-flaky', 'newly flaky tests', facts.newFlaky, policy.maxNewFlaky),
+    overLimit('max-failed', ['failing test', 'failing tests'], facts.failedTests, policy.maxFailed),
+    overLimit(
+      'max-new-regressions',
+      ['new regression', 'new regressions'],
+      facts.newRegressions,
+      policy.maxNewRegressions,
+    ),
+    overLimit('max-new-flaky', ['newly flaky test', 'newly flaky tests'], facts.newFlaky, policy.maxNewFlaky),
   ];
   for (const violation of thresholds) if (violation) violations.push(violation);
 
   const quarantineViolation = overLimit(
     'max-quarantined',
-    'quarantined tests',
+    ['quarantined test', 'quarantined tests'],
     facts.quarantinedTotal,
     policy.maxQuarantined,
   );
@@ -300,6 +308,15 @@ function leakNames(leaks: GateLeak[]): string {
 }
 
 function leakViolations(resources: NonNullable<GateFacts['resources']>, policy: GatePolicy): GateViolation[] {
+  if (resources.declined) {
+    return [
+      {
+        rule: 'resources-declined',
+        message:
+          'the project declined the Resources capability, so its leaks are not measured — turn it on in Settings → Capabilities, or drop the leak rules',
+      },
+    ];
+  }
   if (!resources.reported) {
     return [
       {

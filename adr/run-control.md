@@ -284,7 +284,7 @@ the app's window is one, through a stream and commands behind the desktop token 
 `PIWI_ORIGIN_REF` names its failure cluster, which two runs may share, and the window's own refs (`desktop:…`,
 `job:…`) hold a `:` the channel does not take; an older reporter names its run by `PIWI_ORIGIN_REF` where that fits.
 The shell reads the channel (`PIWI_RUN_CHANNEL`) from a route behind the guard as each run starts, once the readiness
-probe proved the launch nonce, and the route answers no request a browser sends; Piwi Picker reads the hub's address
+probe proved the host holds the token, and the route answers no request a browser sends; Piwi Picker reads the hub's address
 from another (`/api/desktop/live`), in the shape of an editor's `…/live`, and its `hello` carries the desktop token it
 holds since **Allow**: the three open routes are unchanged. A failure no pause bar shows is held in a run the window
 shows live (`show { ref, on }`, the window's own command) or while a Runs window follows the runs, and never in a run

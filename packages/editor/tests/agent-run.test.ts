@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import type { AgentsResult, RunCommand, StopBindResult } from '../src/protocol';
 import { service, waitFor, type Service } from './run-fixtures';
+import { detectCi } from '../../reporter/src/internal/support/ci';
 
 const requireHere = createRequire(import.meta.url);
 const reporter = path.resolve(import.meta.dirname, '../../reporter/dist/index.js');
@@ -118,9 +119,11 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
     if (!run?.env?.PIWI_RUN_CHANNEL) throw new Error('the service built no command for the spec');
     const ref = run.ref!;
     const env: NodeJS.ProcessEnv = { ...process.env, ...run.env };
-    for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT', 'PIWI_EDITOR_SEND']) {
+    for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT', 'PIWI_EDITOR_SEND']) {
       delete env[name];
     }
+    // A run the editor starts is local: no variable a CI provider sets is left.
+    for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
     let output = '';
     let child: ChildProcess | null = null;
     const exited = new Promise<number | null>((resolve) => {

@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { pageNodeKey, collectOwnOrigins, isOwnOriginRequest } from '../../shared/graph';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const {
@@ -28,7 +27,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'graph-project' });
 });
 
@@ -233,15 +232,25 @@ describe('graph pruning', () => {
       kind: 'reaches',
       lastSeenAt: daysAgo(1),
     });
-    // An open surface-drift gap protects its node from removal.
-    await db.insert(schema.scenarioGaps).values({
-      projectId: 1,
-      detector: 'surface-drift',
-      class: 'blind-spot',
-      key: 'route:GET /kept',
-      title: 'new route',
-      status: 'open',
-    });
+    // An open gap protects its node from removal, except a surface-drift gap, which closes with its node.
+    await db.insert(schema.scenarioGaps).values([
+      {
+        projectId: 1,
+        detector: 'single-covering-test',
+        class: 'fragile',
+        key: 'route:GET /kept',
+        title: 'one test',
+        status: 'open',
+      },
+      {
+        projectId: 1,
+        detector: 'surface-drift',
+        class: 'blind-spot',
+        key: 'route:GET /gone',
+        title: 'new route',
+        status: 'open',
+      },
+    ]);
 
     const removed = await pruneStaleCanonicalNodes(db);
     expect(removed).toBe(1);

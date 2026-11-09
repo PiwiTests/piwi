@@ -17,18 +17,17 @@ into something you can send.
 
 A report renders a **dashboard**, an arrangement of analytics widgets in bands, over a **scope**: the
 projects, branches, environments, test filter and period of the analytics **Filters** block. Any
-[saved dashboard](./dashboards) can be exported and scheduled; two built-in dashboards exist for
+[saved dashboard](./dashboards) can be exported and scheduled; four built-in dashboards exist for
 reports:
 
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
-  six headline numbers, the pass rate over time with the comparison period and your
+  six headline numbers, the [pass rate](/guide/concepts#pass-rate) over time with the comparison period and your
   [timeline markers](./timeline-markers), what changed, what is being done (causes fixed, assigned or
   ticketed, tests released from quarantine) and the risks (metrics moving the wrong way, projects
   failing run after run, the oldest open causes).
 - **Engineering**, for the team that owns the suite: the executive report, then the flakiest tests,
   the failure clusters, wasted CI time, regressions, CI time, the [combined coverage](./combined-coverage) trend
   (left out when no project in scope has coverage), the browser matrix and slow endpoints.
-
 - **Team**, the engineering report for the tests one owner holds (`piwi:owner` or CODEOWNERS), offered
   when a test in scope has an owner.
 - **Gaps digest**, the [Test Map](./scenario-gaps)'s weekly digest: the top five new gaps of each
@@ -71,7 +70,10 @@ A **report schedule** sends a quality report on its own. **Schedule…** on the 
 project page's menu opens the form with the filters on screen; **New schedule** on the **Quality
 reports** page starts an empty one. A Contributor or above on the project, or an administrator, creates schedules.
 
-![The Quality reports page: report snapshots and schedules](/screenshots/report-schedules.png)
+<figure>
+  <img src="/screenshots/report-schedules.png" alt="The Quality reports page: report snapshots and schedules">
+  <figcaption>The Quality reports page: snapshots and schedules.</figcaption>
+</figure>
 
 - **When**: daily, weekly, every other week or monthly, at a time in the instance time zone (UTC when
   that setting follows each browser).
@@ -89,12 +91,19 @@ reports** page starts an empty one. A Contributor or above on the project, or an
 
 **Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
 before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots
-and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles. A **global**
+and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles, and a report to someone's
+own channel is dropped once they can no longer open every project it covers. A **global**
 schedule covers every project, goes to global channels and needs an administrator.
+
+<figure>
+  <img src="/screenshots/report-schedule-preview.png" alt="The schedule form's preview: the email the Weekly executive report schedule would send now">
+  <figcaption>Preview in the schedule form: the email the schedule would send now.</figcaption>
+</figure>
 
 The server checks schedules every five minutes; a firing missed while it was down happens at the next
 check, for its own period. The [desktop app](./desktop) fires them while it runs; the demo
 has no scheduler.
+
 
 ### Report snapshots
 
@@ -104,6 +113,11 @@ March reads the same in June, whatever [retention](/operate/storage#data-retenti
 [share](./share-links#report-share-links). You see a snapshot
 when you can open every project it covers. Snapshots go after `PIWI_RETENTION_REPORT_DAYS` days (365; 0
 keeps them).
+
+<figure>
+  <img src="/screenshots/report-snapshot.png" alt="A stored report snapshot: when it was generated and delivered, then the report: the verdict, the headline numbers, the pass rate over time, what changed, what is being done and the risks">
+  <figcaption>A report snapshot: the report as it was generated.</figcaption>
+</figure>
 
 ## Language
 
@@ -127,12 +141,19 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 - The [MCP server](./mcp) offers `get_quality_report` (the bundle), `get_metric_trend` (one metric over
   time) and `compare_periods` (the headline numbers over two periods).
 - The REST API renders a report for a dashboard, format, language and analytics scope, keeps one as a snapshot,
-  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your
+  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/settings/api), or `/settings/api` on your
   instance.
 
 ## Turning reports off
 
-Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in Setup hides
+Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in **Settings → Capabilities** hides
 the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.
+
+## Related
+
+- [Analytics](./analytics): the same metrics, explored on the page
+- [Dashboards](./dashboards): a page of widgets kept for a team or a screen
+- [Notifications](./notifications): the channels a scheduled report is sent through
+- [Piwi CLI](/reference/cli#report): a report from CI or a script

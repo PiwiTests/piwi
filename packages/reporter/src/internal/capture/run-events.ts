@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { ConsoleMessage, Page, Request, Response } from '@playwright/test';
-import { hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
+import { hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
 import { MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import { callSitePath } from './locator-healing.js';
 import { runEventsWanted, tellEvent } from './run-channel.js';
@@ -62,11 +62,14 @@ export function callPlace(
   return null;
 }
 
-/** A call's title: Playwright's own, else its name and the selector it acts on, its credentials hidden. */
+/**
+ * A call's title: Playwright's own, else its name and the selector it acts on, without the text a fill, a typing or an
+ * insert types (`hideTypedText`) and its credentials hidden.
+ */
 export function callTitle(zone: ApiZone, channel: ApiChannel | undefined): string {
   const selector = typeof channel?.params?.selector === 'string' ? ` ${channel.params.selector}` : '';
   const title = zone.title || `${zone.apiName || 'call'}${selector}`;
-  return hideSecretsInText(title).slice(0, 300);
+  return hideSecretsInText(hideTypedText(title)).slice(0, 300);
 }
 
 /** The first lines of a call's error, its credentials hidden. */

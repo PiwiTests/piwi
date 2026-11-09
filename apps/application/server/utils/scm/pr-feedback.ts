@@ -16,7 +16,9 @@
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
 import { testTextLabel } from '#shared/utils/test-label';
-import { and, desc, eq, inArray, max } from 'drizzle-orm';
+import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import {
   bugReports,
   failureClusters,
@@ -28,6 +30,7 @@ import {
 } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
+import type { ScmProvider } from './ScmProvider';
 import { normalizeGitUrl } from './git-url';
 import { getLocatorHealingBatch } from '../locator-healing';
 import { mapHealActionsByCluster } from '../heal/lookup';
@@ -41,6 +44,7 @@ import { getProjectFlakyTests } from '#shared/handlers/projects';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import {
   buildChangeCoverageStatus,
+  changeCoverageStatusUrl,
   hasChangeCoverage,
   buildCommitStatus,
   buildPrComment,
@@ -57,7 +61,7 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage, type RunChangeCoverage } from './change-coverage';
-import { readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
+import { hasNewerPostOnPullRequest, readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
@@ -125,7 +129,7 @@ async function buildFailureEntries(
   projectId: number,
   rows: CaseRow[],
   newRegressionIds: Set<number>,
-  defaultBranchFlaky: Map<number, { branch: string; flakinessRate: number }>,
+  defaultBranchFlaky: Map<number, { branch: string; flakinessScore: number }>,
 ): Promise<{ newRegressions: PrFailureEntry[]; preExisting: PrFailureEntry[] }> {
   const clusterIds = [...new Set(rows.map((r) => r.failureClusterId).filter((id): id is number => id != null))];
   const clusterSignatures = new Map<number, string>();
@@ -208,6 +212,7 @@ export async function buildRunPrSummary(
       expectedStatus: testRunsCases.expectedStatus,
       testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
       duration: testRunsCases.duration,
@@ -247,9 +252,16 @@ export async function buildRunPrSummary(
   const failingRows = caseRows.filter(
     (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
   );
-  const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
+  const flakyRows = [...flakyFinalAttempts(caseRows)];
   const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
-  const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
+  // In the unit of the run's `failedTests`, which it is subtracted from: one final attempt per test, project and
+  // repetition, so a quarantined test's retries never cancel another test's failure.
+  const quarantinedFailures = finalAttempts(caseRows).filter(
+    (row) =>
+      FAIL_STATUSES.includes(row.status) &&
+      !isExpectedFailurePassed(row.status, row.expectedStatus) &&
+      quarantinedIds.has(row.testCaseId),
+  ).length;
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
@@ -261,7 +273,7 @@ export async function buildRunPrSummary(
   // doing. Skipped for runs already on the default branch (nothing to compare).
   const runBranch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = await resolveDefaultBranch(db, project, run.metadata);
-  const defaultBranchFlaky = new Map<number, { branch: string; flakinessRate: number }>();
+  const defaultBranchFlaky = new Map<number, { branch: string; flakinessScore: number }>();
   if (runBranch && runBranch !== defaultBranch) {
     const flaky = await getProjectFlakyTests(
       db,
@@ -272,7 +284,7 @@ export async function buildRunPrSummary(
       defaultBranch,
     ).catch(() => []);
     for (const test of flaky) {
-      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessRate: Math.min(1, test.score / 100) });
+      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessScore: test.score });
     }
   }
 
@@ -370,6 +382,38 @@ export async function buildRunPrSummary(
 }
 
 /**
+ * Whether the pull request number a run's CI named belongs to `repositoryUrl`:
+ * the CI's own repository (`owner/repo`, recorded on GitHub Actions and
+ * Bitbucket Pipelines) is that one, or was not recorded. A suite checked out
+ * from another repository names its CI's pull requests, not this one's.
+ */
+export function ciNamesRepository(ciRepository: string | null | undefined, repositoryUrl: string): boolean {
+  const named = ciRepository
+    ?.trim()
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase();
+  if (!named) return true;
+  return repositoryUrl.toLowerCase().endsWith(`/${named}`);
+}
+
+/**
+ * The open pull request a run belongs to: the one its CI named, a pull request
+ * from a fork included, else the one open on its branch. Null when neither is.
+ */
+export async function findRunPullRequestNumber(
+  provider: Pick<ScmProvider, 'fetchPullRequest' | 'findPullRequestForBranch'>,
+  prNumber: number | null,
+  branch: string | null,
+): Promise<number | null> {
+  if (prNumber != null) {
+    const named = await provider.fetchPullRequest(prNumber).catch(() => null);
+    if (named?.state === 'open' || named?.state === 'draft') return prNumber;
+  }
+  if (!branch) return null;
+  return (await provider.findPullRequestForBranch(branch).catch(() => null))?.number ?? null;
+}
+
+/**
  * Resolve the pull request for a finished run and post the comment and/or the
  * commit status. Returns what it managed to do, for logs and tests.
  */
@@ -419,19 +463,20 @@ export async function postRunPrFeedback(
   summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
-  // cluster or opened a new leak is news. Quarantined failures follow the
-  // commit status's rule.
+  // cluster, opened a new leak or left its change untested is news.
+  // Quarantined failures follow the commit status's rule.
   const quiet = isQuietRun(settings, summary);
 
   let commentPosted = false;
   let prNumber = runPrNumber(run.metadata);
   let commentId: string | null = null;
-  if (settings.comment && branch && !quiet) {
-    const pullRequest = await provider.findPullRequestForBranch(branch);
-    if (pullRequest) {
-      prNumber = pullRequest.number;
+  if (settings.comment && !quiet) {
+    const named = ciNamesRepository(meta?.ci?.repository, repositoryUrl) ? prNumber : null;
+    const pullRequestNumber = await findRunPullRequestNumber(provider, named, branch);
+    if (pullRequestNumber != null) {
+      prNumber = pullRequestNumber;
       const comment = await provider.postPullRequestComment(
-        pullRequest.number,
+        pullRequestNumber,
         PR_COMMENT_MARKER,
         buildPrComment(summary),
       );
@@ -445,13 +490,23 @@ export async function postRunPrFeedback(
   let statusPosted = false;
   const statuses: string[] = [];
   if (settings.status && commit) {
-    statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    statusPosted = await provider.postCommitStatus(commit, {
+      ...buildCommitStatus(summary, settings.statusContext),
+      ref: branch,
+    });
     if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
     if (effectiveChangeCoverage && hasChangeCoverage(effectiveChangeCoverage)) {
       const coverageContext = `${settings.statusContext}/change-coverage`;
       const coveragePosted = await provider
-        .postCommitStatus(commit, buildChangeCoverageStatus(effectiveChangeCoverage, summary.runUrl, coverageContext))
+        .postCommitStatus(commit, {
+          ...buildChangeCoverageStatus(
+            effectiveChangeCoverage,
+            changeCoverageStatusUrl(effectiveChangeCoverage, summary.runUrl),
+            coverageContext,
+          ),
+          ref: branch,
+        })
         .catch(() => false);
       if (coveragePosted) statuses.push(coverageContext);
     }
@@ -565,13 +620,7 @@ export async function refreshRunPrFeedback(db: DbClient, runId: number): Promise
   try {
     const post = await readPrFeedbackPost(db, runId);
     if (!post) return;
-    if (post.prNumber != null) {
-      const [newest] = await db
-        .select({ runId: max(prFeedbackPosts.runId) })
-        .from(prFeedbackPosts)
-        .where(and(eq(prFeedbackPosts.repositoryUrl, post.repositoryUrl), eq(prFeedbackPosts.prNumber, post.prNumber)));
-      if (newest?.runId != null && newest.runId > runId) return;
-    }
+    if (await hasNewerPostOnPullRequest(db, post)) return;
     const change = await computeRunChangeCoverage(db, runId);
     await postRunPrFeedback(db, runId, post.fixes, change?.pr ?? null, change?.locatorBreaks ?? null);
   } catch (e) {
@@ -587,7 +636,7 @@ export async function refreshCommitPrFeedback(db: DbClient, projectId: number, c
   const runs = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit)))
+    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit), notPrivateRun()))
     .orderBy(desc(testRuns.id))
     .limit(REFRESHED_RUNS_SCANNED);
   if (runs.length === 0) return;

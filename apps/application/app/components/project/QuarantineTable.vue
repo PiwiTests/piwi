@@ -46,7 +46,7 @@ interface Candidate {
   flakyScore: number;
   wastedCiMinutes: number;
   rationale: string;
-  /** Dismissed since the newest run. */
+  /** Dismissed since the newest run the candidates read. */
   dismissed: boolean;
 }
 
@@ -69,6 +69,10 @@ const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
 );
 
 watch(data, (d) => emit('count', d?.debt.active ?? 0));
+// A run that starts or ends reads the list again, as it does the project page's counts, and so does a read asked from
+// outside the page (the assistant, once a proposal is applied).
+useRunStream(() => refresh());
+usePageReload(() => refresh());
 
 // What a quarantine leaves uncovered, or a release covers again, beside its button, where the project records coverage.
 const { state: capabilityState } = await useProjectCapabilities(Number(props.projectId));
@@ -130,7 +134,7 @@ async function release(testCaseId: number) {
             :value-class="data.debt.readyToRelease > 0 ? 'text-green-600 dark:text-green-400' : ''"
             hint="earned their way out"
           />
-          <StatTile label="Still failing" :value="data.debt.stillFailing" hint="no passing streak" />
+          <StatTile label="Still failing" :value="data.debt.stillFailing" hint="failed their latest run" />
           <StatTile label="Oldest" :value="formatAge(data.debt.oldestAgeMs)" size="sm" />
         </StatTileGrid>
 

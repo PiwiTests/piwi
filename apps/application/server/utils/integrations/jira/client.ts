@@ -1,5 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
-import { adfPlainText, renderAdf } from '#shared/integrations/render-adf';
+import { adfLinkHrefs, adfPlainText, renderAdf } from '#shared/integrations/render-adf';
 import { DEFAULT_EXPORT_MAX_INLINE_BYTES } from '#shared/export/limits';
 import type {
   CreateIssueInput,
@@ -19,7 +19,9 @@ import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
 import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
-import { isJiraIconPath, isTransientIconStatus, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
+import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
+import { isTransientImageStatus } from '../../public-image';
+import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
@@ -113,16 +115,16 @@ interface JiraIssueResponse {
 }
 
 /** A Jira REST error that keeps the credential out of its message. */
-export class JiraError extends Error {
+export class JiraError extends IntegrationHttpError {
   constructor(
-    readonly status: number,
+    status: number,
     message: string,
-    /** Seconds Jira asked us to wait, carried from a 429 `Retry-After`. */
-    readonly retryAfterSeconds?: number,
+    /** How long Jira asked us to wait, from a 429 `Retry-After`. */
+    retryAfterMs?: number,
     /** Jira's per-field refusals (`customfield_10042` → "Team is required."), from a 400. */
     readonly fieldErrors?: Record<string, string>,
   ) {
-    super(message);
+    super(status, message, retryAfterMs);
     this.name = 'JiraError';
   }
 }
@@ -173,12 +175,10 @@ async function jiraErrorDetail(
 /** The `JiraError` for a failed response: its status line plus Jira's explanation. */
 async function toJiraError(response: Response, what: string): Promise<JiraError> {
   if (response.status === 429) {
-    const header = response.headers.get('retry-after');
-    const retryAfter = header != null ? Number(header) : NaN;
     return new JiraError(
       429,
       'Jira rate limited the request (429)',
-      Number.isFinite(retryAfter) ? retryAfter : undefined,
+      parseRetryAfter(response.headers.get('retry-after')),
     );
   }
   const { detail, fieldErrors } = await jiraErrorDetail(response);
@@ -412,7 +412,7 @@ export class JiraClient implements IssueTracker {
       headers: { Authorization: this.authHeader(), Accept: 'image/*' },
       signal: AbortSignal.timeout(this.timeoutMs),
     }));
-    if (isTransientIconStatus(response.status)) throw await toJiraError(response, 'Jira icon request failed');
+    if (isTransientImageStatus(response.status)) throw await toJiraError(response, 'Jira icon request failed');
     const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
     if (!response.ok || !mime.startsWith('image/')) return null;
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -521,7 +521,11 @@ export class JiraClient implements IssueTracker {
       const data = await this.request<{ fields?: { summary?: string | null; description?: unknown } }>(
         `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description`,
       );
-      return { title: data.fields?.summary ?? null, description: adfPlainText(data.fields?.description) };
+      return {
+        title: data.fields?.summary ?? null,
+        description: adfPlainText(data.fields?.description),
+        links: adfLinkHrefs(data.fields?.description),
+      };
     } catch (err) {
       if (err instanceof JiraError && err.status === 404) return null;
       throw err;

@@ -58,7 +58,7 @@ test.describe('Environment API Tests', () => {
   });
 
   test('should allow multiple environments on the same project', async ({ request }) => {
-    const projectName = 'env-multi-test';
+    const projectName = PROJECT.ENV_MULTI;
     const runIds: number[] = [];
 
     for (const env of envValues) {
@@ -166,7 +166,7 @@ test.describe('Environment API Tests', () => {
 
     const projectsRes = await request.get('/api/projects');
     const { items: projects } = await projectsRes.json();
-    const project = projects.find((p: { name: string }) => p.name === 'env-latestrun-test');
+    const project = projects.find((p: { name: string }) => p.name === PROJECT.ENV_LATEST_RUN);
     expect(project).toBeDefined();
     expect(project.latestRun).toBeDefined();
     expect(project.latestRun.environment).toBe('integration');

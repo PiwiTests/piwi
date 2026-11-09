@@ -88,6 +88,8 @@ const demoPwaConfig = isDemo
     { disable: true };
 
 export default defineNuxtConfig({
+  // The team run request confirmation, the connection card and the helpers they use are shared with Piwi Runner.
+  extends: ['../../packages/run-ui'],
   modules: ['@nuxt/ui', '@vueuse/nuxt', '@vite-pwa/nuxt'],
   ssr: isDemo ? false : undefined,
   // Baked into the demo's static HTML and shown until the app first renders,
@@ -117,14 +119,15 @@ export default defineNuxtConfig({
   },
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
-  // with the reporter), and so does @piwitests/editor, whose run control the
-  // desktop build's server hosts (server/utils/desktop-runs.ts); Vite must
+  // with the reporter), and so do @piwitests/editor, whose run control the
+  // desktop build's server hosts (server/utils/desktop-runs.ts), and
+  // @piwitests/run-ui, whose highlighter the server renders exports with; Vite must
   // transpile them since node_modules is not transpiled by default. Nuxt also
   // passes this list to Nitro's externals.inline, so they are bundled into the
   // server build instead of being copied as TypeScript into
   // .output/server/node_modules.
   build: {
-    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor'],
+    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor', '@piwitests/run-ui'],
   },
 
   devtools: {
@@ -152,22 +155,22 @@ export default defineNuxtConfig({
         baseURL: '/demo/',
         head: {
           htmlAttrs: { lang: 'en' },
-          // Every page title the app sets gains the suffix, so the indexed
-          // entry page reads "Piwi Dashboard (live demo)".
-          title: 'Piwi Dashboard',
+          // Every page title the app sets gains the suffix. The home page sets
+          // none, so the indexed entry page reads this title with the suffix.
+          title: 'Piwi: a Playwright dashboard',
           titleTemplate: '%s (live demo)',
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
             { property: 'og:site_name', content: 'Piwi Dashboard' },
-            { property: 'og:title', content: 'Piwi Dashboard (live demo)' },
+            { property: 'og:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
             { property: 'og:image:width', content: '1200' },
             { property: 'og:image:height', content: '630' },
             { property: 'og:url', content: 'https://piwitests.dev/demo/' },
             { name: 'twitter:card', content: 'summary_large_image' },
-            { name: 'twitter:title', content: 'Piwi Dashboard (live demo)' },
+            { name: 'twitter:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { name: 'twitter:description', content: demoDescription },
             { name: 'twitter:image', content: 'https://piwitests.dev/og-image.png' },
           ],
@@ -397,7 +400,7 @@ export default defineNuxtConfig({
         // Override with `security: []` on auth endpoints (login, oauth, ai/status).
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       } as any,
-      // The reference UI is rendered in-app by app/pages/docs.vue from the
+      // The reference UI is rendered in-app by app/pages/settings/api.vue from the
       // generated /_openapi.json — self-contained (no CDN), and it also covers the
       // static demo where no live server exists. Disabling Nitro's built-in Scalar
       // and Swagger routes here avoids them colliding with that page.
@@ -488,7 +491,7 @@ export default defineNuxtConfig({
         'drizzle-orm/sqlite-proxy',
         // The guided tour's engine, loaded when a tour starts.
         'driver.js',
-        // The languages shared/highlight.ts registers.
+        // The languages @piwitests/run-ui's highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',
         'highlight.js/lib/languages/css',
@@ -525,6 +528,13 @@ export default defineNuxtConfig({
         }
       };
       stamp(pages);
+      // Redirects that keep `/setup`, `/mcp` and `/docs` links working. Page
+      // routes only: `POST /mcp` is the MCP server's.
+      pages.push(
+        { name: 'setup-redirect', path: '/setup', redirect: '/settings/connect' },
+        { name: 'mcp-redirect', path: '/mcp', redirect: '/settings/mcp' },
+        { name: 'docs-redirect', path: '/docs', redirect: '/settings/api' },
+      );
     },
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build

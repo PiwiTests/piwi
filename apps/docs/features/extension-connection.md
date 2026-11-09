@@ -26,8 +26,8 @@ The tab closes, the settings say **Connected as** your name, and the instance's 
 your Piwi instance**.
 
 Allowing creates an API key for your account, named after the browser, with your instance role and project roles. It is
-listed with your other keys in your account's API key settings, where you revoke it; the browser is then
-disconnected at its next request. **Deny**, or ten minutes without an answer, creates nothing.
+listed under **Settings → Account → [Connected apps](/features/run-on-my-machine#connected-apps)**, where you revoke
+it; the browser is then disconnected at its next request. **Deny**, or ten minutes without an answer, creates nothing.
 
 With [authentication](/operate/authentication) off, **Allow** only confirms the connection: there is no account to
 own a key, and none is needed.
@@ -57,7 +57,7 @@ with Playwright**: another program on the app's port receives nothing, after **U
 key instead**, the address must use `127.0.0.1`, since `localhost` may reach another program.
 
 While an instance is connected and no app is paired, the settings point to the pairing. The shared address stays
-granted: **Disconnect** leaves it to the app, and **Unpair** to the instance.
+granted: **Disconnect** leaves it to the app, and **Unpair** to the instance or the editor.
 
 ## URL patterns
 

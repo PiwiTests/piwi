@@ -25,6 +25,7 @@ import {
   notInArray,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -55,7 +56,12 @@ import {
   runBaseUrls,
   linkNodeKey,
   templateAccessibleName,
+  fileRouteTarget,
+  filePageTarget,
+  routeKeyMatchesTarget,
+  pageKeyMatchesTarget,
 } from '../graph';
+import { pathSegments } from '@piwitests/core/file-routes';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
 import {
   scoreTargetMatch,
@@ -65,11 +71,23 @@ import {
   type MatchCandidate,
 } from '@piwitests/core/function-match';
 import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
-import { notLabRun } from './probes';
-import { INVESTIGATION_RUN_ORIGINS, runOriginIn } from '../run-eligibility';
-import { finalAttempts } from '../utils/test-counts';
+import { completeRunSql, eligibleRunSql } from '../run-eligibility';
+import { decidesCheck } from './probes';
+import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { RETIRED_DETECTORS } from './detector-precision';
+import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
+import {
+  closeUnraisedErrorPaths,
+  detectCodeNotExecuted,
+  detectErrorPathNotExecuted,
+  detectSingleCoveringFunction,
+  loadDefaultBranchCoverage,
+  loadErrorPathFiles,
+  loadSingleCoveredFiles,
+  unexecutedFiles,
+  type SourceReader,
+} from './code-gaps';
+import type { GapCloseReason } from '../gap-classes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -84,6 +102,7 @@ import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 export type GapKind = 'gap' | 'finding';
 export type GapClass = 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded';
 export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed';
+export type { GapCloseReason };
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
@@ -91,6 +110,8 @@ export const HISTORY_WINDOW_RUNS = 30;
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
 export const FACTOR_FLOOR = 0.1;
+/** A bug report counts toward escape history, and a closed one raises a gap, for this many days. */
+const ESCAPE_WINDOW_DAYS = 180;
 
 // ── Detected + scored shapes ─────────────────────────────────────────────────
 
@@ -111,6 +132,8 @@ export interface DetectedGap {
   failureClusterId?: number | null;
   /** Files whose churn/age/escape define exposure, when the gap is file-shaped. */
   files?: string[];
+  /** Pages whose escape history the gap shares: its own page, or the pages holding its control. */
+  pages?: string[];
   /** `piwi:priority` observed around the subject, when known. */
   priority?: string | null;
 }
@@ -141,6 +164,8 @@ export interface FileExposure {
 export interface ExposureInputs {
   /** Keyed by file path; absent files fall back to the neutral floor. */
   files?: Map<string, FileExposure>;
+  /** Pages a bug report named: a bug escaped the suite there. */
+  escapedPages?: Set<string>;
 }
 
 // ── Exposure scoring (pure) ──────────────────────────────────────────────────
@@ -201,6 +226,7 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
     age = Math.max(age, ageFactor(fx.ageDays));
     if (fx.escaped) escapeHistory = 1;
   }
+  if (gap.pages?.some((page) => inputs.escapedPages?.has(page))) escapeHistory = 1;
 
   return {
     churn,
@@ -343,11 +369,12 @@ export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTO
 }
 
 /** Why a test's reach is not trusted. */
-export type UntrustedReason = 'flaky' | 'quarantined' | 'skipped' | 'did-not-run';
+export type UntrustedReason = 'flaky' | 'failing' | 'quarantined' | 'skipped' | 'did-not-run';
 
 /** How an untrusted test is named in evidence. */
 const UNTRUSTED_LABEL: Record<UntrustedReason | 'untrusted', string> = {
   flaky: 'flaky',
+  failing: 'failing',
   quarantined: 'quarantined',
   skipped: 'skipped',
   'did-not-run': 'did not run',
@@ -363,9 +390,9 @@ export interface NodeReach {
   nodeKey: string;
   /**
    * Distinct test cases reaching this node, each with its display title.
-   * `trusted` is false for a flaky, quarantined or currently-skipped test, and
-   * `untrustedReason` says which; absent counts as trusted, so pure callers need
-   * not set it.
+   * `trusted` is false for a test flaky or failing lately, quarantined or
+   * currently skipped, and `untrustedReason` says which; absent counts as
+   * trusted, so pure callers need not set it.
    */
   tests: Array<{
     testCaseId: number;
@@ -379,9 +406,9 @@ export interface NodeReach {
 /**
  * Single covering test — a node reached by exactly one *trusted* test, or by
  * tests none of which is trusted. Fragile: one flaky test away from no coverage
- * at all. Flaky, quarantined and skipped tests are not trusted reach, so a
- * trusted test plus a flaky one is single, not double, and a node only untrusted
- * tests reach is named with the reason each is not trusted.
+ * at all. Flaky, failing, quarantined and skipped tests are not trusted reach, so
+ * a trusted test plus a flaky one is single, not double, and a node only
+ * untrusted tests reach is named with the reason each is not trusted.
  */
 export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
@@ -438,13 +465,15 @@ function untrustedOnlyGap(node: NodeReach): DetectedGap {
   };
 }
 
-/** A node with its first- and last-seen runs and reach count. */
+/** A node with its first-seen run, its reach count and whether the ledger holds its drift gap. */
 export interface NodeDrift {
   nodeKind: string;
   nodeKey: string;
   firstSeenRunId: number | null;
   reachCount: number;
   priority?: string | null;
+  /** The ledger holds this node's surface-drift gap open, snoozed or accepted. */
+  liveGap?: boolean;
 }
 
 /**
@@ -462,24 +491,33 @@ function nodeLabel(kind: string, key: string): string {
  * never drift; and the run that built the project's graph first
  * (`firstGraphRunId`) has nothing to compare with, so every node it saw is the
  * baseline, not drift.
+ *
+ * A raised gap stays raised while the ledger holds it (`liveGap`), its node is
+ * in the graph and no test reaches it: it closes once a test reaches the node or
+ * the node leaves the graph, unless triage settles it first.
  */
 export function detectSurfaceDrift(
   nodes: NodeDrift[],
   latestRunId: number | null,
   firstGraphRunId: number | null = null,
 ): DetectedGap[] {
-  if (latestRunId == null || latestRunId === firstGraphRunId) return [];
+  const baseline = latestRunId == null || latestRunId === firstGraphRunId;
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
-    if (node.firstSeenRunId !== latestRunId) continue;
     if (node.nodeKind === 'feature' || node.reachCount > 0) continue;
+    const isNew = !baseline && node.firstSeenRunId === latestRunId;
+    if (!isNew && !node.liveGap) continue;
     gaps.push({
       detector: 'surface-drift',
       kind: 'gap',
       class: 'blind-spot',
       key: `${node.nodeKind}:${node.nodeKey}`,
       title: `New ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)} — confirm it is tested`,
-      evidence: [`Appeared in run #${latestRunId}; no test reaches it yet — observed reach.`],
+      evidence: [
+        node.firstSeenRunId != null
+          ? `Appeared in run #${node.firstSeenRunId}; no test reaches it yet — observed reach.`
+          : 'No test reaches it yet — observed reach.',
+      ],
       confidence: 0.4,
       priority: node.priority ?? null,
     });
@@ -532,30 +570,67 @@ export function detectChangedUnreached(
   return gaps;
 }
 
+/** The reads of a changed file that mean a test reached it. */
+const REACHED_CHANGES = new Set<ChangeReach>(['reached', 'reached-earlier']);
+
+/** The close reason of a *changed, unreached* gap, by the read of its file. */
+const CHANGE_CLOSE_REASONS: Record<Exclude<ChangeReach, 'unreached'>, GapCloseReason> = {
+  reached: 'reached',
+  'reached-earlier': 'reached',
+  'out-of-scope': 'out-of-scope',
+  deleted: 'deleted',
+  'not-observable': 'not-observable',
+};
+
 /**
- * Close the open and snoozed *changed, unreached* gaps of `filePaths`: files a
- * diff no longer reads as uncovered changes, by the rule of change coverage
- * (reached, outside the coverage scope, deleted, or nothing observes them).
- * Returns how many closed.
+ * Close the *changed, unreached* gaps of the files a diff read: the open and
+ * snoozed gaps of those it no longer reads as uncovered changes, by the rule of
+ * change coverage (reached, outside the coverage scope, deleted, or nothing
+ * observes them), and the accepted gaps of those a test reached, whose test was
+ * written. A reached gap of the pull request `prNumber` names closes as
+ * `acted-on`. Returns how many closed.
  */
 export async function closeChangedUnreachedGaps(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
-  filePaths: string[],
+  files: Array<{ filePath: string; reach: ChangeReach }>,
+  prNumber: number | null = null,
 ): Promise<number> {
-  if (filePaths.length === 0) return 0;
+  let closed = 0;
+  for (const [reach, reason] of Object.entries(CHANGE_CLOSE_REASONS) as Array<[ChangeReach, GapCloseReason]>) {
+    const paths = files.filter((f) => f.reach === reach).map((f) => f.filePath);
+    const statuses: GapStatus[] = REACHED_CHANGES.has(reach) ? ['open', 'snoozed', 'accepted'] : ['open', 'snoozed'];
+    closed += await closeChangedGapsOf(db, projectId, runId, paths, statuses, reason, prNumber);
+  }
+  return closed;
+}
+
+/** Close the *changed, unreached* gaps of `filePaths` whose status is one of `statuses`. */
+async function closeChangedGapsOf(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number | null,
+  filePaths: string[],
+  statuses: GapStatus[],
+  reason: GapCloseReason,
+  prNumber: number | null,
+): Promise<number> {
   const now = new Date();
+  const closeReason =
+    reason === 'reached' && prNumber != null
+      ? sql<string>`case when ${scenarioGaps.prNumber} = ${prNumber} then 'acted-on' else 'reached' end`
+      : reason;
   let closed = 0;
   for (let i = 0; i < filePaths.length; i += 100) {
     const rows = await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason, updatedAt: now })
       .where(
         and(
           eq(scenarioGaps.projectId, projectId),
           eq(scenarioGaps.detector, 'changed-unreached'),
-          inArray(scenarioGaps.status, ['open', 'snoozed']),
+          inArray(scenarioGaps.status, statuses),
           inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
         ),
       )
@@ -692,7 +767,7 @@ export interface DependencyProbeStatus {
   dependencyKey: string;
   /** Route keys whose handlers call this dependency. */
   calledByRoutes: string[];
-  /** True when any test has a `checks` edge on this dependency. */
+  /** True when a probe decided a `checks` edge on this dependency (`decidesCheck`). */
   probed: boolean;
 }
 
@@ -885,6 +960,33 @@ export function detectReportedBugEscapes(reports: ReportedBugInput[]): DetectedG
       (r) => `Bug report #${r.id}: ${r.title} — no test names it yet; commit its failing test (piwi:bug ${r.id}).`,
     ),
     confidence: Math.min(1, 0.6 + 0.1 * (list.length - 1)),
+  }));
+}
+
+/** A bug report closed with no test naming it, reported on `pageKey`. */
+export interface ClosedBugInput {
+  id: number;
+  title: string;
+  pageKey: string | null;
+}
+
+/**
+ * Fixed without a regression test: a bug report someone closed while no test
+ * names it (`piwi:bug`). The bug escaped the suite once and nothing would catch
+ * it again; its recorded steps are the test's draft. Blind spot, one per report.
+ */
+export function detectFixedWithoutTest(reports: ClosedBugInput[]): DetectedGap[] {
+  return reports.map((r) => ({
+    detector: 'fixed-without-test',
+    kind: 'gap',
+    class: 'blind-spot',
+    key: `bug:${r.id}`,
+    title: `Bug report #${r.id} was fixed without a regression test: ${r.title}`,
+    evidence: [
+      `Closed${r.pageKey ? ` on ${r.pageKey}` : ''} · no test names it — commit its recorded steps as a test (piwi:bug ${r.id}).`,
+    ],
+    confidence: 0.7,
+    ...(r.pageKey ? { pages: [r.pageKey] } : {}),
   }));
 }
 
@@ -1451,19 +1553,70 @@ function maxPriority(
   return best;
 }
 
+/** The project's default branch, or a run that records no branch, which counts on it. */
+function onDefaultBranch(defaultBranch: string) {
+  return or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''));
+}
+
+/** The runs the detectors read evidence from, newest first. */
+export interface EvidenceWindow {
+  /** The default branch's newest runs the Test Map may read, partial ones included. */
+  runIds: number[];
+  /** The complete runs among the default branch's newest: the ones whose absence of a node says it vanished. */
+  completeRunIds: number[];
+}
+
 /**
- * Ids of a project's most recent real runs, newest first. Lab runs (probes,
- * flake experiments) are excluded — their injected faults must never enter the detectors' history
- * window.
+ * The detectors' evidence: the default branch's newest runs, never a lab or
+ * investigation run nor an environment incident (`test-map` in
+ * `run-eligibility`), since the canonical graph holds the default branch alone.
+ * A partial run observes what it ran; only a complete run's silence about a
+ * node says the node is gone.
  */
-async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
+async function loadEvidenceWindow(db: DrizzleDB, projectId: number, limit: number): Promise<EvidenceWindow> {
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  const window = and(eq(testRuns.projectId, projectId), eligibleRunSql('test-map'), onDefaultBranch(defaultBranch));
+  const ids = async (where: SQL | undefined) =>
+    (await db.select({ id: testRuns.id }).from(testRuns).where(where).orderBy(desc(testRuns.id)).limit(limit)).map(
+      (r) => r.id,
+    );
+  return { runIds: await ids(window), completeRunIds: await ids(and(window, completeRunSql())) };
+}
+
+/**
+ * The statuses each route answered with: in the detectors' evidence window and in
+ * `extraRunIds` (a pull request's own run, whose tests may already exercise what
+ * it adds), keyed by route node key.
+ */
+export async function observedRouteStatuses(
+  db: DrizzleDB,
+  projectId: number,
+  routeKeys: readonly string[],
+  extraRunIds: readonly number[] = [],
+): Promise<Map<string, Set<number>>> {
+  const statuses = new Map<string, Set<number>>();
+  if (routeKeys.length === 0) return statuses;
+  const wanted = new Set(routeKeys);
+  const { runIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
+  const ids = [...new Set([...runIds, ...extraRunIds])];
+  if (ids.length === 0) return statuses;
   const rows = await db
-    .select({ id: testRuns.id })
-    .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
-    .orderBy(desc(testRuns.id))
-    .limit(limit);
-  return rows.map((r) => r.id);
+    .selectDistinct({
+      method: networkRequests.method,
+      url: networkRequests.normalizedUrl,
+      status: networkRequests.status,
+    })
+    .from(networkRequests)
+    .where(inArray(networkRequests.testRunId, ids));
+  for (const r of rows) {
+    if (!r.url) continue;
+    const key = routeNodeKey(r.method, r.url);
+    if (!wanted.has(key)) continue;
+    const set = statuses.get(key) ?? new Set<number>();
+    set.add(r.status);
+    statuses.set(key, set);
+  }
+  return statuses;
 }
 
 /** Title + priority for a set of test cases. */
@@ -1481,67 +1634,133 @@ async function loadTestMeta(
   return meta;
 }
 
-/** The most recent per-case execution status for each of the given test cases. */
-async function latestExecutionStatus(db: DrizzleDB, ids: number[]): Promise<Map<number, string>> {
-  const status = new Map<number, string>();
-  if (ids.length === 0) return status;
-  for (let i = 0; i < ids.length; i += 200) {
-    const slice = ids.slice(i, i + 200);
-    const maxRows = await db
-      .select({ testCaseId: testRunsCases.testCaseId, maxId: sql<number>`max(${testRunsCases.id})` })
-      .from(testRunsCases)
-      .where(inArray(testRunsCases.testCaseId, slice))
-      .groupBy(testRunsCases.testCaseId);
-    const maxIds = maxRows.map((r) => Number(r.maxId)).filter((n) => Number.isFinite(n));
-    if (maxIds.length === 0) continue;
-    const rows = await db
-      .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
-      .from(testRunsCases)
-      .where(inArray(testRunsCases.id, maxIds));
-    for (const r of rows) if (r.testCaseId != null) status.set(r.testCaseId, r.status.toLowerCase());
+/** A test failing each of its last this many runs of the window protects nothing it reaches. */
+const FAILING_RUNS = 3;
+
+/**
+ * Flips between a failing and a passing run that make a test flaky across runs:
+ * one failure fixed in the next run is two, so three is a test that keeps going
+ * back.
+ */
+const FLAKY_FLIPS = 3;
+
+/** How many times a test's outcome turned from failed to passed, or back, across the runs it ran in. */
+function outcomeFlips(runs: readonly WindowOutcome[]): number {
+  let flips = 0;
+  let failedBefore: boolean | null = null;
+  for (const outcome of runs) {
+    if (outcome === 'skipped' || outcome === 'did-not-run') continue;
+    const failed = outcome === 'failed';
+    if (failedBefore !== null && failedBefore !== failed) flips++;
+    failedBefore = failed;
   }
-  return status;
+  return flips;
+}
+
+/** A test's outcome in one run, from its final attempts on every browser and repetition. */
+type WindowOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'did-not-run';
+
+/** The outcome of a test's final attempts in one run: a failure decides it, then a pass after a failed attempt. */
+function windowOutcome(finals: ReadonlyArray<{ status: string; passedAfterFailure: boolean }>): WindowOutcome {
+  const statuses = finals.map((f) => f.status.toLowerCase());
+  if (statuses.some((s) => isFailedStatus(s))) return 'failed';
+  if (finals.some((f) => f.passedAfterFailure)) return 'flaky';
+  if (statuses.includes('passed')) return 'passed';
+  return statuses.every((s) => s === 'skipped') ? 'skipped' : 'did-not-run';
+}
+
+/** The columns of an attempt the window's outcomes read. */
+type AttemptOutcomeRow = {
+  testRunId: number;
+  testCaseId: number;
+  browserName: string | null;
+  repeatEachIndex: number | null;
+  retries: number | null;
+  status: string;
+  passedAfterFailure: boolean;
+};
+
+/** Each test's outcome in every run of the window it ran in, newest run first. */
+async function loadWindowOutcomes(
+  db: DrizzleDB,
+  ids: number[],
+  runIds: number[],
+): Promise<Map<number, WindowOutcome[]>> {
+  const outcomes = new Map<number, WindowOutcome[]>();
+  if (ids.length === 0 || runIds.length === 0) return outcomes;
+  const byRunAndTest = new Map<string, { runId: number; testCaseId: number; rows: AttemptOutcomeRow[] }>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const rows = await db
+      .select({
+        testRunId: testRunsCases.testRunId,
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
+        retries: testRunsCases.retries,
+        status: testRunsCases.status,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
+      })
+      .from(testRunsCases)
+      .where(and(inArray(testRunsCases.testRunId, runIds), inArray(testRunsCases.testCaseId, ids.slice(i, i + 200))));
+    for (const row of rows) {
+      if (row.testCaseId == null) continue;
+      const key = `${row.testRunId}\x00${row.testCaseId}`;
+      const entry = byRunAndTest.get(key) ?? { runId: row.testRunId, testCaseId: row.testCaseId, rows: [] };
+      entry.rows.push({ ...row, testCaseId: row.testCaseId });
+      byRunAndTest.set(key, entry);
+    }
+  }
+  const newestFirst = [...byRunAndTest.values()].sort((a, b) => b.runId - a.runId);
+  for (const { testCaseId, rows } of newestFirst) {
+    const list = outcomes.get(testCaseId) ?? [];
+    list.push(windowOutcome(finalAttempts(rows)));
+    outcomes.set(testCaseId, list);
+  }
+  return outcomes;
 }
 
 /**
- * Test cases whose reach is not trusted: a flaky test (a classified root cause),
- * a quarantined test (an active quarantine), or one whose most recent execution
- * was skipped or did-not-run. Such a test is a fragile single cover, never a
- * second trusted one, so single-covering-test discounts it.
+ * Test cases whose reach is not trusted today, from the window's runs and the
+ * quarantine: a test that passed only after a retry in one of them, or whose
+ * outcome flipped between failed and passed three times across them (flaky), one
+ * that failed each of its last three (failing), one under an active quarantine,
+ * or one whose newest execution among them was skipped or did not run. Such a
+ * test is a fragile single cover, never a second trusted one, so
+ * single-covering-test discounts it. A test with no execution in the window is
+ * judged by nothing, so it stays trusted.
  */
 async function loadUntrustedTests(
   db: DrizzleDB,
   projectId: number,
   ids: number[],
+  runIds: number[],
 ): Promise<Map<number, UntrustedReason>> {
-  // Later reasons win: a test that did not run says more than a quarantine, and a
-  // quarantine more than a flaky classification.
+  // Later reasons win: a test that did not run says more than one failing, a
+  // failing test more than a quarantine, and a quarantine more than a flake.
   const untrusted = new Map<number, UntrustedReason>();
   if (ids.length === 0) return untrusted;
+  const outcomes = await loadWindowOutcomes(db, ids, runIds);
+  for (const [id, runs] of outcomes) {
+    if (runs.includes('flaky') || outcomeFlips(runs) >= FLAKY_FLIPS) untrusted.set(id, 'flaky');
+  }
   for (let i = 0; i < ids.length; i += 200) {
-    const slice = ids.slice(i, i + 200);
-    const flaky = await db
-      .select({ id: testCases.id })
-      .from(testCases)
-      .where(
-        and(eq(testCases.projectId, projectId), inArray(testCases.id, slice), isNotNull(testCases.flakyRootCause)),
-      );
-    for (const r of flaky) untrusted.set(r.id, 'flaky');
     const quarantined = await db
       .select({ id: quarantinedTests.testCaseId })
       .from(quarantinedTests)
       .where(
         and(
           eq(quarantinedTests.projectId, projectId),
-          inArray(quarantinedTests.testCaseId, slice),
+          inArray(quarantinedTests.testCaseId, ids.slice(i, i + 200)),
           isNull(quarantinedTests.releasedAt),
         ),
       );
     for (const r of quarantined) untrusted.set(r.id, 'quarantined');
   }
-  for (const [id, status] of await latestExecutionStatus(db, ids)) {
-    if (status === 'skipped') untrusted.set(id, 'skipped');
-    else if (status === 'didnotrun' || status === 'didnot-run') untrusted.set(id, 'did-not-run');
+  for (const [id, runs] of outcomes) {
+    const latest = runs.slice(0, FAILING_RUNS);
+    if (latest.length === FAILING_RUNS && latest.every((o) => o === 'failed')) untrusted.set(id, 'failing');
+    if (runs[0] === 'skipped') untrusted.set(id, 'skipped');
+    else if (runs[0] === 'did-not-run') untrusted.set(id, 'did-not-run');
   }
   return untrusted;
 }
@@ -1568,11 +1787,28 @@ async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<nu
   return row?.first ?? null;
 }
 
+/** The keys of a detector's gaps the ledger holds open, snoozed or accepted. */
+async function loadLiveGapKeys(db: DrizzleDB, projectId: number, detector: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ key: scenarioGaps.key })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.detector, detector),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    );
+  return new Set(rows.map((r) => r.key));
+}
+
 /**
  * Observed route statuses over the recent window, one row per pattern, kept only
  * for patterns the graph holds as route nodes. Route nodes are written on ingest
  * from the run's own origin alone, so this reuses that own-origin filter and a
  * third-party beacon's raw `network_requests` never becomes a success-only gap.
+ * A page load (a GET of a document) is no call a page makes, so its status
+ * never counts; a form's POST is one.
  */
 async function loadRouteStats(
   db: DrizzleDB,
@@ -1589,7 +1825,16 @@ async function loadRouteStats(
       c: count(),
     })
     .from(networkRequests)
-    .where(inArray(networkRequests.testRunId, runIds))
+    .where(
+      and(
+        inArray(networkRequests.testRunId, runIds),
+        or(
+          isNull(networkRequests.resourceType),
+          ne(networkRequests.resourceType, 'document'),
+          sql`upper(${networkRequests.method}) <> 'GET'`,
+        ),
+      ),
+    )
     .groupBy(networkRequests.method, networkRequests.normalizedUrl, networkRequests.status);
 
   for (const r of rows) {
@@ -1661,18 +1906,11 @@ async function loadPassedWithErrors(
     .select({ routeOrigins: projects.routeOrigins })
     .from(projects)
     .where(eq(projects.id, projectId));
-  // The default branch's newest runs, whatever other branches ran since; a run with no branch counts on it.
+  // The default branch's newest runs, whatever other branches ran since.
   const runs = await db
     .select({ id: testRuns.id, metadata: testRuns.metadata })
     .from(testRuns)
-    .where(
-      and(
-        eq(testRuns.projectId, projectId),
-        notLabRun(testRuns.origin),
-        not(runOriginIn(testRuns.origin, INVESTIGATION_RUN_ORIGINS)),
-        or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, '')),
-      ),
-    )
+    .where(and(eq(testRuns.projectId, projectId), eligibleRunSql('test-map'), onDefaultBranch(defaultBranch)))
     .orderBy(desc(testRuns.id))
     .limit(HISTORY_WINDOW_RUNS);
   if (runs.length === 0) return [];
@@ -1880,10 +2118,16 @@ function parseJsonArray(value: unknown): unknown[] {
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
-  options: { exposure?: ExposureInputs; branch?: string | null; closeTriaged?: boolean } = {},
+  options: {
+    exposure?: ExposureInputs;
+    branch?: string | null;
+    closeTriaged?: boolean;
+    /** Reads a file's source: *error path never executed* runs only with one, and leaves its gaps alone without. */
+    readSource?: SourceReader;
+  } = {},
 ): Promise<{ upserted: number; closed: number }> {
   if (options.branch) return { upserted: 0, closed: 0 };
-  const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
+  const { runIds: recentIds, completeRunIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
   // A background recompute (the nightly sweep) never closes a gap the team
   // deliberately snoozed or accepted: only a run that actually re-covers the
@@ -1945,7 +2189,7 @@ export async function computeScenarioGaps(
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
-  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds]);
+  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds], recentIds);
 
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.
@@ -2071,7 +2315,6 @@ export async function computeScenarioGaps(
   await reopenChangedNodeSnoozes(db, projectId);
 
   const nodeReach: NodeReach[] = [];
-  const nodeDrift: NodeDrift[] = [];
   for (const node of nodeRows) {
     const ids = reachByNode.get(`${node.kind}\x00${node.key}`) ?? new Set<number>();
     nodeReach.push({
@@ -2085,18 +2328,6 @@ export async function computeScenarioGaps(
         untrustedReason: untrustedTests.get(id),
       })),
     });
-    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
-    // detector and are stamped with the latest run on ingest, so they must never
-    // feed surface drift — a newly documented route is not drift.
-    if (node.origin !== 'manifest' && node.origin !== 'openapi') {
-      nodeDrift.push({
-        nodeKind: node.kind,
-        nodeKey: node.key,
-        firstSeenRunId: node.firstSeenRunId ?? null,
-        reachCount: ids.size,
-        priority: maxPriority(ids, meta),
-      });
-    }
   }
 
   // Breadth edges the graph detectors read: contains (page → control), links
@@ -2126,7 +2357,7 @@ export async function computeScenarioGaps(
   const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
   const routesByHandler = new Map<string, Set<string>>(); // handler key → routes handled by it
   const dependenciesByHandler = new Map<string, Set<string>>(); // handler key → dependencies it calls
-  const probedDependencies = new Set<string>(); // dependency keys with any checks edge
+  const probedDependencies = new Set<string>(); // dependency keys a probe decided
   for (const e of breadthEdges) {
     if (e.kind === 'contains' && e.toKind === 'control') {
       const set = pagesByControl.get(e.toKey) ?? new Set<string>();
@@ -2144,13 +2375,14 @@ export async function computeScenarioGaps(
       const set = dependenciesByHandler.get(e.fromKey) ?? new Set<string>();
       set.add(e.toKey);
       dependenciesByHandler.set(e.fromKey, set);
-    } else if (e.kind === 'checks' && e.toKind === 'dependency') {
-      probedDependencies.add(e.toKey);
-    } else if (e.kind === 'checks' && e.toKind === 'route') {
+    } else if (e.kind === 'checks') {
+      // Only a probe that decided the check counts (`decidesCheck`): never an inconclusive one, nor a delay.
       const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
-      if (ev.outcome) {
+      if (!decidesCheck(ev.outcome, ev.fault)) continue;
+      if (e.toKind === 'dependency') probedDependencies.add(e.toKey);
+      else if (e.toKind === 'route') {
         const list = checksByRoute.get(e.toKey) ?? [];
-        list.push({ testKey: e.fromKey, outcome: ev.outcome, fault: ev.fault ?? null });
+        list.push({ testKey: e.fromKey, outcome: ev.outcome!, fault: ev.fault ?? null });
         checksByRoute.set(e.toKey, list);
       }
     }
@@ -2173,11 +2405,15 @@ export async function computeScenarioGaps(
     probed: probedDependencies.has(dependencyKey),
   }));
 
-  // Node recency for orphan tests: a node last seen inside the recent window.
-  const recentSet = new Set(recentIds);
+  // Node recency for orphan tests: a node seen since the oldest complete run of the
+  // window. With no complete run, nothing says a node vanished.
+  const windowStart = completeRunIds.length > 0 ? Math.min(...completeRunIds) : null;
   const nodeSeenRecently = new Map<string, boolean>();
   for (const node of nodeRows) {
-    nodeSeenRecently.set(`${node.kind}\x00${node.key}`, recentSet.has(node.lastSeenRunId ?? -1));
+    nodeSeenRecently.set(
+      `${node.kind}\x00${node.key}`,
+      windowStart == null || (node.lastSeenRunId ?? -1) >= windowStart,
+    );
   }
 
   // Tests that operated an unnamed element on a page holding the control: any
@@ -2187,6 +2423,43 @@ export async function computeScenarioGaps(
     const tests = new Set<number>();
     for (const page of pages) for (const id of unresolvedByPage.get(page) ?? []) tests.add(id);
     if (tests.size > 0) unresolvedTestsByControl.set(control, tests);
+  }
+
+  // Surface drift reads the nodes new in the latest run and those whose drift gap
+  // the ledger holds. A test reaches a route, never the code behind it, so a
+  // handler is reached through the routes it serves and a dependency through the
+  // routes whose handlers call it; a control may be reached by a test that
+  // operated an element the locator index could not name on a page holding it.
+  const liveDrift = await loadLiveGapKeys(db, projectId, 'surface-drift');
+  const driftReach = (kind: string, key: string): Set<number> => {
+    const ids = new Set(reachByNode.get(`${kind}\x00${key}`));
+    let routes: Set<string> | undefined;
+    if (kind === 'handler') routes = routesByHandler.get(key);
+    if (kind === 'dependency') routes = routesByDependency.get(key);
+    for (const route of routes ?? []) {
+      for (const id of reachByNode.get(`route\x00${route}`) ?? []) ids.add(id);
+    }
+    if (kind === 'control') for (const id of unresolvedTestsByControl.get(key) ?? []) ids.add(id);
+    return ids;
+  };
+  const nodeDrift: NodeDrift[] = [];
+  for (const node of nodeRows) {
+    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
+    // detector and are stamped with the latest run on ingest, so they must never
+    // feed surface drift — a newly documented route is not drift. A file is the
+    // code behind the surface, not surface, and never drifts.
+    if (node.kind === 'file' || node.origin === 'manifest' || node.origin === 'openapi') continue;
+    const liveGap = liveDrift.has(`${node.kind}:${node.key}`);
+    if (!liveGap && (node.firstSeenRunId == null || node.firstSeenRunId !== latestRunId)) continue;
+    const ids = driftReach(node.kind, node.key);
+    nodeDrift.push({
+      nodeKind: node.kind,
+      nodeKey: node.key,
+      firstSeenRunId: node.firstSeenRunId ?? null,
+      reachCount: ids.size,
+      priority: maxPriority(ids, meta),
+      liveGap,
+    });
   }
 
   const controlReach: ControlReach[] = [];
@@ -2265,13 +2538,32 @@ export async function computeScenarioGaps(
     };
   });
 
-  // Escaped defects: the project's bug reports that no test names yet.
-  const openReports: ReportedBugInput[] = (
-    await db
-      .select({ id: bugReports.id, title: bugReports.title, pageKey: bugReports.pageKey })
-      .from(bugReports)
-      .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
-  ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  // Escaped defects: the project's bug reports that no test names yet, the
+  // open ones and those closed without a test in the escape window. Every
+  // report in the window that was not dismissed marks its page as escaped.
+  const escapeSince = new Date(Date.now() - ESCAPE_WINDOW_DAYS * 86_400_000);
+  const reportRows = await db
+    .select({
+      id: bugReports.id,
+      title: bugReports.title,
+      pageKey: bugReports.pageKey,
+      status: bugReports.status,
+      testCaseId: bugReports.testCaseId,
+      createdAt: bugReports.createdAt,
+      closedAt: bugReports.closedAt,
+    })
+    .from(bugReports)
+    .where(and(eq(bugReports.projectId, projectId), ne(bugReports.status, 'dismissed')));
+  const inWindow = (d: Date | number | null) => d != null && toMs(d) >= escapeSince.getTime();
+  const openReports: ReportedBugInput[] = reportRows
+    .filter((r) => r.status === 'open')
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const closedUntested: ClosedBugInput[] = reportRows
+    .filter((r) => r.status === 'closed' && r.testCaseId == null && inWindow(r.closedAt))
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const escapedPages = new Set(
+    reportRows.filter((r) => r.pageKey && (r.status === 'open' || inWindow(r.createdAt))).map((r) => r.pageKey!),
+  );
 
   // Passing tests the application reported an error under, on the default branch.
   const passedWithErrors = await loadPassedWithErrors(db, projectId, routeNodeKeys);
@@ -2301,8 +2593,14 @@ export async function computeScenarioGaps(
     }),
   );
 
+  // The default branch's combined coverage, and the error paths of its files when the caller can read their source.
+  const defaultCoverage = await loadDefaultBranchCoverage(db, projectId).catch(() => null);
+  const errorPaths = options.readSource
+    ? await loadErrorPathFiles(defaultCoverage, options.readSource)
+    : { files: [], scanned: [], settled: [] };
   const detected = [
     ...detectReportedBugEscapes(openReports),
+    ...detectFixedWithoutTest(closedUntested),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(
       // A control another test may have operated through an unnamed locator is not known to be single-covered.
@@ -2323,6 +2621,9 @@ export async function computeScenarioGaps(
     ...detectPassedWithErrors(passedExecutions),
     ...detectAssertionLight(assertionPages),
     ...detectCatalogMethodNoTestCalls(catalogReach),
+    ...detectCodeNotExecuted(unexecutedFiles(defaultCoverage)),
+    ...detectSingleCoveringFunction(await loadSingleCoveredFiles(db, projectId)),
+    ...detectErrorPathNotExecuted(errorPaths.files),
   ];
 
   // A gap on a route, a handler or a dependency is exposed through the handler
@@ -2337,7 +2638,17 @@ export async function computeScenarioGaps(
     }
     return [];
   };
+  // A gap on a page or a control shares the escape history of the page it sits on.
+  const pagesOf = (subject: GapSubject): string[] => {
+    if (subject.kind === 'page') return [subject.key];
+    if (subject.kind === 'control') return [...(pagesByControl.get(subject.key) ?? [])];
+    return [];
+  };
   for (const gap of detected) {
+    if (!gap.pages?.length) {
+      const pages = pagesOf(subjectFromGapKey(gap.key));
+      if (pages.length > 0) gap.pages = pages;
+    }
     if (gap.files?.length) continue;
     const files = handlerFilesOf(subjectFromGapKey(gap.key));
     if (files.length > 0) gap.files = files;
@@ -2348,6 +2659,7 @@ export async function computeScenarioGaps(
       ...(await loadRecordedFileExposure(db, projectId, handlerFiles)),
       ...(options.exposure?.files ?? []),
     ]),
+    escapedPages,
   };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
@@ -2394,17 +2706,28 @@ export async function computeScenarioGaps(
       'declared-never-hit',
       'unprobed-dependency',
       'escaped-defect',
+      'fixed-without-test',
       'passed-with-errors',
       'assertion-light',
       'catalog-method-no-test-calls',
+      'code-not-executed',
+      'single-covering-function',
     ],
     scored,
     latestRunId,
     closeStatuses,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, closeStatuses);
+  const closedErrorPaths = await closeUnraisedErrorPaths(
+    db,
+    projectId,
+    [...errorPaths.scanned, ...errorPaths.settled],
+    new Set(errorPaths.files.map((f) => f.path)),
+    latestRunId,
+    closeStatuses,
+  );
   const closedRetired = await closeRetiredDetectorGaps(db, projectId);
-  return { upserted, closed: closed + closedChanged + closedRetired };
+  return { upserted, closed: closed + closedChanged + closedRetired + closedErrorPaths };
 }
 
 /**
@@ -2415,7 +2738,7 @@ async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promi
   const now = new Date();
   const closed = await db
     .update(scenarioGaps)
-    .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+    .set({ status: 'closed', closedAt: now, closedByRunId: null, closeReason: 'retired', updatedAt: now })
     .where(
       and(
         eq(scenarioGaps.projectId, projectId),
@@ -3331,11 +3654,12 @@ async function syncFeatureNodes(
 }
 
 /**
- * Close the open and snoozed *changed, unreached* gaps whose file the rule of
- * change coverage now reads as reached, in the recent window, or outside the
- * coverage scope. Without the diff, a file Piwi observed only through the
- * head commit's coverage cannot be read again, so a file nothing else
- * observes keeps its gap until a later diff settles it.
+ * Close the *changed, unreached* gaps in `statuses` (open and snoozed, and
+ * accepted after a run) whose file the rule of change coverage now reads as
+ * reached, in the recent window, or outside the coverage scope; an accepted
+ * gap closes only once its file is reached. Without the diff, a file Piwi
+ * observed only through the head commit's coverage cannot be read again, so a
+ * file nothing else observes keeps its gap until a later diff settles it.
  */
 async function closeReachedChangedUnreached(
   db: DrizzleDB,
@@ -3343,10 +3667,10 @@ async function closeReachedChangedUnreached(
   runId: number | null,
   statuses: GapStatus[] = ['open', 'snoozed'],
 ): Promise<number> {
-  const closable = statuses.filter((s) => s === 'open' || s === 'snoozed');
+  const closable = statuses.filter((s) => s === 'open' || s === 'snoozed' || s === 'accepted');
   if (closable.length === 0) return 0;
   const open = await db
-    .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key, status: scenarioGaps.status })
     .from(scenarioGaps)
     .where(
       and(
@@ -3361,16 +3685,24 @@ async function closeReachedChangedUnreached(
     changedFiles: open.map((g) => ({ filePath: g.key, additions: 0, deletions: 0 })),
   });
   const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
+  // An open or snoozed gap closes once its file is reached or out of scope; an accepted one once a test reached it.
   const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
-  const toClose = open.filter((g) => settled.has(reachOf.get(g.key) ?? 'unreached')).map((g) => g.id);
+  const toClose = open.filter((g) =>
+    (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'),
+  );
   if (toClose.length === 0) return 0;
 
   const now = new Date();
-  for (let i = 0; i < toClose.length; i += 100) {
-    await db
-      .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
-      .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
+  for (const reason of ['reached', 'out-of-scope'] as const) {
+    const ids = toClose
+      .filter((g) => (reachOf.get(g.key) === 'out-of-scope' ? 'out-of-scope' : 'reached') === reason)
+      .map((g) => g.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      await db
+        .update(scenarioGaps)
+        .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: reason, updatedAt: now })
+        .where(inArray(scenarioGaps.id, ids.slice(i, i + 100)));
+    }
   }
   return toClose.length;
 }
@@ -3460,6 +3792,7 @@ export async function upsertScenarioGaps(
           status: sql`case when ${reopens} then 'open' else ${scenarioGaps.status} end`,
           closedAt: sql`case when ${reopens} then null else ${scenarioGaps.closedAt} end`,
           closedByRunId: sql`case when ${reopens} then null else ${scenarioGaps.closedByRunId} end`,
+          closeReason: sql`case when ${reopens} then null else ${scenarioGaps.closeReason} end`,
         },
       });
     written += slice.length;
@@ -3501,7 +3834,7 @@ async function closeMissingGaps(
   for (let i = 0; i < toClose.length; i += 100) {
     await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: 'not-detected', updatedAt: now })
       .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
   }
   return toClose.length;
@@ -3522,6 +3855,8 @@ export interface ScenarioGapRow {
   factors: ExposureFactors | null;
   score: number | null;
   status: GapStatus;
+  /** Why a closed gap closed; null while it is not closed. */
+  closeReason: GapCloseReason | null;
   dismissReason: string | null;
   ticket: string | null;
   prNumber: number | null;
@@ -3560,6 +3895,7 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
     factors: (r.factors as ExposureFactors | null) ?? null,
     score: r.score ?? null,
     status: r.status as GapStatus,
+    closeReason: r.status === 'closed' ? ((r.closeReason as GapCloseReason | null) ?? null) : null,
     dismissReason: r.dismissReason ?? null,
     ticket: r.ticket ?? null,
     prNumber: r.prNumber ?? null,
@@ -3575,6 +3911,10 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
 }
 
 export interface GapFilters {
+  /** One gap by its id. */
+  gapId?: number;
+  /** The gaps of one key, such as a changed file's path. */
+  key?: string;
   kind?: string;
   class?: string;
   detector?: string;
@@ -3583,6 +3923,8 @@ export interface GapFilters {
   /** Keep only gaps at or above this exposure score. */
   minScore?: number;
   limit?: number;
+  /** List a muted detector's gaps after every other one, so a page holds the others first. */
+  mutedLast?: boolean;
 }
 
 /** List a project's gaps, ranked by score. Defaults to open gaps only. */
@@ -3598,6 +3940,8 @@ export async function listScenarioGaps(
   const where = [eq(scenarioGaps.projectId, projectId)];
   if (filters.status && filters.status !== 'all') where.push(eq(scenarioGaps.status, filters.status));
   else if (!filters.status) where.push(eq(scenarioGaps.status, 'open'));
+  if (filters.gapId != null) where.push(eq(scenarioGaps.id, filters.gapId));
+  if (filters.key) where.push(eq(scenarioGaps.key, filters.key));
   if (filters.kind) where.push(eq(scenarioGaps.kind, filters.kind));
   if (filters.class) where.push(eq(scenarioGaps.class, filters.class));
   if (filters.detector) where.push(eq(scenarioGaps.detector, filters.detector));
@@ -3605,11 +3949,17 @@ export async function listScenarioGaps(
   if (filters.minScore != null) where.push(gte(scenarioGaps.score, filters.minScore));
 
   const limit = Math.min(200, Math.max(1, filters.limit ?? 100));
+  const muted = filters.mutedLast ? [...(await loadMutedDetectors(db, projectId))] : [];
+  const byScore = [desc(scenarioGaps.score), desc(scenarioGaps.updatedAt)];
   const rows = await db
     .select()
     .from(scenarioGaps)
     .where(and(...where))
-    .orderBy(desc(scenarioGaps.score), desc(scenarioGaps.updatedAt))
+    .orderBy(
+      ...(muted.length > 0
+        ? [sql`CASE WHEN ${inArray(scenarioGaps.detector, muted)} THEN 1 ELSE 0 END`, ...byScore]
+        : byScore),
+    )
     .limit(limit);
 
   const mapped = rows.map(mapGapRow);
@@ -3832,7 +4182,11 @@ export async function triageGap(
   const now = new Date();
   const subject = subjectFromGapKey(gap.key);
   // Record who gave the verdict on every triage action (null when auth is off).
-  const set: Record<string, unknown> = { updatedAt: now, triagedBy: input.triagedByUserId ?? null };
+  const set: Record<string, unknown> = {
+    updatedAt: now,
+    triagedBy: input.triagedByUserId ?? null,
+    closeReason: null,
+  };
 
   if (input.verb === 'accept') {
     set.status = 'accepted';
@@ -3858,7 +4212,7 @@ export async function triageGap(
     }
   } else if (input.verb === 'dismiss') {
     set.status = 'dismissed';
-    set.dismissReason = input.reason ?? 'wrong';
+    set.dismissReason = input.reason ?? null;
     if (input.reason === 'covered-elsewhere' && input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
     }
@@ -3870,6 +4224,7 @@ export async function triageGap(
     set.status = 'closed';
     set.closedAt = now;
     set.closedByRunId = null;
+    set.closeReason = 'covered-by';
     set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
@@ -3939,9 +4294,11 @@ async function reopenChangedNodeSnoozes(db: DrizzleDB, projectId: number, now: D
 }
 
 /**
- * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue.
- * A gap the team accepted but whose node still has no trusted edge — the draft
- * was never turned into a test.
+ * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue. A
+ * gap whose test was written closes once a run's recompute no longer finds it
+ * (a change gap, once a diff reads its file as reached), so a gap still accepted
+ * a week on is one whose draft never became a test. A finding never closes
+ * itself, so it is never in the queue.
  */
 export async function listAcceptedUnwritten(
   db: DrizzleDB,
@@ -3949,7 +4306,11 @@ export async function listAcceptedUnwritten(
   now: Date = new Date(),
 ): Promise<ScenarioGapRow[]> {
   const cutoff = new Date(now.getTime() - 7 * DAY_MS);
-  const where = [eq(scenarioGaps.status, 'accepted'), lt(scenarioGaps.acceptedAt, cutoff)];
+  const where = [
+    eq(scenarioGaps.status, 'accepted'),
+    lt(scenarioGaps.acceptedAt, cutoff),
+    ne(scenarioGaps.kind, 'finding'),
+  ];
   if (projectIds !== 'all') {
     if (projectIds.length === 0) return [];
     where.push(inArray(scenarioGaps.projectId, projectIds));
@@ -3960,39 +4321,7 @@ export async function listAcceptedUnwritten(
     .where(and(...where))
     .orderBy(desc(scenarioGaps.score))
     .limit(100);
-  const mapped = rows.map(mapGapRow);
-  if (mapped.length === 0) return mapped;
-
-  // "Unwritten" means the subject node still has no trusted `reaches` edge: a gap
-  // whose test was actually written gains one and drops out of the queue.
-  const byProject = new Map<number, ScenarioGapRow[]>();
-  for (const gap of mapped) {
-    const list = byProject.get(gap.projectId) ?? [];
-    list.push(gap);
-    byProject.set(gap.projectId, list);
-  }
-  const reachedSubjects = new Set<string>();
-  for (const [projectId, gaps] of byProject) {
-    const subjectKeys = [...new Set(gaps.map((g) => g.subject.key))];
-    const edges = await db
-      .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
-      .from(graphEdges)
-      .where(
-        and(
-          eq(graphEdges.projectId, projectId),
-          eq(graphEdges.kind, 'reaches'),
-          isNull(graphEdges.branch),
-          inArray(graphEdges.toKey, subjectKeys),
-        ),
-      );
-    const reached = new Set(edges.map((e) => `${e.toKind}\x00${e.toKey}`));
-    for (const gap of gaps) {
-      if (reached.has(`${gap.subject.kind}\x00${gap.subject.key}`)) {
-        reachedSubjects.add(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`);
-      }
-    }
-  }
-  return mapped.filter((gap) => !reachedSubjects.has(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`));
+  return rows.map(mapGapRow);
 }
 
 // ── Deterministic draft (pure + loader) ──────────────────────────────────────
@@ -4014,6 +4343,20 @@ export interface ScenarioDraft extends ScenarioDraftInput {
   annotations: Array<{ type: string; description?: string }>;
   /** The rendered Playwright test skeleton, delivered as text. */
   text: string;
+}
+
+/** The placeholders `pageKey` puts in a page's path for the parts that differ from visit to visit. */
+const PAGE_KEY_PLACEHOLDER = /\/:(id|uuid|ulid|jwt|token)(?=\/|$)/g;
+
+/**
+ * The draft's step that opens the page `key` names. A key with placeholders (`/shop/orders/:id`) is no address a
+ * browser can open: its `page.goto` is written commented out, with a TODO naming what to fill in.
+ */
+export function gotoStep(key: string): string {
+  const placeholders = [...new Set([...key.matchAll(PAGE_KEY_PLACEHOLDER)].map((m) => `:${m[1]}`))];
+  return placeholders.length
+    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${q(key)});`
+    : `await page.goto(${q(key)});`;
 }
 
 /** A safe single-quoted string for the generated source. */
@@ -4112,6 +4455,7 @@ export function subjectFromGapKey(key: string): GapSubject {
     'feature',
     'ticket',
     'handler',
+    'bug',
   ]) {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
@@ -4151,6 +4495,78 @@ export async function issueScenarioDraft(
   return draft;
 }
 
+/**
+ * Where a changed file's draft starts: the route or page the file serves by the
+ * file-routing convention (`own`), when a test reaches it; else the reached route
+ * or page nearest it, the one sharing the most leading path segments (two at
+ * least, or all of a shorter path), whose page and test the draft borrows. Null
+ * for a file the convention maps to nothing.
+ */
+async function fileDraftAnchor(
+  db: DrizzleDB,
+  projectId: number,
+  filePath: string,
+): Promise<{ anchor: GapSubject; own: GapSubject | null } | null> {
+  const routeTarget = fileRouteTarget(filePath);
+  const pageTarget = routeTarget ? null : filePageTarget(filePath);
+  const target = routeTarget ?? pageTarget;
+  if (!target) return null;
+  const kind = routeTarget ? 'route' : 'page';
+  const matches = (key: string) =>
+    routeTarget ? routeKeyMatchesTarget(routeTarget, key) : pageKeyMatchesTarget(pageTarget!, key);
+
+  const nodes = await db
+    .select({ key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        eq(graphNodes.kind, kind),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+      ),
+    );
+  const ownKey = nodes.find((n) => matches(n.key))?.key ?? null;
+  const own: GapSubject | null = ownKey ? { kind, key: ownKey } : null;
+  const reached = new Set(
+    (
+      await db
+        .selectDistinct({ key: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'reaches'),
+            eq(graphEdges.toKind, kind),
+            isNull(graphEdges.branch),
+          ),
+        )
+    ).map((r) => r.key),
+  );
+  if (ownKey && reached.has(ownKey)) return { anchor: { kind, key: ownKey }, own };
+
+  const needed = Math.min(2, target.segments.length);
+  let best: { key: string; shared: number } | null = null;
+  for (const key of reached) {
+    const segments = pathSegments(kind === 'route' ? parseRouteNodeKey(key).pattern : key);
+    let shared = 0;
+    while (
+      shared < Math.min(segments.length, target.segments.length) &&
+      (target.segments[shared] === CONVENTION_PARAM || target.segments[shared] === segments[shared])
+    ) {
+      shared++;
+    }
+    if (shared >= needed && (!best || shared > best.shared || (shared === best.shared && key < best.key))) {
+      best = { key, shared };
+    }
+  }
+  if (best) return { anchor: { kind, key: best.key }, own };
+  return own ? { anchor: own, own } : null;
+}
+
+/** The segment a file-routing `[param]` reads as, which matches any value. */
+const CONVENTION_PARAM = '\x00';
+
 export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
   const [gap] = await db
     .select()
@@ -4159,11 +4575,25 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   if (!gap) return null;
 
   const subject = subjectFromGapKey(gap.key);
-  const evidence = Array.isArray(gap.evidence) ? (gap.evidence as string[]) : [];
+  const evidence = Array.isArray(gap.evidence) ? [...(gap.evidence as string[])] : [];
+  // The node the path and the nearest test come from: the gap's own, or for a
+  // changed file, the route or page it serves, else the nearest one a test reaches.
+  let anchor: GapSubject = subject;
+  let assertionSubject: GapSubject = subject;
+  if (subject.kind === 'file') {
+    const start = await fileDraftAnchor(db, projectId, subject.key);
+    if (start) {
+      anchor = start.anchor;
+      if (start.own) assertionSubject = start.own;
+      if (!start.own || start.own.key !== start.anchor.key) {
+        evidence.push(`Starts from ${start.anchor.kind} ${start.anchor.key}, the nearest one a test reaches.`);
+      }
+    }
+  }
 
   // Nearest test: the gap's own, else a test reaching the subject node.
   let nearestTestId = gap.testCaseId ?? null;
-  if (nearestTestId == null && (subject.kind === 'route' || subject.kind === 'page' || subject.kind === 'control')) {
+  if (nearestTestId == null && (anchor.kind === 'route' || anchor.kind === 'page' || anchor.kind === 'control')) {
     const [edge] = await db
       .select({ fromKey: graphEdges.fromKey })
       .from(graphEdges)
@@ -4171,8 +4601,8 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
         and(
           eq(graphEdges.projectId, projectId),
           eq(graphEdges.kind, 'reaches'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
@@ -4204,10 +4634,10 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   // Path: a reached page nearest the subject.
   const path: string[] = [];
   let pageForCatalog: string | null = null;
-  if (subject.kind === 'page') {
-    pageForCatalog = subject.key;
-    path.push(`await page.goto(${q(subject.key)});`);
-  } else if (subject.kind === 'control' || subject.kind === 'route') {
+  if (anchor.kind === 'page') {
+    pageForCatalog = anchor.key;
+    path.push(gotoStep(anchor.key));
+  } else if (anchor.kind === 'control' || anchor.kind === 'route') {
     // A page that contains the control, or loads/triggers the route.
     const [edge] = await db
       .select({ pageKey: graphEdges.fromKey })
@@ -4215,20 +4645,20 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       .where(
         and(
           eq(graphEdges.projectId, projectId),
-          inArray(graphEdges.kind, subject.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
+          inArray(graphEdges.kind, anchor.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
           eq(graphEdges.fromKind, 'page'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
       .limit(1);
     if (edge?.pageKey) {
       pageForCatalog = edge.pageKey;
-      path.push(`await page.goto(${q(edge.pageKey)});`);
+      path.push(gotoStep(edge.pageKey));
     }
-    if (subject.kind === 'control') {
-      const [role, ...nameParts] = subject.key.split(':');
+    if (anchor.kind === 'control') {
+      const [role, ...nameParts] = anchor.key.split(':');
       const name = nameParts.join(':');
       path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
     }
@@ -4257,7 +4687,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   return renderScenarioDraft({
     gapTitle: gap.title,
     gapClass: gap.class,
-    subject,
+    subject: assertionSubject,
     nearestTest,
     path,
     catalogMethods,

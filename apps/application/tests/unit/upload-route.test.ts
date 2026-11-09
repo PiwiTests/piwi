@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { gzipSync } from 'node:zlib';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
 import { multipartEvent, type MultipartPart as Part } from './multipart-event';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route module (which imports the barrel) is loaded.
@@ -58,9 +57,7 @@ let db: Db;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   state.db = db;
   state.written.clear();
   testCaseCache.invalidate(1);
@@ -109,6 +106,39 @@ describe('POST /api/test-runs/upload', () => {
     const paysId = executions.find((e) => e.title === 'pays')!.id;
     expect(attachments.map((f) => [f.testRunId, f.testRunsCaseId, f.path.split('/').pop()])).toEqual([
       [runId, paysId, 'pays.png'],
+    ]);
+  });
+
+  test("cancels the instance's run still in flight, as a batch fallback of its stream replaces it", async () => {
+    const [project] = await db.insert(schema.projects).values({ name: 'upload-replaces' }).returning();
+    const [streamed] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: project!.id, status: 'running', startTime: new Date(), instanceId: 'instance-1' })
+      .returning();
+
+    const { runId } = await upload({
+      parts: [
+        field('projectName', 'upload-replaces'),
+        field('testRun', {
+          status: 'passed',
+          startTime: '2026-09-30T10:00:00Z',
+          totalTests: 1,
+          passedTests: 1,
+          instanceId: 'instance-1',
+        }),
+        field('testCases', [
+          { title: 'pays', status: 'passed', location: 'tests/pay.spec.ts:3:1', browser: 'chromium' },
+        ]),
+      ],
+    });
+
+    const runs = await db
+      .select({ id: schema.testRuns.id, status: schema.testRuns.status })
+      .from(schema.testRuns)
+      .orderBy(schema.testRuns.id);
+    expect(runs).toEqual([
+      { id: streamed!.id, status: 'cancelled' },
+      { id: runId, status: 'passed' },
     ]);
   });
 

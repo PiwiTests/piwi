@@ -75,11 +75,15 @@ export interface CollectedTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** On a `begin` event: the retries the test is allowed (`TestCase.retries`). */
+  maxRetries?: number;
   /** Playwright's `TestCase.repeatEachIndex`: which `--repeat-each` repetition this is (0 without repeats). */
   repeatEachIndex?: number;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`, kept by a worker Playwright starts again in the same slot. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   /** Raw Playwright attachments — never sent on the wire. */
@@ -136,8 +140,12 @@ export interface CollectedTestCase {
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout (`TestResult.stdout`), bounded and with its secrets hidden. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr (`TestResult.stderr`), bounded and with its secrets hidden. */
+  stderr?: string | null;
 }
 
 /** Hash + size of a single trace file, used for dedup against the server. */

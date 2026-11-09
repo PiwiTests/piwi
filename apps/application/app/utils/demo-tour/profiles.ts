@@ -60,7 +60,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         align: 'start',
         doc: 'features/code-reach#on-the-execution-page',
       },
-      { id: 'mcp', route: '/mcp', anchor: 'mcp-setup', side: 'bottom', align: 'start', doc: 'features/mcp' },
+      { id: 'mcp', route: '/settings/mcp', anchor: 'mcp-setup', side: 'bottom', align: 'start', doc: 'features/mcp' },
       {
         id: 'simulate',
         anchor: 'demo-simulator',
@@ -121,7 +121,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
       },
       {
         id: 'gaps',
-        route: '/projects/1?tab=gaps',
+        route: '/projects/1?tab=coverage&view=map',
         expect: { project: { id: 1, name: 'e2e-checkout' } },
         anchor: 'feature-map',
         side: 'top',
@@ -130,7 +130,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
       },
       {
         id: 'combined',
-        route: '/projects/5/coverage',
+        route: '/projects/5?tab=coverage&view=code',
         expect: { project: { id: 5, name: 'web-dashboard' }, combinedCoverage: { suites: 3, filesWithoutData: 2 } },
         anchor: 'coverage-overview',
         side: 'bottom',
@@ -228,7 +228,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
       },
       {
         id: 'setup',
-        route: '/setup',
+        route: '/settings/capabilities',
         anchor: 'setup-ladder',
         side: 'bottom',
         align: 'start',

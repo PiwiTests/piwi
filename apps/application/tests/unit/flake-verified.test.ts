@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -54,32 +54,31 @@ describe('which experiment marks a test verified fixed', () => {
 });
 
 describe('when a test flakes again after the verification', () => {
-  const exec = (runId: number, hours: number, status: string, browserKey = 'chromium') => ({
+  const exec = (runId: number, hours: number, status: string, passedAfterFailure = false) => ({
     testCaseId: 1,
     runId,
     runStartedAt: at(hours),
-    browserKey,
+    browserKey: 'chromium',
     status,
+    passedAfterFailure,
   });
 
-  test('a failed and a passed attempt in one run and browser, started after it', () => {
-    expect(firstRetryPassAfter([exp2(1, 5, 'failed'), exp2(1, 5, 'passed')], at(4))).toEqual(at(5));
-    function exp2(runId: number, hours: number, status: string) {
-      return exec(runId, hours, status);
-    }
+  test('an attempt that passed after a failed one, in a run started after it', () => {
+    expect(firstRetryPassAfter([exec(1, 5, 'failed'), exec(1, 5, 'passed', true)], at(4))).toEqual(at(5));
   });
 
   test('a retry-pass in a run that started before it does not count', () => {
-    expect(firstRetryPassAfter([exec(1, 3, 'failed'), exec(1, 3, 'passed')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 3, 'failed'), exec(1, 3, 'passed', true)], at(4))).toBeNull();
   });
 
-  test('a plain failure or pass is not a retry-pass, nor are attempts on two browsers', () => {
+  test('a plain failure or pass is not a retry-pass, nor is a pass on a retry after a pass', () => {
     expect(firstRetryPassAfter([exec(1, 5, 'failed'), exec(2, 6, 'passed')], at(4))).toBeNull();
-    expect(firstRetryPassAfter([exec(1, 5, 'failed', 'chromium'), exec(1, 5, 'passed', 'firefox')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 5, 'passed'), exec(1, 5, 'failed')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 5, 'passed'), exec(1, 5, 'passed')], at(4))).toBeNull();
   });
 
-  test('the earliest such run is reported, and a timed-out attempt counts as failed', () => {
-    const list = [exec(2, 8, 'timedout'), exec(2, 8, 'passed'), exec(1, 6, 'failed'), exec(1, 6, 'passed')];
+  test('the earliest such run is reported', () => {
+    const list = [exec(2, 8, 'timedout'), exec(2, 8, 'passed', true), exec(1, 6, 'failed'), exec(1, 6, 'passed', true)];
     expect(firstRetryPassAfter(list, at(4))).toEqual(at(6));
   });
 });
@@ -112,7 +111,7 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
     });
     await db
       .insert(schema.testRunsCases)
-      .values(retryPass ? [attempt('failed', 0), attempt('passed', 1)] : [attempt('passed', 0)]);
+      .values(withStoredVerdicts(retryPass ? [attempt('failed', 0), attempt('passed', 1)] : [attempt('passed', 0)]));
   }
 
   async function experiment(kind: 'reproduce' | 'verify', verdict: string, hours: number, commit = 'fix1234abcd') {
@@ -146,9 +145,7 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
 
   beforeEach(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
     runSeq = 0;
@@ -249,14 +246,69 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
       duration: 60_000,
       totalTests: 1,
     });
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
-      { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
+        { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
+      ]),
+    );
     expect((await listQuarantine(db as never, 1)).entries[0]).toMatchObject({
       releaseProposed: false,
       releaseReason: null,
       verifiedFix: null,
+    });
+  });
+
+  /** One run where test 1 fails on its only attempt, started `msAfter` ms after `from`. */
+  async function seedFailedRun(from: number, msAfter: number) {
+    const runId = ++runSeq;
+    await db.insert(schema.testRuns).values({
+      id: runId,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(from + msAfter),
+      duration: 60_000,
+      totalTests: 1,
+    });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: runId,
+      testCaseId: 1,
+      status: 'failed',
+      retries: 0,
+      browserName: 'chromium',
+      browser: { projectName: 'chromium' },
+    });
+  }
+
+  test('a failure after the verification withdraws the release proposal', async () => {
+    await addQuarantine(db as never, 1, 1, { reason: 'flaky' });
+    const quarantinedAt = await verifyAfterNow();
+    await seedFailedRun(quarantinedAt, 60_000);
+
+    const { entries, debt } = await listQuarantine(db as never, 1);
+    expect(entries[0]).toMatchObject({ releaseProposed: false, releaseReason: null, verifiedFix: null });
+    // One test cannot be both ready to release and still failing.
+    expect(debt).toMatchObject({ readyToRelease: 0, stillFailing: 1 });
+  });
+
+  test('a failure between the quarantine and the verification leaves the release proposed', async () => {
+    await addQuarantine(db as never, 1, 1, { reason: 'flaky' });
+    const quarantinedAt = Date.now();
+    await seedFailedRun(quarantinedAt, 1_000);
+    await db.insert(schema.flakeExperiments).values({
+      projectId: 1,
+      testCaseId: 1,
+      kind: 'verify',
+      verdict: 'verified',
+      commit: 'fix1234abcd',
+      source: 'cli',
+      createdAt: new Date(quarantinedAt + 60_000),
+      finishedAt: new Date(quarantinedAt + 120_000),
+    });
+
+    expect((await listQuarantine(db as never, 1)).entries[0]).toMatchObject({
+      releaseProposed: true,
+      releaseReason: 'verified-fix',
     });
   });
 });

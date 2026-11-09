@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  gotoStep,
   renderScenarioDraft,
   detectControlNobodyExercises,
   detectReachableUnvisited,
@@ -300,6 +301,18 @@ describe('renderScenarioDraft', () => {
     expect(draft.text).toContain('cartPage.placeOrder()');
     expect(draft.text).toContain('TODO: assert the effect');
     expect(draft.annotations).toContainEqual({ type: 'piwi:feature', description: 'Checkout' });
+  });
+
+  test('opens a page by its key, and leaves a key with placeholders for a real address', () => {
+    expect(gotoStep('/checkout')).toBe("await page.goto('/checkout');");
+    expect(gotoStep('/shop/orders/:id')).toBe(
+      "// TODO: a real :id in place of the key's: await page.goto('/shop/orders/:id');",
+    );
+    expect(gotoStep('/users/:uuid/orders/:id/items/:id')).toBe(
+      "// TODO: a real :uuid and :id in place of the key's: await page.goto('/users/:uuid/orders/:id/items/:id');",
+    );
+    // A colon inside a word is the page's own.
+    expect(gotoStep('/docs/a:b')).toBe("await page.goto('/docs/a:b');");
   });
 
   test('notes when there is no reachable path', () => {

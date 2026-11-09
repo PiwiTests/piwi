@@ -41,6 +41,11 @@ export interface SourceMapLookup {
     end: GeneratedPosition,
     fromLine?: number,
   ): [number, number] | null;
+  /**
+   * Visit every segment that maps to a source, in generated order: its 0-based generated line and column, its
+   * source index and its original 0-based line.
+   */
+  forEachMapping(visit: (line: number, column: number, source: number, originalLine: number) => void): void;
 }
 
 /** A 0-based position in generated code. */
@@ -231,6 +236,14 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
         return true;
       });
       return first;
+    },
+    forEachMapping(visit) {
+      for (let line = 0; line < lineCount; line++) {
+        for (let i = segments.lineStarts[line]!; i < segments.lineStarts[line + 1]!; i++) {
+          const source = segments.sources[i]!;
+          if (source >= 0) visit(line, segments.columns[i]!, source, segments.originalLines[i]!);
+        }
+      }
     },
     originalLinesBetween(source, start, end, fromLine = 0) {
       let first = Number.POSITIVE_INFINITY;

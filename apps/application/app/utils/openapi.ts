@@ -1,9 +1,9 @@
 /**
- * Minimal OpenAPI 3.x types + helpers for the in-app API reference (`/docs`).
+ * Minimal OpenAPI 3.x types + helpers for the in-app API reference (`/settings/api`).
  *
  * The dashboard renders its own auto-generated spec (`/_openapi.json`) with a
  * small self-contained Vue renderer instead of loading a third-party CDN
- * bundle, so `/docs` works offline / air-gapped and makes no outbound calls
+ * bundle, so the reference works offline / air-gapped and makes no outbound calls
  * (honoring the "zero telemetry, no phone-home" promise). Only the subset of
  * OpenAPI the generated spec actually uses is modeled here.
  */

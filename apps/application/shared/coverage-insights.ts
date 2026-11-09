@@ -27,6 +27,8 @@ import {
   type LineRange,
 } from '@piwitests/core/coverage';
 
+import { innermostRunLines, subtractLineRanges } from './coverage-combine';
+
 export type { CoverageRuntime, LineRange } from '@piwitests/core/coverage';
 
 /** Line ranges listed per file and list, at most; the rest are counted in `moreRanges`. */
@@ -65,23 +67,6 @@ export const FAILURES_FOLLOW_MIN_SHARE = 0.9;
 export const MAX_LOSS_TESTS = 50;
 
 // ── Range helpers ────────────────────────────────────────────────────────────
-
-/** The lines of normalized ranges `a` that are not in normalized ranges `b`, as normalized ranges. */
-export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] {
-  const out: LineRange[] = [];
-  let j = 0;
-  for (const [start, end] of a) {
-    let cursor = start;
-    while (j < b.length && b[j]![1] < cursor) j++;
-    for (let k = j; k < b.length && b[k]![0] <= end && cursor <= end; k++) {
-      const [bStart, bEnd] = b[k]!;
-      if (bStart > cursor) out.push([cursor, bStart - 1]);
-      cursor = Math.max(cursor, bEnd + 1);
-    }
-    if (cursor <= end) out.push([cursor, end]);
-  }
-  return out;
-}
 
 /** The union of several lists of line ranges, normalized. */
 export function unionLineRanges(...lists: Array<LineRange[] | undefined>): LineRange[] {
@@ -1144,12 +1129,18 @@ export interface CoverageReachAnswer {
   nearest?: NearestTest | null;
 }
 
-/** The target lines a covered file says ran, did not run, or cannot tell. */
+/**
+ * The target lines a covered file says ran, did not run, or cannot tell. At
+ * function granularity a line ran when the innermost function around it ran:
+ * `allFunctions`, every function of the file's version, sets aside the nested
+ * ones that did not run, such as a callback never called.
+ */
 export function reachOfTargets(
   entry: CoverageFile | null,
   complete: boolean,
   target: LineRange[],
   executable: LineRange[] | null,
+  allFunctions: LineRange[] | null = null,
 ): Pick<CoverageReachAnswer, 'ran' | 'notRan' | 'unknown' | 'notExecutable' | 'allRan' | 'granularity'> {
   const notExecutable = executable ? subtractLineRanges(target, executable) : [];
   const relevant = executable ? intersectLineRanges(target, executable) : target;
@@ -1164,7 +1155,7 @@ export function reachOfTargets(
       missing = subtractLineRanges(relevant, entry.lines);
     } else if (entry.functions?.length) {
       granularity = 'functions';
-      const inFunctions = normalizeLineRanges(entry.functions);
+      const inFunctions = innermostRunLines(entry.functions, allFunctions ?? []);
       ran = intersectLineRanges(relevant, inFunctions);
       missing = subtractLineRanges(relevant, inFunctions);
     } else {

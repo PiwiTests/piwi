@@ -1,6 +1,6 @@
 ---
 title: Auto-heal PRs
-description: "Piwi opens a pull request with a validated locator replacement or patch for a failure; you review and merge it, Piwi never does."
+description: "Piwi opens a pull request with one-line locator replacements, from a passing run's capture or the change's own rename, for a broken locator; you review and merge it, Piwi never does."
 lang: en-US
 ---
 
@@ -31,6 +31,11 @@ strongest thing the dashboard does, so the posture is conservative by design.
 - One PR per run, batching every qualifying edit. A duplicate run never opens a second PR for the same edits while
   their PR is open, however long it stays open; an attempt that failed or was skipped is retried by the next run that
   qualifies.
+
+<figure>
+  <img src="/screenshots/heal-pr.png" alt="The body of an auto-heal pull request: two broken locators replaced, each with its file, line, change, score and where the replacement came from, then the failure clusters, the owners and the command that verifies the fix">
+  <figcaption>An auto-heal pull request's body: one row per replaced locator.</figcaption>
+</figure>
 
 ## After the PR opens
 
@@ -81,3 +86,9 @@ Settings → Auto-heal (administrator only):
   recorded no `defaultBranch` in its metadata.
 - Retries use progressive backoff and record the provider's own error on the action, so a failure is visible rather
   than silent.
+
+## Related
+
+- [Locator healing](./locator-healing): how the replacement locator is chosen
+- [Source control](/guide/source-control): the token Piwi opens the pull request with
+- [Failure clusters](./failure-clusters#did-the-fix-work): how the next run confirms the fix

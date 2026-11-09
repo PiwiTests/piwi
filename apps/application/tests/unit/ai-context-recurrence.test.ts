@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const { recurrenceFlakinessSection, retryBehaviorSection } = await import('../../server/utils/ai-context');
@@ -20,13 +20,15 @@ async function seedRun(): Promise<number> {
 
 /** One execution of the test; a failure in the cluster carries its id, a pass carries none, as at ingest. */
 async function seedExec(runId: number, testCaseId: number, status: 'failed' | 'passed', retries = 0): Promise<void> {
-  await db.insert(schema.testRunsCases).values({
-    testRunId: runId,
-    testCaseId,
-    status,
-    retries,
-    failureClusterId: status === 'failed' ? 1 : null,
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      testRunId: runId,
+      testCaseId,
+      status,
+      retries,
+      failureClusterId: status === 'failed' ? 1 : null,
+    }),
+  );
 }
 
 async function loadCluster() {
@@ -36,7 +38,7 @@ async function loadCluster() {
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'recurrence-project' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'adds an item' },
@@ -71,7 +73,9 @@ describe('recurrence and retry sections of a flaky cluster', () => {
     expect(recurrence).toContain('- Retry-passes: 2 of 3 runs');
     expect(recurrence).toContain('- Pattern: intermittent');
 
-    expect(await retryBehaviorSection(db as never, cluster)).toContain('passed on retry in the last seen run');
+    expect(await retryBehaviorSection(db as never, cluster)).toContain(
+      'passed on a retry after a failed attempt in the last seen run',
+    );
   });
 
   test('a test that fails in every run with no retry pass reads as persistent', async () => {

@@ -77,7 +77,12 @@ export function withSceneChanges(context) {
   files.sort((a, b) => Number(b.filename === suspect(0).path) - Number(a.filename === suspect(0).path));
   return {
     ...context,
-    scmChanges: { commits: newer.map((c) => ({ sha: c.sha, message: c.message })), files, patchesOmitted: false },
+    scmChanges: {
+      // Oldest first, as the providers list a range's commits.
+      commits: newer.map((c) => ({ sha: c.sha, message: c.message })).reverse(),
+      files,
+      patchesOmitted: false,
+    },
     coverage: {
       ...context.coverage,
       scm: {

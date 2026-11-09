@@ -6,7 +6,7 @@
  * the card shows its data instead.
  *
  * `not captured` and `not applicable` reuse `FeatureUnavailable` (the former
- * links to `/setup`, the latter to the relevant doc); `nothing happened` is a
+ * links to the connect wizard, the latter to the relevant doc); `nothing happened` is a
  * quiet confirmation that the fixtures ran and found nothing, so it gets no
  * call to action.
  */

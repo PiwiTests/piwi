@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { InstanceRole, ProjectRole, can, type AccessSummary } from '#shared/permissions';
+import { MAX_SERIAL_ID } from '#shared/route-id';
 import { DEMO_GROUPS, DEMO_USERS, demoAccessFor } from '~~/app/demo/demo-users';
 
 /**
@@ -135,6 +136,27 @@ describe('the demo router holds each route to its permission', () => {
     });
   });
 
+  test('the tracker pickers read through the canned connection only, which every project is bound to', async () => {
+    // Priya files issues on project 2; another connection id answers as a missing connection does.
+    expect((await as(PRIYA).get('/api/integrations/connections/1/projects')).projects).toHaveLength(1);
+    expect((await as(PRIYA).get('/api/integrations/connections/1/issue-picker', 'q=')).issues).not.toHaveLength(0);
+    const paths = [
+      '/projects',
+      '/projects/DEMO/issue-types',
+      '/projects/DEMO/issue-types/Bug/fields',
+      '/assignable',
+      '/issue-picker',
+    ];
+    for (const path of paths) {
+      expect(await refusal(as(PRIYA).get(`/api/integrations/connections/2${path}`, 'project=DEMO')), path).toEqual({
+        statusCode: 404,
+        message: 'Connection not found or has no credentials',
+      });
+    }
+    // Sam files issues nowhere: the permission check refuses the request first.
+    expect((await refusal(as(SAM).get('/api/integrations/connections/1/projects')))?.statusCode).toBe(403);
+  });
+
   test('instance permissions are for the administrator only', async () => {
     expect((await as(AVERY).get('/api/project-access')).users).toHaveLength(DEMO_USERS.length);
     expect((await refusal(as(QUINN).get('/api/project-access')))?.statusCode).toBe(403);
@@ -155,6 +177,15 @@ describe('the demo router holds each route to its permission', () => {
 
     const users = await as(QUINN).get('/api/users');
     expect(Object.keys(users.items[0]).sort()).toEqual(['id', 'name', 'username']);
+    // Noah holds no role yet: Quinn finds him by his whole username only, and cannot name him by id alone.
+    const listsNoah = (list: { items: { id: number }[] }) => list.items.some((u) => u.id === NOAH);
+    expect(listsNoah(users)).toBe(false);
+    expect(listsNoah(await as(QUINN).get('/api/users', 'lookup=NOAH-Newcomer'))).toBe(true);
+    const noahByIdOnly = { entries: [{ subject: { type: 'user', id: NOAH }, role: ProjectRole.VIEWER }] };
+    expect(await refusal(as(QUINN).put('/api/projects/1/members', noahByIdOnly))).toEqual({
+      statusCode: 400,
+      message: `User(s) not found: ${NOAH}`,
+    });
     expect((await as(QUINN).get('/api/groups')).groups.map((g: { name: string }) => g.name)).toEqual([
       'Product owners',
       'QA',
@@ -169,5 +200,24 @@ describe('the demo router holds each route to its permission', () => {
     });
     expect((await as(NOAH).get('/api/projects')).items.map((p: { id: number }) => p.id)).toEqual([4]);
     expect((await as(NOAH).get('/api/auth/me')).user.access.projects).toEqual({ 4: [ProjectRole.VIEWER] });
+  });
+});
+
+describe('the demo router reads the ids of a path as the server routes do', () => {
+  test('an id written with a leading zero is refused, as `requireRouteId` refuses it', async () => {
+    const invalid = { statusCode: 400, message: 'Invalid ID' };
+    expect(await refusal(as(AVERY).get('/api/users/01/api-keys'))).toEqual(invalid);
+    expect(await refusal(as(PRIYA).post('/api/projects/02/markers', marker))).toEqual(invalid);
+    expect(await refusal(as(AVERY).get('/api/users/1/api-keys'))).toBeNull();
+  });
+
+  test('an id above the largest serial id is refused, and one at it is read', async () => {
+    const invalid = { statusCode: 400, message: 'Invalid ID' };
+    expect(await refusal(as(AVERY).get(`/api/users/${MAX_SERIAL_ID + 1}/api-keys`))).toEqual(invalid);
+    expect(await as(AVERY).get(`/api/users/${MAX_SERIAL_ID}/api-keys`)).toEqual({ items: [] });
+  });
+
+  test('an id with anything after its digits matches no route', async () => {
+    expect(await as(AVERY).get('/api/users/1abc/api-keys')).toBeUndefined();
   });
 });

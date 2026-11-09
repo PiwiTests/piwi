@@ -75,11 +75,7 @@ const { data: projectMenu, execute: loadProjects } = useFetch('/api/projects/men
   default: () => [] as ProjectMenuItem[],
   transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
-// Share links need the server; the demo has none, so the switch stays hidden there.
-const { data: shareSettings, execute: loadShareSettings } = useFetch<{ enabled: boolean; maxTtlDays: number }>(
-  '/api/share-links/settings',
-  { server: false, lazy: true, immediate: false },
-);
+const { offered: offersShareLinks, load: loadShareLinks } = useShareLinksOfferedOnOpen();
 let loaded = false;
 
 const name = ref('');
@@ -134,7 +130,7 @@ watch(
       void loadChannels();
       void loadScheduleOptions();
       void loadDashboards();
-      if (!demoMode) void loadShareSettings();
+      void loadShareLinks();
       void loadProjects();
     }
   },
@@ -375,10 +371,17 @@ async function save() {
           :request="previewRequest"
           :channels="selectedChannels"
           :comparison="comparisonText"
-          :include-share-link="includeShareLink && !!shareSettings?.enabled"
+          :include-share-link="includeShareLink && offersShareLinks"
           :include-narrative="includeNarrative"
         />
-        <form v-else class="space-y-4" data-testid="schedule-form" data-tour="schedule-form" @submit.prevent="save">
+        <form
+          v-else
+          class="space-y-4"
+          data-testid="schedule-form"
+          data-tour="schedule-form"
+          method="post"
+          @submit.prevent="save"
+        >
           <UAlert
             v-if="demoMode"
             icon="i-lucide-info"
@@ -502,7 +505,7 @@ async function save() {
             </p>
           </UFormField>
 
-          <UFormField v-if="shareSettings?.enabled">
+          <UFormField v-if="offersShareLinks">
             <template #label>
               <span class="inline-flex items-center gap-1">Share link <HelpHint topic="reports.share-link" /></span>
             </template>

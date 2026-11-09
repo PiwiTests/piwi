@@ -30,11 +30,13 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/auth/setup', // initial admin setup (server only)
   'POST /api/test-runs/submit', // bulk result submission (no server in demo)
   'POST /api/test-runs/upload', // multipart upload (no server in demo)
+  'POST /api/test-runs/upload/results', // a run's results ahead of its files (no server in demo)
   'POST /api/test-runs/start', // alternate streaming start (server only)
   'POST /api/test-runs/:id/case-files', // file upload during live run (server only)
   'DELETE /api/tests/cleanup', // test-suite cleanup hook (server only)
   'POST /api/traces/check', // trace dedup check (server only)
   'GET /api/integrations/connections/:id/icon', // a tracker icon fetched with the connection's credentials; the demo's pickers carry no icons
+  'GET /api/auth/avatar', // the signed-in user's profile picture; the demo stores no upload and its users sign in with no provider, so none has one
   'POST /api/test-runs/:id/gate', // CI gate policy — there is no pipeline to gate in a browser demo
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
@@ -50,11 +52,23 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
   'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'GET /api/desktop/run-channel', // desktop build only; the shell reads the run channel it names in each run it starts
+  'GET /api/desktop/notifications', // desktop build only; the shell shows the notifications it streams
   'GET /api/desktop/live', // desktop build only; Piwi Picker reads the hub of the desktop app's runs
   'GET /api/desktop/runs/events', // desktop build only; the window's stream of the runs the shell starts
   'POST /api/desktop/runs/commands', // desktop build only; the window's commands to those runs
   'POST /api/desktop/runs/picks', // desktop build only; the locators those runs' tests pick, for the window to copy
-  'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
+  'GET /api/desktop/run-target', // desktop build only; the app's connection to a team instance it takes run requests from
+  'POST /api/desktop/run-target/connect', // desktop build only; starts the device flow on a team instance
+  'POST /api/desktop/run-target/key', // desktop build only; the shell keeps the key the device flow gave in the keychain
+  'PUT /api/desktop/run-target/key', // desktop build only; the shell hands the kept key back after each start
+  'DELETE /api/desktop/run-target/key', // desktop build only; the shell disconnects from the team instance
+  'PUT /api/desktop/run-target/links', // desktop build only; the folders the shell links for the instance's projects
+  'POST /api/desktop/run-target/requests/:id/answer', // desktop build only; the person's answer in the window
+  'POST /api/desktop/run-target/requests/:id/plan', // desktop build only; the checks again once a folder is linked
+  'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
+  'POST /api/desktop/run-target/requests/:id/started', // desktop build only; the shell started the requested run
+  'POST /api/desktop/run-target/requests/:id/ended', // desktop build only; the requested run's Playwright exited
+  'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section's Extract button is hidden client-side in demo mode, leaving its prompt to copy, instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no
   // accounts and its data is already public, so there is nothing to share —
@@ -97,6 +111,15 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/extension/connect/token',
   'GET /api/extension/connect/request',
   'POST /api/extension/connect/decision',
+  // Run on my machine: a run target reaches a real server with the key the
+  // device flow gave it, never the demo, whose seeded app answers in the
+  // requester's routes.
+  'GET /api/run-targets/requests',
+  'GET /api/run-targets/stream',
+  'POST /api/run-targets/requests/:id/claim',
+  'POST /api/run-targets/requests/:id/answer',
+  'POST /api/run-targets/requests/:id/state',
+  'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The
   // demo has no server for an MCP client to reach.

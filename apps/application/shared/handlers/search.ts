@@ -1,13 +1,12 @@
 import { and, or, eq, desc, inArray, type SQLWrapper } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 import { testRuns, testCases, projects, failureClusters, entityLinks } from '../../server/database/schema';
 import { foldedContains, foldedEquals } from '../utils/fold-text-sql';
 import { describeCluster } from '../describe-cluster';
+import { MAX_SERIAL_ID } from '../route-id';
 import type { DrizzleDB } from './db';
 
 type ProjectScope = 'all' | Set<number>;
-
-/** The largest id a PostgreSQL `serial` column holds. */
-const MAX_SERIAL_ID = 2_147_483_647;
 
 export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string, scope: ProjectScope = 'all') {
   if (!q || q.trim().length < 2 || (scope !== 'all' && scope.size === 0)) {
@@ -44,7 +43,13 @@ export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string, scop
       })
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(isRunId ? eq(testRuns.id, runId) : matches(testRuns.label), inScope(testRuns.projectId)))
+      .where(
+        and(
+          isRunId ? eq(testRuns.id, runId) : matches(testRuns.label),
+          notPrivateRun(testRuns.origin),
+          inScope(testRuns.projectId),
+        ),
+      )
       .orderBy(desc(testRuns.startTime))
       .limit(5),
 

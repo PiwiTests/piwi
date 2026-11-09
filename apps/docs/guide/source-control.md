@@ -21,7 +21,7 @@ failure, or writes back to a pull request, goes through it.
 | [Notifications](/features/notifications) | Names the author of the fixing commit on `cluster.fixed` and `cluster.regressed` | read |
 | Ownership and the default branch | Reads `CODEOWNERS` for test owners, and the repository's default branch when the project sets none | read |
 | [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status | write |
-| [Re-run in CI](/features/pr-feedback#re-run-from-the-dashboard) | Dispatches a workflow or pipeline | write |
+| [Re-run in CI](/features/ci-rerun) | Dispatches a workflow or pipeline (a CI server takes its own token) | write |
 | [Auto-heal PRs](/features/auto-heal) | Opens a pull request with a locator fix | write |
 
 Every call is best-effort: a missing token, a private repository the token cannot see or an unreachable host is
@@ -29,7 +29,7 @@ logged, and the feature shows nothing rather than failing a run.
 
 ## Set the token
 
-- **Instance-wide**: **Settings → AI → Repository access**. Every project uses it unless it has its own.
+- **Instance-wide**: **Settings → AI → What the model receives → Repository access token**. Every project uses it unless it has its own.
 - **Per project**: the **Source control** section of the project's **Settings** tab, field **SCM token**. It overrides
   the instance-wide token for that project. Prefer one per project for write access: an instance-wide write token can
   write everywhere it reaches.
@@ -48,7 +48,8 @@ The [desktop app](/features/desktop) needs no token for the read features. When 
 remotes points at the run's remote URL), Piwi reads the commits, diffs and files with `git` in that folder, on your
 machine. A commit or branch the clone does not have is asked of the host as above, so run `git fetch` in the folder to
 see commits pushed since your last fetch. With a token set, the host is read instead, as on a server, and the write
-features always need one.
+features always need one. A repository on another host (a self-hosted Bitbucket or Gitea, a GitLab host not listed
+below) is read from the clone alone, token or not: what the clone does not have stays unavailable.
 
 ### Which repository
 
@@ -60,9 +61,10 @@ and source are not read, and nothing is written for it. A project admin can chan
 next run sets it again. With the instance-wide token, a link to a repository no readable project uses is unfurled as a
 public page, without the token.
 
-Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab
-host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token only to a host you
-named. A run without a remote URL has nothing to diff.
+Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. A remote on a host's SSH
+alias (`ssh.github.com`, `ssh.bitbucket.org`, `altssh.bitbucket.org`) names the same repository as on the host. List
+each self-hosted GitLab host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token
+only to a host you named. A run without a remote URL has nothing to diff.
 
 ### Scopes
 
@@ -70,7 +72,7 @@ named. A run without a remote URL has nothing to diff.
 |---|---|---|
 | GitHub | read access to repository contents | `repo` (classic), or fine-grained `contents: write` and `pull_requests: write`; `actions: write` (classic `workflow`) for re-runs |
 | GitLab | `read_api` | `api` |
-| Bitbucket | repository read | repository write; `pipeline:write` for re-runs |
+| Bitbucket | repository read | repository write; `pullrequest` for pull-request comments; `pipeline:write` for re-runs |
 
 ## Verify
 
@@ -88,12 +90,12 @@ section is absent, it says why.
   the commits in the linked folder. The cluster's **More actions › Copy git log** copies the command that lists the
   range in your checkout.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
-  run falls back to the last run where the test passed, and a manual baseline commit overrides both.
+  run falls back to the last run before it where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on
   GitHub and GitLab only.
 
 ## Related
 
 - [AI provider](./ai-provider): the model that reads this context
-- [Pull-request feedback & re-run](/features/pr-feedback): what gets posted on a pull request
+- [Pull-request feedback](/features/pr-feedback): what gets posted on a pull request
 - [Privacy & data flow](./privacy): what Piwi sends to your Git host

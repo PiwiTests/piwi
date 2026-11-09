@@ -4,7 +4,7 @@
  * editors: a request carrying a challenge alone (`EDITOR_CHALLENGE_HEADER`) is answered, refused or not, with the
  * proof only the token's holder computes for the port it was asked on (`editorTokenProof`,
  * `@piwitests/core/editor-send`). Another program that took the port holds no token; one that relays the challenge to
- * the editor on another port gets a proof for that port. Only the background worker asks.
+ * the editor on another port gets a proof for that port. Only the background worker and the settings page ask.
  */
 import {
   EDITOR_CHALLENGE_HEADER,

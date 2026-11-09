@@ -14,9 +14,10 @@ path [opens in your IDE](./ide-integration).
 
 ## Home
 
-`/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average pass rate is a link, a **Project health** table with run-history bars and a tendency badge
-beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or the keyboard
-([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)).
+`/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average [pass rate](/guide/concepts#pass-rate) is a link, a **Project health** table with run-history bars and a tendency badge
+beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or keyboard
+([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)). **Starred projects** lead Project health and the
+sidebar.
 
 <figure>
   <img src="/screenshots/home.png" alt="Home in the light and dark themes: filters, stat strip, project health and recent activity">
@@ -44,11 +45,12 @@ first result, or with **New project**.
 ## Project detail
 
 `/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
-stands: the latest run and the pass rate of the last 20 runs, then the open clusters, flaky tests and quarantined
-tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the header and every
-tab that reads run history; with no branch picked it reads the [default branch](./branches#the-default-branch), and a
-note counts the runs it hides. The **More** menu holds Edit, [Test functions](./test-functions),
-[Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
+stands: the latest run that [ran to its end](/guide/concepts#test-run) and the [pass rate](/guide/concepts#pass-rate) of the last 20 such runs, then the open clusters, flaky tests
+and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
+header and every tab that reads run history; with no branch picked it reads the
+[default branch](./branches#the-default-branch), and a note counts the runs it hides. The **More** menu holds Edit,
+[Test functions](./test-functions), [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The
+tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
@@ -60,8 +62,10 @@ note counts the runs it hides. The **More** menu holds Edit, [Test functions](./
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
 - **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
   project's newest experiments. Hidden when the Flake Lab is switched off.
-- **Gaps**: the tests the suite does not have yet, proposed from the Test Map, with the feature map and the graph view
-  ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
+- **Coverage**: what the suite does not test, in three views: **Gaps**, the tests to write, proposed from the Test Map
+  ([Scenario gaps & the Test Map](./scenario-gaps)); **Map**, the feature map and the graph view; **Code**, every
+  suite's [combined coverage](./combined-coverage) of a commit. Hidden when both the Test Map and coverage are switched
+  off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
 - **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's
@@ -78,14 +82,16 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 
 ## Test run detail
 
-`/test-runs/:id`: one run. The header carries the status, the primary action (**Copy retry command** on a red run,
+`/test-runs/:id`: one run. The header carries the status, the primary action ([**Copy retry command**](./ci-rerun) on a red run,
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
 results stream in live, and the tab's icon and title show its progress. When ingest left something out or rebuilt
 it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the
 [ingest caps](/reference/configuration#ingest-limits), traces not stored, evidence rebuilt from a trace, and the
-fallback the reporter took to send the run. The tabs:
+fallback the reporter took to send the run. When Playwright reported
+[errors outside the tests](/reference/test-metadata#errors-outside-the-tests) (a global setup that threw, a spec that did
+not load), the header shows them under the facts line. The tabs:
 
-- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
+- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default when opened red),
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
@@ -97,15 +103,14 @@ fallback the reporter took to send the run. The tabs:
     click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
     fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
     reported. Runs sent by an older reporter show the sections without their hook list.
-  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
-    several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
-    process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
-    details.
+  - **Gaps**: a lane is one [worker](/reference/test-metadata#worker-lanes). Playwright replaces a worker process
+    after a failed test, so a lane can hold several processes one after another: **↻** marks where a new one took
+    over, and the stretch before it is the old process stopping and the new one starting. A dashed line is time the
+    worker ran no test; hover either for details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
     them with arrows.
-  - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
-    workers are drawn above the worker rows, and one metric of your choice under each worker row. Hover a track for
-    its values; turn each off from the **Resources** menu. See [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
+  - **Resources**: the run's CPU, memory and open pages, above the worker rows and under each of them
+    ([CPU, memory & disk](./cpu-memory-disk#in-the-dashboard)).
 
 ## Test case detail
 
@@ -125,12 +130,6 @@ of its own above the affected tests and their evidence
 ([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
 other sections and the [fix plan](./fix-plans); the occurrence chart and the activity fold to one line each below it.
 
-## Setup
-
-`/setup`, administrators only: the [connect wizard](/guide/getting-started#_2-connect-your-suite) and a checklist of
-which optional capabilities this instance actually uses, judged from the data it holds
-([Choose what you use](/operate/capabilities)).
-
 ## Settings
 
 `/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
@@ -141,11 +140,15 @@ which optional capabilities this instance actually uses, judged from the data it
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)) and **Localization**
-([Localization](/operate/localization)). A setting backed by an environment variable is shown read-only with the
-variable's name ([Configuration reference](/reference/configuration)).
+([Localization](/operate/localization)), and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
+an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).
 
-The sidebar also links the **MCP server** setup page, `/mcp` ([MCP server](./mcp)), and the **API docs**, `/docs`, the
-instance's own OpenAPI reference.
+## Setup
+
+The **Setup** section of Settings: **Connect a suite**, the
+[connect wizard](/guide/getting-started#_2-connect-your-suite); **Capabilities**, for administrators, which optional
+capabilities this instance uses ([Choose what you use](/operate/capabilities)); **MCP server**
+([MCP server](./mcp)); **API reference**, the instance's own OpenAPI reference; and **Companion tools**.
 
 ## Live demo
 

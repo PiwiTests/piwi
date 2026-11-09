@@ -7,8 +7,15 @@
  * reports the moment under it, for the readout and the line across the rows.
  */
 import { computed } from 'vue';
+import type { SeriesPoint } from '#shared/types';
 import { TIMELINE_LAYOUT } from '~/utils/timeline';
-import { RESOURCE_TRACK_KINDS, trackPaths, type ResourceBand, type ResourceTrack } from '~/utils/resource-tracks';
+import {
+  RESOURCE_TRACK_KINDS,
+  seriesPaths,
+  trackPaths,
+  type ResourceBand,
+  type ResourceTrack,
+} from '~/utils/resource-tracks';
 
 const props = defineProps<{
   band: ResourceBand;
@@ -19,6 +26,8 @@ const props = defineProps<{
   pxPerMs: number;
   /** Width of the run's span at the current zoom. */
   plotWidth: number;
+  /** The pages earlier tests left open in the band's workers, drawn under the open pages. */
+  leftOpen?: SeriesPoint[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +49,10 @@ const drawn = computed(() =>
     top: i * trackStride,
     name: props.band.prefix ? `${props.band.prefix} ${LABEL[track.kind]}` : LABEL[track.kind],
     ...trackPaths(track, trackHeight),
+    leftOpen:
+      track.kind === 'pages' && props.leftOpen?.length
+        ? seriesPaths(props.leftOpen, track.yMax, true, trackHeight).area
+        : '',
   })),
 );
 
@@ -80,6 +93,12 @@ function onMove(event: MouseEvent): void {
       <g :clip-path="`url(#${clipId})`">
         <g :transform="`translate(${labelWidth}, ${item.top}) scale(${pxPerMs}, 1)`">
           <path :d="item.area" class="fill-gray-400/20 dark:fill-gray-400/15" />
+          <path
+            v-if="item.leftOpen"
+            :d="item.leftOpen"
+            class="fill-red-500/35 dark:fill-red-400/35"
+            data-resource-left-open
+          />
           <path
             :d="item.line"
             fill="none"

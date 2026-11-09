@@ -1,15 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { matchTransition, transitionSettingValue } from '#shared/integrations/transitions';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Workflow transitions with fields, against a SQLite database and a stubbed
@@ -23,6 +22,7 @@ delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 
 const { createConnection } = await import('../../server/utils/integrations/connections');
+const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { enqueueAction, runAction } = await import('../../server/utils/integrations/actions');
 const { getTransitionSample, sampleIssueQueries } = await import('../../server/utils/integrations/transitions');
 const { transitionsCache } = await import('../../server/utils/integrations/picker-cache');
@@ -109,7 +109,7 @@ beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-transitions-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   vi.stubGlobal('fetch', vi.fn(jira));
@@ -121,6 +121,8 @@ beforeAll(async () => {
       credentials: { email: 'ci@example.com', apiToken: 'token' },
     })
   ).id;
+  // The actions run through the connection the project is bound to.
+  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
 });
 
 afterAll(async () => {

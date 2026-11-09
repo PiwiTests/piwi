@@ -2,11 +2,13 @@
  * The run page's live view on the team instance. While a run of a project that turned it on executes, each worker
  * keeps one event stream open to the instance, with a key for that run alone that the reporter sets in the workers'
  * environment (`PIWI_LIVE_VIEW`, `<url>#<key>`, `formatLiveViewEnv`). On that stream the instance says how many people
- * watch the worker (`viewers`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
+ * watch the worker (`viewers`), and which elements its project masks (`masks`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
- * ended (`ended`), and when the run stops being shared (`unshared`). Nothing goes from the instance to the page: the
+ * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches, it posts too
+ * the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
+ * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
  * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
  * `readWorkerToInstance`).
  *
@@ -14,6 +16,8 @@
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
+import { tryParseLocatorChain } from './locator-chain';
+import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
 
 /** The variable that names the instance's live view endpoint of the run and its key, for the workers. */
@@ -39,6 +43,12 @@ export const MAX_LIVE_FRAME_BASE64 = 4 * Math.ceil(MAX_LIVE_FRAME / 3);
 export const MAX_LIVE_MESSAGE = MAX_LIVE_FRAME_BASE64 + 8 * 1024;
 /** The longest call title a message carries; a longer one is cut. */
 const MAX_TITLE = 500;
+/** The most lines of a call's log a message carries, folded by `compressCallLog`: its last ones. */
+export const MAX_LIVE_CALL_LOG_LINES = 20;
+/** The longest line of a call's log a message carries, and the longest error; a longer one is cut. */
+const MAX_LOG_LINE = 300;
+/** The most call logs a worker posts a second: Playwright tells a call's progress every half second. */
+export const LIVE_CALL_LOGS_PER_SECOND = 4;
 /** The longest refusal a message carries; a longer one is cut. */
 const MAX_REFUSAL = 500;
 /** The longest test title a message carries; a longer one is cut. */
@@ -97,15 +107,16 @@ export function liveRunPage(address: LiveViewAddress): string {
 }
 
 /**
- * Why a run outside CI holds no live view key: it reports to no Piwi instance (`no-instance`), the reporter's global
- * setup did not register it as it started (`unregistered`: the reporter entry without `wrapConfig`, a run that reports
- * at its end alone, or an instance the setup could not reach), the instance gave none (`off`: its project has the
- * live view off, or the instance predates it), or it reports to the desktop app on this machine, which gives none
- * since no teammate reaches it (`local`: its setup answers `liveView.refused: 'local'`).
+ * Why a run holds no live view key: it reports to no Piwi instance (`no-instance`), it reports at its end alone
+ * (`streaming-off`: `streaming: false`, so it has no live run), the reporter's global setup did not register it as it
+ * started (`unregistered`: the reporter entry without `wrapConfig`, or a config that does not list Piwi's reporter),
+ * that setup could not register it (`setup-failed`: the instance did not answer, or refused it), the instance gave none (`off`: its project has the live view off, or the
+ * instance predates it), or it reports to the desktop app on this machine, which gives none since no teammate reaches
+ * it (`local`: its setup answers `liveView.refused: 'local'`).
  */
-export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off' | 'local';
+export type LiveViewMissing = 'no-instance' | 'streaming-off' | 'unregistered' | 'setup-failed' | 'off' | 'local';
 
-const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off', 'local'];
+const MISSING: readonly string[] = ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'];
 
 /** The value of `PIWI_LIVE_VIEW` for a run outside CI that holds no key: why. */
 export function formatLiveViewMissing(why: LiveViewMissing): string {
@@ -122,8 +133,12 @@ export function parseLiveViewMissing(value: string | undefined): LiveViewMissing
 export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
   'no-instance':
     "This run cannot be shared live: it reports to no Piwi instance. Name your team's instance in PIWI_DASHBOARD_URL.",
+  'streaming-off':
+    'This run cannot be shared live: it sends its results at its end alone (streaming: false), so it has no live run on the instance.',
   unregistered:
-    "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
+    "This run cannot be shared live: the reporter's global setup did not register it as it started (wrapConfig adds it, and it registers a run whose config lists Piwi's reporter).",
+  'setup-failed':
+    "This run cannot be shared live: the instance did not register it as it started (the reporter's global setup could not reach it, or was refused: its warning says why).",
   off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
   local:
     "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team's instance in PIWI_DASHBOARD_URL to share a run there.",
@@ -134,17 +149,18 @@ export const LIVE_SHARE_UNKNOWN =
   'This run cannot be shared live: the Piwi reporter gave its workers no live view key.';
 
 /**
- * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404), the key no longer
- * taken (401, 403: the instance started again, or gave the key up), the run no longer live (410), the run held as
- * interrupted after the retries (409); and the instance that did not answer after them.
+ * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404) and the key not
+ * taken (401), which the setting turned on again or a new try may lift; the key refused (403), the run no longer live
+ * (410), the run held as interrupted after the retries (409); and the instance that did not answer after them.
  */
 export function liveShareRefusal(status: number | null): string {
   switch (status) {
     case 404:
-      return "Sharing stopped: the project's live view was turned off on the instance.";
+      return "Sharing stopped: the project's live view was turned off on the instance. Share the run again once it is back on.";
     case 401:
+      return "Sharing stopped: the instance does not take this run's live view key now. Share the run again to try once more.";
     case 403:
-      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or gave the key up).";
+      return "Sharing stopped: the instance refuses this run's live view key.";
     case 410:
       return 'Sharing stopped: the run is no longer live on the instance.';
     case 409:
@@ -162,10 +178,30 @@ export interface LiveCall {
   line: number | null;
 }
 
-/** A worker of a run: its shard (null in a run that is not sharded) and Playwright's worker index. */
+/**
+ * A worker of a run: its shard (null in a run that is not sharded), Playwright's worker index, and its lane (`slot`,
+ * Playwright's `parallelIndex`, which a worker started again after a failure keeps; absent from an older reporter).
+ */
 export interface LiveWorkerId {
   shard: number | null;
   worker: number;
+  slot?: number;
+}
+
+/** How a test a worker ran ended: its title, Playwright's status and how long it ran, in ms. */
+export interface LiveTestOutcome {
+  test: string | null;
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
+  ms: number;
+}
+
+const OUTCOME_STATUSES: readonly string[] = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
+
+/** A test's outcome, checked field by field; null when it is not one. */
+export function readLiveTestOutcome(value: unknown): LiveTestOutcome | null {
+  if (!isObject(value) || !OUTCOME_STATUSES.includes(value.status as string)) return null;
+  if (!isInt(value.ms, 0, 7 * 24 * 3_600_000)) return null;
+  return { test: readLiveTestTitle(value.test), status: value.status as LiveTestOutcome['status'], ms: value.ms };
 }
 
 /** The title of a test a message names, cut short; null for none. */
@@ -180,19 +216,106 @@ export interface LiveStop {
   test: string | null;
 }
 
-/** What the instance says on a worker's stream: how many people watch the worker now. */
-export type InstanceToWorker = { type: 'viewers'; count: number };
+/** A box on the test's page, in its viewport's pixels. */
+export interface LiveBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The call a worker's test is in, as Playwright logs it while it runs: in a CI run, while anyone watches the worker.
+ * Every text has the text a call types hidden (`hideTypedText`, `hideSecretsInLog`) and its credentials too
+ * (`hideSecretsInText`).
+ */
+export interface LiveCallLog {
+  /** Playwright's id of the call: another id is another call. */
+  id: string;
+  call: LiveCall;
+  status: 'running' | 'passed' | 'failed';
+  /**
+   * The call log's last lines, oldest first, `MAX_LIVE_CALL_LOG_LINES` at most, written as Playwright writes a failed
+   * call's log (`compressCallLog`).
+   */
+  lines: string[];
+  /** Where an input action acts, once Playwright knows it. */
+  point: { x: number; y: number } | null;
+  /**
+   * While the call waits: how many elements its locator matches, the first one's box, and whether that one is
+   * enabled. Null for a call without a locator, or one that did not wait.
+   */
+  target: { count: number; box: LiveBox | null; enabled: boolean | null } | null;
+  /** The size of the page's viewport, which the point and the box are measured in. */
+  viewport: { width: number; height: number } | null;
+  /** How long the call had run when the worker posted this, in milliseconds. */
+  ms: number;
+  /** The first line of the error the call ended with. */
+  error: string | null;
+}
+
+/** The most locators a project lists for the live view to mask, beside the secret fields. */
+export const MAX_LIVE_MASKS = 20;
+/** The longest locator a project lists for the live view to mask. */
+export const MAX_LIVE_MASK_LENGTH = 200;
+
+/** The calls that enter or leave a frame: a mask names an element, which the worker looks for in every frame. */
+const FRAME_CALLS: ReadonlySet<string> = new Set(['frameLocator', 'contentFrame', 'owner']);
+/** The calls that act on the elements before them, which a chain cannot start with. */
+const NARROWING_CALLS: ReadonlySet<string> = new Set(['filter', 'and', 'or', 'visible', 'first', 'last', 'nth']);
+
+/**
+ * Why `locator` cannot be one of a project's masked elements, as a person reads it; null when it can: a Playwright
+ * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it, that names elements without
+ * entering a frame.
+ */
+export function liveMaskProblem(locator: string): string | null {
+  if (!locator.trim()) return 'A masked element needs a locator.';
+  if (locator.length > MAX_LIVE_MASK_LENGTH) return `A locator is ${MAX_LIVE_MASK_LENGTH} characters at most.`;
+  const source = locator.trim();
+  const chain = tryParseLocatorChain(source);
+  if (!chain?.calls.length || NARROWING_CALLS.has(chain.calls[0]!.method)) {
+    return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
+  }
+  if (chain.calls.some((call) => FRAME_CALLS.has(call.method))) {
+    return `\`${source}\` enters a frame: masks are looked for in every frame of the page, so name the element alone, such as getByLabel('Card number'), or the iframe, such as locator('iframe#card').`;
+  }
+  return null;
+}
+
+/** A project's masked elements as a message or a setting holds them: trimmed locators, each once; null when not. */
+export function parseLiveMasks(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LIVE_MASKS) return null;
+  const locators: string[] = [];
+  for (const locator of value) {
+    if (typeof locator !== 'string' || liveMaskProblem(locator)) return null;
+    if (!locators.includes(locator.trim())) locators.push(locator.trim());
+  }
+  return locators;
+}
+
+/**
+ * What the instance says on a worker's stream: how many people watch the worker now, and the elements its project
+ * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them. A list
+ * this reader cannot read (`locators: null`, from an instance newer than it) masks nothing it could trust.
+ */
+export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'masks'; locators: string[] | null };
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
-  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the test's title. */
-  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null })
+  /**
+   * A frame of the test's page, a JPEG in base64, the call it was taken at, the test's title and, from a reporter that
+   * says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's clock.
+   */
+  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number })
   /** Why no frame goes: the sentence the viewers see in place of the view. */
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
-  /** The test the viewers watched ended, or none runs: their view closes. */
-  | (LiveWorkerId & { type: 'ended' })
+  /** The call the worker's test is in, as Playwright logs it, and the test's title, as a frame names it. */
+  | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
+  /** The test the viewers watched ended, how when the worker knows (`outcome`), or none runs. */
+  | (LiveWorkerId & { type: 'ended'; outcome?: LiveTestOutcome | null })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
   | (LiveWorkerId & { type: 'unshared' });
 
@@ -210,13 +333,16 @@ function wholeNumber(value: unknown): number {
   return typeof value === 'string' && /^\d{1,6}$/.test(value) ? Number(value) : Number.NaN;
 }
 
-/** A worker's shard and index, from a message or a query: null when either is not one. */
-export function readLiveWorkerId(shard: unknown, worker: unknown): LiveWorkerId | null {
+/** A worker's shard, index and lane, from a message or a query: null when the shard or the index is not one. */
+export function readLiveWorkerId(shard: unknown, worker: unknown, slot?: unknown): LiveWorkerId | null {
   const shardValue = shard === null || shard === undefined || shard === '' ? null : wholeNumber(shard);
   const workerValue = wholeNumber(worker);
   if (shardValue !== null && !isInt(shardValue, 1, 10_000)) return null;
   if (!isInt(workerValue, 0, 100_000)) return null;
-  return { shard: shardValue, worker: workerValue };
+  const slotValue = wholeNumber(slot);
+  return isInt(slotValue, 0, 10_000)
+    ? { shard: shardValue, worker: workerValue, slot: slotValue }
+    : { shard: shardValue, worker: workerValue };
 }
 
 /** The key the instance files a worker under: `<shard>:<worker>`, the shard empty in a run that is not sharded. */
@@ -224,22 +350,136 @@ export function liveWorkerKey(id: LiveWorkerId): string {
   return `${id.shard ?? ''}:${id.worker}`;
 }
 
+/** The key of a worker's lane, its shard and its slot (`<shard>#<slot>`), which a restarted worker keeps. */
+export function liveLaneKey(lane: { shard: number | null; slot: number }): string {
+  return `${lane.shard ?? ''}#${lane.slot}`;
+}
+
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
 
-/** A call, checked field by field, its title cut short; null when it is not one. */
+/**
+ * A call, checked field by field, its title cut short and the text a fill, a typing or an insert types hidden
+ * (`hideTypedText`); null when it is not one.
+ */
 export function readLiveCall(value: unknown): LiveCall | null {
   if (!isObject(value) || typeof value.title !== 'string' || !value.title.trim()) return null;
   const { file, line } = value;
   const named = typeof file === 'string' && file.length > 0 && file.length <= 1024 && !/[\0\r\n]/.test(file);
   return {
-    title: value.title.slice(0, MAX_TITLE),
+    title: hideTypedText(value.title).slice(0, MAX_TITLE),
     file: named ? file : null,
     line: named && isInt(line, 1, 10_000_000) ? line : null,
   };
 }
 
+function isCoordinate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 100_000;
+}
+
+/** The longest run of lines `compressCallLog` looks for repeats of: a retry of an action logs four. */
+const LONGEST_REPEAT = 12;
+
+/** Whether the `size` lines from `a` are the `size` lines from `b`. */
+function sameLines(lines: readonly string[], a: number, b: number, size: number): boolean {
+  for (let k = 0; k < size; k++) if (lines[a + k] !== lines[b + k]) return false;
+  return true;
+}
+
+/**
+ * A call's log lines as Playwright writes them in a failed call's error: each line an item (`- `) at its own indent,
+ * and lines repeated in a row written once, the first with its count (`6 × retrying click action`). From each line on,
+ * the repeat covering the most lines wins, as Playwright's `compressCallLog` picks it.
+ */
+export function compressCallLog(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    let size = 1;
+    let count = 1;
+    for (let length = 1; length <= LONGEST_REPEAT && i + length * 2 <= lines.length; length++) {
+      let times = 1;
+      while (i + length * (times + 1) <= lines.length && sameLines(lines, i, i + length * times, length)) times++;
+      if (times > 1 && times * length > count * size) {
+        size = length;
+        count = times;
+      }
+    }
+    for (let k = 0; k < size; k++) {
+      const line = lines[i + k]!;
+      const indent = /^\s*/.exec(line)![0];
+      if (count === 1) out.push(`${indent}- ${line.trim()}`);
+      else if (k === 0) out.push(`${indent}${count} × ${line.trim()}`);
+      else out.push(`${indent}${' '.repeat(`${count} × `.length - 2)}- ${line.trim()}`);
+    }
+    i += size * count;
+  }
+  return out;
+}
+
+/** A call's log or its error, as a viewer may read it: what may be a secret in it hidden, then cut. */
+function logText(value: string): string {
+  return hideSecretsInText(hideSecretsInLog(value)).slice(0, MAX_LOG_LINE);
+}
+
+/** A call's log, checked field by field and its texts hidden again; null when it is not one. */
+export function readLiveCallLog(value: unknown): LiveCallLog | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !value.id || value.id.length > 100) return null;
+  const call = readLiveCall(value.call);
+  if (!call) return null;
+  if (value.status !== 'running' && value.status !== 'passed' && value.status !== 'failed') return null;
+  // Hidden as one text, so a value an assertion quotes goes when an earlier line names a secret field.
+  const lines = Array.isArray(value.lines)
+    ? hideSecretsInText(
+        hideSecretsInLog(value.lines.filter((line): line is string => typeof line === 'string').join('\n')),
+      )
+        .split('\n')
+        .slice(-MAX_LIVE_CALL_LOG_LINES)
+        .map((line) => line.slice(0, MAX_LOG_LINE))
+    : [];
+  const point =
+    isObject(value.point) && isCoordinate(value.point.x) && isCoordinate(value.point.y)
+      ? { x: value.point.x, y: value.point.y }
+      : null;
+  let target: LiveCallLog['target'] = null;
+  if (isObject(value.target) && isInt(value.target.count, 0, 1_000_000)) {
+    const box = value.target.box;
+    target = {
+      count: value.target.count,
+      box:
+        isObject(box) &&
+        isCoordinate(box.x) &&
+        isCoordinate(box.y) &&
+        isCoordinate(box.width) &&
+        isCoordinate(box.height)
+          ? { x: box.x, y: box.y, width: box.width, height: box.height }
+          : null,
+      enabled: typeof value.target.enabled === 'boolean' ? value.target.enabled : null,
+    };
+  }
+  const viewport =
+    isObject(value.viewport) && isInt(value.viewport.width, 1, 20_000) && isInt(value.viewport.height, 1, 20_000)
+      ? { width: value.viewport.width, height: value.viewport.height }
+      : null;
+  return {
+    id: value.id,
+    call: { ...call, title: hideSecretsInText(call.title) },
+    status: value.status,
+    lines,
+    point,
+    target,
+    viewport,
+    ms: isInt(value.ms, 0, 86_400_000) ? value.ms : 0,
+    error: typeof value.error === 'string' && value.error.trim() ? logText(value.error.split('\n')[0]!) : null,
+  };
+}
+
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** Whether `value` is a time in epoch milliseconds: a finite number after 2001. */
+export function isEpochMs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 1e12;
+}
 
 /** Whether `data` is a live frame's data: base64, not empty, at most `MAX_LIVE_FRAME_BASE64` characters. */
 export function isLiveFrameData(data: unknown): data is string {
@@ -249,7 +489,7 @@ export function isLiveFrameData(data: unknown): data is string {
 /** A message a worker posted, checked field by field; why not, as a sentence, when it is not one this version reads. */
 export function readWorkerToInstance(value: unknown): WorkerToInstance | string {
   if (!isObject(value)) return 'The message is not an object.';
-  const id = readLiveWorkerId(value.shard, value.worker);
+  const id = readLiveWorkerId(value.shard, value.worker, value.slot);
   if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
   switch (value.type) {
     case 'frame': {
@@ -258,7 +498,8 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       }
       if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
-      return { type: 'frame', ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      const frame = { type: 'frame' as const, ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      return isEpochMs(value.at) ? { ...frame, at: Math.round(value.at) } : frame;
     }
     case 'stop': {
       if (value.stop === null) return { type: 'stop', ...id, stop: null };
@@ -270,12 +511,20 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
         : 'other';
       return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
     }
-    case 'ended':
-      return { type: 'ended', ...id };
+    case 'call-log': {
+      const log = readLiveCallLog(value.log);
+      return log
+        ? { type: 'call-log', ...id, log, test: readLiveTestTitle(value.test) }
+        : 'A call log names its call, its status and its lines.';
+    }
+    case 'ended': {
+      const outcome = readLiveTestOutcome(value.outcome);
+      return outcome ? { type: 'ended', ...id, outcome } : { type: 'ended', ...id };
+    }
     case 'unshared':
       return { type: 'unshared', ...id };
     default:
-      return 'The message is of a type other than frame, stop, ended or unshared.';
+      return 'The message is of a type other than frame, stop, call-log, ended or unshared.';
   }
 }
 
@@ -287,6 +536,8 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   } catch {
     return null;
   }
-  if (!isObject(value) || value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
+  if (!isObject(value)) return null;
+  if (value.type === 'masks') return { type: 'masks', locators: parseLiveMasks(value.locators) };
+  if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }

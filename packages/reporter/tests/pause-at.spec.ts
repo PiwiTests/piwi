@@ -1,8 +1,11 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installPickerOverlay,
   pauseAnswered,
+  removeStopHighlight,
   showPauseBar,
   showPickerChoices,
   takePauseState,
@@ -16,7 +19,9 @@ import {
   callSitePlace,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
+  lineKey,
   markPausesWrapped,
   parsePauseAt,
   pauseState,
@@ -51,7 +56,7 @@ import {
 } from '../src/internal/capture/capture-fixtures.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
-import { jsonRes, startServer } from './_helpers.js';
+import { jsonRes, startServer, withoutCi } from './_helpers.js';
 
 const PROBE = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
 /** The capture fixtures' own folder: a frame there is this package's, never the test's. */
@@ -80,6 +85,26 @@ describe('parsePauseAt', () => {
     expect(set.matches('tests/a.spec.ts:3:1')).toBe(true);
     expect(set.matches('tests/b.spec.ts:4:1')).toBe(true);
     expect(set.matches('../shared/c.ts:5:1')).toBe(true);
+  });
+
+  it('follows the links on the way to a listed file, as a stack frame names the file Node loaded', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-pause-link-')));
+    try {
+      fs.mkdirSync(path.join(root, 'shared', 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'shared', 'pages', 'cart.page.ts'), '');
+      fs.mkdirSync(path.join(root, 'app'));
+      fs.symlinkSync(path.join(root, 'shared', 'pages'), path.join(root, 'app', 'pages'), 'dir');
+      const set = parsePauseAt('pages/cart.page.ts:3', path.join(root, 'app'));
+      expect(set.matches('../shared/pages/cart.page.ts:3:5')).toBe(true);
+      expect(set.matches('pages/cart.page.ts:3:5')).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('compares the lines without case on Windows alone', () => {
+    expect(lineKey('tests/Pages/cart.page.ts:3', true)).toBe(lineKey('tests/pages/cart.page.ts:3', true));
+    expect(lineKey('tests/Pages/cart.page.ts:3', false)).not.toBe(lineKey('tests/pages/cart.page.ts:3', false));
   });
 
   it('reads a path holding a comma', () => {
@@ -132,33 +157,50 @@ describe('stopCallSite', () => {
 });
 
 describe('the pause gate', () => {
+  it('reads CI as detectCi does: a provider that sets no CI counts, CI=0 or false does not', () => {
+    const saved = { ...process.env };
+    const ciWith = (env: Record<string, string>) => {
+      Object.assign(withoutCi(process.env), env);
+      return pauseGateFromTestInfo({ project: { use: { headless: false } } } as never).ci;
+    };
+    try {
+      expect(ciWith({ JENKINS_URL: 'https://jenkins.example' })).toBe(true);
+      expect(ciWith({ GITHUB_ACTIONS: 'true' })).toBe(true);
+      expect(ciWith({ CI: '1' })).toBe(true);
+      expect(ciWith({ CI: '0' })).toBe(false);
+      expect(ciWith({ CI: 'false' })).toBe(false);
+      expect(ciWith({})).toBe(false);
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('pauses a headed local run only, outside Playwright’s Inspector', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'false', headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'true', headless: false })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: undefined })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: false })).toBeNull();
+    expect(pauseSkipReason({ ci: true, headless: false })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: undefined })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
     for (const pwdebug of ['', '0', 'false', 'console']) {
-      expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug })).toBeNull();
+      expect(pauseSkipReason({ ci: false, headless: false, pwdebug })).toBeNull();
     }
   });
 
   it('pauses a headless run too while the run connection to the editor is open, never under CI or a debugger', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: undefined, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: false })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: '1', headless: true, channel: true })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: undefined, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: true, channel: false })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: true, headless: true, channel: true })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
   });
 
   it('never pauses under --debug, --debug=cli included, which sets no PWDEBUG', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'cli' })).toBe(
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'cli' })).toBe(
       "Playwright's debugger runs the test (--debug=cli) — run without --debug",
     );
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: undefined })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
+    expect(pauseSkipReason({ ci: false, headless: false, debug: undefined })).toBeNull();
     const testInfo = {
       project: { use: { headless: false } },
       _configInternal: { configCLIOverrides: { debug: 'cli' } },
@@ -516,8 +558,7 @@ function fakePausePage(
         return takes < answers.length ? answers[takes++] : 'resume';
       } else if (fn === installPickerOverlay) {
         if (!opts.hangPick) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
-      }
-      else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
+      } else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
       else if (typeof fn === 'function' && String(fn).includes('__piwi')) return (fn as (a: unknown) => unknown)(arg);
       return null;
     }),
@@ -549,8 +590,8 @@ describe('pauseHere', () => {
 
   it('highlights the element, shows the bar with the call about to run, and hides the highlight on Resume', async () => {
     const { page, shown } = fakePausePage(['resume']);
-    const hide = vi.fn(async () => {});
-    const target = { highlight: vi.fn(async () => ({ dispose: hide })) };
+    const hide = vi.fn(async () => true);
+    const target = { highlight: vi.fn(() => ({ shown: Promise.resolve(true), hide })) };
     const choice = await pauseHere(page as never, { ...POINT, target }, PROBE, () => {});
     expect(choice).toBe('resume');
     expect(target.highlight).toHaveBeenCalledOnce();
@@ -614,7 +655,7 @@ describe('pauseHere', () => {
     expect(record.mock.calls[0]![0]).toBe(stopped.signal);
   });
 
-  it('ends with its stop on a page that stops answering, taking the bar down a second at most', async () => {
+  it('ends with its stop on a page that stops answering, taking the bar and its highlight down a second at most', async () => {
     vi.useFakeTimers();
     try {
       const page = {
@@ -625,7 +666,12 @@ describe('pauseHere', () => {
       };
       const ended = new AbortController();
       let answer: string | undefined;
-      void pauseHere(page as never, POINT, PROBE, () => {}, undefined, ended.signal).then((a) => (answer = a));
+      // Its highlight comes down in the same second as the bar, the most its take-down takes.
+      const hide = vi.fn(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)));
+      const target = { highlight: () => ({ shown: Promise.resolve(true), hide }) };
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}, undefined, ended.signal).then(
+        (a) => (answer = a),
+      );
       await vi.advanceTimersByTimeAsync(0);
       expect(page.evaluate).toHaveBeenCalledWith(showPauseBar, expect.anything());
       ended.abort('ended');
@@ -634,6 +680,30 @@ describe('pauseHere', () => {
       expect(answer).toBeUndefined();
       await vi.advanceTimersByTimeAsync(1000);
       expect(answer).toBe('resume');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes its highlight down before the test goes on, one its frame has not drawn yet included', async () => {
+    vi.useFakeTimers();
+    try {
+      const { page, shown } = fakePausePage(['resume']);
+      const order: string[] = [];
+      // A frame that does not answer: the highlight is not drawn by the time the bar shows.
+      const hide = vi.fn(async () => (order.push('hidden'), false));
+      const target = { highlight: vi.fn(() => ({ shown: new Promise<boolean>(() => {}), hide })) };
+      let answer: string | undefined;
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}).then((a) => {
+        order.push('went on');
+        answer = a;
+      });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(shown).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(answer).toBe('resume');
+      expect(shown).toHaveLength(1);
+      expect(order).toEqual(['hidden', 'went on']);
     } finally {
       vi.useRealTimers();
     }
@@ -698,6 +768,110 @@ describe('pauseHere', () => {
     stopped.abort('closed');
     expect(await recorded).toBe('resume');
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe('a stop’s highlight', () => {
+  /** A frame whose `evaluate` notes each call, answering `answer`. */
+  const frameOf = (answer: () => Promise<unknown> = async () => true) => {
+    const calls: Array<{ fn: unknown; arg: unknown }> = [];
+    return {
+      calls,
+      evaluate: async (fn: unknown, arg: unknown) => {
+        calls.push({ fn, arg });
+        return answer();
+      },
+    };
+  };
+  /**
+   * A locator of `frame` (Playwright's client `_frame`, `_selector`) whose matches there run the page function on
+   * `elements`, each draw noted, or reject with `fails`.
+   */
+  const locatorIn = (frame: Record<string, unknown>, elements: unknown[] = [], fails?: Error) => {
+    const draws: unknown[] = [];
+    Object.assign(frame, {
+      locator: (selector: string) => ({
+        evaluateAll: async (fn: (elements: unknown[], arg: unknown) => unknown, arg: unknown) => {
+          draws.push({ selector, arg });
+          if (fails) throw fails;
+          return fn(elements, arg);
+        },
+      }),
+    });
+    return {
+      draws,
+      locator: { _frame: frame, _selector: 'internal:role=button', highlight: vi.fn(), describe: vi.fn() },
+    };
+  };
+
+  it('draws Piwi’s own highlight in the locator’s frame, anew until it is taken down there by its name', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf();
+      const { draws, locator } = locatorIn(frame);
+      const page = { hideHighlight: vi.fn(), mainFrame: () => frameOf(), isClosed: () => false };
+      const call = highlightAtStop(page as never, locator as never, 'call', "getByRole('button')");
+      // No document here: nothing is drawn.
+      expect(await call.shown).toBe(false);
+      expect(draws).toEqual([
+        {
+          selector: 'internal:role=button',
+          arg: { id: expect.stringMatching(/^call-\d+$/), kind: 'call', label: "getByRole('button')" },
+        },
+      ]);
+      // The matches are found anew every half second while the stop lasts.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(draws).toHaveLength(3);
+      expect(await call.hide()).toBe(true);
+      const id = (draws[0] as { arg: { id: string } }).arg.id;
+      expect(frame.calls).toEqual([{ fn: removeStopHighlight, arg: id }]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(draws).toHaveLength(3);
+      expect(locator.highlight).not.toHaveBeenCalled();
+      expect(locator.describe).not.toHaveBeenCalled();
+      expect(page.hideHighlight).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
+  });
+
+  it('takes it down within a second in a frame that does not answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf(() => new Promise(() => {}));
+      const { locator } = locatorIn(frame);
+      const page = { mainFrame: () => frame, isClosed: () => false };
+      const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
+      await highlight.shown;
+      let hidden: boolean | undefined;
+      void highlight.hide().then((answer) => (hidden = answer));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(hidden).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
+  });
+
+  it('neither throws nor rejects on a page that breaks under it', async () => {
+    const closed = new Error('Target page, context or browser has been closed');
+    const frame = frameOf(() => Promise.reject(closed));
+    const { locator } = locatorIn(frame, [], closed);
+    const page = { mainFrame: () => frame, isClosed: () => true };
+    const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
+    expect(await highlight.shown).toBe(false);
+    expect(await highlight.hide()).toBe(false);
+    const thrown = {
+      evaluateAll: () => {
+        throw new Error('not a locator');
+      },
+    };
+    const broken = highlightAtStop(page as never, thrown as never, 'call', 'x');
+    expect(await broken.shown).toBe(false);
+    expect(await broken.hide()).toBe(false);
   });
 });
 
@@ -828,7 +1002,7 @@ describe('breakpoints in the capture fixtures', () => {
   const env = { ...process.env };
   let log: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
-    delete process.env.CI;
+    withoutCi(process.env);
     delete process.env.PWDEBUG;
     delete process.env.PIWI_RECORD_CHANNEL;
     resetPauseLogs();
@@ -1326,6 +1500,23 @@ describe('the Inspector switch', () => {
     };
     return { debugger: dbg };
   }
+
+  it('leaves no switch of its own to the projects that depend on this one as the worker stops', () => {
+    // Playwright reads the worker's environment as its `__stop__` message comes, and hands what changed on.
+    const stop = () => process.emit('message' as never, { method: '__stop__' } as never);
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
+    // A value set outside Piwi is the user's.
+    resetInspectorSwitch();
+    process.env.PW_CODEGEN_NO_INSPECTOR = '1';
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+  });
 
   it('closes Playwright’s Inspector once every page.pause() goes through Piwi, and opens it while one left to Playwright runs', async () => {
     expect(watchStops(watchedContext() as never, () => {})).toBe(true);

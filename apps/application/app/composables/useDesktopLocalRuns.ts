@@ -32,7 +32,9 @@ import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwite
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import { desktopRunRef } from '~/utils/desktop-run-view';
+import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
+import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
 export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
@@ -43,7 +45,7 @@ export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'erro
  * Lab session (`piwi flake`) at the commit of a test's latest failure, on a
  * test of this app or on an editor's plan.
  */
-export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake';
+export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake' | 'request';
 
 /** What a Flake Lab session runs: which arms, how many runs, and its budget. */
 export interface FlakeLabOptions {
@@ -170,8 +172,13 @@ export interface LocalRunSet {
 export type SavedLocalRunOptions = Required<LocalRunOptions>;
 
 export interface LocalRunLine {
+  /** The line's number in its run, from 1: its key while the run keeps its last `LOCAL_RUN_MAX_LINES`. */
+  id: number;
+  /** The line without its ANSI color codes. */
   text: string;
   error: boolean;
+  /** The line as printed, ANSI color codes included; only on a line that has them and has text. */
+  ansi?: string;
 }
 
 export interface LocalRun {
@@ -214,11 +221,15 @@ export interface LocalRun {
   flakeTestCaseId: number | null;
   status: LocalRunStatus;
   lines: LocalRunLine[];
+  /** The lines the run printed so far, its first ones dropped from `lines` included. */
+  linesTotal: number;
   exitCode: number | null;
   startedAt: number;
   finishedAt: number | null;
   /** The editor's job this run answers (kind === 'reproduce', 'bisect' or 'flake'). */
   jobRequestId: string | null;
+  /** The run request of a team instance it answers (kind === 'request'): the shell reports it there. */
+  teamRequest: { id: string; instance: string } | null;
   /**
    * The origin reference the reporter records for this run (`PIWI_ORIGIN_REF`):
    * the cluster or bug report it was launched for, else one made for it alone.
@@ -271,6 +282,13 @@ export function localRunProgressLabel(run: LocalRun): string {
 function casesTitle(cases: readonly RetryCase[]): string {
   if (cases.length === 1 && cases[0]!.title) return cases[0]!.title;
   return `${cases.length} test${cases.length === 1 ? '' : 's'}`;
+}
+
+/** How long a run has run, or ran: `42s`, `3m 05s`. */
+export function localRunDuration(startedAt: number, finishedAt: number | null, now: number): string {
+  const seconds = Math.max(0, Math.round(((finishedAt ?? now) - startedAt) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
 /** What a run runs, in words: the tray's row title, the toasts and the Run again tooltip read it. */
@@ -375,13 +393,15 @@ interface LocalRunEventPayload {
 }
 
 /** Output lines kept per run — a soak run can produce hundreds of thousands. */
-const MAX_LINES = 2000;
+export const LOCAL_RUN_MAX_LINES = 2000;
 /**
  * How long after a stop request a run's step counts as over even with no exit
  * event: the shell's grace period before it kills the process, plus a margin.
  */
 const STOP_EXIT_FALLBACK_MS = 15_000;
 /** Finished runs kept in the tray; running ones are never dropped. */
+/** How long a run waits for its Piwi run baseline before it starts without one. */
+const BASELINE_TIMEOUT_MS = 10_000;
 const MAX_FINISHED = 15;
 /** The names on the hub kept per run: one per step of its plan. */
 const MAX_HUB_REFS = 20;
@@ -395,20 +415,29 @@ let startingSteps = 0;
 let pendingEvents: LocalRunEventPayload[] = [];
 const runByShellId = new Map<number, LocalRun>();
 const exitResolvers = new Map<number, (code: number | null) => void>();
+/** Who hears each run's end (`onRunEnded`), before the tray can drop it. */
+const endListeners = new Set<(run: LocalRun) => void>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
 
-// Playwright's list reporter, as the shell captures it (plain, non-TTY): a
-// "Running N tests using M workers" announcement per step, then one line per
-// finished test starting with a result mark (✓/✘ or the ASCII fallbacks).
+// Playwright's list reporter, as the shell captures it (non-TTY), read without
+// its colors: a "Running N tests using M workers" announcement per step, then
+// one line per finished test starting with a result mark (✓/✘ or the ASCII
+// fallbacks).
 const PROGRESS_TOTAL_RE = /^Running (\d+) tests? using \d+ workers?$/;
 const PROGRESS_RESULT_RE = /^\s{1,6}(?:✓|✘|✗|x|ok|-)\s+\d+\s/;
 
 export function useDesktopLocalRuns() {
   const runs = useState<LocalRun[]>('desktop-local-runs', () => []);
   const trayOpen = useState<boolean>('desktop-local-runs-tray', () => false);
+  /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
+  const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
+  /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
+  /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
+  const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
   if (import.meta.client) {
     toastApi = useToast();
     routerApi = useRouter();
@@ -443,9 +472,11 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  function pushLine(run: LocalRun, text: string, error: boolean) {
-    run.lines.push({ text, error });
-    if (run.lines.length > MAX_LINES) run.lines.splice(0, run.lines.length - MAX_LINES);
+  function pushLine(run: LocalRun, printed: string, error: boolean) {
+    const text = stripAnsi(printed);
+    const id = ++run.linesTotal;
+    run.lines.push(text === printed || !text ? { id, text, error } : { id, text, error, ansi: printed });
+    if (run.lines.length > LOCAL_RUN_MAX_LINES) run.lines.splice(0, run.lines.length - LOCAL_RUN_MAX_LINES);
     if (error) return;
     const total = PROGRESS_TOTAL_RE.exec(text);
     if (total) {
@@ -552,7 +583,8 @@ export function useDesktopLocalRuns() {
   async function drive(run: LocalRun) {
     try {
       await ensureListener();
-      const worst = run.kind === 'tests' ? await driveTests(run) : await driveSingle(run);
+      let worst: number | null = null;
+      if (!run.stopRequested) worst = run.kind === 'tests' ? await driveTests(run) : await driveSingle(run);
       if (run.stopRequested) {
         run.status = 'stopped';
       } else {
@@ -568,6 +600,13 @@ export function useDesktopLocalRuns() {
       if (run.kind === 'repro') await finishRepro(run);
       if (run.jobRequestId) await finishJob(run);
       run.finishedAt = Date.now();
+      for (const listener of endListeners) {
+        try {
+          listener(run);
+        } catch {
+          // One listener failing must not keep the run from ending.
+        }
+      }
       notifyFinished(run);
       trimFinished();
     }
@@ -605,6 +644,10 @@ export function useDesktopLocalRuns() {
         bugReportId: run.repro.bugReportId ?? null,
         originRef: run.originRef,
       });
+    }
+    if (run.kind === 'request' && run.teamRequest) {
+      // Only the request: the shell takes its command and its request token from this app's server.
+      return spawnCommand(run, 'desktop_run_requested_tests', { requestId: run.teamRequest.id });
     }
     if (run.kind === 'flake' && run.jobRequestId) {
       // Only the request: the shell reads its commit and plan from this app's
@@ -832,8 +875,8 @@ export function useDesktopLocalRuns() {
   /**
    * A headless run can take minutes — when the window is hidden or unfocused,
    * also raise an OS notification. Inside the shell, `window.Notification` is
-   * shimmed onto native notifications (and the dock/taskbar unread badge) by
-   * the desktop plugin.
+   * shimmed onto native notifications by the desktop plugin, and the shell
+   * counts them on the dock/taskbar unread badge.
    */
   function notifyUnfocused(run: LocalRun, label: string, tests: string, seconds: number) {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
@@ -917,6 +960,7 @@ export function useDesktopLocalRuns() {
     flake?: FlakeLabRunState | null;
     flakeTestCaseId?: number | null;
     jobRequestId?: string | null;
+    teamRequest?: { id: string; instance: string } | null;
   }): LocalRun {
     // What the shell stamps as the reference: the cluster or bug report a run was launched for wins.
     const named = input.clusterId ?? input.bisectTarget?.clusterId ?? input.repro?.bugReportId ?? null;
@@ -952,9 +996,11 @@ export function useDesktopLocalRuns() {
       labReport: null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       jobRequestId: input.jobRequestId ?? null,
+      teamRequest: input.teamRequest ?? null,
       originRef,
       status: 'running',
       lines: [],
+      linesTotal: 0,
       exitCode: null,
       startedAt: Date.now(),
       finishedAt: null,
@@ -969,8 +1015,14 @@ export function useDesktopLocalRuns() {
     runs.value = [run, ...runs.value];
     const tracked = runs.value[0]!;
     trayOpen.value = true;
-    void captureBaseline(tracked);
-    void drive(tracked);
+    if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
+    else {
+      // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
+      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile. A
+      // run a team instance asked for reports there, so no run of this app's server is its baseline.
+      if (tracked.kind !== 'request') void captureBaseline(tracked);
+      void drive(tracked);
+    }
     return tracked;
   }
 
@@ -1086,13 +1138,18 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Record the project's newest Piwi run id before our process can report: the
-   * run this local process produced is newer (the reporter finds the app via
-   * `~/.piwi/desktop.json`).
+   * Record the project's newest Piwi run id. `spawn` awaits it before starting
+   * the process, so the run this local process produces (the reporter finds the
+   * app via `~/.piwi/desktop.json`) is newer than the baseline; a Flake Lab
+   * session does not wait for it. A lookup that fails or takes longer than
+   * `BASELINE_TIMEOUT_MS` leaves no baseline: the run starts, without a Piwi
+   * link.
    */
   async function captureBaseline(run: LocalRun) {
     try {
-      const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`);
+      const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`, {
+        timeout: BASELINE_TIMEOUT_MS,
+      });
       run.piwiRunBaseline = latest?.id ?? 0;
     } catch {
       // Unknown baseline — this run just won't get a Piwi link.
@@ -1102,22 +1159,39 @@ export function useDesktopLocalRuns() {
   /**
    * Match local processes to the Piwi runs they produced: the newest run the
    * reporter recorded with this run's origin and reference, newer than the
-   * baseline, so runs going at once never take each other's. Driven by the
-   * shared SSE stream (the tray subscribes), so the link appears as soon as the
-   * reporter checks in.
+   * baseline, under one of the names its steps gave the run (`hubRefs`, which
+   * the reporter records from `PIWI_RUN_REF`). Runs going at once for the same
+   * cluster, bug report or job share the reference and never take each other's:
+   * each finds its own by name, and a run the reporter recorded no name for is
+   * linked only to a local run no other one with that reference overlaps.
+   * Driven by the shared SSE stream (the tray subscribes), so the link appears
+   * as soon as the reporter checks in.
    */
   async function correlatePiwiRuns() {
+    const until = (run: LocalRun) => run.finishedAt ?? Date.now();
+    const sharesReference = (a: LocalRun, b: LocalRun) =>
+      a.projectId === b.projectId &&
+      a.originRef === b.originRef &&
+      localRunOriginKind(a.kind) === localRunOriginKind(b.kind) &&
+      a.startedAt <= until(b) &&
+      b.startedAt <= until(a);
     const cutoff = Date.now() - 2 * 60_000;
     for (const run of runs.value) {
       if (run.piwiRunId != null || run.piwiRunBaseline == null) continue;
       if (run.status !== 'running' && (run.finishedAt ?? 0) < cutoff) continue;
       const origin = localRunOriginKind(run.kind);
       if (!origin || !run.originRef) continue;
+      const names = run.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]);
       try {
-        const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`, {
-          query: { origin, ref: run.originRef },
-        });
-        if (latest && latest.id > run.piwiRunBaseline) run.piwiRunId = latest.id;
+        const latest = await $fetch<{ id: number; name?: string | null } | null>(
+          `/api/projects/${run.projectId}/latest-run`,
+          {
+            query: names.length > 0 ? { origin, ref: run.originRef, run: names } : { origin, ref: run.originRef },
+          },
+        );
+        if (!latest || latest.id <= run.piwiRunBaseline) continue;
+        if (latest.name == null && runs.value.some((other) => other !== run && sharesReference(other, run))) continue;
+        run.piwiRunId = latest.id;
       } catch {
         // Server briefly unavailable — the next stream event retries.
       }
@@ -1129,6 +1203,30 @@ export function useDesktopLocalRuns() {
    * as a spec in the project's test directory, runs it and removes it. The
    * request is marked running here and done, with its verdict, when it ends.
    */
+  /**
+   * Run a request a team instance sent, after **Run** in its confirmation: the shell starts it in the folder linked
+   * to its project for that instance, and the run reports to that instance.
+   */
+  function startTeamRequest(input: {
+    requestId: string;
+    instance: string;
+    projectId: number;
+    cases: RetryCase[];
+    title: string;
+  }): LocalRun | null {
+    if (!tauriCore()) return null;
+    return spawn({
+      kind: 'request',
+      projectId: input.projectId,
+      projectLabel: teamInstanceHost(input.instance),
+      cases: input.cases,
+      title: input.title,
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      steps: [],
+      teamRequest: { id: input.requestId, instance: input.instance },
+    });
+  }
+
   async function startRepro(input: {
     projectId: string | number;
     projectLabel?: string | null;
@@ -1284,6 +1382,12 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /** Opens the tray on a worker of a hub's run: its run expands, and the focus moves to the worker. */
+  function showWorker(ref: string, worker: number) {
+    trayOpen.value = true;
+    shownWorker.value = { ref, worker };
+  }
+
   function clearFinished() {
     runs.value = runs.value.filter((r) => r.status === 'running');
   }
@@ -1305,12 +1409,22 @@ export function useDesktopLocalRuns() {
   return {
     runs,
     trayOpen,
+    shownWorker,
+    holds,
+    trayMounts,
+    /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
+    onRunEnded(listener: (run: LocalRun) => void): () => void {
+      endListeners.add(listener);
+      return () => endListeners.delete(listener);
+    },
+    showWorker,
     activeCount,
     startRun,
     startReproduce,
     startBisect,
     startFlakeLab,
     startRepro,
+    startTeamRequest,
     startJob,
     rerun,
     stopRun,

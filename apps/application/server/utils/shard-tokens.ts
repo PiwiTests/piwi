@@ -71,15 +71,38 @@ export function withShardTokens(metadata: unknown, tokens: Set<string>): Record<
   return meta;
 }
 
-/** Add a shard token's digest to a test run's stored metadata. */
-export async function persistShardToken(db: DB, runId: number, token: string): Promise<void> {
+/**
+ * The shards of a sharded run still in their global setup, from its metadata: the digests of the setup tokens
+ * `/setup` handed them, which their `/begin` has not spent yet. Each is one of the run's shard tokens too.
+ */
+export function readShardSetupTokens(metadata: unknown): string[] {
+  if (!metadata || typeof metadata !== 'object') return [];
+  const tokens = (metadata as Record<string, unknown>).shardSetupTokens;
+  return Array.isArray(tokens) ? tokens.filter((t): t is string => typeof t === 'string') : [];
+}
+
+/** A copy of a run's metadata whose shards still in their global setup are those of `digests`, every other key kept. */
+export function withShardSetupTokens(metadata: unknown, digests: string[]): Record<string, unknown> {
+  const meta = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
+  if (digests.length > 0) meta.shardSetupTokens = digests;
+  else delete meta.shardSetupTokens;
+  return meta;
+}
+
+/**
+ * Add a shard token's digest to a test run's stored metadata. A setup token's (`setup: true`) also counts its shard
+ * among those still in their global setup (`readShardSetupTokens`).
+ */
+export async function persistShardToken(db: DB, runId: number, token: string, { setup = false } = {}): Promise<void> {
   const digest = shardTokenDigest(token);
   await updateRunMetadata(
     db,
     runId,
     (metadata) => {
       const tokens = Array.isArray(metadata.shardTokens) ? (metadata.shardTokens as string[]) : [];
-      return tokens.includes(digest) ? null : { ...metadata, shardTokens: [...tokens, digest] };
+      if (tokens.includes(digest)) return null;
+      const next = { ...metadata, shardTokens: [...tokens, digest] };
+      return setup ? withShardSetupTokens(next, [...readShardSetupTokens(metadata), digest]) : next;
     },
     { updatedAt: new Date() },
   );

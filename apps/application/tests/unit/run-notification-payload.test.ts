@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -16,7 +15,7 @@ const SOURCE = ["  10 | test('pays', async () => {", '> 11 |   await pay();', ' 
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db
     .insert(schema.projects)
     .values({ id: 1, name: 'shop', defaultBranch: 'main', repositoryUrl: 'https://github.com/acme/shop' });
@@ -241,7 +240,7 @@ describe('the payload of a run notification, in edge cases', () => {
     expect(payload.history!.map((h) => h.runId)).toEqual([1, 5, 200]);
   });
 
-  test('draws an interrupted test as one that did not run, not as a missing result', async () => {
+  test('draws an interrupted test as interrupted, in no outcome, not as a missing result', async () => {
     await db.insert(schema.testRuns).values({
       id: 30,
       projectId: 1,
@@ -257,7 +256,10 @@ describe('the payload of a run notification, in edge cases', () => {
       { testRunId: 30, testCaseId: 3, status: 'failed', browserName: 'webkit' },
     ]);
     const [failure] = (await loadRunPayload(db as never, 30))!.runPayload.topFailures;
-    expect(failure!.history).toEqual([null, 'didnotrun', 'failed']);
+    expect(failure!.history).toEqual([null, 'interrupted', 'failed']);
+    // The run's counters leave it out; the payload counts it, so the outcome bar names it.
+    expect((await loadRunPayload(db as never, 5))!.runPayload.interruptedTests).toBe(1);
+    expect((await loadRunPayload(db as never, 30))!.runPayload.interruptedTests).toBe(0);
   });
 
   test("falls back to the test's snippet when the captured frame marks no failing line", async () => {

@@ -1,0 +1,2 @@
+DROP INDEX `idx_test_runs_cases_run_browser`;--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_test_runs_cases_run_browser` ON `test_runs_cases` (`test_run_id`,`test_case_id`,`repeat_each_index`,`retries`,(CASE WHEN "browser_name" IS NULL THEN '' ELSE "browser_name" END));

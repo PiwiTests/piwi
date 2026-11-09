@@ -10,10 +10,11 @@ import { getDatabase } from '../database';
 import { getStorage } from '../storage';
 import { getProjectScope } from './project-access';
 import { resolveIngestProject } from './ingest-project';
-import { resolveMaxUploadBytes } from './upload-limits';
-import { sanitizeFilename } from './sanitize-filename';
+import { resolveMaxImportBytes } from './upload-limits';
+import { attachmentFileName } from './sanitize-filename';
 import { persistRunCases } from './persist-run-cases';
 import { upsertTraceBlob } from './trace-blobs';
+import { deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { parseBlobReport, BlobReportError } from './blob-report';
 import { parseTraceArchive, looksLikeTrace, TraceImportError } from './trace-import';
 import { openArchive, ArchiveError } from './archive-reader';
@@ -48,7 +49,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   const label = input.label ?? null;
   const importGroup = input.importGroup ?? null;
 
-  const maxUploadBytes = resolveMaxUploadBytes();
+  const maxUploadBytes = resolveMaxImportBytes();
   if (archive.data.length === 0) {
     throw apiError({ statusCode: 400, message: 'The uploaded archive is empty' });
   }
@@ -155,7 +156,7 @@ function createServerImportPort(): ImportPort {
       entryName,
       bytes,
       digest,
-    }): Promise<StoredImportFile | null> {
+    }): Promise<StoredImportFile> {
       // Always a buffer here: only the browser half ever passes a `Blob`.
       const raw = await toBytes(bytes);
       const data = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -172,13 +173,22 @@ function createServerImportPort(): ImportPort {
 
         const dir = `project-${projectId}/run-${testRunId}/${testRunsCaseId}`;
         await storage.mkdir(dir);
-        const path = `${dir}/${sanitizeFilename(entryName.split('/').pop() || 'attachment')}`;
+        const path = `${dir}/${attachmentFileName(entryName.split('/').pop() ?? '')}`;
         await storage.writeFile(path, data);
         return { path: path.replace(/\\/g, '/'), size: data.length };
       } catch (error) {
+        // The import fails whole: it leaves no run, so a retry once storage recovers imports it in full.
         console.error(`[Import] Failed to store ${kind} ${entryName}: ${error}`);
-        return null;
+        throw apiError({
+          statusCode: 503,
+          message: `The archive's files could not be stored, so nothing was imported: ${error instanceof Error ? error.message : String(error)}`,
+        });
       }
+    },
+
+    async discardFiles(db, { projectId, runId, blobIds }) {
+      await deleteRunStorageDir(projectId, runId);
+      await gcTraceBlobs(db as never, blobIds);
     },
 
     async readTraceConsole(bytes, startedAt) {

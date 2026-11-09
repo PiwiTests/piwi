@@ -152,8 +152,9 @@ export function reportWebhookBody(
 
 /**
  * A browser notification that the report is ready: to the channel's owner
- * for a personal channel, else to everyone who can open every project the
- * report covers (the stream checks `projectIds`).
+ * for a personal channel, else to everyone, and in both cases only to someone
+ * who can open every project the report covers (the stream checks
+ * `projectIds`).
  */
 export function publishReportNotification(
   bundle: ReportBundle,

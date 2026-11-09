@@ -112,6 +112,7 @@ const PAGE_AREAS: readonly [RegExp, GuideAreaId][] = [
   [/^\/failure-clusters\//, 'clusters'],
   [/^\/test-cases\//, 'test-cases'],
   [/^\/(?:analytics|reports)(?:\/|$)/, 'analytics'],
+  [/^\/settings\/(?:connect|capabilities|mcp|api|companion-tools)$/, 'setup'],
   [/^\/settings(?:\/|$)/, 'settings'],
 ];
 
@@ -163,6 +164,7 @@ export const TOPIC_AREAS: Readonly<Record<string, GuideAreaId>> = {
   'bug-report.spec': 'setup',
   'fix.toolbox': 'clusters',
   'run.keep': 'runs',
+  'run.live-desktop': 'runs',
   'run.live-unshared': 'runs',
   'run.partial': 'runs',
 };
@@ -250,6 +252,14 @@ export const TAB_LISTS: readonly TabList[] = [
     marker: 'const ALIAS_SEGMENT: Record<string, FailureSegment> =',
     pick: 'keys',
     query: (tab) => ({ tab }),
+  },
+  // The Coverage tab's views.
+  {
+    page: '/projects/[id]',
+    file: 'utils/coverage-tab.ts',
+    marker: 'export const COVERAGE_VIEWS =',
+    pick: 'strings',
+    query: (view) => ({ tab: 'coverage', view }),
   },
   {
     page: '/projects/[id]',

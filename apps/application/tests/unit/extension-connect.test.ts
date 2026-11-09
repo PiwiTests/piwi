@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -35,9 +34,7 @@ const at = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   const [user] = await db
     .insert(schema.users)
     .values({ username: 'tester', password: 'x', role: 'member', name: 'Test User' })
@@ -116,6 +113,57 @@ describe('the flow', () => {
     expect(await pollDeviceConnect(anyDb(), start.deviceCode, at(15))).toEqual({ status: 'expired' });
     expect(await db.select().from(schema.apiKeys)).toHaveLength(1);
     expect((await describeConnectRequest(anyDb(), start.userCode, at(16)))!.status).toBe('consumed');
+  });
+
+  test('a run target needs leave to connect, then gets a key that holds run:receive alone', async () => {
+    const start = await startDeviceConnect(anyDb(), { target: 'desktop', device: 'LAPTOP-42', os: 'macOS' }, T0);
+    expect(await decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true }, at(1))).toBe(
+      'target-not-allowed',
+    );
+    expect(
+      await decideDeviceConnect(
+        anyDb(),
+        { userCode: start.userCode, userId, allow: true, mayConnectTarget: true },
+        at(2),
+      ),
+    ).toBe('approved');
+    const approved = await pollDeviceConnect(anyDb(), start.deviceCode, at(6));
+    expect(approved).toMatchObject({ status: 'approved' });
+
+    const [key] = await db.select().from(schema.apiKeys).where(eq(schema.apiKeys.userId, userId));
+    expect(key).toMatchObject({
+      name: 'Piwi Desktop on LAPTOP-42 (macOS)',
+      clientKind: 'desktop',
+      permissions: ['run:receive'],
+    });
+    const targets = await db.select().from(schema.runTargets);
+    expect(targets).toEqual([
+      expect.objectContaining({
+        userId,
+        apiKeyId: key!.id,
+        kind: 'desktop',
+        deviceName: 'Piwi Desktop on LAPTOP-42 (macOS)',
+      }),
+    ]);
+  });
+
+  test('a run target is never connected with authentication off', async () => {
+    const start = await startDeviceConnect(anyDb(), { target: 'runner', device: 'build-01', os: 'Linux' }, T0);
+    await decideDeviceConnect(
+      anyDb(),
+      { userCode: start.userCode, userId: null, allow: true, mayConnectTarget: true },
+      at(1),
+    );
+    expect(await pollDeviceConnect(anyDb(), start.deviceCode, at(6))).not.toMatchObject({ status: 'approved' });
+    expect(await db.select().from(schema.runTargets)).toEqual([]);
+  });
+
+  test('a browser or editor key keeps its owner’s access', async () => {
+    const start = await started();
+    await decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true }, at(1));
+    await pollDeviceConnect(anyDb(), start.deviceCode, at(6));
+    const [key] = await db.select().from(schema.apiKeys);
+    expect(key).toMatchObject({ clientKind: 'picker', permissions: null });
   });
 
   test('two concurrent polls of an approved request yield one key', async () => {

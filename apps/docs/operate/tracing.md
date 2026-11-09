@@ -55,3 +55,9 @@ docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
 ```
 
 Start Piwi with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` and open `http://localhost:16686`.
+
+## Related
+
+- [Metrics and rollup export](./metrics): the numbers Piwi serves to Prometheus
+- [Deployment](./deployment): where the variables are set
+- [Configuration reference](/reference/configuration): every variable Piwi reads

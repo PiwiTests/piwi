@@ -51,6 +51,11 @@ const {
   },
 );
 
+// A run that starts or ends reads the list again, as it does the tab's counts, and so does a read asked from outside
+// the page (the assistant, once a proposal is applied).
+useRunStream(() => refresh());
+usePageReload(() => refresh());
+
 // The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
 const loading = computed(() => clustersStatus.value === 'idle' || clustersStatus.value === 'pending');
 

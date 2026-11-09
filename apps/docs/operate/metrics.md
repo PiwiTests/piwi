@@ -25,6 +25,10 @@ telemetry" promise.
   change that, with the scope keys of the analytics page.
 - Answers are cached for 60 seconds, so a scrape interval under a minute reads the same numbers.
 
+An answer, cut to three metrics and two projects:
+
+<<< @/snippets/metrics-output.txt
+
 With [authentication](./authentication) on, the scraper sends an [API key](./api-keys), and the
 samples cover the projects that key's user can open; a browser session is refused. Create a key for a Member
 with the Viewer role on the projects you want to chart. A Prometheus scrape job:
@@ -33,6 +37,7 @@ with the Viewer role on the projects you want to chart. A Prometheus scrape job:
 scrape_configs:
   - job_name: piwi
     metrics_path: /api/metrics
+    scheme: https   # the key travels in a header: never over plain HTTP
     scrape_interval: 5m
     authorization:
       credentials: pd_your_api_key
@@ -57,7 +62,7 @@ UTC day, environment, branch and run kind, with the history retention deleted st
 curl -H "Authorization: Bearer pd_your_api_key" "https://piwi.example.com/api/rollups?format=csv&period=this-year" -o rollups.csv
 ```
 
-The column list and every parameter are in the API reference (`/docs` on your instance).
+The column list and every parameter are in the API reference (`/settings/api` on your instance).
 
 ## Related
 - [Analytics](/features/analytics): the metrics, the scope and the periods

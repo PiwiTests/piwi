@@ -33,7 +33,7 @@ export interface AnalyticsPortfolioRow {
   tags: AnalyticsTagInfo[];
   /** Terminal runs inside the period. */
   runCount: number;
-  /** Tests passed / tests run across all period runs, 0–100. Null when no tests ran. */
+  /** Tests passed over tests that passed or failed across all period runs, 0–100. Null when none did. */
   passRate: number | null;
   /** Percentage-point change vs the previous equal-length period. Null without a baseline. */
   passRateDelta: number | null;

@@ -3,18 +3,16 @@ import { testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsBrowserMatrix } from '../../analytics/types';
-import {
-  contextRunConditions,
-  fetchContextProjects,
-  getAnalyticsContext,
-  roundRate,
-  type ProjectAccess,
-} from './common';
+import { passRatePercent } from '../../utils/pass-rate';
+import { failedCountSql, passedCountSql } from '../../utils/pass-rate-sql';
+import { finalAttemptSql } from '../test-case-aggregates';
+import { contextRunConditions, fetchContextProjects, getAnalyticsContext, type ProjectAccess } from './common';
 
 /**
  * Pass rate per browser × project — surfaces browser-specific rot (a suite
  * that's green on Chromium but red on WebKit). Uses the scalar `browserName`
- * column on `test_runs_cases`.
+ * column on `test_runs_cases`, and counts one result per run, test, project and
+ * repetition (its final attempt), so a pass on a retry is a pass.
  */
 export async function getAnalyticsBrowserMatrix(
   db: DrizzleDB,
@@ -25,6 +23,7 @@ export async function getAnalyticsBrowserMatrix(
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return { browsers: [], rows: [] };
 
   const conditions = contextRunConditions(ctx, ctx.period.from.getTime(), ctx.period.to.getTime());
+  conditions.push(finalAttemptSql());
   const filter = ctx.testFilter;
   if (filter?.browsers) conditions.push(inArray(testRunsCases.browserName, filter.browsers));
 
@@ -35,8 +34,8 @@ export async function getAnalyticsBrowserMatrix(
       projectId: testRuns.projectId,
       browserName: testRunsCases.browserName,
       testCaseId: filter?.testCaseIds ? testRunsCases.testCaseId : sql<number>`0`,
-      passed: sql<number>`COALESCE(SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END), 0)`,
-      total: sql<number>`COUNT(*)`,
+      passed: passedCountSql(testRunsCases.status),
+      failed: failedCountSql(testRunsCases.status),
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -48,7 +47,7 @@ export async function getAnalyticsBrowserMatrix(
 
   // Aggregate into a project × browser grid.
   const browserSet = new Set<string>();
-  const byProject = new Map<number, Map<string, { passed: number; total: number }>>();
+  const byProject = new Map<number, Map<string, { passed: number; failed: number }>>();
   for (const row of rows) {
     const browser = (row.browserName as string | null) || 'unknown';
     browserSet.add(browser);
@@ -57,9 +56,9 @@ export async function getAnalyticsBrowserMatrix(
       byBrowser = new Map();
       byProject.set(row.projectId, byBrowser);
     }
-    const cell = byBrowser.get(browser) ?? { passed: 0, total: 0 };
+    const cell = byBrowser.get(browser) ?? { passed: 0, failed: 0 };
     cell.passed += Number(row.passed) || 0;
-    cell.total += Number(row.total) || 0;
+    cell.failed += Number(row.failed) || 0;
     byBrowser.set(browser, cell);
   }
 
@@ -78,7 +77,7 @@ export async function getAnalyticsBrowserMatrix(
         label: project.label,
         cells: browsers.map((browser) => {
           const cell = byBrowser.get(browser);
-          return cell ? roundRate(cell.passed, cell.total) : null;
+          return cell ? passRatePercent(cell, 1) : null;
         }),
       };
     })

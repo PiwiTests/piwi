@@ -14,6 +14,7 @@
  * orchestration in `server/utils/heal/`.
  */
 
+import { fnv1a32 } from '@piwitests/core/hash';
 import type { ScmProviderName } from '#shared/scm-urls';
 
 /** `app_settings` key holding the resolved {@link AutoHealSettings}. */
@@ -169,20 +170,10 @@ export type HealActionStatus = 'pending' | 'processing' | 'opened' | 'merged' | 
 
 // ── Deterministic identity (dedupe key + branch name) ────────────────────────
 
-/** FNV-1a 32-bit → 8 hex. Pure, dependency-free; enough to fingerprint an edit set. */
-function fnv1a(input: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
 /** A stable fingerprint of an edit set — order-independent (call site → target locator). */
 export function healSignature(edits: Array<{ filePath: string; line: number; suggestedLocator: string }>): string {
   const parts = edits.map((e) => `${e.filePath}:${e.line}=>${e.suggestedLocator}`).sort();
-  return fnv1a(parts.join('|'));
+  return fnv1a32(parts.join('|'));
 }
 
 /** The dedupe key — one open-PR action per (project, edit set). Enforced by a unique index. */
@@ -214,7 +205,7 @@ export function parseHealBranch(
  * the replacement. A PR closed without merging blocks its edits by this key.
  */
 export function healEditKey(edit: Pick<HealEditPayload, 'filePath' | 'failingLocator' | 'suggestedLocator'>): string {
-  return fnv1a([edit.filePath, edit.failingLocator ?? '', edit.suggestedLocator].join('\u0000'));
+  return fnv1a32([edit.filePath, edit.failingLocator ?? '', edit.suggestedLocator].join('\u0000'));
 }
 
 /** True when a branch name was produced by auto-heal — used to break the feedback loop. */

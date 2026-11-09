@@ -2,6 +2,8 @@ import { and, eq } from 'drizzle-orm';
 import { runDeliveries } from '../database/schema';
 import type { DbClient } from '../database';
 import { createKeyedLock } from './keyed-lock';
+import { deleteRunsByIds } from './retention';
+import { publicRunUrl } from '#shared/run-url';
 
 /** A delivery key as a client generates it: a UUID, or any similar opaque token. */
 const DELIVERY_KEY = /^[A-Za-z0-9_-]{16,128}$/;
@@ -15,6 +17,8 @@ export function readDeliveryKey(value: unknown): string | null {
 export interface RepeatedDelivery {
   success: true;
   runId: number;
+  /** The run's page (`publicRunUrl`). */
+  runUrl: string;
   projectId: number;
   duplicate: true;
 }
@@ -42,10 +46,33 @@ export async function deliverOnce<T extends { runId: number }>(
       .from(runDeliveries)
       .where(and(eq(runDeliveries.projectId, projectId), eq(runDeliveries.deliveryKey, deliveryKey)))
       .limit(1);
-    if (delivered) return { success: true, runId: delivered.runId, projectId, duplicate: true };
+    if (delivered)
+      return {
+        success: true,
+        runId: delivered.runId,
+        runUrl: publicRunUrl(delivered.runId),
+        projectId,
+        duplicate: true,
+      };
 
     const result = await ingest();
     await db.insert(runDeliveries).values({ projectId, deliveryKey, runId: result.runId }).onConflictDoNothing();
     return result;
   });
+}
+
+/**
+ * Store the executions of a run a batch delivery created, with `store`. When that fails, the run is deleted with
+ * everything stored for it so far (`deleteRunsByIds`) before the error goes on, so the delivery sent again stores one
+ * run.
+ */
+export async function storeOrDiscardRun<T>(db: DbClient, runId: number, store: () => Promise<T>): Promise<T> {
+  try {
+    return await store();
+  } catch (error) {
+    await deleteRunsByIds(db, [runId]).catch((err) =>
+      console.error(`[ingest] Failed to remove run #${runId}, whose executions could not be stored:`, err),
+    );
+    throw error;
+  }
 }

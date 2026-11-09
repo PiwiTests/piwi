@@ -7,7 +7,8 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
 
 /**
  * The metadata key where a `finalizing` run keeps the status its reporter sent
- * to `/finish`, until its report upload lands or the stale-run sweep settles it.
+ * to `/finish`, or with its results (`/upload/results`), until its report upload
+ * lands or the stale-run sweep settles it.
  */
 const PENDING_STATUS_KEY = 'pendingStatus';
 
@@ -32,12 +33,13 @@ export function readPendingStatus(metadata: unknown): string | undefined {
 }
 
 /**
- * Give a `finalizing` run the status its reporter sent to `/finish`, announce
- * its end and fire the finish-time side effects, as `/finish` does for a run
- * with no uploads pending. The update applies only while the run is still
- * finalizing, so when the report upload and the stale-run sweep reach the same
- * run, only one of them settles it. Returns the status set, or null when the
- * run had already left `finalizing`.
+ * Give a `finalizing` run the status its reporter sent to `/finish`, or with its
+ * results (`/upload/results`), announce its end and fire the finish-time side
+ * effects, as `/finish` does for a run with no uploads pending. A settled run
+ * holds no stream token, so it takes no more files. The update applies only
+ * while the run is still finalizing, so when the report upload and the
+ * stale-run sweep reach the same run, only one of them settles it. Returns the
+ * status set, or null when the run had already left `finalizing`.
  */
 export async function settleFinalizingRun(
   db: DbClient,
@@ -49,7 +51,14 @@ export async function settleFinalizingRun(
 
   const settled = await db
     .update(testRuns)
-    .set({ status, metadata, origin: runOrigin(metadata), commit: runCommit(metadata), updatedAt: new Date() })
+    .set({
+      status,
+      metadata,
+      origin: runOrigin(metadata),
+      commit: runCommit(metadata),
+      streamToken: null,
+      updatedAt: new Date(),
+    })
     .where(and(eq(testRuns.id, run.id), eq(testRuns.status, 'finalizing')))
     .returning({ id: testRuns.id, isFullRun: testRuns.isFullRun });
   if (settled.length === 0) return null;

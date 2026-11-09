@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The owner and the diagnosis an execution's detail reads, against an in-memory
@@ -26,9 +25,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, title: 'pays by card', filePath: 'tests/checkout.spec.ts' },
@@ -48,7 +45,15 @@ beforeAll(async () => {
   await db.insert(schema.testRunsCases).values([
     { id: 10, testRunId: 1, testCaseId: 1, status: 'failed', error: 'Error: card declined', failureClusterId: 1 },
     { id: 11, testRunId: 1, testCaseId: 2, status: 'failed', error: 'Error: card declined', failureClusterId: 1 },
-    { id: 12, testRunId: 1, testCaseId: 1, status: 'failed', error: 'Error: transfer refused', failureClusterId: 2 },
+    {
+      id: 12,
+      testRunId: 1,
+      testCaseId: 1,
+      repeatEachIndex: 1,
+      status: 'failed',
+      error: 'Error: transfer refused',
+      failureClusterId: 2,
+    },
   ]);
   // Cluster 1 has its own diagnosis and an execution's; cluster 2 only an execution's.
   await db.insert(schema.failureDiagnoses).values([

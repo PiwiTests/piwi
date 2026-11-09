@@ -15,7 +15,8 @@ import {
 } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { PICK_AT_NEEDS } from '../src/internal/capture/pick-at.js';
+import { jpegBand, jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The live view of a stopped page, the input played on it and Pick on the image, in a real Playwright run through the
@@ -24,7 +25,8 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * alone. The page tells the fake editor where its elements and Piwi's overlays are, as a person sees them on the
  * view. Headless, the view shows a page nobody else sees: input clicks a button, a pick on the image names its
  * locator, Pick and Record run in the page through the view, and nothing of Piwi is left in it once the test goes on.
- * Headed, the view shows the page beside its pause bar. With a video recorded, the view leaves the video whole. Under
+ * Headed, the view shows the page with its pause bar painted over, each frame decoded and its pixels checked. With a
+ * video recorded, the view leaves the video whole. Under
  * `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`). Firefox runs where it is installed.
  */
@@ -41,7 +43,23 @@ const HOLD_MS = 2500;
 const TEST_TIMEOUT_MS = 1500;
 /** How long the editor watches an animated page, to count its frames. */
 const WATCH_MS = 1500;
+/**
+ * The longest the editor watches a stop for the frames it waits for: a view whose every frame is a screenshot between
+ * two reads (before Playwright 1.61) sends them slowly on a busy runner.
+ */
+const FRAMES_WAIT_MS = 15_000;
 const requireHere = createRequire(import.meta.url);
+/** Playwright's own JPEG decoder, for the pixels of an image the view sent. */
+const jpeg = (
+  createRequire(requireHere.resolve('playwright-core/package.json'))('playwright-core/lib/utilsBundle') as {
+    jpegjs: {
+      decode(
+        data: Buffer,
+        options: { useTArray: true; formatAsRGBA: true },
+      ): { width: number; height: number; data: Uint8Array };
+    };
+  }
+).jpegjs;
 const FIREFOX = (() => {
   try {
     const { firefox } = requireHere('@playwright/test') as { firefox: { executablePath(): string } };
@@ -59,7 +77,7 @@ const PAGE = (animated: boolean) => `<!doctype html><meta charset="utf-8"><title
 <style>body { margin: 0; padding: 120px 20px 20px; font: 16px sans-serif } button { all: unset; display: inline-block; padding: 8px 16px; background: #ddd }
 #spin { width: 80px; height: 80px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <h1>Shop</h1><section data-testid="cart" aria-label="Cart"><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button></section>
-<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}
+<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}<dialog id="modal"><button>OK</button></dialog>
 <script>
 const center = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
 let dblclicked = false;
@@ -76,9 +94,18 @@ setInterval(() => {
     choice: center(buttons.find((b) => /^getBy|^locator\\(/.test(b.textContent))),
     recorder: !!document.getElementById('piwi-record-hud-host'),
     heading: document.querySelector('h1').textContent,
+    bar: document.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null,
+    field: center(document.getElementById('field')),
+    barFocused: !!document.getElementById('__piwi-pause-bar')?.contains(document.activeElement),
+    dialog: document.getElementById('modal').open,
     dblclicked,
     ctrlClicked,
-  }) }).catch(() => {});
+  }) }).then((r) => r.json()).then((asked) => {
+    // The test's window focuses the bar's first button, as a person who tabs into it there.
+    if (asked.focusBar) document.querySelector('#__piwi-pause-bar button')?.focus();
+    // The app opens a modal dialog of its own.
+    if (asked.openDialog) document.getElementById('modal').showModal();
+  }).catch(() => {});
 }, 100);
 </script>`;
 
@@ -158,7 +185,18 @@ test('picked on a sharper image', async ({ page }) => {
   await page.goto('${base}/still');
   await expect(page.locator('#go')).toBeVisible(); // bp
 });
+test('watched with a secret field', async ({ page }) => {
+  await page.goto('${base}/secret');
+  await expect(page.locator('#go')).toBeVisible(); // bp
+});
 `;
+
+/** Where the secret field stands on its page, in CSS pixels, a solid green no image may show. */
+const SECRET_BOX = { x: 40, y: 200, width: 300, height: 60 };
+/** A page with a password field, at `SECRET_BOX`, its value typed in. */
+const SECRET = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; background: #fff }
+#secret { position: absolute; left: ${SECRET_BOX.x}px; top: ${SECRET_BOX.y}px; width: ${SECRET_BOX.width}px; height: ${SECRET_BOX.height}px; box-sizing: border-box; border: 0; padding: 0 8px; background: #0c0; color: #00f; font: 32px sans-serif }</style>
+<button id="go" style="position:absolute;left:10px;top:10px">Go</button><input type="password" id="secret" value="hunter2">`;
 
 /**
  * A page of noise, which no JPEG makes small: at 1280 by 720 its frames are over the view's limit, a lighter image
@@ -243,6 +281,13 @@ interface Where {
   choice: Point | null;
   recorder: boolean;
   heading: string;
+  /** The pause bar's bottom edge, in CSS pixels; null while it does not show. */
+  bar: number | null;
+  field: Point | null;
+  /** Whether the focus is on one of the pause bar's buttons. */
+  barFocused: boolean;
+  /** Whether the page's modal dialog is open. */
+  dialog: boolean;
   dblclicked: boolean;
   ctrlClicked: boolean;
 }
@@ -274,11 +319,31 @@ const stops: Record<string, Stopped> = {};
 const images: Record<string, { width?: number; height?: number; data: string } | null> = {};
 /** Where a client showing the image of a page with a device scale factor of 2 clicked, and the point it sent. */
 const sharp: { natural?: { width: number; height: number } | null; clicked?: Point; sent?: Point } = {};
-const watched: Record<string, { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null }> = {};
+const watched: Record<
+  string,
+  { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null; lastJpeg: Buffer | null }
+> = {};
 /** Whether the frame a view sent again, asked again, was the one it sent last. */
 const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
 const heavy: { refusals?: string[] } = {};
+/**
+ * The pause bar's bottom edge at the headed stop, the frames its view sent until the page was clicked, whether a Tab
+ * played from the page's last field focused the bar, and the bar and its focus once the keys played.
+ */
+const headed: {
+  bar?: number;
+  frames?: FrameHeard[];
+  /** What the clicks across the bar's band were answered. */
+  bandClicks?: string[];
+  tabbed?: boolean;
+  afterKeys?: { bar: number | null; focused: boolean };
+  /** Whether the page's dialog closed on the viewer's Escape. */
+  dialogClosed?: boolean;
+} = {};
+/** Whether the page focuses the pause bar's first button, or opens its dialog, on its next report. */
+let focusBar = false;
+let openDialog = false;
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -347,17 +412,23 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
   const answers = (said[test] ??= []);
   const view = (on: boolean) => ask(connection, { what: 'view', stop: stop.stop, on });
   const play = (events: ViewInput[]) => ask(connection, { what: 'input', stop: stop.stop, events });
-  const watch = async (ms: number) => {
+  /** Watch the stop `ms` at least, and until `least` frames came, `FRAMES_WAIT_MS` at most. */
+  const watch = async (ms: number, least: number) => {
     const before = frames(connection, stop.stop).length;
     const start = Date.now();
     await sleep(ms);
+    while (frames(connection, stop.stop).length - before < least && Date.now() - start < FRAMES_WAIT_MS) {
+      await sleep(20);
+    }
     const seen = frames(connection, stop.stop).slice(before);
     const first = frames(connection, stop.stop)[0]?.message.data;
+    const last = seen[seen.length - 1]?.message.data;
     watched[test] = {
       frames: seen.length,
       bytes: seen.reduce((sum, f) => sum + (f.message.data.length * 3) / 4, 0),
       ms: Date.now() - start,
       firstJpeg: first ? Buffer.from(first, 'base64') : null,
+      lastJpeg: last ? Buffer.from(last, 'base64') : null,
     };
   };
   try {
@@ -376,10 +447,46 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         const again = await waitFor(() => frames(connection, stop.stop)[seen.length], 3000);
         resent.push(again.message.data === seen[seen.length - 1]!.message.data);
       }
-      if (test === 'watched in Firefox') await watch(WATCH_MS);
+      if (test === 'watched in Firefox') await watch(WATCH_MS, 2);
+      if (test === 'watched at a headed stop') {
+        headed.bar = await waitFor(() => where?.bar ?? undefined);
+        // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, the
+        // answer says the click was not played, and the click on the page below still plays.
+        headed.bandClicks = [];
+        for (let x = 20; x < 1000; x += 40) {
+          headed.bandClicks.push((await play(click({ x, y: Math.floor(headed.bar / 2) }))).message);
+        }
+        // Keys reach none of its buttons either: a Tab from the page's last field passes the bar by, Enter and Space on
+        // a button of it the test's window focused press nothing, and Escape, which the bar takes as Resume, goes to the
+        // page alone: the stop stays held, and the page's own dialog closes on it.
+        answers.push(await play(click(await waitFor(() => where?.field ?? undefined))));
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Tab' }]));
+        await sleep(300);
+        headed.tabbed = (await waitFor(() => (where ? { focused: where.barFocused } : undefined))).focused;
+        focusBar = true;
+        await waitFor(() => where?.barFocused);
+        answers.push(
+          await play([
+            { type: 'key', action: 'press', key: 'Enter' },
+            { type: 'key', action: 'press', key: ' ' },
+          ]),
+        );
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
+        await sleep(300);
+        headed.afterKeys = await waitFor(() => (where ? { bar: where.bar, focused: where.barFocused } : undefined));
+        openDialog = true;
+        await waitFor(() => where?.dialog);
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
+        headed.dialogClosed = await waitFor(() => (where && !where.dialog) || undefined, 3000).catch(() => false);
+      }
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
       await waitFor(() => where?.heading === 'Clicked');
+      if (test === 'watched at a headed stop') {
+        // The frame of the page clicked, under the bar drawn before, comes a few frames later at most.
+        await sleep(500);
+        headed.frames = frames(connection, stop.stop).map(({ message }) => message);
+      }
       if (test === 'clicked through the view') {
         // A double click as a viewer's browser counted it, 320 ms apart, and a click with Control held.
         const note = await waitFor(() => where?.note ?? undefined);
@@ -427,10 +534,15 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       await waitFor(() => where && !where.recorder);
     } else if (test === 'held past its timeout while watched') {
       answers.push(await view(true));
-      await watch(HOLD_MS);
+      await watch(HOLD_MS, 2);
+      answers.push(await view(false));
+    } else if (test === 'watched with a secret field') {
+      images[test] = (await ask(connection, { what: 'image' })) as unknown as { data: string } | null;
+      answers.push(await view(true));
+      await watch(800, 1);
       answers.push(await view(false));
     } else if (test === 'picked on a sharper image') {
-      // The image is in device pixels; the point goes in CSS pixels of the page, as the image's viewport names them.
+      // The point goes in CSS pixels of the page, as the image's viewport names them, whatever the image's size.
       const image = (await ask(connection, { what: 'image' })) as unknown as {
         width: number;
         height: number;
@@ -448,20 +560,20 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       };
       answers.push(await ask(connection, { what: 'pick-at', stop: stop.stop, ...sharp.sent }));
       answers.push(await view(true));
-      await watch(300);
+      await watch(300, 1);
     } else if (test === 'recorded on video while watched') {
       answers.push(await view(true));
-      await watch(WATCH_MS);
+      await watch(WATCH_MS, 2);
     } else if (test === 'watched on a page too heavy for its frames') {
       answers.push(await view(true));
       await waitFor(() => frames(connection, stop.stop).length > 0, 5000);
-      await watch(500);
+      await watch(500, 0);
     } else if (test === 'watched on a page too heavy for a lighter image') {
       answers.push(await view(true));
       await waitFor(() => refusals(connection, stop.stop).length > 0, 5000);
       // The page paints again: it is said once.
       answers.push(await play([{ type: 'mouse', action: 'move', x: 600, y: 300 }]));
-      await watch(1000);
+      await watch(1000, 0);
       heavy.refusals = refusals(connection, stop.stop).map((m) => m.refused);
     }
   } catch (error) {
@@ -559,7 +671,10 @@ beforeAll(async () => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/where') {
       where = JSON.parse(req.body) as Where;
-      return res.end();
+      const asked = { focusBar, openDialog };
+      focusBar = false;
+      openDialog = false;
+      return jsonRes(res, 200, asked);
     }
     if (url.pathname === '/piwi/send') {
       picks.push({ authorization: req.headers.authorization, body: JSON.parse(req.body) });
@@ -567,6 +682,7 @@ beforeAll(async () => {
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     if (url.pathname === '/noisy') return res.end(NOISY(1280, 720));
+    if (url.pathname === '/secret') return res.end(SECRET);
     if (url.pathname === '/noisier') return res.end(NOISY(1920, 1080));
     res.end(PAGE(url.pathname === '/animated'));
   });
@@ -633,7 +749,8 @@ module.exports = defineConfig({
       breakpoints('firefox.spec.cjs', FIREFOX_SPEC(server.url)),
     ].join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,
@@ -662,17 +779,26 @@ const NEEDS_BAR =
   "Pick a locator needs the pause bar in the test's window, and this stop shows none: run the test headed.";
 const ON = { ok: true, message: 'The live view is on.' };
 const OFF = { ok: true, message: 'The live view is off.' };
+const PLAYED_1 = { ok: true, message: 'Played 1 event.' };
 const PLAYED_2 = { ok: true, message: 'Played 2 events.' };
 const GO = "getByRole('button', { name: 'Go' })";
-const PICKED_AT = {
-  ok: true,
-  message: `${GO} went to the editor, in place of the locator on the stopped line.`,
-  locator: GO,
-};
+/** Pick on the image needs Playwright 1.60 (the snapshot's boxes): below it, it is refused, saying so. */
+const PICKS_AT = playwrightAtLeast('1.60');
+const PICKED_AT = PICKS_AT
+  ? { ok: true, message: `${GO} went to the editor, in place of the locator on the stopped line.`, locator: GO }
+  : { ok: false, message: PICK_AT_NEEDS, locator: null };
+
+/** What Pick on the image sends where a pick goes, at the stop of the headless test `title`. */
+function pickSent(title: string) {
+  const at = { file: 'tests/headless.spec.cjs', line: breakpointOf(HEADLESS_SPEC(server.url), title) };
+  return { authorization: `Bearer ${SEND_TOKEN}`, body: { kind: 'locator', text: GO, at } };
+}
 
 describe('the live view of a stopped page', () => {
   it('lets every test pass, and says it takes the view, its input and a pick on the image as it attaches', () => {
-    expect(exitCode, output).toBe(0);
+    // The run's output, and each test's status and errors, which its output leaves out.
+    const outcomes = JSON.stringify(tests.map((t) => [t.title, t.status, t.errors]));
+    expect(exitCode, `${output}\n${outcomes}`).toBe(0);
     expect(tests.map((t) => [t.title, t.status, t.errors])).toEqual([
       ['clicked through the view', 'passed', []],
       ['picked through the view', 'passed', []],
@@ -682,13 +808,15 @@ describe('the live view of a stopped page', () => {
       ['watched at a headed stop', 'passed', []],
       ['recorded on video while watched', 'passed', []],
       ['picked on a sharper image', 'passed', []],
+      ['watched with a secret field', 'passed', []],
       ['watched on a page too heavy for its frames', 'passed', []],
       ['watched on a page too heavy for a lighter image', 'passed', []],
       ...(FIREFOX ? [['watched in Firefox', 'passed', []]] : []),
     ]);
+    // Pick on the image reads each element's box from the snapshot, which Playwright 1.60 added.
     expect(connections[0]!.heard[0]!.message).toMatchObject({
       type: 'run-attach',
-      takes: expect.arrayContaining(['view', 'input', 'pick-at']),
+      takes: expect.arrayContaining(['view', 'input', ...(PICKS_AT ? ['pick-at'] : [])]),
     });
   });
 
@@ -741,17 +869,17 @@ describe('the live view of a stopped page', () => {
     expect(said['held past its timeout while watched']).toEqual([ON, OFF]);
   });
 
-  it('names the locator of the element under a point of the page, sent where a pick goes', () => {
-    const where = {
-      file: 'tests/headless.spec.cjs',
-      line: breakpointOf(HEADLESS_SPEC(server.url), 'clicked through the view'),
-    };
-    expect(picks).toContainEqual({
-      authorization: `Bearer ${SEND_TOKEN}`,
-      body: { kind: 'locator', text: GO, at: where },
-    });
-    // The image names the page's viewport in CSS pixels, which a point on it is mapped to.
+  it('sends an image that names the page’s viewport in CSS pixels, which a point on it is mapped to', () => {
     expect(images['clicked through the view']).toMatchObject({ width: 1000, height: 640 });
+  });
+
+  it.runIf(PICKS_AT)('names the locator of the element under a point of the page, sent where a pick goes', () => {
+    expect(picks).toContainEqual(pickSent('clicked through the view'));
+  });
+
+  it.runIf(!PICKS_AT)('refuses Pick on the image without the snapshot’s boxes, and sends no pick', () => {
+    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
+    expect(picks).not.toContainEqual(pickSent('clicked through the view'));
   });
 
   it('picks headless through the view, the anchors step and the choice included, leaving nothing behind', () => {
@@ -812,9 +940,51 @@ describe('the live view of a stopped page', () => {
   });
 
   it('shows a headed stop too, and plays its input there', () => {
-    expect(said['watched at a headed stop']).toEqual([ON, PLAYED_2, PICKED_AT, OFF]);
+    expect(said['watched at a headed stop']).toEqual([
+      ON,
+      PLAYED_2,
+      PLAYED_1,
+      PLAYED_2,
+      PLAYED_1,
+      PLAYED_1,
+      PLAYED_2,
+      PICKED_AT,
+      OFF,
+    ]);
     expect(stops['watched at a headed stop']).toMatchObject({ bar: true });
   });
+
+  it('plays no click on the hidden bar’s band, and says so', () => {
+    expect(new Set(headed.bandClicks)).toEqual(
+      new Set(['Played 1 of 2 events: 1 not played, as the pause bar the view paints over would take it.']),
+    );
+  });
+
+  it('keeps a viewer’s keys from the hidden bar: Tab passes it by, Enter and Space press nothing, Escape is the page’s', () => {
+    expect(headed.tabbed).toBe(false);
+    expect(headed.afterKeys).toEqual({ bar: headed.bar, focused: false });
+    expect(headed.dialogClosed).toBe(true);
+  });
+
+  // Each frame of the stop is decoded in JavaScript: seconds under coverage.
+  it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {
+    const bar = headed.bar!;
+    expect(bar).toBeGreaterThan(10);
+    const seen = headed.frames!;
+    expect(seen.length).toBeGreaterThan(0);
+    const gray = (mean: number[]) => mean.every((channel) => Math.abs(channel - 96) < 16);
+    const white = (mean: number[]) => mean.every((channel) => channel > 235);
+    const strips = seen.map((frame) => jpegBand(Buffer.from(frame.data, 'base64'), frame.height, 2, bar - 2));
+    for (const strip of strips) {
+      // Gray where the bar is, or the page's white in a frame from before the bar was drawn: never the bar itself.
+      expect(strip.violet).toBe(0);
+      expect(gray(strip.mean) || white(strip.mean), `the band of the bar: ${strip.mean.join(', ')}`).toBe(true);
+    }
+    // The page clicked through the view, the bar drawn: painted over, the page under its shadow left as it is.
+    expect(gray(strips[strips.length - 1]!.mean)).toBe(true);
+    const last = seen[seen.length - 1]!;
+    expect(white(jpegBand(Buffer.from(last.data, 'base64'), last.height, bar + 40, bar + 70).mean)).toBe(true);
+  }, 60_000);
 
   it('leaves the test’s video whole, its first client’s size the view’s', () => {
     const video = tests
@@ -836,18 +1006,49 @@ describe('the live view of a stopped page', () => {
     }
     const seen = watched['recorded on video while watched']!;
     expect(seen.frames).toBeGreaterThan(1);
-    // The video asked first, at its own size: the view's frames come at that size, not the view's.
-    expect(jpegSize(seen.firstJpeg!)).toEqual({ width: 800, height: 512 });
+    // The video asked first, at its own size: the view's frames come at that size, not the view's. A view that joins
+    // the page's screencast first gets the last frame it painted, which can predate the page's viewport: the size is
+    // read from the frames the view watched.
+    expect(jpegSize(seen.lastJpeg!)).toEqual({ width: 800, height: 512 });
   });
 
-  it('maps a point of an image in device pixels to the page through the viewport the image names', () => {
-    // Twice the viewport's CSS pixels: the device scale factor.
-    expect(sharp.natural).toEqual({ width: 2000, height: 1280 });
-    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x * 2);
-    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
+  it('sends an image at the viewport’s size in CSS pixels, whatever the device scale factor', () => {
+    // The viewport's CSS pixels, a device scale factor of 2 left out.
+    expect(sharp.natural).toEqual({ width: 1000, height: 640 });
     // The view names the same viewport, whatever its frames' own size.
     const seen = watched['picked on a sharper image']!;
     expect(seen.firstJpeg && jpegSize(seen.firstJpeg)).toEqual({ width: 1000, height: 640 });
+  });
+
+  it.runIf(PICKS_AT)('maps a point of such an image to the page through the viewport it names', () => {
+    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x);
+    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
+  });
+
+  it('paints a secret field over in the stop’s image and in every frame of its view', () => {
+    const decoded: Buffer[] = [Buffer.from(images['watched with a secret field']!.data, 'base64')];
+    const seen = watched['watched with a secret field']!;
+    expect(seen.frames).toBeGreaterThan(0);
+    decoded.push(seen.firstJpeg!, seen.lastJpeg!);
+    for (const data of decoded) {
+      const image = jpeg.decode(data, { useTArray: true, formatAsRGBA: true });
+      const scale = image.width / 1000;
+      let green = 0;
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.ceil(SECRET_BOX.y * scale); y < Math.floor((SECRET_BOX.y + SECRET_BOX.height) * scale); y++) {
+        for (let x = Math.ceil(SECRET_BOX.x * scale); x < Math.floor((SECRET_BOX.x + SECRET_BOX.width) * scale); x++) {
+          const i = (y * image.width + x) * 4;
+          const [r, g, b] = [image.data[i]!, image.data[i + 1]!, image.data[i + 2]!];
+          if ((g > 160 && r < 100 && b < 100) || (b > 160 && r < 100 && g < 100)) green++;
+          sum += g;
+          n++;
+        }
+      }
+      expect(green).toBe(0);
+      // The paint's gray, the field's green gone.
+      expect(Math.abs(sum / n - 96)).toBeLessThan(30);
+    }
   });
 
   it('shows a lighter image of a page whose frames are too long, and says once why none goes when it is too', () => {
@@ -855,7 +1056,10 @@ describe('the live view of a stopped page', () => {
     const lighter = watched['watched on a page too heavy for its frames']!;
     expect(lighter.firstJpeg!.length).toBeLessThanOrEqual(MAX_VIEW_FRAME);
     expect(jpegSize(lighter.firstJpeg!)).toEqual({ width: 1280, height: 720 });
-    expect(said['watched on a page too heavy for a lighter image']).toEqual([ON, { ok: true, message: 'Played 1 event.' }]);
+    expect(said['watched on a page too heavy for a lighter image']).toEqual([
+      ON,
+      { ok: true, message: 'Played 1 event.' },
+    ]);
     expect(heavy.refusals).toEqual([
       'This page is too heavy for the live view: each image of it is over 384 KB, a lighter one included. The image of the stop still shows it.',
     ]);

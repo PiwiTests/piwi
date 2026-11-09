@@ -56,7 +56,7 @@ jobs:
           # `app` alongside the dmg: the bundler makes the macOS update bundle
           # (.app.tar.gz, the darwin entry of latest.json) from the app bundle
           # only, never from the dmg.
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
             bundles: app,dmg
             updaterConfig: src-tauri/tauri.updater.conf.json

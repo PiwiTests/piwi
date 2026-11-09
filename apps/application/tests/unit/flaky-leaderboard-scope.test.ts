@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * Which runs the flaky leaderboard reads: with no branch named, those of the
@@ -49,15 +49,17 @@ async function seedRun(
   for (const [caseId, outcome] of Object.entries(tests)) {
     const attempts = outcome === 'flaky' ? ['failed', 'passed'] : ['passed'];
     for (const [retries, status] of attempts.entries()) {
-      await db.insert(schema.testRunsCases).values({
-        testRunId: run!.id,
-        testCaseId: Number(caseId),
-        status,
-        retries,
-        duration: 2_000,
-        browserName,
-        browser: { projectName: browserName },
-      });
+      await db.insert(schema.testRunsCases).values(
+        withStoredVerdicts({
+          testRunId: run!.id,
+          testCaseId: Number(caseId),
+          status,
+          retries,
+          duration: 2_000,
+          browserName,
+          browser: { projectName: browserName },
+        }),
+      );
     }
   }
   return run!.id;
@@ -65,7 +67,7 @@ async function seedRun(
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   // No default branch stored: most of the project's runs are on develop.
   await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
   await db.insert(schema.testCases).values([

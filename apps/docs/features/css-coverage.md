@@ -38,7 +38,8 @@ a change to that file keeps every test that matched one of its rules.
 
 A style rule counts from its selector to its closing brace, like a function. A grouping rule (`@media`, `@supports`,
 `@layer`, `@container`) counts its first line once a rule inside it matched. Every rule of each sheet, matched or not,
-goes with the run, for the file's ratio.
+goes with the run, for the file's ratio. The rules also count in the project's **Functions** ratio, beside the
+scripts' functions.
 
 ## Where it is used
 

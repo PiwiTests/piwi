@@ -220,7 +220,11 @@ export async function runGate(
   if (argv.includes('--json')) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(formatGateResult(result));
+    // A dashboard that does not know its own address (no PIWI_SITE_URL) links the run by its path: the summary prints
+    // it on the dashboard URL this command called, so the CI log can open it.
+    const { runUrl } = result.facts;
+    const link = runUrl.startsWith('/') ? `${args.serverUrl}${runUrl}` : runUrl;
+    console.log(formatGateResult({ ...result, facts: { ...result.facts, runUrl: link } }));
   }
 
   if (result.verdict === 'inconclusive') return EXIT_INCONCLUSIVE;

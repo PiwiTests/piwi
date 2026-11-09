@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { and, eq, inArray } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ScmChanges } from '../../server/utils/scm/ScmProvider';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Suspect lines against a migrated SQLite database: executions ingested with
@@ -171,7 +170,7 @@ async function cluster(id: number, firstSeenRunId: number, executionIds: number[
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: `file:${join(tmpDir, 'test.db')}` }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   testCaseCache.invalidate(1);
   testSuiteCache.invalidate(1);

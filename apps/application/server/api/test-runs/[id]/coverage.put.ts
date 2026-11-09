@@ -4,6 +4,7 @@ import {
   storeRunCoverage,
   storeRunCoverageGaps,
 } from '../../../utils/coverage';
+import { isPrivateRunOrigin } from '#shared/run-eligibility';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 import { invalidateCommitCoverage } from '../../../utils/coverage-summary';
@@ -105,6 +106,11 @@ export default eventHandler(async (event) => {
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_RUN_COVERAGE_BYTES) throw apiError({ statusCode: 413, message: tooLarge });
   const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  // Run coverage joins the project's coverage: a private run records none.
+  const [origin] = await db.select({ origin: testRuns.origin }).from(testRuns).where(eq(testRuns.id, id));
+  if (isPrivateRunOrigin(origin?.origin)) {
+    throw apiError({ statusCode: 409, message: 'A requested run records no coverage' });
+  }
   const body = await readJsonBodyWithin(event, MAX_RUN_COVERAGE_BYTES, tooLarge);
   const files = parseRunCoverage(body);
   if (typeof files === 'string') throw apiError({ statusCode: 400, message: files });

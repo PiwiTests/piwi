@@ -32,7 +32,7 @@ request** works headless too.
   Assert in the stopped test's page**, **Piwi: Mock a request of the stopped test**…), and behind the status bar's
   `</>` item, **Piwi: Write code at the stop…**.
 - **In a JetBrains IDE**, they are links in the inlay above the stopped line (by the same short names), in the
-  gutter icon's menu, first in the status bar item's menu, and under **Tools → Piwi** (**Assert at the Stop**, **Mock
+  gutter icon's menu, in the status bar item's menu, and under **Tools → Piwi** (**Assert at the Stop**, **Mock
   a Request at the Stop**…).
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search

@@ -9,8 +9,11 @@
 export const SUBMIT_FALLBACK_PATHS = ['upload', 'submit', 'recovery'] as const;
 export type SubmitFallbackPath = (typeof SUBMIT_FALLBACK_PATHS)[number];
 
-/** Why the reporter fell back. */
-export const SUBMIT_FALLBACK_REASONS = ['results-lost', 'finish-failed', 'upload-failed'] as const;
+/**
+ * Why the reporter fell back. `run-ended`: the dashboard ended the run while it streamed, as it does once another run
+ * with the same run label started (`cancelInstanceRuns`).
+ */
+export const SUBMIT_FALLBACK_REASONS = ['results-lost', 'finish-failed', 'upload-failed', 'run-ended'] as const;
 export type SubmitFallbackReason = (typeof SUBMIT_FALLBACK_REASONS)[number];
 
 export interface SubmitFallback {
@@ -127,6 +130,7 @@ const REASON_CLAUSES: Record<SubmitFallbackReason, string> = {
   'results-lost': 'the live stream lost results',
   'finish-failed': 'finishing the live stream failed',
   'upload-failed': 'the batch upload failed',
+  'run-ended': 'another run with the same run label ended its live run',
 };
 
 function plural(n: number, one: string, many: string): string {

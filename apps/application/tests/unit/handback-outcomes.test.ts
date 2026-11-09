@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { locatorSignatureFromExpression } from '#shared/locator-healing';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Hand-back outcomes against an in-memory SQLite database: the write path and
@@ -71,10 +70,14 @@ async function insertRun(opts: { origin?: string; status?: string; startTime?: D
   return id;
 }
 
+/** The project an execution's `browser` names, which ingest stores as its `browserName`. */
+const projectOf = (extra: Record<string, unknown>) =>
+  (extra.browser as { projectName?: string } | undefined)?.projectName ?? null;
+
 async function insertCase(runId: number, testCaseId: number, status: string, extra: Record<string, unknown> = {}) {
   const [row] = await db
     .insert(schema.testRunsCases)
-    .values({ testRunId: runId, testCaseId, status, ...extra })
+    .values({ testRunId: runId, testCaseId, status, browserName: projectOf(extra), ...extra })
     .returning({ id: schema.testRunsCases.id });
   return row!.id;
 }
@@ -90,9 +93,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-outcomes-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   runSeq = 0;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.users).values({ id: 7, username: 'ada', password: 'x', role: 'member' });
@@ -263,7 +264,16 @@ describe('merge suggestions', () => {
 });
 
 describe('quarantine proposals', () => {
+  // Quarantined at T0, so the runs `insertRun` dates after it count toward a release.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: T0 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('quarantining a proposed test applies the proposal; a manual quarantine is no hand-back', async () => {
+    flaky.tests = [{ testCaseId: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', score: 60, wastedCiMinutes: 4 }];
     await insertRun();
     await addQuarantine(db as never, 1, 1, { source: 'proposed', createdBy: 7 });
     await addQuarantine(db as never, 1, 2, { source: 'manual', createdBy: 7 });
@@ -271,6 +281,16 @@ describe('quarantine proposals', () => {
     expect(rows.map((r) => [r.subjectId, r.suggestionKey, r.outcome, r.channel, r.actorUserId])).toEqual([
       [1, 'quarantine', 'applied', 'ui', 7],
     ]);
+  });
+
+  test('a quarantine said to apply a proposal is manual when the test is no candidate', async () => {
+    flaky.tests = [];
+    await insertRun();
+    await addQuarantine(db as never, 1, 1, { source: 'proposed', createdBy: 7 });
+
+    const [entry] = await db.select().from(schema.quarantinedTests);
+    expect(entry).toMatchObject({ testCaseId: 1, source: 'manual' });
+    expect(await listOutcomes(db as never, { kind: 'quarantine-proposal' })).toEqual([]);
   });
 
   test('releasing a test whose streak earned it applies the release proposal; an early release does not', async () => {
@@ -536,7 +556,11 @@ describe('Flake Lab verified fixes', () => {
     const retryPass = async (opts: { origin?: string; startTime: Date }) => {
       const run = await insertRun(opts);
       await insertCase(run, 1, 'failed', { browser: { projectName: 'chromium' } });
-      await insertCase(run, 1, 'passed', { browser: { projectName: 'chromium' } });
+      await insertCase(run, 1, 'passed', {
+        browser: { projectName: 'chromium' },
+        retries: 1,
+        passedAfterFailure: true,
+      });
       return run;
     };
     const before = await retryPass({ startTime: new Date(verifiedAt.getTime() - 60_000) });

@@ -11,7 +11,7 @@
  */
 
 import type { SelectionPredicateGroup, SelectionPriority } from '../selection/types';
-import { SELECTION_KEY_PATTERN } from '../selection/validate';
+import { SELECTION_KEY_PATTERN, fileGlobsErrors, withinFileGlobLimits } from '../selection/validate';
 import {
   DEFAULT_COMPARISON,
   DEFAULT_PERIOD,
@@ -136,8 +136,8 @@ function parseTestPredicates(query: QueryLike): SelectionPredicateGroup | undefi
   if (priority?.length) group.priority = priority;
   const feature = parseList(pick(query, 'feature'));
   if (feature) group.feature = feature;
-  const files = parseList(pick(query, 'files'));
-  if (files) group.files = files;
+  const files = withinFileGlobLimits(parseList(pick(query, 'files')) ?? []);
+  if (files.length > 0) group.files = files;
   const text = pick(query, 'q')?.trim();
   if (text) group.text = text;
   const quarantined = pick(query, 'quarantined');
@@ -147,6 +147,27 @@ function parseTestPredicates(query: QueryLike): SelectionPredicateGroup | undefi
 
 function stripAt(tag: string): string {
   return tag.replace(/^@+/, '');
+}
+
+/**
+ * A scope's test predicates with `files` read as `parseAnalyticsScope` reads
+ * it: its first 100 globs of at most 500 characters, none when no glob is
+ * left. A scope stored before these limits may hold more.
+ */
+export function testsWithinLimits(tests: SelectionPredicateGroup): SelectionPredicateGroup {
+  const { files, ...rest } = tests;
+  if (!files) return tests;
+  const kept = withinFileGlobLimits(files);
+  return kept.length > 0 ? { ...rest, files: kept } : rest;
+}
+
+/**
+ * Why a scope query's `files` breaks the limits of a selection's, named
+ * `where`; empty when it does not. A dashboard or a report schedule refuses to
+ * save such a scope, which `parseAnalyticsScope` reads within the limits.
+ */
+export function scopeFilesErrors(query: QueryLike, where: string): string[] {
+  return fileGlobsErrors(parseList(pick(query, 'files')) ?? [], where);
 }
 
 /** Split a comma-separated query value into a trimmed, non-empty list (undefined when empty). */

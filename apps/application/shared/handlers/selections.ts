@@ -12,9 +12,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
-import { eligibleExecutionSql } from '../run-eligibility';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
+import { eligibleExecutionInProject } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
+import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
+import { compileGlob, type GlobToken } from '@piwitests/core/glob';
 import {
   BUILTIN_SELECTIONS,
   getBuiltinSelection,
@@ -61,70 +64,78 @@ export interface CatalogRow {
 
 // ── Catalog loading ──────────────────────────────────────────────────────────
 
+/** What `loadSelectionCatalog` reads beyond each test's own fields, its quarantine and its latest status. */
+export interface CatalogOptions {
+  /** Each test's recency rank of its newest failure (`firstFailRank`), which `failedInLastRuns` and a `recentFailure` ranking read. */
+  withFailRanks: boolean;
+  /**
+   * The aggregates over each test's whole history: `totalRuns`, `passRate`,
+   * `avgDurationMs` and `neverRun`, which read every execution of the test.
+   * Loaded unless false; without them the rows read 0 runs, null rates and
+   * durations and `neverRun` false, so only a caller that keeps the resolved
+   * ids alone, for definitions `catalogNeeds` says read none of them, skips them.
+   */
+  withAggregates?: boolean;
+}
+
 /**
- * Load every test in a project with the per-case aggregates a selection reads.
- * Only executions of runs the `selection-catalog` use reads count: lab runs,
- * bisect steps and reproductions stay out of every aggregate.
+ * Load every test in a project with the per-case aggregates a selection reads,
+ * over its runs: one result per run, Playwright project and repetition, read
+ * from its final attempt (`testCaseAggregates`). Only executions of runs the
+ * `selection-catalog` use reads count: lab runs, bisect steps and
+ * reproductions stay out of every aggregate.
  */
 export async function loadSelectionCatalog(
   db: DrizzleDB,
   projectId: number,
-  opts: { withFailRanks: boolean } = { withFailRanks: false },
+  opts: CatalogOptions = { withFailRanks: false },
 ): Promise<CatalogRow[]> {
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`;
-  const failed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`;
-  const recentFlaky = sql<number>`(
-      SELECT COUNT(*) FROM (
-        SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
-        FROM ${testRunsCases}
-        WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
-        ORDER BY ${testRunsCases.createdAt} DESC
-        LIMIT 10
-      ) AS recent WHERE s = 'passed' AND r > 0
-    )`;
+  const withAggregates = opts.withAggregates !== false;
+  const eligible = () => eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId);
+  const recentFlaky = recentFlakySql(testCases.id, eligible());
   // The latest run's status: failed when one of the test's repetitions failed there.
-  const lastStatus = latestRunStatusSql(eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
-  const lastLine = sql<number | null>`(
-      SELECT ${testRunsCases.line}
+  const lastStatus = latestRunStatusSql(eligible());
+  // A nested `sql` keeps its columns qualified: a single-table select renders the columns of its own fields without
+  // their table, which inside the subquery would name the execution's own `id`.
+  const latestLine = sql`SELECT ${testRunsCases.line}
       FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligible()}
       ORDER BY ${testRunsCases.createdAt} DESC
-      LIMIT 1
-    )`;
-  const passRate = sql<
-    number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`;
+      LIMIT 1`;
+  const lastLine = sql<number | null>`(${latestLine})`;
 
-  const rows: any[] = await db
-    .select({
-      id: testCases.id,
-      filePath: testCases.filePath,
-      suitePath: testCases.suitePath,
-      title: testCases.title,
-      tags: testCases.tags,
-      locks: testCases.locks,
-      owner: testCases.owner,
-      priority: testCases.priority,
-      feature: testCases.feature,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
-      recentFlakyRuns: recentFlaky,
-      passRate,
-      avgDuration: sql<
-        number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-      lastStatus,
-      lastLine,
-    })
-    .from(testCases)
-    .leftJoin(
-      testRunsCases,
-      and(
-        eq(testCases.id, testRunsCases.testCaseId),
-        eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
-      ),
-    )
-    .where(eq(testCases.projectId, projectId))
-    .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
+  const fields = {
+    id: testCases.id,
+    filePath: testCases.filePath,
+    suitePath: testCases.suitePath,
+    title: testCases.title,
+    tags: testCases.tags,
+    locks: testCases.locks,
+    owner: testCases.owner,
+    priority: testCases.priority,
+    feature: testCases.feature,
+    recentFlakyRuns: recentFlaky,
+    lastStatus,
+    lastLine,
+  };
+  const inProject = eq(testCases.projectId, projectId);
+  let rows: any[];
+  if (withAggregates) {
+    const aggregates = testCaseAggregates();
+    rows = await db
+      .select({
+        ...fields,
+        totalRuns: aggregates.totalRuns,
+        passRate: aggregates.passRate,
+        avgDuration: aggregates.avgDuration,
+      })
+      .from(testCases)
+      .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), eligible(), finalAttemptSql()))
+      .where(inProject)
+      .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
+  } else {
+    rows = await db.select(fields).from(testCases).where(inProject);
+  }
 
   const quarantined = await getQuarantinedCaseIds(db, projectId);
   const failRanks = opts.withFailRanks ? await loadRecentFailRanks(db, projectId) : new Map<number, number>();
@@ -148,7 +159,7 @@ export async function loadSelectionCatalog(
       lastStatus: row.lastStatus ?? null,
       lastLine: row.lastLine != null ? Number(row.lastLine) : null,
       quarantined: quarantined.has(row.id),
-      neverRun: totalRuns === 0,
+      neverRun: withAggregates && totalRuns === 0,
       firstFailRank: failRanks.get(row.id) ?? null,
     } satisfies CatalogRow;
   });
@@ -156,65 +167,74 @@ export async function loadSelectionCatalog(
 
 /**
  * Recency rank of each test's most recent failure within its last
- * `MAX_FAILED_IN_LAST_RUNS` executions (1 = the latest execution). Computed with
- * a window function in one pass, only when a definition actually needs it.
+ * `MAX_FAILED_IN_LAST_RUNS` runs (1 = the latest run), a run being one result
+ * per run, Playwright project and repetition (`finalAttemptSql`): a pass on a
+ * retry is not a failure. Each test reads only its latest results, through the
+ * `(test_case_id, created_at)` index, numbered newest first; loaded only when a
+ * definition needs it.
  */
 async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Map<number, number>> {
-  const ranked = db.$with('ranked').as(
-    db
-      .select({
-        testCaseId: testRunsCases.testCaseId,
-        status: testRunsCases.status,
-        rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRunsCases.testCaseId} ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC)`.as(
-          'rn',
-        ),
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(
-        and(eq(testCases.projectId, projectId), eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)),
-      ),
-  );
+  const latest = sql`SELECT ${testRunsCases.status} AS status, ${testRunsCases.createdAt} AS created_at, ${testRunsCases.id} AS id
+      FROM ${testRunsCases}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId)}
+        AND ${finalAttemptSql()}
+      ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC
+      LIMIT ${sql.raw(String(MAX_FAILED_IN_LAST_RUNS))}`;
+  const numbered = sql`SELECT status, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn FROM (${latest}) latest`;
+  const rank = sql<
+    number | null
+  >`(SELECT MIN(rn) FROM (${numbered}) numbered WHERE status IN ('failed', 'timedOut', 'timedout'))`;
 
-  const rows: any[] = await db
-    .with(ranked)
-    .select({ testCaseId: ranked.testCaseId, rank: sql<number>`MIN(${ranked.rn})` })
-    .from(ranked)
-    .where(
-      and(sql`${ranked.status} IN ('failed', 'timedOut', 'timedout')`, sql`${ranked.rn} <= ${MAX_FAILED_IN_LAST_RUNS}`),
-    )
-    .groupBy(ranked.testCaseId);
+  const rows: { testCaseId: number; rank: number | null }[] = await db
+    .select({ testCaseId: testCases.id, rank })
+    .from(testCases)
+    .where(eq(testCases.projectId, projectId));
 
-  return new Map(rows.map((r) => [Number(r.testCaseId), Number(r.rank)]));
+  return new Map(rows.filter((r) => r.rank != null).map((r) => [Number(r.testCaseId), Number(r.rank)]));
 }
 
 // ── Predicate evaluation ─────────────────────────────────────────────────────
 
-/** Convert a glob (`**`, `*`, `?`) to an anchored regex over a POSIX path. */
-function globToRegExp(glob: string): RegExp {
-  let re = '';
+/**
+ * A glob over a POSIX path as an anchored, case-insensitive matcher: `**` (and
+ * the `/` right after it) any run of characters but a line terminator, `*` a
+ * run within one segment, `?` one character of a segment. `compileGlob` matches
+ * in steps that grow with the glob's length times the path's, whatever the glob
+ * holds.
+ */
+function pathGlobMatcher(glob: string): (path: string) => boolean {
+  const tokens: GlobToken[] = [];
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        re += '.*';
+        tokens.push({ kind: 'run', slash: true });
         i++;
         if (glob[i + 1] === '/') i++;
       } else {
-        re += '[^/]*';
+        tokens.push({ kind: 'run', slash: false });
       }
     } else if (c === '?') {
-      re += '[^/]';
-    } else if ('\\^$.|+()[]{}'.includes(c)) {
-      re += '\\' + c;
+      tokens.push({ kind: 'one', slash: false });
     } else {
-      re += c;
+      tokens.push({ kind: 'char', char: c });
     }
   }
-  return new RegExp(`^${re}$`, 'i');
+  return compileGlob(tokens, true);
 }
 
-function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean {
+/** A predicate group with its file globs compiled, once for every catalog row a resolve reads. */
+interface CompiledGroup {
+  group: SelectionPredicateGroup;
+  files?: Array<(path: string) => boolean>;
+}
+
+function compileGroups(groups: SelectionPredicateGroup[] | undefined): CompiledGroup[] {
+  return (groups ?? []).map((group) => ({ group, files: group.files?.map(pathGlobMatcher) }));
+}
+
+function matchesGroup(row: CatalogRow, { group, files }: CompiledGroup): boolean {
   if (group.ids && !group.ids.includes(row.id)) return false;
   if (group.tags) {
     const have = new Set(row.tags.map((t) => t.toLowerCase()));
@@ -227,9 +247,9 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
   if (group.owner && !(row.owner && group.owner.includes(row.owner))) return false;
   if (group.priority && !(row.priority && group.priority.includes(row.priority as never))) return false;
   if (group.feature && !(row.feature && group.feature.includes(row.feature))) return false;
-  if (group.files) {
+  if (files) {
     const posix = row.filePath.replace(/\\/g, '/');
-    if (!group.files.some((g) => globToRegExp(g).test(posix))) return false;
+    if (!files.some((matches) => matches(posix))) return false;
   }
   if (group.suitePath && !foldText(row.suitePath).includes(foldText(group.suitePath))) return false;
   if (group.text) {
@@ -264,13 +284,12 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
 }
 
 /** A test matches include when include is empty/absent, or it matches any include group. */
-function matchesInclude(row: CatalogRow, include: SelectionPredicateGroup[] | undefined): boolean {
-  if (!include || include.length === 0) return true;
+function matchesInclude(row: CatalogRow, include: CompiledGroup[]): boolean {
+  if (include.length === 0) return true;
   return include.some((group) => matchesGroup(row, group));
 }
 
-function matchesExclude(row: CatalogRow, exclude: SelectionPredicateGroup[] | undefined): boolean {
-  if (!exclude || exclude.length === 0) return false;
+function matchesExclude(row: CatalogRow, exclude: CompiledGroup[]): boolean {
   return exclude.some((group) => matchesGroup(row, group));
 }
 
@@ -336,6 +355,33 @@ function definitionNeedsFailRanks(def: SelectionDefinition): boolean {
   return def.budget?.rankBy === 'recentFailure';
 }
 
+/** Whether a definition reads the aggregates over a test's history: a rate, a duration, `neverRun`, or a budget. */
+function definitionNeedsAggregates(def: SelectionDefinition): boolean {
+  if (def.budget) return true;
+  const groups = [...(def.include ?? []), ...(def.exclude ?? [])];
+  return groups.some(
+    (g) =>
+      g.minPassRate !== undefined ||
+      g.maxPassRate !== undefined ||
+      g.minAvgDurationMs !== undefined ||
+      g.maxAvgDurationMs !== undefined ||
+      g.neverRun !== undefined,
+  );
+}
+
+/**
+ * The least catalog that resolves these definitions to the same tests:
+ * fail ranks and history aggregates only when one of them reads them. A
+ * resolution against it gives the right ids, not the durations of the
+ * estimate or the shards.
+ */
+export function catalogNeeds(definitions: SelectionDefinition[]): CatalogOptions {
+  return {
+    withFailRanks: definitions.some(definitionNeedsFailRanks),
+    withAggregates: definitions.some(definitionNeedsAggregates),
+  };
+}
+
 export interface ResolveOptions {
   key?: string | null;
   version?: number | null;
@@ -352,8 +398,12 @@ export interface ResolveOptions {
   order?: SelectionRankBy;
   /**
    * A catalog already loaded by the caller, reused instead of querying again.
-   * It must carry fail ranks (`withFailRanks: true`) so any definition resolves
-   * correctly. Analytics resolves many selections against one shared catalog.
+   * It must carry what the resolution reads: fail ranks for
+   * `failedInLastRuns` and a `recentFailure` budget or `order`, the
+   * aggregates for a rate, a duration, `neverRun`, a budget, a `shard` and the
+   * estimate. `catalogNeeds` names what the definitions alone read, for a
+   * caller that keeps the resolved ids. Analytics resolves many selections
+   * against one shared catalog.
    */
   catalog?: CatalogRow[];
 }
@@ -377,9 +427,11 @@ export async function resolveSelectionDefinition(
   const warnings: SelectionWarning[] = [];
 
   // include → exclude
+  const include = compileGroups(definition.include);
+  const exclude = compileGroups(definition.exclude);
   const selected = new Map<number, CatalogRow>();
   for (const row of catalog) {
-    if (matchesInclude(row, definition.include) && !matchesExclude(row, definition.exclude)) {
+    if (matchesInclude(row, include) && !matchesExclude(row, exclude)) {
       selected.set(row.id, row);
     }
   }
@@ -612,6 +664,7 @@ export async function createSelection(
       updatedAt: now,
     })
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -657,6 +710,7 @@ export async function updateSelection(
     .set(updates)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -665,5 +719,6 @@ export async function deleteSelection(db: DrizzleDB, projectId: number, key: str
     .delete(testSelections)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning({ id: testSelections.id });
+  dropProjectTestFilters(projectId);
   return { deleted: rows.length > 0 };
 }

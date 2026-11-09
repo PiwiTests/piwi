@@ -15,16 +15,19 @@
  */
 
 import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
-import { and, eq, gt, ne } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, ne } from 'drizzle-orm';
+import { resolveBrowserName } from '../browser-name';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
+import { saveEnvironmentSnapshots } from './environment-snapshots';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
+import { storableRunErrors, storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
-import { sumFailedAndTimedOut } from '../utils/test-counts';
+import { distinctRunCountsFromAttempts } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
@@ -75,8 +78,9 @@ export interface ImportPort {
   ): Promise<Array<{ id: number; inputIndex: number }>>;
 
   /**
-   * Write one file and report where it landed, or null if it could not be
-   * stored. `testRunsCaseId` is absent while traces are being staged ahead of
+   * Write one file and report where it landed. Throws when it cannot be
+   * stored, which fails the import: an import never says it imported a file
+   * it lost. `testRunsCaseId` is absent while traces are being staged ahead of
    * their case rows.
    */
   storeFile(input: {
@@ -92,7 +96,14 @@ export interface ImportPort {
      * content-addresses its storage need not read them again to find out.
      */
     digest?: string;
-  }): Promise<StoredImportFile | null>;
+  }): Promise<StoredImportFile>;
+
+  /**
+   * Remove what an import stored for a run it discarded: the run's own files,
+   * and those of `blobIds` (deduplicated traces) nothing references any more.
+   * A host whose storage is swept by other means leaves it out.
+   */
+  discardFiles?(db: DrizzleDB, input: { projectId: number; runId: number; blobIds: number[] }): Promise<void>;
 
   /** Console entries recovered from a trace archive's bytes. */
   readTraceConsole(bytes: Uint8Array, startedAt: number | null): Promise<unknown>;
@@ -274,7 +285,7 @@ export async function importBlobReportRun(
         entryName: ref.entry,
         bytes,
       });
-      if (file) staged.push({ file, entryName: ref.entry });
+      staged.push({ file, entryName: ref.entry });
     }
     if (staged.length) stagedTraces.set(index, staged);
   }
@@ -298,7 +309,7 @@ export async function importBlobReportRun(
       duration: parsed.duration,
       totalTests: parsed.totalTests,
       passedTests: parsed.passedTests,
-      failedTests: sumFailedAndTimedOut(parsed.failedTests, parsed.timedOutTests),
+      failedTests: parsed.failedTests,
       skippedTests: parsed.skippedTests,
       didNotRunTests: parsed.didNotRunTests,
       flakyTests: parsed.flakyTests,
@@ -306,6 +317,7 @@ export async function importBlobReportRun(
       branch: resolveRunBranch({ scm: parsed.scm }),
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
+      runErrors: storableRunErrors(parsed.runErrors),
       importHash,
       metadata: metadata as never,
       origin: runOrigin(metadata),
@@ -315,6 +327,7 @@ export async function importBlobReportRun(
 
   const run = inserted[0];
   if (!run) throw new Error('Failed to create the imported test run');
+  if (parsed.runner) await saveEnvironmentSnapshots(db, run.id, [parsed.runner]);
 
   let traceCount = 0;
   let attachmentCount = 0;
@@ -365,7 +378,6 @@ export async function importBlobReportRun(
           entryName: ref.entry,
           bytes,
         });
-        if (!stored) continue;
 
         await db.insert(files).values({
           testRunsCaseId,
@@ -391,7 +403,8 @@ export async function importBlobReportRun(
   } catch (error) {
     // A failed import leaves no run behind, so a retry of the same archive is
     // not taken for a duplicate of it.
-    await discardImportedRun(db, port, run.id);
+    const stagedBlobIds = [...stagedTraces.values()].flat().map((staged) => staged.file.blobId);
+    await discardImportedRun(db, port, { projectId, runId: run.id, stagedBlobIds });
     throw error;
   }
 
@@ -408,7 +421,7 @@ export async function importBlobReportRun(
     startTime: parsed.startTime.toISOString(),
     totalTests: parsed.totalTests,
     passedTests: parsed.passedTests,
-    failedTests: sumFailedAndTimedOut(parsed.failedTests, parsed.timedOutTests),
+    failedTests: parsed.failedTests,
     skippedTests: parsed.skippedTests,
     didNotRunTests: parsed.didNotRunTests,
     flakyTests: parsed.flakyTests,
@@ -504,10 +517,11 @@ export async function importTraceRun(
   if (!run) throw new Error('Failed to create the imported test run');
 
   let traceCount = 0;
+  let stored: StoredImportFile | null = null;
   try {
     // Stage the trace first: its stored path is derived from the bytes, so it
     // doubles as the check for whether this very trace is already in the run.
-    const stored = await port.storeFile({
+    stored = await port.storeFile({
       projectId,
       testRunId: run.id,
       testRunsCaseId: null,
@@ -519,19 +533,28 @@ export async function importTraceRun(
       digest: importHash,
     });
 
-    if (stored) {
-      const already = await db
-        .select({ id: files.id })
-        .from(files)
-        .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
-      // The same trace already here is a repeat upload, not a second attempt.
-      if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
-    }
+    const already = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
+    // The same trace already here is a repeat upload, not a second attempt.
+    if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
 
     // A different trace for a test the run already has is a retry. Traces carry
     // no attempt index of their own, so it comes from how many attempts of this
-    // test the run already holds — which makes upload order the attempt order.
-    parsed.case.retries = await countPriorAttempts(db, projectId, run.id, parsed.case);
+    // test the run already holds — which makes upload order the attempt order —
+    // and its attempt history from those attempts, as the reporter sends one.
+    const prior = await priorAttempts(db, projectId, run.id, parsed.case);
+    parsed.case.retries = prior.length;
+    parsed.case.attempts = [
+      ...prior,
+      {
+        retry: prior.length,
+        status: parsed.case.status,
+        duration: parsed.case.duration ?? 0,
+        startedAt: parsed.case.startedAt ?? null,
+      },
+    ];
 
     const inserted = await port.persistRunCases(
       db,
@@ -543,23 +566,23 @@ export async function importTraceRun(
     const testRunsCaseId = inserted[0]?.id;
     if (!testRunsCaseId) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
 
-    if (stored) {
-      await db.insert(files).values({
-        testRunsCaseId,
-        testRunId: run.id,
-        type: 'trace',
-        path: stored.path,
-        size: stored.size,
-        blobId: stored.blobId ?? null,
-      });
-      traceCount = 1;
-    }
+    await db.insert(files).values({
+      testRunsCaseId,
+      testRunId: run.id,
+      type: 'trace',
+      path: stored.path,
+      size: stored.size,
+      blobId: stored.blobId ?? null,
+    });
+    traceCount = 1;
 
     await rollUpTraceRun(db, run.id, new Date(parsed.startedAt));
   } catch (error) {
     // A failed import leaves no run of its own behind, so a retry of the same
     // trace is not taken for a duplicate of it.
-    if (createdRun) await discardImportedRun(db, port, run.id);
+    if (createdRun) {
+      await discardImportedRun(db, port, { projectId, runId: run.id, stagedBlobIds: [stored?.blobId] });
+    }
     throw error;
   }
 
@@ -581,20 +604,35 @@ export async function importTraceRun(
 
 /**
  * Remove a run an import created and could not finish, with the rows written
- * for it so far. Child rows are deleted explicitly, since the in-browser
- * database does not enforce foreign keys. A failure here is only reported, so
- * the caller rethrows the import's own error.
+ * for it so far, then the files it stored (`ImportPort.discardFiles`): the
+ * run's own, and the deduplicated traces it staged or linked that nothing else
+ * references. Child rows are deleted explicitly, since the in-browser database
+ * does not enforce foreign keys. A failure here is only reported, so the
+ * caller rethrows the import's own error.
  */
-async function discardImportedRun(db: DrizzleDB, port: ImportPort, runId: number): Promise<void> {
+async function discardImportedRun(
+  db: DrizzleDB,
+  port: ImportPort,
+  input: { projectId: number; runId: number; stagedBlobIds: Array<number | null | undefined> },
+): Promise<void> {
+  const { projectId, runId } = input;
   try {
+    const linked = await db.select({ blobId: files.blobId }).from(files).where(eq(files.testRunId, runId));
     await db.delete(files).where(eq(files.testRunId, runId));
     await db.delete(networkRequests).where(eq(networkRequests.testRunId, runId));
     await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, runId));
     await db.delete(testRuns).where(eq(testRuns.id, runId));
+    const blobIds = [...new Set([...input.stagedBlobIds, ...linked.map((row) => row.blobId)])].filter(
+      (id): id is number => typeof id === 'number',
+    );
+    await port.discardFiles?.(db, { projectId, runId, blobIds });
   } catch (error) {
     port.warn?.(`Could not remove the unfinished run #${runId}: ${error}`);
   }
 }
+
+/** The name of Playwright's error context: `error-context`, or `_error-context-<n>` before Playwright 1.53. */
+const ERROR_CONTEXT_NAME = /^(?:error-context|_error-context(?:-\d+)?)$/;
 
 /** Recover the evidence Playwright's `error-context` attachment still holds. */
 async function recoverErrorContext(
@@ -602,7 +640,7 @@ async function recoverErrorContext(
   readEntry: ArchiveEntryReader,
   entry: ImportedRunCase,
 ): Promise<void> {
-  const contextRef = entry.attachments.find((a) => a.name === 'error-context');
+  const contextRef = entry.attachments.find((a) => ERROR_CONTEXT_NAME.test(a.name));
   if (!contextRef) return;
 
   const bytes = await readEntry(contextRef.entry);
@@ -613,34 +651,63 @@ async function recoverErrorContext(
   entry.case.testSource = evidence.testSource;
 }
 
-/** How many executions of this same test the run already holds. */
-async function countPriorAttempts(
+/** One entry of an execution's attempt history (`test_runs_cases.attempts`). */
+interface AttemptEntry {
+  retry: number;
+  status: string;
+  duration: number;
+  startedAt: number | null;
+}
+
+/** The executions of this same test, in the same browser, the run already holds, as attempt history entries. */
+async function priorAttempts(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
-  input: { filePath: string; suitePath?: string[] | null; title: string },
-): Promise<number> {
+  input: { filePath: string; suitePath?: string[] | null; title: string; browser?: unknown },
+): Promise<AttemptEntry[]> {
+  // The names as the test's rows store them (`storedTestIdentity`).
+  const stored = await storedTestIdentity(input);
   const existing = await db
     .select({ id: testCases.id })
     .from(testCases)
     .where(
       and(
         eq(testCases.projectId, projectId),
-        eq(testCases.filePath, input.filePath),
-        eq(testCases.suitePath, joinSuitePath(input.suitePath)),
-        eq(testCases.title, input.title),
+        eq(testCases.filePath, stored.filePath),
+        eq(testCases.suitePath, joinSuitePath(stored.suitePath)),
+        eq(testCases.title, stored.title),
       ),
     );
 
   const testCaseId = existing[0]?.id;
-  if (testCaseId === undefined) return 0;
+  if (testCaseId === undefined) return [];
 
+  const projectName = resolveBrowserName(input.browser);
+  const browserName = projectName === null ? null : await storedIdentity(projectName);
   const attempts = await db
-    .select({ id: testRunsCases.id })
+    .select({
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      startedAt: testRunsCases.startedAt,
+    })
     .from(testRunsCases)
-    .where(and(eq(testRunsCases.testRunId, testRunId), eq(testRunsCases.testCaseId, testCaseId)));
+    .where(
+      and(
+        eq(testRunsCases.testRunId, testRunId),
+        eq(testRunsCases.testCaseId, testCaseId),
+        browserName === null ? isNull(testRunsCases.browserName) : eq(testRunsCases.browserName, browserName),
+      ),
+    )
+    .orderBy(asc(testRunsCases.retries), asc(testRunsCases.id));
 
-  return attempts.length;
+  return attempts.map((attempt) => ({
+    retry: attempt.retries ?? 0,
+    status: attempt.status,
+    duration: attempt.duration ?? 0,
+    startedAt: attempt.startedAt ?? null,
+  }));
 }
 
 /**
@@ -652,18 +719,21 @@ async function countPriorAttempts(
  */
 async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date): Promise<void> {
   const rows = await db
-    .select({ status: testRunsCases.status, duration: testRunsCases.duration, startedAt: testRunsCases.startedAt })
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      startedAt: testRunsCases.startedAt,
+    })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, testRunId));
 
-  const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
-  for (const row of rows) {
-    if (row.status === 'passed') counts.passed++;
-    else if (row.status === 'timedout' || row.status === 'timedOut') counts.timedOut++;
-    else if (row.status === 'skipped') counts.skipped++;
-    else if (row.status === 'didnotrun') counts.didNotRun++;
-    else counts.failed++;
-  }
+  // One result per test, decided by its last attempt: a trace of a retry that passed makes the test flaky, not failed.
+  const counts = distinctRunCountsFromAttempts(rows);
 
   const stats = durationStats(rows.map((row) => row.duration));
   const earliest = rows.reduce<number>(
@@ -679,14 +749,15 @@ async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date)
   await db
     .update(testRuns)
     .set({
-      status: counts.failed + counts.timedOut > 0 ? 'failed' : 'passed',
+      status: counts.failedTests > 0 ? 'failed' : 'passed',
       startTime: new Date(earliest),
       duration: Math.max(0, latestEnd - earliest),
-      totalTests: rows.length,
-      passedTests: counts.passed,
-      failedTests: sumFailedAndTimedOut(counts.failed, counts.timedOut),
-      skippedTests: counts.skipped,
-      didNotRunTests: counts.didNotRun,
+      totalTests: counts.totalTests,
+      passedTests: counts.passedTests,
+      failedTests: counts.failedTests,
+      skippedTests: counts.skippedTests,
+      didNotRunTests: counts.didNotRunTests,
+      flakyTests: counts.flakyTests,
       avgTestDuration: stats?.avg ?? null,
       p90TestDuration: stats?.p90 ?? null,
       updatedAt: new Date(),

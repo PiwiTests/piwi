@@ -1,3 +1,4 @@
+import { resolveBrowserName } from '#shared/browser-name';
 import { projects, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
@@ -12,6 +13,8 @@ import {
   countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
+  hiddenErrorText,
+  hiddenStepEventErrors,
   capSourceFrames,
   capText,
   sanitizeWebVitals,
@@ -32,13 +35,14 @@ import {
   parseTestMetadata,
   sanitizeTestMetadata,
 } from '@piwitests/core/test-meta';
-import { matchInsertedRunCases, resolveRepeatEachIndex } from './inserted-run-cases';
+import { matchInsertedRunCases, resolveRepeatEachIndex, uncountClustersOfSkippedRows } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { syncTestCaseMetadata, type CaseMetaSnapshot } from './test-case-metadata-sync';
 import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCaseClaim } from './test-case-match';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { assignFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
+import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertLocatorSnapshots } from './locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from './ingest-health';
@@ -54,7 +58,7 @@ import {
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isLabRun } from '#shared/handlers/probes';
-import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
+import { eligibleExecutionSql, isEligibleRun, isPrivateRunOrigin } from '#shared/run-eligibility';
 import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import {
@@ -65,12 +69,23 @@ import {
   type TestCoverageCase,
 } from './coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { sanitizeTestOutput } from '@piwitests/core/test-output';
+import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
+import { int32, int64, storableRunCase } from './storable-values';
+import { workerLane } from '#shared/worker-lane';
+import { recordTagsTruncated } from './tags-truncated';
 import type { DbClient as DB } from '../database';
+
+/**
+ * Rows per multi-row INSERT. An execution row binds about 50 parameters, and one statement takes at most 32,766 on
+ * SQLite and 65,534 on PostgreSQL, so a whole run's batch is written in slices of this size.
+ */
+const INSERT_CHUNK = 200;
 
 /** Apply the canonical per-case status spelling to each attempt entry. */
 function normalizeAttemptStatuses(attempts: unknown): unknown {
@@ -148,6 +163,8 @@ export interface RunCaseInput {
   testSource?: string | null;
   testSourceFrames?: unknown;
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), stored only as a non-negative integer (`workerLane`). */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
@@ -157,17 +174,12 @@ export interface RunCaseInput {
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`; derived from the annotations when absent. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
-}
-
-function resolveBrowserName(browser: unknown): string | null {
-  if (typeof browser === 'string') return browser;
-  if (browser && typeof browser === 'object') {
-    const b = browser as Record<string, unknown>;
-    if (typeof b.projectName === 'string') return b.projectName;
-  }
-  return null;
+  /** What the attempt wrote to stdout — bounded again (`sanitizeTestOutput`), stored through case_payloads. */
+  stdout?: unknown;
+  /** What the attempt wrote to stderr — bounded again (`sanitizeTestOutput`), stored through case_payloads. */
+  stderr?: unknown;
 }
 
 /**
@@ -178,7 +190,12 @@ function resolveBrowserName(browser: unknown): string | null {
  * Cache hits still fire a background update so mode/annotations stay fresh
  * when a describe block's config changes between runs.
  */
-async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): Promise<Map<string, number>> {
+async function resolveSuites(
+  db: DB,
+  projectId: number,
+  cases: RunCaseInput[],
+  { knownOnly = false } = {},
+): Promise<Map<string, number>> {
   // Collect unique (filePath, levelPath, mode, annotations) — one entry per
   // describe level per unique suitePath across all cases in the batch.
   type SuiteSpec = { filePath: string; levelPath: string; mode: string; annotations: unknown[] };
@@ -211,8 +228,8 @@ async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): 
     const cached = projectSuiteCache.get(`${spec.filePath}\x00${spec.levelPath}`);
     if (cached !== undefined) {
       suiteIdMap.set(key, cached);
-      toUpdate.push({ id: cached, mode: spec.mode, annotations: spec.annotations });
-    } else {
+      if (!knownOnly) toUpdate.push({ id: cached, mode: spec.mode, annotations: spec.annotations });
+    } else if (!knownOnly) {
       toUpsert.push({ key, ...spec });
     }
   }
@@ -317,7 +334,10 @@ async function dedupeGreenSamples(
 
 /**
  * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
- * `test_runs_cases` rows in a single statement. Network requests, web vitals and
+ * `test_runs_cases` rows in a single statement. Each case is first made
+ * storable on either database (`storableRunCase`: no NUL character, its
+ * identity held to what an index entry takes), and each number held to its
+ * column. Network requests, web vitals and
  * console logs are sanitized here (stripping query strings from URLs). Failed
  * cases with error text are fingerprinted and linked to a `failure_clusters`
  * row so failures sharing a root cause can be grouped.
@@ -338,15 +358,43 @@ export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[],
+  input: RunCaseInput[],
   options: PersistRunCasesOptions = {},
-): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
-  if (cases.length === 0) return [];
+): Promise<
+  Array<{
+    id: number;
+    status: string;
+    testCaseId: number;
+    inputIndex: number;
+    passedAfterFailure: boolean;
+    attempts: unknown;
+  }>
+> {
+  if (input.length === 0) return [];
 
   const limits = resolveIngestLimits();
+  const cases = await Promise.all(input.map(storableRunCase));
+
+  // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
+  // its tests without renaming, moving or giving an ID to any of them, and a private run writes no test or suite at
+  // all, its executions of a test the project does not know left out.
+  const [run] = await db
+    .select({
+      metadata: testRuns.metadata,
+      branch: testRuns.branch,
+      startTime: testRuns.startTime,
+      origin: testRuns.origin,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  const writesTestState = isEligibleRun(
+    { metadata: run?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
+  const knownOnly = isPrivateRunOrigin(run?.origin);
 
   // --- Step 1: Resolve all suites referenced in this batch ---
-  const suiteIdMap = await resolveSuites(db, projectId, cases);
+  const suiteIdMap = await resolveSuites(db, projectId, cases, { knownOnly });
 
   // --- Step 2: Resolve test case IDs and build junction rows ---
 
@@ -360,32 +408,32 @@ export async function persistRunCases(
       title: c.title,
       externalId,
       displayTitle: displayTitleOf(c, externalId),
-      line: c.line,
+      line: int32(c.line),
     };
   });
-  // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
-  // its tests without renaming, moving or giving an ID to any of them.
-  const [run] = await db
-    .select({ metadata: testRuns.metadata, branch: testRuns.branch, startTime: testRuns.startTime })
-    .from(testRuns)
-    .where(eq(testRuns.id, testRunId));
-  const writesTestState = isEligibleRun(
-    { metadata: run?.metadata, historicalImport: options.keepTestState },
-    'shared-state',
-  );
-  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, { readOnly: !writesTestState });
+  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, {
+    readOnly: !writesTestState,
+    knownOnly,
+  });
 
+  // Each case's error as it is kept: what may be a secret hidden, once for all.
+  const errors = cases.map((c) => hiddenErrorText(c.error));
+  // The sample a failure's new cluster keeps, which its fingerprint reads, so
+  // the recluster reads what ingest read. An expected failure that passed is
+  // good news about one test, not a failure mode: it forms no cluster. Nor does
+  // a test the run's stop cut short (Ctrl+C, `maxFailures`, the global
+  // timeout): its error says the run ended, nothing about the test.
+  const samples = cases.map((c, i) =>
+    c.error &&
+    c.status !== 'passed' &&
+    c.status !== 'skipped' &&
+    c.status !== 'interrupted' &&
+    !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
+      ? capText(errors[i], limits.sampleErrorChars)
+      : null,
+  );
   const fingerprintResults = await Promise.all(
-    cases.map((c) =>
-      // An expected failure that passed is good news about one test, not a
-      // failure mode: it forms no cluster.
-      c.error &&
-      c.status !== 'passed' &&
-      c.status !== 'skipped' &&
-      !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
-        ? computeErrorFingerprint(c.error)
-        : Promise.resolve(null),
-    ),
+    samples.map((sample) => (sample ? computeErrorFingerprint(sample) : Promise.resolve(null))),
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
@@ -404,6 +452,8 @@ export async function persistRunCases(
     locatorPages: string | null;
     codeReach: string | null;
     coverage: string | null;
+    stdout: string | null;
+    stderr: string | null;
   }> = [];
   // Each row's coverage, stored as fragments once the loop has built every row.
   const rowCoverage: Array<CoverageCapture | null> = [];
@@ -431,6 +481,7 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
+    const error = errors[i] ?? null;
     const fingerprint = fingerprintResults[i] ?? null;
     const caseId = resolved.caseIds[i];
 
@@ -480,12 +531,7 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint is computed from the raw error above; only storage is capped.
-        pendingClusters.set(fingerprint.fingerprint, {
-          fp: fingerprint,
-          sampleError: capText(c.error, limits.sampleErrorChars)!,
-          count: 1,
-        });
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: samples[i]!, count: 1 });
       }
     }
     rowFingerprints.push(fingerprint);
@@ -505,6 +551,8 @@ export async function persistRunCases(
       locatorPages: locatorPages ? JSON.stringify(locatorPages) : null,
       codeReach: reached ? JSON.stringify(reached) : null,
       coverage: null,
+      stdout: sanitizeTestOutput(c.stdout),
+      stderr: sanitizeTestOutput(c.stderr),
     });
     rowCoverage.push(coverage);
 
@@ -512,19 +560,19 @@ export async function persistRunCases(
       testRunId,
       testCaseId: caseId,
       status: normalizeTestCaseStatus(c.status),
-      duration: c.duration ?? null,
-      timeout: c.timeout ?? null,
-      error: capErrorText(c.error, limits.errorChars),
-      retries: c.retries ?? 0,
+      duration: int32(c.duration),
+      timeout: int32(c.timeout),
+      error: capErrorText(error, limits.errorChars),
+      retries: int32(c.retries) ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
-      line: c.line,
-      column: c.column,
+      line: int32(c.line),
+      column: int32(c.column),
       steps: cappedSteps,
-      stepEvents: capArray(c.stepEvents, limits.stepEvents),
-      slowestStep: c.slowestStep ?? null,
-      slowestStepDuration: c.slowestStepDuration ?? null,
-      wastedTimeMs: c.wastedTimeMs ?? null,
+      stepEvents: hiddenStepEventErrors(capArray(c.stepEvents, limits.stepEvents)),
+      slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
+      slowestStepDuration: int32(c.slowestStepDuration),
+      wastedTimeMs: int32(c.wastedTimeMs),
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       resources: sanitizeExecutionResources(c.resources),
       pageState: sanitizePageState(c.pageState),
@@ -545,9 +593,10 @@ export async function persistRunCases(
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
-      workerIndex: c.workerIndex ?? null,
-      shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      workerIndex: int32(c.workerIndex),
+      parallelIndex: workerLane(c.parallelIndex),
+      shardIndex: int32(c.shardIndex),
+      startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,
@@ -583,7 +632,8 @@ export async function persistRunCases(
   await dedupeGreenSamples(db, runCasesRows, rowPayloads);
 
   // Coverage fragments land first, so each execution's payload can name them.
-  const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
+  // A private run's coverage joins nothing of the project's.
+  const rowFragments = knownOnly ? [] : await upsertCoverageFragments(db, projectId, rowCoverage);
   const perCaseCoverage: TestCoverageCase[] = [];
   rowFragments.forEach((fragments, i) => {
     if (!fragments) return;
@@ -604,6 +654,8 @@ export async function persistRunCases(
       p.locatorPages,
       p.codeReach,
       p.coverage,
+      p.stdout,
+      p.stderr,
     ]),
   );
   runCasesRows.forEach((row, i) => {
@@ -616,36 +668,61 @@ export async function persistRunCases(
     row.locatorPagesPayloadId = p.locatorPages ? (payloadIds.get(p.locatorPages) ?? null) : null;
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
     row.coveragePayloadId = p.coverage ? (payloadIds.get(p.coverage) ?? null) : null;
+    row.stdoutPayloadId = p.stdout ? (payloadIds.get(p.stdout) ?? null) : null;
+    row.stderrPayloadId = p.stderr ? (payloadIds.get(p.stderr) ?? null) : null;
   });
 
+  const countsOccurrences = isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences');
   if (!probeRun) {
     await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
       wakeSnoozed: !options.keepSnoozed,
+      countsOccurrences,
     });
   }
 
-  const insertedCases = matchInsertedRunCases(
-    runCasesRows,
-    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+  const withoutHistory = await fillAttemptHistories(db, testRunId, runCasesRows);
+  const insertRunCases = (rows: typeof runCasesRows) =>
+    db.insert(testRunsCases).values(rows).onConflictDoNothing().returning({
       id: testRunsCases.id,
       status: testRunsCases.status,
       testCaseId: testRunsCases.testCaseId,
       retries: testRunsCases.retries,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
-    }),
-  );
+    });
+  const returnedRows: Awaited<ReturnType<typeof insertRunCases>> = [];
+  try {
+    for (let i = 0; i < runCasesRows.length; i += INSERT_CHUNK) {
+      returnedRows.push(...(await insertRunCases(runCasesRows.slice(i, i + INSERT_CHUNK))));
+    }
+  } catch (error) {
+    await uncountClustersOfSkippedRows(
+      db,
+      runCasesRows,
+      matchInsertedRunCases(runCasesRows, returnedRows),
+      countsOccurrences,
+    ).catch((err) =>
+      console.warn('[persist-run-cases] failed to take back the cluster counts of a batch it could not store', err),
+    );
+    throw error;
+  }
+  const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
+  await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
+  // Every row of the batch, inserted or stored by an earlier request that failed past its insert.
+  await settleFinalAttempts(db, testRunId, runCasesRows, withoutHistory);
 
   const result = insertedCases.map((r) => ({
     id: r.id,
     status: r.status,
     testCaseId: r.testCaseId,
     inputIndex: rowInputIndices[r.rowIndex]!,
+    passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
+    attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
-  if (nrValues.length > 0) {
-    await db.insert(networkRequests).values(nrValues);
+  for (let i = 0; i < nrValues.length; i += INSERT_CHUNK) {
+    await db.insert(networkRequests).values(nrValues.slice(i, i + INSERT_CHUNK));
   }
 
   if (writesTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
@@ -670,6 +747,7 @@ export async function persistRunCases(
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,

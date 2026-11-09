@@ -83,7 +83,8 @@ export const FR_COPY = {
             wasted: 'Les minutes de CI gaspillées par ses nouvelles tentatives, qui fixent l’ordre.',
             score: 'Son score d’instabilité, de 0 à 100, tiré de ses tentatives et de ses bascules.',
             'top-suspect': 'Son principal suspect : la condition que ses échecs partagent le plus.',
-            quarantine: '**Quarantine** garde le test actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
+            quarantine:
+              '**Quarantined** : le test reste actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
           },
         },
         suspects: {
@@ -114,7 +115,7 @@ export const FR_COPY = {
       stops: {
         health: {
           title: 'Tous les projets d’un coup d’œil',
-          body: '**Project health** montre pour chaque projet ses 20 derniers runs, sa tendance et le taux de réussite de son dernier run, les projets en échec en premier. Ouvrez-en un pour voir ce qui a échoué.',
+          body: '**Project health** montre pour chaque projet ses 20 derniers runs, sa tendance et le taux de réussite de son dernier run : les projets marqués d’une étoile d’abord, puis ceux en échec. Ouvrez-en un pour voir ce qui a échoué.',
         },
         analytics: {
           title: 'La qualité au fil du temps',
@@ -160,7 +161,7 @@ export const FR_COPY = {
         },
         setup: {
           title: 'Ce qui est activé',
-          body: "**What's switched on** lit les données de cette instance, et non sa configuration, pour montrer les fonctionnalités en service et ce qu’il faut à chacune des autres, comme un jeton de dépôt ou un fournisseur d’IA. Les étapes au-dessus connectent une suite.",
+          body: "**What's switched on** lit les données de cette instance, et non sa configuration, pour montrer les fonctionnalités en service et ce qu’il faut à chacune des autres, comme un jeton de dépôt ou un fournisseur d’IA.",
         },
         simulate: {
           title: 'Regardez un run arriver en direct',

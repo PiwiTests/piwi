@@ -44,6 +44,12 @@ describe('the breakpoints a run pauses at', () => {
     expect(placesOf([breakpoint])).toEqual([{ uri: 'file:///work/shop/a.spec.ts', line: 3 }]);
   });
 
+  test('leave a logpoint out: it logs and never stops', () => {
+    const spec = path.join(root, 'tests', 'login.spec.ts');
+    const logpoint = { ...at(spec, 12), logMessage: 'cart {cart.length}' };
+    expect(runBreakpoints([logpoint, at(spec, 14)], [root]).map((b) => b.line)).toEqual([14]);
+  });
+
   test('are none without a Playwright config', () => {
     expect(runBreakpoints([at(path.join(root, 'tests', 'a.spec.ts'), 1)], [])).toEqual([]);
   });

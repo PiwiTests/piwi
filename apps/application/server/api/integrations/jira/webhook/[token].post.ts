@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Jira inbound webhook',
     description:
-      'Refresh one tracked issue from a Jira "issue updated" webhook. The secret token in the path selects the connection; the handler only ever refreshes a link and applies the resolve/reopen policies — it can never create or transition anything. Public and rate-limited.',
+      'Refresh one tracked issue from a Jira "issue updated" webhook. The secret token in the path selects the connection; the handler only ever refreshes the links to that issue of the projects bound to that connection and applies the resolve/reopen policies — it can never create or transition anything. Public and rate-limited.',
     parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
     security: [],
   },

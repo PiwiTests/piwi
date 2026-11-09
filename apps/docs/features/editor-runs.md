@@ -31,7 +31,8 @@ second of its end.
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
 folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task** starts it again), in the Run tool
 window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwright runner (test tree, Debug, **Rerun
-Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
+Failed Tests**), a choice of **Settings → Tools → Piwi** that keeps every control of a Piwi run, through the runner's
+Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it in the
 browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints); the editor pauses,
 steps and resumes it too: [Pause and step from the editor](./editor-run-control).
@@ -85,7 +86,8 @@ Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails,
 A verification (**Verify ×3**) says how many of its runs passed instead, whatever the setting: `Piwi: run #124 ·
 Passed 3 of 3`, or `Failed 1 of 3`. Each run is a result of its own on the instance, and the editor counts them from
 the results the run streams as it executes; when it missed some, a failing verification says `Failed at least 1 of 3`.
-When its run never reached an instance, the exit code says it: `Passed 3 of 3: tests/checkout.spec.ts:42`, or
+When its run never reached an instance, the exit code says it, which cannot tell a pass from a skip:
+`None of 3 runs failed: tests/checkout.spec.ts:42`, or
 `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`.
 
 ## The status bar

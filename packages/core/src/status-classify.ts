@@ -44,9 +44,16 @@ const EXPECTED_FAILURE_PASSED_MESSAGE = 'Expected to fail, but passed.';
  * Synthetic error text for a should-fail test that passed — the one case where
  * `classifyStatus` reports `failed` without Playwright recording any error.
  * Returns null everywhere else, so callers fall back to the real error text.
+ * `expectedStatus` is Playwright's, when the caller has it (see `classifyStatus`).
  */
-export function expectedFailureError(rawStatus: string, annotations: TestAnnotation[]): string | null {
-  return rawStatus === 'passed' && expectsFailure(annotations) ? EXPECTED_FAILURE_PASSED_MESSAGE : null;
+export function expectedFailureError(
+  rawStatus: string,
+  annotations: TestAnnotation[],
+  expectedStatus?: string | null,
+): string | null {
+  return rawStatus === 'passed' && resolveExpectedStatus(expectedStatus, annotations) === 'failed'
+    ? EXPECTED_FAILURE_PASSED_MESSAGE
+    : null;
 }
 
 /** Playwright's `TestCase.expectedStatus` values. */
@@ -83,6 +90,32 @@ export function resolveExpectedStatus(raw: unknown, annotations: unknown): Expec
  */
 export function isExpectedFailurePassed(status: string | null | undefined, expectedStatus: string | null | undefined) {
   return status === 'failed' && expectedStatus === 'failed';
+}
+
+/**
+ * Whether a stored attempt status is an unexpected outcome: failed or timed out, in either spelling of timed out.
+ * `classifyStatus` stores an expected failure as `passed` and an unexpected pass as `failed`, so the stored status is
+ * already read against the test's expected status.
+ */
+export function isUnexpectedStatus(status: string | null | undefined): boolean {
+  return status === 'failed' || status === 'timedout' || status === 'timedOut';
+}
+
+/**
+ * Whether a test result is flaky: its last attempt passed, and an earlier attempt that ran ended unexpectedly
+ * (`isUnexpectedStatus`). A retry is not flaky when every earlier attempt passed (a `describe.serial` group retried
+ * for another test's failure, or a `test.fail()` test that failed as expected), was skipped or did not run. The last
+ * attempt decides a result's bucket, so a result whose last attempt did not pass is never flaky here, where
+ * Playwright's own summary, which ignores attempt order, calls a pass followed by a failure flaky. Statuses are the
+ * stored ones (`classifyStatus`).
+ */
+export function isFlakyResult(
+  lastStatus: string | null | undefined,
+  earlierStatuses: Iterable<string | null | undefined>,
+): boolean {
+  if (lastStatus !== 'passed') return false;
+  for (const status of earlierStatuses) if (isUnexpectedStatus(status)) return true;
+  return false;
 }
 
 /** The fields `lastAttempts` groups and orders a run's executions by. */
@@ -196,20 +229,27 @@ export function bugOutcome(attempts: readonly OutcomeRow[]): 'looks-fixed' | 'pa
  *    stays `skipped`. Without one it is a side effect of an earlier failure in a
  *    `describe.serial` group, reclassified to `didnotrun` so the dashboard can
  *    tell a deliberate skip apart from a test that never executed.
- *  - A `test.fail()` test (`expectsFailure`) inverts pass and fail: an actual
- *    `failed` is the expected outcome and counts as `passed`, while an actual
- *    `passed` is unexpected and counts as `failed`. A `timedOut` passes through
- *    unchanged — Playwright counts it as unexpected and the dashboard already
- *    reads a timeout as a failure.
+ *  - A test expected to fail inverts pass and fail: an actual `failed` is the
+ *    expected outcome and counts as `passed`, while an actual `passed` is
+ *    unexpected and counts as `failed`. The expected status is Playwright's
+ *    `expectedStatus` when the caller has it, else the one the annotations
+ *    imply (`resolveExpectedStatus`), so a `fail` annotation a test pushes
+ *    itself, without `test.fail()`, inverts nothing. A `timedOut` passes
+ *    through unchanged — Playwright counts it as unexpected and the dashboard
+ *    already reads a timeout as a failure.
  *
  * Every other status passes through unchanged.
  */
-export function classifyStatus(rawStatus: string, annotations: TestAnnotation[]): string {
+export function classifyStatus(
+  rawStatus: string,
+  annotations: TestAnnotation[],
+  expectedStatus?: string | null,
+): string {
   if (rawStatus === 'skipped') {
     const intentional = annotations.some((a) => a.type === 'skip' || a.type === 'fixme');
     return intentional ? 'skipped' : 'didnotrun';
   }
-  if (expectsFailure(annotations)) {
+  if (resolveExpectedStatus(expectedStatus, annotations) === 'failed') {
     if (rawStatus === 'failed') return 'passed';
     if (rawStatus === 'passed') return 'failed';
   }
@@ -218,22 +258,32 @@ export function classifyStatus(rawStatus: string, annotations: TestAnnotation[])
 
 /**
  * Why a test carries the `didnotrun` status. A test never executes for one of
- * two shapes of reason:
+ * three shapes of reason:
  *  - `previous-failure` — a preceding test (or hook) in the same serial group
  *    failed, so Playwright skipped the rest; this test *reported* as an
  *    annotation-less skip and links to the failure that blocked it.
+ *  - `dependency-failure` — a test of a project its project depends on
+ *    (`dependencies`) failed, so Playwright ran none of its project's tests;
+ *    this test never reported, and links to that failure.
  *  - the run stopped before reaching it — `global-timeout` (the run's
  *    `globalTimeout` elapsed), `max-failures` (`maxFailures` reached), or a
  *    plain `interrupted` (worker crash / Ctrl-C).
  */
-export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted';
+export type DidNotRunReason =
+  | 'previous-failure'
+  | 'dependency-failure'
+  | 'global-timeout'
+  | 'max-failures'
+  | 'interrupted';
 
 /**
  * Run-level reason for tests Playwright planned but never reported (no
  * `onTestEnd` fired). Derived from the overall run status plus the failure
  * count against `maxFailures`: a timed-out run stopped on the global timeout, a
  * run that hit its failure budget stopped on `maxFailures`, anything else that
- * cut the run short is a generic interruption.
+ * cut the run short is a generic interruption. `failures` counts tests as
+ * Playwright's `maxFailures` does: a test whose last attempt failed, once,
+ * however many attempts it made.
  */
 export function resolveUnrunReason(
   runStatus: string | undefined,
@@ -251,6 +301,17 @@ export interface BlockableCase {
   status?: string;
   didNotRunReason?: string | null;
   blockedBy?: string | null;
+  /** The attempt (`result.retry`); absent reads as the first. */
+  retries?: number | null;
+  /** The `--repeat-each` repetition; absent reads as the first. */
+  repeatEachIndex?: number | null;
+  /** The Playwright project the case ran in, as the reporter collects it. */
+  browser?: { projectName?: string | null } | null;
+}
+
+/** The project, attempt and repetition a case belongs to: a cascade and its blocker share them. */
+function runKey(c: BlockableCase): string {
+  return `${c.browser?.projectName ?? ''}\x00${c.retries ?? 0}\x00${c.repeatEachIndex ?? 0}`;
 }
 
 /** Drop the trailing `:line:column` from a `file:line:column` location string. */
@@ -272,10 +333,11 @@ function sharedPrefixDepth(a: readonly string[], b: readonly string[]): number {
 /**
  * Link each `previous-failure` case to the test that blocked it, by setting
  * `blockedBy` to that test's location. The blocker is the failed/timed-out test
- * in the same file and serial group — an identical suite path, else the one
- * sharing the deepest suite-path prefix (nested serial describes). A cascade
- * with no resolvable blocker (e.g. a failing `beforeAll` hook rather than a
- * sibling test) keeps `blockedBy` null. Mutates the passed cases in place.
+ * of the same Playwright project, attempt and repetition, in the same file and
+ * serial group — an identical suite path, else the one sharing the deepest
+ * suite-path prefix (nested serial describes). A cascade with no resolvable
+ * blocker (e.g. a failing `beforeAll` hook rather than a sibling test) keeps
+ * `blockedBy` null. Mutates the passed cases in place.
  */
 export function linkBlockedTests(cases: BlockableCase[]): void {
   const blockers = cases.filter((c) => c.status === 'failed' || c.status === 'timedOut' || c.status === 'timedout');
@@ -284,7 +346,8 @@ export function linkBlockedTests(cases: BlockableCase[]): void {
   for (const c of cases) {
     if (c.didNotRunReason !== 'previous-failure') continue;
     const file = fileOf(c.location);
-    const inFile = blockers.filter((b) => fileOf(b.location) === file);
+    const run = runKey(c);
+    const inFile = blockers.filter((b) => fileOf(b.location) === file && runKey(b) === run);
     if (inFile.length === 0) continue;
 
     const key = suiteKey(c.suitePath);

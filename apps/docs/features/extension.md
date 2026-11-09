@@ -112,7 +112,8 @@ project** select overrides both for the session. See [Extension connection](./ex
   there picks its host element. The recorder records the fields of open shadow roots, and from a closed one only the
   keys of a password field (Enter, Escape, the arrows).
 - **Recording covers one origin.** On another site it stops capturing: stop and review, or start again there.
-- **No aria-snapshot copier** yet for `toMatchAriaSnapshot()`.
+- **No ARIA snapshot from a plain pick.** `toMatchAriaSnapshot()` code comes from **Assert a region**, at a stopped
+  test in the [Runs window](./runs-window).
 
 ## Related
 

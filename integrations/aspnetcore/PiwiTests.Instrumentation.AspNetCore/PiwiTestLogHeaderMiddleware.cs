@@ -50,6 +50,13 @@ public sealed class PiwiTestLogHeaderMiddleware
             return;
         }
 
+        // The runtime facts of this process, under the same guard as the manifest.
+        if (PiwiEnvironmentEndpoint.IsRequest(context.Request))
+        {
+            await PiwiEnvironmentEndpoint.WriteAsync(context);
+            return;
+        }
+
         // Server coverage, once code built with coverage instrumentation runs in this process: the
         // coverage endpoints, and each request's own coverage, named on its response.
         var coverageActive = _coverage.IsActive;

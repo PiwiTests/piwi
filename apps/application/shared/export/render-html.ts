@@ -16,7 +16,7 @@
 import { markdownToHtml } from '#shared/markdown-to-html';
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from './html';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightCode, highlightLines, languageForPath } from '#shared/highlight';
+import { highlightCode, highlightLines, languageForPath } from '@piwitests/run-ui/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { stepLabelParts } from '@piwitests/core/step-analysis';
 import { outcomeText, percent } from '#shared/notifications/message-parts';
@@ -39,6 +39,7 @@ import {
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
+  outputStreams,
   projectLabel,
   runFacts,
   runFailureGroups,
@@ -142,11 +143,11 @@ p { margin:.4rem 0; }
 }
 .chip.new { color:var(--fail); border-color:currentColor; font-weight:650; }
 
-/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
-.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
+/* Matches getStatusColor in app/utils: timed-out reads as failed, interrupted as neutral, didn't run as a warning. */
+.s-failed, .s-timedout, .s-error, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-flaky { color:var(--flaky); }
-.s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
+.s-skipped, .s-interrupted, .s-log, .s-debug, .s-ignored { color:var(--skip); }
 .s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
 .s-info { color:var(--info); }
 .tag { font-weight:650; }
@@ -330,11 +331,12 @@ const TONE_CLASSES: Record<StatusColorKey, string> = {
   fixme: 't-skip',
   didnotrun: 't-warn',
   running: 't-info',
+  interrupted: 't-skip',
 };
 
 /** A status → the tone of a header's edge and tint. */
-function toneClass(value: unknown, retries?: number | null): string {
-  return TONE_CLASSES[statusTone(value, retries)];
+function toneClass(value: unknown, flaky?: boolean | null): string {
+  return TONE_CLASSES[statusTone(value, flaky)];
 }
 
 function httpClass(status: unknown): string {
@@ -619,6 +621,17 @@ function renderConsole(logs: unknown): RawHtml {
   </div>`;
 }
 
+/** What the test wrote to stdout and to stderr, each stream under its name, as plain text. */
+function renderOutput(detail: Record<string, any>): RawHtml {
+  return joinHtml(
+    outputStreams(detail).map(
+      (stream) =>
+        html`<h3 class="file">${stream.name}</h3>
+          <pre class="hljs"><code>${stream.text}</code></pre>`,
+    ),
+  );
+}
+
 function renderNetwork(requests: unknown): RawHtml {
   if (!Array.isArray(requests) || !requests.length) return raw('');
   const rows = (requests as Record<string, any>[]).map(
@@ -653,8 +666,8 @@ function caseHero(exportCase: ExportCase, heading: 'h1' | 'h2'): RawHtml {
   const headline = caseHeadline(exportCase);
   const labels = caseLabels(exportCase);
   const title = heading === 'h1' ? html`<h1>${exportCase.title}</h1>` : html`<h2>${exportCase.title}</h2>`;
-  const retries = Number((exportCase.detail as Record<string, any>).retries ?? 0);
-  return html`<div class="hero ${toneClass(exportCase.status, retries)}">
+  const flaky = Boolean((exportCase.detail as Record<string, any>).passedAfterFailure);
+  return html`<div class="hero ${toneClass(exportCase.status, flaky)}">
     <div class="labels">
       <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
       ${labels.map((label) => html`<span class="chip ${label.news ? 'new' : ''}">${label.text}</span>`)}
@@ -729,6 +742,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, caseOpts: CaseO
   const count = (v: unknown) => (Array.isArray(v) ? v.length : undefined);
   parts.push(details('Steps', renderSteps(d.steps, d.pauses), { open: true, count: count(d.steps) }));
   parts.push(details('Console', renderConsole(d.consoleLogs), { count: count(d.consoleLogs) }));
+  parts.push(details('Output', renderOutput(d)));
   parts.push(details('Network', renderNetwork(d.networkRequests), { count: count(d.networkRequests) }));
   if (d.testSource) {
     parts.push(
@@ -877,7 +891,7 @@ function runFailures(bundle: ExportBundle, run: ExportRun): RawHtml {
   );
 }
 
-/** The tests of a run that passed only on a retry. */
+/** The tests of a run that passed after an earlier attempt failed. */
 function runFlaky(run: ExportRun): RawHtml {
   const flaky = run.tests.filter((t) => t.flaky);
   if (!flaky.length) return raw('');

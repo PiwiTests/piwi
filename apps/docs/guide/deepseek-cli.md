@@ -22,7 +22,7 @@ saved DeepSeek API-key reference from `DSH_HOME/.credentials.yaml` (default: `.d
 directory). A saved account takes precedence; a saved API key takes precedence over the environment key.
 Other provider credentials and `.env` files are excluded.
 
-Select **DeepSeek Harness (local)** in **Settings → AI**. The desktop app discovers `dsh` on PATH; servers opt in by
+Select **DeepSeek Harness** under **Command-line tools** in **Settings → AI**. The desktop app discovers `dsh` on PATH; servers opt in by
 setting `PIWI_DEEPSEEK_CLI_PATH` to its absolute launcher path. Use `PIWI_AI_PROVIDER=deepseek-cli` for environment-managed
 configuration. No API key is stored in Piwi for this provider. **Recheck** reports installation compatibility and local
 credential presence; credential validity is checked when a model is called. Sign-in and sign-out remain in Harness.

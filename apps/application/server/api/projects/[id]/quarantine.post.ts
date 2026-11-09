@@ -18,7 +18,12 @@ defineRouteMeta({
             properties: {
               testCaseId: { type: 'integer' },
               reason: { type: 'string' },
-              source: { type: 'string', enum: ['manual', 'proposed'] },
+              source: {
+                type: 'string',
+                enum: ['manual', 'proposed'],
+                description:
+                  '`proposed` applies Piwi’s proposal: stored as such only while the test is one of the `candidates` of `GET /api/projects/:id/quarantine`, else the entry is `manual`.',
+              },
             },
             required: ['testCaseId'],
           },

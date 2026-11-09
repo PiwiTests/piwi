@@ -6,8 +6,10 @@
  * (`127.0.0.1:<port>` or `localhost:<port>`) and an extension's `Origin` (`chrome-extension://<id>`,
  * `moz-extension://<uuid>`); the first message must be `hello` with the token, within `HUB_HELLO_MS`. Every later
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
- * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
- * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
+ * as it changes (`HubSessionMessage`), what each action that writes code at a stop came to, whichever surface
+ * started it (`HubCodeMessage`: its sentence, never the code), and the other live hubs of the machine as they come and
+ * go (`HubPeersMessage`: their addresses, never their tokens); `welcome` and the desktop app's live answer list what
+ * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there
  * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
@@ -16,7 +18,13 @@
  * code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
-import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
+import {
+  MAX_RUN_FAILURE_TEXT,
+  MAX_STOP_ERROR,
+  type KeptRequest,
+  type RunCounts,
+  type RunEndStatus,
+} from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
@@ -41,6 +49,19 @@ export const MAX_HUB_CLIENT = 200;
 export const MAX_HUB_MESSAGE = 1000;
 /** The most warnings a `code` carries: the hub sends the first ones. */
 export const MAX_HUB_WARNINGS = 16;
+/** The most hubs a `peers` names: the hub names the first ones. */
+export const MAX_HUB_PEERS = 64;
+
+/**
+ * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
+ * other live hubs of the machine as they come and go (`peers`), and shows a lane of a run while it runs (`lanes`: the
+ * command `watch`, its frames `lane-frame`). A reader keeps those it knows; a hub that predates the list does none of
+ * them.
+ */
+export type HubFeature = 'peers' | 'lanes';
+
+/** The features of a hub of this version. */
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes'];
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -133,9 +154,11 @@ export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
  * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
- * failure leaves out: Resume ends it as it failed.
+ * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
+ * while it runs (`watch`, at a hub whose features list `lanes`); `give-up` too, while a Pause waits for the call its
+ * test runs: End the test there (`runControl` `give-up`).
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end';
+export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch' | 'give-up';
 
 /**
  * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
@@ -159,6 +182,8 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'input-clicks',
   'pick-at',
   'end',
+  'watch',
+  'give-up',
 ];
 
 /**
@@ -172,16 +197,35 @@ export interface HubWorker {
   /** Playwright's worker index, which the commands name. */
   worker: number;
   parallelIndex: number;
-  state: 'running' | 'stopped' | 'between';
+  /** `other` for a state of a newer service, which a reader shows as running. */
+  state: 'running' | 'stopped' | 'between' | 'other';
   test: HubTest | null;
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
   /**
+   * While pausing, the call its test waits in before it can stop, as its reporter says it; absent otherwise, and from
+   * a service or a reporter that predates it.
+   */
+  waiting?: HubWaiting;
+  /**
    * The actions its reporter takes, Assert, Assert a region and Mock a request only while the editor writes the code
    * from a stop: none for a reporter that predates them, whose stops every action is refused at.
    */
   intents: HubAction[];
+}
+
+/**
+ * The call a pausing worker's test waits in: its title (`Click getByRole('button', { name: 'Pay' })`), its file as a
+ * `file:` URI and 0-based line (null when the worker names none), when it began by the hub's clock (`since`, ISO 8601;
+ * null when the worker cannot tell), and whether End the test gives it up (`endable`), else lets it finish first.
+ */
+export interface HubWaiting {
+  title: string;
+  uri: string | null;
+  line: number | null;
+  since: string | null;
+  endable: boolean;
 }
 
 /**
@@ -222,10 +266,32 @@ export interface HubSession {
    */
   terminal?: boolean;
   /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included) rather than a terminal. Absent otherwise, and from a service or a
+   * reporter that predates it.
+   */
+  runner?: boolean;
+  /**
    * How the run stands on the team instance's live view, for a run whose reporter shares it: absent from a service
    * or a reporter that predates **Share live**.
    */
   live?: HubLive;
+  /**
+   * How far the run is, as its own process says (`run-begin`, `run-progress`, `run-end` of
+   * `@piwitests/core/run-channel`): absent from a service or a reporter that predates it.
+   */
+  progress?: HubProgress;
+}
+
+/**
+ * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`), whether it
+ * still runs or how it ended (`status`), and its first failure, once it ended (the test's title and its error's first
+ * line, null for none).
+ */
+export interface HubProgress extends RunCounts {
+  total: number;
+  status: 'running' | RunEndStatus;
+  failure: { title: string; error: string | null } | null;
 }
 
 /**
@@ -241,9 +307,10 @@ export interface HubImage {
 
 /**
  * The controls the extension sends; Run to a line stays in the editor, which has the file. `end` ends the test at the
- * stop, for a worker whose `intents` list it.
+ * stop, for a worker whose `intents` list it; `give-up` ends it while a Pause waits for its call, for a pausing worker
+ * whose `intents` list it, naming no stop.
  */
-export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end';
+export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end' | 'give-up';
 
 /** The first message: the token of the hub's discovery file. */
 export interface HubHello {
@@ -314,7 +381,15 @@ export type HubCommand =
    * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
    * shared.
    */
-  | { type: 'share'; id: number; ref: string; on: boolean };
+  | { type: 'share'; id: number; ref: string; on: boolean }
+  /**
+   * Start (`on`) or stop watching the lane `lane` (Playwright's `parallelIndex`) of the run: the page of its running
+   * test, of its stop while it stands at one, through its tests, its stops and a worker Playwright starts in its place,
+   * its frames coming to this connection alone (`HubLaneFrameMessage`) until it stops watching, the run ends or the
+   * connection closes. Refused for a lane whose worker's `intents` lack `watch`, saying why. At a stop the frames
+   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`.
+   */
+  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -346,6 +421,8 @@ export interface HubWelcome {
   client: string | null;
   roots: string[];
   keepaliveMs: number;
+  /** What it does beyond every hub; read as none from a hub that predates the list. */
+  features: HubFeature[];
 }
 
 /** A run that changed, or every run live as `subscribe` is answered. */
@@ -404,6 +481,50 @@ export interface HubFrameRefusal {
   refused: string;
 }
 
+/**
+ * A frame of the lane `lane` of the run, while this connection watches it (`watch`), as `frame` carries one: the page of
+ * the worker `worker` at the stop `since` names, null while the test it shows (`test`, Playwright's id) runs. At most
+ * `MAX_VIEW_FPS` a second, the latest alone while the connection is backed up; the hub keeps none.
+ */
+export interface HubLaneFrameMessage {
+  type: 'lane-frame';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string;
+  since: string | null;
+  width: number;
+  height: number;
+  data: string;
+}
+
+/**
+ * The lane `lane` sends no frame now, and why (`refused`, at most `MAX_HUB_MESSAGE` characters): each image of the page
+ * is too long, or masks the reporter cannot read hide it. Sent once until a frame comes again.
+ */
+export interface HubLaneFrameRefusal {
+  type: 'lane-frame';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string | null;
+  since: string | null;
+  refused: string;
+}
+
+/** A live hub as another one names it (`peers`): where it listens and whose it is, never its token. */
+export type PeerHub = Omit<LiveHub, 'token' | 'features'>;
+
+/**
+ * The other live hubs of the machine, as the hub reads them from the editors' discovery folder: sent to a subscribed
+ * connection after the runs `subscribe` answers with, then each time the list changes, the whole list each time. A
+ * client that holds no token for one asks the editor's `GET …/live` again, which names it with its token.
+ */
+export interface HubPeersMessage {
+  type: 'peers';
+  hubs: PeerHub[];
+}
+
 /** What the hub sends. */
 export type HubMessage =
   | HubWelcome
@@ -412,6 +533,9 @@ export type HubMessage =
   | HubCodeMessage
   | HubFrameMessage
   | HubFrameRefusal
+  | HubLaneFrameMessage
+  | HubLaneFrameRefusal
+  | HubPeersMessage
   | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
@@ -421,6 +545,8 @@ export interface LiveHub extends HubAddress {
   client: string | null;
   roots: string[];
   startedAt: string;
+  /** What it does beyond every hub, where the answer says (the desktop app's); a hub's `welcome` says it too. */
+  features?: HubFeature[];
 }
 
 /** The body of `GET /piwi/live` and `GET /api/piwi/live`. */
@@ -445,6 +571,26 @@ export function liveHubsOf(editors: readonly EditorDiscovery[]): LiveHub[] {
         ]
       : [],
   );
+}
+
+/** The hubs a hub names to its clients as its peers: the others, without their tokens, at most `MAX_HUB_PEERS`. */
+export function hubPeersOf(hubs: readonly LiveHub[], self: string): PeerHub[] {
+  return hubs
+    .filter((hub) => hub.url !== self)
+    .slice(0, MAX_HUB_PEERS)
+    .map(({ url, pid, version, client, roots, startedAt }) => ({
+      url,
+      pid,
+      version,
+      client: cutName(client),
+      roots: roots.slice(0, MAX_HUB_ROOTS),
+      startedAt,
+    }));
+}
+
+/** A client name cut to `MAX_HUB_CLIENT`. */
+function cutName(client: string | null): string | null {
+  return client === null || client.length <= MAX_HUB_CLIENT ? client : client.slice(0, MAX_HUB_CLIENT);
 }
 
 /** The live endpoint beside a Send to editor endpoint: `…/piwi/send` → `…/piwi/live`; null for another address. */
@@ -512,7 +658,7 @@ function isInt(value: unknown, min: number, max = 2_147_483_647): value is numbe
 }
 
 const REF = /^[\w-]{1,64}$/;
-const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end'];
+const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end', 'give-up'];
 /** Why a command that answers a stop and names none is refused. */
 const NEEDS_STOP = 'The command needs the stop it answers.';
 
@@ -539,6 +685,13 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       ? { type: 'share', id, ref: value.ref, on: value.on }
       : invalid('share needs on: true to share the run live, false to stop.');
   }
+  if (value.type === 'watch') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    if (!isInt(value.lane, 0)) return invalid('watch needs the lane: a parallelIndex, from 0.');
+    return typeof value.on === 'boolean'
+      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on }
+      : invalid('watch needs on: true to watch the lane, false to stop watching it.');
+  }
   if (
     !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
   ) {
@@ -557,9 +710,9 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       const { action } = value;
       if (action === 'run-to') return invalid('Run to a line stays in the editor: use Run to Cursor there.');
       if (typeof action !== 'string' || !ACTIONS.includes(action)) {
-        return invalid('action must be pause, step, resume, finish or end.');
+        return invalid('action must be pause, step, resume, finish, end or give-up.');
       }
-      if (action !== 'pause' && since === null) return invalid(NEEDS_STOP);
+      if (action !== 'pause' && action !== 'give-up' && since === null) return invalid(NEEDS_STOP);
       return { type: 'runControl', id, ref, worker, action: action as HubControlAction, since };
     }
     case 'pausedPage':
@@ -607,6 +760,7 @@ function nullableStr(value: unknown, max: number): string | null | undefined {
 }
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
+const WORKER_STATES: readonly string[] = ['running', 'stopped', 'between'];
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /** A kept request as an answer lists it, field by field; null when it is not one. */
@@ -643,6 +797,29 @@ function readFrame(value: Record<string, unknown>): HubFrameMessage | HubFrameRe
     ref,
     worker,
     since: since as string,
+    width: width as number,
+    height: height as number,
+    data,
+  };
+}
+
+/** A frame of a lane, or why none comes, field by field; null when it is neither. */
+function readLaneFrame(value: Record<string, unknown>): HubLaneFrameMessage | HubLaneFrameRefusal | null {
+  const { ref, lane, worker, test, since, width, height, data, refused } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(lane, 0) || !isInt(worker, 0)) return null;
+  if (since !== null && (str(since, 64) === null || !since)) return null;
+  if (test !== null && (str(test, 256) === null || !test)) return null;
+  const at = { ref, lane, worker, test: test as string | null, since: since as string | null };
+  if (refused !== undefined) {
+    return typeof refused === 'string' && refused.trim() && refused.length <= MAX_HUB_MESSAGE
+      ? { type: 'lane-frame', ...at, refused }
+      : null;
+  }
+  if (at.test === null || !isViewSize(width, height) || !isViewFrameData(data)) return null;
+  return {
+    type: 'lane-frame',
+    ...at,
+    test: at.test,
     width: width as number,
     height: height as number,
     data,
@@ -723,13 +900,42 @@ function readWorker(value: unknown): HubWorker | null {
   if (!isObject(value)) return null;
   const { worker, parallelIndex, state, pausing } = value;
   if (!isInt(worker, 0) || !isInt(parallelIndex, 0) || typeof pausing !== 'boolean') return null;
-  if (state !== 'running' && state !== 'stopped' && state !== 'between') return null;
+  if (typeof state !== 'string' || state.length > 64) return null;
   const test = readTest(value.test);
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
-  return { worker, parallelIndex, state, test, stop, pausing, intents: readActions(value.intents) };
+  const waiting = pausing && value.waiting !== undefined ? readWaiting(value.waiting) : null;
+  return {
+    worker,
+    parallelIndex,
+    state: WORKER_STATES.includes(state) ? (state as HubWorker['state']) : 'other',
+    test,
+    stop,
+    pausing,
+    intents: readActions(value.intents),
+    ...(waiting ? { waiting } : {}),
+  };
 }
 
+/** The call a pausing worker waits in, field by field; null when it is not one. */
+function readWaiting(value: unknown): HubWaiting | null {
+  if (!isObject(value)) return null;
+  const { title, uri, line, since, endable } = value;
+  if (str(title, MAX_HUB_MESSAGE) === null || !title || typeof endable !== 'boolean') return null;
+  if (since !== null && (typeof since !== 'string' || since.length > 64 || Number.isNaN(Date.parse(since))))
+    return null;
+  if (uri !== null && (typeof uri !== 'string' || !uri.startsWith('file:') || uri.length > 4096)) return null;
+  if (line !== null && !isInt(line, 0)) return null;
+  return {
+    title: title as string,
+    uri: uri as string | null,
+    line: line as number | null,
+    since: since as string | null,
+    endable,
+  };
+}
+
+/** A run and those of its workers this version reads; null when the run itself is not one. */
 function readSession(value: unknown): HubSession | null {
   if (!isObject(value) || typeof value.ref !== 'string' || !REF.test(value.ref) || typeof value.ended !== 'boolean') {
     return null;
@@ -740,13 +946,47 @@ function readSession(value: unknown): HubSession | null {
   const project = nullableStr(value.project, MAX_HUB_PROJECT);
   if (root === undefined || label === undefined || command === undefined || project === undefined) return null;
   if (!Array.isArray(value.workers) || value.workers.length > 1000) return null;
-  const workers = value.workers.map(readWorker);
-  if (!workers.every((w): w is HubWorker => w !== null)) return null;
+  const workers = value.workers.map(readWorker).filter((w): w is HubWorker => w !== null);
   const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
   if (value.terminal === true) session.terminal = true;
-  if (value.live === undefined) return session;
-  const live = readLive(value.live);
-  return live ? { ...session, live } : null;
+  if (value.terminal === true && value.runner === true) session.runner = true;
+  const live = value.live === undefined ? null : readLive(value.live);
+  if (live) session.live = live;
+  const progress = value.progress === undefined ? null : readProgress(value.progress);
+  if (progress) session.progress = progress;
+  return session;
+}
+
+const PROGRESS_STATUSES: readonly string[] = ['running', 'passed', 'failed', 'timedout', 'interrupted', 'other'];
+
+/** How far a run is, field by field: a status of a newer service reads as `other`; null when it is not one. */
+function readProgress(value: unknown): HubProgress | null {
+  if (!isObject(value)) return null;
+  const { total, done, failed, flaky, skipped, status, failure } = value;
+  if (![total, done, failed, flaky, skipped].every((n) => isInt(n, 0))) return null;
+  if (
+    (done as number) > (total as number) ||
+    (failed as number) + (flaky as number) + (skipped as number) > (done as number)
+  ) {
+    return null;
+  }
+  if (typeof status !== 'string') return null;
+  let first: HubProgress['failure'] = null;
+  if (failure !== null) {
+    if (!isObject(failure) || str(failure.title, MAX_RUN_FAILURE_TEXT) === null || !failure.title) return null;
+    const error = nullableStr(failure.error, MAX_RUN_FAILURE_TEXT);
+    if (error === undefined) return null;
+    first = { title: failure.title as string, error };
+  }
+  return {
+    total: total as number,
+    done: done as number,
+    failed: failed as number,
+    flaky: flaky as number,
+    skipped: skipped as number,
+    status: (PROGRESS_STATUSES.includes(status) ? status : 'other') as HubProgress['status'],
+    failure: first,
+  };
 }
 
 /** A run's live view on the team instance, field by field; null when it is not one. */
@@ -785,6 +1025,7 @@ export function parseHubMessage(text: string): HubMessage | null {
         client: client as string | null,
         roots: roots as string[],
         keepaliveMs,
+        features: readFeatures(value.features),
       };
     }
     case 'answer': {
@@ -807,12 +1048,18 @@ export function parseHubMessage(text: string): HubMessage | null {
     }
     case 'frame':
       return readFrame(value);
+    case 'lane-frame':
+      return readLaneFrame(value);
     case 'session': {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;
     }
     case 'code':
       return readCode(value);
+    case 'peers':
+      return Array.isArray(value.hubs) && value.hubs.length <= MAX_HUB_PEERS
+        ? { type: 'peers', hubs: value.hubs.flatMap((hub) => readPeer(hub) ?? []) }
+        : null;
     case 'keepalive':
       return { type: 'keepalive' };
     default:
@@ -828,25 +1075,34 @@ export function parseHubMessage(text: string): HubMessage | null {
 export function parseLiveAnswer(body: unknown): LiveHub[] | null {
   if (!isObject(body) || !Array.isArray(body.hubs)) return null;
   return body.hubs.flatMap((hub): LiveHub[] => {
-    if (!isObject(hub)) return [];
-    const { token, pid, version, client, roots, startedAt } = hub;
-    const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
-    if (!named) return [];
-    const url = `ws://127.0.0.1:${named[1]}${named[2]}`;
-    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token) || !isInt(pid, 1)) return [];
-    if (str(version, 64) === null || str(startedAt, 64) === null) return [];
-    if (client !== null && str(client, 200) === null) return [];
-    if (!Array.isArray(roots) || !roots.every((r) => str(r, 4096) !== null)) return [];
-    return [
-      {
-        url,
-        token,
-        pid,
-        version: version as string,
-        client: client as string | null,
-        roots: roots as string[],
-        startedAt: startedAt as string,
-      },
-    ];
+    const peer = readPeer(hub);
+    if (!peer || !isObject(hub)) return [];
+    const { token } = hub;
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token)) return [];
+    return [hub.features === undefined ? { ...peer, token } : { ...peer, token, features: readFeatures(hub.features) }];
   });
+}
+
+/** A hub as a live answer or `peers` names it, but its token, field by field, on `127.0.0.1`; null when it is not one. */
+function readPeer(hub: unknown): PeerHub | null {
+  if (!isObject(hub)) return null;
+  const { pid, version, client, roots, startedAt } = hub;
+  const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
+  if (!named || !isInt(pid, 1)) return null;
+  if (str(version, 64) === null || str(startedAt, 64) === null) return null;
+  if (client !== null && str(client, 200) === null) return null;
+  if (!Array.isArray(roots) || !roots.every((r) => str(r, 4096) !== null)) return null;
+  return {
+    url: `ws://127.0.0.1:${named[1]}${named[2]}`,
+    pid,
+    version: version as string,
+    client: client as string | null,
+    roots: roots as string[],
+    startedAt: startedAt as string,
+  };
+}
+
+/** The features of a list, those this version knows, in its order; none for anything but a list. */
+function readFeatures(value: unknown): HubFeature[] {
+  return Array.isArray(value) ? HUB_FEATURES.filter((feature) => value.includes(feature)) : [];
 }

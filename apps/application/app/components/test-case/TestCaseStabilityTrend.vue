@@ -68,7 +68,7 @@ const legend = [
 ];
 const exportData = computed(() => ({
   name: `test-${props.testCaseId}-trend`,
-  header: ['date', 'executions', 'pass rate %', 'flaky rate %', 'average duration ms'],
+  header: ['date', 'runs', 'pass rate %', 'flaky rate %', 'average duration ms'],
   rows: buckets.value.map((b) => [b.date, b.totalRuns, pct(b.passRate), pct(b.flakyRate), b.avgDuration]),
 }));
 const subtitle = computed(() => {
@@ -77,7 +77,7 @@ const subtitle = computed(() => {
   const runs = t.buckets.reduce((n, b) => n + b.totalRuns, 0);
   const span =
     t.bucketDays === 1 ? 'day' : t.bucketDays === 7 ? 'week' : t.bucketDays >= 28 ? 'month' : `${t.bucketDays} days`;
-  return `${runs} executions · one point per ${span} (UTC)`;
+  return `${runs} ${runs === 1 ? 'run' : 'runs'} · one point per ${span} (UTC)`;
 });
 </script>
 
@@ -110,7 +110,7 @@ const subtitle = computed(() => {
         </UButton>
       </template>
     </ErrorState>
-    <EmptyState v-else-if="!hasData" text="No execution in this span." />
+    <EmptyState v-else-if="!hasData" text="No run in this span." />
     <div v-else class="space-y-2" :class="pending ? 'opacity-60' : ''">
       <TrendLinesChart
         :series="rateLines"

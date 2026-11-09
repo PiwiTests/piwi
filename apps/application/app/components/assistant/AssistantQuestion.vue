@@ -59,7 +59,7 @@ function submit(): void {
 </script>
 
 <template>
-  <form class="space-y-2.5 min-w-0" data-assistant-block="question" @submit.prevent="submit">
+  <form class="space-y-2.5 min-w-0" data-assistant-block="question" method="post" @submit.prevent="submit">
     <p class="text-sm text-highlighted leading-relaxed">{{ block.prompt }}</p>
     <URadioGroup
       v-if="!block.multiple"

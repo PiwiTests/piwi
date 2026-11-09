@@ -603,6 +603,20 @@ describe('renderSpec — options', () => {
     expect(code).not.toContain('@playwright/test');
   });
 
+  test('expectImport takes expect from another module than test, as a fixtures file that exports test alone', () => {
+    const plain = renderSpec(buildSession([step()], 0), { testImport: '../fixtures' });
+    const { code, stepLines } = renderSpec(buildSession([step()], 0), {
+      testImport: '../fixtures',
+      expectImport: '@playwright/test',
+    });
+    expect(code.split('\n').slice(0, 2)).toEqual([
+      `import { test } from '../fixtures';`,
+      `import { expect } from '@playwright/test';`,
+    ]);
+    // Each step is one line further down, under the second import.
+    expect(stepLines).toEqual(plain.stepLines.map((line) => line + 1));
+  });
+
   test('relative urls write the recorded origin as paths and leave other origins alone', () => {
     const session = buildSession(
       [
@@ -768,6 +782,73 @@ describe('renderSpec — assertions', () => {
     expect(renderSpec(session).code).toContain(
       `await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // recorded: 'Total: 40'`,
     );
+  });
+
+  test('a text check takes a locator not found by the text it checks, while one is not brittle', () => {
+    const sent = (alternatives: RecordedTarget['alternatives']) =>
+      target({ tagName: 'div', role: 'status', accessibleName: 'Sent!', alternatives });
+    const check = (on: RecordedTarget, matcher: 'toHaveText' | 'toContainText' | 'toBeVisible' = 'toHaveText') =>
+      renderSpec(
+        buildSession(
+          [
+            step({
+              action: 'assert',
+              target: on,
+              assertion: {
+                matcher,
+                expected: matcher === 'toBeVisible' ? null : 'Sent!',
+                actual: null,
+                negated: false,
+                note: null,
+              },
+            }),
+          ],
+          0,
+        ),
+        { locators: 'stable' },
+      ).code;
+    const ranked = sent([
+      { locator: "getByText('Sent!')", method: 'getByText', score: 95 },
+      { locator: "getByRole('status', { name: 'Sent!' })", method: 'getByRole', score: 90 },
+      { locator: "locator('div').filter({ hasText: 'Sent!' })", method: 'locator', score: 70 },
+      { locator: "getByRole('status')", method: 'getByRole', score: 60 },
+    ]);
+    expect(check(ranked)).toContain(`await expect(page.getByRole('status')).toHaveText('Sent!');`);
+    expect(check(ranked, 'toContainText')).toContain(`await expect(page.getByRole('status')).toContainText('Sent!');`);
+    // Any other check keeps the first stable locator.
+    expect(check(ranked, 'toBeVisible')).toContain(`await expect(page.getByText('Sent!')).toBeVisible();`);
+    // Only a brittle locator is found otherwise: the text keeps the element.
+    const brittle = sent([
+      { locator: "getByText('Sent!')", method: 'getByText', score: 95 },
+      { locator: "locator('#app > div:nth-child(3)')", method: 'locator', score: 20 },
+    ]);
+    expect(check(brittle)).toContain(`await expect(page.getByText('Sent!')).toHaveText('Sent!');`);
+    // A brittle chain ranked before the one taken is left out too, in either mode.
+    const between = sent([
+      { locator: "getByText('Sent!')", method: 'getByText', score: 95 },
+      { locator: "locator('#app > div:nth-child(3)')", method: 'locator', score: 80 },
+      { locator: "getByRole('status')", method: 'getByRole', score: 60 },
+    ]);
+    expect(check(between)).toContain(`await expect(page.getByRole('status')).toHaveText('Sent!');`);
+    const first = renderSpec(
+      buildSession(
+        [
+          step({
+            action: 'assert',
+            target: between,
+            assertion: { matcher: 'toHaveText', expected: 'Sent!', actual: null, negated: false, note: null },
+          }),
+        ],
+        0,
+      ),
+    ).code;
+    expect(first).toContain(`await expect(page.getByRole('status')).toHaveText('Sent!');`);
+    // A name the checked text only starts with is a label, not the text checked.
+    const labelled = sent([
+      { locator: "getByRole('status', { name: 'Sent' })", method: 'getByRole', score: 90 },
+      { locator: "locator('#result')", method: 'locator', score: 60 },
+    ]);
+    expect(check(labelled)).toContain(`await expect(page.getByRole('status', { name: 'Sent' })).toHaveText('Sent!');`);
   });
 
   test('state assertions, negation and notes', () => {

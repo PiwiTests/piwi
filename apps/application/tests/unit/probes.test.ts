@@ -7,6 +7,8 @@ import {
   isLabRun,
   notLabRun,
   PROBE_FAULTS,
+  PLANNED_PROBE_FAULTS,
+  decidesCheck,
   DEFAULT_PROBE_BUDGET,
   type ProbeCandidate,
 } from '../../shared/handlers/probes';
@@ -69,14 +71,26 @@ describe('selectProbePlan', () => {
     expect(plan.items[0]!.suitePath).toEqual(['Orders']);
   });
 
-  test('assigns a fault from the known set, spread across pairs', () => {
+  test('rotates the faults that break what a test checks, spread across pairs', () => {
     const plan = selectProbePlan(
       Array.from({ length: PROBE_FAULTS.length }, (_, i) =>
         candidate({ testCaseId: i + 1, routeKey: `GET /api/${i}`, exposure: PROBE_FAULTS.length - i }),
       ),
     );
-    expect(new Set(plan.items.map((i) => i.fault)).size).toBe(PROBE_FAULTS.length);
-    for (const item of plan.items) expect(PROBE_FAULTS).toContain(item.fault);
+    expect(new Set(plan.items.map((i) => i.fault))).toEqual(new Set(PLANNED_PROBE_FAULTS));
+    // A delay reads a test's timeout, and a stale value needs an earlier response: neither is planned.
+    expect(plan.items.map((i) => i.fault)).not.toContain('slow');
+    expect(plan.items.map((i) => i.fault)).not.toContain('stale-value');
+  });
+
+  test('only a decisive outcome of a fault that breaks a check decides it', () => {
+    expect(decidesCheck('noticed', 'status-500')).toBe(true);
+    expect(decidesCheck('not-noticed', 'drop-field')).toBe(true);
+    expect(decidesCheck('inconclusive', 'status-500')).toBe(false);
+    expect(decidesCheck('not-noticed', 'slow')).toBe(false);
+    expect(decidesCheck('noticed', 'delay')).toBe(false);
+    expect(decidesCheck('not-noticed', 'slow-first')).toBe(false);
+    expect(decidesCheck('noticed', 'throw')).toBe(true);
   });
 });
 

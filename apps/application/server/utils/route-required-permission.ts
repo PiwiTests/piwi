@@ -1,5 +1,4 @@
 import type { H3Event } from 'h3';
-import { getRequestURL } from 'h3';
 import type { RouterContext } from 'rou3';
 import type { RoutePermission } from '#shared/permissions';
 import { buildPermissionRouter, matchRequiredPermissions } from './route-permission-match';
@@ -12,11 +11,14 @@ let router: RouterContext<RoutePermission[]> | undefined;
 
 /**
  * The permissions the current route requires, from its `x-required-permission`
- * OpenAPI meta — the single source of truth, also surfaced in the `/docs`
- * reference. Empty when the route declares none (public or token-authenticated),
+ * OpenAPI meta — the single source of truth, also surfaced in the API
+ * reference (`/settings/api`). Empty when the route declares none (public or token-authenticated),
  * leaving `requireAuth` to enforce sign-in only.
  */
 export function getRouteRequiredPermissions(event: H3Event): RoutePermission[] {
   router ??= buildPermissionRouter(handlersMeta);
-  return matchRequiredPermissions(router, event.method, getRequestURL(event).pathname);
+  // The path Nitro's router dispatched the request on: the raw path, its query left out. A normalized URL would read
+  // `\`, `..` and `#` differently, and send the lookup to another route than the one that runs.
+  const path = event.path.split('?', 1)[0] || '/';
+  return matchRequiredPermissions(router, event.method, path);
 }

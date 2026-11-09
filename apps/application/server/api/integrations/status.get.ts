@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Which trackers are connected',
     description:
-      'Lists the connected trackers a member can file into. Drives whether the create-issue entry points show.',
+      'Lists the connected trackers. Drives whether the create-issue entry points show; an issue is filed through the connection its project is bound to.',
     'x-required-permission': 'signed-in',
   },
 });

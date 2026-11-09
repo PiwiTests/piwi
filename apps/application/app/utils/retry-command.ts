@@ -7,8 +7,15 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { RetryCase } from '#shared/retry-command';
 
-export { buildRetryCommand, escapeGrep, toPosixPath } from '#shared/retry-command';
-export type { RetryMode, RetryCase } from '#shared/retry-command';
+export {
+  buildRetryCommand,
+  escapeGrep,
+  RETRY_OPTION_LIMITS,
+  retryProjects,
+  specPattern,
+  toPosixPath,
+} from '#shared/retry-command';
+export type { RetryMode, RetryCase, RetryRunMode, RetryRunOptions, RetryTraceMode } from '#shared/retry-command';
 
 /** An execution row of a run as the case a re-run names: its file, line, title and Playwright project. */
 export function retryCaseOf(tc: TestCaseResult): RetryCase {

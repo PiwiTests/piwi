@@ -10,26 +10,28 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInArray } from 'drizzle-orm';
+import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { splitSuitePath } from '../utils/suites';
-import { inlineCasePayloads } from '../../server/utils/case-payloads';
+import { caseOutput, inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
 import { describeDidNotRun } from '../did-not-run';
-import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
-import { getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
+import { ticketReconcileKey } from '#shared/cluster-state';
+import { clusterFailureGoesOn, getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
-import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
+import { eligibleRunSql, notLabRunOrOwn } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
-import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
+import { FAILED_STATUS_KEYS, finalAttempts, finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
+import { flakyRate, passRate, passRatePercent } from '../utils/pass-rate';
+import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import { timelineResources, type TimelineResources } from '../timeline-resources';
 import { readResourceReport } from './resource-reports';
@@ -64,14 +66,19 @@ import type { DrizzleDB } from './db';
 import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
 
 /**
- * A test case with its header stats, recent executions and clusters. Executions
- * of lab runs (probes, flake experiments) replay the test under injected
- * conditions, so they never count toward the stats nor show as its history.
+ * A test case with its header stats, recent executions and clusters. The stats
+ * count its runs: one result per run, Playwright project and `--repeat-each`
+ * repetition, read from its final attempt (`testCaseAggregates`), so a retry
+ * never counts as a run of its own. Executions of lab runs (probes, flake
+ * experiments) replay the test under injected conditions, so they never count
+ * toward the stats nor show as its history. `viewerId`'s own requested runs
+ * (origin `request`) show in its recent executions, and count in nothing.
  */
-export async function getTestCase(db: DrizzleDB, id: number) {
+export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | null = null) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
   if (!testCase) return null;
   const realExecution = and(eq(testRunsCases.testCaseId, id), notLabExecution(testRunsCases.testRunId));
+  const aggregates = testCaseAggregates();
 
   const [[project], aggResult, [lastExecution]] = await Promise.all([
     db
@@ -79,37 +86,22 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       .from(projects)
       .where(eq(projects.id, testCase.projectId))
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
-    // PostgreSQL returns COUNT and SUM (int8) and AVG (numeric) as strings, and
-    // a timestamp aggregate unparsed: each is mapped so both dialects agree.
+    // A timestamp aggregate comes back unparsed from PostgreSQL: it is mapped so both dialects agree.
     db
       .select({
-        totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
-        passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number),
-        failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`.mapWith(Number),
-        skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
-        timedOutRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-        flakyRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-        recentFlakyRuns: sql<number>`(
-          SELECT COUNT(*) FROM (
-            SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
-            FROM ${testRunsCases}
-            WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-              AND ${notLabExecution(testRunsCases.testRunId)}
-            ORDER BY ${testRunsCases.createdAt} DESC
-            LIMIT 10
-          ) AS recent WHERE s = 'passed' AND r > 0
-        )`.mapWith(Number),
-        avgDuration: sql<number>`AVG(${testRunsCases.duration})`.mapWith(Number),
+        totalRuns: aggregates.totalRuns,
+        passedRuns: aggregates.passedRuns,
+        failedRuns: aggregates.failedRuns,
+        skippedRuns: aggregates.skippedRuns,
+        timedOutRuns: aggregates.timedOutRuns,
+        flakyRuns: aggregates.flakyRuns,
+        // The outer query reads one table, so its columns render unqualified: the subquery names the test by its id.
+        recentFlakyRuns: recentFlakySql(id, notLabExecution(testRunsCases.testRunId)),
+        avgDuration: aggregates.avgDuration,
         lastRunAt: sql<Date>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       })
       .from(testRunsCases)
-      .where(realExecution),
+      .where(and(realExecution, finalAttemptSql())),
     db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
@@ -127,12 +119,14 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         duration: testRunsCases.duration,
         error: testRunsCases.error,
         retries: testRunsCases.retries,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
         attempts: testRunsCases.attempts,
         workerIndex: testRunsCases.workerIndex,
         browser: testRunsCases.browser,
         runId: testRuns.id,
         runStatus: testRuns.status,
         runLabel: testRuns.label,
+        runOrigin: testRuns.origin,
         startTime: testRuns.startTime,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
@@ -140,7 +134,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.origin)))
+      .where(and(eq(testRunsCases.testCaseId, id), notLabRunOrOwn(viewerId, testRuns.origin)))
       .orderBy(desc(testRuns.startTime))
       .limit(20),
     db
@@ -187,10 +181,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
     flakyRuns: aggResult[0]?.flakyRuns ?? 0,
     recentFlakyRuns: aggResult[0]?.recentFlakyRuns ?? 0,
     avgDuration: aggResult[0]?.avgDuration ?? null,
-    passRate:
-      totalRuns > 0
-        ? Math.round((((aggResult[0]?.passedRuns ?? 0) + (aggResult[0]?.skippedRuns ?? 0)) / totalRuns) * 100)
-        : null,
+    passRate: passRatePercent({ passed: aggResult[0]?.passedRuns ?? 0, failed: aggResult[0]?.failedRuns ?? 0 }),
     lastRunAt: aggResult[0]?.lastRunAt ?? null,
     lastExecutionId: lastExecution?.id ?? null,
     failureClusters: clusterRows.map((c: any) => ({
@@ -207,7 +198,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
 
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
   // Lab runs replay a test with an injected fault or condition, so their executions never
-  // appear in a test's history.
+  // appear in a test's history. A row is one attempt, in one Playwright project and repetition.
   return db
     .select({
       id: testRunsCases.id,
@@ -216,7 +207,10 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       duration: testRunsCases.duration,
       error: testRunsCases.error,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       attempts: testRunsCases.attempts,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
     })
@@ -252,6 +246,7 @@ export async function getNewerExecutions(
       status: testRunsCases.status,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       browserName: testRunsCases.browserName,
       failureClusterId: testRunsCases.failureClusterId,
       startTime: testRuns.startTime,
@@ -298,6 +293,7 @@ export async function getTestRunCase(
 
   // Large evidence payloads are content-addressed; a row may still keep them inline.
   const evidence = await inlineCasePayloads(db, trc);
+  const output = await caseOutput(db, trc);
 
   // Every attempt is its own execution row (unique on run + test case + repeat
   // + retries + browser), so each stored attempt maps to the sibling row of the
@@ -321,11 +317,11 @@ export async function getTestRunCase(
       }))
     : null;
 
-  // A pass that needed a retry has no error of its own: its headline, steps and
-  // `why` come from the last failed attempt of the same run, test, browser and
-  // repetition.
+  // A pass after a failed attempt has no error of its own: its headline, steps
+  // and `why` come from the last failed attempt of the same run, test, browser
+  // and repetition.
   const retries = trc.retries ?? 0;
-  const passedOnRetry = trc.status === 'passed' && retries > 0;
+  const passedOnRetry = trc.status === 'passed' && trc.passedAfterFailure;
   const failedSibling = passedOnRetry
     ? (siblingRows as Array<{ id: number; retries: number | null; status: string }>)
         .filter((r) => (r.retries ?? 0) < retries && isFailedStatus(r.status))
@@ -387,7 +383,7 @@ export async function getTestRunCase(
   if (testRun) {
     const [projectResult] = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
     if (projectResult) {
-      const { scmToken: _scmToken, ...projectPublic } = projectResult;
+      const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectPublic } = projectResult;
       project = projectPublic;
     }
   }
@@ -433,22 +429,7 @@ export async function getTestRunCase(
       // A Done issue on a failure that goes on calls for a new issue, and on one
       // that stopped, for marking the cluster resolved: the rules the cluster page
       // follows. Read only when the issue is Done.
-      let goesOn: boolean | null = null;
-      if (knownIssue?.statusCategory === 'done') {
-        const [latestFinished] = await db
-          .select({ id: testRuns.id, startTime: testRuns.startTime })
-          .from(testRuns)
-          .where(
-            and(eq(testRuns.projectId, cluster.projectId), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
-          )
-          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-          .limit(1);
-        const [lastSeen] = await db
-          .select({ id: testRuns.id, startTime: testRuns.startTime })
-          .from(testRuns)
-          .where(eq(testRuns.id, cluster.lastSeenRunId));
-        goesOn = failureGoesOn(lastSeen ?? null, latestFinished ?? null);
-      }
+      const goesOn = knownIssue?.statusCategory === 'done' ? await clusterFailureGoesOn(db, cluster) : null;
       ticketDoneKey =
         goesOn === null
           ? null
@@ -525,7 +506,8 @@ export async function getTestRunCase(
   //  - `blockedTests`: the downstream tests this execution stopped from running
   //    (they carry `blocked_by = this execution's location`).
   //  - `blockedByCase`: the failing execution that blocked THIS one (only set on
-  //    a `previous-failure` case, resolved from its `blocked_by` location).
+  //    a `previous-failure` or `dependency-failure` case, resolved from its
+  //    `blocked_by` location).
   const ownLocation =
     testCase?.filePath && trc.line != null && trc.column != null
       ? `${testCase.filePath}:${trc.line}:${trc.column}`
@@ -554,13 +536,28 @@ export async function getTestRunCase(
     status: testRunsCases.status,
   };
 
+  // A location names the same test in every Playwright project, attempt and repetition. A serial group's cascade and
+  // its blocker share all three; a test blocked by a failed project dependency is in another project than its blocker.
+  const sameAttempt = and(
+    trc.browserName ? eq(testRunsCases.browserName, trc.browserName) : sql`${testRunsCases.browserName} IS NULL`,
+    sql`COALESCE(${testRunsCases.retries}, 0) = ${trc.retries ?? 0}`,
+    eq(testRunsCases.repeatEachIndex, trc.repeatEachIndex),
+  );
+
+  // Only a failure blocks a test, and a blocker is a failed execution.
   let blockedTests: BlockedCaseRef[] = [];
-  if (ownLocation) {
+  if (ownLocation && isFailedStatus(trc.status)) {
     const rows = await db
       .select(blockedRefColumns)
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(and(eq(testRunsCases.testRunId, trc.testRunId), eq(testRunsCases.blockedBy, ownLocation)));
+      .where(
+        and(
+          eq(testRunsCases.testRunId, trc.testRunId),
+          eq(testRunsCases.blockedBy, ownLocation),
+          or(eq(testRunsCases.didNotRunReason, 'dependency-failure'), sameAttempt),
+        ),
+      );
     blockedTests = rows.map(toRef);
   }
 
@@ -580,8 +577,12 @@ export async function getTestRunCase(
             eq(testCases.filePath, m[1]!),
             eq(testRunsCases.line, Number(m[2])),
             eq(testRunsCases.column, Number(m[3])),
+            inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]),
+            ...(trc.didNotRunReason === 'dependency-failure' ? [] : [sameAttempt]),
           ),
-        );
+        )
+        .orderBy(desc(testRunsCases.retries))
+        .limit(1);
       if (row) {
         const steps = Array.isArray(row.steps) ? (row.steps as TreeStepLike[]) : [];
         blockedByCase = { ...toRef(row), failedIn: failureHookContext(steps, row.error) };
@@ -589,7 +590,7 @@ export async function getTestRunCase(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
   // cluster and owner — built from what is already loaded above, and for a retry
@@ -611,7 +612,7 @@ export async function getTestRunCase(
     error: verdictError,
     steps: failedAttempt ? failedAttempt.steps : trc.steps,
     status: trc.status,
-    retries: trc.retries,
+    passedAfterFailure: trc.passedAfterFailure,
     isNewRegression: trc.isNewRegression,
     isNewFlaky: trc.isNewFlaky,
     runId: trc.testRunId,
@@ -623,8 +624,8 @@ export async function getTestRunCase(
     owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
     fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
   });
-  // A retry pass is one with or without its failed attempt stored: the policy
-  // reads it from the status alone when there is no verdict.
+  // A pass after a failure is one with or without its failed attempt stored:
+  // without a failure verdict, the policy reads it from `passedAfterFailure`.
   const why = verdict?.why ?? (passedOnRetry ? 'passed-on-retry' : null);
 
   // The situation lines and the single next step, built from the verdict and
@@ -766,6 +767,7 @@ export async function getTestRunCase(
     duration: trc.duration,
     error: trc.error,
     retries: trc.retries,
+    passedAfterFailure: Boolean(trc.passedAfterFailure),
     attempts,
     steps: trc.steps,
     testSource: evidence.testSource,
@@ -796,9 +798,13 @@ export async function getTestRunCase(
     pageState: trc.pageState,
     aiUsage: trc.aiUsage,
     consoleLogs: trc.consoleLogs,
+    // What the attempt wrote to stdout and stderr, as the reporter kept it.
+    stdout: output.stdout,
+    stderr: output.stderr,
     ariaSnapshot: evidence.ariaSnapshot,
     evidenceSources: trc.evidenceSources,
     workerIndex: trc.workerIndex,
+    parallelIndex: trc.parallelIndex ?? null,
     shardIndex: trc.shardIndex,
     browser: trc.browser,
     isNewRegression: trc.isNewRegression ?? null,
@@ -1544,16 +1550,17 @@ export async function getTestRunCaseTraces(db: DrizzleDB, id: number) {
 /** How far back the stability trend of a test case reaches by default. */
 export const STABILITY_TREND_DEFAULT_DAYS = 90;
 
+/** One bucket of a test's stability trend, over its runs there: one result per run, Playwright project and repetition. */
 export interface TestCaseStabilityBucket {
   /** Bucket start (`YYYY-MM-DD`, UTC). */
   date: string;
-  /** Executions in the bucket. */
+  /** Runs in the bucket. */
   totalRuns: number;
-  /** Passed executions over executions, 0–1; null without an execution. */
+  /** Passed runs over the runs that passed or failed, 0–1; null without either. */
   passRate: number | null;
-  /** Executions that passed only on a retry over executions, 0–1; null without an execution. */
+  /** Flaky runs (passed after an earlier attempt failed) over the runs that passed or failed, 0–1; null without either. */
   flakyRate: number | null;
-  /** Average duration of the bucket's executions in ms; null without a duration. */
+  /** Average duration in ms of the bucket's runs that ran (neither skipped nor did not run); null without one. */
   avgDuration: number | null;
 }
 
@@ -1565,12 +1572,13 @@ export interface TestCaseStabilityTrend {
 }
 
 /**
- * Stability of a single test case over time: its executions of the last
- * `days` days (lab runs left out) in UTC time buckets, each with its pass
- * rate, flaky rate and average duration. The buckets follow the analytics
- * granularity (`auto` keeps about 31 of them), and a bucket without an
- * execution is a gap. Shared by the REST stability-trend endpoint, the Trend
- * tab of the test page and the MCP `get_test_stability_trend` tool.
+ * Stability of a single test case over time: its runs of the last `days` days
+ * (lab runs left out), one result per run, Playwright project and repetition
+ * read from its final attempt (`finalAttemptsOfRuns`), in UTC time buckets,
+ * each with its pass rate, flaky rate and average duration. The buckets follow
+ * the analytics granularity (`auto` keeps about 31 of them), and a bucket
+ * without a run is a gap. Shared by the REST stability-trend endpoint, the
+ * Trend tab of the test page and the MCP `get_test_stability_trend` tool.
  */
 export async function getTestCaseStabilityTrend(
   db: DrizzleDB,
@@ -1585,9 +1593,14 @@ export async function getTestCaseStabilityTrend(
   const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
   const rawRows: any[] = await db
     .select({
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       startTime: testRuns.startTime,
       runMetadata: testRuns.metadata,
     })
@@ -1596,22 +1609,25 @@ export async function getTestCaseStabilityTrend(
     .where(and(eq(testRunsCases.testCaseId, testCaseId), gte(testRuns.startTime, new Date(from))));
 
   const buckets = makeTimeBuckets(from, now + 1, options.granularity ?? 'auto');
-  const tally = new Map<string, { total: number; passed: number; flaky: number; durations: number[] }>();
-  for (const row of rawRows) {
-    // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
-    if (isLabRun(row.runMetadata)) continue;
+  const tally = new Map<
+    string,
+    { total: number; passed: number; failed: number; flaky: number; durations: number[] }
+  >();
+  // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
+  const { final, flaky } = finalAttemptsOfRuns(rawRows.filter((row) => !isLabRun(row.runMetadata)));
+  for (const row of final) {
     const key = buckets.keyFor(row.startTime);
     if (!key) continue;
-    const t = tally.get(key) ?? { total: 0, passed: 0, flaky: 0, durations: [] };
+    const t = tally.get(key) ?? { total: 0, passed: 0, failed: 0, flaky: 0, durations: [] };
     t.total += 1;
     if (row.status === 'passed') {
       t.passed += 1;
-      if ((row.retries ?? 0) > 0) t.flaky += 1;
-    }
-    if (row.duration != null) t.durations.push(row.duration);
+      if (flaky.has(row)) t.flaky += 1;
+    } else if (isFailedStatus(row.status)) t.failed += 1;
+    if (row.duration != null && ranTest(row.status)) t.durations.push(row.duration);
     tally.set(key, t);
   }
-  const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);
+  const round = (share: number | null) => (share === null ? null : Math.round(share * 100) / 100);
   return {
     testCaseId,
     bucketDays: buckets.bucketDays,
@@ -1620,8 +1636,8 @@ export async function getTestCaseStabilityTrend(
       return {
         date,
         totalRuns: t?.total ?? 0,
-        passRate: t ? rate(t.passed, t.total) : null,
-        flakyRate: t ? rate(t.flaky, t.total) : null,
+        passRate: t ? round(passRate(t)) : null,
+        flakyRate: t ? round(flakyRate(t)) : null,
         avgDuration:
           t && t.durations.length > 0 ? Math.round(t.durations.reduce((a, b) => a + b, 0) / t.durations.length) : null,
       };

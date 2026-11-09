@@ -1,12 +1,11 @@
 import { describe, test, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { LocatorHealingResult, RankedLocator } from '#shared/locator-healing.types';
 import type { ScmEntityState } from '../../server/utils/scm/ScmProvider';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Auto-heal against an in-memory SQLite database, from the run that proposes
@@ -134,9 +133,7 @@ async function markOpened(id: number, prNumber: number) {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main', repositoryUrl: REMOTE });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/pay.spec.ts', title: 'pays' });
   await setAppSetting(db as never, AUTO_HEAL_KEY, { enabled: true, projects: [1], minScore: 80 });

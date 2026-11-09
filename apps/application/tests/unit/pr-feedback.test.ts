@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   buildChangeCoverageStatus,
+  changeCoverageStatusUrl,
   buildCommitStatus,
   buildGateStatus,
   buildPrComment,
@@ -152,6 +153,17 @@ describe('buildPrComment', () => {
       }),
     );
     expect(body).toContain("💡 Try `getByRole('button', { name: 'Save' })` instead.");
+  });
+
+  test("names a failure's flakiness score on the default branch, never as a share of runs", () => {
+    const body = buildPrComment(
+      summary({
+        failedTests: 1,
+        newRegressions: [entry({ flakyOnDefaultBranch: { branch: 'main', flakinessScore: 42 } })],
+      }),
+    );
+    expect(body).toContain('🎲 Also flaky on `main` (flakiness score 42/100) — likely not yours.');
+    expect(body).not.toContain('% of recent runs');
   });
 
   test('shows owner and tags so a reader knows who to route it to', () => {
@@ -376,6 +388,42 @@ describe('isQuietRun', () => {
   test('posts every run when only-on-failure is off', () => {
     expect(isQuietRun({ onlyOnFailure: false }, summary())).toBe(false);
   });
+
+  test('posts a green run whose change left a file unreached, and not for changed lines unrun alone', () => {
+    const base = {
+      fileReach: true,
+      totalFiles: 1,
+      uncoveredFiles: 0,
+      reachedFiles: 1,
+      notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
+      ticketCount: 0,
+      windowRuns: 30,
+      tickets: [],
+    } satisfies PrChangeCoverage;
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: base }))).toBe(true);
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: { ...base, uncoveredFiles: 1 } }))).toBe(false);
+    const unrunLines: PrChangeCoverage = {
+      ...base,
+      tickets: [
+        {
+          ticket: null,
+          files: [
+            {
+              filePath: 'src/Orders.cs',
+              additions: 4,
+              deletions: 0,
+              reach: 'reached',
+              lines: { changed: 4, ran: 2, undetermined: 0, notRun: [[14, 15]] },
+            },
+          ],
+        },
+      ],
+    };
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: unrunLines }))).toBe(true);
+    expect(
+      isQuietRun(onlyOnFailure, summary({ changeCoverage: { ...base, fileReach: false, uncoveredFiles: 1 } })),
+    ).toBe(true);
+  });
 });
 
 describe('buildGateStatus', () => {
@@ -453,7 +501,7 @@ describe('change coverage section', () => {
               additions: 41,
               deletions: 3,
               reach: 'unreached',
-              draftTitle: 'a scenario that exercises [id].patch.ts',
+              gapId: 31,
             },
             {
               filePath: 'components/OrderRow.vue',
@@ -478,6 +526,36 @@ describe('change coverage section', () => {
     expect(section).not.toContain('OrderRow.vue');
     expect(section).toContain('5 files reached.');
     expect(section).not.toContain('Gate');
+  });
+
+  test('links each uncovered file to its gap, where a draft test is one click away', () => {
+    const section = renderChangeCoverage(coverage({ projectId: 4 }), 'https://piwi.example.com')!;
+    expect(section).toContain(
+      '→ [open its gap](https://piwi.example.com/projects/4?tab=coverage&gap=31): **Accept** copies a draft test',
+    );
+    // Without the instance's address the comment links nothing.
+    expect(renderChangeCoverage(coverage({ projectId: 4 }))).not.toContain('open its gap');
+  });
+
+  test('the change-coverage status leads to the pull request’s uncovered changes, else to the run', () => {
+    const run = 'https://piwi.example.com/test-runs/42';
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7 }), run)).toBe(
+      'https://piwi.example.com/projects/4?tab=coverage&gapPr=7',
+    );
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, uncoveredFiles: 0 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, fileReach: false }), run)).toBe(run);
+  });
+
+  test('counts the gaps the change-time detectors raised, linked to the pull request’s gaps', () => {
+    const cc = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 2 });
+    expect(renderChangeCoverage(cc, 'https://piwi.example.com')).toContain(
+      '2 gaps this change adds: a new error path, a new control or an intent no test names, [on the Coverage tab](https://piwi.example.com/projects/4?tab=coverage&gapPr=7).',
+    );
+    const onlyRaised = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 1, uncoveredFiles: 0, tickets: [] });
+    expect(changeCoverageStatusUrl(onlyRaised, 'https://piwi.example.com/test-runs/42')).toBe(
+      'https://piwi.example.com/projects/4?tab=coverage&gapPr=7',
+    );
   });
 
   test('reports a clean diff without listing files', () => {
@@ -554,7 +632,6 @@ describe('change coverage section', () => {
                 additions: 5,
                 deletions: 0,
                 reach: 'unreached',
-                draftTitle: 'exercise new.ts',
               },
               {
                 filePath: 'src/old.ts',
@@ -625,6 +702,7 @@ describe('new leaks', () => {
               count: 4,
               heldMs: 41_200,
               untilWorkerEnd: true,
+              lastUse: 'tests/cart.spec.ts:20',
             },
           ],
         },
@@ -632,7 +710,7 @@ describe('new leaks', () => {
     );
     expect(body).toContain('#### 🟠 Left open by this change (1)\n\nNever seen on `main`.');
     expect(body).toContain(
-      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test)',
+      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test) · last used at `tests/cart.spec.ts:20`',
     );
   });
 

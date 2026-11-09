@@ -48,7 +48,8 @@ never narrowed. Added, deleted and
 renamed files count as whole files.
 
 A changed line inside a function no test ran selects nothing from that file: no test can catch a mistake there. The
-answer names it as `notRun`, the line a new test should cover.
+answer names it as `notRun`, the line a new test should cover, numbered as in the file before the change: the version
+the tests' coverage recorded.
 
 The rule assumes a line a test did not run cannot change that test's path, as every coverage-based selection does,
 and it reads each test's latest recorded coverage. Keep running the full suite on a schedule: it stays the reference.

@@ -35,6 +35,51 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-environment',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Environment line of the run’s Details: the runner’s time zone, locale and OS, opening every shard’s runner, browser and server.',
+    shownWhen: 'When the reporter recorded where the run executed.',
+    help: 'run-environment',
+    doc: 'features/run-environment',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'run-retry-command',
+    kind: 'action',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The header’s Copy retry command: the Playwright command that runs the run’s failed tests again, with the options its menu sets.',
+    shownWhen: 'On a run with failed tests, outside the desktop app, which re-runs them itself.',
+    doc: 'features/ci-rerun',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'run-create-issue',
+    kind: 'action',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The header’s Create issue: files a Jira issue about the run, with the person’s comment, its tests and results, and its failure clusters.',
+    shownWhen: 'When an issue tracker is connected and the viewer can file issues in the project.',
+    requires: { capability: 'integrations', permission: 'issue:create' },
+    doc: 'features/run-issues',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'retry-command-options',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-retry-command' }],
+    describes:
+      'The options of Copy retry command: how the tests are named, headed, trace, repeat each, workers and the Playwright project.',
+    shownWhen: 'On a run with failed tests, outside the desktop app.',
+    help: 'run.retryOptions',
+    doc: 'features/ci-rerun',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
     id: 'run-retention',
     kind: 'block',
     pages: ['/test-runs/[id]'],
@@ -56,6 +101,18 @@ export const RUNS_ANCHORS = [
     help: 'run.ingestHealth',
     doc: 'features/ui-overview#test-run-detail',
     sample: { route: '/test-runs/4', expect: { run: { id: 4, project: 'e2e-checkout' } } },
+  },
+  {
+    id: 'run-tags-truncated',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Tags cut line of the run’s Details: the tests that declare more than 20 tags, and how many tags each one lost.',
+    shownWhen: 'When a test of the run declares more than 20 tags.',
+    help: 'run.tagsTruncated',
+    doc: 'reference/test-metadata#tag-limit',
+    sample: { route: '/test-runs/6', expect: { run: { id: 6, project: 'e2e-checkout' } } },
   },
   {
     id: 'run-coverage-gaps',
@@ -160,6 +217,17 @@ export const RUNS_ANCHORS = [
     shownWhen: 'When the run is not kept yet.',
     doc: 'operate/storage#keeping-runs-forever',
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'run-errors',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The errors Playwright reported outside the run’s tests, as it printed them: a global setup that threw, a spec that did not load, a failing teardown.',
+    shownWhen: 'When Playwright reported an error outside the tests.',
+    help: 'run.errors',
+    doc: 'reference/test-metadata#errors-outside-the-tests',
+    sample: { route: '/test-runs/4', expect: { run: { id: 4, project: 'e2e-checkout' }, runErrors: true } },
   },
   {
     id: 'run-incident',
@@ -310,15 +378,42 @@ export const RUNS_ANCHORS = [
 export const RUNS_EXEMPTIONS = [
   {
     rule: 'help',
+    key: 'run.live-view-setup',
+    reason: 'Live-view readiness shows only while a run is reporting, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
+    key: 'run.live-no-workers',
+    reason:
+      'Shows only while a CI run’s tests run without a worker in its live view, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
+    key: 'run.live-view-demo',
+    reason: 'Simulated progress shows only during a demo run, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
     key: 'run.live',
     reason:
       'The Tests tab’s live counter shows only while a run is still reporting, and the seed has no run in progress.',
   },
   {
     rule: 'help',
+    key: 'run.live-stalled',
+    reason:
+      'Live updates stalled shows only while a live run’s stream does not open, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
     key: 'run.live-unshared',
     reason:
       'Not shared live shows only on a live run outside CI that holds a live view key, and the demo runs no test worker.',
+  },
+  {
+    rule: 'help',
+    key: 'run.live-desktop',
+    reason: 'See its page at a stop shows only in the desktop app, on a live run, and the demo is no desktop app.',
   },
   {
     rule: 'help',

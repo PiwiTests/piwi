@@ -91,8 +91,8 @@ function laneTop(lane: number): number {
     >
       {{
         row.shardIndex != null && props.shardTotal && props.shardTotal > 1
-          ? `S${row.shardIndex} W${row.slot}`
-          : `Worker ${row.slot}`
+          ? `S${row.shardIndex} W${row.slot + 1}`
+          : `Worker ${row.slot + 1}`
       }}
     </text>
   </g>

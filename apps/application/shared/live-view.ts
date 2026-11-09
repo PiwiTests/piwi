@@ -4,19 +4,34 @@
  * side of the protocol is `@piwitests/core/live-view`.
  */
 import {
+  isEpochMs,
   readLiveCall,
+  readLiveCallLog,
+  readLiveTestOutcome,
   readLiveTestTitle,
   type LiveCall,
+  type LiveCallLog,
   type LiveStop,
+  type LiveTestOutcome,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
 
-export { liveWorkerKey, type LiveCall, type LiveStop } from '@piwitests/core/live-view';
+export {
+  liveWorkerKey,
+  type LiveCall,
+  type LiveCallLog,
+  type LiveStop,
+  type LiveTestOutcome,
+} from '@piwitests/core/live-view';
 
-/** A worker of a live run as the run page knows it: whether it is connected, and its test's stop while it holds. */
+/**
+ * A worker of a live run as the run page knows it: its lane (`slot`, from a reporter that says it), whether it is
+ * connected, and its test's stop while it holds.
+ */
 export interface LiveWorkerState {
   shard: number | null;
   worker: number;
+  slot?: number;
   connected: boolean;
   paused: LiveStop | null;
 }
@@ -28,11 +43,42 @@ export interface LiveWorkerState {
  */
 export interface LiveViewRunState {
   keyed: boolean;
+  /** Whether the project's live view is on now: off, the run page says so whatever the run holds. */
+  enabled: boolean;
 }
 
-/** How the run page names a worker: its index, and its shard in a sharded run. */
+/**
+ * How the run page names a worker: by its lane, counted from 1 (`worker 2`), which a worker Playwright starts again
+ * after a failure keeps, else by its index from a reporter that does not say its lane; and its shard in a sharded run.
+ */
 export function liveWorkerName(id: LiveWorkerId): string {
-  return id.shard === null ? `worker ${id.worker}` : `worker ${id.worker} of shard ${id.shard}`;
+  const name = id.slot === undefined ? `worker ${id.worker}` : `worker ${id.slot + 1}`;
+  return id.shard === null ? name : `${name} of shard ${id.shard}`;
+}
+
+/** A worker's lane in a run: its shard (null when the run is not sharded) and its slot, Playwright's `parallelIndex`. */
+export interface LiveLane {
+  shard: number | null;
+  slot: number;
+}
+
+/**
+ * The `?watch=` value of the run page's address that opens the live view of a lane: the worker's number as the page
+ * names it (`2` for worker 2), after its shard in a sharded run (`3.2` for worker 2 of shard 3).
+ */
+export function liveWatchAddress(lane: LiveLane): string {
+  return lane.shard === null ? String(lane.slot + 1) : `${lane.shard}.${lane.slot + 1}`;
+}
+
+/** The lane a `?watch=` value names, or null when it names none. */
+export function parseLiveWatchAddress(value: unknown): LiveLane | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:(\d{1,4})\.)?(\d{1,5})$/.exec(value.trim());
+  if (!match) return null;
+  const shard = match[1] === undefined ? null : Number(match[1]);
+  const number = Number(match[2]);
+  if (number < 1 || number > 10_000 || (shard !== null && shard < 1)) return null;
+  return { shard, slot: number - 1 };
 }
 
 /**
@@ -44,12 +90,20 @@ export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | '
 
 /** A message of one worker's view, to the person watching it. */
 export type LiveViewerMessage =
-  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the title of its test. */
-  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null }
+  /**
+   * A frame of the test's page, a JPEG in base64, the call it was taken at, the title of its test and, from a reporter
+   * that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's
+   * clock.
+   */
+  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number }
+  /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */
+  | { type: 'call-log'; log: LiveCallLog; test: string | null }
   /** Why no frame shows now. */
   | { type: 'refused'; message: string }
-  /** The view ended: the stream closes after it. */
-  | { type: 'end'; reason: LiveViewEnd };
+  /** The test ended, how when its worker says (`outcome`): a view that follows the worker's lane stays for the next. */
+  | { type: 'test-ended'; outcome: LiveTestOutcome | null }
+  /** The view ended, with how its test ended when that is why: the stream closes after it. */
+  | { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null };
 
 const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced', 'unshared'];
 
@@ -71,11 +125,23 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
         data: message.data,
         call: message.call ? readLiveCall(message.call) : null,
         test: readLiveTestTitle(message.test),
+        ...(isEpochMs(message.at) ? { at: message.at } : {}),
       };
+    case 'call-log': {
+      const log = readLiveCallLog(message.log);
+      return log ? { type: 'call-log', log, test: readLiveTestTitle(message.test) } : null;
+    }
     case 'refused':
       return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;
-    case 'end':
-      return ENDS.includes(message.reason as string) ? { type: 'end', reason: message.reason as LiveViewEnd } : null;
+    case 'test-ended':
+      return { type: 'test-ended', outcome: readLiveTestOutcome(message.outcome) };
+    case 'end': {
+      if (!ENDS.includes(message.reason as string)) return null;
+      const outcome = readLiveTestOutcome(message.outcome);
+      return outcome
+        ? { type: 'end', reason: message.reason as LiveViewEnd, outcome }
+        : { type: 'end', reason: message.reason as LiveViewEnd };
+    }
     default:
       return null;
   }

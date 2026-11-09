@@ -2032,6 +2032,14 @@ export const FAILURE_STORIES = [
         message: 'Your session is about to expire. Stay signed in?',
       },
       pageStateDropKeys: ['quote'],
+      // The warning Node writes to stderr the first time the worker loads a
+      // dependency that still requires `punycode`: noise next to the failure,
+      // as most of what a test writes is.
+      outputOnFail: {
+        stderr:
+          '(node:48213) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.\n' +
+          '(Use `node --trace-deprecation ...` to show where the warning was created)\n',
+      },
       // The CVV the helper typed last still holds focus, caret after its three
       // digits, when the test timeout stops the Pay click.
       pageInteraction: {
@@ -2509,7 +2517,7 @@ export const FAILURE_STORIES = [
             callLog: [
               "waiting for getByLabel('Delivery notes')",
               'locator resolved to <textarea id="delivery-notes"></textarea>',
-              'fill("Leave at the door")',
+              'fill("<hidden>")',
               'attempting fill action',
             ],
             frames,
@@ -2913,6 +2921,40 @@ export const SIMULATOR_ERRORS = {
   /** Joins cluster 2 (renamed email label — locator healing showcase). */
   emailLabelRenamed: FAILURE_STORIES[1].failingCases[0].error,
 };
+
+// ── Environment incident ────────────────────────────────────────────────────
+// The staging host that refuses every connection in the seeded incident run
+// and in the simulator's "Staging down" scenario: both build the error of a
+// test that failed there from these, so a live incident reads like the seeded one.
+
+/** The host the demo's environment incident cannot reach. */
+export const INCIDENT_HOST = 'staging.checkout.example.com';
+
+/**
+ * The staging page a checkout spec file opens first: the file's path without `tests/` and `.spec.ts`.
+ *
+ * @param {string} file
+ * @returns {string}
+ */
+export function incidentUrl(file) {
+  return `https://${INCIDENT_HOST}/${file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
+}
+
+/**
+ * The error of a test whose first navigation found the staging host refusing connections, as Playwright reports it,
+ * with the test's declaration as its frame.
+ *
+ * @param {{ file: string, declLine: number, declColumn: number }} test
+ * @returns {string}
+ */
+export function incidentNavigationError(test) {
+  const url = incidentUrl(test.file);
+  return (
+    `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
+    `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
+    `    at ${test.file}:${test.declLine}:${test.declColumn}`
+  );
+}
 
 /** Story lookup by cluster id. */
 export function storyByClusterId(clusterId) {
@@ -3651,11 +3693,11 @@ export const DEMO_PROJECTS = [
             params: { locator: "getByLabel('Email')", value: 'admin@example.com' },
           },
           {
-            title: 'Fill "********"',
+            title: 'Fill "<hidden>"',
             category: 'input',
             weight: 200,
             subtitle: "getByLabel('Password')",
-            params: { locator: "getByLabel('Password')" },
+            params: { locator: "getByLabel('Password')", value: '<hidden>' },
           },
           {
             title: 'Click',

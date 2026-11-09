@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ScmEntityState } from '../../server/utils/scm/ScmProvider';
+import { migrateToLatest } from './temp-db';
 
 const scm = vi.hoisted(() => ({
   /** Token per project; a project not listed has the default one. */
@@ -119,9 +119,7 @@ beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-heal-pr-state-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'checkout', repositoryUrl: 'https://github.com/acme/app' },
     { id: 2, name: 'search', repositoryUrl: 'https://github.com/acme/app' },

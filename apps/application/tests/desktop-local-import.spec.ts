@@ -34,6 +34,7 @@ async function installFakeBridge(page: Page) {
             return () => {};
           },
         },
+        window: { getCurrentWindow: () => ({ label: 'main' }) },
       },
     });
   });

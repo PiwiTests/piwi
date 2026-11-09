@@ -54,7 +54,7 @@ Lines above the code (CodeLens):
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
-Above a flaky test: its flaky rate and [top suspect](./flake-lab#from-the-editor-and-the-failure-pages), then
+Above a flaky test: Flake Lab's **flaky N%** and [top suspect](./flake-lab#from-the-editor-and-the-failure-pages), then
 **Reproduce this flake** and, once reproduced, **Verify the flake fix**, which run `piwi flake`; beside a team instance,
 **Reproduce this flake in the desktop app**.
 
@@ -92,9 +92,9 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 ## Piwi's MCP server for the agent
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
-connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: for
-`mcp.json` in VS Code, for the AI Assistant's MCP settings in a JetBrains IDE (an `mcpServers` entry running
-`mcp-remote`). It holds your API key: keep it out of the repository.
+connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: VS Code's
+`mcp.json` or Cursor's `mcpServers`, as you choose; the AI Assistant's in a JetBrains IDE, an `mcpServers` entry
+running `mcp-remote`. It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
 to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
@@ -103,6 +103,9 @@ your API keys. The desktop app keeps its own token. For the runs the editor star
 [Run control for agents](./agent-run-control).
 
 ## Commands
+
+VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Open the log**, **Get started** or
+**Refresh the latest run**.
 
 | Command | What it does |
 |---|---|

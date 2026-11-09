@@ -1,14 +1,15 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { hashForProject, computeInstanceId } from '../src/internal/support/instance-id.js';
-import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { getSetupFilePath, peekSetupInfo, readSetupInfo, writeSetupInfo } from '../src/internal/support/setup-file.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
-import { workerIndexOf } from '../src/internal/support/worker-index.js';
-import { detectCliFileFilters } from '../src/internal/support/cli-filters.js';
+import { parallelIndexOf, workerIndexOf } from '../src/internal/support/worker-index.js';
+import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../src/internal/support/cli-filters.js';
 
 const CI_KEYS = [
   'GITHUB_ACTIONS',
@@ -65,9 +66,9 @@ describe('hashForProject', () => {
 });
 
 describe('getSetupFilePath', () => {
-  it('lives in os.tmpdir() and embeds the project hash', () => {
+  it('lives in the private temp folder and embeds the project hash', () => {
     const p = getSetupFilePath('my-project');
-    expect(path.dirname(p)).toBe(os.tmpdir());
+    expect(path.dirname(p)).toBe(privateTempDir());
     const base = path.basename(p);
     expect(base.startsWith('piwi-dashboard-setup-'), base).toBeTruthy();
     expect(base.includes(hashForProject('my-project'))).toBeTruthy();
@@ -88,15 +89,71 @@ describe('detectCliFileFilters', () => {
   it('does not mistake value-taking flag values for files', () => {
     expect(detectCliFileFilters([...N, 'test', '-g', '@smoke'])).toEqual([]);
     expect(detectCliFileFilters([...N, 'test', '--grep', '@smoke', 'tests/a.spec.ts'])).toEqual(['tests/a.spec.ts']);
-    expect(detectCliFileFilters([...N, 'test', '-j', '4', '--project', 'chromium', 'a.spec.ts'])).toEqual([
+    expect(detectCliFileFilters([...N, 'test', '-j', '4', '--project', 'chromium', '--headed', 'a.spec.ts'])).toEqual([
       'a.spec.ts',
     ]);
+  });
+  it('reads every value-taking option as Playwright does', () => {
+    for (const args of [
+      ['--only-changed', 'origin/main'],
+      ['--last-failed', '--last-failed-file', 'ci/last-run.json'],
+      ['--test-list', 'smoke.txt'],
+      ['--tsconfig', 'tsconfig.e2e.json'],
+      ['--add-reporter', 'html'],
+      ['--update-snapshots', 'all'],
+      ['-u', 'missing'],
+      ['--shuffle', '42'],
+      ['--project', 'chromium', 'firefox'],
+    ]) {
+      expect(detectCliFileFilters([...N, 'test', ...args]), args.join(' ')).toEqual([]);
+    }
+    expect(detectCliFileFilters([...N, 'test', '--only-changed', '--headed', 'a.spec.ts'])).toEqual(['a.spec.ts']);
+  });
+  it('reads no filter from merge-reports, whose arguments name report folders', () => {
+    expect(detectCliFileFilters([...N, 'merge-reports', '--reporter', '@piwitests/reporter', './blobs'])).toEqual([]);
   });
   it('handles --flag=value forms (no extra token consumed)', () => {
     expect(detectCliFileFilters([...N, 'test', '--project=chromium', 'a.spec.ts'])).toEqual(['a.spec.ts']);
   });
   it('works when no explicit test subcommand is present', () => {
     expect(detectCliFileFilters([...N, 'a.spec.ts'])).toEqual(['a.spec.ts']);
+  });
+});
+
+describe('detectCliNarrowingFlags', () => {
+  const N = ['node', 'playwright'];
+  it('returns [] for a full-suite run', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--workers=4', '--project', 'chromium'])).toEqual([]);
+  });
+  it('names --test-list and --test-list-invert, whose file chooses the tests', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--test-list', 'smoke.txt'])).toEqual(['test-list']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--test-list-invert=quarantine.txt'])).toEqual(['test-list-invert']);
+  });
+  it('does not read a value as a flag', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--grep', '--last-failed'])).toEqual([]);
+  });
+  it('names --last-failed and --only-changed, with or without a ref', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--last-failed'])).toEqual(['last-failed']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--only-changed=origin/main'])).toEqual(['only-changed']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--only-changed', '--last-failed'])).toEqual([
+      'only-changed',
+      'last-failed',
+    ]);
+  });
+});
+
+describe('detectCliGrep', () => {
+  const N = ['node', 'playwright'];
+  it('reads the patterns Playwright hands to its runner rather than to config.grep', () => {
+    expect(detectCliGrep([...N, 'test', '--grep', '@smoke'])).toEqual({ grep: '@smoke' });
+    expect(detectCliGrep([...N, 'test', '-g', 'checkout', '-G', '@slow'])).toEqual({
+      grep: 'checkout',
+      grepInvert: '@slow',
+    });
+    expect(detectCliGrep([...N, 'test', '--grep-invert=@flaky'])).toEqual({ grepInvert: '@flaky' });
+  });
+  it('is empty for a full-suite run', () => {
+    expect(detectCliGrep([...N, 'test', '--workers=4', 'a.spec.ts'])).toEqual({});
   });
 });
 
@@ -314,10 +371,7 @@ describe('collectSourceFrames', () => {
       ].join('\n');
       const frames = collectSourceFrames(error, spec, 40, { projectRoot: root, context: 2 });
       // The node_modules frame is dropped; helper (innermost in-project) comes before the spec.
-      expect(frames.map((f) => f.file)).toEqual([
-        path.join('tests', 'helper.ts'),
-        path.join('tests', 'checkout.spec.ts'),
-      ]);
+      expect(frames.map((f) => f.file)).toEqual(['tests/helper.ts', 'tests/checkout.spec.ts']);
       expect(frames[0]!.line).toBe(15);
       expect(frames[0]!.snippet).toContain('> ');
       expect(frames[0]!.file.startsWith('..')).toBe(false); // project-relative
@@ -332,7 +386,7 @@ describe('collectSourceFrames', () => {
       const error = `Error: boom\n    at internal (${lib}:5:3)`;
       const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 2 });
       expect(frames).toHaveLength(1);
-      expect(frames[0]!.file).toBe(path.join('tests', 'checkout.spec.ts'));
+      expect(frames[0]!.file).toBe('tests/checkout.spec.ts');
       expect(frames[0]!.line).toBe(42);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -347,7 +401,19 @@ describe('collectSourceFrames', () => {
       const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
       expect(performance.now() - started).toBeLessThan(1000);
       // The frame sits past the scanned start of the text, so the test file stands in.
-      expect(frames.map((f) => f.file)).toEqual([path.join('tests', 'checkout.spec.ts')]);
+      expect(frames.map((f) => f.file)).toEqual(['tests/checkout.spec.ts']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reads a relative frame from the project root, wherever the run started', () => {
+    const { root, spec } = makeProject();
+    try {
+      // The frame the error text appends is relative to the config's folder, not the working directory.
+      const error = 'Error: boom\n    at tests/checkout.spec.ts:20:5';
+      const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
+      expect(frames.map((f) => `${f.file}:${f.line}`)).toEqual(['tests/checkout.spec.ts:20']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -380,7 +446,7 @@ describe('readSetupInfo', () => {
   it('round-trips setup info and deletes the file', () => {
     const projectName = 'piwi-setup-roundtrip-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(file, JSON.stringify({ runId: 42, setupToken: 'tok', projectName }), 'utf8');
+    fs.writeFileSync(file, JSON.stringify({ runId: 42, setupToken: 'tok', projectName }), { mode: 0o600 });
     try {
       const info = readSetupInfo(projectName);
       expect(info).toEqual({ runId: 42, setupToken: 'tok', projectName });
@@ -391,15 +457,102 @@ describe('readSetupInfo', () => {
     }
   });
 
+  it("reads this process's registration alone, never another run's of the same project", () => {
+    const projectName = 'piwi-setup-two-runs-' + Date.now();
+    // Another run of the project on this machine registered too: Playwright ran its global setup in its own runner.
+    const theirs = getSetupFilePath(projectName, process.pid + 1);
+    fs.writeFileSync(theirs, JSON.stringify({ runId: 7, setupToken: 'theirs', projectName }), 'utf8');
+    try {
+      expect(peekSetupInfo(projectName)).toBe(null);
+      expect(readSetupInfo(projectName)).toBe(null);
+      writeSetupInfo({ runId: 8, setupToken: 'ours', projectName });
+      expect(readSetupInfo(projectName)).toEqual({ runId: 8, setupToken: 'ours', projectName });
+      // The other run's registration waits for its own reporter.
+      expect(JSON.parse(fs.readFileSync(theirs, 'utf8')).runId).toBe(7);
+    } finally {
+      fs.rmSync(theirs, { force: true });
+      fs.rmSync(getSetupFilePath(projectName), { force: true });
+    }
+  });
+
   it('returns null when projectName does not match', () => {
     const projectName = 'piwi-setup-mismatch-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(file, JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }), 'utf8');
+    fs.writeFileSync(file, JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }), {
+      mode: 0o600,
+    });
     try {
       expect(readSetupInfo(projectName)).toBe(null);
     } finally {
       if (fs.existsSync(file)) fs.unlinkSync(file);
     }
+  });
+});
+
+describe('a setup file this user did not write', () => {
+  const posix = process.platform !== 'win32';
+  let projectName: string;
+  let dir: string;
+  let warnings: string[];
+
+  beforeEach(() => {
+    projectName = `piwi-setup-planted-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-setup-planted-'));
+    warnings = [];
+    vi.spyOn(console, 'warn').mockImplementation((line: string) => void warnings.push(line));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A registration of the project's, as another run would write it. */
+  const registration = () => JSON.stringify({ runId: 7, setupToken: 'theirs', projectName });
+
+  /** A symbolic link at the setup file's path to a registration; false where links cannot be made. */
+  function plantLink(): boolean {
+    const target = path.join(dir, 'setup.json');
+    fs.writeFileSync(target, registration(), { mode: 0o600 });
+    try {
+      fs.symlinkSync(target, getSetupFilePath(projectName));
+      return true;
+    } catch {
+      return false; // creating a link needs a privilege some systems do not grant
+    }
+  }
+
+  it('is ignored when it is a symbolic link, with one warning saying why', () => {
+    if (!plantLink()) return;
+    expect(peekSetupInfo(projectName)).toBe(null);
+    expect(readSetupInfo(projectName)).toBe(null);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('[Piwi Dashboard] Ignoring');
+    expect(warnings[0]).toContain('it is a symbolic link');
+  });
+
+  it.skipIf(!posix)('is ignored when other users may write to it', () => {
+    fs.writeFileSync(getSetupFilePath(projectName), registration(), { mode: 0o600 });
+    fs.chmodSync(getSetupFilePath(projectName), 0o620);
+    expect(readSetupInfo(projectName)).toBe(null);
+    expect(warnings.join('\n')).toContain('other users may write to it');
+  });
+
+  it.skipIf(!posix)('is ignored when another user owns it', () => {
+    fs.writeFileSync(getSetupFilePath(projectName), registration(), { mode: 0o600 });
+    vi.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1);
+    expect(peekSetupInfo(projectName)).toBe(null);
+    expect(warnings.join('\n')).toContain('another user owns it');
+  });
+
+  it('is replaced by the global setup, never written through, and its own file is read', () => {
+    const linked = plantLink();
+    writeSetupInfo({ runId: 8, setupToken: 'ours', projectName });
+    if (linked) expect(JSON.parse(fs.readFileSync(path.join(dir, 'setup.json'), 'utf8')).runId).toBe(7);
+    if (posix) expect(fs.statSync(getSetupFilePath(projectName)).mode & 0o777).toBe(0o600);
+    expect(readSetupInfo(projectName)).toEqual({ runId: 8, setupToken: 'ours', projectName });
+    expect(warnings).toEqual([]);
   });
 });
 
@@ -420,6 +573,22 @@ describe('workerIndexOf', () => {
 
   it('returns null when both are null', () => {
     expect(workerIndexOf({ workerIndex: null, parallelIndex: null })).toBe(null);
+  });
+});
+
+describe('parallelIndexOf', () => {
+  it("returns the worker's lane, 0 included", () => {
+    expect(parallelIndexOf({ workerIndex: 5, parallelIndex: 1 })).toBe(1);
+    expect(parallelIndexOf({ workerIndex: 5, parallelIndex: 0 })).toBe(0);
+  });
+
+  it('returns null without a non-negative integer', () => {
+    expect(parallelIndexOf({ workerIndex: 5 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: -1 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: 1.5 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: '1' })).toBe(null);
+    expect(parallelIndexOf(null)).toBe(null);
+    expect(parallelIndexOf(undefined)).toBe(null);
   });
 });
 

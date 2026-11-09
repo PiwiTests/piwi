@@ -50,7 +50,7 @@ Piwi is a reporter that uploads from your Playwright run, a server (or the [desk
 
 Piwi is Playwright-only by design, pre-1.0, and not an "ask AI" button. [Why Piwi?](./comparison#when-piwi-is-not-the-right-choice) states each limit and says which tool fits better when Piwi does not.
 
-## Where to go next
+## Related
 
 - [Getting started](./getting-started) — pick a path and land your first run
 - [Core concepts](./concepts) — the vocabulary (run, execution, cluster, fingerprint, baseline)

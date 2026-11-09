@@ -24,6 +24,11 @@ brittle already finds the element alone, the results open at once, and **Scope t
 **anchors** step: stable parents to scope the locator to, with a live match count, after which the results show again
 with the scoped locators. When none finds it alone, the anchors step comes first.
 
+<figure>
+  <video src="/videos/picker-pick-loop.mp4" autoplay loop muted playsinline controls aria-label="Picking on a shop page: the outline and the locator follow the pointer, the arrow keys walk up to the parents and back, and a click on Checkout opens its ranked locators"></video>
+  <figcaption>Hover, walk the tree with ↑ and ↓, click: the ranked locators open.</figcaption>
+</figure>
+
 **Enter** picks too: the highlighted element when the pointer is on one, otherwise the element that has the keyboard
 focus, so a control reached with Tab is picked without the mouse. **Esc** cancels the pick.
 

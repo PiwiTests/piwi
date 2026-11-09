@@ -1,14 +1,24 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { createGlobalSetup } from '../src/public/global-setup.js';
-import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { relayRunLog } from '../src/internal/support/run-log.js';
+import type * as RunLog from '../src/internal/support/run-log.js';
+import { PiwiDashboardReporter } from '../src/public/reporter.js';
+import { getSetupFilePath, peekSetupFailure, readSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   ariaSampleIdentity,
   clearAriaSampleFile,
   loadAriaSampleSet,
   resetAriaSampleCache,
 } from '../src/internal/support/aria-sampling.js';
+
+vi.mock('../src/internal/support/run-log.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof RunLog>();
+  return { ...actual, relayRunLog: vi.fn(actual.relayRunLog) };
+});
 
 interface RecordedReq {
   method: string;
@@ -107,8 +117,30 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it('registers no run when streaming is off, while still fetching the sample set', async () => {
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: 'batch-only' }] });
+      if (req.url === '/api/projects/9/aria-sampling') return jsonRes(res, 200, { tests: [] });
+      return jsonRes(res, 200, { runId: 5, setupToken: 't' });
+    });
+    cleanupNames.push('batch-only');
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'batch-only', streaming: false });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      // The run is created by the batch upload at the end; one registered here would wait for a stream that never comes.
+      expect(requests.map((r) => r.url)).not.toContain('/api/test-runs/setup');
+      expect(requests.map((r) => r.url)).toContain('/api/projects/9/aria-sampling');
+      expect(fs.existsSync(getSetupFilePath('batch-only'))).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('does not fetch the sample set when sampleAriaOnPass is off', async () => {
-    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, setupToken: 't' }));
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 5, setupToken: 't' }),
+    );
     cleanupNames.push('sampling-off');
     try {
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'sampling-off', sampleAriaOnPass: false });
@@ -145,9 +177,7 @@ describe('createGlobalSetup', () => {
       const patterns = uploads.map((r) => JSON.parse(r.body).manifest.routes[0].pattern).sort();
       expect(patterns).toEqual(['/cart', '/users']);
     } finally {
-      await Promise.all(
-        [server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))),
-      );
+      await Promise.all([server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))));
     }
   });
 
@@ -167,7 +197,56 @@ describe('createGlobalSetup', () => {
       expect(body.projectName).toBe('global-setup-register');
 
       const info = readSetupInfo('global-setup-register');
-      expect(info).toEqual({ runId: 42, setupToken: 'tok-abc', projectName: 'global-setup-register' });
+      // An instance that names no page for the run: the run's page under the address the reporter reached.
+      expect(info).toEqual({
+        runId: 42,
+        setupToken: 'tok-abc',
+        projectName: 'global-setup-register',
+        runUrl: `${url}/test-runs/42`,
+      });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("keeps a CI run's registration and its live view key when the workers' log relay cannot start", async () => {
+    const key = `pdl_${'k'.repeat(43)}`;
+    const { server, url } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 43, setupToken: 'tok', liveView: { key } }),
+    );
+    const projectName = 'global-setup-relay-fails';
+    cleanupNames.push(projectName);
+    vi.mocked(relayRunLog).mockImplementationOnce(() => {
+      throw new Error('EPERM: operation not permitted');
+    });
+    vi.stubEnv('CI', 'true');
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(relayRunLog).toHaveBeenCalled();
+      expect(readSetupInfo(projectName)).toMatchObject({ runId: 43, setupToken: 'tok', liveViewKey: key });
+      expect(peekSetupFailure(projectName)).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('leaves no registration behind when the run stops before its tests', async () => {
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 200, { runId: 9, setupToken: 't' }));
+    const projectName = 'global-setup-stopped';
+    cleanupNames.push(projectName);
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(fs.existsSync(getSetupFilePath(projectName))).toBe(true);
+      // A spec that does not load: Playwright ends the run without calling `onBegin`.
+      const reporter = new PiwiDashboardReporter({
+        serverUrl: url,
+        projectName,
+        uploadReport: false,
+        uploadTraces: false,
+      });
+      await reporter.onEnd({ status: 'failed' } as any);
+      expect(fs.existsSync(getSetupFilePath(projectName))).toBe(false);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -249,8 +328,57 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it("does not take a reporter whose path holds 'piwi' for Piwi's", async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 1, setupToken: 't' }),
+    );
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-piwi-path' });
+      // The project's own reporter, in a folder named after Piwi, as Playwright hands it: resolved to its path.
+      await setupFn({
+        configFile: '/home/me/piwi-shop/playwright.config.ts',
+        reporter: [['/home/me/piwi-shop/reporters/slack.ts', { channel: '#qa' }]],
+      });
+      expect(requests).toHaveLength(0);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("finds Piwi's reporter and its options by the path Playwright resolved it to", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-entry-'));
+    const pkg = path.join(project, 'node_modules', '@piwitests', 'reporter');
+    fs.mkdirSync(path.join(pkg, 'dist'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, 'package.json'),
+      JSON.stringify({ name: '@piwitests/reporter', main: 'dist/index.js' }),
+    );
+    fs.writeFileSync(path.join(pkg, 'dist', 'index.js'), '');
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 4, setupToken: 't' }),
+    );
+    cleanupNames.push('global-setup-resolved-entry');
+    try {
+      await createGlobalSetup()({
+        configFile: path.join(project, 'playwright.config.ts'),
+        reporter: [
+          ['list', null],
+          [
+            fs.realpathSync(path.join(pkg, 'dist', 'index.js')),
+            { serverUrl: url, projectName: 'global-setup-resolved-entry' },
+          ],
+        ],
+      });
+      expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('swallows HTTP failures without throwing, and still chains userSetup', async () => {
-    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { error: 'boom' }));
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { message: 'boom' }));
+    cleanupNames.push('global-setup-http-fail');
     try {
       let userSetupCalled = false;
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-http-fail' }, async () => {
@@ -258,7 +386,10 @@ describe('createGlobalSetup', () => {
       });
       await expect(setupFn({ reporter: [PIWI_REPORTER_ENTRY] })).resolves.not.toThrow();
       expect(userSetupCalled).toBe(true);
+      // The reporter says why the run has no live view.
+      expect(peekSetupFailure('global-setup-http-fail')).toBe('Request failed with status 500: boom');
       expect(readSetupInfo('global-setup-http-fail')).toBeNull();
+      expect(peekSetupFailure('global-setup-http-fail')).toBeNull();
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -385,8 +516,13 @@ describe('createGlobalSetup', () => {
       try {
         const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'base-url-remote', checkBaseUrl: true });
         const connectOptions = { wsEndpoint: 'ws://grid.example.test/' };
-        await setupFn({ reporter: [PIWI_REPORTER_ENTRY], projects: [{ name: 'grid', use: { baseURL: `${url}/`, connectOptions } }] });
-        expect(logs.some((l) => l.startsWith(`[Piwi Dashboard] Base URL answered: ${url}/. The check ran from`))).toBe(true);
+        await setupFn({
+          reporter: [PIWI_REPORTER_ENTRY],
+          projects: [{ name: 'grid', use: { baseURL: `${url}/`, connectOptions } }],
+        });
+        expect(logs.some((l) => l.startsWith(`[Piwi Dashboard] Base URL answered: ${url}/. The check ran from`))).toBe(
+          true,
+        );
       } finally {
         spy.mockRestore();
         await new Promise<void>((r) => server.close(() => r()));

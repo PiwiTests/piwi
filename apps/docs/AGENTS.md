@@ -18,7 +18,7 @@ by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
-| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
+| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts`, and the Settings pages whose fields name each variable, `apps/application/shared/settings-metadata.ts` | `scripts/generate-configuration.mjs` |
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts`; its "The pieces" and "Choosing a setup" sections from `apps/application/shared/piwi-ecosystem.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md`, read by `apps/application/shared/changelog.ts` (the MCP `get_release_notes` parser) | `scripts/generate-whats-new.mjs` |
@@ -34,6 +34,9 @@ by `docs:dev` and `docs:build`:
 - **A generator runs with only `apps/docs` installed**, since the docs workflows install nothing else. A package a
   registry imports at runtime, such as `zod`, is therefore a devDependency here, and the generator resolves it from here
   through a jiti alias (see `scripts/generate-mcp-tools.mjs`).
+- **`docs:gen` also runs on the root install alone**: the dashboard's unit test job runs it before the tests, with no
+  `apps/docs` install. A generator imports only Node, `jiti`, `typescript` and what the app's registries import; a
+  package only `apps/docs` installs breaks `Dashboard unit tests`.
 - **The band labels in `ANALYTICS_BANDS` are the headings of the Analytics widgets page**, and the in-app help links
   them: renaming one is a link change.
 - **Every reporter option has a JSDoc comment** stating its default: the Reporter options page is generated from those
@@ -55,13 +58,13 @@ by `docs:dev` and `docs:build`:
 ### The API reference
 
 There is **no `apps/docs/api.md`, and you must not create one.** The auto-generated OpenAPI spec (`/_openapi.json`) and the
-self-contained in-app reference at `/docs` in the running app are the single source of truth for API documentation.
+self-contained in-app reference at `/settings/api` in the running app are the single source of truth for API documentation.
 The in-app page renders the spec with no third-party CDN, so it works offline and air-gapped.
 
 When documenting a feature here, link to the live demo reference
-(`[API docs](https://piwitests.dev/demo/docs)`) and refer to the self-hosted reference as inline code
-`/docs` rather than inlining endpoint descriptions. Do **not** write a bare `[API docs](/docs)` markdown link:
-`/docs` is a route on the running app, not a page on this docs site, so VitePress's dead-link check fails the
+(`[API docs](https://piwitests.dev/demo/settings/api)`) and refer to the self-hosted reference as inline code
+`/settings/api` rather than inlining endpoint descriptions. Do **not** write a bare `[API docs](/settings/api)` markdown
+link: `/settings/api` is a route on the running app, not a page on this docs site, so VitePress's dead-link check fails the
 build. Endpoint documentation is authored in the handler's `defineRouteMeta({ openAPI: … })` block: see
 [`../application/server/api/AGENTS.md`](../application/server/api/AGENTS.md#openapi-annotations).
 
@@ -111,7 +114,7 @@ which the drift test also reads.
 ### Where a new page goes
 
 - **A new feature** adds a catalog entry and one page under `features/`. The entry's `title` is the page's H1 and its
-  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the six
+  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
   feature groups an entry's `doc` is a whole page, never a `#section`; only the Self-hosting group may point into a
   section of an operator page. A page stays single-purpose: if it needs two sentences to say what it is for, it is two
   pages (`storage` + `database` was one).
@@ -140,8 +143,10 @@ which the drift test also reads.
 
 ### Page types and word budgets
 
-Every page is one type, with one word budget and no allowlist. A page over its budget is cut, or split into two pages;
-it is never excused. The budget counts the page body without its front matter, code blocks included.
+Every page is one type, with one word budget and no allowlist. The budget counts the page's prose, figure captions
+included; it leaves out the front matter, fenced code blocks and an image's markup and alt text. A page over it is
+split into two pages, or moves a section to the page it belongs on; it is never excused, nor trimmed of true facts
+sentence by sentence.
 
 | Type | Answers | Pages | Budget |
 |---|---|---|---:|
@@ -160,8 +165,14 @@ flags, events): link the reference page instead of copying it.
 
 - A `description` in its front matter: one sentence of at least 50 characters, used as the search snippet and the
   social card text. The home page is the exception: it uses the site description in `config.mts`.
+- A `<title>` of at most 60 characters that names Playwright: the site's `TITLE_TEMPLATE` (`.vitepress/page-meta.mts`)
+  adds `| Piwi for Playwright` to its front matter `title`. A recipe keeps its sidebar label as `title` and names the
+  search it answers in its own `titleTemplate` (`"Slow Playwright suite: :title | Piwi"`). `docs-page-meta.test.ts`
+  checks every page on disk, the generated ones once `docs:gen` has written them.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
+- An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
+  its native size on a click. The drift test refuses a Markdown image and a `doc-screenshot` wrapper.
 - A new term goes into `concepts.md` in the change that introduces it.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet
@@ -235,6 +246,9 @@ its heading text or update every link the test names.
 - **`snippets/` holds the code blocks several surfaces share.** A page includes one with `<<< @/snippets/…`; a surface
   that cannot include a file (`README.md`, `DOCKER_HUB.md`, a package README) carries a byte-for-byte copy, which the
   drift test compares (`SNIPPET_COPIES`).
+- **What Piwi prints is quoted from the code.** A command's output or a served sample shown on a page (`init`, the
+  reporter's lines, the gate, a metrics scrape) is a `snippets/*.txt` that
+  `apps/application/tests/unit/docs-checkpoints.test.ts` renders with the code that prints it: change both together.
 - American English, sentence-case headings, and the [cross-platform shell commands](#cross-platform-shell-commands) rule.
 - Diagrams are theme-aware SVG assets under `apps/docs/public/` — commit the asset rather than embedding a large inline
   `<svg>` in prose.
@@ -293,8 +307,7 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
 - **The docs gallery's hero** (`home`) is a light/dark diagonal split, `split: true`, so it recaptures with one command
   like any other image: `npm run app:screens -- home`. It is captured at `deviceScaleFactor: 2` and written at
   `outputWidth` 1152, the width of the featured tile: anything wider is bytes the reader never sees.
-- **The other gallery images** (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at
-  **1280×720**.
+- **The other gallery images** (`flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at **1280×720**.
 - **The README's quick tour** is six scenes tagged `readme` (`tour-*.png`): whole screens at one size and in one theme,
   so the two-column grid lines up. Recapture them together (`npm run app:screens -- --tag readme`), with the server
   started with an AI provider so the diagnosis panel shows its configured state (`PIWI_AI_PROVIDER=anthropic` and any
@@ -303,7 +316,8 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
   the harness renders icons from the bundled collection and runs offline, so the image stays reproducible as the UI
   moves.
 - **Run `npm run app:screens:check` after adding or deleting an image**: it fails on an image with no scene and on a
-  scene whose image is missing.
+  scene whose image is missing. An image no page, README or extension README shows is deleted with its scene: the
+  drift test fails on it.
 
 Images from other pipelines, which the harness's `--check` leaves alone (`EXTERNAL_DOCS_IMAGES` and the `picker-`,
 `vscode-` and `jetbrains-` prefixes):
@@ -313,11 +327,14 @@ Images from other pipelines, which the harness's `--check` leaves alone (`EXTERN
   local demo build (`npm run app:generate:demo`), and needs an ffmpeg with libx264 (`--ffmpeg <path>` or `FFMPEG`);
 - the browser extension's: `picker-*.png` at 1280 × 800, the size the stores take, except the DevTools pane, and
   `tested-elements-overlay.png` at 1400 × 900, by `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots`
-  from `apps/extension/`;
+  from `apps/extension/`, which also writes the loops of `public/videos/` (`picker-*-loop.mp4`: a tool in use, muted,
+  with an ffmpeg that has libx264, `FFMPEG` or on the PATH). A loop goes in a `<figure>` as a `<video>` with
+  `autoplay loop muted playsinline controls` and an `aria-label` saying what it shows;
 - the editor extensions' (`vscode-*.png`, `jetbrains-*.png`), by `apps/vscode/scripts/take-screenshots.mjs` and
   `apps/jetbrains/scripts/take-screenshots.mjs`. They open one fixture project
   (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb; each script's
-  header says how to run it. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
+  header says how to run it. `apps/vscode/scripts/record-loop.mjs` films `editor-recording-loop.mp4` the same way, the
+  recording's browser beside the editor on one screen ffmpeg captures. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
   found about each product while the three pipelines were built. The README's *In your browser and your editor* row
   and the Marketplace READMEs show the same images.
 

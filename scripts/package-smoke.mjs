@@ -6,9 +6,10 @@
 // and runs this on Linux, macOS and Windows (`package-smoke` in .github/workflows/ci.yml).
 //
 // Usage:
-//   node scripts/package-smoke.mjs <dir>
+//   node scripts/package-smoke.mjs <dir> [--playwright floor]
 //
-// <dir> holds the two tarballs. From the repository root, after building the reporter and
+// <dir> holds the two tarballs. The suite runs on the Playwright version the repository locks, or with
+// `--playwright floor` on the oldest one the reporter supports (scripts/playwright-floor.mjs). From the repository root, after building the reporter and
 // the application, pack them into an existing <dir>:
 //   npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination <dir>
 //
@@ -22,6 +23,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { playwrightFloor } from './playwright-floor.mjs';
 
 const PROJECT_NAME = 'package-smoke';
 const SERVER_READY_TIMEOUT_MS = 180_000;
@@ -31,7 +33,7 @@ const isWindows = process.platform === 'win32';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
 const usage = `Usage:
-  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz>`;
+  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz> [--playwright floor]`;
 
 // The suite: one passing, one failing and one skipped test. The capture fixtures load in
 // the worker, and no test opens a page, so no browser is needed.
@@ -59,7 +61,6 @@ function findTarball(dir, prefix) {
   return path.resolve(dir, matches[0]);
 }
 
-// The suite runs on the Playwright version the repository is tested with.
 function lockedVersion(name) {
   const lock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8'));
   const version = lock.packages[`node_modules/${name}`]?.version;
@@ -221,10 +222,10 @@ function expectEqual(actual, expected, what) {
   }
 }
 
-async function smoke(tarballDir, projectDir, onServer) {
+async function smoke(tarballDir, projectDir, playwright, onServer) {
   const serverTarball = findTarball(tarballDir, 'piwitests-server-');
   const reporterTarball = findTarball(tarballDir, 'piwitests-reporter-');
-  const playwrightVersion = lockedVersion('@playwright/test');
+  const playwrightVersion = playwright === 'floor' ? playwrightFloor() : lockedVersion('@playwright/test');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -281,13 +282,14 @@ async function smoke(tarballDir, projectDir, onServer) {
     throw new Error('the server did not create .data/piwi.db in the directory it was started from');
   }
   log(
-    `Passed: server ${serverVersion} and reporter ${reporterVersion} on ${process.platform}, Node ${process.version}`,
+    `Passed: server ${serverVersion} and reporter ${reporterVersion} with Playwright ${playwrightVersion} on ${process.platform}, Node ${process.version}`,
   );
 }
 
 async function main() {
-  const tarballDir = process.argv[2];
-  if (!tarballDir) {
+  const [tarballDir, ...options] = process.argv.slice(2);
+  const playwright = options[0] === '--playwright' ? options[1] : undefined;
+  if (!tarballDir || options.length !== (playwright === 'floor' ? 2 : 0)) {
     console.error(usage);
     return 2;
   }
@@ -302,7 +304,7 @@ async function main() {
   });
 
   try {
-    await smoke(tarballDir, projectDir, (started) => (server = started));
+    await smoke(tarballDir, projectDir, playwright, (started) => (server = started));
   } catch (error) {
     console.error(`[package-smoke] FAILED: ${error.message}`);
     if (error.cause) console.error(`[package-smoke] Cause: ${error.cause}`);

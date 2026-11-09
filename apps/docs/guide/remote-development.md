@@ -9,10 +9,13 @@ lang: en-US
 In remote development the editor's window is on your computer, while the code, the
 [editor service](/features/editors) and the test runs are on another machine: a server over SSH, WSL, a dev container
 or a codespace. What the editor shows from the service works there as it does on your computer: failures, runs,
-[pausing and stepping](/features/editor-run-control), a headless stop's image and Pick on it,
+[pausing and stepping](/features/editor-run-control), a headless stop's live preview and Pick on it,
 [code from a pause](/features/editor-stop-code). [Piwi Picker](/features/extension) is the part that needs a word: it
 runs in the browser on your computer and reaches the editor through a pairing address on the loopback interface,
 which in remote development is the local end of a forwarded port.
+
+The editor's **Watch live** and **Interact** controls use its existing connection. They need no Picker pairing or
+extra port forwarding. The steps below are for using Picker's separate Runs window and Send to editor.
 
 ## VS Code
 

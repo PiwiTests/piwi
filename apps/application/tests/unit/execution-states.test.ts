@@ -1,13 +1,13 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { FailureVerdict } from '#shared/failure-verdict';
 import type { Situation } from '#shared/situation';
 import type { NextStep } from '#shared/next-step';
 import type { DidNotRunExplanation } from '#shared/did-not-run';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * The execution detail of a test that is not a plain failure, against an
@@ -45,9 +45,7 @@ async function detail(id: number, opts: { aiConfigured?: boolean } = {}): Promis
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'admin' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, title: 'toggles dark mode', filePath: 'tests/admin/settings.spec.ts' },
@@ -62,41 +60,43 @@ beforeAll(async () => {
   });
   const failed = { retry: 0, status: 'failed', duration: 2400, startedAt: 1_000 };
   const passed = { retry: 1, status: 'passed', duration: 4800, startedAt: 4_000 };
-  await db.insert(schema.testRunsCases).values([
-    // The failed first attempt and the passing retry of one test, each its own row.
-    {
-      id: 10,
-      testRunId: 1,
-      testCaseId: 1,
-      browserName: 'Chromium',
-      status: 'failed',
-      retries: 0,
-      error: SETTINGS_ERROR,
-      steps: [{ title: "expect(locator('html')).toHaveAttribute()", duration: 2000, failed: true }],
-      attempts: [failed],
-    },
-    {
-      id: 11,
-      testRunId: 1,
-      testCaseId: 1,
-      browserName: 'Chromium',
-      status: 'passed',
-      retries: 1,
-      isNewFlaky: 1,
-      steps: [{ title: "expect(locator('html')).toHaveAttribute()", duration: 300 }],
-      attempts: [failed, passed],
-    },
-    // A retry pass whose failed attempt was never stored as its own row.
-    {
-      id: 12,
-      testRunId: 1,
-      testCaseId: 2,
-      browserName: 'Chromium',
-      status: 'passed',
-      retries: 1,
-      attempts: [failed, passed],
-    },
-  ]);
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts([
+      // The failed first attempt and the passing retry of one test, each its own row.
+      {
+        id: 10,
+        testRunId: 1,
+        testCaseId: 1,
+        browserName: 'Chromium',
+        status: 'failed',
+        retries: 0,
+        error: SETTINGS_ERROR,
+        steps: [{ title: "expect(locator('html')).toHaveAttribute()", duration: 2000, failed: true }],
+        attempts: [failed],
+      },
+      {
+        id: 11,
+        testRunId: 1,
+        testCaseId: 1,
+        browserName: 'Chromium',
+        status: 'passed',
+        retries: 1,
+        isNewFlaky: 1,
+        steps: [{ title: "expect(locator('html')).toHaveAttribute()", duration: 300 }],
+        attempts: [failed, passed],
+      },
+      // A retry pass whose failed attempt was never stored as its own row.
+      {
+        id: 12,
+        testRunId: 1,
+        testCaseId: 2,
+        browserName: 'Chromium',
+        status: 'passed',
+        retries: 1,
+        attempts: [failed, passed],
+      },
+    ]),
+  );
 
   // Run 2 stopped at its failure budget after one failure; run 3 after two.
   await db.insert(schema.testCases).values([
@@ -109,21 +109,23 @@ beforeAll(async () => {
     { id: 3, projectId: 1, status: 'interrupted', failedTests: 2, startTime: new Date('2026-09-03T10:00:00Z') },
   ]);
   const cartError = 'Error: expect(locator).toHaveText(expected) failed\n    at tests/checkout/cart.spec.ts:9:5';
-  await db.insert(schema.testRunsCases).values([
-    { id: 30, testRunId: 2, testCaseId: 3, status: 'failed', line: 4, column: 3, error: cartError },
-    { id: 31, testRunId: 2, testCaseId: 4, status: 'didnotrun', didNotRunReason: 'max-failures' },
-    {
-      id: 32,
-      testRunId: 2,
-      testCaseId: 5,
-      status: 'didnotrun',
-      didNotRunReason: 'previous-failure',
-      blockedBy: 'tests/checkout/cart.spec.ts:4:3',
-    },
-    { id: 40, testRunId: 3, testCaseId: 3, status: 'failed', error: cartError },
-    { id: 41, testRunId: 3, testCaseId: 5, status: 'timedOut', error: 'Test timeout of 30000ms exceeded.' },
-    { id: 42, testRunId: 3, testCaseId: 4, status: 'didnotrun', didNotRunReason: 'max-failures' },
-  ]);
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts([
+      { id: 30, testRunId: 2, testCaseId: 3, status: 'failed', line: 4, column: 3, error: cartError },
+      { id: 31, testRunId: 2, testCaseId: 4, status: 'didnotrun', didNotRunReason: 'max-failures' },
+      {
+        id: 32,
+        testRunId: 2,
+        testCaseId: 5,
+        status: 'didnotrun',
+        didNotRunReason: 'previous-failure',
+        blockedBy: 'tests/checkout/cart.spec.ts:4:3',
+      },
+      { id: 40, testRunId: 3, testCaseId: 3, status: 'failed', error: cartError },
+      { id: 41, testRunId: 3, testCaseId: 5, status: 'timedOut', error: 'Test timeout of 30000ms exceeded.' },
+      { id: 42, testRunId: 3, testCaseId: 4, status: 'didnotrun', didNotRunReason: 'max-failures' },
+    ]),
+  );
 
   // Run 4 stopped after one test failed on both its attempts, while another
   // test failed once and passed on retry: one failed test, three failed rows.
@@ -135,20 +137,22 @@ beforeAll(async () => {
     flakyTests: 1,
     startTime: new Date('2026-09-04T10:00:00Z'),
   });
-  await db.insert(schema.testRunsCases).values([
-    { id: 50, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
-    { id: 51, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 1, error: cartError },
-    { id: 52, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
-    { id: 53, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'passed', retries: 1 },
-    {
-      id: 54,
-      testRunId: 4,
-      testCaseId: 4,
-      browserName: 'Chromium',
-      status: 'didnotrun',
-      didNotRunReason: 'max-failures',
-    },
-  ]);
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts([
+      { id: 50, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
+      { id: 51, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 1, error: cartError },
+      { id: 52, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
+      { id: 53, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'passed', retries: 1 },
+      {
+        id: 54,
+        testRunId: 4,
+        testCaseId: 4,
+        browserName: 'Chromium',
+        status: 'didnotrun',
+        didNotRunReason: 'max-failures',
+      },
+    ]),
+  );
 });
 
 describe('a test that passed on retry', () => {

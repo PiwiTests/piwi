@@ -1,13 +1,21 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { applyOptionsToEnv, originEnv, resolveOptions, usedDotEnv } from '../src/internal/config/env.js';
+import {
+  applyOptionsToEnv,
+  ignoredEnvValues,
+  normalizeBoolEnv,
+  originEnv,
+  resolveOptions,
+  usedDotEnv,
+} from '../src/internal/config/env.js';
 import { wrapConfig } from '../src/public/config-wrapper.js';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath } from '../src/internal/support/setup-file.js';
+import { getReporterVersion } from '../src/internal/support/reporter-version.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import { startServer, jsonRes, fakeConfig, fakeSuite, type FakeServer } from './_helpers.js';
 
@@ -174,6 +182,42 @@ describe('resolveOptions', () => {
     expect(resolveOptions({ submitTimeout: 5000 }).submitTimeout).toBe(5000);
   });
 
+  it('keeps the default of a number variable it cannot read, PIWI_SUBMIT_TIMEOUT=15m included, and names it', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '15m';
+    expect(resolveOptions({}).submitTimeout).toBe(15 * 60 * 1000);
+    expect(ignoredEnvValues()).toEqual([{ name: 'PIWI_SUBMIT_TIMEOUT', value: '15m', fallback: 15 * 60 * 1000 }]);
+
+    process.env.PIWI_SUBMIT_TIMEOUT = '-1';
+    process.env.PIWI_STREAMING_BATCH_SIZE = 'twenty';
+    const opts = resolveOptions({});
+    expect(opts.submitTimeout).toBe(15 * 60 * 1000);
+    expect(opts.streamingBatchSize).toBe(20);
+
+    process.env.PIWI_SUBMIT_TIMEOUT = ' 60000 ';
+    delete process.env.PIWI_STREAMING_BATCH_SIZE;
+    expect(resolveOptions({}).submitTimeout).toBe(60000);
+    expect(ignoredEnvValues()).toEqual([]);
+  });
+
+  it('warns once the run begins about a number variable it could not read', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '15m';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const reporter = new PiwiDashboardReporter({
+        serverUrl: 'http://127.0.0.1:1',
+        projectName: 'piwi-env-warning',
+        streaming: false,
+        captureResources: false,
+      });
+      reporter.onBegin(fakeConfig(), fakeSuite());
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        '[Piwi Dashboard] PIWI_SUBMIT_TIMEOUT=15m is not a number of 0 or more, so the default (900000) applies.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('PIWI_VERBOSE env wins over user option (preserved quirk)', () => {
     const opts1 = resolveOptions({ verbose: false });
     expect(opts1.verbose).toBe(false);
@@ -186,6 +230,31 @@ describe('resolveOptions', () => {
     process.env.PIWI_VERBOSE = 'false';
     const opts = resolveOptions({});
     expect(opts.verbose).toBe(false);
+  });
+
+  it('PIWI_VERBOSE=1 turns it on, as yes and on do', () => {
+    for (const value of ['1', 'yes', 'ON']) {
+      process.env.PIWI_VERBOSE = value;
+      expect(resolveOptions({}).verbose).toBe(true);
+    }
+  });
+
+  it('writes each boolean variable as true or false for the workers, which read some of them as they are', () => {
+    const env: NodeJS.ProcessEnv = {
+      PIWI_CAPTURE_PAGE_INVENTORY: 'yes',
+      PIWI_CAPTURE_LOCATORS: '0',
+      PIWI_AI_UPDATE: 'On',
+      PIWI_VERBOSE: '1',
+      PIWI_PROJECT_NAME: 'shop',
+    };
+    normalizeBoolEnv(env);
+    expect(env).toEqual({
+      PIWI_CAPTURE_PAGE_INVENTORY: 'true',
+      PIWI_CAPTURE_LOCATORS: 'false',
+      PIWI_AI_UPDATE: 'true',
+      PIWI_VERBOSE: 'true',
+      PIWI_PROJECT_NAME: 'shop',
+    });
   });
 
   it('reads PIWI_OUTPUT_FILE from env, and a user option wins over it', () => {
@@ -403,6 +472,9 @@ describe("the config folder's .env", () => {
     // The reporter begins the run the global setup registered, under the same project.
     expect(request('/api/test-runs/7/begin')?.headers.authorization).toBe('Bearer pd_dotenv');
     expect(JSON.parse(request('/api/test-runs/7/begin')!.body).setupToken).toBe('setup-tok');
+    // The setup token goes in the run token header too: the dashboard asks for it by the version `/setup` names.
+    expect(request('/api/test-runs/7/begin')?.headers['x-piwi-run-token']).toBe('setup-tok');
+    expect(JSON.parse(request('/api/test-runs/setup')!.body).reporterVersion).toBe(getReporterVersion());
   });
 });
 

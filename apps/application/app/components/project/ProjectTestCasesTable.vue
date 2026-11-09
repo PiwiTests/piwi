@@ -10,6 +10,7 @@ import {
 } from '#shared/test-search';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { splitSuitePath } from '#shared/utils/suites';
+import { flakyRate, passRate } from '#shared/utils/pass-rate';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 import { fileGroupRows, type TestPosition } from '~/utils/test-list-order';
 import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
@@ -317,18 +318,22 @@ function groupMetrics(rows: TestCaseWithStats[]) {
       timedRuns += executed;
     }
   }
-  const executed = passed + failed;
-  const passRate = executed > 0 ? passed / executed : null;
+  const rate = passRate({ passed, failed });
+  const flakyShare = flakyRate({ flaky, passed, failed });
   return [
     {
       label: 'Pass',
-      value: passRate != null ? `${Math.round(passRate * 100)}%` : '—',
-      // A group whose executions were all skipped has no pass rate to judge.
-      tone: passRate != null ? passRateTone(passRate * 100) : ('muted' as const),
+      value: rate != null ? `${Math.round(rate * 100)}%` : '—',
+      // A group with no passed or failed run has no pass rate to judge.
+      tone: rate != null ? passRateTone(rate * 100) : ('muted' as const),
     },
-    { label: 'Flaky', value: executed > 0 ? `${Math.round((flaky / executed) * 100)}%` : '—', tone: 'muted' as const },
+    {
+      label: 'Flaky',
+      value: flakyShare != null ? `${Math.round(flakyShare * 100)}%` : '—',
+      tone: 'muted' as const,
+    },
     { label: 'Failures', value: String(failed), tone: failed > 0 ? ('poor' as const) : ('muted' as const) },
-    { label: 'Executions', value: String(runs), tone: 'muted' as const },
+    { label: 'Runs', value: String(runs), tone: 'muted' as const },
     { label: 'Avg', value: timedRuns > 0 ? formatMs(durationTotal / timedRuns) : '—', tone: 'muted' as const },
   ];
 }

@@ -26,9 +26,8 @@ npx @piwitests/reporter flake tests/checkout.spec.ts:42
 
 The command reads the test's plan from the dashboard, so it needs the reporter's `PIWI_DASHBOARD_URL` and
 `PIWI_API_KEY` (or the project's `.env`). The specs must use the
-[capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. In the
-[desktop app](./desktop#reproducing-a-flake), **Reproduce this flake** on the Flakiness tab runs it at the commit
-of the latest failure, and a bisect of a reproduced flake runs its arm at each step (`flake verify --bisect`).
+[capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. The
+[desktop app](#in-the-desktop-app) runs it for you.
 
 It runs, one after the other:
 
@@ -54,6 +53,7 @@ Verdict: reproduced by delay GET /api/cart 1.8 s (3/4 against 0/10, p = 0.011)
 | A slow route | delay it to the failures' median duration | the fixtures hold each response until that long after the request started |
 | A failed route | fail it with the same status, or abort it | the fixtures answer with the status, or reset the connection |
 | Load | throttle the CPU ×4 | a DevTools session, so Chromium only |
+| A runner time zone or locale | run the browser in it | `timezoneId` or `locale` of each context the test opens |
 | Another test alongside | run both together | both tests on two workers; only rounds where they overlapped count |
 | The test just before | run that test first | both tests on one worker; only rounds where it ran just before count |
 | A browser | pin the Playwright project | `--project` |
@@ -91,7 +91,7 @@ It reruns the reproducing arm and its control for enough runs that a failure at 
 shown with 95% confidence (`⌈ln 0.05 / ln(1 − rate)⌉`, at least 5), and stops at the first matching failure. With
 none, the fix is **verified**. The verify experiment appears on the Flakiness tab next to the one it verifies, and the
 test reads [verified fixed](./flaky-tests#verified-fixed): off the flaky ranking until it retry-passes again, and a
-quarantined test is proposed for release at once.
+quarantined test is proposed for release at once, until it fails again.
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it
 still fails, or too few runs passed to say) · `2` error.
@@ -108,8 +108,8 @@ still fails, or too few runs passed to say) · `2` error.
   arms to run; the `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows this loop.
 
 <figure>
-  <img src="/screenshots/flake-lab.png" alt="The Flake Lab tab: counts by stage over each test and its next command">
-  <figcaption>The Flake Lab tab.</figcaption>
+  <img src="/screenshots/flake-lab-tab.png" alt="A project's Flake Lab tab: counts of flaky, untested, to-verify and verified-fixed tests, each test with its lab state and the command to run next, then the newest experiments with their verdicts">
+  <figcaption>The Flake Lab tab: each flaky test's lab state and next command, then the newest experiments.</figcaption>
 </figure>
 
 The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine
@@ -117,14 +117,25 @@ and every other comparison between runs.
 
 ## From the editor and the failure pages
 
-- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows its flaky rate and top suspect
-  ("flaky 18% · top suspect: GET /api/cart slower (reproduced 7 of 10)"), with **Reproduce this flake** and, once
-  reproduced, **Verify the flake fix**, run in a terminal against the instance the editor reads. Beside a team
-  instance, **Reproduce this flake in the desktop app** (also on a failure with an untested suspect) runs the
-  instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you confirm it; **Share on …** records
-  the results on the instance, as run from `desktop`.
+- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows the share of its recent passed or
+  failed runs in which it failed or passed on a retry, and its top suspect ("flaky 18% · top suspect: GET /api/cart slower (reproduced
+  7 of 10)"), with **Reproduce this flake** and, once reproduced, **Verify the flake fix**, run in a terminal against
+  the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (also on a failure
+  with an untested suspect) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you
+  confirm it; **Share on …** records the results on the instance, as run from `desktop`.
 - **On a flaky failure's page**, the next step reproduces it under the top untested suspect, then verifies the fix.
 - **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
+
+## In the desktop app
+
+On a flaky test's Flakiness tab in the [desktop app](./desktop), **Reproduce this flake** checks out the commit of the
+test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options pick the arms (every
+suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded as run from
+`desktop`.
+
+Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
+runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
+enough clean runs, which tells when a flake started.
 
 ## Run it in CI
 
@@ -162,7 +173,7 @@ The experiment is recorded with the source `ci`. Exit code 1 (nothing reproduced
 
 To start it from a failure's next step (**Reproduce in CI**, **Verify in CI**), make the input the command's arguments
 (<code v-pre>npx @piwitests/reporter ${{ inputs.piwi_flake }}</code>) and name the workflow as the **Flake Lab** target in the project's
-[CI re-run](./pr-feedback#re-run-from-the-dashboard) settings. It receives `flake 1842` or `flake verify 1842`.
+[CI re-run](./ci-rerun) settings. It receives `flake 1842` or `flake verify 1842`.
 
 ## Without the dashboard
 
@@ -190,4 +201,4 @@ The [live demo](https://piwitests.dev/demo/) cannot run the lab but holds experi
 - [Piwi CLI](/reference/cli#flake): every flag of `piwi flake`
 - [Clue rules](/reference/clues): `known-flake-suspect`
 - [Agent skills](./agent-skills): `stabilize-flaky-tests`
-- [Desktop app](./desktop#reproducing-a-flake): the lab and a flake-aware bisect in a worktree
+- [Desktop app runs](./desktop-runs): the runs the app starts, the lab's among them, in its Local runs tray

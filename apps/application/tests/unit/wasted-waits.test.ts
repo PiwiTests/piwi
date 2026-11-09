@@ -59,6 +59,12 @@ describe('isWastedWait', () => {
   test('* matches everything', () => {
     expect(isWastedWait(wait('Wait for load state'), ['*'])).toBe(true);
   });
+
+  test('answers at once for a pattern a regular expression backtracks on', () => {
+    const started = performance.now();
+    expect(isWastedWait(wait('w'.repeat(36), 'w'.repeat(36)), [`${'*w'.repeat(8)}*!`])).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('computeWastedMs', () => {

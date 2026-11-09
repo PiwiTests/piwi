@@ -1,12 +1,12 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { MCP_TOOLS } from '../../server/utils/mcp/tools';
 import { ADMIN_ACCESS } from '#shared/permissions';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
@@ -105,6 +105,25 @@ describe('detectSurfaceDrift', () => {
     expect(
       gaps.detectSurfaceDrift([{ nodeKind: 'feature', nodeKey: 'Checkout', firstSeenRunId: 830, reachCount: 0 }], 830),
     ).toEqual([]);
+    expect(
+      gaps.detectSurfaceDrift(
+        [{ nodeKind: 'feature', nodeKey: 'Checkout', firstSeenRunId: 812, reachCount: 0, liveGap: true }],
+        830,
+      ),
+    ).toEqual([]);
+  });
+
+  test('a gap the ledger holds stays raised while no test reaches its node, naming the run it appeared in', () => {
+    const node = { nodeKind: 'page', nodeKey: '/billing/plans', firstSeenRunId: 812, reachCount: 0, liveGap: true };
+    const [gap] = gaps.detectSurfaceDrift([node], 830, 800);
+    expect(gap!.key).toBe('page:/billing/plans');
+    expect(gap!.evidence[0]).toBe('Appeared in run #812; no test reaches it yet — observed reach.');
+    expect(gaps.detectSurfaceDrift([{ ...node, firstSeenRunId: null }], 830, 800)[0]!.evidence[0]).toBe(
+      'No test reaches it yet — observed reach.',
+    );
+    // A test reaching the node ends it, and an older node the ledger holds no gap for is never raised.
+    expect(gaps.detectSurfaceDrift([{ ...node, reachCount: 1 }], 830, 800)).toEqual([]);
+    expect(gaps.detectSurfaceDrift([{ ...node, liveGap: false }], 830, 800)).toEqual([]);
   });
 
   test('the run that built the graph first is the baseline, not drift', () => {
@@ -270,7 +289,7 @@ async function seedReach(testCaseId: number, toKind: string, toKey: string, runI
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'gap-project' });
   await db
     .insert(schema.testCases)
@@ -322,6 +341,35 @@ describe('computeScenarioGaps', () => {
     expect(single).toBeTruthy();
     expect(single!.status).toBe('open');
     expect(single!.factors).not.toBeNull();
+  });
+
+  test('a bug report closed with no test is a gap, and its page ranks with escape history', async () => {
+    await seedRun(1);
+    await seedReach(1, 'page', '/checkout', 1);
+    const report = (title: string, status: string, testCaseId: number | null = null) => ({
+      projectId: 1,
+      title,
+      pageKey: '/checkout',
+      status,
+      testCaseId,
+      steps: [],
+      evidence: {},
+      context: {},
+      closedAt: status === 'closed' ? new Date() : null,
+    });
+    const [untested] = await db
+      .insert(schema.bugReports)
+      .values([
+        report('coupon applied twice', 'closed'),
+        report('total off by a cent', 'closed', 1),
+        report('not a bug', 'dismissed'),
+      ])
+      .returning({ id: schema.bugReports.id });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const rows = await gaps.listScenarioGaps(db, 1, {});
+    expect(rows.filter((r) => r.detector === 'fixed-without-test').map((r) => r.key)).toEqual([`bug:${untested!.id}`]);
+    expect(rows.find((r) => r.detector === 'single-covering-test')!.factors!.escapeHistory).toBe(1);
   });
 
   test('recomputation preserves triage — a dismissed gap stays dismissed', async () => {
@@ -479,7 +527,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values([
       {
@@ -561,7 +609,7 @@ describe('computeScenarioGaps', () => {
     // A later run's test reaches the route the handler serves.
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() }));
     await seedReach(1, 'route', 'GET /api/orders/:id', 1);
     await gaps.computeScenarioGaps(db, 1);
 
@@ -575,22 +623,29 @@ describe('computeScenarioGaps', () => {
     await seedRun(1);
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
-    const gap = (key: string) => ({
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() }));
+    const gap = (key: string, status = 'open') => ({
       projectId: 1,
       detector: 'changed-unreached',
       class: 'blind-spot',
       key,
       title: `${key} changed but not reached`,
-      status: 'open',
+      status,
     });
     await db
       .insert(schema.scenarioGaps)
-      .values([gap('src/lib/cart.ts'), gap('src/lib/tax.ts'), gap('src/Client.g.cs')]);
-    // The test executed cart.ts (code reach); nothing reaches tax.ts; Client.g.cs is generated, outside the scope.
-    await db
-      .insert(schema.codeReach)
-      .values({ projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() });
+      .values([
+        gap('src/lib/cart.ts'),
+        gap('src/lib/tax.ts'),
+        gap('src/Client.g.cs'),
+        gap('src/lib/rates.ts', 'accepted'),
+      ]);
+    // The test executed cart.ts and rates.ts, whose accepted gap had its test written (code reach); nothing
+    // reaches tax.ts; Client.g.cs is generated, outside the scope.
+    await db.insert(schema.codeReach).values([
+      { projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() },
+      { projectId: 1, testCaseId: 1, file: 'src/lib/rates.ts', runtime: 'browser', lastSeenAt: new Date() },
+    ]);
 
     await gaps.computeScenarioGaps(db, 1);
 
@@ -602,10 +657,11 @@ describe('computeScenarioGaps', () => {
       'src/lib/cart.ts': 'closed',
       'src/lib/tax.ts': 'open',
       'src/Client.g.cs': 'closed',
+      'src/lib/rates.ts': 'closed',
     });
   });
 
-  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
+  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered, and the accepted ones of files a test reached', async () => {
     await seedRun(1);
     const gap = (key: string, status: string) => ({
       projectId: 1,
@@ -622,9 +678,20 @@ describe('computeScenarioGaps', () => {
         gap('src/b.ts', 'snoozed'),
         gap('src/c.ts', 'dismissed'),
         gap('src/d.ts', 'open'),
+        gap('src/e.ts', 'accepted'),
+        gap('src/f.ts', 'accepted'),
       ]);
 
-    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts'])).toBe(2);
+    expect(
+      await gaps.closeChangedUnreachedGaps(db, 1, 1, [
+        { filePath: 'src/a.ts', reach: 'reached' },
+        { filePath: 'src/b.ts', reach: 'deleted' },
+        { filePath: 'src/c.ts', reach: 'reached' },
+        { filePath: 'src/d.ts', reach: 'unreached' },
+        { filePath: 'src/e.ts', reach: 'reached-earlier' },
+        { filePath: 'src/f.ts', reach: 'not-observable' },
+      ]),
+    ).toBe(3);
 
     const rows = await db
       .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
@@ -634,6 +701,46 @@ describe('computeScenarioGaps', () => {
       'src/b.ts': 'closed',
       'src/c.ts': 'dismissed',
       'src/d.ts': 'open',
+      'src/e.ts': 'closed',
+      'src/f.ts': 'accepted',
+    });
+  });
+
+  test('a changed gap closes with the read of its file as its reason, acted on when its own pull request reached it', async () => {
+    await seedRun(1);
+    const gap = (key: string, prNumber: number | null) => ({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      prNumber,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('src/a.ts', 7), gap('src/b.ts', 3), gap('src/c.ts', 7), gap('src/d.ts', 7)]);
+
+    await gaps.closeChangedUnreachedGaps(
+      db,
+      1,
+      1,
+      [
+        { filePath: 'src/a.ts', reach: 'reached' },
+        { filePath: 'src/b.ts', reach: 'reached' },
+        { filePath: 'src/c.ts', reach: 'out-of-scope' },
+        { filePath: 'src/d.ts', reach: 'deleted' },
+      ],
+      7,
+    );
+
+    const rows = await db
+      .select({ key: schema.scenarioGaps.key, reason: schema.scenarioGaps.closeReason })
+      .from(schema.scenarioGaps);
+    expect(Object.fromEntries(rows.map((r) => [r.key, r.reason]))).toEqual({
+      'src/a.ts': 'acted-on',
+      'src/b.ts': 'reached',
+      'src/c.ts': 'out-of-scope',
+      'src/d.ts': 'deleted',
     });
   });
 
@@ -642,7 +749,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
 
     // A first-party route the graph holds as a node, seen only with success.
@@ -684,11 +791,11 @@ describe('computeScenarioGaps', () => {
 
     const [realExec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     const [probeExec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 2, testCaseId: 2, status: 'failed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 2, testCaseId: 2, status: 'failed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
 
     await db.insert(schema.graphNodes).values({
@@ -729,7 +836,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values({
       projectId: 1,
@@ -793,11 +900,43 @@ describe('computeScenarioGaps', () => {
     expect(list.find((r) => r.key === 'route:POST /api/orders')).toBeFalsy();
   });
 
+  test('a probe that decided nothing never checks a route', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
+    await seedReach(1, 'route', 'POST /api/orders', 1);
+    await seedReach(2, 'route', 'POST /api/orders', 1);
+    for (const [testCaseId, outcome, fault] of [
+      [1, 'not-noticed', 'status-500'],
+      [2, 'noticed', 'slow'],
+    ] as const) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: 'POST /api/orders',
+        kind: 'checks',
+        evidence: { outcome, fault },
+        lastSeenAt: new Date(++clock),
+      });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    // A test failing under a delay read its timeout, not its assertions: the route is still unchecked.
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
+    expect(list.map((r) => r.key)).toContain('route:POST /api/orders');
+  });
+
   test('a flaky test noticing a probe does not check the route', async () => {
     await seedRun(1);
-    await db
-      .insert(schema.testCases)
-      .values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b', flakyRootCause: 'timing' });
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
+    // Test 2 passed only after a retry in the run: flaky lately.
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 2, status: 'failed', retries: 0 },
+        { testRunId: 1, testCaseId: 2, status: 'passed', retries: 1 },
+      ]),
+    );
     await seedReach(1, 'route', 'POST /api/orders', 1);
     await seedReach(2, 'route', 'POST /api/orders', 1);
     for (const [testCaseId, outcome] of [
@@ -828,7 +967,7 @@ describe('computeScenarioGaps', () => {
       .values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x', feature: 'Orders' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values({
       projectId: 1,

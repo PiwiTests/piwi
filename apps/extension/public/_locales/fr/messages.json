@@ -779,7 +779,7 @@
     "message": "Application de bureau"
   },
   "options_desktopHint": {
-    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet."
+    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Les exécutions qu’elle lance s’affichent aussi dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension)."
   },
   "options_desktopUrl": {
     "message": "Adresse de l’application de bureau"
@@ -1201,7 +1201,7 @@
     "message": "Envoyer à l’éditeur"
   },
   "options_editorHint": {
-    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur."
+    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur. Les exécutions qu’il lance s’affichent alors dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez."
   },
   "options_editorAddress": {
     "message": "Adresse d’association"
@@ -1280,6 +1280,33 @@
   },
   "options_editorPermission": {
     "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
+  },
+  "options_editorNotProven": {
+    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il est votre éditeur, donc rien ne lui est envoyé : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée, ou mettez à jour Piwi dans l’éditeur.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Associé à $url$, mais rien n’y répond pour l’instant : ouvrez votre éditeur avec l’extension Piwi. Si sa commande Piwi « Pair with Piwi Picker » copie une autre adresse, associez celle-là.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Associé à $url$, mais le navigateur a retiré à Piwi Picker l’accès à cette adresse : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
   },
   "common_close": {
     "message": "Fermer"
@@ -3821,7 +3848,7 @@
     "message": "Associez d’abord l’application de bureau, dans les réglages de Piwi Picker sous Application de bureau."
   },
   "replay_desktopOpenOptions": {
-    "message": "Ouvrir les options"
+    "message": "Ouvrir les réglages"
   },
   "replay_desktopPreview": {
     "message": "Envoie à l’application de bureau à $url$ : le titre et ces étapes, avec les valeurs saisies. Aucune capture, entrée de console ou requête. Rien ne se lance avant que vous le démarriez dans la fenêtre de l’application.",
@@ -6204,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Pause, pas à pas, reprise"
   },
+  "popup_runsHintAway": {
+    "message": "Non connecté : voir pourquoi"
+  },
   "popup_runsHint_one": {
     "message": "$count$ exécution dans l’éditeur",
     "placeholders": {
@@ -6298,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Tel que vu en dernier : les commandes reviennent dès que $editor$ répond à nouveau.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "votre éditeur"
   },
@@ -6344,7 +6383,10 @@
     "message": "L’extension Piwi de votre éditeur ne partage pas ses exécutions : mettez-la à jour."
   },
   "runs_statusUnproven": {
-    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande dans un instant."
+    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande chaque minute tant que cette fenêtre est ouverte. Si votre éditeur a changé de port, associez à nouveau Piwi Picker à votre éditeur dans les réglages."
+  },
+  "runs_statusNotEditor": {
+    "message": "Le programme sur le port associé n’est pas l’extension Piwi de votre éditeur, ou une trop ancienne pour le prouver : Piwi Picker ne lui a rien envoyé. Ouvrez votre éditeur, relancez la commande Piwi « Pair with Piwi Picker » et collez dans les réglages l’adresse copiée."
   },
   "runs_statusNoHub": {
     "message": "Votre éditeur répond, mais aucune de ses fenêtres ne partage ses exécutions : mettez à jour l’extension Piwi."
@@ -6358,29 +6400,14 @@
   "runs_terminal": {
     "message": "Terminal"
   },
+  "runs_runner": {
+    "message": "Lanceur de tests"
+  },
   "runs_desktopName": {
     "message": "l’application de bureau"
   },
   "runs_followingDesktop": {
     "message": "Application de bureau suivie"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "$count$ fenêtre d’éditeur et l’application de bureau suivies",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "$count$ fenêtres d’éditeur et l’application de bureau suivies",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Recherche des exécutions de l’application de bureau…"
@@ -6406,6 +6433,89 @@
   "runs_ended": {
     "message": "L’exécution est terminée."
   },
+  "runs_progress_one": {
+    "message": "$done$ sur $count$ test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ sur $count$ tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ instable",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ instables",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "L’exécution a réussi."
+  },
+  "runs_endedFailed": {
+    "message": "L’exécution est en échec."
+  },
+  "runs_firstFailure": {
+    "message": "Premier échec : $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "L’exécution a atteint son délai."
+  },
+  "runs_endedInterrupted": {
+    "message": "L’exécution a été interrompue."
+  },
   "runs_stoppedBreakpoint": {
     "message": "Arrêté à un point d’arrêt"
   },
@@ -6426,6 +6536,27 @@
   },
   "runs_statePausing": {
     "message": "Mise en pause…"
+  },
+  "runs_statePausingIn": {
+    "message": "Mise en pause : attend dans $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "depuis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "Terminer le test maintenant : l’appel où il attend est abandonné si possible, et la suite du test est ignorée"
   },
   "runs_stateRunning": {
     "message": "En cours"
@@ -6482,7 +6613,7 @@
     "message": "Terminer"
   },
   "runs_finishTitle": {
-    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt dans cette tentative"
   },
   "runs_end": {
     "message": "Terminer le test"
@@ -6648,10 +6779,34 @@
     "message": "Démarrage de la vue en direct…"
   },
   "runs_liveLost": {
-    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Activez de nouveau Voir en direct une fois la connexion revenue."
+    "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
   },
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."
+  },
+  "runs_watch": {
+    "message": "Regarder"
+  },
+  "runs_watchTitle": {
+    "message": "Afficher la page du test pendant qu’il s’exécute, à travers ses arrêts et ses tests suivants : à un arrêt, vos clics et vos touches y vont"
+  },
+  "runs_pauseWatch": {
+    "message": "Pause et regarder"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Arrêter le test avant son prochain appel, et afficher sa page"
+  },
+  "runs_watchOutdated": {
+    "message": "Mettez à jour le reporter pour regarder un test en cours"
+  },
+  "runs_watchToUse": {
+    "message": "Regardez le test pour l’utiliser"
+  },
+  "runs_laneRunning": {
+    "message": "En cours…"
+  },
+  "runs_laneAltLast": {
+    "message": "La page du test, telle que vue en dernier"
   },
   "runs_pickAt": {
     "message": "Choisir sur l’image"
@@ -6721,5 +6876,32 @@
   },
   "runs_copyRunPage": {
     "message": "Copier le lien de la page de l’exécution"
+  },
+  "runs_pageAtStop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle rend compte à l’application de bureau Piwi de cet ordinateur, que vos collègues ne peuvent pas joindre. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL pour y partager une exécution."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Cette exécution ne peut pas être partagée en direct : la vue en direct de son projet est désactivée sur l’instance. Un Project admin l’active dans Project → Settings → Live view."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le global setup du reporter ne l’a pas enregistrée à son démarrage (wrapConfig l’ajoute, et il enregistre une exécution dont la configuration nomme le reporter de Piwi)."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle n’envoie ses résultats qu’à la fin (streaming désactivé), elle n’a donc pas d’exécution en direct sur l’instance."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "Cette exécution ne peut pas être partagée en direct : l’instance ne l’a pas enregistrée à son démarrage (le global setup du reporter n’a pas pu la joindre, ou a été refusé : son avertissement dit pourquoi)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle ne rend compte à aucune instance Piwi. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le reporter Piwi n’a donné à ses workers aucune clé de vue en direct."
   }
 }

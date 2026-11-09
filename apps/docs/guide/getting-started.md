@@ -11,6 +11,11 @@ to the server, which keeps every run with its traces and renders the dashboard. 
 vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the dashboard
 uses.
 
+<figure>
+  <img src="/diagrams/moving-parts.svg" alt="The reporter, inside a Playwright run on your machine or in CI, streams results and uploads traces to the Piwi server, which keeps them in its database and artifact storage and serves the dashboard to your browser">
+  <figcaption>The same reporter runs locally and in CI; one server keeps every run.</figcaption>
+</figure>
+
 ## 1. Run the dashboard
 
 The dashboard is one Node process. Pick the way to run it that fits:
@@ -38,19 +43,24 @@ why the snippet creates `.data` with the right owner; see
 it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
-token, for when you need them, are on its **Setup** page under **Send results to this app**.
+token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 
 Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's. Want
 to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
 
 ## 2. Connect your suite
 
-The dashboard's connect wizard, on **Home** while it has no project and on **Setup** after, builds every snippet below
+The dashboard's connect wizard, on **Home** while it has no project and on **Settings → Connect a suite** after, builds every snippet below
 from your project name and its own URL, and offers three ways to the same setup: one command, a prompt for a coding
 agent, or the steps by hand.
 Each ends in [`wrapConfig`](./reporter#installing-via-wrapconfig) around your config and the
 [capture fixtures](./capture-fixtures) in your specs: the reporter entry alone keeps your runs, and those two add the
 failure screenshots and traces, the network and console capture, and locator healing.
+
+<figure>
+  <img src="/screenshots/home-empty-connect-waiting.png" alt="The connect wizard on an instance with no project: the project name, the three ways to connect (one command, coding agent, by hand) with the init command, the fixtures import and the test command, and a status line waiting for the first run">
+  <figcaption>The connect wizard, waiting for the first run.</figcaption>
+</figure>
 
 ### Fast path: one command
 
@@ -60,6 +70,11 @@ From your Playwright project, one command installs the reporter, wraps your `pla
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
+
+It prints one line per step, `+` for a file it created, `~` for one it changed, `=` for one already set, `!` for a
+step left to you:
+
+<<< @/snippets/init-output.txt
 
 Every step is idempotent, so it is safe to re-run. When `init` finds a config shape it will not rewrite, or a fixtures
 file that already exists, it reports that step as `manual` with the exact change to make instead of touching the file.
@@ -77,10 +92,10 @@ Then import `test` from the fixtures file in your specs, the one change `init` l
 import { test, expect } from './fixtures'
 ```
 
-A coding agent can do both: the **Coding agent** path on **Setup** gives it a prompt that runs `init --json`, finishes
+A coding agent can do both: the **Coding agent** path on **Connect a suite** gives it a prompt that runs `init --json`, finishes
 the steps it reports as `manual` and moves the specs onto the fixtures.
 
-If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Setup** creates one in place. When
+If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Connect a suite** creates one in place. When
 developers run the [desktop app](/features/desktop) and CI reports to a shared dashboard, add `--desktop-app prefer`:
 [local runs then land in the app](./reporter#local-runs-to-the-desktop-app-ci-to-a-team-server). To wire the reporter
 in by hand, or to send one run without editing your config, see [Reporter](./reporter).
@@ -92,6 +107,25 @@ npx playwright test
 ```
 
 The run streams into the dashboard while it executes, and the reporter prints a `View run:` link at the end. Open it.
+
+While it runs, the wizard's status line changes from *Waiting for the first run* to the run reporting, with a link to watch it:
+
+<figure>
+  <img src="/screenshots/home-empty-connect-reporting.png" alt="The wizard's status line: a run of checkout is reporting now, with a Watch it link">
+  <figcaption>The checkpoint: your first run is reporting.</figcaption>
+</figure>
+
+If nothing shows up, read the first lines the reporter prints. This one means it found no server to report to:
+
+<<< @/snippets/reporter-not-enabled.txt
+
+Set `PIWI_DASHBOARD_URL`, in the environment or the `.env` next to your Playwright config, or rerun `init` with
+`--server-url`. From WSL, a dev container or another machine, the URL is the dashboard's address as that machine
+reaches it, not `localhost`.
+
+The home page and a project's page leave out partial runs (a run of a few files) until you change their **Filters**,
+and a project's page leaves out branches other than the default one too. The **Filters** block counts the runs it
+hides, with **Include partial runs** and **Show all branches** to bring them back.
 
 In CI nothing Piwi-specific is needed: the same reporter runs inside `npx playwright test`, pointed at your instance
 with `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`. [CI & sharding](./ci) has the pipeline examples.

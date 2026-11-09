@@ -1,22 +1,22 @@
 /**
- * Pure helpers for the Settings → AI provider form (`app/pages/settings/ai.vue`).
+ * Pure helpers for the Settings → AI form (`app/pages/settings/ai.vue`).
  *
- * The form edits four model roles (diagnosis, research, embedding, assistant). Turning
- * those role forms into the PUT body is fiddly enough — and was buggy enough —
- * to be worth isolating from the Vue component so it can be unit-tested.
+ * The form edits four model roles (diagnosis, research, embedding, assistant)
+ * and turns them into the PUT body. A role counts as configured when:
+ *   - diagnosis: a provider is selected, since its presence is what turns AI on;
+ *   - an optional role (research / embedding / assistant): its feature is on.
  *
- * The subtlety that bit us: `diagnosis` is REQUIRED and has no enable toggle in
- * the UI, so its `enabled` flag is *not* a reliable signal — nothing in the UI
- * ever flips it true for a first-time config, so a freshly-picked provider used
- * to be treated as "not enabled" and silently discarded on save (or rejected by
- * the server with "a diagnosis role with its own provider is required"). A role
- * counts as configured when:
- *   - diagnosis: a provider is selected — its presence *is* "AI is on"; or
- *   - an optional role (research / embedding / assistant): its enable switch is on.
- *
- * Saving with no diagnosis provider means "turn AI off" → `{ roles: null }`.
+ * Saving with no diagnosis provider turns AI off: `{ roles: null }`.
  */
-import type { AiModelRole, AiRoleConfigInput, SaveAiSettingsBody } from '~~/types/api';
+import type { AiModelRole, AiRoleConfigInput, AiRoleSettings, SaveAiSettingsBody } from '~~/types/api';
+import {
+  type ModelPurpose,
+  type ProviderTile,
+  type ProviderTileId,
+  providerTile,
+  suggestedModel,
+  tileFor,
+} from '~/utils/ai-provider-catalog';
 
 export interface RoleForm {
   enabled: boolean;
@@ -25,16 +25,87 @@ export interface RoleForm {
   model: string;
   baseUrl: string;
   apiKey: string;
-  /** OpenAI-compat only: sampling temperature override, kept as a string like the other inputs. Empty means "provider default". */
-  temperature: string;
+  /**
+   * OpenAI-compat only: sampling temperature override. Empty means "provider default"; a number input
+   * may hand over a number.
+   */
+  temperature: string | number;
 }
 
 export type RoleForms = Record<AiModelRole, RoleForm>;
 
+/** A role form with the tile the user picked, which the stored config alone cannot always tell. */
+export interface RoleDraft extends RoleForm {
+  tile: ProviderTileId | null;
+}
+
+export type RoleDrafts = Record<AiModelRole, RoleDraft>;
+
+export function blankRoleDraft(): RoleDraft {
+  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '', temperature: '', tile: null };
+}
+
+/** The form of a stored role; the key is never returned, so it starts empty. */
+export function roleDraftFromSettings(stored: AiRoleSettings | null | undefined): RoleDraft {
+  return {
+    enabled: Boolean(stored),
+    reuse: stored?.reuse ?? null,
+    provider: stored?.provider ?? '',
+    model: stored?.model ?? '',
+    baseUrl: stored?.baseUrl ?? '',
+    apiKey: '',
+    temperature: stored?.temperature != null ? String(stored.temperature) : '',
+    tile: stored?.reuse ? null : tileFor(stored?.provider, stored?.baseUrl),
+  };
+}
+
+/**
+ * Point a role at a tile. Back on the stored config's own tile, the stored
+ * address, model and temperature return; on another, the tile's address and
+ * suggested model. A typed key never carries over.
+ */
+export function applyTile(
+  form: RoleDraft,
+  tile: ProviderTile,
+  purpose: ModelPurpose,
+  stored: AiRoleSettings | null | undefined,
+): void {
+  const backToStored = !stored?.reuse && tileFor(stored?.provider, stored?.baseUrl) === tile.id;
+  form.tile = tile.id;
+  form.provider = tile.provider;
+  form.reuse = null;
+  form.apiKey = '';
+  form.baseUrl = backToStored ? (stored?.baseUrl ?? '') : (tile.baseUrl ?? '');
+  form.model = backToStored ? (stored?.model ?? '') : suggestedModel(tile.id, purpose);
+  form.temperature = backToStored && stored?.temperature != null ? String(stored.temperature) : '';
+}
+
+const sameUrl = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ?? '').trim().replace(/\/+$/, '') === (b ?? '').trim().replace(/\/+$/, '');
+
+/**
+ * Whether the stored key still applies to the form: the server sends a saved
+ * key only to the provider and base URL it was saved for.
+ */
+export function storedKeyApplies(form: RoleForm, stored: AiRoleSettings | null | undefined): boolean {
+  if (!stored?.hasApiKey || stored.reuse || form.reuse) return false;
+  return stored.provider === form.provider && sameUrl(stored.baseUrl, form.baseUrl);
+}
+
+/** What a role's own connection still lacks before it can be saved or tested, or null. */
+export function connectionProblem(form: RoleDraft, keyStored: boolean): string | null {
+  const tile = providerTile(form.tile);
+  if (!form.provider) return 'Choose a provider.';
+  if (tile?.key === 'required' && !keyStored && !form.apiKey.trim()) return `${tile.label} needs an API key.`;
+  if (form.provider === 'openai' && !form.baseUrl.trim()) return 'Enter the server address.';
+  if (form.provider === 'openai' && !form.model.trim()) return 'Enter a model.';
+  return null;
+}
+
 /**
  * Whether a role should be written on save. The diagnosis role is the required
  * root, so it's "configured" the moment a provider is chosen (it has no enable
- * toggle); every other role is opt-in via its enable switch.
+ * toggle); every other role is opt-in via its feature switch.
  */
 export function isRoleConfigured(roles: RoleForms, role: AiModelRole): boolean {
   const r = roles[role];
@@ -46,8 +117,8 @@ export function isRoleConfigured(roles: RoleForms, role: AiModelRole): boolean {
  * Parse the free-text temperature field; blank means "provider default". Range
  * (0-2) is enforced server-side too — this only guards obviously bad input.
  */
-export function parseRoleTemperature(role: AiModelRole, raw: string): number | undefined {
-  const trimmed = raw.trim();
+export function parseRoleTemperature(role: AiModelRole, raw: string | number | null | undefined): number | undefined {
+  const trimmed = String(raw ?? '').trim();
   if (trimmed === '') return undefined;
   const n = Number(trimmed);
   if (!Number.isFinite(n) || n < 0 || n > 2) {
@@ -56,8 +127,12 @@ export function parseRoleTemperature(role: AiModelRole, raw: string): number | u
   return n;
 }
 
-/** The PUT body fragment for one role, or `null` when the role is not configured. */
-export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigInput | null {
+/**
+ * The PUT body fragment for one role, or `null` when the role is not configured.
+ * With `dropStoredKey`, a role with no key typed removes its stored one: the
+ * server refuses to keep a key for a provider or address it was not saved for.
+ */
+export function roleSaveBody(roles: RoleForms, role: AiModelRole, dropStoredKey = false): AiRoleConfigInput | null {
   if (!isRoleConfigured(roles, role)) return null;
   const r = roles[role];
   const temperature = parseRoleTemperature(role, r.temperature);
@@ -69,6 +144,7 @@ export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigI
     temperature,
   };
   if (r.apiKey !== '') body.apiKey = r.apiKey;
+  else if (dropStoredKey) body.apiKey = null;
   return body;
 }
 
@@ -79,7 +155,7 @@ export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigI
  */
 export function buildAiSaveBody(
   roles: RoleForms,
-  opts: { envManaged: boolean; autoDiagnose: boolean },
+  opts: { envManaged: boolean; autoDiagnose: boolean; dropStoredKeys?: AiModelRole[] },
 ): SaveAiSettingsBody {
   // Non-env-managed with no diagnosis provider → the user is turning AI off, so
   // clear the whole config. When env-managed we keep sending roles so per-role
@@ -89,10 +165,10 @@ export function buildAiSaveBody(
   }
   return {
     roles: {
-      diagnosis: roleSaveBody(roles, 'diagnosis'),
-      research: roleSaveBody(roles, 'research'),
-      embedding: roleSaveBody(roles, 'embedding'),
-      assistant: roleSaveBody(roles, 'assistant'),
+      diagnosis: roleSaveBody(roles, 'diagnosis', opts.dropStoredKeys?.includes('diagnosis')),
+      research: roleSaveBody(roles, 'research', opts.dropStoredKeys?.includes('research')),
+      embedding: roleSaveBody(roles, 'embedding', opts.dropStoredKeys?.includes('embedding')),
+      assistant: roleSaveBody(roles, 'assistant', opts.dropStoredKeys?.includes('assistant')),
     },
     autoDiagnose: opts.autoDiagnose,
   };

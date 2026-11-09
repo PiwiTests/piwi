@@ -55,7 +55,9 @@ lists them, and the owner is the one of the spec file whose tests visit the page
 CODEOWNERS). It needs the [capture fixtures](/guide/capture-fixtures), which record the page each locator ran on.
 
 Until a test names it, an open report is also an **escaped defect** on the [Test Map](./scenario-gaps): one blind spot
-per page with open reports, ranked like any gap.
+per page with open reports, ranked like any gap. A report closed while no test names it becomes a gap of its own,
+*fixed without a regression test*, and every report of the last 180 days raises the escape history of the gaps on its
+page ([exposure](/reference/gap-detectors#exposure)).
 
 ## The failing test
 
@@ -76,8 +78,8 @@ test('bug: coupon not applied to the total', {
   test.fail(); // passes while the bug exists; remove this line with the fix
   await page.goto('/cart');
   await page.getByLabel('Coupon').fill('SPRING10');
-  await page.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // recorded: 'Total: 40'
+  await page.getByRole('button', { name: 'Apply coupon' }).click();
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 36.00'); // recorded: 'Total: 40.00'
 });
 ```
 
@@ -86,6 +88,11 @@ tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` 
 `../fixtures` when your tests use fixtures of their own.
 
 From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once.
+
+<figure>
+  <img src="/screenshots/bug-report-spec.png" alt="A bug report's Spec tab: the failing Playwright test written from the report's steps, ready to commit">
+  <figcaption>A report's Spec tab: the failing test, written with the project's settings.</figcaption>
+</figure>
 
 ## From report to fix
 
@@ -128,7 +135,7 @@ reopens as its ticket moves into and out of Done.
 
 For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
 Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
-which shows the same code. The address is on the app's **Setup** page, under **Connect Piwi Picker**
+which shows the same code. The address is in the app's **Settings → Desktop app**, under **Connect Piwi Picker**
 (`http://127.0.0.1:3000` by default); **Pair by hand** takes the token shown there.
 The token goes only to an app that proves it holds it.
 

@@ -32,12 +32,17 @@ breadcrumb, then the tab and the section it sits in, the ones the guide just ope
 When a stop explains several parts of the screen, it numbers them: each number on the page matches one line of the
 popover, and pointing at a line enlarges its number on the page.
 
+<figure>
+  <img src="/screenshots/guides-stop.png" alt="The first stop of the Run the Flake Lab guide: a card pointing at a project's flaky tests list, with where it is, what it shows, a link to the docs and Next">
+  <figcaption>A guide's stop: where you are, what the highlighted part shows, and the way on.</figcaption>
+</figure>
+
 ## The guides
 
 | Guide | What it shows | Listed for |
 |---|---|---|
 | **Report a first run** | Install the reporter, send a run, and find it in its project | Administrators |
-| **Configure AI** | Choose the models behind diagnosis and the assistant | Administrators |
+| **Configure AI** | Choose where the AI runs and what it does | Administrators |
 | **Add the SCM token** | Let Piwi read the commits behind a failure | Project admins |
 | **Set up CI and sharding** | Report from CI, merge shards into one run, re-run from a cluster | Administrators |
 | **Turn on pull-request feedback** | Post each run's result on its pull request | Administrators |
@@ -52,7 +57,7 @@ popover, and pointing at a line enlarges its number on the page.
 | **Build a dashboard** | Save the widgets and filters a team watches | Everyone |
 | **Set retention** | See what runs take up, delete old ones, keep the ones that matter | Administrators |
 
-A guide about a capability your instance declined on the Setup page ([Choose what you
+A guide about a capability your instance declined in **Settings → Capabilities** ([Choose what you
 use](/operate/capabilities#declining-a-capability)) is not listed. With authentication off, every guide is listed for
 everyone, as every page is.
 
@@ -73,7 +78,7 @@ Three pages suggest a guide, or a question for the [assistant](./assistant), whe
 
 | Page | When | Offers |
 |---|---|---|
-| Setup | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
+| Settings → Capabilities | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
 | A failure cluster | Its diagnosis read no commits, and no SCM token is set for the project or the instance | **Show me**: Add the SCM token |
 | An execution | It timed out, or its leading clue comes from the network, the server logs or the console, and the project has not decided on the capture fixtures | **Show me**: Add the capture fixtures |
 
@@ -81,7 +86,7 @@ A fixed rule over what the page already shows decides; no AI model is called. A 
 and a browser at most three a week. **Don't show again** hides one for good: the dismissal is kept on the server for
 your account, so it stays hidden in every browser, and with authentication off it is hidden for every visitor. A
 suggestion whose guide is not listed for you does not show. A question needs the assistant and an AI model to answer
-it, so declining the assistant or AI on the Setup page turns the Setup suggestion off; the two that offer a guide need
+it, so declining the assistant or AI in **Settings → Capabilities** turns that page's suggestion off; the two that offer a guide need
 no model and keep showing, and **Don't show again** still hides them.
 
 ## Related

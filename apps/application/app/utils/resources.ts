@@ -184,7 +184,14 @@ export interface ResourceTotals {
 
 /** The figures the tab's tiles show, summed over the shards. */
 export function resourceTotals(report: StoredResourceReport): ResourceTotals {
-  const counts: Record<ResourceVerdict, number> = { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
+  const counts: Record<ResourceVerdict, number> = {
+    leaked: 0,
+    lingering: 0,
+    idle: 0,
+    piling: 0,
+    handle: 0,
+    probable: 0,
+  };
   let cpuMs: number | null = null;
   let runWaitMs: number | null = null;
   let peakMemoryBytes: number | null = null;

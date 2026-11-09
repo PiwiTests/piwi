@@ -1,7 +1,5 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import {
@@ -14,6 +12,7 @@ import {
 } from '#shared/duration-standout';
 import { buildFailureTimeline } from '#shared/failure-timeline';
 import { diffAttempts } from '#shared/attempt-diff';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The usual duration of a step or a request: the median over the test's last
@@ -156,9 +155,7 @@ describe('getUsualDurations', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'reports' });
     await db.insert(schema.testCases).values([
       { id: 1, projectId: 1, title: 'opens the monthly report', filePath: 'tests/reports.spec.ts' },

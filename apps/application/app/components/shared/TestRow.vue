@@ -21,13 +21,16 @@
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
-import type { LiveWorkerState } from '#shared/live-view';
+import { liveWorkerName, type LiveWorkerState } from '#shared/live-view';
+import { liveRowShows, type LiveRowNote } from '~/utils/live-row-note';
+import type { DesktopRowWorker } from '~/utils/desktop-run-view';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
 import { testLabel } from '#shared/utils/test-label';
+import { shownWorkerNumber } from '#shared/worker-lane';
 
 const props = withDefaults(
   defineProps<{
@@ -77,8 +80,16 @@ const props = withDefaults(
     liveResources?: LiveWorkerResources | null;
     /** This row's worker in the run's live view: Watch, and Paused while its test is stopped (live runs only). */
     liveWorker?: LiveWorkerState | null;
-    /** A running row of a run its developer has not shared live: says so, and how to share it (live runs only). */
-    liveUnshared?: boolean;
+    /**
+     * This row's worker in a run the desktop app started: Pause and watch, and where its test stopped (live runs in
+     * the desktop app only).
+     */
+    desktopWorker?: DesktopRowWorker | null;
+    /**
+     * What a running row says where Watch would be: its run is not shared live from the developer's machine, and how to
+     * share it; or, in the desktop app, where its test's page shows (live runs only).
+     */
+    liveNote?: LiveRowNote | null;
     highlighted?: boolean;
     projectKey?: string | number | null;
     projectName?: string | null;
@@ -116,7 +127,8 @@ const props = withDefaults(
     liveStep: null,
     liveResources: null,
     liveWorker: null,
-    liveUnshared: false,
+    desktopWorker: null,
+    liveNote: null,
     highlighted: false,
     projectKey: null,
     projectName: null,
@@ -130,10 +142,33 @@ const props = withDefaults(
 const emit = defineEmits<{ toggle: []; select: []; watch: [] }>();
 
 const tc = computed(() => props.testCase);
+/** What the row shows where Watch would be: Watch, Pause and watch, or the run's note. */
+const liveShows = computed(() =>
+  liveRowShows({ liveWorker: !!props.liveWorker, desktopWorker: !!props.desktopWorker, note: props.liveNote }),
+);
+/**
+ * Where the row's test stands stopped, as text, from a run outside CI whose reporter told it (`test-stopped`): shown
+ * unless the run's live view or the desktop app's own hub shows the stop.
+ */
+const toldStop = computed(() =>
+  tc.value?.liveStop && !props.liveWorker?.paused && liveShows.value !== 'pause-and-watch' ? tc.value.liveStop : null,
+);
+/** The row's test stands at a stop: in the run's live view, in a run the desktop app started, or as its reporter told. */
+const stopped = computed(
+  () => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped' || !!tc.value?.liveStop,
+);
+/** Whether the row has a live line under its title: the step, where it is paused, or the run's note. */
+const liveLine = computed(
+  () =>
+    (!!props.liveStep && !stopped.value) ||
+    !!toldStop.value ||
+    (liveShows.value === 'watch' ? !!props.liveWorker?.paused : !!liveShows.value),
+);
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
   const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
-  return `What worker ${tc.value?.workerIndex ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
+  const worker = tc.value ? shownWorkerNumber(tc.value) : null;
+  return `What worker ${worker ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
 });
 
 const title = computed(() => props.title ?? tc.value?.title ?? '');
@@ -261,7 +296,11 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
-                  <span v-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
+                  <span v-if="(tc.retries ?? 0) > 0" class="text-info" data-testid="live-retry">
+                    Retry {{ tc.retries }}<template v-if="tc.maxRetries"> of {{ tc.maxRetries }}</template>
+                  </span>
+                  <TestRowStuck v-if="tc.stuck && !stopped" :stuck="tc.stuck" />
+                  <span v-else-if="!liveStep && !stopped" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
                     class="inline-flex items-center gap-0.5 tabular-nums"
@@ -275,7 +314,7 @@ const clusterLabel = computed(() =>
                 <DurationValue v-else-if="tc.duration" :ms="tc.duration" />
                 <BrowserBadge :browser="tc.browser" size="sm" />
                 <UBadge
-                  v-if="(tc.retries ?? 0) > 0"
+                  v-if="(tc.retries ?? 0) > 0 && tc.status !== 'running'"
                   color="warning"
                   variant="soft"
                   size="xs"
@@ -331,18 +370,33 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveWorker || liveUnshared" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveLine" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
-          <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
-          <TestRowLiveWorker
-            v-if="liveWorker"
-            :worker="liveWorker"
+          <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
+          <TestRowLivePause
+            v-if="liveWorker?.paused && liveShows === 'watch'"
+            :reason="liveWorker.paused.reason"
+            :call="liveWorker.paused.call"
             :project-key="projectKey"
             :project-name="projectName"
-            @watch="emit('watch')"
+          />
+          <TestRowLivePause
+            v-else-if="toldStop"
+            :reason="toldStop.reason"
+            :call="toldStop"
+            :since="toldStop.since"
+            :project-key="projectKey"
+            :project-name="projectName"
+          />
+          <TestRowDesktopWorker
+            v-else-if="desktopWorker && liveShows === 'pause-and-watch'"
+            :session="desktopWorker.session"
+            :worker="desktopWorker.worker"
+            :project-key="projectKey"
+            :project-name="projectName"
           />
           <span
-            v-else-if="liveUnshared"
+            v-else-if="liveShows === 'unshared'"
             class="inline-flex items-center gap-1 text-xs text-muted"
             data-testid="live-unshared"
             @click.stop
@@ -351,8 +405,32 @@ const clusterLabel = computed(() =>
             Not shared live
             <HelpHint topic="run.live-unshared" />
           </span>
+          <span
+            v-else-if="liveShows === 'desktop'"
+            class="inline-flex items-center gap-1 text-xs text-muted"
+            data-testid="live-at-stop"
+            @click.stop
+          >
+            <UIcon name="i-lucide-eye" class="size-3 shrink-0" />
+            See its page at a stop
+            <HelpHint topic="run.live-desktop" />
+          </span>
         </div>
       </div>
+      <!-- Watch keeps one place at the row's end, whatever the live step beside it says. -->
+      <UButton
+        v-if="liveWorker && liveShows === 'watch'"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-eye"
+        class="shrink-0"
+        :aria-label="`Watch ${liveWorkerName(liveWorker)} live`"
+        :title="`Watch the page ${liveWorkerName(liveWorker)} is on, live`"
+        data-testid="live-watch"
+        @click.stop="emit('watch')"
+        ><span class="hidden sm:inline">Watch</span></UButton
+      >
     </div>
   </div>
 </template>

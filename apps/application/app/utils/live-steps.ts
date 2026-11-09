@@ -1,4 +1,5 @@
 import type { TestCaseResult } from '~~/types/api';
+import { liveWorkerKey } from '#shared/live-view';
 
 /**
  * The step a worker is currently on, from the run stream's transient
@@ -14,24 +15,39 @@ export interface LiveStepInfo {
   status?: string | null;
   /** Owning test's title — pins the step to the right running row. */
   parentTitle?: string | null;
+  /** When the step began, in epoch milliseconds of the worker's wall clock. */
+  startedAt?: number | null;
 }
 
-/** Worker index → the step that worker is currently on. */
-export type LiveStepsByWorker = Record<number, LiveStepInfo | undefined>;
+/** The step each worker is currently on, by `liveWorkerKey` (its shard and its worker). */
+export type LiveStepsByWorker = Record<string, LiveStepInfo | undefined>;
 
 /**
  * The live step to show on a test row: only rows still running, matched by
- * worker. The `parentTitle` guard drops a stale readout during a worker's
- * test handoff — the previous test's last step lingers in the map until the
- * next test's first step begins, and it must not surface on the new row.
+ * shard and worker, else by worker alone for a reporter that sends no shard
+ * with its steps. The `parentTitle` guard drops a stale readout during a
+ * worker's test handoff — the previous test's last step lingers in the map
+ * until the next test's first step begins, and it must not surface on the new
+ * row.
  */
 export function liveStepForCase(
   steps: LiveStepsByWorker | null | undefined,
   testCase: TestCaseResult,
 ): LiveStepInfo | null {
-  if (!steps || testCase.status !== 'running' || testCase.workerIndex == null) return null;
-  const step = steps[testCase.workerIndex];
+  if (testCase.status !== 'running' || testCase.workerIndex == null) return null;
+  return liveStepOf(steps, { shard: testCase.shardIndex ?? null, worker: testCase.workerIndex, test: testCase.title });
+}
+
+/** The step a worker is on in its test `test`, by shard and worker, else by worker alone. Null for none. */
+export function liveStepOf(
+  steps: LiveStepsByWorker | null | undefined,
+  at: { shard: number | null; worker: number; test: string },
+): LiveStepInfo | null {
+  if (!steps) return null;
+  const step =
+    steps[liveWorkerKey({ shard: at.shard, worker: at.worker })] ??
+    steps[liveWorkerKey({ shard: null, worker: at.worker })];
   if (!step) return null;
-  if (step.parentTitle && step.parentTitle !== testCase.title) return null;
+  if (step.parentTitle && step.parentTitle !== at.test) return null;
   return step;
 }

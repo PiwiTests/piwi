@@ -51,6 +51,9 @@ export interface RoleBindingView {
 
 // ── Users (`/api/users`) ──────────────────────────────────────────────────────
 
+/** The longest username an account is created with, and the longest a sign-in or a lookup by username takes. */
+export const USERNAME_MAX_LENGTH = 200;
+
 /** A user as administrators see them (`users:manage`). */
 export interface UserListItem {
   id: number;
@@ -64,6 +67,8 @@ export interface UserListItem {
   email: string | null;
   emailVerified: boolean;
   oauthProvider: string | null;
+  /** Whether the user uploaded a profile picture, which an administrator may remove. */
+  avatarUploaded: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -380,8 +385,13 @@ export interface ProjectMembersResponse {
 }
 
 /** `PUT /api/projects/{id}/members`: the project's direct bindings, replacing the current ones. */
+/** A member to set: a user may carry the whole username a project admin found them by. */
+export interface ProjectMemberSubject extends AccessSubject {
+  username?: string;
+}
+
 export interface ProjectMembersUpdate {
-  entries: { subject: AccessSubject; role: ProjectRole }[];
+  entries: { subject: ProjectMemberSubject; role: ProjectRole }[];
 }
 
 /** `PUT /api/projects/{id}/members`: the members after the change. */

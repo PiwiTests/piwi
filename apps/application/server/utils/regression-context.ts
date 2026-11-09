@@ -3,6 +3,7 @@ import { projects, testRunsCases } from '../database/schema';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
 import { buildCommitRange, computeMetadataDiff, type MetaDiffEntry } from '#shared/utils/run-metadata';
+import { loadRunsSnapshots } from '#shared/handlers/environment-snapshots';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { normalizeGitUrl } from './scm/git-url';
 import { resolveRunBranch } from './run-branch';
@@ -20,6 +21,7 @@ export interface RunForRegression {
   environment: string | null;
   branch?: string | null;
   metadata: unknown;
+  playwrightVersion?: string | null;
 }
 
 export type RegressionContextResult =
@@ -88,7 +90,11 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
 
   const commitRange = buildCommitRange(repositoryUrl, lastGreenCommit, currentCommit);
 
-  const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment);
+  const snapshots = await loadRunsSnapshots(db, [lastGreen.id, run.id]);
+  const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment, {
+    before: { playwrightVersion: lastGreen.playwrightVersion, snapshots: snapshots.get(lastGreen.id) ?? [] },
+    after: { playwrightVersion: run.playwrightVersion, snapshots: snapshots.get(run.id) ?? [] },
+  });
 
   const [greenCases, currentCases] = await Promise.all([
     db

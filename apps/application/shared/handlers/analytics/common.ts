@@ -1,11 +1,12 @@
 import { and, eq, gte, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm';
+import { notPrivateRun } from '../../run-eligibility';
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
-import { getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
+import { catalogNeeds, getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
 import type { SelectionDefinition } from '../../selection/types';
 import { distinctRunCountsFromAttempts } from '../../utils/test-counts';
-import { hasTestFilter, type AnalyticsScope } from '../../analytics/scope';
+import { hasTestFilter, testsWithinLimits, type AnalyticsScope } from '../../analytics/scope';
 import {
   resolveComparison,
   resolvePeriod,
@@ -16,6 +17,7 @@ import {
 import type { AnalyticsTagInfo } from '../../analytics/types';
 import { branchPolicyCondition, defaultBranchPolicy, type BranchPolicy } from './branch-policy';
 import { resolveStoredDefaultBranches } from '../../../server/utils/scm/stored-default-branch';
+import { memoizedTestFilter } from './test-filter-memo';
 
 export type ProjectAccess = 'all' | Set<number>;
 
@@ -116,7 +118,14 @@ async function resolveAnalyticsContext(
   const comparison = resolveComparison(scope.comparison, scope.period, period, resolveCtx);
 
   const branchPolicy = await resolveBranchPolicy(db, scope, allowed);
-  const testFilter = await resolveTestFilter(db, scope, allowed, notes);
+  const memoized = hasTestFilter(scope)
+    ? await memoizedTestFilter(db, scope, allowed, async () => {
+        const filterNotes: string[] = [];
+        return { filter: await resolveTestFilter(db, scope, allowed, filterNotes), notes: filterNotes };
+      })
+    : null;
+  const testFilter = memoized?.filter ?? null;
+  if (memoized) notes.push(...memoized.notes);
   if (testFilter?.testCaseIds) {
     allowed = [...testFilter.testCaseIds.keys()];
   }
@@ -220,6 +229,7 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
           inArray(testRuns.projectId, projectIds.slice(i, i + 500)),
           isNotNull(testRuns.branch),
           ne(testRuns.branch, ''),
+          notPrivateRun(testRuns.origin),
         ),
       );
     for (const row of rows) found.add(row.projectId);
@@ -228,7 +238,8 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
 }
 
 /**
- * The test filter of a scope, per project: a selection key resolves to that
+ * The test filter of a scope, per project (`memoizedTestFilter` keeps it for
+ * `TEST_FILTER_MEMO_TTL_MS`): a selection key resolves to that
  * project's selection with that key (a project without it is left out and
  * named in the notes), inline predicates resolve as an ad-hoc selection, and
  * both together intersect. A test filter means the tests that match it today,
@@ -263,9 +274,9 @@ async function resolveTestFilter(
       }
       definitions.push(selection.definition);
     }
-    if (scope.tests) definitions.push({ include: [scope.tests] });
+    if (scope.tests) definitions.push({ include: [testsWithinLimits(scope.tests)] });
 
-    const catalog = await loadSelectionCatalog(db, projectId, { withFailRanks: true });
+    const catalog = await loadSelectionCatalog(db, projectId, catalogNeeds(definitions));
     const sets: Set<number>[] = [];
     for (const definition of definitions) {
       const resolved = await resolveSelectionDefinition(db, projectId, definition, { catalog });
@@ -421,14 +432,22 @@ export interface FilteredExecution {
   wastedTimeMs: number | null;
   isNewRegression: number | null;
   isNewFlaky: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
 }
 
 const RUN_BATCH = 400;
 
+/** The most test ids one query of `fetchFilteredExecutions` binds; a larger filter is applied in memory alone. */
+const MAX_BOUND_TEST_IDS = 500;
+
 /**
- * The executions of the given runs that match the context's test filter.
- * Filtering happens in memory against the resolved test ids, so a selection of
- * any size costs no bound variables.
+ * The executions of the given runs that match the context's test filter, read
+ * `RUN_BATCH` runs per query. A query also names the matching tests of its
+ * runs' projects when they are at most `MAX_BOUND_TEST_IDS`, so a small
+ * selection reads only its own executions; every row is then checked in
+ * memory against its project's tests, so a selection of any size binds a
+ * bounded number of variables.
  */
 export async function fetchFilteredExecutions(
   db: DrizzleDB,
@@ -442,6 +461,14 @@ export async function fetchFilteredExecutions(
   for (let i = 0; i < ids.length; i += RUN_BATCH) {
     const batch = ids.slice(i, i + RUN_BATCH);
     const conditions: SQL[] = [inArray(testRunsCases.testRunId, batch)];
+    if (filter?.testCaseIds) {
+      const tests = new Set<number>();
+      for (const projectId of new Set(batch.map((id) => projectOf.get(id)!))) {
+        for (const testCaseId of filter.testCaseIds.get(projectId) ?? []) tests.add(testCaseId);
+      }
+      if (tests.size === 0) continue;
+      if (tests.size <= MAX_BOUND_TEST_IDS) conditions.push(inArray(testRunsCases.testCaseId, [...tests]));
+    }
     if (filter?.browsers) conditions.push(inArray(testRunsCases.browserName, filter.browsers));
     const rows: FilteredExecution[] = await db
       .select({
@@ -455,6 +482,7 @@ export async function fetchFilteredExecutions(
         wastedTimeMs: testRunsCases.wastedTimeMs,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
       })
       .from(testRunsCases)
       .where(and(...conditions));

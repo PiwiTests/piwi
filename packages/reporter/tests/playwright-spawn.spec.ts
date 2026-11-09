@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { playwrightInvocation, resolveNpmEntry } from '../src/internal/support/playwright-spawn.js';
+import {
+  childExitCode,
+  playwrightInvocation,
+  resolveNpmEntry,
+  spawnPlaywright,
+} from '../src/internal/support/playwright-spawn.js';
 
 const dirs: string[] = [];
 
@@ -60,5 +65,39 @@ describe('resolveNpmEntry', () => {
     );
 
     expect(resolveNpmEntry('npx', path.join(tempDir(), 'node'))).toBeNull();
+  });
+});
+
+describe('childExitCode', () => {
+  it("keeps the child's own code", () => {
+    expect(childExitCode(0, null)).toBe(0);
+    expect(childExitCode(1, null)).toBe(1);
+  });
+
+  it('reports a signal as a shell does', () => {
+    expect(childExitCode(null, 'SIGTERM')).toBe(143);
+    expect(childExitCode(null, 'SIGKILL')).toBe(137);
+    expect(childExitCode(null, 'SIGINT')).toBe(130);
+  });
+
+  it('falls back to the could-not-start code without a code or a known signal', () => {
+    expect(childExitCode(null, null)).toBe(2);
+  });
+});
+
+describe('spawnPlaywright', () => {
+  it.skipIf(process.platform === 'win32')('exits with 128 plus the signal that stopped Playwright', async () => {
+    const project = tempDir();
+    const cli = path.join(project, 'node_modules', 'playwright');
+    fs.mkdirSync(cli, { recursive: true });
+    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await spawnPlaywright([], process.env, { cwd: project, command: 'piwi rerun' })).toBe(143);
+      expect(errors).toHaveBeenCalledWith('piwi rerun: Playwright was stopped by SIGTERM');
+    } finally {
+      errors.mockRestore();
+    }
   });
 });

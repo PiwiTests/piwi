@@ -3,8 +3,11 @@ import { parseErrorContext, consoleLogsFromTrace } from '../../server/utils/impo
 import { errorContextMarkdown } from '../utils/blob-report-fixture';
 import type { ParsedTraceData } from '../../server/utils/trace-events';
 
-/** A `ParsedTraceData` carrying only the console entries a test cares about. */
-function traceWith(consoleEntries: ParsedTraceData['consoleEntries']): ParsedTraceData {
+/** A `ParsedTraceData` carrying only the console entries and context headers a test cares about. */
+function traceWith(
+  consoleEntries: ParsedTraceData['consoleEntries'],
+  contexts: ParsedTraceData['contexts'] = [],
+): ParsedTraceData {
   return {
     actions: [],
     consoleEntries,
@@ -12,6 +15,8 @@ function traceWith(consoleEntries: ParsedTraceData['consoleEntries']): ParsedTra
     frameSnapshots: [],
     failingAction: null,
     failingActionIndex: -1,
+    contexts,
+    errors: [],
     eventCount: 0,
     timeoutFallback: false,
     traceEndTime: 0,
@@ -93,6 +98,19 @@ describe('consoleLogsFromTrace', () => {
     );
     // Trace timestamps that are too small to be an epoch are offsets, not dates.
     expect(logs![0]!.timestamp).toBe(1_700_000_009_605);
+  });
+
+  test("puts a monotonic time on the wall clock through the trace's own anchor, not the worker's uptime", () => {
+    // The worker had been up an hour when the browser context opened at 1_700_000_000_000.
+    const contexts = [
+      { origin: 'testRunner', wallTime: 1_699_999_999_900, monotonicTime: 3_599_900 },
+      { origin: 'library', wallTime: 1_700_000_000_000, monotonicTime: 3_600_000 },
+    ];
+    const logs = consoleLogsFromTrace(
+      traceWith([{ type: 'error', text: 'boom', timestamp: 3_605_000.4 }], contexts),
+      1_699_999_999_900,
+    );
+    expect(logs![0]!.timestamp).toBe(1_700_000_005_000);
   });
 
   test('leaves wall-clock trace timestamps alone', () => {

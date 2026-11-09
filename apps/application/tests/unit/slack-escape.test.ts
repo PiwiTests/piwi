@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { slackEscape, slackLink } from '../../server/utils/notifications/slack';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Slack messages escape every value they interpolate: a branch, a test title or
@@ -44,9 +43,7 @@ describe('a run.failed message to a Slack channel', () => {
   beforeAll(async () => {
     vi.stubEnv('PIWI_SITE_URL', 'https://piwi.example.test');
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     const [channel] = await db
       .insert(schema.notificationChannels)
       .values({ name: 'Team', type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/services/T/B/1' } })

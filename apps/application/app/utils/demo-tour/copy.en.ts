@@ -83,7 +83,7 @@ export const EN_COPY = {
             wasted: 'The CI minutes its retries wasted, which set the order.',
             score: 'Its flaky score, from 0 to 100, from its retries and flips.',
             'top-suspect': 'Its top suspect: the condition its failures share most.',
-            quarantine: '**Quarantine** keeps the test running and reporting while the CI gate leaves it out.',
+            quarantine: '**Quarantined**: the test keeps running and reporting, but the CI gate leaves it out.',
           },
         },
         suspects: {
@@ -114,7 +114,7 @@ export const EN_COPY = {
       stops: {
         health: {
           title: 'Every project at a glance',
-          body: '**Project health** shows each project’s last 20 runs, its tendency and the pass rate of its latest run, failing projects first. Open one to see what failed.',
+          body: '**Project health** shows each project’s last 20 runs, its tendency and the pass rate of its latest run: starred projects first, then failing ones. Open one to see what failed.',
         },
         analytics: {
           title: 'Quality over time',
@@ -160,7 +160,7 @@ export const EN_COPY = {
         },
         setup: {
           title: 'What is switched on',
-          body: "**What's switched on** reads this instance’s data, not its config, to show which capabilities are in use, and what each of the others needs, such as a repository token or an AI provider. The steps above it connect a suite.",
+          body: "**What's switched on** reads this instance’s data, not its config, to show which capabilities are in use, and what each of the others needs, such as a repository token or an AI provider.",
         },
         simulate: {
           title: 'Watch a run stream in',

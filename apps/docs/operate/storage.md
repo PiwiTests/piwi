@@ -111,8 +111,13 @@ PIWI_S3_SECRET_ACCESS_KEY=your-r2-secret-key
 
 The **Settings › Storage** page (`/settings/storage`) provides administrators with:
 
-- **Storage analysis** — total storage used and file count, the projects that consume the most space, a breakdown by file kind (traces, screenshots, videos, reports, attachments, visual diffs), storage growth over time, and the actual on-disk storage size (local only) — which also surfaces any untracked files lingering on disk.
+- **Storage analysis** — total storage and file count, the projects that take the most, a breakdown by file kind, growth over time, and the on-disk size (local only), which also surfaces untracked files left on disk.
 - **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). [Kept runs](#keeping-runs-forever) are skipped, and so are each project's newest runs when `PIWI_RETENTION_MIN_RUNS` is set. A confirmation dialog is shown before any data is deleted, and the result says how many runs were skipped.
+
+<figure>
+  <img src="/screenshots/storage-analysis.png" alt="Settings, Storage: the total storage and its growth, storage over time, the space taken by each file kind, and the projects that take the most">
+  <figcaption>Settings → Storage: how much is stored, how it grows, and where it goes.</figcaption>
+</figure>
 
 Project admins can also delete runs by hand:
 
@@ -125,13 +130,14 @@ a run that could not be deleted stays listed with its error.
 
 A kept run cannot be deleted until it is released; a selection skips kept runs.
 
+
 ### Data retention
 
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
-- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: nothing is pruned until you set it. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
+- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: nothing is pruned until you set it. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying. The [desktop app](/features/desktop) sets it under **Settings › Storage**, from its next start, and also runs the sweep a few minutes after it starts.
 - **Analytics rollups** — pruned runs' numbers are moved into the [daily rollups](/features/analytics#where-the-numbers-come-from) in the transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead. Hand-back outcomes are counted the same way.
-- **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
+- **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30), and with them settled auto-heal and integration actions, the agents' write log, and run requests that ended or expired.
 - **Report snapshot pruning** — removes [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).
 - **Diagnosis history capping** — keeps the newest `PIWI_RETENTION_DIAGNOSIS_VERSIONS` versions per AI diagnosis (default 20).
 - **Unlinked traces** — deletes traces no execution has used for a day.
@@ -156,7 +162,7 @@ There are three ways to keep a run:
 
 A kept run shows a lock next to its number in the runs table and a **Kept** mark in its header; its **Details** say who kept it, when and why. The runs table's **Kept runs only** box lists every kept run of the project, however far back. **Settings › Storage** shows how many runs are kept and how much storage their own files hold.
 
-A Project admin can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. Scripts can keep and release runs through the API; see the [API docs](https://piwitests.dev/demo/docs).
+A Project admin can **release** a run (**Release keep** in the same menus), which puts it back under retention. A kept run cannot be deleted until it is released. Scripts can keep and release runs through the API; see the [API docs](https://piwitests.dev/demo/settings/api).
 
 ### Space reclamation
 
@@ -177,7 +183,7 @@ backend. What happens to them is automatic and needs no configuration:
 - **Failure evidence is stored once.** The ARIA snapshot, source snippet and stack frames of a failure are stored
   once per project and shared by every execution that fails the same way.
 
-The one capture choice that visibly changes storage growth is the `screen` trace snapshot, below.
+The capture choices that visibly change storage growth are the trace's `screen` snapshots and, on a large page, its `aria` snapshots, below.
 
 ## Trace snapshots
 
@@ -185,8 +191,8 @@ A Playwright 1.63 trace can record an **aria tree** and a **screenshot** before 
 
 The two kinds cost very differently:
 
-- **`aria`** adds one small JSON tree per action per phase — a few hundred bytes each, negligible next to the trace it rides in. [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns it on by default on Playwright 1.63+.
-- **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } } }`.
+- **`aria`** adds one JSON tree per action per phase: a few hundred bytes on a small page, hundreds of kilobytes on a large one, where ten clicks on a 1,000-row table made the trace three times bigger. Each tree also takes hundreds of milliseconds to record on such a page, on every attempt. It is **opt-in**, off in the trace [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) sets: [`defaultCapture`](/reference/reporter-options#defaultcapture) gives the measured cost and the setting.
+- **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, screen: true } } }`.
 
 Identical screenshots, common between consecutive actions and across runs, are stored once in the shared pool.
 

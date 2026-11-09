@@ -38,11 +38,11 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const testCaseId = requireRouteId(event, 'id', 'test case ID');
-  const { db } = await requireResolvedProjectAccess(event, testCaseId, resolveCaseProjectId, 'Test case');
+  const { db, user } = await requireResolvedProjectAccess(event, testCaseId, resolveCaseProjectId, 'Test case');
   const query = parseCoverageReachQuery(getQuery(event));
   if ('error' in query) throw apiError({ statusCode: 400, message: query.error });
   try {
-    const answer = await getCoverageReach(db, testCaseId, query);
+    const answer = await getCoverageReach(db, testCaseId, query, user.id);
     if (!answer) throw apiError({ statusCode: 404, message: 'Test case not found' });
     return answer;
   } catch (error) {

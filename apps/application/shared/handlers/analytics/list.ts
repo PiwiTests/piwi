@@ -181,7 +181,7 @@ export async function getAnalyticsList(
       detail: g.cls,
       projectName: names.get(g.projectId) ?? '',
       at: iso(g.createdAt),
-      href: `/projects/${g.projectId}?tab=gaps`,
+      href: `/projects/${g.projectId}?tab=coverage`,
       facts: { source: 'scenario-gaps' as const, detector: g.detector, gapClass: g.cls },
     })),
   };

@@ -3,6 +3,7 @@ import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js'
 import {
   REPORT_FINDINGS_CAP,
   TIMELINE_SERIES_CAP,
+  TIMELINE_SPANS_CAP,
   TIMELINE_WORKER_POINTS_CAP,
   downsample,
   downsamplePoints,
@@ -10,7 +11,7 @@ import {
   resourceReportWire,
   resourceTimeline,
 } from '../src/internal/collect/resource-wire.js';
-import type { ResourceReport } from '../src/internal/collect/resource-verdicts.js';
+import type { ResourceReport, ResourceSpan } from '../src/internal/collect/resource-verdicts.js';
 import type { RunProfile } from '../src/internal/collect/process-sampler.js';
 
 const ref = (id: string) => ({ id, file: 'tests/cart.spec.ts', suite: [], title: `title ${id}` });
@@ -178,6 +179,55 @@ describe('resourceTimeline', () => {
   });
 });
 
+describe('resourceTimeline spans', () => {
+  const span = (from: number, to: number, extra: Partial<ResourceSpan> = {}): ResourceSpan => ({
+    worker: 0,
+    verdict: 'leaked',
+    kind: 'context',
+    where: 'tests/cart.spec.ts:4',
+    site: 'tests/cart.spec.ts:4',
+    lastUse: 'tests/cart.spec.ts:6',
+    from,
+    to,
+    untilWorkerEnd: true,
+    scope: 'test',
+    pages: 1,
+    test: { title: 'title t1', file: 'tests/cart.spec.ts' },
+    ...extra,
+  });
+
+  it('puts each span on the timeline’s clock, and carries a run that measured nothing else', () => {
+    const timeline = resourceTimeline(null, [], [span(1500, 4000), span(2000, 2600, { verdict: 'lingering', untilWorkerEnd: false, scope: null })])!;
+    expect(timeline.startedAt).toBe(1500);
+    expect(timeline.spans).toEqual([
+      {
+        worker: 0,
+        verdict: 'leaked',
+        kind: 'context',
+        where: 'tests/cart.spec.ts:4',
+        site: 'tests/cart.spec.ts:4',
+        lastUse: 'tests/cart.spec.ts:6',
+        from: 0,
+        to: 2500,
+        untilWorkerEnd: true,
+        scope: 'test',
+        pages: 1,
+        test: { title: 'title t1', file: 'tests/cart.spec.ts' },
+      },
+      expect.objectContaining({ verdict: 'lingering', from: 500, to: 1100 }),
+    ]);
+    expect(resourceTimeline(null, [], [])).toBeNull();
+  });
+
+  it('keeps the longest spans, in the order they start', () => {
+    const spans = Array.from({ length: TIMELINE_SPANS_CAP + 10 }, (_, i) => span(i * 10, i * 10 + (i < 10 ? 1 : 1000)));
+    const kept = resourceTimeline(null, [], spans)!.spans!;
+    expect(kept).toHaveLength(TIMELINE_SPANS_CAP);
+    expect(kept[0]!.from).toBe(0);
+    expect(kept.every((s) => s.to - s.from === 1000)).toBe(true);
+  });
+});
+
 describe('executionResources', () => {
   it("projects a census's metrics, what was open at the start and what the test left open", () => {
     const resources = executionResources(
@@ -224,7 +274,8 @@ describe('resourceReportWire', () => {
         tests: 1,
         count: 1,
       })),
-      counts: { leaked: 0, idle: 105, piling: 0, handle: 0, probable: 0 },
+      counts: { leaked: 0, lingering: 0, idle: 105, piling: 0, handle: 0, probable: 0 },
+      spans: [],
     };
     const profile = { cpu: { series: Array.from({ length: 1000 }, () => 50) } } as unknown as RunProfile;
     const wire = resourceReportWire({

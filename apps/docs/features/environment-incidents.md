@@ -13,7 +13,10 @@ resolving, the browser crashes on a starved runner. None of those failures says 
 Piwi recognizes such a run as an **environment incident**, says so on the run page, and keeps it out of every verdict
 that compares runs.
 
-![A run flagged as an environment incident: the reason, the rule that decided, and the action to clear the flag](/screenshots/environment-incident.png)
+<figure>
+  <img src="/screenshots/environment-incident.png" alt="A run flagged as an environment incident: the reason, the rule that decided, and the action to clear the flag">
+  <figcaption>A run flagged as an environment incident, with the rule that decided.</figcaption>
+</figure>
 
 ## How a run is recognized
 
@@ -59,7 +62,8 @@ A [probe](./probes) or [Flake Lab](./flake-lab) run is never judged: it injects 
   test owners. `run.finished` still fires. When one outage flags runs in several projects, a channel that hears from
   all of them receives one message.
 - **The failure inbox** on Home shows one row for the run instead of one row per new cluster it opened. Clusters that
-  were already open before the incident keep their rows.
+  were already open before the incident keep their rows, and a cluster it opened gets its own row once a run that is
+  no incident fails it again.
 - **No AI diagnosis and no pull-request comment** are produced for the run.
 
 The run's history stays: its executions, evidence and clusters are kept like any other run's, and analytics still
@@ -106,7 +110,7 @@ The rules can miss an outage or flag a real regression. Anyone who can upload or
   again: its regression signals are computed, and it feeds flaky scores and baselines from then on.
 
 Either decision is kept on the run, and finalizing the run again (a late shard, a report upload) never overrides it.
-The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/docs), and an
+The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/settings/api), and an
 agent makes it with the MCP tool [`set_run_incident`](/reference/mcp-tools#set_run_incident), which needs a key whose
 owner may make the same change in the dashboard and is kept in the [write log](./mcp).
 
@@ -120,6 +124,9 @@ owner may make the same change in the dashboard and is kept in the [write log](.
   sent.
 
 ## Try it in the demo
+
+The [live demo](https://piwitests.dev/demo/) holds an incident run, and its run simulator streams one: pick
+**Staging down** in **Simulate a test run**, and the run is flagged as it finishes.
 
 <DemoExamples />
 

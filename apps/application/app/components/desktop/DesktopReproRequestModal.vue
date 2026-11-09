@@ -80,14 +80,9 @@ const labArms = computed(() => {
   const plan = job.value?.plan;
   return plan ? [plan.control, ...plan.arms] : [];
 });
-const instanceHost = computed(() => {
+const fromHost = computed(() => {
   const url = current.value?.instanceUrl;
-  if (!url) return 'another Piwi instance';
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
+  return url ? teamInstanceHost(url) : 'another Piwi instance';
 });
 const preview = computed(() => {
   if (!current.value) return '';
@@ -157,7 +152,7 @@ async function run() {
         <p v-if="job?.plan" class="text-sm text-muted">
           Your editor asks to run Flake Lab on
           <span class="font-medium text-highlighted">{{ current.title || job.plan.displayTitle }}</span>
-          from {{ instanceHost }} at <code>{{ shortCommit(job.commit) }}</code> (its latest failure), in a throwaway
+          from {{ fromHost }} at <code>{{ shortCommit(job.commit) }}</code> (its latest failure), in a throwaway
           worktree: your checkout is untouched. Each arm below runs the test under one suspect's condition, next to a
           control run with none. It runs the code of that commit on this machine, so start it only if you trust it.
           Nothing runs until you start it; the request expires at {{ expires?.toLocaleTimeString() }}.
@@ -166,7 +161,7 @@ async function run() {
           Your editor asks to
           {{ isBisect ? 'find the commit that broke' : 'reproduce' }}
           <span class="font-medium text-highlighted">{{ current.title || 'a failing test' }}</span>
-          from {{ instanceHost }}
+          from {{ fromHost }}
           <template v-if="isBisect && job.good">
             between <code>{{ shortCommit(job.good) }}</code> (last green) and
             <code>{{ shortCommit(job.commit) }}</code> (failing)</template

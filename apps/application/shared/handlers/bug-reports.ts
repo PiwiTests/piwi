@@ -25,7 +25,7 @@ import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branc
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
-import { isEligibleRun } from '../run-eligibility';
+import { isEligibleRun, notPrivateRun } from '../run-eligibility';
 
 /**
  * Bug reports: what Piwi Picker sends with **Send to Piwi…**, kept with its
@@ -373,7 +373,7 @@ async function listBugReproductions(db: DrizzleDB, bugReportId: number): Promise
 
 /**
  * Whether a reproduction may name `runId`: none named, or a run of the bug
- * report's own project. Callers answer 400 otherwise, so a run of a project the
+ * report's own project that is not private. Callers answer 400 otherwise, so a run of a project the
  * caller cannot see reads the same as one that does not exist.
  */
 export async function isReproductionRunAllowed(
@@ -386,7 +386,7 @@ export async function isReproductionRunAllowed(
     .select({ id: testRuns.id })
     .from(testRuns)
     .innerJoin(bugReports, eq(bugReports.projectId, testRuns.projectId))
-    .where(and(eq(testRuns.id, runId), eq(bugReports.id, bugReportId)));
+    .where(and(eq(testRuns.id, runId), eq(bugReports.id, bugReportId), notPrivateRun(testRuns.origin)));
   return Boolean(row);
 }
 

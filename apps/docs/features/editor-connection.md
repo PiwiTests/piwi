@@ -61,7 +61,8 @@ the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** to
    `https://piwi.example.com`.
 2. When the instance has a login, choose **Sign in with the browser**. The instance's page opens with a code: check
    that the editor shows the same code, then click **Allow**. The editor receives an [API key](/operate/api-keys)
-   created for you and named after it, such as "Piwi in WebStorm on macOS", which you can revoke with your other keys.
+   created for you and named after it, such as "Piwi in WebStorm on macOS", which you revoke under **Settings →
+   Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
    Or paste a key you created yourself. An instance without a login needs no key.
 3. Pick the project.
 
@@ -112,3 +113,9 @@ twice as long each time, up to every five minutes. A click on the item, or **Piw
 the instance refuses still reads **Piwi: connect**, since only signing in again helps.
 
 **Piwi: Open settings** in VS Code opens the extension's settings.
+
+## Related
+
+- [Editor extensions](./editors): what the extensions show once connected
+- [API keys](/operate/api-keys): the key the editor signs in with, and how to revoke it
+- [Desktop app](/features/desktop): the local instance the editor finds by itself

@@ -31,7 +31,7 @@ import { defineConfig } from '@playwright/test'
 import { wrapConfig } from '@piwitests/reporter'
 
 export default wrapConfig(defineConfig({}), {
-  serverUrl: 'http://localhost:3000',
+  serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
   projectName: 'my-project',
 })
 ```
@@ -67,7 +67,7 @@ Most options can also be set via a `PIWI_*` environment variable (config wins ov
 ## Requirements
 
 - Node.js 20 or higher (the reporter runs inside your test project — the dashboard *server* itself targets Node 22+, or use its Docker image)
-- Playwright Test 1.61.1 or higher
+- Playwright Test 1.59 or higher (a few features need a later version, named in their docs)
 - A running Piwi Dashboard server
 
 ## Contributing

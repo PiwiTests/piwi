@@ -1,6 +1,6 @@
 ---
 title: Desktop app runs
-description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, the code a stop makes, to copy, a run shared live with your team, and the same runs for a coding agent."
+description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, its page live as it runs and at a stop, a pick on its image, the code a stop makes, to copy, a run shared live with your team, and the same runs for a coding agent."
 lang: en-US
 ---
 
@@ -35,18 +35,38 @@ run nobody attends never holds one, and its switch says so: a Flake Lab run, a b
 </figure>
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
-tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. When no run of the app is going
+tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every
+page, and again as soon as it reloads while a run of the app goes on. On a page without the tray, as an analytics
+dashboard in TV mode or an error page, the system tells you of every stop, whatever the window shows, and no failure
+is held; a `page.pause()`, a step or a breakpoint still waits there until something answers it: the tray once a page
+shows it again, [Piwi Picker's Runs window](./runs-window) or [an agent](#for-agents). When no run of the app is going
 on, the window stops listening, and a stop goes on at once.
 
+## Its output
+
+Each run shows its output under its workers, in the colors Playwright prints in a terminal. **Open the output in a
+separate window**, the window button on the run, moves it to a window of its own, to keep beside your editor or on
+another screen: it goes on updating and has the run's **Stop**. Closing that window, or the same button, now **Show
+the output here**, brings the output back; the window closes with the app.
+
 ## Watch live
+
+**Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
+stop, until you turn it off; at a stop, the image takes your input as **Watch live** does. After **Step**, **Resume**
+or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
+update it.
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
 until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
 to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
-**Pick on the image**, or a `Shift`+click on the image or the view, names the element under the pointer: its locator
-shows under the test, with **Copy**.
+**Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
+the test as **Pause** does, watching its worker: the tray opens at the stop, the page live. The row
+then says where the test stopped, with **Show its page** to open the tray on it again.
+
+**Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
+the pointer: its locator shows under the test, with **Copy**.
 
 ## Code to copy
 
@@ -63,18 +83,17 @@ your file:
 Each code shows the line it goes above, and its import lines apart, each with **Copy**. The code is made from the file
 as it is on disk, in the folder linked to the project.
 
+<figure>
+  <img src="/screenshots/desktop-run-live-code.png" alt="Code from the runs in the desktop app's tray: a mocked request, the page.route call to write above tests/checkout.spec.ts:18, with Copy">
+  <figcaption>A mocked request, as code to copy above the stopped line.</figcaption>
+</figure>
+
 ## Share live
 
 A run that reports to your team's Piwi instance, as a **Re-run** in a folder whose `.env` or Playwright config
-names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
-live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
-to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
-link** and **Stop sharing**. A run that cannot be shared says why: [Share a run from your
-machine](./live-view#share-a-run-from-your-machine).
-
-A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance)
-offers no **Share live**: the app hands out no live view key, since no teammate reaches it, and its project settings
-have no **Live view** section.
+names it does, can be shared there for a teammate to watch: **Share live**, above the run's workers, asks first the
+first time since the app started. Who sees what, and why a run cannot be shared: [Share a
+run live](./share-live#from-the-desktop-app).
 
 ## From Piwi Picker
 
@@ -106,6 +125,8 @@ for an agent that left.
 - **A linked folder.** A reproduction or a bisect step runs in a throwaway worktree, which no project links: its
   stops make no code.
 - **A file changed since the run started** makes no code: run the test again.
+- **A reload forgets the tray's runs.** A run still going shows among the app's other runs, without **Hold
+  failures**: its failures go on, a reproduction's included.
 - **Run to cursor** stays in the editor, which has the file.
 - **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
   passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 40 seconds at most
@@ -118,3 +139,4 @@ for an agent that left.
 - [Code from a pause](./editor-stop-code): what each action writes.
 - [Runs window](./runs-window): Piwi Picker's window for the same runs.
 - [Run control for agents](./agent-run-control): the tools an agent steers the runs with.
+- [Flake Lab](./flake-lab#in-the-desktop-app): **Reproduce this flake** and a flake-aware bisect, run by the app.

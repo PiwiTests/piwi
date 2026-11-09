@@ -1,24 +1,37 @@
-import { displayTitleOf, externalIdOf } from '../../../utils/test-case-match';
 import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
-import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
-import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
+import { runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
-import { authorizeStreamToken } from '../../../utils/stream-auth';
+import { testBeginData, testStopRunEvent, testCompletedData } from '../../../utils/live-case-events';
+import { resolveIngestLimits } from '../../../utils/ingest-limits';
+import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then.",
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'X-Piwi-Run-Token',
+        in: 'header',
+        required: false,
+        description:
+          'The stream token of the body, checked before the body is read. A run of reporter 0.65.0 or later needs it: 401 without it, 403 for one that is not the run’s.',
+        schema: { type: 'string' },
+      },
+    ],
     requestBody: {
       content: {
         'application/json': {
@@ -37,37 +50,20 @@ defineRouteMeta({
   },
 });
 
-const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
-
-/**
- * Stable identity for a test case within a run, used to match a `begin` event
- * to its later `complete`. Mirrors the key the run page builds client-side
- * (title + location + browser + repeat), so recording on begin and clearing on
- * complete target the same running-case entry.
- */
-function runningCaseKey(tc: {
-  title?: string;
-  location?: string | null;
-  browser?: unknown;
-  repeatEachIndex?: unknown;
-}): string {
-  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}\x1f${resolveRepeatEachIndex(tc.repeatEachIndex)}`;
+/** Whether a streamed result can be stored; one that cannot leaves the run's running tests and is logged. */
+function isStorableResult(runId: number, tc: StreamEventPayload): boolean {
+  const problem = wireCaseProblem(tc);
+  if (!problem) return true;
+  runEventBus.clearRunningCase(runId, runningCaseKey(tc));
+  console.warn(`[events] Run #${runId}: left out the result of "${tc.title}", whose ${problem} cannot be stored`);
+  return false;
 }
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
-
-  const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
-  if (contentLength > MAX_EVENT_BATCH_BYTES) {
-    throw apiError({ statusCode: 413, message: 'Event batch too large (max 10 MB)' });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
+  const db = await getDatabase();
+  // The body-limit middleware holds the batch to MAX_EVENT_BATCH_BYTES (server/utils/body-limit.ts).
+  await requireStreamingRun(db, id, 'events', getRequestHeader(event, RUN_TOKEN_HEADER));
 
   const body = await readBody(event);
 
@@ -79,52 +75,56 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const db = await getDatabase();
-
   const { projectId } = await authorizeStreamToken(db, id, body.streamToken);
 
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
 
-  const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
+  // Playwright accepts an empty title.
+  const validEvents = testCaseEvents.filter((tc: { title?: unknown }) => tc && typeof tc.title === 'string');
 
-  // Split into begin and complete events; step events keep their batch order
+  // Split into begin and complete events; step events keep their batch order. A result whose fields the database
+  // cannot hold is left out, so it fails neither the batch nor the reporter's retries of it.
   const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
+  const completeEvents = validEvents.filter(
+    (tc: StreamEventPayload) => tc.type === 'complete' && isStorableResult(id, tc),
+  );
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
+
+  // What each running case's last event in the batch is: a retry's begin may follow its previous attempt's complete,
+  // and a short test's complete its begin, and the running case keeps the last.
+  const lastOf = new Map<string, 'begin' | 'complete'>();
+  for (const tc of validEvents as Array<{ type?: string } & Parameters<typeof runningCaseKey>[0]>) {
+    if (tc.type === 'begin' || tc.type === 'complete') lastOf.set(runningCaseKey(tc), tc.type);
+  }
 
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
-    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
-    const filePath = loc.filePath;
-    const beginData = {
-      title: tc.title,
-      filePath,
-      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-      location: tc.location,
-      workerIndex: tc.workerIndex ?? null,
-      shardIndex: tc.shardIndex ?? null,
-      startedAt: tc.startedAt ?? null,
-      browser: tc.browser ?? null,
-      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-    };
+    // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
+    const beginData = testBeginData(tc, Date.now(), resolveIngestLimits().locks);
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
-    runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
+    if (lastOf.get(runningCaseKey(tc)) === 'begin') runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
+  }
+
+  // --- Handle stop events (a test outside CI stopped, or went on), in batch order, after the begins ---
+  for (const tc of validEvents as StreamEventPayload[]) {
+    const stopEvent = testStopRunEvent(tc, runEventBus.getRunningCase(id, runningCaseKey(tc)));
+    if (stopEvent) runEventBus.publish(id, stopEvent);
   }
 
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---
-  for (const stepEvent of stepRunEvents) {
-    runEventBus.publish(id, stepEvent);
-  }
+  for (const stepEvent of stepRunEvents) runEventBus.publish(id, stepEvent);
+  // The step each worker is in, for the stream's catch-up: steps and completions in batch order.
+  runEventBus.noteLiveSteps(id, validEvents, body.streamToken);
 
   // --- Handle complete events (test finished, persist to DB) ---
   if (completeEvents.length === 0) {
     return {
       success: true,
       processed: beginEvents.length + stepRunEvents.length,
-      watched: runEventBus.isWatched(id),
+      watched: runEventBus.answerWatched(id, body.streamToken),
     };
   }
 
@@ -171,32 +171,10 @@ export default eventHandler(async (event) => {
     const persisted = persistedByInputIndex.get(index);
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
-    runEventBus.clearRunningCase(id, runningCaseKey(tc));
+    if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
     runEventBus.publish(id, {
       type: 'test-completed',
-      data: {
-        title: tc.title,
-        externalId: externalIdOf(cases[index]!) ?? null,
-        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
-        filePath: cases[index]!.filePath,
-        suitePath: tc.suitePath ?? null,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        error: tc.error ?? null,
-        stepEvents: tc.stepEvents ?? null,
-        wastedTimeMs: tc.wastedTimeMs ?? null,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        // The attempt number rides along so the live page can tell a
-        // passed-on-retry (flaky) test from a first-try pass.
-        retries: tc.retries ?? null,
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-        executionId: persisted?.id ?? null,
-        testCaseId: persisted?.testCaseId ?? null,
-      },
+      data: testCompletedData(tc, cases[index]!, persisted, resolveIngestLimits().locks),
     });
   }
 
@@ -228,6 +206,6 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     processed: insertedRunCases.length + beginEvents.length,
-    watched: runEventBus.isWatched(id),
+    watched: runEventBus.answerWatched(id, body.streamToken),
   };
 });

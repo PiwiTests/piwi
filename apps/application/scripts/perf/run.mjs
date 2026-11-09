@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
  * Performance regression suite for the dashboard's heaviest pages: the
- * projects list, every tab of a project, the test-run page, and a failed
- * execution's page with a large trace.
+ * projects list, every tab of a project, the test-run page, a failed
+ * execution's page with a large trace, and the Overview analytics dashboard
+ * with and without a test filter.
  *
  * Each target is a production build (`.output`). The first one migrates a
  * fresh database and the dataset is written into it (`lib/dataset.mjs`), then
  * every target runs as its own server on a copy, signed in as an
  * administrator, so a newer build migrates the copy the way an upgrade would.
- * For each page it measures the server render over HTTP and the full load in
+ * On PostgreSQL each copy is then vacuumed and analyzed, once its build's
+ * startup work is done. For each page it measures the server render over HTTP and the full load in
  * Chromium, then replays every API call the pages made. On PostgreSQL every
  * request's SQL is read from `pg_stat_statements`; a last pass with
  * OpenTelemetry on lists the SQL each request ran, on builds that trace.
@@ -51,6 +53,7 @@ import {
   redact,
   statementDelta,
   statementSnapshot,
+  vacuumDatabase,
 } from './lib/pg.mjs';
 import { startOtlpReceiver } from './lib/otlp-receiver.mjs';
 import { fetchTimed, loadPage, signedInContext } from './lib/measure.mjs';
@@ -311,7 +314,11 @@ function typicalSql(deltas) {
   return { source: 'pg_stat_statements', statements: d.statements, ms: d.ms, queries: d.queries, nested: [] };
 }
 
-async function startTargets({ otel }) {
+/**
+ * Start every target and wait until its startup work is done. With `vacuum`, each target's PostgreSQL database is
+ * then vacuumed and analyzed, so every build is measured on tables in the state autovacuum leaves them.
+ */
+async function startTargets({ otel, vacuum = false }) {
   const servers = [];
   for (const target of targets) {
     const server = await startServer({
@@ -330,6 +337,13 @@ async function startTargets({ otel }) {
       waitForIdle(s, { activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase(s.name)) : null, log }),
     ),
   );
+  if (vacuum && pg) {
+    for (const s of servers) {
+      const started = Date.now();
+      await vacuumDatabase(opts['pg-url'], pgDatabase(s.name));
+      log(`  ${s.name}: database vacuumed in ${Math.round((Date.now() - started) / 1000)} s`);
+    }
+  }
   for (const s of servers) await signIn(s);
   return Object.fromEntries(servers.map((s) => [s.name, s]));
 }
@@ -393,7 +407,7 @@ async function main() {
 
   // Pass 1: timings and, on PostgreSQL, statement counts — tracing off, so it costs nothing.
   log('Starting the targets…');
-  let servers = await startTargets({ otel: null });
+  let servers = await startTargets({ otel: null, vacuum: true });
   const contexts = {};
   if (browser) for (const t of targets) contexts[t.name] = await signedInContext(browser, servers[t.name]);
   // The calls no page makes in the browser are measured once, by the first shard.

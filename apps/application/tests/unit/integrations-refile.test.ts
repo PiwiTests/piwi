@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Filing an issue for a cluster and keeping it, against a SQLite database and a
@@ -41,6 +40,8 @@ let labeled: string[] = [];
 let issueSeq = 0;
 /** The category each stub issue reads back with, by key. */
 const categories = new Map<string, 'new' | 'indeterminate' | 'done'>();
+/** What happens while an issue is read back, by key: a person's triage, made meanwhile. */
+let whileReading: ((key: string) => Promise<void>) | null = null;
 const STATUS_NAME = { new: 'To Do', indeterminate: 'In Progress', done: 'Done' } as const;
 
 function json(body: unknown, status = 200): Response {
@@ -75,6 +76,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   if (read) {
     const ref = read[1]!;
     const key = /^\d+$/.test(ref) ? `PROJ-${Number(ref) - 10000}` : ref;
+    await whileReading?.(key);
     const category = categories.get(key);
     if (!category) return json({ errorMessages: ['Not found'] }, 404);
     return json({
@@ -96,7 +98,7 @@ beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-refile-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
 
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
@@ -129,6 +131,8 @@ beforeAll(async () => {
     credentials: { email: 'ci@example.com', apiToken: 'token' },
   });
   connectionId = connection.id;
+  // Issues are filed through the connection the project is bound to.
+  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
 });
 
 afterAll(async () => {
@@ -140,6 +144,7 @@ afterAll(async () => {
 beforeEach(() => {
   created = [];
   labeled = [];
+  whileReading = null;
 });
 
 function file(entityType: 'failure_cluster' | 'test_runs_case', entityId: number) {
@@ -302,6 +307,22 @@ describe('sync policies act on a move of the ticket', () => {
     categories.set(link.key!, 'indeterminate');
     await syncTrackerLinks(dbc, { now: new Date(Date.now() + 6 * 24 * 3600_000) });
     expect((await clusterRow(3)).status).toBe('open');
+  });
+
+  test('a person who ignores the cluster while its Done ticket is read keeps their status and note', async () => {
+    await setPolicies({ resolveOnClose: true });
+    const link = await linkOf(4);
+    categories.set(link.key!, 'done');
+    whileReading = async (key) => {
+      if (key !== link.key) return;
+      whileReading = null;
+      await db
+        .update(schema.failureClusters)
+        .set({ status: 'ignored', triageNote: 'Not ours' })
+        .where(eq(schema.failureClusters.id, 4));
+    };
+    await syncTrackerLinks(dbc);
+    expect(await clusterRow(4)).toMatchObject({ status: 'ignored', triageNote: 'Not ours' });
   });
 
   test("a linked issue's first move to Done resolves the cluster, as for a filed one", async () => {

@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The notification outbox sends each delivery once: overlapping sweeps share
@@ -31,7 +30,8 @@ vi.mock('../../server/utils/safe-fetch', () => ({
 
 delete process.env.PIWI_DATABASE_URL;
 const { sweepOutbox } = await import('../../server/utils/notifications/dispatch');
-const { OUTBOX_LEASE_MS } = await import('../../server/utils/outbox');
+const { OUTBOX_LEASE_MS, OUTBOX_MAX_ATTEMPTS, OUTBOX_ABANDONED_ERROR, claimOutboxRows } =
+  await import('../../server/utils/outbox');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let channelId = 0;
@@ -67,7 +67,7 @@ async function statusOf(id: number) {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   const [channel] = await db
     .insert(schema.notificationChannels)
     .values({ name: 'Hook', type: 'webhook', config: { url: 'https://hooks.example.com/piwi' } })
@@ -126,6 +126,30 @@ describe('sweepOutbox', () => {
 
     expect(result).toEqual({ sent: 1, failed: 0 });
     expect(await statusOf(stuck)).toMatchObject({ status: 'sent', attempts: 1 });
+  });
+
+  test('a claim counts as an attempt, so a delivery whose every attempt dies is given up at the cap', async () => {
+    const id = await enqueue();
+    for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt++) {
+      // A sweep claims the delivery, then its process ends before the attempt reports back.
+      expect(await claimOutboxRows(db as never, schema.notificationDeliveries, [id])).toEqual(new Set([id]));
+      expect((await statusOf(id)).attempts).toBe(attempt);
+      await db
+        .update(schema.notificationDeliveries)
+        .set({ scheduledFor: new Date(Date.now() - 1000) })
+        .where(eq(schema.notificationDeliveries.id, id));
+    }
+    expect(await claimOutboxRows(db as never, schema.notificationDeliveries, [id])).toEqual(new Set());
+
+    const result = await sweepOutbox(db as never);
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(webhook.bodies).toHaveLength(0);
+    expect(await statusOf(id)).toMatchObject({
+      status: 'failed',
+      attempts: OUTBOX_MAX_ATTEMPTS,
+      error: OUTBOX_ABANDONED_ERROR,
+    });
   });
 
   test('a delivery is claimed, with a lease, while it is being sent', async () => {

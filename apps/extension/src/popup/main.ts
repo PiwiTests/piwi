@@ -540,17 +540,21 @@ async function replayInOtherTab(tabId: number): Promise<boolean> {
 }
 
 /**
- * The Runs tile: shown, with the number of runs, while a hub of the paired editor answers. The worker finds the hubs
- * through the pairing and keeps their connections (`background/run-hubs.ts`); the popup only asks it.
+ * The Runs tile: shown while an editor or the desktop app is paired, with the number of runs while one of its hubs
+ * answers, muted otherwise, its line saying the Runs window tells why. The worker finds the hubs through the pairings
+ * and keeps their connections (`background/run-hubs.ts`); the popup only asks it.
  */
 async function showRunsTile(): Promise<void> {
   const summary = (await chrome.runtime.sendMessage({ type: 'piwi-runs-summary' }).catch(() => null)) as {
     connected?: boolean;
+    paired?: boolean;
     runs?: number;
   } | null;
-  if (!summary?.connected) return;
+  if (!summary?.connected && !summary?.paired) return;
   const runs = summary.runs ?? 0;
-  runsHint.textContent = runs > 0 ? tn('popup_runsHint', runs) : t('popup_runsHintNone');
+  if (summary.connected) runsHint.textContent = runs > 0 ? tn('popup_runsHint', runs) : t('popup_runsHintNone');
+  else runsHint.textContent = t('popup_runsHintAway');
+  if (!summary.connected) runsButton.dataset.state = 'waiting';
   runsButton.hidden = false;
 }
 

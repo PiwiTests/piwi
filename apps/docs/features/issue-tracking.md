@@ -14,9 +14,10 @@ is linked back as the cluster's *known issue*, and the key travels wherever the 
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
-<div class="doc-screenshot">
-  <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
-</div>
+<figure>
+  <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an optional comment, an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
+  <figcaption>The Create issue modal on a failure cluster.</figcaption>
+</figure>
 
 ## What it does, exactly
 
@@ -24,6 +25,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's
   **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
   ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
+- **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
+  live status; any other stays a plain link, read through no connection.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
@@ -37,6 +40,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
   write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
   Jira's reason atop the modal and on the Issue or Cluster line; creating again replaces it.
+- **Comment** places your words first in the issue, or adds them to the cluster's issue already filed. Runs and
+  tests: [Issues about a run or a test](./run-issues).
 
 ## The key travels
 
@@ -49,9 +54,10 @@ A cluster's **known issue** is its most recently linked ticket; earlier ones sta
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/cluster-issue-line.png" alt="A failure cluster's situation block with its Issue line naming the Jira issue the cluster is tracked in">
-</div>
+  <figcaption>The cluster's Issue line names the Jira issue that tracks it.</figcaption>
+</figure>
 
 ## Keep the ticket honest
 
@@ -73,10 +79,8 @@ Both status policies act on a **move** of the ticket, so a cluster a person reop
 
 Every comment is written in the [ticket's language](#language), for the [runs that
 write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
-description updates. A Jira admin can register an optional
-[inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen shows at once; it only
-refreshes a link. The failure inbox gains a **Needs ticket** queue — open clusters on
-the default branch, older than the binding's age (default 2 days), with no issue.
+description updates. An optional [inbound webhook](/operate/integrations#registering-the-inbound-webhook) shows a
+close or reopen at once. The failure inbox gains a [**Needs ticket**](./failure-clusters#queues) queue.
 
 ## The project binding
 
@@ -85,9 +89,13 @@ type, default labels and assignee, the [ticket language](#language), what a tick
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route.
 
-<div class="doc-screenshot">
+Tickets linked through a connection the project is no longer bound to keep their last status; the sync and the
+policies skip them.
+
+<figure>
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
-</div>
+  <figcaption>A project's Issue tracker settings.</figcaption>
+</figure>
 
 ## Required Jira fields
 
@@ -106,21 +114,24 @@ transitions an issue offers and asks for their required fields, such as a *Resol
 empty fails at once, naming it. A requirement no screen shows, such as a workflow validator, comes back as Jira's
 refusal naming the field, which the modal then asks for.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal's Required by Jira block: Severity Major, from the project settings, Team empty, Found in on Jira's default, and the footer saying Jira still needs Team">
-</div>
+  <figcaption>The Required by Jira block: each field Jira requires, and where its value comes from.</figcaption>
+</figure>
 
 ## Requirements
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
+- A [project binding](#the-project-binding) naming the connection: a project's issues are filed, read and written
+  back through that one connection, never through another.
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
 - The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
   who reads the project sees the key and status.
 
 ## Enable it
 
-The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the
-connected site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+The modal files through the connection of the [project binding](#the-project-binding) and prefills its fields from
+the binding, else offers pickers over the bound site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
 A share link needs the **Maintainer** role and is created when the issue is filed.
 From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.

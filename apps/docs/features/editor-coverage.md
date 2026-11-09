@@ -17,12 +17,12 @@ a line lists them.
 
 The marks show what the reporter records, per test:
 
-- **Server code**: an ASP.NET Core backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
+- **Server code**: an ASP.NET Core or Nitro backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
   `PIWI_COVERAGE_SERVER=lines`: [Server coverage](./server-coverage) has the steps. With `functions`,
   every line of a function that ran is marked run, and no line is marked as not run.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
   top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
-  with its lens above it. No line of a browser file is marked as not run.
+  with its lens above it, and no line is marked as not run; with `'lines'`, its lines are marked as a server file's.
 
 Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
 coverage show nothing of it: no mark, no lens line, no command, no hover text.
@@ -73,12 +73,14 @@ file's lens says `coverage recorded on another version`. Fetching it brings the 
 ## Uncovered changes
 
 A file the editor can observe and no test reaches has its changes marked before the pull request's
-[uncovered changes](./uncovered-changes) list them, by the same rule: a page (Nuxt `pages/**`) while Piwi knows the
-pages your tests visit, or a server route (`server/api/**`, `server/routes/**`) while code reach maps routes to tests,
-that no test visits, requests or runs. Its lines changed since the default branch are marked orange: those added since
+[uncovered changes](./uncovered-changes) list them: a page (Nuxt `pages/**`) while the locator index knows the pages
+your tests act on, or a server route (`server/api/**`, `server/routes/**`) while code reach maps routes to tests, that
+no test's locator acts on, requests or runs. The rule is close to the pull request's, not the same: it applies no
+coverage scope and no window of runs, and a page a test only visited reads as unreached. Its lines changed since the default branch are marked orange: those added since
 the commit your branch left it at (the merge base with `origin/main`, else `main`), uncommitted changes included,
 blank lines left out. The file's top lens says `Uncovered changes: 12 lines changed since main, and no test reaches
-this file`, and so does the hover on a marked line. A test that reaches the file, or the change reaching the default
+this file`, and opens the file's gaps on the dashboard's Coverage tab, where **Accept** copies a draft test once a
+pull-request run has raised one. The hover on a marked line says the same. A test that reaches the file, or the change reaching the default
 branch, takes the marks away. A file nothing can observe, and a project whose code reach is missing or cut short, show
 nothing.
 

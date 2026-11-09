@@ -18,7 +18,8 @@ dashboard.
 2. A **subscription** links a channel to the events you care about, for every project or one, with filters and a
    delivery mode.
 3. When an event fires, Piwi matches the active subscriptions and writes each delivery to an outbox, which a scheduled
-   task sends with retries. A browser channel is delivered at once to every open dashboard tab.
+   task sends with retries. It drops a delivery whose subscription was muted or turned off since, or whose recipient
+   can no longer open its project. A browser channel is delivered at once to every open dashboard tab.
 
 ## Where it is
 
@@ -37,12 +38,14 @@ their own, and administrators can add global ones.
 ## Events
 
 Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
-and others on a flakiness spike, a performance regression, a finished AI diagnosis and an auto-heal pull request.
-Each event, when it fires and the payload it carries are in
+and others on a flakiness spike, a performance regression, a [stuck test](./stuck-tests), a finished AI diagnosis and
+an auto-heal pull request.
+When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
-fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+fires no run event and no new-cluster, fixed, regressed, flakiness or performance event
+([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 
@@ -52,7 +55,7 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
-- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them.
+- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them. On Windows and Linux, a click on one opens what it is about (on Windows, while the toast shows).
 
 Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
 notifications**.
@@ -78,6 +81,11 @@ needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `
 
 Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
+<figure>
+  <img src="/screenshots/channel-form-slack.png" alt="The new channel form for Slack: incoming webhook or bot token, the three steps to create the Slack app, a pasted webhook URL recognized as a Slack incoming webhook, Send test and Save channel">
+  <figcaption>Adding a Slack channel: the URL is recognized before you save it.</figcaption>
+</figure>
+
 ### Microsoft Teams
 
 In the Teams channel's **⋯** menu, open **Workflows**, pick the template *Send webhook alerts to a channel*, choose the
@@ -95,16 +103,16 @@ The body, its fields and how to verify the signature are in
 
 ### Reaching the person who fixed it
 
-`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM token](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
+`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM token](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly, when the commit's email belongs to a registered Piwi user who can open the project:
 
-- **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
+- **Email**, through the same outbox, when SMTP is configured. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.
 
 When the lookup fails (a private repository without a token, a host that exposes no email), subscriptions alone apply.
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL.
 
 ## Subscriptions
 
@@ -116,20 +124,21 @@ The bell offers the branches and environments the project's runs reported, and t
 any characters, so `release/*` covers every release branch. A subscription delivers only events from runs on one of
 its branches **and** in one of its environments; a run that reported no branch (or environment) matches none, and an
 empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
-`flakiness.spike`, `perf.regression`, the `cluster.*` events and `bug.looks_fixed`. `diagnosis.completed` and
+`flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. `diagnosis.completed` and
 `auto_heal.pr_opened` are not filtered.
 
 ### Through the API
 
-The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
+The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/settings/api)) adds:
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
-  `run.*` events, `flakiness.spike`, `perf.regression` and `cluster.new` and delivers them only when a failing test
-  behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
-  (a 0–1 rate) and `perfRegressionPct`.
-- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
-  **one combined message** per email, Slack or Teams channel.
+  `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
+  test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
+  (a 0–1 rate) and `perfRegressionPct`. Lists hold up to 100 values of at most 256 characters; branch and environment
+  patterns, up to 200 characters and 10 `*` each, 2,000 together.
+- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
+  held until then and sent as **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration
@@ -143,7 +152,7 @@ PIWI_SMTP_FROM=noreply@example.com
 PIWI_SMTP_FROM_NAME=Piwi Dashboard   # optional display name
 PIWI_SMTP_USER=apikey         # only when the server requires authentication
 PIWI_SMTP_PASS=••••••••        # only when the server requires authentication; never returned by the API
-PIWI_SMTP_SECURE=false        # true for port 465 (implicit TLS)
+PIWI_SMTP_SECURE=false        # implicit TLS, default on for 465
 PIWI_SITE_URL=https://piwi.example.com   # base URL used in email links
 ```
 

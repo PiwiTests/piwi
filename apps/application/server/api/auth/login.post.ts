@@ -1,12 +1,7 @@
 import { getDatabase } from '../../database';
 import { authUserView, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
-import {
-  checkRateLimit,
-  rateLimitClientIp,
-  rateLimitedError,
-  releaseRateLimit,
-  resetRateLimit,
-} from '../../utils/rate-limit';
+import { rateLimitClientIp, releaseRateLimit, resetRateLimit, takeRateLimitSlots } from '../../utils/rate-limit';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import { z } from 'zod';
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -21,8 +16,9 @@ defineRouteMeta({
   },
 });
 
+// A username longer than any account's is refused before it names a rate-limit key.
 const loginSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().min(1).max(USERNAME_MAX_LENGTH),
   password: z.string().min(1),
 });
 
@@ -47,21 +43,33 @@ export default eventHandler(async (event) => {
 
   const { username, password } = validation.data;
 
-  const ipKey = `login:ip:${rateLimitClientIp(event)}`;
-  const accountKey = `login:user:${username.toLowerCase()}`;
-  // Throttle failed attempts, per source and per account, so credentials can't
-  // be brute-forced online. Every attempt takes its slot before the password is
-  // checked, so attempts sent together count as well; a valid login gives the
-  // source's slot back and clears the account's counter.
-  const limited = () =>
-    rateLimitedError(event, [ipKey, accountKey], 'Too many failed attempts. Please wait before trying again.');
-  if (!checkRateLimit(ipKey, 20, WINDOW_MS)) throw limited();
-  if (!checkRateLimit(accountKey, 5, WINDOW_MS)) {
-    releaseRateLimit(ipKey);
-    throw limited();
-  }
+  const address = rateLimitClientIp(event);
+  const account = username.toLowerCase();
+  const ipKey = `login:ip:${address}`;
+  // An address never holds an `@`, so the last one splits this key unambiguously.
+  const accountAddressKey = `login:user-ip:${account}@${address}`;
+  const accountKey = `login:user:${account}`;
+  // Throttle failed attempts so credentials can't be brute-forced online: per
+  // source, per account from one source, and a ceiling per account across every
+  // source, so failures from elsewhere never lock the owner out below it. Every
+  // attempt takes its slots before the password is checked, so attempts sent
+  // together count as well; a refused attempt gives back the slots it took.
+  const taken = takeRateLimitSlots(
+    event,
+    [
+      [ipKey, 20],
+      [accountAddressKey, 5],
+      [accountKey, 50],
+    ],
+    WINDOW_MS,
+    'Too many failed attempts. Please wait before trying again.',
+  );
 
-  const user = await verifyUser(username, password);
+  // A check that throws (a busy server's 503) found no wrong password, so it gives its slots back.
+  const user = await verifyUser(event, username, password).catch((error: unknown) => {
+    for (const slot of taken) releaseRateLimit(slot);
+    throw error;
+  });
   if (!user) {
     throw apiError({
       statusCode: 401,
@@ -69,8 +77,11 @@ export default eventHandler(async (event) => {
     });
   }
 
+  // A valid login does not count: it gives back its slots and clears the
+  // account's failures from this source.
   releaseRateLimit(ipKey);
-  resetRateLimit(accountKey);
+  releaseRateLimit(accountKey);
+  resetRateLimit(accountAddressKey);
 
   const view = await authUserView(await getDatabase(), user);
 

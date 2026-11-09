@@ -1,7 +1,7 @@
 /**
  * The deterministic edits `init` makes to a project: wrapping the Playwright
- * config, creating the capture-fixtures file, and recording connection details
- * in `.env` / `.gitignore`.
+ * config, creating the capture-fixtures file, recording connection details
+ * in `.env` / `.gitignore`, and recording the reporter in `package.json`.
  *
  * Every function here is pure — string in, string out — so the risky part
  * (rewriting someone's config) is unit-tested without touching disk, and the
@@ -79,10 +79,14 @@ function matchClosingParen(src: string, openIndex: number): number {
   return -1;
 }
 
-/** The Piwi options object, printed multi-line to sit inside the wrapped call. */
+/**
+ * The Piwi options object, printed multi-line to sit inside the wrapped call. The server URL defers to
+ * `PIWI_DASHBOARD_URL`, since an option set in the config wins over the environment: a CI job that sets the variable
+ * reports there, and a run without it reports to the URL given to `init`.
+ */
 function optionsLiteral(opts: WrapOptions): string {
   const lines: string[] = [];
-  if (opts.serverUrl) lines.push(`    serverUrl: ${quote(opts.serverUrl)},`);
+  if (opts.serverUrl) lines.push(`    serverUrl: process.env.PIWI_DASHBOARD_URL || ${quote(opts.serverUrl)},`);
   lines.push(`    projectName: ${quote(opts.projectName)},`);
   if (opts.desktopApp) lines.push(`    desktopApp: ${quote(opts.desktopApp)},`);
   return `{\n${lines.join('\n')}\n  }`;
@@ -150,7 +154,8 @@ export function fixturesContents(): string {
 
 /**
  * Add each `KEY=value` line that is not already present. Existing keys are left
- * untouched (a value already set by the user is never overwritten).
+ * untouched (a value already set by the user is never overwritten), in each form
+ * `@piwitests/core/dotenv` reads: `KEY=`, `KEY =` and `export KEY=`.
  */
 export function upsertEnvKeys(
   existing: string,
@@ -162,12 +167,44 @@ export function upsertEnvKeys(
   let text = existing;
   const added: string[] = [];
   for (const [key, value] of entries) {
-    if (new RegExp(`^\\s*${key}=`, 'm').test(text)) continue;
+    if (new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`, 'm').test(text)) continue;
     if (text.length && !text.endsWith('\n')) text += '\n';
     text += `${key}=${value}\n`;
     added.push(key);
   }
   return { text, added };
+}
+
+/**
+ * Record `name` at `range` in a `package.json`'s `devDependencies`, sorted as the package managers sort them, for the
+ * package manager to install later. The file keeps its indentation, line endings and final newline. `already` when it
+ * lists `name` among its dependencies, `manual` when it is not a JSON object.
+ */
+export function recordDevDependency(
+  source: string,
+  name: string,
+  range: string,
+): { text: string; status: 'updated' | 'already' | 'manual' } {
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(source);
+  } catch {
+    return { text: source, status: 'manual' };
+  }
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return { text: source, status: 'manual' };
+  const record = pkg as Record<string, unknown>;
+  const listed = (field: string): Record<string, unknown> => {
+    const value = record[field];
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  };
+  if (name in listed('dependencies') || name in listed('devDependencies')) return { text: source, status: 'already' };
+  record.devDependencies = Object.fromEntries(
+    Object.entries({ ...listed('devDependencies'), [name]: range }).sort(([a], [b]) => a.localeCompare(b, 'en')),
+  );
+  const indent = /^[ \t]+(?=")/m.exec(source)?.[0] ?? '  ';
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const text = JSON.stringify(record, null, indent).replace(/\n/g, eol) + (source.endsWith('\n') ? eol : '');
+  return { text, status: 'updated' };
 }
 
 /** Ensure `entry` (default `.env`) appears in a `.gitignore`'s contents. */

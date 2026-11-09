@@ -6,18 +6,18 @@ lang: en-US
 
 # Integrations
 
-Connect an issue tracker and the external links you pin to a run, execution or failure cluster stop being
-dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current
-when you refresh. Jira Cloud is the supported tracker. This page sets up the connection; filing and syncing
+Connect an issue tracker, bind a project to it, and the project's links to the tracker stop being dead URLs: Piwi
+fetches the ticket's title and status through the connection and keeps the badge current when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
 issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
 
 A connection is instance infrastructure — one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
 with `PIWI_SECRET_KEY`.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/integrations-settings.png" alt="Settings → Integrations: a Jira card with a connected system, its verified status, and a test-connection button">
-</div>
+  <figcaption>Settings → Integrations: one card per connected tracker.</figcaption>
+</figure>
 
 ## Connecting Jira Cloud
 
@@ -33,13 +33,14 @@ Connect Jira** (administrator only) walks through it:
 4. **Check sign-in** calls `GET /rest/api/3/myself` without saving and shows the account, the token kind and the
    projects the account sees, or what to fix. Then **Connect**.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/jira-connect-form.png" alt="The Jira connect form: a pasted board URL read down to the site, the scoped-token steps and a passed sign-in check">
-</div>
+  <figcaption>The Jira connect form: paste a board URL, then sign in with a scoped token.</figcaption>
+</figure>
 
-Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123`, including a self-hosted
-host once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
-badge (colored by the issue's status category), and refreshes through the connection.
+Once a project is bound to the connection, its links to that site — `https://your-team.atlassian.net/browse/PROJ-123`
+or a Cloud site's own domain — are recognized as Jira issues, unfurl with the summary and a status badge (colored by
+the issue's status category), and refresh through it.
 
 ## Permissions the token needs
 
@@ -120,13 +121,15 @@ to French); a project binding overrides it, and the create modal offers a per-is
 ## Who can do what
 
 With [authentication](./authentication) on, connections are administrator-only. Binding a project to Jira takes the
-Project admin role on that project (`project:manage`), or an administrator. Filing an issue takes the
-[Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`).
+Project admin role on it (`project:manage`), or an administrator. Filing an issue takes the
+[Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`), and goes through
+the connection the project is bound to: a request naming another is refused. Contributors and Maintainers list Jira's
+projects, users and issues through that connection only; Project admins, through any.
 
 ## Status sync
 
-A background task reads every tracked issue back through its connection and caches the status, title and assignee, so a
-closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
+A background task reads every tracked issue back through its project's connection and caches the status, title and
+assignee, so a closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
 [`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
 rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
 a resolved or ignored cluster refresh at most once a day. A connection that fails to
@@ -146,7 +149,8 @@ register a webhook so a close or reopen reflects immediately instead of within t
    `PIWI_SITE_URL` when Piwi sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
-3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
+3. Piwi looks the issue up by its id in the bound projects' links and refreshes those, applying the resolve/reopen
+   policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
 create or transition anything. **Regenerate webhook** invalidates the old URL, and **Disable webhook** turns the

@@ -49,6 +49,7 @@ import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
+import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -141,14 +142,18 @@ import {
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
-import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
+import { specPattern } from '@piwitests/core/spec-filter';
+import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
+  freeTestTitle,
   indentBlock,
+  newTestModule,
   originOf,
   repositoryCodegen,
   siblingSpecs,
@@ -156,8 +161,9 @@ import {
 } from './recorder/sessions.js';
 import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
-import { RunLines, type DiskFile } from './run-lines.js';
+import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
+import { ClientLaneView, ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
@@ -187,6 +193,7 @@ import {
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RECORD_REQUEST,
+  NEW_TEST_FILE_REQUEST,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   RECORD_REQUESTED_NOTIFICATION,
@@ -213,6 +220,9 @@ import {
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
   PAUSED_PAGE_REQUEST,
+  PAGE_VIEW_REQUEST,
+  PAGE_INPUT_REQUEST,
+  PAGE_FRAME_NOTIFICATION,
   PICK_AT_REQUEST,
   HUB_REQUEST,
   AGENTS_REQUEST,
@@ -256,6 +266,11 @@ import {
   type McpServersResult,
   type Notice,
   type PausedPageParams,
+  type PageViewParams,
+  type LaneViewParams,
+  LANE_VIEW_REQUEST,
+  LANE_FRAME_NOTIFICATION,
+  type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
   type PickAtResult,
@@ -273,6 +288,8 @@ import {
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
+  type NewTestFileParams,
+  type NewTestFileResult,
   type RecordRequested,
   type DeclineRecordParams,
   type RecordResult,
@@ -335,7 +352,10 @@ const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
-/** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
+/**
+ * How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths, and
+ * `piwi/newTestFile` before reading the test folders from the config's text.
+ */
 const OPTIONS_WAIT_MS = 3_000;
 /**
  * How long a quick fix or a hover waits for what it fetches from the instance: past it, it answers without, and the
@@ -394,6 +414,12 @@ export interface ServerOptions {
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
+  /**
+   * The editors' discovery folder the hub names its peers from (`readLiveHubs`), and how often it reads it while a
+   * connection is subscribed; `editorsDir()` and `PEERS_MS` by default.
+   */
+  editorsDir?: string;
+  hubPeersMs?: number;
   /** How long an agent follows a run after its last call on it; `FOLLOW_IDLE_S` by default. */
   agentFollowIdleMs?: number;
 }
@@ -644,7 +670,7 @@ export function commandFolder(context: PiwiContext): string {
 }
 
 /**
- * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
+ * The Flake Lab lines above a flaky test: its flaky N% and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
  * context reads. With `desktop`, while the desktop app runs beside a team
@@ -1721,8 +1747,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
     });
   /** The runs the service built, as their workers tell them on the run channel. */
+  let clientPageView: ClientPageView | null = null;
+  let clientLaneView: ClientLaneView | null = null;
   const runSessions = new RunSessions({
     notify: (session) => {
+      clientPageView?.changed();
+      clientLaneView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
@@ -1749,7 +1779,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
     },
+    // The run runs a file as it stood on disk when it started: one written since keeps each line as it is.
+    runText: (ref, file) => {
+      const disk = diskFile(file);
+      const started = runLines.startedAt(ref);
+      return disk && (started === null || disk.mtime <= started) ? disk.text : null;
+    },
   });
+  clientPageView = new ClientPageView(runSessions, (frame) =>
+    connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  );
+  clientLaneView = new ClientLaneView(runSessions, (frame) =>
+    connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+  );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
     sessions: runSessions,
@@ -1771,7 +1813,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
       return;
     }
+    // The steps go above the paused call where it stands now, which an earlier recording at this stop moved down.
+    const now = stopLineNow(file, handoff.line - 1);
+    if ('refusal' in now) {
+      recordChannel?.refuse(handoff.id, now.refusal);
+      return;
+    }
     handoff.file = file;
+    handoff.line = now.line + 1;
     void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
       handoff: handoff.id,
       uri: pathToFileURL(handoff.file).href,
@@ -2223,6 +2272,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         onAttach: recordRequested,
         onCheck: (handoff) => stopActions.check(handoff),
         onRun: (socket, attach) => runSessions.attach(socket, attach),
+        onRunMain: (socket, begin) => runSessions.attachMain(socket, begin),
       }),
       RunHub.open({
         sessions: runSessions,
@@ -2238,6 +2288,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
         forwarded: () => hubForwarded,
+        peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        peersMs: options.hubPeersMs,
         keepaliveMs: options.hubKeepaliveMs,
         helloMs: options.hubHelloMs,
       }),
@@ -2824,8 +2876,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       )) {
         if (!found) continue;
         const i = call.line;
-        const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
+        // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
+        const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
+        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
         const status = fixed
           ? ` · ${fixedLabel(context, fixed)}`
           : found.status && found.status !== 'passed'
@@ -2854,7 +2908,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',
@@ -2973,7 +3027,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         uncoveredOf(params.uri).catch(() => null),
         null,
       );
-      return uncovered ? { file: { line: 0, title: `Uncovered changes: ${uncovered.label}` }, lines: [] } : empty;
+      if (!uncovered) return empty;
+      const target = coverageTarget(params.uri);
+      const gaps =
+        target?.context.client && target.context.project
+          ? {
+              title: 'Open its gap in the dashboard',
+              command: 'piwi.openInDashboard' as const,
+              arguments: [target.context.client.gapsOfFileUrl(target.context.project.id, target.repoRelative)],
+            }
+          : undefined;
+      return {
+        file: { line: 0, title: `Uncovered changes: ${uncovered.label}`, ...(gaps ? { command: gaps } : {}) },
+        lines: [],
+      };
     }
     const pageLine: SummaryLine = {
       line: 0,
@@ -3117,16 +3184,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
+   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
     command: RunCommand,
     breakpoints: EditorBreakpoint[] | undefined,
   ): RunCommand => {
+    const texts = new Map<string, string | null>();
     const files = (Array.isArray(breakpoints) ? breakpoints : []).flatMap((b) => {
       const file = typeof b?.uri === 'string' ? uriToPath(b.uri) : null;
-      return file && typeof b.line === 'number' ? [{ file, line: b.line }] : [];
+      if (!file || typeof b.line !== 'number') return [];
+      if (!texts.has(file)) texts.set(file, diskFile(file)?.text ?? null);
+      const text = texts.get(file);
+      return (text ? breakpointLines(text, b.line) : [b.line]).map((line) => ({ file, line }));
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
@@ -3182,10 +3254,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
-  /** The Playwright arguments that run the tests `params` names: by location, else by id from the instance. */
+  /**
+   * The Playwright arguments that run the tests `params` names: by location, each spec as Playwright's file filter
+   * reads it (`specPattern`), else by id from the instance.
+   */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
-      return params.locations.every((l) => specLocation(context, l)) ? [...params.locations] : null;
+      if (!params.locations.every((l) => specLocation(context, l))) return null;
+      return params.locations.map((l) => {
+        const colon = l.lastIndexOf(':');
+        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
+      });
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -3223,7 +3302,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
     const test = debugTest(text, relative, debug.title);
     if (typeof test === 'string') return refuse(test);
-    const args = debugArgs(`${relative}:${test.line + 1}`, debug.project);
+    const args = debugArgs(`${specPattern(relative)}:${test.line + 1}`, debug.project, test, debug.title);
     const command = playwrightTestCommand(args);
     if (!command) {
       return refuse(
@@ -3265,7 +3344,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ref,
     };
     if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
-    repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
+    const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
+    repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
@@ -3344,16 +3424,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         : null;
     if (!file) return { uri: null, edit: null };
     const uri = openDocument(file)?.uri ?? pathToFileURL(file).href;
-    const lineText = readText(file)?.split(/\r?\n/)[params.line];
+    const now = stopLineNow(file, params.line);
+    const line = 'line' in now ? now.line : null;
+    const lineText = line === null ? undefined : readText(file)?.split(/\r?\n/)[line];
     const edit = lineText === undefined || !params.locator ? null : pickEditOnLine(lineText, params.locator);
     return {
       uri,
       edit: edit && {
-        range: { start: { line: params.line, character: edit.start }, end: { line: params.line, character: edit.end } },
+        range: { start: { line: line!, character: edit.start }, end: { line: line!, character: edit.end } },
         newText: edit.newText,
       },
     };
   });
+
+  /**
+   * Where the run's 0-based `line` of `file`, which a pick or a recording at a stop names, stands now: mapped through
+   * the edits made since the run of a worker stopped there started (`RunLines`), as the code from a stop is, so it
+   * lands on the paused call after a recording wrote above it; why not when that line was removed or cannot be
+   * followed. The line as it is when no worker is stopped there.
+   */
+  const stopLineNow = (file: string, line: number): LineNow => {
+    const key = lineKey(file);
+    const stopped = runSessions.current().find((session) =>
+      session.workers.some((w) => {
+        const at = w.stop ? uriToPath(w.stop.uri) : null;
+        return !!at && lineKey(at) === key && w.stop!.line === line;
+      }),
+    );
+    if (!stopped) return { line };
+    const open = !!openDocument(file);
+    return runLines.lineNow(stopped.ref, key, line, open, open ? null : diskFile(file));
+  };
 
   connection.onRequest(FAILURES_REQUEST, (params: FailuresParams | null): FailuresResult => {
     failuresGrouping = parseFailuresGrouping(params?.grouping) ?? failuresGrouping;
@@ -3448,12 +3549,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           () => null,
         )
       : null;
+    // At a caret outside any test, class or function, the steps go in a new test, as Record here writes one there.
+    const newTest = !!file && candidates?.context === 'file';
+    const testModule = newTest ? newTestModule(file!, text) : null;
     const result = renderSpec(sessionFromSteps(parsed.steps), {
-      format: 'body',
+      format: newTest ? 'test' : 'body',
+      ...(newTest
+        ? { title: freeTestTitle(text, parsed.steps.title?.trim() || undefined), fixtures: fileFixtures(text) }
+        : {}),
       urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
-      ...repositoryCodegen(codegenConfigOf(piwi).options, 'steps', candidates?.context ?? 'file'),
+      ...repositoryCodegen(codegenConfigOf(piwi).options, newTest ? 'test' : 'steps', candidates?.context ?? 'file'),
       catalog: context ? await context.functionCatalog() : [],
       preferLocators: suiteLocators(context),
       ...(page ? { page } : {}),
@@ -3467,8 +3574,47 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           ? result.code
           : indentBlock(result.code, caretLine.slice(0, caretLine.length - caretLine.trimStart().length)),
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { importEdit: importInsertion(text, blockImports(text, result)) } : {}),
+      ...(separate
+        ? {
+            importEdit: importInsertion(
+              text,
+              blockImports(text, result, {
+                ...(testModule ? { testModule } : {}),
+                ...(file
+                  ? { expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file), testModule }) }
+                  : {}),
+              }),
+            ),
+          }
+        : {}),
     };
+  });
+
+  connection.onRequest(NEW_TEST_FILE_REQUEST, async (params: NewTestFileParams | null): Promise<NewTestFileResult> => {
+    const at = params?.uri ? uriToPath(params.uri) : null;
+    // The config whose folder is the folder at hand, else the one holding the file at hand, else the first.
+    const own = at ? contexts.find((c) => path.relative(c.root, at) === '') : undefined;
+    const context = own ?? (at ? contextFor(at) : null) ?? contexts[0] ?? null;
+    if (!context) return null;
+    const configFile = playwrightConfigFile(context.root);
+    // Playwright's own reading of the projects' test folders, when it answers soon enough.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const options = configFile
+      ? await Promise.race([
+          projectOptions(configFile).catch(() => null),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), OPTIONS_WAIT_MS);
+          }),
+        ])
+      : null;
+    clearTimeout(timer);
+    const place = newTestFile({
+      at,
+      root: context.root,
+      configFile,
+      testDirs: options ? options.projects.map((p) => p.testDir) : [],
+    });
+    return { uri: pathToFileURL(path.join(place.folder, place.name)).href, root: context.root };
   });
 
   connection.onRequest(PAGE_CANDIDATES_REQUEST, (params: PageCandidatesParams): PageCandidatesResult => {
@@ -3573,6 +3719,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
+
+  connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
+    answersStops
+      ? clientPageView!.watch(params)
+      : Promise.resolve({ ok: false, message: 'This client does not show stopped pages.' }),
+  );
+  connection.onRequest(PAGE_INPUT_REQUEST, (params: PageInputParams): Promise<RunControlResult> =>
+    !clientPageView!.takes(params) && clientLaneView!.takes(params)
+      ? clientLaneView!.input(params)
+      : clientPageView!.input(params),
+  );
+  connection.onRequest(LANE_VIEW_REQUEST, (params: LaneViewParams): Promise<RunControlResult> =>
+    answersStops
+      ? clientLaneView!.watch(params)
+      : Promise.resolve({ ok: false, message: 'This client does not show running tests.' }),
+  );
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
     if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);
@@ -3725,6 +3887,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const closeRecordChannel = () => {
     const open = !!recordChannel || !!runHub;
     shutDown = true;
+    clientPageView?.dispose();
+    clientLaneView?.dispose();
     recordChannel?.close();
     recordChannel = null;
     runHub?.close();

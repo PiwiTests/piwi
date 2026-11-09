@@ -686,6 +686,12 @@ export function useGuide() {
     await goTo(run, 0);
   }
 
+  /** Starts loading driver.js and the stylesheets, so a guide that has work to do before `start` shows sooner. */
+  function preload(): void {
+    if (import.meta.server) return;
+    loadEngine().catch(() => {});
+  }
+
   /** Ends the running guide, if any. */
   function stop(): void {
     const run = running;
@@ -723,6 +729,9 @@ export function useGuide() {
     document.body.classList.add(MOVING_CLASS);
     run.driver?.getState('popover')?.wrapper.removeAttribute(SETTLED_ATTRIBUTE);
     try {
+      // The pointer on the way to the stop is styled by `guide.css`: nothing is drawn before it loads.
+      const { driver } = await loadEngine();
+      if (running !== run) return;
       const route = stopRoute(guideStop.route, anchor);
       if (route && !isOnRoute(route, router)) {
         const current = router.currentRoute.value;
@@ -744,8 +753,7 @@ export function useGuide() {
       }
       if (running === run && anchor) await reveal(run, anchor);
       if (running !== run) return;
-      const instance = run.driver ?? (run.driver = (await loadEngine()).driver(configFor(run)));
-      if (running !== run) return;
+      const instance = (run.driver ??= driver(configFor(run)));
       instance.setConfig({ ...instance.getConfig(), steps: stepsFor(run) });
       if (instance.isActive()) instance.moveTo(index);
       else instance.drive(index);
@@ -1014,6 +1022,7 @@ export function useGuide() {
 
   return {
     start,
+    preload,
     stop,
     isRunning,
     activeGuideId: readonly(activeGuideId),

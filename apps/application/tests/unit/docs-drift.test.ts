@@ -27,7 +27,18 @@ const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8'
 
 // Pages the docs build writes from a registry; they are gitignored, so they are
 // only on disk once `docs:gen` has run, and a check skips them rather than fail.
+// CI generates them before the unit tests, so there a missing page fails.
 const GENERATED_PAGES = new Set<string>(Object.keys(GENERATED_DOCS_PAGES));
+
+/** Whether the generated page at `path` is missing, which fails under CI. */
+function generatedPageMissing(path: string | undefined): boolean {
+  if (path && existsSync(path)) return false;
+  expect(
+    process.env.CI,
+    `${path ?? 'a generated docs page'} is missing: run npm run docs:gen in apps/docs`,
+  ).toBeFalsy();
+  return true;
+}
 
 const FRONT_MATTER = /^---\n[\s\S]*?\n---\n/;
 // A fence may be indented, inside a list item.
@@ -129,7 +140,7 @@ describe('documented counts', () => {
       ).toContain(module);
     }
     const page = join(repoRoot, 'apps/docs/reference/mcp-tools.md');
-    if (!existsSync(page)) return;
+    if (generatedPageMissing(page)) return;
     const contents = readFileSync(page, 'utf8');
     for (const { name } of MCP_TOOL_DEFS) {
       expect(contents, `apps/docs/reference/mcp-tools.md has no entry for \`${name}\``).toContain(`id="${name}"`);
@@ -188,7 +199,7 @@ describe('docs pages the app deep-links into', () => {
   test.each(targets)('%s resolves to a page and heading', (target) => {
     const [page, anchor] = target.split('#');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);
-    if (GENERATED_PAGES.has(page!) && !existsSync(path)) return;
+    if (GENERATED_PAGES.has(page!) && generatedPageMissing(path)) return;
 
     expect(existsSync(path), `no apps/docs/${page}.md`).toBe(true);
     if (!anchor) return;
@@ -351,7 +362,7 @@ describe('no endpoint paths in prose', () => {
       .filter((path) => !ALLOWED.has(path) && isPiwiEndpoint(path));
     expect(
       paths,
-      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
+      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/settings/api) instead (apps/docs/AGENTS.md, "The API reference")`,
     ).toEqual([]);
   });
 });
@@ -428,6 +439,15 @@ describe('hand-written reference pages match the code', () => {
     for (const key of searchKeys) {
       expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
     }
+    // The desktop app's Ctrl shortcuts, `DESKTOP_SHORTCUTS`.
+    const desktopKeys = [
+      ...read('apps/application/app/utils/desktop-shortcuts.ts').matchAll(/^ {2}'?([^':\s]+)'?: '\w+',$/gm),
+    ].map((m) => m[1]!.toUpperCase());
+    expect(desktopKeys.length, 'no keys found in DESKTOP_SHORTCUTS').toBeGreaterThan(0);
+    const desktop = sectionOf(page, 'Desktop app');
+    for (const key of desktopKeys) {
+      expect(desktop, `${page} does not list the desktop shortcut Ctrl + ${key}`).toContain(`\`Ctrl\` + \`${key}\``);
+    }
     // The assistant: Ctrl+I anywhere, and the keys its question field's keydown handler takes.
     expect(read('apps/application/app/components/assistant/AssistantPanel.vue')).toContain('meta_i:');
     expect(anywhere, `${page} does not list the Ctrl + I assistant shortcut`).toContain('`Ctrl` + `I`');
@@ -461,6 +481,7 @@ describe('hand-written reference pages match the code', () => {
     gate: '`gate`',
     'quality-report': '`report`',
     select: '{#select-run}',
+    rerun: '`rerun`',
     probe: '`probe`',
     flake: '`flake`',
     ai: '`ai`',
@@ -522,6 +543,10 @@ describe('word budget per page type', () => {
     index: 'setup',
   };
 
+  // An <img> or <video> tag, a Markdown image, and the figure tags around them.
+  const IMAGE_MARKUP =
+    /<(?:img|video|source)\b[^>]*>|<\/video>|!\[[^\]]*\]\([^)]*\)|<\/?(?:figure|figcaption)\b[^>]*>/g;
+
   const typedPages = docsPages
     .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
     .filter((page) => !page.startsWith('blog/') && !GENERATED_PAGES.has(page));
@@ -529,8 +554,16 @@ describe('word budget per page type', () => {
   test.each(typedPages)('%s is within the budget of its page type', (page) => {
     const type = PAGE_TYPE_EXCEPTIONS[page] ?? FOLDER_TYPES[page.split('/')[0]!];
     expect(type, `apps/docs/${page}.md has no page type: add its folder to FOLDER_TYPES`).toBeDefined();
-    // The page as a reader sees it: the front matter is metadata, not reading.
-    const words = read(`apps/docs/${page}.md`).replace(FRONT_MATTER, '').trim().split(/\s+/).length;
+    // The prose a reader reads: the front matter is metadata, a code block is
+    // copied rather than read, and an image's markup and alt text are not
+    // reading; a figure's caption is.
+    const words = read(`apps/docs/${page}.md`)
+      .replace(FRONT_MATTER, '')
+      .replace(FENCED_CODE, ' ')
+      .replace(IMAGE_MARKUP, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
     expect(
       words,
       `apps/docs/${page}.md is ${words} words, over the ${BUDGETS[type!]}-word budget of a ${type} page: cut it or split it`,
@@ -597,7 +630,7 @@ describe('docs site structure', () => {
     const [route, anchor] = link.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '/index');
     const path = join(repoRoot, 'apps/docs', `${page}.md`);
-    if (GENERATED_PAGES.has(page) && !existsSync(path)) return;
+    if (GENERATED_PAGES.has(page) && generatedPageMissing(path)) return;
 
     expect(existsSync(path), `the sidebar links ${link}, and there is no apps/docs/${page}.md`).toBe(true);
     if (anchor) {
@@ -638,7 +671,7 @@ describe('docs site structure', () => {
     const [route, anchor] = url!.split('#');
     const page = route!.replace(/^\//, '').replace(/\/$/, '') || 'index';
     const path = [`${page}.md`, `${page}/index.md`].map((file) => join(repoRoot, 'apps/docs', file)).find(existsSync);
-    if (GENERATED_PAGES.has(page) && !path) return;
+    if (GENERATED_PAGES.has(page) && generatedPageMissing(path)) return;
 
     expect(path, `${surface} links ${url}, and the docs have no such page`).toBeDefined();
     if (!anchor) return;
@@ -707,6 +740,55 @@ describe('docs site structure', () => {
     ).toBe(true);
     expect(helpRecipes.has(recipe), `no help topic in shared/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
+
+  // Every page but the home page and the blog posts ends its reading with one
+  // footer heading, Related.
+  const footedPages = handWrittenPages
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
+    .filter((page) => page !== 'index' && !page.startsWith('blog/'));
+
+  test.each(footedPages)('%s has one Related footer', (page) => {
+    const headings =
+      read(`apps/docs/${page}.md`)
+        .replace(FENCED_CODE, '')
+        .match(/^## Related$/gm) ?? [];
+    expect(headings.length, `apps/docs/${page}.md needs one "## Related" heading`).toBe(1);
+  });
+});
+
+describe('docs images', () => {
+  const handWrittenPages = docsPages.filter(
+    (p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')),
+  );
+
+  // One markup for an image of the content, the <figure> custom.css frames,
+  // captions and makes zoomable.
+  test.each(handWrittenPages)('%s shows its images in a <figure>', (page) => {
+    const body = read(page).replace(FENCED_CODE, '');
+    expect(body, `${page}: use <figure>, not <div class="doc-screenshot">`).not.toContain('doc-screenshot');
+    const markdownImages = [...body.matchAll(/(?<!\[)!\[[^\]]*\]\((\/[^)]+)\)/g)].map((m) => m[1]);
+    expect(markdownImages, `${page}: put these images in a <figure>`).toEqual([]);
+  });
+
+  // An image under public/screenshots, or a loop under public/videos, is shown
+  // by a docs page, the README or an extension's README; one nobody shows is
+  // deleted with what makes it.
+  test('every docs screenshot and video is shown somewhere', () => {
+    const showing = [
+      ...docsPages,
+      'README.md',
+      ...['vscode', 'jetbrains', 'extension'].map((app) => `apps/${app}/README.md`),
+    ]
+      .filter((path) => existsSync(join(repoRoot, path)))
+      .map(read)
+      .join('\n');
+    const unused = ['screenshots', 'videos'].flatMap((dir) =>
+      readdirSync(join(repoRoot, 'apps/docs/public', dir))
+        .map((file) => `${dir}/${file}`)
+        .filter((file) => !showing.includes(file)),
+    );
+    expect(unused).toEqual([]);
+  });
 });
 
 describe('demo examples', () => {
@@ -749,7 +831,7 @@ describe('demo examples', () => {
     const handLinks = docsPages.flatMap((page) =>
       [...read(page).matchAll(/piwitests\.dev\/demo\/([^)\s"'`>]*)/g)]
         .map((m) => m[1]!)
-        .filter((path) => path !== '' && path !== 'docs')
+        .filter((path) => path !== '' && path !== 'settings/api')
         .map((path) => `${page}: /demo/${path}`),
     );
     expect(handLinks).toEqual([]);
@@ -757,5 +839,24 @@ describe('demo examples', () => {
 
   test('every example route is a demo route, from the demo root', () => {
     for (const example of DEMO_EXAMPLES) expect(example.route, example.id).toMatch(/^\/(?!demo\/)\S+$/);
+  });
+});
+
+describe('the oldest Playwright the reporter supports', () => {
+  // The lower bound of the reporter's peer range on @playwright/test, which CI's `reporter-floor` job tests. The
+  // reporter's guide and its README state it, so the range and the docs move together; a feature's page names only a
+  // later version it needs.
+  const range: string = JSON.parse(read('packages/reporter/package.json')).peerDependencies['@playwright/test'];
+  const floor = /^>=(\d+\.\d+)\.\d+ <2$/.exec(range)?.[1];
+
+  test('the peer range is a floor below the next major', () => {
+    expect(floor, `packages/reporter/package.json: "@playwright/test": "${range}" is not ">=x.y.z <2"`).toBeDefined();
+  });
+
+  test.each([
+    ['apps/docs/guide/reporter.md', 'It needs `@playwright/test` %s or later'],
+    ['packages/reporter/README.md', 'Playwright Test %s or higher'],
+  ])('%s states it', (file, phrase) => {
+    expect(read(file)).toContain(phrase.replace('%s', floor ?? '?'));
   });
 });

@@ -1,7 +1,7 @@
 # Run ingestion: agent guide
 
 Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, `events`, `heartbeat`, `case-files`,
-`finish`, `submit` and `upload`, and the imports) and for what they write. Read
+`finish`, `submit`, `upload` and `upload/results`, and the imports) and for what they write. Read
 [`../../../AGENTS.md`](../../../AGENTS.md) and [`../AGENTS.md`](../AGENTS.md) first.
 
 ## Finish-time side effects
@@ -22,6 +22,11 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
 
 - **Run cases are written only through `persistRunCases`** (`server/utils/persist-run-cases.ts`, mirrored for the demo
   in `app/demo/api/reporter.ts`): every ingest route hands it the mapped cases, never an `insert` of its own.
+- **A test's identity is stored as `storableRunCase` makes it** (`server/utils/storable-values.ts`): its file,
+  describe path and title stay whole while together they fit one PostgreSQL index entry, past it each over 800 bytes
+  keeps its head and a hash, as a project name over 800 bytes always does. A lookup by the names a client sends
+  passes them through `storedTestIdentity` first (`storedIdentityForms` without the describe path), as
+  `[id]/case-files` does (`tests/unit/stored-identity-lookups.test.ts`).
 
 ## Timed-out tests fold into `failedTests`
 
@@ -45,31 +50,67 @@ How a run is identified:
 - **A shard's identity** is Playwright's `config.shard`, or the `i/n` in `PIWI_SHARD`, which `piwi run --shard` sets
   because it narrows the tests itself and passes Playwright no `--shard`. The reporter reads both through
   `resolveShardInfo` (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A
-  run with no shard identity starts non-sharded and cancels every running run of its instance id.
+  run with no shard identity starts non-sharded and cancels every run of its instance id still initializing or
+  running, never a finalizing one, which holds all its results (`tests/unit/finalizing-runs.test.ts`). A batch
+  delivery also cancels the run its reporter streamed, a finalizing one too, when it names it with that run's stream
+  token (`replacesRun`, `cancelReplacedRun`), which `/finish` leaves on a run it holds for its reports.
 
 How the server merges shards:
 
-- `/setup`, `/start`, `/submit` and `/upload` reuse the instance's active sharded run when `shardTotal > 1`
-  (`findActiveShardedRun`, and `batchShardRun` for the two batch routes, `server/utils/sharded-runs.ts`). `/begin` on a
-  run another shard already began joins it: the shard gets a stream token of its own and adds its planned tests to
-  `totalTests`.
+- `/setup`, `/start`, `/submit` and `/upload` reuse the instance's active sharded run of the same `shardTotal` when
+  `shardTotal > 1` (`findActiveShardedRun`, and `batchShardRun` for the two batch routes,
+  `server/utils/sharded-runs.ts`). `/begin` on a run another shard already began joins it: the shard gets a stream
+  token of its own and adds its planned tests to `totalTests`.
 - Each shard's counters add up with SQL `+`, and the run settles only once `shardsFinished` reaches `shardTotal`
   (`finalizeShardedRun`, which runs the side effects once). `cancelInstanceRuns()` with `isShardedRun: true` cancels
   only the instance's non-sharded runs.
+- **A shard's end is recorded only through `recordShardEnd`** (`server/utils/shard-spans.ts`, the server and the demo):
+  its span joins `metadata.shards` and the run's start and duration become the first start to the last end, in one
+  write that shards of one run make one at a time (`tests/unit/sharded-run-setup.test.ts`).
 - **A shard's resource report replaces the one it sent before, whole**: one `test_run_resource_reports` row per run
   and shard (`saveResourceReportPart`, `shared/handlers/resource-reports.ts`), never merged into another shard's row.
+- **An environment snapshot replaces its row whole**: one `test_run_environment_snapshots` row per run, kind and scope
+  (shard, shard and project, origin), written only through `saveEnvironmentSnapshots`
+  (`shared/handlers/environment-snapshots.ts`), which keeps the listed fields alone; every ingest route, `begin`,
+  `start` and the demo's mirror included, passes it `body.environments` (`tests/unit/environment-snapshots.test.ts`).
 
 ### Stream tokens
 
 - **The streaming routes authenticate with the run's stream token**, not `requireAuth`: `[id]/begin` (with the setup
   token `/setup` returned), then `events`, `heartbeat`, `live-resources`, `case-files` and `finish`. `/setup` and
-  `/start` authenticate the caller and hand the token out. A token is kept only as its digest (`streamTokenDigest`,
-  `shardTokenDigest`): in `test_runs.stream_token`, in the in-memory run state (`runEventBus`,
-  `server/utils/run-events.ts`) and, for a shard, in the run's `metadata.shardTokens`, which project members can read.
+  `/start` authenticate the caller and hand the token out, and so does `/upload/results` for a batch run it holds
+  `finalizing` until its files are in, its repeated delivery a new one in place of the first (`renewHeldRunToken`), as
+  a repeat of it to `/upload` or `/submit` does, its files unread (`tests/unit/batch-run-in-parts.test.ts`). A
+  token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`): in `test_runs.stream_token`, in the
+  in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a shard, in the run's
+  `metadata.shardTokens`, which project members can read.
+- **A requested run starts only with its request token, and its origin is the server's**
+  (`server/utils/request-tokens.ts`): `/setup` and `/start` check it (`checkRequestToken`) in place of `requireAuth`,
+  store the run, then spend the token on it (`spendRequestToken`), report into the request's project, stamp `request`
+  (`withRequestOrigin`), set `requester_id` and ignore `keep`. `sanitizeMetadata` drops a `request` origin the reporter
+  sends, every later write of the reporter's metadata goes through `carryRequestOrigin`, and `runOrigin` reads `request`
+  before any lab stamp (`tests/unit/request-tokens.test.ts`).
+- **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
+  `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
+  with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload
+  with `runId` attaches reports alone.
 - **A new streaming route authenticates with `authorizeStreamToken`** (`server/utils/stream-auth.ts`). It accepts the
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set
   directly: `matchesShardToken` and `matchesStreamToken` refuse a presented digest.
+- **A streaming route whose token is in its body refuses what it can before it reads the body**: `begin`, `events`,
+  `finish` and `live-resources` call `requireStreamingRun` (`server/utils/stream-auth.ts`) first, which answers the 404
+  of a missing run, the 409 of one the route does not take and the 401 or 403 of the token header as the route does
+  after reading the body, and the body-limit middleware holds the body to the route's cap (`server/utils/body-limit.ts`,
+  10 MB for `events`, 32 MB for the others; `tests/unit/stream-route-bodies.test.ts`, `tests/unit/body-limit.test.ts`).
+- **The reporter sends those routes' token twice, in the body and in `X-Piwi-Run-Token`** (`RUN_TOKEN_HEADER`,
+  `@piwitests/core/wire`): its setup token to `begin`, its stream token to the others. The header is required of a
+  run whose `reporter_version` (from `/setup`, `/start` or `begin`) is 0.65.0 or later (`sendsRunTokenHeader`); the
+  token of an older or unknown reporter's run is checked in the body alone. Keep the body's token checked too: an
+  older dashboard reads only it.
+- **A path that ends a run drops its cached state** (`runEventBus.cleanup`), as `/finish`, the stale-run sweep and
+  `cancelInstanceRuns` do: `authorizeStreamToken` trusts the cache without reading the run's status, so a run left in
+  it takes events after it ended (`tests/unit/cancelled-run-stream.test.ts`).
 - **The live view routes authenticate with the run's live view key, and nothing else does** (`liveViewRelay.authorize`,
   `server/utils/live-view.ts`). `setup` mints one, for a project with `live_view` on and a reporter that asked
   (`liveView: true`, any run's: outside CI its workers stream only once shared), and the desktop build none
@@ -78,11 +119,18 @@ How the server merges shards:
   or cancel; an interruption closes the streams and keeps it once it streamed) or the setting, a key that ended
   answering 410 or 404 rather than 401 (`refuseLiveViewKey`; `tests/unit/live-view-routes.test.ts`). At their bounds
   the keys that never opened a stream go first (`tests/unit/live-view-relay.test.ts`).
+- **A run keeps its live view keys' digests, never a key** (`live_view_key_digests`, `storeLiveViewKey` in `setup`),
+  and no response carries them. Both routes authorize through `authorizeLiveViewKey`: a key the relay does not hold
+  (a restart, the setting turned off and on) is taken back only for that run, compared in constant time, while it is
+  initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
   export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays
   valid until that shard calls `/begin`, which swaps it for the shard's stream token: read the set with
   `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.
+- **A shard still in its global setup keeps its run waiting**: `/setup` lists its setup token's digest in
+  `metadata.shardSetupTokens`, its `/begin` takes it out (`withShardSetupTokens`), and the stale-run sweep gives a
+  running run listing one the hour of a run in its global setup (`tests/unit/sharded-run-setup.test.ts`).
 
 ## Adding a field to test run data
 

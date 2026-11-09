@@ -121,6 +121,22 @@ function hostilePayloads(): Record<NotificationEvent, NotificationPayload> {
       otherProjects: 1,
       incidentKey: 'k',
     },
+    'test.stuck': {
+      runId: 12,
+      projectId: 1,
+      projectName: HOSTILE,
+      testTitle: HOSTILE,
+      suitePath: [HOSTILE],
+      location: HOSTILE,
+      browserName: HOSTILE,
+      workerIndex: 2,
+      startedAt: 1_700_000_000_000,
+      elapsedMs: 300_000,
+      usualMs: 8000,
+      branch: HOSTILE,
+      owners: [HOSTILE],
+      ciUrl: 'javascript:alert(1)',
+    },
   };
 }
 

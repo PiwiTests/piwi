@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { addIngestHealth, carryIngestHealth, describeIngestHealth, readIngestHealth } from '../../shared/ingest-health';
+import {
+  addIngestHealth,
+  carryIngestHealth,
+  describeIngestHealth,
+  readIngestHealth,
+  reporterIngestHealth,
+} from '../../shared/ingest-health';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
@@ -20,7 +25,7 @@ let db: Db;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'ingest-health' });
   await db.insert(schema.testRuns).values({
     id: 1,
@@ -155,6 +160,13 @@ describe('describeIngestHealth', () => {
       'Delivered by the batch upload instead of the live stream: finishing the live stream failed',
     ]);
     expect(describeIngestHealth(null)).toEqual([]);
+  });
+
+  test('names the run a later run with the same run label ended while it streamed', () => {
+    const metadata = { ingestHealth: { submitFallback: { path: 'submit', reason: 'run-ended' } } };
+    expect(describeIngestHealth(readIngestHealth(reporterIngestHealth(metadata)))).toEqual([
+      'Delivered by the plain JSON submit, without its traces and reports: another run with the same run label ended its live run',
+    ]);
   });
 
   test('addIngestHealth drops zero counts', () => {

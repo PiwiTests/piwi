@@ -13,6 +13,10 @@ Rules for the Nitro routes (`server/api/`, `server/routes/`) and the authorizati
   and other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
   `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks the routes
   and the app's requests.
+- **A numeric route param is read with `requireRouteId`** (`requireRouteIndex` for a 0-based position, `parseRouteId`
+  of `#shared/route-id` for a route whose refusal is not a 400), never with `parseInt` or `Number`, which read `12abc`
+  as 12 and pass an id above PostgreSQL's `serial` (`tests/unit/route-permission-raw-path.test.ts`). The demo router
+  refuses its `(\d+)` captures the same way (`tests/unit/demo-access.test.ts`).
 - **An endpoint the demo serves too gets its demo handler**; `npm run app:check:demo` compares the route patterns. See
   [`app/demo/AGENTS.md`](../../app/demo/AGENTS.md).
 - **A settings route returns whether a secret is set, never its value** (an API key, an SCM token, the SMTP password):
@@ -27,9 +31,25 @@ record is `proposals/roles-and-groups.md`.
 
 - **Authentication is optional**, turned on by `PIWI_AUTH_ENABLED=true`. When it is off, `requireAuth()` returns a
   virtual administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
+- **With authentication off, the server answers only an IP, `localhost` or `*.localhost` `Host`, the host of
+  `PIWI_SITE_URL` or a name `PIWI_ALLOWED_HOSTS` lists**, a container's name included
+  (`server/middleware/allowed-host.ts`, `isAllowedHostWithoutAuth`). It reads `Host` alone, never `X-Forwarded-Host`
+  (`tests/unit/allowed-host.test.ts`).
 - **With authentication on, a request signs in with a session cookie (the browser) or an API key** (`pd_` prefix, as a
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
-  more and nothing less.
+  more and nothing less, unless its `permissions` column names the only ones it holds.
+- **A key that holds some permissions only (a run target's) serves its own routes alone**: `requireAuth` refuses it,
+  `getUserByApiKey` answers null for it, and only `requireRunTarget` (`server/utils/run-requests.ts`) takes it
+  (`tests/unit/run-requests.test.ts`).
+- **A connected app hears its requests and stops on its stream** (`server/utils/run-target-events.ts`):
+  `publishRunRequest` once a request is stored and has passed the waiting cap, a `stop` to the app that holds a
+  request, `publishWithdrawn` when a waiting request is stopped or claimed, and `revoked` on its key's revoke and on its
+  owner's delete. A path that creates, stops, claims or revokes another way publishes too
+  (`tests/unit/run-target-publish.test.ts`).
+- **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
+  calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
+  or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
+  still manages other users and creates accounts with a password: it is as powerful as the administrator's password.
 - **`/mcp` also takes an OAuth access token** (`pdo_` prefix), from the authorization server MCP clients sign in
   through (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `adr/mcp-oauth.md`).
   Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it: keep it that way. Each grant owns
@@ -50,7 +70,7 @@ record is `proposals/roles-and-groups.md`.
 ### Per-route permissions are declared once, in the route meta
 
 A route's `defineRouteMeta` declares what it needs in `openAPI['x-required-permission']`. That one literal drives
-**both** the `/docs` display and the enforcement: `requireAuth(event)` reads it from the compiled route metas
+**both** the API reference's display (`/settings/api`) and the enforcement: `requireAuth(event)` reads it from the compiled route metas
 (`server/utils/route-required-permission.ts`, matched with rou3 exactly as Nitro dispatches).
 
 ```typescript
@@ -77,11 +97,13 @@ export default eventHandler(async (event) => {
 - **`requireAuth(event, permission)` overrides the meta** for a handler whose permission depends on the request
   (`integrations/actions.get.ts` needs `connections:manage` for a connection's activity, `project:read` for a
   project's); the meta then documents the usual case.
-- **No response carries `test_runs.stream_token`**: a handler returning run rows selects `publicRunColumns()`
-  (`shared/handlers/public-run.ts`).
+- **No response carries `test_runs.stream_token` or `live_view_key_digests`**: a handler returning run rows selects
+  `publicRunColumns()` (`shared/handlers/public-run.ts`).
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
-  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
-  `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and, with authentication off only,
+  one without that header whose `Origin` is opaque or names neither the `Host` header's host and port nor
+  `PIWI_SITE_URL`'s (any scheme) nor a name `PIWI_ALLOWED_HOSTS` names, `*` aside (`tests/unit/cross-site.test.ts`). No route
+  sends `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
   same-origin pages or Piwi Picker's background worker; every other client (reporter, CLI, MCP, IDE clients) sends no
   browser metadata.
 
@@ -98,6 +120,10 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **Authenticate before any lookup by a request's id**, so a caller without credentials gets 401 whether the id exists
   or not. A handler that loads the row itself calls `requireAuth(event)`, then `requireProjectPermission(event,
   projectId)` (`tests/unit/request-access.test.ts`, `tests/unit/route-permissions.test.ts`).
+- **A private run (origin `request`) is its requester's alone** (`isVisibleRun`, `notPrivateRun` in
+  `shared/run-eligibility.ts`): the run and execution resolvers take the viewer's id and answer a run they may not see
+  as missing, and every list a project's members read leaves it out (`notLabRun` sets it aside). With no viewer, or
+  authentication off, nobody sees it (`tests/unit/request-tokens.test.ts`).
 - Both refuse with 403: "No access to this project" when the user cannot read the project, "Insufficient permissions"
   when they read it without the route's permission.
 - **A list handler takes the user's project scope**: `getProjectScope(db, user, permission = 'project:read')` returns
@@ -115,12 +141,31 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **The last administrator can be neither demoted nor deleted.**
 - **A Project admin edits role bindings only on projects where they hold `project:members`**, never on all projects
   (that takes `users:manage`, an administrator's).
+- **A Project admin's user list holds only the users who can open a project they can open** (`listUserSummaries`):
+  anyone else is found, and added to a project, only by their whole username, never by id or in a list
+  (`replaceProjectMembers`). `tests/unit/access-management-routes.test.ts`.
+- **A project reads and writes its tracker only through the connection its binding names**: filing refuses any other
+  and the draft proposes none, a link is matched and read against that one alone, and the sync, the webhook, the
+  policies and the outbox pass by a link or a write on another (`server/utils/integrations/bound-connection.ts`).
+  `tests/unit/issue-create-routes.test.ts`, `tests/unit/issue-link-routes.test.ts`.
+- **No row keeps a share link's token**, only its hash (`share_links`): an issue body queued or filed with a share
+  link holds its URL with the token redacted, the link minted as the issue is sent and its token read back from the
+  issue for a rewrite (`server/utils/integrations/share-url.ts`, `tests/unit/integrations-share-link.test.ts`).
+- **An `issue:create` route under `integrations/connections/[id]/` calls `requireConnectionAccess` before its cache
+  and the tracker**: `issue:create` on a project bound to the connection, `project:manage` anywhere or
+  `connections:manage`, else the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
+- **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
+  `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
+  (`tests/unit/notification-stream.test.ts`). A subscriber's, and a personal channel's owner's, is checked when a
+  delivery is queued (`match.ts`) and again when the outbox sends it, digests included, with the subscription's mute
+  and active state, and a quality report's against every project of its snapshot (`undeliverableReason` in
+  `dispatch.ts`, `tests/unit/notification-dispatch-access.test.ts`).
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 
 ### OpenAPI annotations
 
-Every endpoint gets a `defineRouteMeta({ openAPI: … })` block: it feeds `/_openapi.json` and `/docs`, and it is the
+Every endpoint gets a `defineRouteMeta({ openAPI: … })` block: it feeds `/_openapi.json` and the API reference (`/settings/api`), and it is the
 only place endpoint documentation is written. A public endpoint declares `security: []`; every other one inherits the
 root-level `security: [{ bearerAuth: [] }, { sessionCookie: [] }]` of `nuxt.config.ts` (whose `meta` is cast `as any`
 on purpose, to allow those fields).

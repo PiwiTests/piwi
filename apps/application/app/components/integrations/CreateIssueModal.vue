@@ -22,6 +22,9 @@ import {
   type TrackerField,
 } from '#shared/integrations/fields';
 import { withTypedValue } from '~/utils/text-format';
+import { commentNodes, MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment } from '#shared/integrations/run-issue';
+import { renderMarkdown } from '#shared/integrations/render-markdown';
+import { isOutcomeUnknownError } from '#shared/integrations/action-keys';
 
 const props = defineProps<{
   entityType: IssueEntityType;
@@ -65,6 +68,44 @@ function showError(message: string, title = 'Could not create the issue') {
 /** What an already-filed issue was filed for, in the toast that names it. */
 const filedFor = computed(() => (props.entityType === 'bug_report' ? 'this bug report' : 'this cluster'));
 
+/**
+ * A run, or an execution with no failure cluster, may get several issues: the
+ * ones already linked are listed, and never stand in for a new one.
+ */
+const perSubmission = computed(
+  () =>
+    props.entityType === 'test_run' ||
+    (props.entityType === 'test_runs_case' && draft.value != null && draft.value.clusterId == null),
+);
+
+/** What the person writes, placed first in the issue under their name. */
+const comment = ref('');
+/** One id per opening of the dialog, or the one a queued filing holds: sending it again files nothing new. */
+const submissionId = ref('');
+/** The comment block as the issue will open, rendered with the server's own builder. */
+const commentMarkdown = computed(() => {
+  const text = normalizeIssueComment(comment.value);
+  if (!text || !draft.value) return '';
+  return renderMarkdown({ nodes: commentNodes(locale.value, { text, author: draft.value.filedBy ?? null }) });
+});
+/** What the Comment field says it does: on a cluster already tracked, it may go to the issue Piwi filed. */
+const commentDescription = computed(() => {
+  const under = draft.value?.filedBy ? ', under your name' : '';
+  const tracked = !perSubmission.value && existing.value.length > 0;
+  return tracked
+    ? `What is wrong, what to improve, what test is missing. It opens the new issue${under}, or is added to the issue Piwi already filed for this cluster.`
+    : `What is wrong, what to improve, what test is missing. It opens the issue${under}.`;
+});
+/** The linked issues with a key, as the per-submission list names them. */
+const linkedKeys = computed(() => existing.value.filter((issue) => issue.key));
+/** Whether this opening sends again the filing an earlier one queued. */
+const resendsQueued = ref(false);
+/** What the held submission ids are kept for. */
+const submissionSubject = computed(() => `${props.entityType}:${props.entityId}`);
+const previewMarkdown = computed(() =>
+  commentMarkdown.value ? `${commentMarkdown.value}\n${draft.value?.markdown ?? ''}` : (draft.value?.markdown ?? ''),
+);
+
 // The editable form, seeded from the draft.
 const title = ref('');
 const connectionId = ref<number | undefined>(undefined);
@@ -92,8 +133,6 @@ const assigneeQuery = ref('');
 
 const showAllCreate = ref(false);
 
-const hasMultipleConnections = computed(() => (draft.value?.connections.length ?? 0) > 1);
-const connectionItems = computed(() => (draft.value?.connections ?? []).map((c) => ({ label: c.name, value: c.id })));
 const existing = computed<ExistingIssueCandidate[]>(() => draft.value?.existing ?? []);
 
 // ── Jira fields: what the chosen issue type requires ─────────────────────────
@@ -169,6 +208,7 @@ const missingNames = computed(() => joinFieldNames(missingFields.value.map((f) =
 
 // Why Create is disabled, named in the footer next to the fields Jira still needs.
 const blockedReason = computed(() => {
+  if (draft.value && !draft.value.connectionId) return 'This project has no Jira connection to file through.';
   const need = [
     !title.value.trim() ? 'a title' : null,
     !projectKey.value ? 'a Jira project' : null,
@@ -185,6 +225,10 @@ const blockedReason = computed(() => {
 const description = computed(() => {
   if (props.entityType === 'bug_report')
     return 'File a Jira issue from this bug report, with its steps, evidence and failing test.';
+  if (props.entityType === 'test_run')
+    return 'File a Jira issue about this run, with its tests, results and failure clusters. A run can have several issues.';
+  if (perSubmission.value)
+    return 'File a Jira issue about this test, with its result and its run. A test with no failure cluster can have several issues.';
   const id = draft.value?.clusterId;
   if (props.knownIssueKey)
     return `Files a new issue for ${id ? `cluster #${id}` : 'the cluster'} next to ${props.knownIssueKey}, which stays linked. The new issue, with the fix plan as its body, becomes the cluster's issue on the cluster page and on each of its executions.`;
@@ -198,6 +242,7 @@ const { can } = useAuth();
 const canBind = computed(() => (draft.value ? can('project:manage', draft.value.projectId) : false));
 /** A share link is public: only someone who may create one can put it in the ticket. */
 const canShareLink = computed(() => draft.value != null && can('share:create', draft.value.projectId));
+const { offered: offersShareLinks, load: loadShareLinks } = useShareLinksOfferedOnOpen();
 
 const canCreate = computed(
   () =>
@@ -229,7 +274,6 @@ async function loadDraft() {
   draft.value = null;
   try {
     const params = new URLSearchParams({ entityType: props.entityType, entityId: String(props.entityId) });
-    if (connectionId.value) params.set('connectionId', String(connectionId.value));
     params.set('includeDiagnosis', String(include.value.includeDiagnosis));
     params.set('includePatch', String(include.value.includePatch));
     params.set('includeScreenshot', String(include.value.includeScreenshot));
@@ -250,12 +294,11 @@ async function loadDraft() {
   }
 }
 
-/** Re-fetch only the preview/labels when a toggle or the connection changes. */
+/** Re-fetch only the preview/labels when a toggle or the language changes. */
 async function refreshPreview() {
   if (!draft.value) return;
   try {
     const params = new URLSearchParams({ entityType: props.entityType, entityId: String(props.entityId) });
-    if (connectionId.value) params.set('connectionId', String(connectionId.value));
     params.set('includeDiagnosis', String(include.value.includeDiagnosis));
     params.set('includePatch', String(include.value.includePatch));
     params.set('includeScreenshot', String(include.value.includeScreenshot));
@@ -342,20 +385,14 @@ const assigneeAvatar = computed(() => assigneeItems.value.find((i) => i.value ==
 
 watch(open, (isOpen) => {
   if (isOpen) {
+    comment.value = '';
+    submissionId.value = submissionIdFor(submissionSubject.value);
+    resendsQueued.value = submissionHeld(submissionSubject.value);
     projects.value = [];
     issueTypes.value = [];
     showAllCreate.value = false;
     void loadDraft();
-  }
-});
-
-watch(connectionId, (id, prev) => {
-  if (prev != null && id !== prev) {
-    projects.value = [];
-    issueTypes.value = [];
-    void loadProjects();
-    void loadIssueTypes();
-    void refreshPreview();
+    void loadShareLinks();
   }
 });
 
@@ -386,27 +423,65 @@ async function create() {
         locale: locale.value,
         include: include.value,
         fields: fieldValues.value,
+        comment: normalizeIssueComment(comment.value) ?? undefined,
+        submissionId: submissionId.value,
       },
     });
-    if (res.status === 'done' && res.key && res.url) {
+    if (res.status === 'done' && res.key && res.url && resendsQueued.value && res.submissionFiled) {
+      // The earlier filing went through in the meantime: what this form holds was not sent.
       toast.add({
-        title: res.alreadyFiled ? `${res.key} was already filed for ${filedFor.value}` : `${res.key} created`,
-        color: res.alreadyFiled ? 'info' : 'success',
+        title: `${res.key} was filed from your earlier attempt`,
+        description: 'What you changed here was not sent. Open Create issue again to file another issue.',
+        color: 'info',
         actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
+      releaseSubmission(submissionSubject.value);
+      emit('created', { key: res.key, url: res.url });
+      open.value = false;
+    } else if (res.status === 'done' && res.key && res.url) {
+      const already = `${res.key} was already filed for ${filedFor.value}.`;
+      const commentToast =
+        res.commentStatus === 'added'
+          ? { title: `Your comment was added to ${res.key}`, description: already }
+          : res.commentStatus === 'pending'
+            ? {
+                title: `Your comment to ${res.key} is queued`,
+                description: `${already} Jira did not answer yet: Piwi adds the comment once it does.`,
+              }
+            : res.commentStatus === 'failed'
+              ? {
+                  title: `Your comment was not added to ${res.key}`,
+                  description: `${already} It was not sent${res.commentError ? `: ${res.commentError}` : '.'}`,
+                }
+              : null;
+      toast.add({
+        title: res.alreadyFiled ? `${res.key} was already filed for ${filedFor.value}` : `${res.key} created`,
+        ...commentToast,
+        color: res.commentStatus === 'failed' ? 'warning' : res.alreadyFiled ? 'info' : 'success',
+        actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
+      });
+      releaseSubmission(submissionSubject.value);
       emit('created', { key: res.key, url: res.url });
       open.value = false;
     } else if (res.status === 'pending') {
       toast.add({
         title: 'Filing queued',
-        description: 'Jira did not answer yet. Piwi retries and links the issue once it is created.',
+        description:
+          'Jira did not answer yet. Piwi retries and links the issue once it is created, or stops at Outcome unknown when Jira may have it already.',
         color: 'info',
       });
+      holdSubmission(submissionSubject.value, submissionId.value);
       emit('queued');
       open.value = false;
     } else {
       showError(res.error || 'The tracker gave no reason.');
       if (res.actionId) emit('failed');
+      if (isOutcomeUnknownError(res.error)) {
+        // Creating again from here is a new filing, once the person has checked the tracker.
+        releaseSubmission(submissionSubject.value);
+        submissionId.value = newSubmissionId();
+        resendsQueued.value = false;
+      }
       fieldProblems.value = [...(res.missingFields ?? []), ...(res.fieldErrors ?? [])];
       // The screen may have changed since it was read: read it again.
       if (fieldProblems.value.length) void reloadFields();
@@ -425,8 +500,11 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     await $fetch('/api/links', {
       method: 'POST',
       body: {
-        entityType: props.entityType === 'bug_report' ? 'bug_report' : 'failure_cluster',
-        entityId: props.entityType === 'bug_report' ? props.entityId : (draft.value?.clusterId ?? props.entityId),
+        entityType: props.entityType === 'bug_report' || perSubmission.value ? props.entityType : 'failure_cluster',
+        entityId:
+          props.entityType === 'bug_report' || perSubmission.value
+            ? props.entityId
+            : (draft.value?.clusterId ?? props.entityId),
         url: candidate.url,
         title: candidate.title,
       },
@@ -469,7 +547,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </div>
         <!-- Dedupe: lead with an issue that already tracks this failure. -->
         <UAlert
-          v-if="existing.length && !showAllCreate"
+          v-if="existing.length && !showAllCreate && !perSubmission"
           color="warning"
           variant="subtle"
           icon="i-lucide-link"
@@ -484,9 +562,30 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
           </template>
         </UAlert>
 
-        <template v-if="!existing.length || showAllCreate">
+        <p v-if="perSubmission && linkedKeys.length" class="text-xs text-muted" data-testid="create-issue-linked">
+          Already linked:
+          <template v-for="(issue, i) in linkedKeys" :key="issue.key"
+            ><template v-if="i">, </template
+            ><a :href="issue.url" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">{{
+              issue.key
+            }}</a></template
+          >. A new issue is filed next to them.
+        </p>
+
+        <template v-if="!existing.length || showAllCreate || perSubmission">
+          <!-- No connection: a project's issues go only through the one it is bound to, with credentials. -->
+          <p v-if="!draft.connectionId" class="text-xs text-muted" data-testid="create-issue-no-connection">
+            This project has no Jira connection to file through: its issues go only through the connection its settings
+            name, once that connection has credentials.
+            <NuxtLink
+              v-if="canBind"
+              :to="`/projects/${draft.projectId}?tab=settings&section=issue-tracker`"
+              :class="SENTENCE_LINK_CLASS"
+              >Open the issue tracker settings</NuxtLink
+            ><template v-else> A project admin sets it in the project settings.</template>
+          </p>
           <!-- No default Jira project for this Piwi project: say so, and where to set one. -->
-          <p v-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
+          <p v-else-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
             This project has no default Jira project and issue type, so pick them for this issue.
             <NuxtLink
               v-if="canBind"
@@ -495,15 +594,25 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               >Set the defaults</NuxtLink
             ><template v-else> A project admin can set them in the project settings.</template>
           </p>
+          <p v-if="resendsQueued" class="text-xs text-muted" data-testid="create-issue-resends">
+            A filing from your earlier attempt is still queued: Create sends it again, with what this form holds.
+          </p>
+          <UFormField label="Comment" hint="Optional" :description="commentDescription">
+            <UTextarea
+              v-model="comment"
+              :rows="3"
+              autoresize
+              :maxlength="MAX_ISSUE_COMMENT_LENGTH"
+              class="w-full"
+              data-testid="create-issue-comment"
+            />
+          </UFormField>
           <UFormField label="Title">
             <UInput v-model="title" class="w-full" />
           </UFormField>
 
-          <UFormField v-if="hasMultipleConnections" label="Connection">
-            <USelect v-model="connectionId" :items="connectionItems" value-key="value" class="w-full" />
-          </UFormField>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- The pickers read the project's connection: none to read without one. -->
+          <div v-if="draft.connectionId" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <UFormField label="Jira project">
               <USelectMenu
                 v-model="projectKey"
@@ -569,7 +678,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             />
           </template>
 
-          <UFormField label="Assignee">
+          <UFormField v-if="draft.connectionId" label="Assignee">
             <USelectMenu
               v-model="assignee"
               :items="assigneeItems"
@@ -611,11 +720,12 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             </UFormField>
           </div>
 
-          <UFormField label="Include">
+          <UFormField v-if="!perSubmission" label="Include">
             <div class="flex flex-wrap gap-4">
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
               <USwitch
+                v-if="offersShareLinks"
                 v-model="include.includeShareLink"
                 label="Share link"
                 :disabled="!draft.linksBack || !canShareLink"
@@ -635,7 +745,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 
           <div>
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
-            <MarkdownPreview :text="draft.markdown" max-height="16rem" />
+            <MarkdownPreview :text="previewMarkdown" max-height="16rem" />
           </div>
         </template>
       </div>
@@ -644,7 +754,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     <template #footer>
       <div class="flex flex-wrap items-center justify-end gap-2 w-full">
         <span
-          v-if="draft && (!existing.length || showAllCreate) && (blockedReason || missingNames)"
+          v-if="draft && (!existing.length || showAllCreate || perSubmission) && (blockedReason || missingNames)"
           class="mr-auto text-xs text-muted"
           data-testid="create-issue-missing"
         >
@@ -653,7 +763,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </span>
         <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
         <UButton
-          v-if="draft && (!existing.length || showAllCreate)"
+          v-if="draft && (!existing.length || showAllCreate || perSubmission)"
           icon="i-simple-icons-jira"
           :loading="creating"
           :disabled="!canCreate"

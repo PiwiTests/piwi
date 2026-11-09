@@ -4,13 +4,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import { flakeErrorSignature } from '@piwitests/core/flake-plan';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { routePermissionList } from '#shared/permissions';
+import { migrateToLatest } from './temp-db';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -48,7 +48,7 @@ beforeAll(async () => {
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   await client.execute('PRAGMA foreign_keys=ON');
   db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([
     { id: 1, name: 'Shop', defaultBranch: 'main' },
@@ -322,6 +322,19 @@ describe('combining arms', () => {
       { kind: 'cpu', rate: 4 },
     ]);
     expect(lab.combineFlakeArms([{ conditions: [{ kind: 'cpu', rate: 4 }] }])).toBeNull();
+  });
+
+  test('keeps one time zone and one locale', () => {
+    expect(
+      lab.combineFlakeArms([
+        { conditions: [{ kind: 'timezone', timeZone: 'UTC' }] },
+        { conditions: [{ kind: 'locale', locale: 'fr-FR' }] },
+        { conditions: [{ kind: 'timezone', timeZone: 'Europe/Paris' }] },
+      ]),
+    ).toEqual([
+      { kind: 'timezone', timeZone: 'UTC' },
+      { kind: 'locale', locale: 'fr-FR' },
+    ]);
   });
 });
 

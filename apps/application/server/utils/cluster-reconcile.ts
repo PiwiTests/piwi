@@ -18,7 +18,9 @@
  * input-recipe version): after a model switch or recipe change, stale vectors
  * drop out of the candidate pool and the backfill re-embeds them over the
  * following runs, instead of scoring vectors from different spaces against
- * each other.
+ * each other. The backfill also re-embeds the stale vectors of the resolved
+ * clusters "Fixed before" compares open ones against (`cluster-memory.ts`),
+ * after the open ones and within the same cap; those are never merged.
  *
  * Runs only when an `embedding` AI role is configured; otherwise it's a no-op,
  * so clustering still works with zero AI configuration. Invoked fire-and-forget
@@ -27,7 +29,7 @@
  * interleave merges of the same clusters.
  */
 
-import { and, asc, count, countDistinct, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, asc, count, countDistinct, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { failureClusters, testCases, testRunsCases } from '../database/schema';
 import { mergeFailureClusters } from '#shared/handlers/failure-cluster-ops';
 import {
@@ -171,10 +173,39 @@ async function reconcilePass(
     );
   }
 
-  if (fresh.length === 0 && backfill.length === 0) return { embedded: 0, merged: 0, suggested: 0 };
+  // The clusters "Fixed before" compares an open cluster against (`findFixedBefore`: resolved, or a fix that held)
+  // whose vector is from another model or recipe, with what the open backfill leaves of its cap, in the order
+  // "Fixed before" reads them. They are embedded only: never a source or a candidate of a merge or a suggestion.
+  const fixedBudget = MAX_BACKFILL_PER_RUN - backfill.length;
+  const fixedBefore: ClusterRow[] =
+    fixedBudget > 0
+      ? await db
+          .select(CLUSTER_FIELDS)
+          .from(failureClusters)
+          .where(
+            and(
+              eq(failureClusters.projectId, projectId),
+              ne(failureClusters.status, 'open'),
+              or(
+                eq(failureClusters.status, 'resolved'),
+                and(isNotNull(failureClusters.fixLandedRunId), ne(failureClusters.fixVerification, 'regressed')),
+              ),
+              isNotNull(failureClusters.embedding),
+              or(isNull(failureClusters.embeddingModel), ne(failureClusters.embeddingModel, tag)),
+            ),
+          )
+          .orderBy(sql`${failureClusters.fixLandedAt} DESC NULLS LAST`, desc(failureClusters.updatedAt))
+          .limit(fixedBudget)
+      : [];
 
-  // Embed everything that lacks a vector in the current space.
-  const toEmbed = [...fresh.filter((c) => !c.embedding || c.embeddingModel !== tag), ...backfill];
+  if (fresh.length === 0 && backfill.length === 0 && fixedBefore.length === 0) {
+    return { embedded: 0, merged: 0, suggested: 0 };
+  }
+
+  // Embed everything that lacks a vector in the current space. A fixed cluster keeps its `updatedAt`, which
+  // "Fixed before" shows as when it was resolved.
+  const fixedIds = new Set(fixedBefore.map((c) => c.id));
+  const toEmbed = [...fresh.filter((c) => !c.embedding || c.embeddingModel !== tag), ...backfill, ...fixedBefore];
   let embedded = 0;
   if (toEmbed.length > 0) {
     const vectors = await embedTexts(
@@ -187,10 +218,11 @@ async function reconcilePass(
       const vec = vectors[i];
       if (!vec || vec.length === 0) continue;
       const json = JSON.stringify(vec);
+      const id = toEmbed[i]!.id;
       await db
         .update(failureClusters)
-        .set({ embedding: json, embeddingModel: tag, updatedAt: new Date() })
-        .where(eq(failureClusters.id, toEmbed[i]!.id));
+        .set({ embedding: json, embeddingModel: tag, ...(fixedIds.has(id) ? {} : { updatedAt: new Date() }) })
+        .where(eq(failureClusters.id, id));
       toEmbed[i]!.embedding = json;
       toEmbed[i]!.embeddingModel = tag;
       embedded++;

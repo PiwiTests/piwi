@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { asc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
 import { testOutcomes } from '#shared/utils/test-counts';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A `--repeat-each` run through the ingest routes: each repetition of a test is
@@ -64,7 +63,7 @@ const ERROR = "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
   projectId = project!.id;
@@ -178,6 +177,21 @@ describe('a submitted --repeat-each run', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ flaky: false });
     expect(groups[0]!.cases[0]).toMatchObject({ passedOnRetry: false, executionId: hard.id });
+  });
+
+  test('a case is passed on retry when its result passed after it, in its own Playwright project', async () => {
+    const flaky = await submitRun([result(0, 'failed', 0), result(0, 'passed', 1)], { totalTests: 1, passedTests: 1 });
+    const [group] = await getFailureGroups(db as never, flaky.runId);
+    expect(group).toMatchObject({ flaky: true });
+    expect(group!.cases[0]).toMatchObject({ passedOnRetry: true });
+
+    const otherProject = { ...result(0, 'passed', 0), browser: { projectName: 'firefox' } };
+    const split = await submitRun([result(0, 'failed', 0), otherProject], { totalTests: 2, passedTests: 1 });
+    expect(await getFailureGroups(db as never, split.runId)).toMatchObject([{ flaky: false }]);
+
+    // A describe.serial group retried for another test: the earlier pass does not make the final failure flaky.
+    const serial = await submitRun([result(0, 'passed', 0), result(0, 'failed', 1)], { totalTests: 1, failedTests: 1 });
+    expect(await getFailureGroups(db as never, serial.runId)).toMatchObject([{ flaky: false }]);
   });
 
   test('a failure cluster is not flaky because another repetition passed', async () => {

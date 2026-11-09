@@ -1,41 +1,45 @@
 ---
-title: Pull-request feedback & re-run
-description: "Piwi posts a run's result on the pull request, new failures apart from pre-existing ones, and re-runs a cluster's tests in CI from the dashboard."
+title: Pull-request feedback
+description: "Piwi posts a run's result on the pull request, new failures apart from pre-existing ones, and sets a commit status from the merge gate's verdict."
 lang: en-US
 ---
 
-# Pull-request feedback & re-run
+# Pull-request feedback
 
 <Needs reporter scm />
 
 The run URL a CI job prints is a link somebody has to click. Piwi can instead post the result onto the pull request
-itself, which is where the person who broke the test already is. And once a cluster is fixed, the cluster page can
-start the CI run that proves it.
+itself, which is where the person who broke the test already is. To re-run a fixed cluster's tests from the dashboard,
+see [Re-run in CI](./ci-rerun).
 
 ## What gets posted
 
-Two things get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
+A comment and a commit status get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
 partial run from a developer's machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
 
-- **A summary comment** on the branch's open pull request: one comment per pull request, edited on each later run rather than appended, so a busy
+- **A summary comment** on the run's open pull request (the one its CI names when the CI runs in the repository Piwi
+  posts to, a pull request from a fork included, else the one open on its branch): one comment per pull request, edited on each later run rather than appended, so a busy
   branch doesn't collect a comment per push.
 - **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
   list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
   the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
-  failures** follows the same rule: such a run gets no comment.
+  failures** follows the same rule: such a run gets no comment, unless its change left a file no test reached, which
+  the [uncovered changes](./uncovered-changes) section names. When the run has a
+  diff to read, a second status that never fails joins it, `/change-coverage`
+  ([what it counts](./uncovered-changes#on-the-pull-request)).
 
 What the comment says, in this order:
 
 1. **New failures**: failing now, passing in the last green run. This change caused them.
 2. **Pre-existing failures**: already broken before this change. Separated so nobody debugs someone else's bug.
-3. **Flaky**: passed only on a retry.
+3. **Flaky**: passed on a retry after an earlier attempt failed.
 4. **Looks fixed**: `test.fail()` tests that passed, each with "remove `test.fail()`" and its file, since the bug they
    reproduce no longer shows.
 5. **New failure clusters**: root causes never seen before in this project.
 6. **Fixed by this change**: clusters this pull request closed, with how long they were open. See
    [Did the fix work?](./failure-clusters#did-the-fix-work)
-7. **Left open by this change**: [resource leaks](./resource-leaks#in-ci) the base branch never showed, each with the
+7. **Left open by this change**: [resource leaks](./leak-history) the base branch never showed, each with the
    line that opened it.
 
 Each failure carries its error, its owner and tags when the test declares them (see
@@ -49,6 +53,11 @@ translation the diff removes or renames, matched against the base branch's locat
 already listed with its failure, a passing one was updated), so it names what the run did not exercise: tests outside
 the selection, on another shard set, or in a nightly suite. Each comes with its call site and, for a rename, the
 rewritten locator.
+
+<figure>
+  <img src="/screenshots/pr-comment.png" alt="The summary comment on a pull request: the run's counts, one new failure with its headline, owner and suggested locator, a pre-existing failure tracked in Jira, a flaky test also flaky on main, a new cluster, a cluster this change fixed, and the CI minutes wasted">
+  <figcaption>The summary comment on a pull request.</figcaption>
+</figure>
 
 ## The gate verdict
 
@@ -72,89 +81,15 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 - **`PIWI_SITE_URL`** set on the dashboard. Every link in the comment is built from it; without it nothing is posted,
   because a comment full of unreachable links is worse than no comment.
 - **An SCM token with write access** to the repository, set instance-wide or per project: `repo` on GitHub, `api` on
-  GitLab. [Source control](/guide/source-control) explains where to set it and what else uses it.
+  GitLab, `repository` and `pullrequest` on Bitbucket. [Source control](/guide/source-control) explains where to set
+  it and what else uses it.
 - **Branch and commit metadata on the run**, which the reporter [detects automatically](/guide/ci#what-gets-detected).
-
-## Re-run from the dashboard
-
-Once a cluster is fixed, the fastest way to prove it is to re-run exactly the affected tests, and a
-[filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
-trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
-the cluster's retry arguments (each affected test's `file:line` from its latest failure, and the projects it failed
-in) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
-that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that one test at its
-line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
-
-It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
-under **CI re-run**. Turn it on and fill in the block for your provider:
-
-| Provider | Target you configure | Token scope |
-|---|---|---|
-| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | `actions:write` (a classic PAT's `workflow` scope) |
-| **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
-| **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
-
-The dispatch uses the project's SCM token, so that token needs the write scope above. The button is disabled with an
-explanatory tooltip when the feature is off, no target is configured for the repository's provider, or no token is set.
-
-An optional **Flake Lab** block names a second workflow or pipeline that runs `piwi flake` for one flaky test, started
-from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the workflow.
-
-Your workflow has to actually consume the value. A minimal GitHub example that forwards the input to Playwright:
-
-```yaml
-on:
-  workflow_dispatch:
-    inputs:
-      args:
-        description: Playwright arguments
-        required: false
-        default: ''
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npx playwright test ${{ inputs.args }}
-```
-
-On GitLab, read the variable in your test job (`npx playwright test $PW_ARGS`); on Bitbucket, reference it the same way
-inside the `custom:` pipeline you named. GitHub's `workflow_dispatch` returns no run id, so the link goes to the
-workflow's runs page filtered to the branch; GitLab and Bitbucket link straight to the pipeline.
-
-When the re-run finishes, Piwi recognizes it and records its [origin](/reference/test-metadata#run-origin) as `ci-rerun`: by
-GitLab's pipeline id or Bitbucket's build number, which the dispatch answered with, and on GitHub by the dispatch id
-when the workflow passes it on. GitHub rejects an input the workflow does not declare, so that input is a separate,
-optional setting. Declare it and hand it to the reporter as `PIWI_ORIGIN_REF`:
-
-```yaml
-on:
-  workflow_dispatch:
-    inputs:
-      args:
-        required: false
-        default: ''
-      piwi_dispatch:
-        required: false
-        default: ''
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npx playwright test ${{ inputs.args }}
-        env:
-          PIWI_ORIGIN_REF: ${{ inputs.piwi_dispatch }}
-```
-
-Without it, a GitHub run is matched on its branch, a start within six hours of the dispatch, and running exactly the
-dispatched spec files.
 
 ## Limits
 
-- Pull-request feedback posts on GitHub and GitLab. On Bitbucket the settings page saves, but nothing is posted.
+- Pull-request feedback posts on GitHub, GitLab and Bitbucket Cloud, not on Bitbucket Server or Data Center. On
+  Bitbucket the commit status is a build status keyed by the status context, shown on the pull request of the run's
+  branch, and the comment's marker is a link reference definition, which Markdown does not render.
 - Piwi only ever edits a comment it wrote itself (identified by a hidden marker), so a human comment is never
   overwritten.
 - Everything here is best-effort: the run is already stored by the time it runs, and a missing token or an unreachable
@@ -167,4 +102,5 @@ dispatched spec files.
 - [CI & sharding](/guide/ci): run the reporter in CI and gate a merge
 - [Source control](/guide/source-control): the SCM token and its scopes
 - [Auto-heal PRs](./auto-heal): the pull request Piwi opens itself
-- [Failure clusters & the inbox](./failure-clusters): the clusters the comment and the re-run act on
+- [Failure clusters & the inbox](./failure-clusters): the clusters the comment reports
+- [Re-run in CI](./ci-rerun): re-run a cluster's tests from the dashboard

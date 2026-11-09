@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import type { Page, WorkerInfo } from '@playwright/test';
 import {
+  LIVE_CALL_LOGS_PER_SECOND,
   LIVE_FRAME_BYTE_RATE,
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
@@ -17,17 +18,22 @@ import {
   parseLiveViewEnv,
   parseLiveViewMissing,
   type LiveCall,
+  type LiveCallLog,
   type LiveStop,
   type LiveViewAddress,
   type LiveWorkerId,
   type WorkerToInstance,
+  type LiveTestOutcome,
 } from '@piwitests/core/live-view';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
-import { fitViewSize } from '@piwitests/core/run-view';
+import { PIWI_RUN_LOG_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
+import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
-import { openPageView, type PageFrame, type PageView } from './page-view.js';
+import { followCallLog } from './live-call-log.js';
+import { subscribeLane, type LaneSubscription } from './lane-feed.js';
+import type { PageFrame } from './page-view.js';
 
 /**
  * The worker's connection to the team instance for the run page's live view (`@piwitests/core/live-view`), when the
@@ -41,20 +47,29 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at most
  * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
  * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
- * alone waiting. Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
+ * alone waiting. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
+ * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and a headed stop's pause
+ * bar in the same pass (`page-view.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
- * it opens, since the instance forgets a stream's stop as it closes. Every call named goes through
- * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then given
- * up until a person shares the run again, and a refused key gives it up at once, for the worker's life. The key is out
- * of the worker's environment from the connection's opening to its close (`hideKey`).
+ * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches, it also posts
+ * the call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest
+ * again for a viewer that comes later. Every call named goes through
+ * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then, in a
+ * CI run, every 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost and once that
+ * it is back (`printRunLine`); outside CI, it is given up until a person shares the run again. A key the instance does
+ * not take now (401), or a project with the live view off (404), skips the quick retries: an instance started again,
+ * or the setting turned on again, takes the key back. A key refused (403), or a run no longer live (410), gives it up
+ * at once, for the worker's life. The key is out of the worker's environment from the connection's opening to its
+ * close (`hideKey`).
  */
 
-/** How long the worker waits before it opens its stream again, after each failure in a row; then it gives up. */
+/** How long the worker waits before it opens its stream again, after each failure in a row. */
 const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
-/** How many times a worker opens its stream again over its life, at most. */
-const MAX_RECONNECTS = 20;
+/** Past those, in a CI run: the least wait before the stream opens again, and the most added to it at random. */
+const SLOW_RETRY_MS = 30_000;
+const SLOW_RETRY_JITTER_MS = 30_000;
 /** A stream open this long counts as working: the next failure starts the retries again. */
 const STEADY_MS = 30_000;
 /** How long the stream may stay silent: the instance writes a comment every 15 seconds. */
@@ -68,10 +83,17 @@ const MAX_STATES_WAITING = 8;
 /** The JPEG quality of the image sent in place of a frame longer than `MAX_LIVE_FRAME`, and how often at most. */
 const LIGHT_QUALITY = 30;
 const SHOT_MS = 1000;
+/** The least time between two call logs a worker posts: `LIVE_CALL_LOGS_PER_SECOND` at most. */
+const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
-/** The statuses that give the connection up: the key or the run is no longer one, or the instance has no live view. */
-const GIVE_UP = new Set([401, 403, 404, 410]);
+/** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
+const GIVE_UP = new Set([403, 410]);
+/**
+ * The statuses an instance started again, or the project's live view turned on again, lifts: the key unknown, the
+ * live view off.
+ */
+const NOT_NOW = new Set([401, 404]);
 
 const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
@@ -86,16 +108,22 @@ interface Link {
   agent: http.Agent;
   stream: http.ClientRequest | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** The failures in a row since a stream last stayed open `STEADY_MS`. */
   retries: number;
-  reconnects: number;
   /** The worker ended: nothing opens any more. */
   ended: boolean;
-  /** Why the instance no longer takes the key, as a person reads it: nothing opens any more. */
+  /** Why the instance will not take the key again, as a person reads it: nothing opens any more. */
   refused: string | null;
   /** Whether the stream is wanted: from the start in a CI run, while a person shares the run outside one. */
   sharing: boolean;
-  /** Why the sharing stopped though nobody asked: the instance did not answer after the retries. */
+  /** Why the sharing stopped though nobody asked: the instance did not answer after the retries, or took no key. */
   lost: string | null;
+  /** A CI run's: the file the global setup reads the worker's lines from for the run's log (`PIWI_RUN_LOG`). */
+  runLog: string | null;
+  /** The run's log says the view is lost: the next stream that stays open `STEADY_MS` says it is back. */
+  dark: boolean;
+  /** Says the view is back once the stream that opened while it was lost has stayed open `STEADY_MS`. */
+  backTimer: ReturnType<typeof setTimeout> | null;
   /** The instance's latest answer that opened no stream, since one last opened: what the retries end on. */
   answered: number | null;
   viewers: number;
@@ -106,6 +134,22 @@ interface Link {
   stop: LiveStop | null;
   /** Whether a frame's post is in flight. */
   posting: boolean;
+  /** The frame's post in flight, which the test's end waits for, so the end goes after its last frame. */
+  framePost: Promise<unknown> | null;
+  /** A CI run's: the call log is followed while someone watches (`live-call-log.ts`). */
+  ci: boolean;
+  /** The call log shown now, whether one is posting, when the last one went, and the pause before the next goes. */
+  log: LiveCallLog | null;
+  logPosting: boolean;
+  logSentAt: number;
+  logTimer: ReturnType<typeof setTimeout> | null;
+  /** The instance does not take call logs (it answered 400): none goes any more. */
+  logRefused: boolean;
+  /**
+   * The project's own locators masked in each image, beside the secret fields, as the instance last said; null when it
+   * named some this reporter cannot read, and no image goes.
+   */
+  masks: string[] | null;
 }
 
 let link: Link | null = null;
@@ -121,11 +165,20 @@ interface RunningTest {
   title: string;
   page: Page | null;
   call: () => LiveCall | null;
+  /** Something may pause it: its call log is not followed, which would move where the debugger stops. */
+  mayPause: boolean;
+  began: number;
 }
 
 let running: RunningTest | null = null;
-/** The view of the running test's page, while someone watches. */
-let view: { page: Page; opened: Promise<PageView | null>; onClose: () => void } | null = null;
+/** The view of the running test's page, while someone watches: its hold on the lane's frames. */
+let view: {
+  page: Page;
+  frames: LaneSubscription;
+  onClose: () => void;
+  /** What stops following the page's call log, in a CI run. */
+  following: Promise<(() => void) | null> | null;
+} | null = null;
 
 /** `PIWI_LIVE_VIEW` while the worker runs without it, and the listener that puts it back for Playwright's look. */
 let hidden: { env: NodeJS.ProcessEnv; value: string; onStop: (message: unknown) => void } | null = null;
@@ -199,7 +252,7 @@ export function liveViewState(): RunLiveState {
  * one, only once the run is shared (`shareLiveView`). Returns at once, whether it named one. Never throws.
  */
 export function openLiveView(
-  worker: Pick<WorkerInfo, 'workerIndex' | 'config'>,
+  worker: Pick<WorkerInfo, 'workerIndex' | 'config'> & { parallelIndex?: number },
   env: NodeJS.ProcessEnv = process.env,
   ci = detectCi(env),
 ): boolean {
@@ -218,23 +271,39 @@ export function openLiveView(
   const client = secure ? https : http;
   link = {
     address,
-    id: { shard: resolveShardInfo(worker.config, env)?.current ?? null, worker: worker.workerIndex },
+    id: {
+      shard: resolveShardInfo(worker.config, env)?.current ?? null,
+      worker: worker.workerIndex,
+      // The lane, which a worker Playwright starts again after a failure keeps, so a view follows it.
+      ...(typeof worker.parallelIndex === 'number' ? { slot: worker.parallelIndex } : {}),
+    },
     client,
-    agent: new client.Agent({ keepAlive: true, maxSockets: 2 }),
+    // The stream, and a frame, a call log and a stop or an end in flight at once: none waits behind another.
+    agent: new client.Agent({ keepAlive: true, maxSockets: 4 }),
     stream: null,
     timer: null,
     retries: 0,
-    reconnects: 0,
     ended: false,
     refused: null,
     sharing: ci,
+    ci,
     lost: null,
+    runLog: ci ? env[PIWI_RUN_LOG_ENV] || null : null,
+    dark: false,
+    backTimer: null,
     answered: null,
     viewers: 0,
     states: Promise.resolve(),
     statesWaiting: 0,
     stop: null,
     posting: false,
+    framePost: null,
+    log: null,
+    logPosting: false,
+    logSentAt: 0,
+    logTimer: null,
+    logRefused: false,
+    masks: [],
   };
   if (ci) connect(link);
   changed();
@@ -252,14 +321,16 @@ export function closeLiveView(): void {
   if (!own) return;
   own.ended = true;
   if (own.timer) clearTimeout(own.timer);
+  stopBackTimer(own);
   own.stream?.destroy();
   own.agent.destroy();
 }
 
 /**
- * A person shares the run from now on (`on`): the stream opens, its retries counted afresh; or stops sharing it: the
- * view stops, the viewers hear why their view ends (`unshared`), and the stream closes, so nothing more goes to the
- * instance. Each one waits for the one before. Nothing happens for a worker without a key the instance takes.
+ * A person shares the run from now on (`on`): the stream opens, its retries counted afresh, after a sharing that
+ * stopped on its own too; or stops sharing it: the view stops, the viewers hear why their view ends (`unshared`), and
+ * the stream closes, so nothing more goes to the instance. Each one waits for the one before. Nothing happens for a
+ * worker without a key, or whose key the instance refused for good.
  */
 export function shareLiveView(on: boolean): Promise<void> {
   const turn = shareTurn.then(() => (on ? startSharing() : stopSharing()));
@@ -274,7 +345,6 @@ function startSharing(): void {
   own.lost = null;
   own.answered = null;
   own.retries = 0;
-  own.reconnects = 0;
   connect(own);
   changed();
 }
@@ -296,10 +366,10 @@ async function stopSharing(): Promise<void> {
   changed();
 }
 
-/** A test titled `title` begins: `call` names the call it is on, for each frame. */
-export function liveViewTestBegan(title: string, call: () => LiveCall | null): void {
+/** A test titled `title` begins: `call` names the call it is on, for each frame; `mayPause` when it may pause. */
+export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
-  running = { title, page: null, call };
+  running = { title, page: null, call, mayPause, began: Date.now() };
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -309,13 +379,17 @@ export function liveViewPage(page: Page): void {
   if (link.viewers > 0 && active(link)) startView();
 }
 
-/** The test ended: its view stops, and the people watching hear it ended. */
-export async function liveViewTestEnded(): Promise<void> {
+/** The test ended (`status`, Playwright's): its view stops, and the people watching hear how it ended. */
+export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Promise<void> {
   if (!running) return;
+  const ended = running;
   running = null;
+  const outcome = status ? { test: ended.title, status, ms: Math.max(0, Date.now() - ended.began) } : null;
   await stopView();
   const own = link;
-  if (own && own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id });
+  if (!own) return;
+  await own.framePost;
+  if (own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
 }
 
 /**
@@ -334,9 +408,12 @@ export function liveViewStopped(stop: LiveStop): () => void {
   };
 }
 
-/** A call as the run page shows it: its title through `hideSecretsInText`, which a URL or a token may hold. */
+/**
+ * A call as the run page shows it: its title without the text a fill, a typing or an insert types (`hideTypedText`),
+ * and through `hideSecretsInText`, which a URL or a token may hold.
+ */
 function hideCallSecrets(call: LiveCall): LiveCall {
-  return { ...call, title: hideSecretsInText(call.title) };
+  return { ...call, title: hideSecretsInText(hideTypedText(call.title)) };
 }
 
 /** Post a stop's start or end after the ones before it, a few waiting at most, while the run is shared. */
@@ -350,12 +427,13 @@ function postState(own: Link, message: WorkerToInstance): void {
     });
 }
 
-/** Open the stream, and open it again after a failure a few times, waiting longer each time. */
+/** Open the stream, and open it again after a failure (`retry`). */
 function connect(own: Link): void {
   if (!active(own)) return;
   const url = new URL(own.address.url);
   url.searchParams.set('worker', String(own.id.worker));
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
+  if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
   let openedAt: number | null = null;
   let dropped = false;
   /**
@@ -367,19 +445,13 @@ function connect(own: Link): void {
     dropped = true;
     if (own.stream !== request) return;
     own.stream = null;
+    stopBackTimer(own);
     setViewers(own, 0);
     if (!active(own)) return;
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
     if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
-    if (own.retries >= RETRY_MS.length || own.reconnects >= MAX_RECONNECTS) return void giveUp(own);
-    const wait = RETRY_MS[own.retries++]!;
-    own.reconnects++;
-    own.timer = setTimeout(() => {
-      own.timer = null;
-      connect(own);
-    }, wait);
-    own.timer.unref?.();
+    retry(own, status !== null && NOT_NOW.has(status));
   };
   const request = own.client.request(url, {
     method: 'GET',
@@ -403,6 +475,15 @@ function connect(own: Link): void {
     }
     openedAt = Date.now();
     own.answered = null;
+    if (own.dark) {
+      own.backTimer = setTimeout(() => {
+        own.backTimer = null;
+        if (own.stream !== request || !own.dark) return;
+        own.dark = false;
+        printRunLine(own.runLog, `${workerName(own.id)}: live view back.`);
+      }, STEADY_MS);
+      own.backTimer.unref?.();
+    }
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
     if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
     response.setEncoding('utf8');
@@ -420,7 +501,8 @@ function connect(own: Link): void {
           .map((line) => line.slice(5).trimStart())
           .join('\n');
         const message = data ? parseInstanceToWorker(data) : null;
-        if (message) setViewers(own, message.count);
+        if (message?.type === 'masks') setMasks(own, message.locators);
+        else if (message) setViewers(own, message.count);
       }
     });
     response.on('error', () => drop(null));
@@ -429,10 +511,71 @@ function connect(own: Link): void {
   request.end();
 }
 
-/** The instance refused the key (`status`): nothing more is tried for the worker's life, and the run says why. */
+/**
+ * Open the stream again after a failure: soon, a few times, waiting longer each time; past them, in a CI run, every
+ * 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost; outside CI, the sharing
+ * stops. A key the instance does not take now (`notNow`: a 401 or 404) skips the quick retries.
+ */
+function retry(own: Link, notNow: boolean): void {
+  if (!notNow && own.retries < RETRY_MS.length) return void later(own, RETRY_MS[own.retries++]!);
+  if (!own.ci) return void giveUp(own);
+  goDark(own, 'Trying again every 30 to 60 s while the run lasts.');
+  later(own, SLOW_RETRY_MS + Math.random() * SLOW_RETRY_JITTER_MS);
+}
+
+/** The run's log says once that the worker's view is lost, why, and what follows (`next`), until it is back. */
+function goDark(own: Link, next: string): void {
+  if (own.dark) return;
+  own.dark = true;
+  printRunLine(own.runLog, `${workerName(own.id)}: live view lost: ${lostCause(own.answered)}. ${next}`);
+}
+
+function stopBackTimer(own: Link): void {
+  if (own.backTimer) clearTimeout(own.backTimer);
+  own.backTimer = null;
+}
+
+/** Open the stream `wait` milliseconds from now. */
+function later(own: Link, wait: number): void {
+  own.timer = setTimeout(() => {
+    own.timer = null;
+    connect(own);
+  }, wait);
+  own.timer.unref?.();
+}
+
+/** The worker as the run page names it: by its lane, from 1, and its shard. */
+function workerName(id: LiveWorkerId): string {
+  const worker = `Worker ${id.slot === undefined ? id.worker : id.slot + 1}`;
+  return id.shard === null ? worker : `${worker} of shard ${id.shard}`;
+}
+
+/** What the instance last answered (`status`; null for nothing), as the run's log says why the view is lost. */
+function lostCause(status: number | null): string {
+  switch (status) {
+    case null:
+      return 'the instance did not answer';
+    case 401:
+      return "the instance does not take the run's live view key now";
+    case 404:
+      return "the project's live view is off";
+    case 403:
+      return "the instance refuses the run's live view key";
+    case 409:
+      return 'the instance holds the run as interrupted';
+    case 410:
+      return 'the run is no longer live on the instance';
+    default:
+      return `the instance answered ${status}`;
+  }
+}
+
+/** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
 function refuse(own: Link, status: number): void {
   if (own.refused !== null) return;
   own.refused = liveShareRefusal(status);
+  own.answered = status;
+  if (own.ci) goDark(own, 'It stays off for this worker.');
   own.viewers = 0;
   own.stream?.destroy();
   own.agent.destroy();
@@ -441,8 +584,9 @@ function refuse(own: Link, status: number): void {
 }
 
 /**
- * The retries are over: the sharing stops, saying what the instance last answered (nothing, or that the run is
- * interrupted), and its stream closes; a person may share the run again.
+ * The retries are over, or the instance took no key: the sharing stops, saying what the instance last answered
+ * (nothing, that the run is interrupted, the key unknown or the live view off), and its stream closes; a person may
+ * share the run again.
  */
 function giveUp(own: Link): void {
   own.sharing = false;
@@ -473,10 +617,23 @@ function setViewers(own: Link, count: number): void {
     return;
   }
   if (view) {
-    if (count > before) void view.opened.then((opened) => opened?.resend());
+    if (count > before) {
+      view.frames.resend();
+      if (own.log) postLog(own, own.log);
+    }
     return;
   }
   startView();
+}
+
+/**
+ * The project masks `locators` from now on: the image kept for a later viewer was masked without them, so the view
+ * takes one again.
+ */
+function setMasks(own: Link, locators: string[] | null): void {
+  if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
+  own.masks = locators;
+  if (own === link) view?.frames.refresh();
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */
@@ -489,24 +646,37 @@ function startView(): void {
     return;
   }
   const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
-  const opened = openPageView(page, {
-    size: (viewport) => fitViewSize(viewport, LIVE_FRAME_WIDTH, LIVE_FRAME_HEIGHT),
+  // The lane's frames, masked with the project's masks and the page's secret fields.
+  const frames = subscribeLane({
+    maxWidth: LIVE_FRAME_WIDTH,
+    maxHeight: LIVE_FRAME_HEIGHT,
     quality: LIVE_FRAME_QUALITY,
     fps: LIVE_FRAME_FPS,
     spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
+    masks: () => own.masks,
     busy: () => own.posting,
-    live,
-    send: (frame) => postFrame(own, frame),
-    refuse: () => void post(own, { type: 'frame', ...own.id, refused: TOO_HEAVY }),
-  }).catch(() => null);
+    send: (frame) => {
+      if (live()) postFrame(own, frame);
+    },
+    refuse: (why) => {
+      if (live()) void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY });
+    },
+  });
   const onClose = (): void => {
     if (view?.page === page) void stopView();
   };
   page.once('close', onClose);
-  view = { page, opened, onClose };
+  // The call log Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
+  const following =
+    own.ci && running && !running.mayPause && !own.logRefused
+      ? followCallLog(page, running.began, (log) => {
+          if (live()) postLog(own, log);
+        }).catch(() => null)
+      : null;
+  view = { page, frames, onClose, following };
 }
 
 /** Stop the view, `VIEW_END_MS` at most; one still opening is closed once it opened. */
@@ -515,7 +685,14 @@ async function stopView(): Promise<void> {
   view = null;
   if (!shown) return;
   shown.page.off('close', shown.onClose);
-  const closed = shown.opened.then((opened) => opened?.close());
+  void shown.following?.then((stop) => stop?.());
+  const own = link;
+  if (own) {
+    own.log = null;
+    if (own.logTimer) clearTimeout(own.logTimer);
+    own.logTimer = null;
+  }
+  const closed = shown.frames.close();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
     closed.catch(() => undefined),
@@ -533,16 +710,57 @@ function postFrame(own: Link, frame: PageFrame): void {
   own.posting = true;
   const call = running?.call() ?? null;
   const data = frame.data.toString('base64');
-  void post(own, {
+  own.framePost = post(own, {
     type: 'frame',
     ...own.id,
     data,
     call: call && hideCallSecrets(call),
     test: running?.title ?? null,
+    ...(Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {}),
   })
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
+      own.framePost = null;
+    });
+}
+
+/**
+ * Post the call log shown now, `LOG_SPACING_MS` after the one before it at the soonest, one in flight: a newer one
+ * replaces the one waiting, and one the instance had no room for (429) goes again unless a newer one came.
+ */
+function postLog(own: Link, log: LiveCallLog): void {
+  own.log = log;
+  nextLog(own);
+}
+
+/** Post the call log shown now once the one in flight is done and the spacing allows; once for any number asked. */
+function nextLog(own: Link): void {
+  if (own.logPosting || own.logTimer) return;
+  const wait = LOG_SPACING_MS - (Date.now() - own.logSentAt);
+  if (wait > 0) {
+    own.logTimer = setTimeout(() => {
+      own.logTimer = null;
+      nextLog(own);
+    }, wait);
+    own.logTimer.unref?.();
+    return;
+  }
+  const log = own.log;
+  if (!active(own) || !view || !log || own.logRefused) return;
+  own.logPosting = true;
+  own.logSentAt = Date.now();
+  let again = false;
+  void post(own, { type: 'call-log', ...own.id, log, test: running?.title ?? null })
+    .then((status) => {
+      if (status === 400) own.logRefused = true;
+      again = status === 429;
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      own.logPosting = false;
+      // A newer call log came while this one went, or this one found no room.
+      if (own.log && (own.log !== log || again)) nextLog(own);
     });
 }
 
@@ -564,6 +782,8 @@ function send(own: Link, message: WorkerToInstance): Promise<number | null> {
       if (settled) return;
       settled = true;
       if (status !== null && GIVE_UP.has(status)) refuse(own, status);
+      // The stream opens again, and hears from the instance whether it takes the key.
+      else if (status !== null && NOT_NOW.has(status)) own.stream?.destroy();
       resolve(status);
     };
     const request = own.client.request(own.address.url, {

@@ -5,6 +5,7 @@
  * goes through these requests, and each client draws them natively: CodeLens
  * in VS Code, Code Vision in the JetBrains IDEs.
  */
+import type { ViewInput } from '@piwitests/core/run-view';
 
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
 export interface PiwiCommand {
@@ -1165,6 +1166,21 @@ export interface RecordResult {
 
 export const RECORD_REQUEST = 'piwi/record';
 
+/**
+ * `piwi/newTestFile`: where Record a new test file offers to create its spec, from the file or folder at hand (`uri`):
+ * beside the spec at hand, in a folder of a config's test folder at hand, else in the test folder of the config holding
+ * it (`testDir`, as Playwright resolves it), or of the workspace's first config. Named `recorded` with the suffix the
+ * suite's specs use, a name the folder does not hold yet.
+ */
+export interface NewTestFileParams {
+  uri?: string | null;
+}
+
+/** The new spec's path (`uri`), and the folder of the config it belongs to (`root`, a path). Null with no config. */
+export type NewTestFileResult = { uri: string; root: string } | null;
+
+export const NEW_TEST_FILE_REQUEST = 'piwi/newTestFile';
+
 /** `piwi/stopRecording`: stop recording; the browser closes and a last `piwi/recordingChanged` says `stopped`. */
 export interface StopRecordingParams {
   sessionId: string;
@@ -1459,12 +1475,33 @@ export interface RunWorker {
   stop: RunStop | null;
   /** What its reporter takes at a stop. */
   takes: RunTake[];
+  /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
+  watchable: boolean;
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
    * **Pausing…**.
    */
   pausing: boolean;
+  /**
+   * While `pausing`, the call its test waits in before it can stop, as a reporter that ends a test there says it
+   * (`piwi/runControl` `give-up`: a client offers End the test); null otherwise.
+   */
+  waiting: RunWaiting | null;
+}
+
+/**
+ * The call a pausing worker's test waits in: its title (`Click getByRole('button', { name: 'Pay' })`), its file and
+ * 0-based line (null when the worker names none), when it began (`since`, ISO 8601 by the service's clock; null when the
+ * worker cannot tell), and whether End the test gives it up at once (`endable`, a locator call that carries the
+ * attempt's end signal), else lets it finish first, the test skipped as it returns.
+ */
+export interface RunWaiting {
+  title: string;
+  uri: string | null;
+  line: number | null;
+  since: string | null;
+  endable: boolean;
 }
 
 /**
@@ -1497,10 +1534,35 @@ export interface RunSession {
    */
   terminal?: boolean;
   /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included), as its workers said (`run-attach`'s `runner`): its process is that
+   * runner's, which stops it. Absent otherwise, and from a reporter that predates it.
+   */
+  runner?: boolean;
+  /**
    * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
    * `share`; absent for one whose reporter predates it.
    */
   live?: RunLive;
+  /** How far the run is, as its own process says; absent for a run whose reporter predates it. */
+  progress?: RunProgress;
+}
+
+/**
+ * How far a run is (`run-begin`, `run-progress` and `run-end` of `@piwitests/core/run-channel`): how many tests it
+ * holds (`total`, its repeats included), how many ended, each once by the outcome of its last attempt (`done`, and of
+ * them `failed`, `flaky` and `skipped`; the others passed), whether it still runs or how it ended (`status`, `other`
+ * for a status of a newer Playwright), and its first failure once it ended (the test's title and the first line of its
+ * error; null for none).
+ */
+export interface RunProgress {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  status: 'running' | 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
+  failure: { title: string; error: string | null } | null;
 }
 
 /**
@@ -1533,13 +1595,16 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
  * line (or at a breakpoint before it), `end` ends the test there, reported as skipped (for a worker that takes `end`):
  * the stopped call never runs where the worker holds it (a locator call, a `page.pause()`), else it runs first and the
  * test ends before its next locator call. At a failure, or once the test function ended (an `afterEach` hook), `end`
- * lets the test end as Resume does, its result kept.
+ * lets the test end as Resume does, its result kept. `give-up` ends a test a Pause waits for, naming no stop: the call
+ * it waits in (`RunWorker.waiting`) is given up where it can be, else the test is skipped at its next locator call, and
+ * the Pause is dropped.
  */
-export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end';
+export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end' | 'give-up';
 
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
- * between tests, and the other actions to the one stopped (refused when several are). `place` is required for
+ * between tests, `give-up` to the one whose test waits in a call (`RunWorker.waiting`), and the other actions to the
+ * one stopped (each refused when several are). `place` is required for
  * `run-to`, as the line of the run's code: a client maps a line of a document edited since the run started back to
  * it.
  */
@@ -1637,6 +1702,55 @@ export interface PausedPageResult {
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
 
+/** The editor watches one stopped page through its existing language-service connection. */
+export interface PageViewParams {
+  ref: string;
+  worker: number;
+  since: string;
+  on: boolean;
+}
+
+/** Input is accepted only from the editor while it watches this exact stop. */
+export interface PageInputParams extends Omit<PageViewParams, 'on'> {
+  events: ViewInput[];
+  release?: boolean;
+}
+
+/** A transient JPEG of the stop the editor watches, or why its page has no frame. */
+export type PageFrame = Omit<PageViewParams, 'on'> &
+  ({ data: string; width: number; height: number } | { refused: string });
+
+export const PAGE_VIEW_REQUEST = 'piwi/pageView';
+export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
+export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
+
+/**
+ * `piwi/laneView`: the editor watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or
+ * stopped, through its existing connection: the page of the test the worker there runs, of its stop while it stands at
+ * one, through its tests and the worker Playwright starts in its place, until it stops watching (`on: false`) or the
+ * run ends. One lane at a time: watching another stops the first. Refused for a worker whose reporter does not show it
+ * (`RunWorker.watchable`). At a stop of the lane's running test, `piwi/pageInput` takes the editor's input as from a
+ * viewer of that stop.
+ */
+export interface LaneViewParams {
+  ref: string;
+  lane: number;
+  on: boolean;
+}
+
+/**
+ * `piwi/laneFrame` (notification, server to client): a transient JPEG of the lane the editor watches, of the worker
+ * `worker` while its test `test` (Playwright's id) runs, or at the stop `since` names; or why its page has no frame now
+ * (`refused`). Never stored; the worker sends none of a test it left, and the service none of a stop that ended.
+ */
+export type LaneFrame = { ref: string; lane: number; worker: number; test: string | null; since: string | null } & (
+  | { data: string; width: number; height: number }
+  | { refused: string }
+);
+
+export const LANE_VIEW_REQUEST = 'piwi/laneView';
+export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
+
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
  * under the point `x`, `y` of the stopped page, in CSS pixels of its viewport (a point of the image `piwi/pausedPage`
@@ -1657,7 +1771,7 @@ export interface PickAtParams {
 
 /**
  * The locator sent, with `ok`; null with why otherwise: no element there (the page's background), an iframe, a stop
- * the test went on from, a Playwright older than 1.64 or a reporter that does not take it.
+ * the test went on from, a Playwright older than 1.60 or a reporter that does not take it.
  */
 export interface PickAtResult {
   ok: boolean;

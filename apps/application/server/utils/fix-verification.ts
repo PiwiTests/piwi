@@ -15,19 +15,32 @@
  *
  * And one more, in the other direction: a cluster that had a fix recorded and
  * is failing again is marked `regressed`, because a fix that did not hold is
- * worth more than no record at all.
+ * worth more than no record at all. A cluster a person resolved with no fix on
+ * record (or after its fix regressed) that fails again in a run started after
+ * they resolved it, and whose failures count as occurrences
+ * (`cluster-occurrences`), is reopened the same way, and emits
+ * `cluster.regressed` with no fix run; an ignored cluster stays ignored.
  *
- * A quiet run counts as a fix only when it could have carried one: its commit
- * differs from the commit the cluster last failed at, and it ran on the branch
- * the cluster last failed on or on the default branch. A pass at the failing
- * commit (a CI retry, a re-run from the dashboard) is stored as flake evidence
- * on the cluster instead; a pass on another branch says nothing about this one.
+ * A quiet run counts as a fix only when it could have carried one: it started
+ * after the run the cluster last failed in, its commit differs from the commit
+ * the cluster last failed at, and it ran on the branch the cluster last failed
+ * on or on the default branch. A pass at the failing commit (a CI retry, a
+ * re-run from the dashboard) is stored as flake evidence on the cluster
+ * instead; a pass on another branch says nothing about this one. A failing run
+ * says a fix did not hold only when it started after the run the fix landed in,
+ * on the branch the fix landed on or on the default branch: another branch may
+ * not have the fix yet.
  *
  * The verdict moves the triage status only when the evidence is strong:
  * `diagnosis-verified` resolves an open cluster, `regressed` reopens a resolved
- * one, each appending a system line to the triage note. `stopped-failing`
+ * one, each appending a system line to the triage note. Each move is one
+ * conditional write (`transitionClusterStatus`), so a person's triage made
+ * while the run was being verified is never overwritten. `stopped-failing`
  * alone changes nothing — a flaky test achieves it by accident. Every recorded
- * fix emits `cluster.fixed`; every regression emits `cluster.regressed`.
+ * fix emits `cluster.fixed` and every regression `cluster.regressed`, with the
+ * fix author's email, when the run sends notifications (the `notifications`
+ * use): a run from an editor or a partial local run records its verdicts
+ * silently.
  *
  * A commit in that range carrying a `Piwi-Heal: <dedupe key>` trailer names the
  * auto-heal pull request that landed the fix: the fix then carries it as
@@ -50,10 +63,13 @@
  * branch), and a regression records `regressed` on the attempts a fix verified
  * (`server/utils/fix-attempts.ts`).
  *
+ * A fix whose change names a cause none of the cluster's tests is about raises
+ * an *incidental catch* gap (`server/utils/incidental-catch.ts`).
+ *
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
-import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, healActions, projects, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider } from './scm';
 import type { ScmChanges, ScmCommit } from './scm/ScmProvider';
@@ -65,7 +81,8 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, patchInCode, stripAbPrefix, validatePatch } from '#shared/patch';
 import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
-import { isEligibleRun } from '#shared/run-eligibility';
+import { eligibleExecutionInProject, isEligibleRun } from '#shared/run-eligibility';
+import { runStartedAfter, type RunPoint } from '#shared/cluster-state';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
@@ -77,7 +94,10 @@ import {
 } from './integrations/policies';
 import { listOutcomes, recordOutcome } from './outcomes';
 import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
+import { recordIncidentalCatch } from './incidental-catch';
+import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
 import type { DbClient } from '../database';
+import { isPassedOrFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
@@ -122,10 +142,25 @@ export function classifyQuietRun(input: {
   return 'other-branch';
 }
 
-/** Append a system-written line to a triage note, keeping what a person wrote. */
-export function appendTriageNote(existing: string | null | undefined, line: string): string {
-  const current = existing?.trim();
-  return current ? `${current}\n${line}` : line;
+/** What a run that failed a cluster again says about the cluster's fix. */
+export type FailingRunVerdict = 'regression' | 'other-branch';
+
+/**
+ * Whether a run that failed a cluster again says its fix did not hold: it ran
+ * on the branch the fix landed on, or on the default branch. A failure on
+ * another branch may come from code that never had the fix. An unknown branch
+ * matches only another unknown branch.
+ */
+export function classifyFailingRun(input: {
+  runBranch: string | null;
+  fixBranch: string | null;
+  defaultBranch: string | null;
+}): FailingRunVerdict {
+  const runBranch = input.runBranch?.trim() || null;
+  const fixBranch = input.fixBranch?.trim() || null;
+  if (runBranch === fixBranch) return 'regression';
+  if (runBranch != null && runBranch === input.defaultBranch) return 'regression';
+  return 'other-branch';
 }
 
 /** The files a cluster's completed diagnosis proposed changing, if any. */
@@ -391,6 +426,30 @@ async function emitClusterOutcome(db: DbClient, event: NotificationEvent, payloa
 }
 
 /**
+ * The Playwright projects a cluster's test failed in at its latest failing run
+ * (`run`), a run fix verification reads when the test failed in one
+ * (`eligible`); `anyProject` when a failure there named none.
+ */
+interface FailedIn {
+  run: RunPoint;
+  eligible: boolean;
+  projects: Set<string>;
+  anyProject: boolean;
+}
+
+/**
+ * The names of the Playwright projects a run's config lists
+ * (`metadata.htmlReport.projects[].name`), including those a `--project`
+ * filter left out; null when the run's metadata carries none.
+ */
+export function configuredProjectNames(meta: RunMetadata | null): Set<string> | null {
+  const names = (meta?.htmlReport?.projects ?? [])
+    .map((project) => project?.name)
+    .filter((name): name is string => typeof name === 'string');
+  return names.length > 0 ? new Set(names) : null;
+}
+
+/**
  * Record fixes and regressions for one finished run. Returns the fixes that
  * landed, so the pull-request comment can report them.
  */
@@ -399,13 +458,19 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   // A lab arm, a bisect step or a reproduction ran at a commit chosen to
   // investigate a failure: its passes prove no fix and its failures no regression.
   if (!run || !isEligibleRun(run, 'fix-verification')) return [];
+  // The verdicts are recorded for every run fix verification reads; their events
+  // and the fix author's email go out only for a run that sends notifications.
+  const notify = isEligibleRun(run, 'notifications');
 
   // A partial run can still verify a cluster — but only by the same rule a full
   // run is held to below: every test the cluster covers ran in this run and
-  // passed. A `--grep` that re-ran exactly the affected tests then closes the
-  // cluster; one that skipped even one of them still does not, because a test
-  // that did not execute has not been shown to pass. There is no separate
-  // `isFullRun` gate: the per-cluster check is the honest one either way.
+  // passed in each Playwright project it last failed in that the run ran, and
+  // at least one of them ran in one of those projects. A `--grep` that re-ran
+  // exactly the affected tests then closes the cluster; one that skipped even
+  // one of them, or a `--project` run of a project none of them failed in,
+  // still does not, because a test that did not execute has not been shown to
+  // pass. There is no separate `isFullRun` gate: the per-cluster check is the
+  // honest one either way.
 
   const meta = (run.metadata as RunMetadata | null) ?? null;
   const currentCommit = meta?.scm?.commit ?? null;
@@ -414,31 +479,85 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     branch: run.branch ?? resolveRunBranch(run.metadata) ?? undefined,
     environment: run.environment ?? undefined,
   };
+  // This run in the project's run order: it proves a fix only after the
+  // failure, and a regression only after the fix.
+  const thisRun: RunPoint = { id: runId, startTime: run.startTime };
 
-  // What this run saw, per test case: any pass, and any failure.
+  // What this run saw: each test's outcome in each Playwright project, and the
+  // clusters that failed.
   const caseRows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       status: testRunsCases.status,
       clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
 
+  // A skipped or unrun outcome is no outcome: the test was not shown to pass or fail.
+  const outcomeByTest = new Map<string, string>();
   const passedCaseIds = new Set<number>();
-  const executedCaseIds = new Set<number>();
+  const ranCaseIds = new Set<number>();
+  for (const outcome of testOutcomes(caseRows)) {
+    if (!isPassedOrFailedStatus(outcome.status)) continue;
+    outcomeByTest.set(testKey(outcome), outcome.status);
+    ranCaseIds.add(outcome.testCaseId);
+    if (outcome.status === 'passed') passedCaseIds.add(outcome.testCaseId);
+  }
   const clustersSeenNow = new Set<number>();
   for (const row of caseRows) {
-    executedCaseIds.add(row.testCaseId);
-    if (row.status === 'passed') passedCaseIds.add(row.testCaseId);
     if (row.clusterId != null && FAIL_STATUSES.includes(row.status)) clustersSeenNow.add(row.clusterId);
   }
+
+  // The Playwright projects this run's config lists, whether or not it ran
+  // them; null when the run did not send them.
+  const configuredProjects = configuredProjectNames(meta);
+
+  // What this run shows about one affected test: it `holds` when it passed in
+  // each project it last failed in that this run ran, it is `unproven` when
+  // this run did not run it at all or it did not pass in one of those
+  // projects, and it is `silent` when this run ran it only in other projects
+  // (another CI job's, or one the test never failed in). Only the projects
+  // this run's config lists count; a failure whose project is unknown, or
+  // whose projects this run's config all leaves out, is answered by a pass in
+  // any project.
+  const verdictHere = (testCaseId: number, failedIn: FailedIn): 'holds' | 'unproven' | 'silent' => {
+    if (!ranCaseIds.has(testCaseId)) return 'unproven';
+    const listed = [...failedIn.projects].filter(
+      (browserName) => configuredProjects == null || configuredProjects.has(browserName),
+    );
+    const ran = listed.filter((browserName) => outcomeByTest.has(testKey({ testCaseId, browserName })));
+    if (ran.some((browserName) => outcomeByTest.get(testKey({ testCaseId, browserName })) !== 'passed')) {
+      return 'unproven';
+    }
+    if (failedIn.anyProject || listed.length === 0) return passedCaseIds.has(testCaseId) ? 'holds' : 'unproven';
+    return ran.length > 0 ? 'holds' : 'silent';
+  };
 
   const [project] = await db
     .select({ name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(eq(projects.id, run.projectId));
   const projectName = project?.label || project?.name || `Project #${run.projectId}`;
+  const runBranch = runScope.branch ?? null;
+
+  // Resolved once, and only when a run on another branch than the cluster's
+  // needs it.
+  let defaultBranch: string | null | undefined;
+  const resolveProjectDefaultBranch = async (): Promise<string | null> => {
+    if (defaultBranch === undefined) {
+      defaultBranch = await resolveDefaultBranch(
+        db,
+        { id: run.projectId, defaultBranch: project?.defaultBranch ?? null },
+        run.metadata,
+      ).catch(() => null);
+    }
+    return defaultBranch;
+  };
 
   // Clusters that regressed this run, so the still-failing policy below does not
   // also comment "still failing" on a ticket it just told about the regression.
@@ -451,9 +570,8 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         id: failureClusters.id,
         signature: failureClusters.signature,
         title: failureClusters.title,
-        status: failureClusters.status,
-        triageNote: failureClusters.triageNote,
         fixLandedRunId: failureClusters.fixLandedRunId,
+        fixLandedAt: failureClusters.fixLandedAt,
         fixCommit: failureClusters.fixCommit,
       })
       .from(failureClusters)
@@ -464,45 +582,60 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
           ne(failureClusters.fixVerification, 'regressed'),
         ),
       );
+    // The branch each fix landed on; null once its run is gone.
+    const fixRunIds = [...new Set(regressing.map((cluster) => cluster.fixLandedRunId!))];
+    const fixRuns = fixRunIds.length
+      ? await db
+          .select({ id: testRuns.id, branch: testRuns.branch, metadata: testRuns.metadata })
+          .from(testRuns)
+          .where(inArray(testRuns.id, fixRunIds))
+      : [];
+    const fixBranchByRunId = new Map(fixRuns.map((row) => [row.id, row.branch ?? resolveRunBranch(row.metadata)]));
 
     for (const cluster of regressing) {
+      // A run that started before the fix landed ran the code without it.
+      if (!runStartedAfter(thisRun, { id: cluster.fixLandedRunId!, startTime: cluster.fixLandedAt })) continue;
+      const fixBranch = fixBranchByRunId.get(cluster.fixLandedRunId!) ?? null;
+      const verdict = classifyFailingRun({
+        runBranch,
+        fixBranch,
+        defaultBranch: runBranch && runBranch !== fixBranch ? await resolveProjectDefaultBranch() : null,
+      });
+      if (verdict === 'other-branch') continue;
       try {
+        // Recorded once: a run verified at the same time may have recorded it.
+        const marked = await db
+          .update(failureClusters)
+          .set({ fixVerification: 'regressed', updatedAt: new Date() })
+          .where(and(eq(failureClusters.id, cluster.id), ne(failureClusters.fixVerification, 'regressed')))
+          .returning({ id: failureClusters.id });
+        if (marked.length === 0) continue;
         // A person's "resolved" was contradicted by the runs, so the cluster goes
         // back to open with the reason on record; "ignored" is left alone.
-        const reopened = cluster.status === 'resolved';
-        await db
-          .update(failureClusters)
-          .set({
-            fixVerification: 'regressed',
-            updatedAt: new Date(),
-            ...(reopened
-              ? {
-                  status: 'open',
-                  triageNote: appendTriageNote(
-                    cluster.triageNote,
-                    `Reopened automatically: regressed in run #${runId}`,
-                  ),
-                }
-              : {}),
-          })
-          .where(eq(failureClusters.id, cluster.id));
+        const reopened = await transitionClusterStatus(db, cluster.id, {
+          from: 'resolved',
+          to: 'open',
+          line: `Reopened automatically: regressed in run #${runId}`,
+        });
 
         // The regression reaches the author of the fix that did not hold.
-        const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, cluster.fixCommit);
-        const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
-        await emitClusterOutcome(db, 'cluster.regressed', {
-          clusterId: cluster.id,
-          projectId: run.projectId,
-          projectName,
-          signature: cluster.signature,
-          title: cluster.title,
-          runId,
-          ...runScope,
-          fixLandedRunId: cluster.fixLandedRunId,
-          reopened,
-          fixAuthor,
-          knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
-        });
+        if (notify) {
+          const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, cluster.fixCommit);
+          const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
+          await emitClusterOutcome(db, 'cluster.regressed', {
+            clusterId: cluster.id,
+            projectId: run.projectId,
+            projectName,
+            signature: cluster.signature,
+            title: cluster.title,
+            runId,
+            ...runScope,
+            fixLandedRunId: cluster.fixLandedRunId,
+            reopened,
+            fixAuthor,
+            knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+          });
+        }
 
         await recordDiagnosisRegressed(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
           console.error('[outcomes] diagnosis regression failed', e),
@@ -525,6 +658,80 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         console.error(`[fix-verification] marking cluster #${cluster.id} regressed in run #${runId} failed`, error);
       }
     }
+
+    // ── Failing again after a person resolved it ─────────────────────────────
+    // No fix on record (or the recorded one already regressed): the person's
+    // "resolved" is contradicted by a new occurrence, from a run that started
+    // after they resolved it. A resolved cluster's `updatedAt` is the moment it
+    // was resolved, since a new occurrence leaves it alone.
+    const resolvedByHand = !isEligibleRun(run, 'cluster-occurrences')
+      ? []
+      : await db
+          .select({
+            id: failureClusters.id,
+            signature: failureClusters.signature,
+            title: failureClusters.title,
+            updatedAt: failureClusters.updatedAt,
+          })
+          .from(failureClusters)
+          .where(
+            and(
+              inArray(failureClusters.id, [...clustersSeenNow]),
+              eq(failureClusters.status, 'resolved'),
+              or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
+            ),
+          );
+    for (const cluster of resolvedByHand) {
+      if (regressedIds.has(cluster.id) || run.startTime.getTime() <= cluster.updatedAt.getTime()) continue;
+      try {
+        // The branch it failed on before it was resolved stands for the branch of a fix.
+        const [failedBefore] = await db
+          .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+          .from(testRunsCases)
+          .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+          .where(and(eq(testRunsCases.failureClusterId, cluster.id), lt(testRuns.startTime, cluster.updatedAt)))
+          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+          .limit(1);
+        const failedBranch = failedBefore ? (failedBefore.branch ?? resolveRunBranch(failedBefore.metadata)) : null;
+        const verdict = classifyFailingRun({
+          runBranch,
+          fixBranch: failedBranch,
+          defaultBranch: runBranch && runBranch !== failedBranch ? await resolveProjectDefaultBranch() : null,
+        });
+        if (verdict === 'other-branch') continue;
+        const reopened = await transitionClusterStatus(db, cluster.id, {
+          from: 'resolved',
+          to: 'open',
+          line: `Reopened automatically: failed again in run #${runId}`,
+        });
+        if (!reopened) continue;
+
+        if (notify) {
+          const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
+          await emitClusterOutcome(db, 'cluster.regressed', {
+            clusterId: cluster.id,
+            projectId: run.projectId,
+            projectName,
+            signature: cluster.signature,
+            title: cluster.title,
+            runId,
+            ...runScope,
+            fixLandedRunId: null,
+            reopened,
+            knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+          });
+        }
+        // Comment on (and optionally reopen) the ticket per the binding's policy.
+        await enqueueRegressionPolicies(db, {
+          clusterId: cluster.id,
+          projectId: run.projectId,
+          runId,
+        }).catch((e) => console.error('[integrations] regression policy failed', e));
+        regressedIds.add(cluster.id);
+      } catch (error) {
+        console.error(`[fix-verification] reopening cluster #${cluster.id} in run #${runId} failed`, error);
+      }
+    }
   }
 
   // ── Candidates: clusters that were failing and are quiet in this run ──────
@@ -536,8 +743,6 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       createdAt: failureClusters.createdAt,
       firstSeenRunId: failureClusters.firstSeenRunId,
       lastSeenRunId: failureClusters.lastSeenRunId,
-      status: failureClusters.status,
-      triageNote: failureClusters.triageNote,
     })
     .from(failureClusters)
     .where(
@@ -580,16 +785,41 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
   const candidateIds = candidates.map((cluster) => cluster.id);
   const affected = await db
-    .select({ clusterId: testRunsCases.failureClusterId, testCaseId: testRunsCases.testCaseId })
+    .select({
+      clusterId: testRunsCases.failureClusterId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      runId: testRunsCases.testRunId,
+      runStartTime: testRuns.startTime,
+      runEligible: sql<number>`CASE WHEN ${eligibleExecutionInProject('fix-verification', run.projectId, testRunsCases.testRunId)} THEN 1 ELSE 0 END`,
+    })
     .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(inArray(testRunsCases.failureClusterId, candidateIds));
 
-  const casesByCluster = new Map<number, Set<number>>();
+  // Per cluster, its tests and the Playwright projects each one failed in at
+  // its latest failing run. A reproduction, a lab arm or a bisect step runs the
+  // projects it was asked to, so its failures name the projects only of a test
+  // that failed in no other run.
+  const casesByCluster = new Map<number, Map<number, FailedIn>>();
   for (const row of affected) {
     if (row.clusterId == null) continue;
-    let set = casesByCluster.get(row.clusterId);
-    if (!set) casesByCluster.set(row.clusterId, (set = new Set()));
-    set.add(row.testCaseId);
+    let tests = casesByCluster.get(row.clusterId);
+    if (!tests) casesByCluster.set(row.clusterId, (tests = new Map()));
+    const failedRun: RunPoint = { id: row.runId, startTime: row.runStartTime };
+    const eligible = Number(row.runEligible) === 1;
+    let failedIn = tests.get(row.testCaseId);
+    if (
+      !failedIn ||
+      (eligible && !failedIn.eligible) ||
+      (eligible === failedIn.eligible && runStartedAfter(failedRun, failedIn.run))
+    ) {
+      tests.set(row.testCaseId, (failedIn = { run: failedRun, eligible, projects: new Set(), anyProject: false }));
+    } else if (failedIn.run.id !== failedRun.id) {
+      continue;
+    }
+    if (row.browserName) failedIn.projects.add(row.browserName);
+    else failedIn.anyProject = true;
   }
 
   // The commit the cluster last failed at — the "from" end of the diff that
@@ -618,20 +848,6 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
   const fixed: VerifiedFix[] = [];
 
-  // Resolved once, and only when a run on another branch than the cluster's
-  // needs it.
-  let defaultBranch: string | null | undefined;
-  const resolveProjectDefaultBranch = async (): Promise<string | null> => {
-    if (defaultBranch === undefined) {
-      defaultBranch = await resolveDefaultBranch(
-        db,
-        { id: run.projectId, defaultBranch: project?.defaultBranch ?? null },
-        run.metadata,
-      ).catch(() => null);
-    }
-    return defaultBranch;
-  };
-
   // Read once per run: the range's commits and files per starting commit, and
   // whether the project has auto-heal PRs whose trailers are worth reading.
   const changesByFromCommit = new Map<string, ScmChanges | null>();
@@ -655,20 +871,26 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       const clusterCases = casesByCluster.get(cluster.id);
       if (!clusterCases || clusterCases.size === 0) continue;
 
-      // Every affected test must have run here and passed. One unexecuted test
-      // is enough to say nothing.
-      let allGreen = true;
-      for (const caseId of clusterCases) {
-        if (!executedCaseIds.has(caseId) || !passedCaseIds.has(caseId)) {
-          allGreen = false;
-          break;
-        }
+      // No affected test may be unproven here, and at least one must hold.
+      // One test that did not run is enough to say nothing.
+      const verdicts = [...clusterCases].map(([caseId, failedIn]) => verdictHere(caseId, failedIn));
+      if (verdicts.includes('unproven') || !verdicts.includes('holds')) continue;
+
+      // A run that started before the cluster's last failure ran before it: its
+      // passes say nothing about whether the failure stopped. A deleted last
+      // failing run orders nothing.
+      if (
+        startTimeByRunId.has(cluster.lastSeenRunId) &&
+        !runStartedAfter(thisRun, {
+          id: cluster.lastSeenRunId,
+          startTime: startTimeByRunId.get(cluster.lastSeenRunId) ?? null,
+        })
+      ) {
+        continue;
       }
-      if (!allGreen) continue;
 
       const fromCommit = commitByRunId.get(cluster.lastSeenRunId) ?? null;
       const failedBranch = branchByRunId.get(cluster.lastSeenRunId) ?? null;
-      const runBranch = runScope.branch ?? null;
       const quiet = classifyQuietRun({
         runBranch,
         runCommit: currentCommit,
@@ -685,15 +907,16 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       let verification: VerifiedFix['verification'] = 'stopped-failing';
       let healPr: HealPrRef | undefined;
       let changes: ScmChanges | null | undefined;
+      let files: string[] = [];
       if (repositoryUrl && fromCommit && currentCommit) {
-        const files = await diagnosedFiles(db, cluster.id);
+        files = await diagnosedFiles(db, cluster.id);
+        changes = changesByFromCommit.get(fromCommit);
+        if (changes === undefined) {
+          changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
+          changesByFromCommit.set(fromCommit, changes);
+        }
+        if (changesTouchFiles(changes, files)) verification = 'diagnosis-verified';
         if (files.length > 0 || (await projectHasHealPrs())) {
-          changes = changesByFromCommit.get(fromCommit);
-          if (changes === undefined) {
-            changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
-            changesByFromCommit.set(fromCommit, changes);
-          }
-          if (changesTouchFiles(changes, files)) verification = 'diagnosis-verified';
           healPr = await findHealPr(db, run.projectId, cluster.id, healKeysFromCommits(changes?.commits ?? [])).catch(
             () => undefined,
           );
@@ -710,10 +933,8 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         startTimeByRunId.get(cluster.firstSeenRunId) ?? (cluster.createdAt instanceof Date ? cluster.createdAt : null);
       const timeToResolutionMs = brokeAt ? Math.max(0, landedAt.getTime() - brokeAt.getTime()) : null;
 
-      // The diagnosis pointing at the change that fixed it is strong enough to
-      // close the triage; "stopped failing" alone is not.
-      const resolved = verification === 'diagnosis-verified' && cluster.status === 'open';
-      await db
+      // Recorded once: a run verified at the same time may have recorded a fix.
+      const landed = await db
         .update(failureClusters)
         .set({
           fixLandedRunId: runId,
@@ -722,17 +943,25 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
           timeToResolutionMs,
           fixVerification: verification,
           updatedAt: new Date(),
-          ...(resolved
-            ? {
-                status: 'resolved',
-                triageNote: appendTriageNote(
-                  cluster.triageNote,
-                  `Resolved automatically: diagnosis verified in run #${runId}`,
-                ),
-              }
-            : {}),
         })
-        .where(eq(failureClusters.id, cluster.id));
+        .where(
+          and(
+            eq(failureClusters.id, cluster.id),
+            or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
+          ),
+        )
+        .returning({ id: failureClusters.id });
+      if (landed.length === 0) continue;
+
+      // The diagnosis pointing at the change that fixed it is strong enough to
+      // close the triage; "stopped failing" alone is not.
+      const resolved =
+        verification === 'diagnosis-verified' &&
+        (await transitionClusterStatus(db, cluster.id, {
+          from: 'open',
+          to: 'resolved',
+          line: `Resolved automatically: diagnosis verified in run #${runId}`,
+        }));
 
       if (verification === 'diagnosis-verified') {
         await recordDiagnosisVerified(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
@@ -759,6 +988,15 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         fromCommit,
         repositoryUrl,
       }).catch((e) => console.error('[outcomes] fix attempt verification failed', e));
+      // The fixing change names the cause: tests not about it caught it by accident.
+      await recordIncidentalCatch(db, {
+        projectId: run.projectId,
+        runId,
+        clusterId: cluster.id,
+        caseIds: [...clusterCases.keys()],
+        diagnosedFiles: verification === 'diagnosis-verified' ? files : [],
+        changedFiles: changes && !changes.filesTruncated ? changes.files.map((file) => file.filename) : null,
+      }).catch((e) => console.error('[fix-verification] incidental catch failed', e));
 
       fixed.push({
         clusterId: cluster.id,
@@ -771,25 +1009,27 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       });
 
       // The fix reaches the person whose commit landed it.
-      const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, currentCommit);
-      const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
-      await emitClusterOutcome(db, 'cluster.fixed', {
-        clusterId: cluster.id,
-        projectId: run.projectId,
-        projectName,
-        signature: cluster.signature,
-        title: cluster.title,
-        runId,
-        ...runScope,
-        verification,
-        commit: currentCommit,
-        timeToResolutionMs,
-        testCount: clusterCases.size,
-        resolved,
-        fixAuthor,
-        knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
-        healPr,
-      });
+      if (notify) {
+        const fixAuthor = await resolveFixAuthor(db, run.projectId, repositoryUrl, currentCommit);
+        const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
+        await emitClusterOutcome(db, 'cluster.fixed', {
+          clusterId: cluster.id,
+          projectId: run.projectId,
+          projectName,
+          signature: cluster.signature,
+          title: cluster.title,
+          runId,
+          ...runScope,
+          verification,
+          commit: currentCommit,
+          timeToResolutionMs,
+          testCount: clusterCases.size,
+          resolved,
+          fixAuthor,
+          knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+          healPr,
+        });
+      }
 
       // Comment on (and optionally transition) the ticket per the binding's policy.
       await enqueueFixPolicies(db, {

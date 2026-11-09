@@ -44,6 +44,7 @@ export const en = {
   'table.owner': 'Owner',
   'table.failures': 'Failures',
   'text.moreTests': { one: '…and {count} more test.', other: '…and {count} more tests.' },
+  'text.moreClusters': { one: '…and {count} more failure cluster.', other: '…and {count} more failure clusters.' },
 
   // Inline labels
   'label.rootCause': 'Root cause',
@@ -140,6 +141,35 @@ export const en = {
   'comment.diagnosis': 'Piwi diagnosed this failure:',
   'comment.mergedInto': 'This failure was merged into {key} — tracking continues there.',
   'comment.absorbed': 'Absorbed {key} into this issue — its failures are tracked here now.',
+  // An issue a person files, with their comment, for a run or one execution
+  'section.comment': 'Comment',
+  'section.commentFrom': 'Comment from {name}',
+  'section.theRun': 'The run',
+  'section.tests': { one: '{count} test', other: '{count} tests' },
+  'section.failureClusters': { one: '{count} failure cluster', other: '{count} failure clusters' },
+  'fact.project': 'Project',
+  'fact.branch': 'Branch',
+  'fact.commit.run': 'Commit',
+  'fact.environment': 'Environment',
+  'fact.startedAt': 'Started',
+  'fact.results': 'Results',
+  'value.runResults': '{passed} passed, {failed} failed, {flaky} flaky, {skipped} skipped, of {total}',
+  'table.project': 'Project',
+  'table.result': 'Result',
+  'result.passed': 'Passed',
+  'result.failed': 'Failed',
+  'result.timedOut': 'Timed out',
+  'result.flaky': 'Flaky',
+  'result.skipped': 'Skipped',
+  'result.interrupted': 'Interrupted',
+  'result.didNotRun': 'Did not run',
+  'link.thisExecution': 'This execution',
+  'text.filedBy': 'Filed by {name} from Piwi.',
+  'text.filedFromPiwi': 'Filed from Piwi.',
+  'title.run': 'Run #{id}',
+  'title.failedOf': '{failed} of {total} failed',
+  'title.onBranch': 'on {branch}',
+  'comment.addedFrom': 'Comment added from Piwi on {where}.',
 } satisfies Record<string, MessageValue>;
 
 /** Every message key; `fr.ts` must supply exactly these. */

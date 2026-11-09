@@ -13,9 +13,10 @@ them: after each run, Piwi files an issue for every failure that a project's **r
 the branches and environments that matter, and keeps the issue's comments and description current as the failure
 evolves. Everything is **off by default** and set per project, under **Project → Settings → Issue tracker**.
 
-<div class="doc-screenshot">
-  <img src="/screenshots/project-integration-auto-create.png" alt="The Automatic creation block of a project's issue tracker settings: two rules, one for release branches at the first occurrence and one for the default branch in staging after three occurrences in two runs over a day, the guards, and a preview listing one open failure filed at its next occurrence and one waiting on a threshold">
-</div>
+<figure>
+  <img src="/screenshots/project-integration-auto-create.png" alt="The Automatic creation block of a project's issue tracker settings: two rules, one for release branches at the first occurrence and one for the default branch in staging after three occurrences in two runs over a day, the guards, and a preview listing the open failure the second rule files at its next occurrence">
+  <figcaption>Automatic creation: the rules, the guards, and a preview of what they would file.</figcaption>
+</figure>
 
 ## Automatic creation
 
@@ -96,7 +97,8 @@ Each of these is a switch in **Keep the ticket honest**, off by default, and a d
   a run in which the failure failed again, and when a diagnosis completes. The rewrite keeps the language, the toggles
   and the share link the issue was filed with, and changes the title only on an issue a rule filed. Before writing,
   Piwi reads the description back: once someone has edited it in the tracker, Piwi never replaces it again, and the
-  activity list says so. A rewrite that would change nothing is not sent.
+  activity list says so. A rewrite that would change nothing is not sent. Piwi keeps no copy of a share link's token:
+  it takes the link from the issue's description, and skips a rewrite that cannot find it there.
 
 ## What an automatic issue says
 

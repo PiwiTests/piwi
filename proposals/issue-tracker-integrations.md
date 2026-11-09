@@ -9,8 +9,11 @@ outbox) so the next tracker or wiki is one provider file, not one more feature.
 project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization), and
 the automatic creation of step 4 (ordered rules over branches, environments, test tags, occurrences, runs and days;
 the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope for the write-backs, a
-diagnosis comment and description updates that never overwrite an edit made in the tracker); flaky-test and run
-tickets (the rest of step 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+diagnosis comment and description updates that never overwrite an edit made in the tracker), and run tickets: a
+run's issue, and one for an execution with no failure cluster, filed by hand with a comment, once per submission
+([run-on-my-machine.md](run-on-my-machine.md), D17). Flaky-test tickets, the `relatedIssue` run link and the links the
+tests declare (the rest of step 4, the last designed in [Links the tests declare](#links-the-tests-declare)) and
+Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -87,8 +90,8 @@ so "file this with the right team" is still a human's job, and the inbox cannot 
 days on the default branch and nobody has a ticket for it".
 
 Two smaller loose ends: the reporter's `relatedIssue` option (`packages/reporter/src/public/options.ts:183`) is stored
-in run metadata and never becomes a link; and `test_cases.link` accepts only an absolute URL, so the common
-`{ type: 'issue', description: 'PROJ-12' }` annotation convention resolves to nothing.
+in run metadata and never becomes a link; and a test has no way to name the issue its failures are tracked in
+(`piwi:link` is any related URL, kept on `test_cases.link`), so every new cluster of a test is linked by hand.
 
 ## What exists to build on
 
@@ -315,17 +318,20 @@ Three columns on `entity_links`, all nullable so existing rows are untouched:
 ```
 connection_id  FK integration_connections ON DELETE SET NULL   -- which connection can read/write this record
 external_id    TEXT                                            -- the tracker's stable id (Jira issue id, not the key — keys change on move)
-origin         'pinned' | 'created' | 'annotation' | 'reporter' -- who put it there
+origin         'pinned' | 'created' | 'annotation' | 'tag' | 'reporter' -- who put it there
 ```
 
-- **Detection learns the connections.** `detectProvider(url)` keeps its URL-shape rules; a server-side
-  `detectProviderWithConnections(db, url)` first asks each connection's `parseIssueUrl`, so `https://jira.company.com/browse/XYZ-99`
-  is `jira` once that host is connected. The demo and the client keep the pure detector.
+- **Detection learns the project's connection.** `detectProvider(url)` keeps its URL-shape rules; a server-side
+  `detectProviderWithConnection(db, url, projectConnectionId)` first asks the `parseIssueUrl` of the connection the
+  link's project is bound to, so `https://jira.company.com/browse/XYZ-99` is `jira` once the project is bound to that
+  host, and a link to any other site, another connection's included, stays a plain link. The demo and the client keep
+  the pure detector.
 - **Refresh goes through the connection**, replacing the ad-hoc `loadAtlassianConfig`. `unfurlUrl` becomes: a link
   with a `connection_id` refreshes through `tracker.getIssue(externalId)`; a link without one keeps today's path.
 - **Two loose ends close.** The reporter's `relatedIssue` (`'PROJ-12'`) becomes a run link (`origin: 'reporter'`)
-  when a tracker connection can resolve the key to a URL. A test annotation `{ type: 'issue' | 'link' }` whose
-  description is a bare key is resolved the same way into `test_cases.link`; an absolute URL keeps working.
+  when a tracker connection can resolve the key to a URL. A test's `piwi:issue` annotation, or a tag the project's
+  issue-key pattern reads, links the cluster its failures join (`origin: 'annotation'` or `'tag'`): see
+  [Links the tests declare](#links-the-tests-declare).
 
 ### Security posture
 
@@ -383,8 +389,9 @@ issue. The modal then leads with *PROJ-98 already tracks this (Open) — link it
 *tracked in PROJ-123* on each failure whose cluster has one; the fix plan and the exports list it under *Links*;
 `get_fix_plan` returns `issue: { key, url, status }`.
 
-**Two cheap wins ride along**: the `relatedIssue` reporter option becomes a run link, and bare-key issue annotations
-resolve to `test_cases.link` (both need only a connection, no binding).
+**Two cheap wins ride along**: the `relatedIssue` reporter option becomes a run link (it needs only a connection, no
+binding), and the issue a test names links its clusters ([Links the tests declare](#links-the-tests-declare), which
+needs a binding).
 
 ### Tier 2 — keep the ticket honest
 
@@ -431,6 +438,145 @@ resolve to `test_cases.link` (both need only a connection, no binding).
   the notifications' owner filter (free text today), the inbox's *Mine* queue and a per-team analytics cut all read
   one source. The proposal recommends starting with routes on the binding (nothing to migrate, one form) and
   promoting them to a team entity once two consumers beyond Jira want the same mapping.
+
+### Links the tests declare
+
+Requested in [#1153](https://github.com/PiwiTests/piwi/issues/1153). A suite often names, on each test, the issue its
+failures are tracked in, so a person still opens each new cluster and pastes the same URL into *Link an issue*. Piwi
+reads that name when the run is ingested and links the cluster itself. Not built; each *Default* below answers one of
+open questions 10 to 14.
+
+**Two sources, both declared in the spec.**
+
+```ts
+test('pays with a saved card', {
+  tag: '@SHOP-123',                  // the tag source: opt-in, read with the project's issue-key pattern
+  annotation: { type: 'piwi:issue', description: 'https://acme.atlassian.net/browse/SHOP-412' },
+}, async ({ page }) => { /* … */ });
+```
+
+- **`piwi:issue`**: its description is the issue's URL, as pasted in *Link an issue*, or the bare key. Several
+  annotations name several issues. It stays apart from `piwi:link` and from Playwright's `{ type: 'issue' }`: suites
+  already use both for any related page, and reading them as *the issue this failure is tracked in* would link
+  existing suites by surprise. `parseTestMetadata` in `packages/core/src/test-meta.ts` parses it into an
+  `issues: string[]` field (at most 10 values, each an absolute `http(s)` URL or a key, 500 characters at most), and
+  the execution's `test_meta` carries it. `sanitizeTestMetadata` maps only string values today, so it gets an array
+  branch for `issues`, and the wire's `testMeta` is held to the same rules. `isPiwiAnnotation` already keeps it out of
+  the test marks. A row in `reference/test-metadata.md`.
+- **The test's tags**, read with a per-project issue-key pattern. Off by default. This is the second tag pattern next
+  to the Zephyr case-key pattern, so it uses that design's helper and settings instead of a third regex:
+  `matchTagKeys(tags, pattern)` in `apps/application/shared/integrations/tag-keys.ts` and the *Keys in test tags*
+  section of the project's Integrations tab, with its overlap warning and the default it states,
+  `^[A-Z][A-Z0-9]+-\d+$` ([zephyr-sync.md, rollout step 3](zephyr-sync.md#rollout)). The helper lives in the app's
+  `shared/`, not in the MIT `@piwitests/core`, because only the server reads these patterns. The annotation is parsed
+  in core because the reporter parses every `piwi:` annotation. The reporter's `externalId.pattern` stays apart: it
+  reads one ID per test from the title, to match the test's history, where a test names several issues in its tags.
+
+**Only issues of the bound Jira project are linked.** An annotation or a tag is run data that any reporter token can
+send, while the issue is read through the connection's account. Without a limit, an upload could have Piwi read any
+issue on the site and show its title and status to the project's readers. Pinning a link takes `link:write`.
+
+- A key enters the lookup only in the shape `^[A-Z][A-Z0-9_]+-[1-9][0-9]*$` and with the binding's `projectKey` as
+  its project part, whatever the tag pattern matched. A returned issue counts only when its project is that key and
+  its key is the key the test named, so a moved issue, which comes back under its new key, is dropped. A URL must
+  also parse with the connection's `parseIssueUrl`. A binding without a `projectKey` links nothing. *Default:* the
+  owner routes' project keys do not count.
+- Anything else is dropped. *Default:* it is not stored as a plain link either: a plain link is unfurled through the
+  OpenGraph path (`createEnrichedLink`), so storing one would let a reporter token make the server fetch a URL of its
+  choosing.
+- A project match does not keep out a story tag when stories live in the same Jira project. *Default:* the tag source
+  links only the issue types listed in its setting, which defaults to the binding's issue type (what Piwi files bugs
+  as); the setting is required when the binding has none. The annotation is explicit, so it has no type filter.
+
+**Links from the tests are read-only.** Run data must not drive writes through the shared account. Today the policies
+write to the cluster's tracker link (`getClusterTrackerLink`: the newest keyed link `writableLink` accepts) and the
+sync resolves a cluster when any of its links moves to Done, neither looking at `origin`
+(`server/utils/integrations/policies.ts`, `sync.ts`). So, by `origin` (*Default*):
+
+- Piwi never writes to a link from the tests: `getClusterTrackerLink` passes it by, so no comment on fix or
+  regression, no transition, no diagnosis comment, no description update, no merge comment. An issue body Piwi writes
+  lists only `created` and `pinned` links among its related issues (`clusterKnownIssues` in `documents.ts`).
+- Its status never moves the cluster. The status pull refreshes it, but *resolve on ticket close* and the reopen when a
+  ticket reopens skip it. When the pull finds that its issue moved out of the bound project, it deletes the link.
+- It counts as tracked. The known issue (`getClusterKnownIssue` and `clusterKnownIssues`, which back the chip, the PR
+  comment's *tracked in SHOP-123*, the `cluster.*` notifications, the automatic-creation guard and the `needs-ticket`
+  queue) is the cluster's tracker link when it has one, so the issue named is the issue written to. Otherwise it is the
+  oldest link from the tests whose status category is not Done, and the oldest link from the tests when all are Done:
+  `knownIssueTracks` (`shared/handlers/known-issues.ts`) treats a Done issue as not tracking, so a cluster that names
+  SHOP-100 (Done) and SHOP-412 (open) is tracked in SHOP-412 and gets no duplicate.
+- A person who wants the write-backs pins the issue by hand: `createEnrichedLink`, which the REST route and the MCP
+  tool share, turns a link from the tests with the same key into a `pinned` one instead of adding a row.
+
+**When and how.** One step, `linkDeclaredIssues(db, runId)`, at run finalize
+(`server/utils/run-finalize-side-effects.ts`):
+
+- It runs for runs `isEligibleRun(current, 'tracker')` accepts and the binding's run scope (`policies.scope`) admits,
+  on a project bound to a Jira connection, after the incident return and whether or not the run notifies. It reads the
+  run's failing executions that joined a cluster: their `tags` and `test_meta.issues`.
+- **It finishes before the steps that read links start.** Its promise is passed into
+  `analyzeFinishedRunInBackground`, whose fix verification sends the `cluster.*` events, and `runTrackerAutomation`
+  and the PR feedback wait on it too, so a newly linked cluster counts as tracked in each. The finish response and the
+  returned rollup do not wait on it. It has a 10-second budget: at the deadline it is aborted, and nothing it read
+  after it is written, so a late link never lands beside an issue automation filed.
+- **One lookup per run**, not per result. It picks at most 50 distinct keys, the ones the most failing executions name
+  first, leaving out a key already linked or dismissed on its cluster and the keys of a cluster at the cap. *Default:*
+  the lookup is Jira Cloud's bulk fetch (`POST /rest/api/3/issue/bulkfetch`), which answers an unknown key with an
+  error of its own instead of failing the request (JQL `key in (…)` fails it), with the project and the issue type
+  among its fields; the project and type checks run on its result. `TrackerIssue` gains `projectKey` and `issueType`.
+  This is checked against Jira Cloud when built. A key Jira rejects is asked again on the next run that names it.
+  With Jira down, the step links nothing and the next failing run tries again: the step is a read, never an outbox
+  action.
+- **The link is written directly.** No caller is signed in, so `createdBy` is null. Title, status and status category
+  come from the lookup, so `createEnrichedLink` and its `readable` scope are not used. `connection_id` is the
+  binding's and `external_id` the Jira issue id from the lookup, as for an issue Piwi files, so the sync task and the
+  webhook refresh it.
+- `origin` is `'annotation'` for `piwi:issue` and a new `'tag'` for the tag source (`'reporter'` stays for
+  `relatedIssue`). `metadata.source` holds the test case and the tag, and the link chip says *From the test's
+  annotation* or *From the tag `@SHOP-123`*.
+- **One link per (cluster, key).** A cluster already linking the key, by any origin, gets nothing. Two runs finishing
+  at once are kept from inserting it twice by a partial unique index on `entity_links (failure_cluster_id, key)` where
+  `origin in ('annotation', 'tag')`, with the insert ignoring a conflict (both dialects, one migration each).
+
+**At most 10 links from the tests per cluster.** One root cause often fails dozens of tests, and with the tag source on,
+each test's key would be its own link. Links pinned by hand or created by Piwi do not count toward the 10. The first 10
+linked stay, so links do not churn between runs. Two runs finishing at once can pass the cap by a few links; the next
+step adds none. *Default:* the step stores how many other keys of the bound project the cluster's failing executions
+named in that run (in the key shape, not linked, not dismissed; Jira does not check them) in a
+`failure_clusters.declared_issues_more` integer, and the cluster's links end with *and N more named by its tests*.
+
+**A link removed by hand is not added back.** Unlinking deletes the row, so the next run would add it again. A new table
+records the removal:
+
+```
+entity_link_dismissals
+  id, failure_cluster_id (FK failure_clusters, cascade), key text, external_id text,
+  removed_by (FK users, set null), removed_at
+  unique (failure_cluster_id, key)
+```
+
+- Both delete paths write it when the removed link is on a cluster and has a key: `deleteLink` (REST
+  `DELETE /api/links/:id`) and `deleteLinksTo` (MCP). It keeps the link's Jira issue id in `external_id` for a link
+  from the tests or a created one, and null for a pinned one, whose `key` column already holds the key. The step skips
+  an issue whose key or Jira issue id is dismissed, so a dismissal of a link from the tests survives a move.
+- Pinning the same issue on that cluster by hand deletes the dismissal.
+- `mergeFailureClusters`, before it moves the victim's links, deletes the victim's links from the tests whose key the
+  survivor links (by any origin) or has dismissed, and the survivor's links from the tests whose key the victim pinned
+  or created, so one link per key remains and the partial unique index never rejects the merge. It then moves the
+  victim's dismissals (a pair the survivor holds is ignored). A survivor may hold more than 10 links from the tests;
+  the cap limits what the step adds.
+- `splitFailureCluster` copies the cluster's dismissals to the cluster split off, so a key removed by hand does not
+  come back on it.
+- Kept apart from `entity_links`: a soft-deleted link would have to be filtered by every reader of the table.
+
+**Side effects, all wanted and documented on `features/issue-tracking.md`:**
+
+- A linked cluster counts as tracked. The automatic-creation rules file no second issue for it, and it leaves the
+  `needs-ticket` queue. So a test that names an issue, through run data, also keeps Piwi from filing one.
+- The pull-request comment says *tracked in SHOP-123*, and the `cluster.*` notifications name the issue.
+- None of the write-backs or the status moves above apply until the issue is pinned by hand.
+
+**Demo.** The seed gets a test with a `piwi:issue` annotation and one with a key tag, and the demo's tracker answers the
+lookup, so both links and the *and N more* line show without a Jira site.
 
 ### Jira Cloud versus Server / Data Center
 
@@ -514,8 +660,17 @@ shared.
 ## Storage and API
 
 **Tables** (both dialects, generated migrations): `integration_connections`, `project_integrations`,
-`integration_actions`; `entity_links` + `connection_id`, `external_id`, `origin`; optional `teams` / `team_members`
-(Tier 3). Every FK to a project cascades; connection deletion sets links' `connection_id` to null and leaves the URLs.
+`integration_actions`; `entity_links` + `connection_id`, `external_id`, `origin`; `entity_link_dismissals`, a
+partial unique index on `entity_links` and `failure_clusters.declared_issues_more` for the links the tests declare;
+optional `teams` / `team_members` (Tier 3). Every FK to a project cascades; connection deletion sets links'
+`connection_id` to null and leaves the URLs.
+
+**Bindings: one table per integration kind.** `project_integrations` is the tracker binding, one row per project. A
+wiki (Confluence) binding goes in its own `project_wiki` table and a test management binding in
+`project_test_management`, each with its own typed columns, so writing one kind's binding never touches another's.
+`runAction` maps an action's kind to its integration kind, checks the binding of that kind
+(`boundConnectionId(db, projectId, kind)`) and builds that kind's client, which dispatches on the connection's
+provider. Decided with the test management sync, [zephyr-sync.md](zephyr-sync.md).
 
 **Endpoints** (all under `/api/integrations/`, every one with `defineRouteMeta` and `x-required-roles`):
 
@@ -571,7 +726,12 @@ Jira the same way; the settings page hides nothing there.
   private-host policy, the generated configuration reference for the env vars, and the `mcp.md` tool table.
 - **Unit** (Vitest): every renderer against fixture documents (ADF snapshots checked against the schema's node
   list), every builder against seeded facts, the Jira client with `vi.stubGlobal('fetch')` as `scm-unfurl.test.ts`
-  does, dedupe candidate ranking, the policy guards, the backoff helper, `detectProviderWithConnections`.
+  does, dedupe candidate ranking, the policy guards, the backoff helper, `detectProviderWithConnection`. For the
+  links the tests declare: `piwi:issue` in `test-meta.test.ts` (URL, key, other schemes, the cap), the link step
+  against a stubbed search (off-project keys, an unknown key in the batch, the per-cluster cap, a dismissed pair, two
+  steps at once, a moved issue, the deadline), the dismissal and a shared key across a merge and a split, the known
+  issue of a cluster that names a Done issue and an open one, and that no policy, status move or issue body acts on a
+  link from the tests.
 - **E2E** (Playwright): a mock Jira HTTP server in `tests/utils/` (the `ai-diagnosis.spec.ts` mock-provider pattern)
   driving create → chip → sync → comment → close → cluster prompt; a mock Confluence for publish; role checks; the
   env-managed connection; the MCP tool. Project names registered in `shared/test-project-names.ts`.
@@ -621,6 +781,19 @@ Each with the default the design assumes; a different answer changes the first m
    owner on the binding, or ask each Piwi user to store their Jira account id in *Account settings*? *Default: live
    search with remembered routes; a per-user field can follow.*
 
+Raised by [Links the tests declare](#links-the-tests-declare):
+
+10. **Which Jira projects a test may link.** The binding's `projectKey` only, or also its owner routes' project keys?
+    *Default: the binding's only.*
+11. **Story keys in the same Jira project.** Limit the tag source to some issue types? *Default: yes, the issue types in
+    its setting, defaulting to the binding's issue type; the annotation is not limited.*
+12. **A URL off the bound project.** Drop it, or store it as a plain link Piwi never reads? *Default: drop it; a plain
+    link is unfurled, which would let run data choose what the server fetches.*
+13. **The "and N more" count.** Compute it when the cluster is read, or store it at ingest? *Default: store it at
+    finalize, from the keys of the bound project the run named; Jira does not check them.*
+14. **What Piwi does with a link from the tests.** Treat it as a pinned link, or read it only? *Default: read it only:
+    no write-backs and no status moves until a person pins it.*
+
 ## Rollout sketch
 
 Each step is a separately mergeable pull request that leaves the app green and useful on its own.
@@ -637,8 +810,10 @@ Each step is a separately mergeable pull request that leaves the app green and u
    resolve on close), merge handling, the optional webhook, `needs-ticket` queue, and the response-language setting.
    *Outcome: the loop closes both ways.*
 4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see
-   `shared/integrations/automation.ts`); flaky-test and run tickets; the `relatedIssue` and annotation resolutions if
-   not already in step 2.
+   `shared/integrations/automation.ts`); flaky-test tickets; the `relatedIssue` run link; the links the
+   tests declare, in two pull requests: `piwi:issue` in core with the link step, the dismissals and the read-only
+   handling by origin (`feat(app)`, `feat(db)` for the migrations), then the tag source, with or after Zephyr's
+   shared tag-key helper ([zephyr-sync.md](zephyr-sync.md#rollout), step 3).
 5. **Confluence** — the wiki interface, the storage renderer, publish investigation and run report, page-in-place
    updates.
 6. **The next trackers** — GitHub Issues and GitLab Issues on the SCM token; Jira Data Center; Linear.

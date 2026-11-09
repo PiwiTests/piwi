@@ -13,6 +13,7 @@ import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
 import {
   PAGE_CANDIDATES_REQUEST,
+  NEW_TEST_FILE_REQUEST,
   RECORD_REQUEST,
   RECORD_REQUESTED_NOTIFICATION,
   DECLINE_RECORD_NOTIFICATION,
@@ -24,6 +25,8 @@ import {
   type FileEdit,
   type PageCandidatesParams,
   type PageCandidatesResult,
+  type NewTestFileParams,
+  type NewTestFileResult,
   type PiwiCommand,
   type RecordInto,
   type RecordParams,
@@ -40,10 +43,7 @@ import {
 import {
   DOCUMENT_PATTERN,
   RECORDED_ACTIONS,
-  TEST_FILE,
-  configTestDir,
   followBlock,
-  newTestFileName,
   placedBlock,
   recordInto,
   recordedBlockText,
@@ -741,42 +741,33 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
   };
 
   /**
-   * The folder a new test file goes in: next to `file` (the active file) when it is a test file, else the test
-   * folder of the workspace's Playwright config; with the file whose suffix the new name takes.
+   * The new test file's path, asked relative to its workspace folder, from where the service offers it
+   * (`piwi/newTestFile`: beside the spec at hand in a test folder, else in the test folder of the config holding the
+   * file at hand, under a name it does not hold yet); null when cancelled.
    */
-  const newFileFolder = async (file: vscode.Uri | undefined) => {
-    if (file?.scheme === 'file' && TEST_FILE.test(file.fsPath)) {
-      return { folder: vscode.Uri.file(path.dirname(file.fsPath)), sample: file.fsPath };
-    }
-    const [config] = await vscode.workspace.findFiles(
-      '**/playwright.config.{ts,js,mjs,cjs,mts,cts}',
-      '**/node_modules/**',
-      1,
-    );
-    if (config) {
-      const text = Buffer.from(await vscode.workspace.fs.readFile(config)).toString('utf-8');
-      const folder = path.resolve(path.dirname(config.fsPath), configTestDir(text) ?? '.');
-      return { folder: vscode.Uri.file(folder), sample: config.fsPath };
-    }
-    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri;
-    return workspace ? { folder: workspace, sample: null } : null;
-  };
-
-  /** The new test file's path, asked relative to its workspace folder; null when cancelled. */
   const askNewFile = async (file: vscode.Uri | undefined): Promise<vscode.Uri | null> => {
-    const where = await newFileFolder(file);
-    if (!where) {
-      void vscode.window.showInformationMessage('Piwi: open a folder to create the test file in.');
+    const offered = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Piwi: finding where the test file goes' },
+      () =>
+        lc
+          .sendRequest<NewTestFileResult>(NEW_TEST_FILE_REQUEST, {
+            uri:
+              file?.scheme === 'file'
+                ? file.toString()
+                : (vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null),
+          } satisfies NewTestFileParams)
+          .catch(() => null),
+    );
+    if (!offered) {
+      void vscode.window.showInformationMessage(
+        'Piwi: open a folder with a Playwright config to create the test file in.',
+      );
       return null;
     }
-    const root = (vscode.workspace.getWorkspaceFolder(where.folder)?.uri ?? where.folder).fsPath;
-    const offered = newTestFileName(where.sample);
-    const dot = offered.indexOf('.');
-    let name = offered;
-    for (let n = 2; n < 100 && (await exists(vscode.Uri.joinPath(where.folder, name))); n++) {
-      name = `${offered.slice(0, dot)}-${n}${offered.slice(dot)}`;
-    }
-    const value = path.relative(root, path.join(where.folder.fsPath, name));
+    const target = vscode.Uri.parse(offered.uri);
+    const root = vscode.workspace.getWorkspaceFolder(target)?.uri.fsPath ?? offered.root;
+    const name = path.basename(target.fsPath);
+    const value = path.relative(root, target.fsPath);
     const nameAt = value.length - name.length;
     const answer = await vscode.window.showInputBox({
       title: 'Piwi: Record a new test file',

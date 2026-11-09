@@ -30,8 +30,12 @@ file's base blob and changed base lines, and a test that reaches the file only t
 coverage of that version ran a changed statement or a function around a changed line; a change outside every known
 function or crossing from one into the next, coverage of another version or with no ranges, and an incomplete or
 unknown capture stay at file level. The MCP tool
-`get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
-yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
+`get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Browser
+lines (PR 6) are built on 2026-11-03 as `coverage.browser: 'lines'`, a level of its own since V8's block coverage
+costs 64% more script time than function coverage on a CPU-bound page: each block range mapped through the script's
+source map, a file's executable lines being the lines a segment maps to (a module with no map: the lines holding code
+inside its functions), counted in the combined coverage on those lines with none undetermined. Not built yet: the
+Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
 open question 5, gives Nitro backends the same server coverage: built the same day (delivery PR 9) and checked on the
 sample application, whose Nitro backend now records what its ASP.NET Core one does, unit tests and combined coverage
 included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is built the same

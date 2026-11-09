@@ -5,7 +5,7 @@ useHead({ title: 'Settings — Piwi Dashboard' });
 
 const { envManaged } = useSettingsEnvState();
 
-// Already grouped (Instance / Analysis / meta): the vertical menu and the select below.
+// Already grouped (Instance / Analysis / Setup / meta): the vertical menu and the select below.
 // Documentation is not a settings page — it lives in Settings → About →
 // Resources and behind every inline-help "Learn more" link.
 const navItems = await useSettingsNav(envManaged);

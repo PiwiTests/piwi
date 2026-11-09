@@ -2,7 +2,7 @@
 /**
  * The tools that ship alongside the dashboard but install elsewhere — the
  * browser extension, the desktop app, the reporter CLI, MCP agent access, the
- * editor extensions and the IDE hand-off. Unlike the capability ladder above it, none of these leave
+ * editor extensions and the IDE hand-off. Unlike the capability ladder, none of these leave
  * evidence on the instance, so the card is informative rather than detected.
  */
 import {
@@ -99,7 +99,7 @@ const isDesktop = useIsDesktop();
             workflows — investigate a failure, apply a healed locator, stabilize flaky tests — into your test project.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <UButton to="/mcp" size="xs" variant="soft" icon="i-lucide-plug">MCP setup</UButton>
+            <UButton to="/settings/mcp" size="xs" variant="soft" icon="i-lucide-plug">MCP setup</UButton>
             <DocLink to="features/agent-skills" class="text-sm">Skills docs</DocLink>
           </div>
         </div>

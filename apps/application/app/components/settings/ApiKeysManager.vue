@@ -20,7 +20,8 @@ const apiKeysList = ref<ApiKeySummary[]>([]);
 async function loadApiKeys() {
   try {
     const data = await $fetch<ApiKeysResponse>(`/api/users/${props.userId}/api-keys`);
-    apiKeysList.value = data.items;
+    // The keys the device flow made are listed under Connected apps.
+    apiKeysList.value = data.items.filter((key) => !key.clientKind);
   } catch {
     apiKeysList.value = [];
   }

@@ -11,6 +11,7 @@ import {
   RecordingSessions,
   blockImports,
   forkLauncher,
+  freeTestTitle,
   indentBlock,
   UPDATE_INTERVAL_MS,
   recorderLanguage,
@@ -648,6 +649,36 @@ describe('a recording session', () => {
     }
   });
 
+  test('a new test in an empty spec imports test as the specs beside it do, under a title no test of the file has', async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-sessions-new-test-'));
+    try {
+      fs.writeFileSync(path.join(folder, 'a.spec.ts'), "import { test, expect } from './fixtures';\n");
+      const empty = setup();
+      await empty.start({ line: 0, into: 'test' }, { file: path.join(folder, 'checkout.spec.ts'), text: '' });
+      empty.launchers[0]!.emit({ type: 'started' });
+      empty.launchers[0]!.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+      empty.launchers[0]!.emit({
+        type: 'event',
+        event: event('assert', {
+          target: null,
+          assertion: { matcher: 'toHaveURL', expected: '/login', actual: null, negated: false, note: null },
+        }),
+      });
+      expect(empty.last().code).toContain("test('recorded flow', async ({ page }) => {");
+      expect(empty.last().importEdit).toEqual(insertAt(0, "import { test, expect } from './fixtures';\n\n"));
+
+      // A second recording into the same file takes a title of its own: Playwright refuses two alike.
+      const again = setup();
+      const recorded = "import { test, expect } from './fixtures';\n\ntest('recorded flow', async ({ page }) => {});\n";
+      await again.start({ line: 3, into: 'test' }, { file: path.join(folder, 'checkout.spec.ts'), text: recorded });
+      again.launchers[0]!.emit({ type: 'started' });
+      again.launchers[0]!.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+      expect(again.last().code).toContain("test('recorded flow 2', async ({ page }) => {");
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   test('a spec loading test with require gets expect as a require declaration after the last one, once', async () => {
     const text = [
       "const { test } = require('@playwright/test');",
@@ -1121,6 +1152,21 @@ describe('blockImports', () => {
     ]);
   });
 
+  test('test for a new test in a file that takes none, with expect from the same module when it exports it', () => {
+    const newTest = "test('recorded flow', async ({ page }) => {\n  " + check + '\n});';
+    expect(
+      blockImports('', { code: newTest, imports: [] }, { testModule: './fixtures', expectModule: './fixtures' }),
+    ).toEqual(["import { test, expect } from './fixtures';"]);
+    expect(
+      blockImports('', { code: newTest, imports: [] }, { testModule: './fixtures', expectModule: '@playwright/test' }),
+    ).toEqual(["import { test } from './fixtures';", "import { expect } from '@playwright/test';"]);
+    // A file that takes `test` already, or declares its own, gets no second one.
+    const own = "import { test as base } from '@playwright/test';\nconst test = base.extend({});\n";
+    expect(
+      blockImports(own, { code: newTest, imports: [] }, { testModule: './fixtures', expectModule: './fixtures' }),
+    ).toEqual(["import { expect } from './fixtures';"]);
+  });
+
   test('nothing for expect when the file imports it or the block checks nothing; catalog imports as before', () => {
     const both = "import { test, expect } from './shop-fixtures';\n";
     expect(blockImports(both, { code: check, imports: [] })).toEqual([]);
@@ -1129,6 +1175,15 @@ describe('blockImports', () => {
       call,
     ]);
     expect(blockImports('', { code: 'await page.expectation(1); await my.expect(2);', imports: [] })).toEqual([]);
+  });
+});
+
+describe('freeTestTitle', () => {
+  test('a recorded test takes a title no test of the file has', () => {
+    expect(freeTestTitle('')).toBe('recorded flow');
+    const one = "test('recorded flow', async ({ page }) => {});\n";
+    expect(freeTestTitle(one)).toBe('recorded flow 2');
+    expect(freeTestTitle(one + 'test("recorded flow 2", async () => {});\n')).toBe('recorded flow 3');
   });
 });
 

@@ -8,6 +8,11 @@ lang: en-US
 
 Piwi is one Node.js server with its data in one directory. Run it as a Docker container (recommended), with Docker Compose, on Kubernetes or with `npx`, then put an HTTPS proxy in front of it.
 
+<figure>
+  <img src="/diagrams/production-topology.svg" alt="CI runners, your team and coding agents reach one Piwi container through an HTTPS reverse proxy; its data sits on the /app/.data volume, or in PostgreSQL and an S3-compatible bucket; outbound calls go only to the services you configure">
+  <figcaption>One replica behind a TLS proxy, with persistent data.</figcaption>
+</figure>
+
 ## Docker (recommended)
 
 ### Quick start
@@ -82,7 +87,7 @@ The server reads three process-level variables directly:
 | `HOST` | `0.0.0.0` | Listen on all interfaces. The Docker image sets `NITRO_HOST=0.0.0.0`, which takes precedence — override the bind address there with `NITRO_HOST`. `npx @piwitests/server` defaults to `127.0.0.1` |
 | `PORT` | `3000` | Application port |
 
-Everything else is a `PIWI_*` variable, listed with its default and whether the Settings UI can override it in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
+Everything else is a `PIWI_*` variable, listed with its default and the Settings page that names it in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
 
 ## One-click deploy
 
@@ -110,6 +115,11 @@ Run with:
 ```bash
 docker compose up -d
 ```
+
+With authentication off, a container that reaches the dashboard by its service name, such as a reporter in a
+Playwright container sending to `http://piwi-dashboard:3000`, gets a `403` until that name is in `PIWI_ALLOWED_HOSTS`:
+add `PIWI_ALLOWED_HOSTS=piwi-dashboard` to the dashboard's `environment`
+([why](./authentication#disabling-authentication)).
 
 ### Docker Compose with PostgreSQL
 
@@ -151,7 +161,8 @@ docker compose up -d
 
 ## Kubernetes
 
-Example deployment manifest:
+Example deployment manifest. It reads its variables from the `piwi-config` ConfigMap and the `piwi-secrets` Secret
+that the [configuration generator](/reference/configuration/generator)'s Kubernetes output creates: apply that first.
 
 ```yaml
 apiVersion: apps/v1
@@ -170,11 +181,19 @@ spec:
       labels:
         app: piwi-dashboard
     spec:
+      securityContext:
+        fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:latest
+        image: phenx/piwitests-server:0.67.0 # x-release-please-version
         ports:
         - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: piwi-config
+        - secretRef:
+            name: piwi-secrets
+            optional: true
         readinessProbe:
           httpGet:
             path: /api/health
@@ -216,8 +235,13 @@ spec:
   ports:
   - port: 80
     targetPort: 3000
-  type: LoadBalancer
+  type: ClusterIP
 ```
+
+The Service stays inside the cluster: publish it through your Ingress with TLS, rather than as a plain-HTTP
+`LoadBalancer`, with the proxy settings of [Reverse proxy (HTTPS)](#reverse-proxy-https). With authentication off, a
+pod that calls the Service by name needs that name in `PIWI_ALLOWED_HOSTS` (`piwi-dashboard`, or the full
+`piwi-dashboard.<namespace>.svc.cluster.local`); the probes call the pod's IP address and need nothing.
 
 ## npm / npx (quick local run)
 
@@ -248,8 +272,9 @@ $env:PORT='8080'; npx @piwitests/server
 :::
 
 It listens on `127.0.0.1` only, so other machines cannot reach it: with authentication off, the default, anyone who
-reaches the port is an administrator. To serve other machines, turn [authentication](./authentication) on and set
-`HOST=0.0.0.0`.
+reaches the port is an administrator. To serve other machines, turn [authentication](./authentication) on, set
+`HOST=0.0.0.0` and put [HTTPS](#reverse-proxy-https) in front: the session cookie is `Secure`, so sign-in over plain
+`http://` works only on `localhost`.
 
 Docker remains the recommended path for production: it ships a pinned Node runtime, runs as a non-root user and
 isolates the environment.
@@ -260,7 +285,7 @@ isolates the environment.
 
 ## Reverse proxy (HTTPS)
 
-Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost. Two working examples — mind the **upload size** (trace/report uploads can reach hundreds of MB) and **SSE streaming** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered).
+Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost. Two working examples — mind the **upload size** (trace/report uploads can reach hundreds of MB, and a run's results sent as one JSON document up to [`PIWI_SUBMIT_MAX_BYTES`](/reference/configuration#ingest-limits), 256 MB by default) and **SSE streaming** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered).
 
 **Caddy** (automatic HTTPS):
 
@@ -275,6 +300,7 @@ piwi.example.com {
 ```nginx
 server {
     listen 443 ssl;
+    http2 on;    # nginx 1.25.1 or later; before it, `listen 443 ssl http2;`
     server_name piwi.example.com;
 
     # ssl_certificate     /etc/letsencrypt/live/piwi.example.com/fullchain.pem;
@@ -285,7 +311,7 @@ server {
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
@@ -296,7 +322,9 @@ server {
 }
 ```
 
-When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)).
+Serve the dashboard over HTTP/2 when people keep several tabs open. Over HTTP/1.1, plain HTTP or HTTPS without HTTP/2, a browser opens at most six connections to one address, and each Piwi page that follows a running run holds one: a run page that finds none left says **Live updates stalled**. Caddy speaks HTTP/2 by default; nginx needs `http2 on`, as above.
+
+When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a name other than `localhost`, its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
 
 ## Resource requirements
 

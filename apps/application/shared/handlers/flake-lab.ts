@@ -14,6 +14,7 @@
  * counts with `@piwitests/core/flake-verdict`, never taken from the client.
  */
 import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { notPrivateRun } from '../run-eligibility';
 import {
   describeFlakeArm,
   flakeErrorSignature,
@@ -208,6 +209,10 @@ function toPlanCondition(condition: ProfileCondition, tests: Map<number, FlakeTe
         : { kind: 'fail', route: condition.route, status: condition.status, match: 'all' };
     case 'cpu':
       return { kind: 'cpu', rate: condition.rate };
+    case 'timezone':
+      return { kind: 'timezone', timeZone: condition.timeZone };
+    case 'locale':
+      return { kind: 'locale', locale: condition.locale };
     case 'alongside':
     case 'after': {
       const test = tests.get(condition.testCaseId);
@@ -989,7 +994,7 @@ export interface FlakeLabTest {
   lastExperimentAt: string | null;
   experiments: number;
   verifiedFix: VerifiedFix | null;
-  /** Share of the runs read in which it failed at least once (failed, or passed on a retry); null off the ranking. */
+  /** Share of the runs read where it passed or failed in which it failed at least once (failed, or passed on a retry); null off the ranking. */
   flakeRate: number | null;
   /**
    * With `suspects`, on the first tests that need a step: the suspect it is shown with (see
@@ -1301,7 +1306,9 @@ export async function listFlakeLabInbox(
     .select({ projectId: testRuns.projectId, name: projects.name, label: projects.label })
     .from(testRuns)
     .innerJoin(projects, eq(projects.id, testRuns.projectId))
-    .where(projectIds === 'all' ? undefined : inArray(testRuns.projectId, projectIds))
+    .where(
+      and(projectIds === 'all' ? undefined : inArray(testRuns.projectId, projectIds), notPrivateRun(testRuns.origin)),
+    )
     .groupBy(testRuns.projectId, projects.name, projects.label)
     .orderBy(desc(sql`MAX(${testRuns.id})`))
     .limit(FLAKE_LAB_INBOX_PROJECTS);

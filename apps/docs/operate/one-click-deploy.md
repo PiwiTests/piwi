@@ -19,7 +19,7 @@ choices of variables.
 
 | Provider | How | Persistent volume | Notes |
 |---|---|---|---|
-| [Railway](#railway) | Button | Yes | Managed PostgreSQL available alongside |
+| [Railway](#railway) | A service from the image | Yes | Managed PostgreSQL available alongside |
 | [Render](#render) | Button | Yes, on a paid instance | Repo-driven; only `PIWI_SITE_URL` is set by hand |
 | [Fly.io](#fly-io) | `fly launch` | Yes | One command rather than a button; cheapest always-on option |
 | [Koyeb](#koyeb) | Button | Volume attached afterwards | Starts once you set its secrets; see the warning below |
@@ -37,8 +37,7 @@ template's exact contents live in
 and the repo ships a [`railway.json`](https://github.com/PiwiTests/piwi/blob/main/railway.json) pinning
 the health check to `/api/health` and the replica count to 1.
 
-<!-- Replace with the published template URL once the template is live on Railway. -->
-> **No button yet.** Until the template is published on Railway, create a service from the
+> **No button.** Railway lists no published Piwi template: create a service from the
 > `phenx/piwitests-server:latest` image, add a volume mounted at `/app/.data`, and copy the variables from
 > `deploy/railway/template.md`.
 

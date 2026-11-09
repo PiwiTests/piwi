@@ -19,6 +19,16 @@ await build({
   logLevel: 'info',
 });
 
+await build({
+  entryPoints: ['src/paused-page-client.ts'],
+  bundle: true,
+  platform: 'browser',
+  target: 'es2022',
+  format: 'iife',
+  outfile: 'dist/paused-page.js',
+  minify: true,
+});
+
 // The service, and the files of the recorder it finds next to itself: the launcher, the reporter that reads the
 // Playwright config, the recorder's bundle for pages of the browser it opens, and that bundle's messages.
 const SERVICE = [

@@ -18,6 +18,8 @@ import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi } from '~/utils';
+import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
+import { escapeHtml } from '#shared/markdown-to-html';
 import { stripAnsi } from '~/utils/text-format';
 import { coverageLossPreview } from '~/utils/coverage-insights';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
@@ -27,11 +29,10 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { issueLineForm } from '~/utils/issue-line';
 import { buildNextStepChange } from '~/utils/next-step-change';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
-// Share links need the server; the public demo has no share-link routes.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 // What the viewer may do on the cluster's project, matching each action's route.
 const { can } = useAuth();
@@ -47,14 +48,17 @@ const {
   coverage: contextCoverage,
   scmChanges,
   suspectLines: clusterSuspectLines,
+  fetchDiagnosis,
 } = provideClusterDiagnosis(clusterId);
 
-const {
-  data: cluster,
-  error: clusterError,
-  refresh: refreshCluster,
-} = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
+const { data: cluster, error: clusterError } = await useFetch<FailureClusterDetail>(
+  `/api/failure-clusters/${clusterId}`,
+);
 if (clusterError.value) showPageLoadError(clusterError.value, 'failure cluster');
+// Every later read of the cluster keeps the one the page shows when it fails.
+const reloadCluster = refetchKeeping(cluster, () => $fetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`));
+// A read asked from outside the page (the assistant, once a proposal is applied): the cluster and its diagnosis.
+usePageReload(() => Promise.all([reloadCluster(), fetchDiagnosis()]));
 const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
 provideExternalIdUrl(() => cluster.value?.project?.externalIdUrl);
 const canTriage = computed(() => can('triage:write', clusterProjectId.value));
@@ -255,7 +259,6 @@ function copyCluster() {
   const c = cluster.value;
   if (!c) return;
   const url = window.location.href;
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const meta = [
     errorTypeLabel.value,
@@ -286,17 +289,15 @@ function copyCluster() {
   ].join('\n');
 
   const html = [
-    `<p><strong>❌ Failure cluster</strong>: ${esc(clusterName.value)}</p>`,
-    clusterName.value !== c.signature ? `<p><code>${esc(c.signature)}</code></p>` : '',
-    `<p><em>${esc(meta)}</em></p>`,
-    issue
-      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
-      : '',
+    `<p><strong>❌ Failure cluster</strong>: ${escapeHtml(clusterName.value)}</p>`,
+    clusterName.value !== c.signature ? `<p><code>${escapeHtml(c.signature)}</code></p>` : '',
+    `<p><em>${escapeHtml(meta)}</em></p>`,
+    issue ? trackedIssueHtml(issue) : '',
     c.sampleError ? `<p><strong>Sample error:</strong></p><pre>${renderAnsi(c.sampleError)}</pre>` : '',
     aiSummary
-      ? `<p><strong>AI diagnosis</strong> (${esc(c.diagnosis?.category ?? 'unknown')}, ${esc(c.diagnosis?.confidence ?? '?')} confidence):<br>${esc(c.diagnosis!.summary!)}</p>`
+      ? `<p><strong>AI diagnosis</strong> (${escapeHtml(c.diagnosis?.category ?? 'unknown')}, ${escapeHtml(c.diagnosis?.confidence ?? '?')} confidence):<br>${escapeHtml(c.diagnosis!.summary!)}</p>`
       : '',
-    `<p>🔗 <a href="${url}">View failure cluster</a></p>`,
+    `<p>🔗 ${richCopyLink(url, 'View failure cluster')}</p>`,
   ].join('');
 
   copyRich(plain, html, { toast: 'Failure cluster copied' });
@@ -318,7 +319,7 @@ const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
 const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
 
 function refresh() {
-  refreshCluster();
+  void reloadCluster();
   refreshRerun();
 }
 
@@ -375,6 +376,7 @@ const {
   decide: decideClusterProjectCap,
 } = await useProjectCapabilities(cluster.value?.project?.id ?? 0);
 const { decide: decideClusterInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 async function declineClusterFixtures(level: 'project' | 'instance') {
   if (level === 'project') await decideClusterProjectCap('fixtures', 'declined');
@@ -402,14 +404,12 @@ const reproduceSummary = computed(() =>
   reproduceSectionSummary(fixPlan.value?.reproduce?.steps?.length ?? 0, Boolean(fixPlan.value?.bisect?.available)),
 );
 const verifySummary = computed(() =>
-  verifySectionSummary(affectedRetryCases.value.length, Boolean(rerunInfo.value?.available)),
+  verifySectionSummary(affectedRetryCases.value.length, canRerun.value && Boolean(rerunInfo.value?.available)),
 );
 
 // ── Apply the same triage ─────────────────────────────────────────────────────
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => clusterId,
-  status: () => cluster.value?.status,
-  currentNote: () => cluster.value?.triageNote,
   onApplied: () => refresh(),
 });
 
@@ -447,6 +447,10 @@ const nudgeFacts = computed(() => ({ diagnosed: Boolean(clusterDiagnosis.value),
 
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
+// The cluster's tests not quarantined yet, past the listed page too; the listed ones preview their coverage loss.
+const pendingQuarantineCount = computed(() =>
+  Math.max(0, (cluster.value?.affectedTests ?? 0) - (cluster.value?.quarantinedTests ?? 0)),
+);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
 // What quarantining them leaves to no other trusted test, read when the menu opens, where the project records coverage.
 const pendingQuarantineIds = computed(() => pendingQuarantine.value.map((c) => c.testCaseId));
@@ -486,7 +490,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   }
 
   const testActions: DropdownMenuItem[] = [];
-  if (canQuarantine.value && pendingQuarantine.value.length > 0)
+  if (canQuarantine.value && pendingQuarantineCount.value > 0)
     testActions.push({
       label: 'Quarantine all affected tests',
       description: coverageLossPreview(quarantineLossFor(pendingQuarantineIds.value), 'quarantine')?.headline,
@@ -667,7 +671,7 @@ const breadcrumbItems = computed(() => [
         </template>
         <template #right>
           <ShareLinksModal
-            v-if="cluster && !isDemoMode"
+            v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
             :project-id="cluster.project?.id ?? null"
           />
@@ -960,11 +964,7 @@ const breadcrumbItems = computed(() => [
                   :source-run-id="cluster.lastSeenRunId"
                 />
                 <ClientOnly>
-                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
-                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                  </span>
+                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
               </div>
             </div>
@@ -998,7 +998,7 @@ const breadcrumbItems = computed(() => [
               <UIcon name="i-lucide-bot" class="size-3 shrink-0" />
               The diagnosis, edits, failing tests, owner and verify command in one document —
               <code class="font-mono">get_fix_plan</code> returns the same to your AI agent via the
-              <NuxtLink to="/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
+              <NuxtLink to="/settings/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
             </p>
           </template>
         </Toolbox>
@@ -1041,8 +1041,10 @@ const breadcrumbItems = computed(() => [
     v-if="cluster && canQuarantine"
     ref="quarantineAll"
     hide-trigger
+    :cluster-id="cluster.id"
     :project-id="cluster.project?.id"
     :cases="cluster.affectedTestCases ?? []"
+    :pending-count="pendingQuarantineCount"
     :reason="`Quarantined from cluster #${cluster.id}`"
     @changed="refresh"
   />

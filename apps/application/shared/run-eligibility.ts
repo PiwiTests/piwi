@@ -23,12 +23,24 @@
  * never sends them, and a run from a developer's machine or the desktop app
  * sends them only when it ran the whole suite. A finished run's analysis (fix
  * verification, change coverage, the hand-back outcomes) does not follow that
- * rule: each step reads the run under its own use.
+ * rule: each step reads the run under its own use. A run from an editor does
+ * not make a failure cluster recur either (`cluster-occurrences`). No run
+ * started on a developer's machine (a local run, `piwi preflight --run`,
+ * `piwi bug --write`) sends `test.stuck`, complete or not
+ * (`stuck-notifications`).
  */
 
-import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
-import { parseRunOrigin, RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, type RunOriginKind } from '@piwitests/core/wire';
+import {
+  parseRunOrigin,
+  parseRunOriginRef,
+  RUN_ORIGIN_KINDS,
+  RUN_ORIGIN_METADATA_KEY,
+  RUN_REF_METADATA_KEY,
+  type RunOrigin,
+  type RunOriginKind,
+} from '@piwitests/core/wire';
 import { testRuns } from '../server/database/schema';
 import { INCIDENT_RUN_METADATA_KEY } from './run-incident';
 
@@ -54,7 +66,28 @@ export const CI_RUN_ORIGINS = ['ci', 'ci-rerun'] as const satisfies readonly Run
 /** The origins of a developer's own runs: their machine, the desktop app, an editor. */
 export const LOCAL_RUN_ORIGINS = ['local', 'desktop', 'editor'] as const satisfies readonly RunOriginKind[];
 
+/**
+ * The origins of private runs: a run a person asked for on their own machine, seen by them alone, on a branch and a
+ * machine the team did not choose. No use reads them.
+ */
+export const PRIVATE_RUN_ORIGINS = ['request'] as const satisfies readonly RunOriginKind[];
+
 const LAB_AND_INVESTIGATION: readonly RunOriginKind[] = [...LAB_RUN_ORIGINS, ...INVESTIGATION_RUN_ORIGINS];
+
+/** The origins no use reads: lab runs, runs at a commit chosen to investigate a failure, and private runs. */
+const NO_TEAM_USE: readonly RunOriginKind[] = [...LAB_AND_INVESTIGATION, ...PRIVATE_RUN_ORIGINS];
+
+/**
+ * The origins of the runs set aside from everything that reads the suite as a whole (`isLabRun`, `notLabRun`): lab
+ * runs, whose failures are injected, and private runs. Neither forms failure clusters.
+ */
+const SET_ASIDE_RUN_ORIGINS: readonly RunOriginKind[] = [...LAB_RUN_ORIGINS, ...PRIVATE_RUN_ORIGINS];
+
+/**
+ * The origins of runs started on a developer's machine: their own runs (`LOCAL_RUN_ORIGINS`), `piwi preflight --run`
+ * and `piwi bug --write`.
+ */
+const DEVELOPER_MACHINE_RUN_ORIGINS: readonly RunOriginKind[] = [...LOCAL_RUN_ORIGINS, 'preflight', 'bug'];
 
 /** What a use reads runs for. */
 export type RunUse =
@@ -66,11 +99,14 @@ export type RunUse =
   | 'branch-failures'
   | 'editor-overlay'
   | 'change-coverage'
+  | 'test-map'
   | 'shared-state'
   | 'auto-heal'
   | 'bug-lifecycle'
   | 'notifications'
+  | 'stuck-notifications'
   | 'tracker'
+  | 'cluster-occurrences'
   | 'run-health';
 
 export interface RunUseRule {
@@ -101,73 +137,84 @@ export interface RunUseRule {
 export const RUN_USES: Record<RunUse, RunUseRule> = {
   /** Execution baselines: the environment, visual and page diffs, the AI's baseline comparison, the last pass. */
   baseline: {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** Run baselines: a run compared with a whole earlier run. */
   'run-baseline': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: true,
     excludesHistoricalImports: false,
   },
   'fix-verification': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   flakiness: {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** Pass rates, last statuses, recent failures and durations behind selections and their suggestions. */
   'selection-catalog': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** What the editor shows as the branch's CI failures. */
   'branch-failures': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: true,
     excludesHistoricalImports: false,
   },
   /** The runs the editor overlays on the branch's latest complete run. */
   'editor-overlay': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** Change coverage and every "not reached in the last N runs" analysis. */
   'change-coverage': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: false,
     completeOnly: true,
     excludesHistoricalImports: false,
   },
+  /**
+   * The Test Map's evidence: the statuses and the new surface the default branch's
+   * runs observed, and the surface its complete runs no longer reach. An
+   * environment incident's errors are the environment's, not the application's.
+   */
+  'test-map': {
+    excludes: NO_TEAM_USE,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** Locator snapshots, the locator index, test metadata and green samples. */
   'shared-state': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: false,
     completeOnly: false,
     excludesHistoricalImports: true,
   },
   'auto-heal': {
-    excludes: LAB_AND_INVESTIGATION,
+    excludes: NO_TEAM_USE,
     excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },
   'bug-lifecycle': {
-    excludes: ['bug', ...LAB_AND_INVESTIGATION],
+    excludes: ['bug', ...NO_TEAM_USE],
     excludesIncidents: false,
     completeOnly: false,
     excludesHistoricalImports: false,
@@ -180,10 +227,20 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
    * inconclusive.
    */
   notifications: {
-    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
+    excludes: [...NO_TEAM_USE, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
+    excludesHistoricalImports: false,
+  },
+  /**
+   * The `test.stuck` notification of a live run's running attempt: the runs of `notifications` but those started on a
+   * developer's machine. The run page's **Stuck?** mark reads no use.
+   */
+  'stuck-notifications': {
+    excludes: [...NO_TEAM_USE, ...DEVELOPER_MACHINE_RUN_ORIGINS],
+    excludesIncidents: true,
+    completeOnly: false,
     excludesHistoricalImports: false,
   },
   /**
@@ -192,15 +249,27 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
    * trigger. The rule of `notifications`.
    */
   tracker: {
-    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
+    excludes: [...NO_TEAM_USE, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
     excludesHistoricalImports: false,
   },
+  /**
+   * A failure cluster's occurrences: their count, the runs the cluster was first
+   * and last seen in, and the wake of an "until it recurs" snooze. A run from an
+   * editor, a bisect step or a reproduction still joins its failures to their
+   * clusters, without making them recur.
+   */
+  'cluster-occurrences': {
+    excludes: [...NO_TEAM_USE, 'editor'],
+    excludesIncidents: false,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** The runs the incident classifier judges, and the runs of other projects it compares them with. */
   'run-health': {
-    excludes: LAB_RUN_ORIGINS,
+    excludes: [...LAB_RUN_ORIGINS, ...PRIVATE_RUN_ORIGINS],
     excludesIncidents: false,
     completeOnly: false,
     excludesHistoricalImports: false,
@@ -236,9 +305,40 @@ export function isIncidentRun(metadata: unknown): boolean {
   return isObject(record(metadata)?.[INCIDENT_RUN_METADATA_KEY]);
 }
 
+/** Metadata stamped as a requested run's: origin `request`, with the request's id as its ref. */
+export function withRequestOrigin(
+  metadata: Record<string, unknown> | null,
+  requestId: string,
+): Record<string, unknown> {
+  return requestStamped(metadata, { kind: 'request', ref: requestId });
+}
+
+/** `metadata` with a requested run's origin, and without the lab stamps that would name it a lab run. */
+function requestStamped(metadata: Record<string, unknown> | null, origin: RunOrigin): Record<string, unknown> {
+  const { [PROBE_RUN_METADATA_KEY]: _probe, [FLAKE_LAB_RUN_METADATA_KEY]: _lab, ...rest } = metadata ?? {};
+  return { ...rest, [RUN_ORIGIN_METADATA_KEY]: origin };
+}
+
+/**
+ * Metadata replacing a run's stored metadata, with a requested run's origin carried over. The reporter never sends
+ * `request` (`sanitizeMetadata` drops it), and every write of the reporter's metadata over a stored run passes
+ * through this.
+ */
+export function carryRequestOrigin(
+  next: Record<string, unknown> | null,
+  stored: unknown,
+): Record<string, unknown> | null {
+  const origin = record(stored)?.[RUN_ORIGIN_METADATA_KEY];
+  const parsed = parseRunOrigin(origin);
+  if (parsed?.kind !== 'request') return next;
+  return requestStamped(next, parsed);
+}
+
 /** What launched a run, read from its metadata. */
 export function runOrigin(metadata: unknown): RunOriginRead {
   const meta = record(metadata);
+  // The server's `request` stamp wins over every key the reporter writes.
+  if (parseRunOrigin(meta?.[RUN_ORIGIN_METADATA_KEY])?.kind === 'request') return 'request';
   if (isProbeRun(meta)) return 'probe';
   if (isFlakeLabRun(meta)) return 'flake-lab';
   if (meta && RUN_ORIGIN_METADATA_KEY in meta && isObject(meta[RUN_ORIGIN_METADATA_KEY])) {
@@ -266,13 +366,27 @@ export function runOriginRef(metadata: unknown): string | null {
   return parseRunOrigin(record(metadata)?.[RUN_ORIGIN_METADATA_KEY])?.ref ?? null;
 }
 
+/** The launcher's name for the run itself (`PIWI_RUN_REF`), when the reporter recorded one. */
+export function runLauncherRef(metadata: unknown): string | null {
+  return parseRunOriginRef(record(metadata)?.[RUN_REF_METADATA_KEY]) ?? null;
+}
+
 /**
- * True for a lab run, one that replays tests under conditions Piwi injected: a
- * probe run or a flake-lab run. A lab run never counts as a real run, so no use
- * reads it.
+ * True for a lab run, one that replays tests under conditions Piwi injected (a
+ * probe run or a flake-lab run), and for a private run (`PRIVATE_RUN_ORIGINS`).
+ * Neither counts as a real run: no use reads it and it forms no clusters.
  */
 export function isLabRun(metadata: unknown): boolean {
-  return (LAB_RUN_ORIGINS as readonly string[]).includes(runOrigin(metadata));
+  return (SET_ASIDE_RUN_ORIGINS as readonly string[]).includes(runOrigin(metadata));
+}
+
+/**
+ * True for the origin of a lab run or of a run at a commit chosen to investigate a failure: a Flake Lab or probe run,
+ * a bisect step, a reproduction. Such a run is a step of a job whose verdict says what its failures mean: no use
+ * reading the suite as it behaves today reads it, and it sends no notification (`RUN_USES`).
+ */
+export function isLabOrInvestigationOrigin(origin: string): boolean {
+  return (LAB_AND_INVESTIGATION as readonly string[]).includes(origin);
 }
 
 /** The fields of a run the rule reads. */
@@ -364,6 +478,48 @@ export function runOriginIn(origin: SQLWrapper, kinds: readonly RunOriginKind[])
   )})`;
 }
 
+/** The columns of a run its visibility reads. */
+export interface RunVisibilityFields {
+  origin: string | null;
+  requesterId: number | null;
+}
+
+/** Whether a run of `origin` is private: its requester's alone. */
+export function isPrivateRunOrigin(origin: string | null | undefined): boolean {
+  return (PRIVATE_RUN_ORIGINS as readonly (string | null | undefined)[]).includes(origin);
+}
+
+/**
+ * Whether a person sees a run: every run but a private one (`PRIVATE_RUN_ORIGINS`), which its requester alone sees.
+ * A private run whose requester is gone, or read with no person (sign-in off), is seen by nobody.
+ */
+export function isVisibleRun(run: RunVisibilityFields, viewerId: number | null): boolean {
+  if (!isPrivateRunOrigin(run.origin)) return true;
+  return viewerId != null && run.requesterId === viewerId;
+}
+
+/** SQL predicate: the run is not a private run, for the lists every member of a project reads. */
+export function notPrivateRun(origin: SQLWrapper = testRuns.origin): SQL {
+  return sql`NOT ${runOriginIn(origin, PRIVATE_RUN_ORIGINS)}`;
+}
+
+/**
+ * SQL predicate: the run is set aside from team use (`notLabRun`), except the viewer's own private runs, for a list
+ * that shows them to their requester.
+ */
+export function notLabRunOrOwn(viewerId: number | null, origin: SQLWrapper = testRuns.origin): SQL {
+  if (viewerId === null) return notLabRun(origin);
+  return or(
+    notLabRun(origin),
+    and(runOriginIn(origin, PRIVATE_RUN_ORIGINS), eq(testRuns.requesterId, viewerId)),
+  ) as SQL;
+}
+
+/** `notPrivateRun` on an execution's run id, for queries over `test_runs_cases` that do not join `test_runs`. */
+export function notPrivateExecution(testRunId: SQLWrapper): SQL {
+  return sql`NOT EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${runOriginIn(testRuns.origin, PRIVATE_RUN_ORIGINS)})`;
+}
+
 /** SQL predicate: the run is flagged as an environment incident (`isIncidentRun`). */
 export function incidentRunSql(metadata: SQLWrapper): SQL {
   return hasKey(text(metadata), INCIDENT_RUN_METADATA_KEY, '{');
@@ -385,7 +541,7 @@ const TEST_RUN_COLUMNS: EligibleRunColumns = {
 };
 
 /** SQL predicate: the run covered the whole suite and finished (`isCompleteRun`). */
-function completeRunSql(columns: EligibleRunColumns): SQL {
+export function completeRunSql(columns: EligibleRunColumns = TEST_RUN_COLUMNS): SQL {
   const unfinished = sql.join(
     UNFINISHED_RUN_STATUSES.map((s) => sql`${s}`),
     sql`, `,
@@ -429,9 +585,12 @@ export function eligibleExecutionInProject(use: RunUse, projectId: number, testR
   return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${listed})`;
 }
 
-/** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. `origin` is the run's stored origin. */
+/**
+ * SQL predicate keeping only runs that are neither lab runs nor private runs: the SQL form of `!isLabRun(metadata)`.
+ * `origin` is the run's stored origin.
+ */
 export function notLabRun(origin: SQLWrapper): SQL {
-  return sql`NOT ${runOriginIn(origin, LAB_RUN_ORIGINS)}`;
+  return sql`NOT ${runOriginIn(origin, SET_ASIDE_RUN_ORIGINS)}`;
 }
 
 /** `notLabRun` on an execution's run id, for queries over `test_runs_cases` that do not join `test_runs`. */

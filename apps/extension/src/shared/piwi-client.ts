@@ -19,7 +19,7 @@ import type { ConnectPoll } from './connect-flow.js';
 import { desktopOrigin, getDesktopSettings, type DesktopSettings } from './desktop-settings.js';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { bugReportUrl, normalizeBaseUrl } from './instance-links.js';
-import { proveEditor } from './editor-proof.js';
+import { proveEditor, type EditorProof } from './editor-proof.js';
 import { t } from './i18n.js';
 
 /**
@@ -379,19 +379,26 @@ export async function addServerPattern(
 }
 
 /**
+ * Whether the program on the paired editor's port holds the pairing's token (`proveEditor`), asked on the live
+ * endpoint beside `…/send`, which answers a request without a body in both editors: a JetBrains IDE's send endpoint
+ * takes a POST alone.
+ */
+export function provePairedEditor(pairing: EditorPairing): Promise<EditorProof> {
+  return proveEditor(liveUrlOf(pairing.url) ?? pairing.url, pairing.token);
+}
+
+/**
  * Post a locator or a recording to the paired editor, on this computer's
  * loopback interface; the editor inserts it at its cursor. Needs the host
  * permission for the editor's origin, requested when pairing. The program on
- * the paired port proves it holds the token first (`proveEditor`), asked on the
- * live endpoint beside `…/send`, which answers a request without a body in both
- * editors: a JetBrains IDE's send endpoint takes a POST alone.
+ * the paired port proves it holds the token first (`provePairedEditor`).
  */
 export async function postToEditor(
   pairing: EditorPairing,
   payload: EditorSendPayload,
 ): Promise<{ ok: true; file: string | null } | { ok: false; error: string }> {
   // The token goes only to the program that proves it holds it: never to another one that took the paired port.
-  const proof = await proveEditor(liveUrlOf(pairing.url) ?? pairing.url, pairing.token);
+  const proof = await provePairedEditor(pairing);
   if (proof === 'unreachable') return { ok: false, error: t('common_editorUnreachable') };
   if (proof === 'outdated') return { ok: false, error: t('common_editorOutdated') };
   if (proof !== 'proven') return { ok: false, error: t('common_editorNotProven') };

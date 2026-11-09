@@ -779,7 +779,7 @@
     "message": "Desktop-App"
   },
   "options_desktopHint": {
-    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen."
+    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen. Die Läufe, die sie startet, erscheinen auch im Fenster „Läufe“ (Läufe, im Menü der Erweiterung)."
   },
   "options_desktopUrl": {
     "message": "Adresse der Desktop-App"
@@ -1201,7 +1201,7 @@
     "message": "An den Editor senden"
   },
   "options_editorHint": {
-    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt."
+    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt. Die Läufe, die er startet, erscheinen dann im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen."
   },
   "options_editorAddress": {
     "message": "Kopplungsadresse"
@@ -1280,6 +1280,33 @@
   },
   "options_editorPermission": {
     "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
+  },
+  "options_editorNotProven": {
+    "message": "Mit $url$ gekoppelt, aber das Programm an diesem Port beweist nicht, dass es Ihr Editor ist, daher geht nichts dorthin: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse, oder aktualisieren Sie Piwi dort.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Mit $url$ gekoppelt, aber dort antwortet gerade nichts: Öffnen Sie Ihren Editor mit der Piwi-Erweiterung. Kopiert sein „Piwi: Pair with Piwi Picker“ eine andere Adresse, koppeln Sie mit dieser.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Mit $url$ gekoppelt, aber der Browser hat Piwi Picker den Zugriff darauf entzogen: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
   },
   "common_close": {
     "message": "Schließen"
@@ -3818,10 +3845,10 @@
     "message": "Mit Playwright in der Desktop-App ausführen"
   },
   "replay_desktopNotPaired": {
-    "message": "Koppeln Sie zuerst die Desktop-App, in den Optionen von Piwi Picker unter Desktop-App."
+    "message": "Koppeln Sie zuerst die Desktop-App, in den Einstellungen von Piwi Picker unter Desktop-App."
   },
   "replay_desktopOpenOptions": {
-    "message": "Optionen öffnen"
+    "message": "Einstellungen öffnen"
   },
   "replay_desktopPreview": {
     "message": "Sendet an die Desktop-App unter $url$: den Titel und diese Schritte, mit den darin eingegebenen Werten. Keine Bildschirmfotos, Konsoleneinträge oder Anfragen. Nichts läuft, bevor Sie es im Fenster der App starten.",
@@ -6204,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Anhalten, Schritt, weiter"
   },
+  "popup_runsHintAway": {
+    "message": "Nicht verbunden: warum?"
+  },
   "popup_runsHint_one": {
     "message": "$count$ Lauf im Editor",
     "placeholders": {
@@ -6298,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Stand der letzten Meldung: Die Bedienelemente kehren zurück, sobald die Verbindung mit $editor$ wieder steht.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "Ihrem Editor"
   },
@@ -6344,7 +6383,10 @@
     "message": "Die Piwi-Erweiterung Ihres Editors kann ihre Läufe nicht teilen: Aktualisieren Sie sie."
   },
   "runs_statusUnproven": {
-    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut."
+    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt jede Minute erneut, solange dieses Fenster geöffnet ist. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
+  },
+  "runs_statusNotEditor": {
+    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Öffnen Sie Ihren Editor, führen Sie erneut „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse in den Einstellungen ein."
   },
   "runs_statusNoHub": {
     "message": "Ihr Editor antwortet, aber keines seiner Fenster teilt seine Läufe: Aktualisieren Sie dort die Piwi-Erweiterung."
@@ -6358,29 +6400,14 @@
   "runs_terminal": {
     "message": "Terminal"
   },
+  "runs_runner": {
+    "message": "Test-Runner"
+  },
   "runs_desktopName": {
     "message": "der Desktop-App"
   },
   "runs_followingDesktop": {
     "message": "Mit der Desktop-App verbunden"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "$count$ Editorfenster und die Desktop-App verbunden",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "$count$ Editorfenster und die Desktop-App verbunden",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Läufe der Desktop-App werden gesucht…"
@@ -6406,6 +6433,89 @@
   "runs_ended": {
     "message": "Der Lauf ist beendet."
   },
+  "runs_progress_one": {
+    "message": "$done$ von $count$ Test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ von $count$ Tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ fehlgeschlagen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ fehlgeschlagen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ instabil",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ instabil",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "Der Lauf ist bestanden."
+  },
+  "runs_endedFailed": {
+    "message": "Der Lauf ist fehlgeschlagen."
+  },
+  "runs_firstFailure": {
+    "message": "Erster Fehlschlag: $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "Der Lauf hat sein Zeitlimit erreicht."
+  },
+  "runs_endedInterrupted": {
+    "message": "Der Lauf wurde abgebrochen."
+  },
   "runs_stoppedBreakpoint": {
     "message": "An einem Haltepunkt angehalten"
   },
@@ -6426,6 +6536,27 @@
   },
   "runs_statePausing": {
     "message": "Wird angehalten…"
+  },
+  "runs_statePausingIn": {
+    "message": "Wird angehalten: wartet in $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "seit $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "Test jetzt beenden: Der Aufruf, in dem er wartet, wird wo möglich abgebrochen, der Rest des Tests übersprungen"
   },
   "runs_stateRunning": {
     "message": "Läuft"
@@ -6482,7 +6613,7 @@
     "message": "Beenden"
   },
   "runs_finishTitle": {
-    "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten"
+    "message": "Den Test weiterlaufen lassen, ohne in diesem Versuch erneut an einem Haltepunkt anzuhalten"
   },
   "runs_end": {
     "message": "Test beenden"
@@ -6648,10 +6779,34 @@
     "message": "Die Live-Ansicht startet…"
   },
   "runs_liveLost": {
-    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Wählen Sie wieder „Live ansehen“, sobald sie zurück ist."
+    "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
   },
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."
+  },
+  "runs_watch": {
+    "message": "Ansehen"
+  },
+  "runs_watchTitle": {
+    "message": "Die Seite des Tests zeigen, während er läuft, über seine Halte und seine nächsten Tests hinweg: Bei einem Halt gehen Ihre Klicks und Tasten an die Seite"
+  },
+  "runs_pauseWatch": {
+    "message": "Anhalten und ansehen"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Den Test vor seinem nächsten Aufruf anhalten und seine Seite zeigen"
+  },
+  "runs_watchOutdated": {
+    "message": "Aktualisieren Sie den Reporter, um einen laufenden Test anzusehen"
+  },
+  "runs_watchToUse": {
+    "message": "Zum Verwenden ansehen"
+  },
+  "runs_laneRunning": {
+    "message": "Läuft…"
+  },
+  "runs_laneAltLast": {
+    "message": "Die Seite des Tests, wie zuletzt gesehen"
   },
   "runs_pickAt": {
     "message": "Im Bild wählen"
@@ -6721,5 +6876,32 @@
   },
   "runs_copyRunPage": {
     "message": "Link zur Seite des Laufs kopieren"
+  },
+  "runs_pageAtStop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an die Piwi-Desktop-App auf diesem Rechner, die kein Teammitglied erreicht. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein, um einen Lauf dort zu teilen."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Die Live-Ansicht seines Projekts ist auf der Instanz ausgeschaltet. Ein Project admin schaltet sie unter Project → Settings → Live view ein."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Das globale Setup des Reporters hat ihn beim Start nicht registriert (wrapConfig fügt es hinzu, und es registriert einen Lauf, dessen Konfiguration den Reporter von Piwi nennt)."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er sendet seine Ergebnisse erst an seinem Ende (streaming: false) und hat daher keinen Live-Lauf auf der Instanz."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Die Instanz hat ihn beim Start nicht angemeldet (das globale Setup des Reporters hat sie nicht erreicht oder wurde abgewiesen: Seine Warnung nennt den Grund)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an keine Piwi-Instanz. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Der Piwi-Reporter hat seinen Workern keinen Schlüssel für die Live-Ansicht gegeben."
   }
 }

@@ -13,20 +13,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { detectProject } from './detect.js';
+import { playwrightVersionAtLeast } from '../internal/support/playwright-version.js';
 
 export const REPORTER_PACKAGE = '@piwitests/reporter';
 export const ADD_REPORTER_FLAG = '--add-reporter';
 
-/** First Playwright version whose CLI accepts `--add-reporter`. */
-const ADD_REPORTER_MIN = { major: 1, minor: 63 } as const;
-
-/** Whether the installed Playwright version accepts `--add-reporter`. */
+/** Whether the installed Playwright version accepts `--add-reporter` (1.63 and later). */
 export function playwrightSupportsAddReporter(version: string | null | undefined): boolean {
-  const match = version ? /^(\d+)\.(\d+)/.exec(version) : null;
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  return major > ADD_REPORTER_MIN.major || (major === ADD_REPORTER_MIN.major && minor >= ADD_REPORTER_MIN.minor);
+  return playwrightVersionAtLeast(version, '1.63');
 }
 
 /** Whether a config's source already wires in the Piwi reporter (import or entry). */

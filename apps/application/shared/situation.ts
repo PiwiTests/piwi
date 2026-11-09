@@ -175,9 +175,9 @@ function runList(ids: number[]): string {
 }
 
 /** What the newest execution did, in a run (`passed in run #62`). */
-function outcomeWords(status: string, retries: number): string {
+function outcomeWords(status: string, passedAfterFailure: boolean): string {
   if (isFailedStatus(status)) return 'failed';
-  if (status === 'passed') return retries > 0 ? 'passed on retry' : 'passed';
+  if (status === 'passed') return passedAfterFailure ? 'passed on retry' : 'passed';
   if (status === 'skipped') return 'was skipped';
   if (status === 'didnotrun') return 'did not run';
   if (status === 'interrupted') return 'was interrupted';
@@ -219,7 +219,7 @@ function latestLine(latest: LatestExecution, input: SituationInput, now: Date): 
   const failed = isFailedStatus(newest.status);
   if (newest.sameRun) {
     // "Not the latest: attempt 2 of this run passed"
-    const did = failed ? 'failed again' : outcomeWords(newest.status, 0);
+    const did = failed ? 'failed again' : outcomeWords(newest.status, false);
     line.push('text', `${lead}: attempt ${newest.retries + 1} of this run ${did}`);
   } else {
     const rel = relativeTimeAgo(newest.at, now);
@@ -231,7 +231,7 @@ function latestLine(latest: LatestExecution, input: SituationInput, now: Date): 
       const again = `failed again${anotherError === 'all' ? ' with another error' : ''}`;
       what = `${again} in ${failedAgainWhere(latest, newest.runId, anotherError)}`;
     } else {
-      what = `${outcomeWords(newest.status, newest.retries)} in run #${newest.runId}`;
+      what = `${outcomeWords(newest.status, newest.passedAfterFailure)} in run #${newest.runId}`;
     }
     line.push('text', `${lead}: ${what}${rel ? `, ${rel}` : ''}`);
   }

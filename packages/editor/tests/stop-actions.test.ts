@@ -50,6 +50,14 @@ const FIRST = [
   '});',
   '',
 ].join('\n');
+const PICKED = [
+  "import { test } from '@playwright/test';",
+  '',
+  "test('pays', async ({ page }) => {",
+  "  await page.getByText('Pay now').click();",
+  '});',
+  '',
+].join('\n');
 const ADMIN = [
   "import { test } from './fixtures';",
   '',
@@ -90,6 +98,7 @@ beforeAll(() => {
   write('tests/first.spec.ts', FIRST);
   write('tests/disk.spec.ts', FIRST);
   write('tests/admin.spec.ts', ADMIN);
+  write('tests/picked.spec.ts', PICKED);
   // What a check needs from the service's dist: the recorder's bundle and its catalogs.
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-stop-dist-'));
   fs.writeFileSync(path.join(dist, 'record-ide.js'), '// the recorder\n');
@@ -454,6 +463,58 @@ describe('code from a stop, with a client that writes it', () => {
       );
       expect(lines[second.line + second.code.split('\n').length]).toBe("  await page.goto('/cart');");
     } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: file } });
+      worker.socket.destroy();
+    }
+  });
+
+  test('places a pick and a recording at a stop on the stopped call, where the lines written above it moved it', async () => {
+    const { ref, channel, worker } = await stoppedWorker(svc, 'tests/picked.spec.ts', 4, true);
+    const file = uri('tests/picked.spec.ts');
+    const handoff = net.connect(channel.path);
+    try {
+      // A recording at this stop wrote two steps above the stopped call, as the client writes them.
+      await svc.client.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: file, languageId: 'typescript', version: 1, text: PICKED },
+      });
+      await svc.client.sendNotification('textDocument/didChange', {
+        textDocument: { uri: file, version: 2 },
+        contentChanges: [
+          {
+            range: { start: { line: 3, character: 0 }, end: { line: 3, character: 0 } },
+            text: "  await page.getByLabel('Email').fill('alice@example.com');\n  await page.getByLabel('Password').fill(process.env.E2E_PASSWORD ?? '');\n",
+          },
+        ],
+      });
+      // The pick names the run's line, 3, which holds the Email step now.
+      const picked = (await svc.client.sendRequest('piwi/applyPick', {
+        file: 'tests/picked.spec.ts',
+        line: 3,
+        locator: "getByRole('button', { name: 'Pay now' })",
+      })) as { uri: string; edit: { range: { start: { line: number } } } | null };
+      expect(picked.edit?.range.start.line).toBe(5);
+
+      // A second recording at the same stop goes above the stopped call too, under the first one's steps.
+      const requested = new Promise<{ line: number }>((resolve) => {
+        const listener = svc.client.onNotification('piwi/recordRequested', (params: { line: number }) => {
+          listener.dispose();
+          resolve(params);
+        });
+      });
+      handoff.write(
+        `${JSON.stringify({
+          type: 'attach',
+          token: channel.token,
+          file: path.join(dir, 'tests/picked.spec.ts'),
+          line: 4,
+          reason: 'breakpoint',
+          testIdAttribute: null,
+          baseURL: null,
+        })}\n`,
+      );
+      expect(await requested).toMatchObject({ uri: file, line: 5 });
+    } finally {
+      handoff.destroy();
       await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: file } });
       worker.socket.destroy();
     }

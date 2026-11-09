@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
@@ -172,7 +171,7 @@ describe('dedupeScoredGaps (F1)', () => {
 let db: ReturnType<typeof drizzle<typeof schema>>;
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'p' });
 });
 
@@ -700,5 +699,78 @@ describe('draftScenario does not leak another project’s test (F3)', () => {
     expect(draft!.text).not.toContain('SECRET');
     expect(draft!.text).not.toContain('secret/b.spec.ts');
     expect(draft!.nearestTest).toBeNull();
+  });
+});
+
+describe('draftScenario for a changed file', () => {
+  async function fileGap(key: string) {
+    await db.insert(schema.scenarioGaps).values({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      status: 'open',
+    });
+    const [gap] = await db
+      .select({ id: schema.scenarioGaps.id })
+      .from(schema.scenarioGaps)
+      .where(eq(schema.scenarioGaps.key, key));
+    return gap!.id;
+  }
+  async function reached(testCaseId: number, title: string, routeKey: string, page?: string) {
+    await db
+      .insert(schema.testCases)
+      .values({ id: testCaseId, projectId: 1, title, filePath: 'tests/orders.spec.ts' })
+      .onConflictDoNothing();
+    await db.insert(schema.graphNodes).values({ projectId: 1, kind: 'route', key: routeKey }).onConflictDoNothing();
+    await db.insert(schema.graphEdges).values([
+      {
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: routeKey,
+        kind: 'reaches',
+        lastSeenAt: new Date(),
+      },
+      ...(page
+        ? [
+            {
+              projectId: 1,
+              fromKind: 'page',
+              fromKey: page,
+              toKind: 'route',
+              toKey: routeKey,
+              kind: 'loads',
+              lastSeenAt: new Date(),
+            },
+          ]
+        : []),
+    ]);
+  }
+
+  test('starts from the route the file serves, with the test that reaches it', async () => {
+    await reached(1, 'edits an order', 'PATCH /api/orders/:id', '/orders/:id');
+    const draft = await gaps.draftScenario(db, 1, await fileGap('server/api/orders/[id].patch.ts'));
+    expect(draft!.nearestTest?.title).toBe('edits an order');
+    expect(draft!.text).toContain("await page.goto('/orders/:id');");
+    expect(draft!.text).not.toContain('No reached path');
+  });
+
+  test('a route no test reaches borrows the page and test of the nearest one under the same path', async () => {
+    await reached(1, 'shows an order', 'GET /api/orders/:id', '/orders/:id');
+    await reached(2, 'lists users', 'GET /api/users');
+    const draft = await gaps.draftScenario(db, 1, await fileGap('server/api/orders/[id].delete.ts'));
+    expect(draft!.nearestTest?.title).toBe('shows an order');
+    expect(draft!.text).toContain('Starts from route GET /api/orders/:id, the nearest one a test reaches.');
+    expect(draft!.text).toContain("await page.goto('/orders/:id');");
+  });
+
+  test('a file no convention maps keeps the draft with no path', async () => {
+    await reached(1, 'shows an order', 'GET /api/orders/:id', '/orders/:id');
+    const draft = await gaps.draftScenario(db, 1, await fileGap('src/lib/pricing.ts'));
+    expect(draft!.nearestTest).toBeNull();
+    expect(draft!.text).toContain('No reached path');
   });
 });

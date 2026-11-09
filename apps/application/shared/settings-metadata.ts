@@ -34,6 +34,12 @@ export type SettingsPageId =
   | 'auto-heal'
   | 'integrations'
   | 'ai'
+  | 'desktop'
+  | 'connect'
+  | 'capabilities'
+  | 'mcp'
+  | 'api'
+  | 'companion-tools'
   | 'about';
 
 export interface SettingFieldMeta {
@@ -48,15 +54,16 @@ export interface SettingFieldMeta {
 }
 
 /**
- * Settings splits into two jobs: running the instance, and tuning what Piwi
- * infers from your results, so infrastructure pages and analysis pages are
- * grouped apart.
+ * Settings splits into three jobs: running the instance, tuning what Piwi
+ * infers from your results, and connecting things to it (a suite, an agent, a
+ * script), so infrastructure, analysis and setup pages are grouped apart.
  */
-export type SettingsGroupId = 'instance' | 'analysis' | 'meta';
+export type SettingsGroupId = 'instance' | 'analysis' | 'setup' | 'meta';
 
 export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   { id: 'instance', label: 'Instance' },
   { id: 'analysis', label: 'Analysis' },
+  { id: 'setup', label: 'Setup' },
   { id: 'meta', label: '' },
 ];
 
@@ -78,6 +85,8 @@ export interface SettingsPageMeta {
    * single-user with auth off — see `useSettingsNav` / `useIsDesktop`.
    */
   authOnly?: boolean;
+  /** Pages of the desktop build alone, hidden everywhere else. */
+  desktopOnly?: boolean;
   /** Fields on this page (used to aggregate env vars + drive tooltips). */
   fields: SettingFieldMeta[];
   /** Topic key for a page-level intro hint shown under the nav. */
@@ -92,6 +101,18 @@ export interface SettingsPageMeta {
 
 export const SETTINGS_PAGES: SettingsPageMeta[] = [
   {
+    // The desktop app's own wiring: its address and token, Piwi Picker
+    // pairing, where its data lives and its background service.
+    id: 'desktop',
+    label: 'Desktop app',
+    icon: 'i-lucide-monitor',
+    to: '/settings/desktop',
+    group: 'instance',
+    permission: 'settings:manage',
+    desktopOnly: true,
+    fields: [],
+  },
+  {
     id: 'account',
     label: 'Account',
     icon: 'i-lucide-user-round',
@@ -103,6 +124,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'account.email', label: 'Email address', help: 'account.email' },
       { id: 'account.connected-accounts', label: 'Connected accounts', help: 'account.connected-accounts' },
       { id: 'account.password', label: 'Password', help: 'account.password' },
+      { id: 'account.connected-apps', label: 'Connected apps', help: 'settings.connected-apps' },
       { id: 'account.api-keys', label: 'API keys', help: 'settings.api-keys' },
       { id: 'account.auth-toggle', label: 'Authentication', help: 'settings.auth-toggle', envOnly: true },
     ],
@@ -263,17 +285,61 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     permission: 'settings:manage',
     capability: 'ai',
     fields: [
-      { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
-      { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
-      { id: 'ai.embedding', label: 'Embedding model', help: 'settings.embedding-model' },
+      { id: 'ai.diagnosis', label: 'Provider', help: 'settings.ai-provider' },
+      { id: 'ai.research', label: 'Two-stage diagnosis', help: 'settings.ai-research' },
+      { id: 'ai.embedding', label: 'Semantic clustering', help: 'settings.embedding-model' },
       { id: 'ai.assistant', label: 'Assistant model', help: 'settings.ai-assistant' },
       { id: 'ai.auto-diagnose', label: 'Auto-diagnose', help: 'settings.auto-diagnose' },
       { id: 'ai.notifications', label: 'Diagnosis notifications', help: 'settings.ai-notifications' },
       { id: 'ai.context-limits', label: 'Diagnosis context limits', help: 'settings.ai-limits' },
       { id: 'ai.instructions', label: 'Global analysis instructions', help: 'settings.ai-instructions' },
       { id: 'ai.scm-token', label: 'Repository access token', help: 'project.scm-token' },
-      { id: 'ai.privacy', label: 'Privacy notice', help: 'settings.privacy' },
+      { id: 'ai.privacy', label: 'What the model receives', help: 'settings.privacy' },
     ],
+  },
+  {
+    // The connect wizard, for anyone who reports a suite: its API-key step
+    // creates a key with the viewer's own access.
+    id: 'connect',
+    label: 'Connect a suite',
+    icon: 'i-lucide-cable',
+    to: '/settings/connect',
+    group: 'setup',
+    fields: [],
+  },
+  {
+    id: 'capabilities',
+    label: 'Capabilities',
+    icon: 'i-lucide-toggle-right',
+    to: '/settings/capabilities',
+    group: 'setup',
+    permission: 'settings:manage',
+    fields: [],
+  },
+  {
+    id: 'mcp',
+    label: 'MCP server',
+    icon: 'i-lucide-bot',
+    to: '/settings/mcp',
+    group: 'setup',
+    capability: 'mcp',
+    fields: [],
+  },
+  {
+    id: 'api',
+    label: 'API reference',
+    icon: 'i-lucide-book-open',
+    to: '/settings/api',
+    group: 'setup',
+    fields: [],
+  },
+  {
+    id: 'companion-tools',
+    label: 'Companion tools',
+    icon: 'i-lucide-blocks',
+    to: '/settings/companion-tools',
+    group: 'setup',
+    fields: [],
   },
   {
     id: 'about',
@@ -340,7 +406,10 @@ export interface SettingsNavContext {
    * entirely: every visitor is a virtual administrator then.
    */
   canSeeAdmin: boolean;
-  /** Desktop build: single-user with auth off, so `authOnly` pages are hidden. */
+  /**
+   * Desktop build: single-user with auth off, so `authOnly` pages are hidden;
+   * `desktopOnly` pages show in it alone.
+   */
   isDesktop: boolean;
   /** Pages currently pinned by env, which get a trailing lock badge. */
   envManaged?: Partial<Record<SettingsPageId, boolean>>;
@@ -366,6 +435,7 @@ export function buildSettingsNavSections(ctx: SettingsNavContext): SettingsNavIt
     (page) =>
       (!page.permission || ctx.canSeeAdmin) &&
       !(ctx.isDesktop && page.authOnly) &&
+      !(!ctx.isDesktop && page.desktopOnly) &&
       !(page.capability && ctx.declinedCapabilities?.has(page.capability)),
   );
 

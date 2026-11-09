@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { extractStackFrames } from '@piwitests/core/error-parse';
 import type { TestSourceFrame } from '@piwitests/core/wire';
+import { relativeTestPath } from './test-paths.js';
 
 /**
  * Read a snippet of source code surrounding the declaration line, optionally
@@ -39,6 +40,24 @@ export function readSourceSnippet(
   }
 }
 
+/** The lines of a source file, or null when it cannot be read. */
+export type SourceLines = (file: string) => readonly string[] | null;
+
+/** A reader of source files' lines, each file read once. */
+export function sourceLineReader(): SourceLines {
+  const files = new Map<string, string[] | null>();
+  return (file) => {
+    if (!files.has(file)) {
+      try {
+        files.set(file, fs.readFileSync(file, 'utf-8').split(/\r?\n/));
+      } catch {
+        files.set(file, null);
+      }
+    }
+    return files.get(file)!;
+  };
+}
+
 /** How much of an error text the stack-frame scans read: the frames follow the message. */
 const MAX_SCANNED_ERROR_CHARS = 64 * 1024;
 
@@ -57,10 +76,13 @@ function stackFrames(errorText: string): Array<{ file: string; line: number }> {
  * "the interesting part is upper" (a failure inside a helper the test called)
  * is visible, not just the test line that invoked it.
  *
- * Frames in `node_modules` or outside `projectRoot` are dropped (Playwright /
- * library internals), duplicates are collapsed, and the list is capped. When the
- * stack has no in-project frame at all, falls back to the test file's failing
- * line so there is always at least one frame for a failure.
+ * A relative frame is read from `projectRoot`, the folder the error text's
+ * paths are relative to, and each frame is named relative to it with POSIX
+ * separators, as the test's own file is (`relativeTestPath`). Frames in
+ * `node_modules` or outside `projectRoot` are dropped (Playwright / library
+ * internals), duplicates are collapsed, and the list is capped. When the stack
+ * has no in-project frame at all, falls back to the test file's failing line so
+ * there is always at least one frame for a failure.
  */
 export function collectSourceFrames(
   errorText: string | null | undefined,
@@ -88,7 +110,7 @@ export function collectSourceFrames(
       if (picked.length >= maxFrames) break;
       let abs: string;
       try {
-        abs = path.resolve(frame.file);
+        abs = path.resolve(projectRoot, frame.file);
       } catch {
         continue;
       }
@@ -102,14 +124,18 @@ export function collectSourceFrames(
   // or a failure so deep the test frame fell past the cap).
   const absTest = path.resolve(testFile);
   if (!picked.some((p) => p.absFile === absTest)) {
-    add(absTest, extractFailingLine(errorText, testFile, declLine));
+    add(absTest, extractFailingLine(errorText, testFile, declLine, projectRoot));
   }
 
   const frames: TestSourceFrame[] = [];
   for (const p of picked.slice(0, maxFrames)) {
     const snippet = readSourceSnippet(p.absFile, p.line, context, p.line);
     if (snippet) {
-      frames.push({ file: path.relative(projectRoot, p.absFile) || path.basename(p.absFile), line: p.line, snippet });
+      frames.push({
+        file: relativeTestPath(p.absFile, projectRoot) || path.basename(p.absFile),
+        line: p.line,
+        snippet,
+      });
     }
   }
   return frames;
@@ -117,18 +143,20 @@ export function collectSourceFrames(
 
 /**
  * Extract the line number of the first stack frame inside `testFile` from an
- * error's stack trace. Falls back to `declarationLine`.
+ * error's stack trace, a relative frame read from `base`. Falls back to
+ * `declarationLine`.
  */
 export function extractFailingLine(
   errorText: string | null | undefined,
   testFile: string,
   declarationLine: number,
+  base: string = process.cwd(),
 ): number {
   if (!errorText) return declarationLine;
   const expectedFile = path.resolve(testFile);
   for (const frame of stackFrames(errorText)) {
     try {
-      if (path.resolve(frame.file) === expectedFile && !isNaN(frame.line)) return frame.line;
+      if (path.resolve(base, frame.file) === expectedFile && !isNaN(frame.line)) return frame.line;
     } catch {
       /* skip unresolvable paths */
     }

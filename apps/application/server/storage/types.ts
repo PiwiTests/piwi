@@ -2,6 +2,8 @@
  * Storage abstraction layer types
  */
 
+import type { Readable } from 'node:stream';
+
 export interface StorageAdapter {
   /**
    * Write a file to storage
@@ -17,6 +19,21 @@ export interface StorageAdapter {
    * @returns Promise that resolves with the file content as Buffer
    */
   readFile(path: string): Promise<Buffer>;
+
+  /**
+   * Read a file from storage, or null when no file is stored there
+   * @param path - Relative path of the file to read
+   * @returns Promise that resolves with the file content, or null if the file does not exist; rejects on any other failure
+   */
+  readFileIfExists(path: string): Promise<Buffer | null>;
+
+  /**
+   * Stream a file from storage, whole or one range of it
+   * @param path - Relative path of the file to read
+   * @param range - The bytes to read, both ends included; the whole file when absent
+   * @returns Promise that resolves with the content as a stream, once the file is open
+   */
+  readStream(path: string, range?: { start: number; end: number }): Promise<Readable>;
 
   /**
    * Check if a file exists

@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
@@ -28,7 +27,7 @@ const {
   connectionByWebhookToken,
 } = await import('../../server/utils/integrations/connections');
 const { hashToken } = await import('../../server/utils/token-hash');
-const { detectProviderWithConnections } = await import('../../server/utils/integrations/link-resolve');
+const { detectProviderWithConnection } = await import('../../server/utils/integrations/link-resolve');
 
 /** A minimal `fetch` Response carrying JSON, or a non-2xx status. */
 function jsonResponse(body: unknown, ok = true, status = 200) {
@@ -172,9 +171,7 @@ describe('connections and link resolution', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'piwi-integrations-'));
     client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
     db = drizzle(client, { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     dbc = db as unknown as DbClient;
   });
 
@@ -341,12 +338,12 @@ describe('connections and link resolution', () => {
     expect(await listConnections(dbc)).toHaveLength(0);
   });
 
-  test('detectProviderWithConnections recognizes a self-hosted Jira once connected', async () => {
+  test('detectProviderWithConnection recognizes a self-hosted Jira through the connection the project is bound to', async () => {
     const url = 'https://jira.company.com/browse/XYZ-99';
+    const generic = { provider: 'generic', connectionId: null, key: null };
 
     // Without a connection, the self-hosted host stays generic.
-    const before = await detectProviderWithConnections(dbc, url);
-    expect(before).toEqual({ provider: 'generic', connectionId: null, key: null });
+    expect(await detectProviderWithConnection(dbc, url, null)).toEqual(generic);
 
     const conn = await createConnection(dbc, {
       provider: 'jira',
@@ -354,9 +351,21 @@ describe('connections and link resolution', () => {
       baseUrl: 'https://jira.company.com',
       credentials: { email: 'a@b.io', apiToken: 't' },
     });
+    const other = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Another site',
+      baseUrl: 'https://other.atlassian.net',
+      credentials: { email: 'a@b.io', apiToken: 't' },
+    });
 
-    const after = await detectProviderWithConnections(dbc, url);
-    expect(after).toEqual({ provider: 'jira', connectionId: conn.id, key: 'XYZ-99' });
+    // Connected, it is still generic for a project bound to none or to another site.
+    expect(await detectProviderWithConnection(dbc, url, null)).toEqual(generic);
+    expect(await detectProviderWithConnection(dbc, url, other.id)).toEqual(generic);
+    expect(await detectProviderWithConnection(dbc, url, conn.id)).toEqual({
+      provider: 'jira',
+      connectionId: conn.id,
+      key: 'XYZ-99',
+    });
   });
 
   test('ensureEnvManagedConnections updates the base URL in place', async () => {

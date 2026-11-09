@@ -7,7 +7,7 @@ import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
 import { localGitProvider, type LocalGitProvider } from './local-git';
 import { projectRepositoryFor } from './project-repository';
-import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
+import { canonicalScmHostname, detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
 /** Returns the SCM provider name for a repository URL, or null if unsupported. */
@@ -43,7 +43,9 @@ export function scmProviderForUrl(
   token: string | null,
 ): GitHubProvider | GitLabProvider | BitbucketProvider | null {
   try {
-    const { hostname, pathname } = new URL(repositoryUrl);
+    const url = new URL(repositoryUrl);
+    const hostname = canonicalScmHostname(url.hostname);
+    const pathname = url.pathname;
     const repoPath = pathname.replace(/^\//, '').replace(/\/$/, '');
     if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
       return new GitHubProvider(repoPath, token);
@@ -79,9 +81,11 @@ export function scmProviderForUrl(
  * (`project-repository.ts`): `repositoryUrl`, which usually comes from a run's
  * metadata, must name it, or there is no provider.
  *
- * On the desktop app with no token, a project linked to a clone of the
- * repository reads its history with local git in that folder, and asks the host
- * only for what the clone does not have (see {@link localGitProvider}).
+ * On the desktop app, a project linked to a clone of the repository reads its
+ * history with local git in that folder, and asks the host only for what the
+ * clone does not have (see {@link localGitProvider}): with no token, or for a
+ * host Piwi has no client for, where the clone is the only source. A token on a
+ * host Piwi has a client for always goes to that host.
  */
 export async function createScmProvider(
   repositoryUrl: string,
@@ -92,10 +96,8 @@ export async function createScmProvider(
   if (!repository) return null;
   const token = await resolveScmToken(db, projectId);
   const hosted = scmProviderForUrl(repository, token);
-  if (hosted && !token) {
-    return (await localGitProvider(projectId, repository, hosted)) ?? hosted;
-  }
-  return hosted;
+  if (hosted && token) return hosted;
+  return (await localGitProvider(projectId, repository, hosted)) ?? hosted;
 }
 
 /**

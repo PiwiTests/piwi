@@ -24,6 +24,7 @@ import {
 } from '#shared/handlers/scenario-gaps';
 import { filePageTarget, fileRouteTarget, pageKeyMatchesTarget, routeKeyMatchesTarget } from '#shared/graph';
 import { gapClassSeverity, worstGapClass } from '#shared/gap-classes';
+import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import type { DrizzleDB } from '#shared/handlers/db';
 
 /** The maximum traversal depth the endpoint and tool allow. */
@@ -116,11 +117,19 @@ export async function getFeatureGraph(
     frontier = next;
   }
 
-  // Gap class per node: the class of the highest-scoring open gap on the node.
-  const gapRows = await db
-    .select({ key: scenarioGaps.key, class: scenarioGaps.class, score: scenarioGaps.score })
-    .from(scenarioGaps)
-    .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
+  // Gap class per node: the class of the highest-scoring open gap on the node, a muted detector's left out.
+  const mutedDetectors = await loadMutedDetectors(db, projectId);
+  const gapRows = (
+    await db
+      .select({
+        key: scenarioGaps.key,
+        class: scenarioGaps.class,
+        score: scenarioGaps.score,
+        detector: scenarioGaps.detector,
+      })
+      .from(scenarioGaps)
+      .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')))
+  ).filter((g) => !mutedDetectors.has(g.detector));
   const classByNode = new Map<string, { class: string; score: number }>();
   for (const g of gapRows) {
     const subject = subjectFromGapKey(g.key);
@@ -288,11 +297,15 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
 
   // Open gaps, each folded onto the one feature the gap list files it under — or
   // onto the feature itself for a gap keyed on the feature node — else onto
-  // "ungrouped", or "shared" for a hub.
-  const gapRows = await db
-    .select({ key: scenarioGaps.key, class: scenarioGaps.class })
-    .from(scenarioGaps)
-    .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
+  // "ungrouped", or "shared" for a hub. A muted detector's gaps neither count nor
+  // color a feature.
+  const muted = await loadMutedDetectors(db, projectId);
+  const gapRows = (
+    await db
+      .select({ key: scenarioGaps.key, class: scenarioGaps.class, detector: scenarioGaps.detector })
+      .from(scenarioGaps)
+      .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')))
+  ).filter((g) => !muted.has(g.detector));
   const ownerOf = await loadGapFeatureOwners(
     db,
     projectId,
@@ -544,23 +557,26 @@ export async function getFileTestMap(db: DrizzleDB, projectId: number, filePath:
     gapKeys.add(n.key);
   }
   for (const nid of pageOf.keys()) gapKeys.add(nid.replace('\x00', ':'));
-  const gapRows = await db
-    .select({
-      id: scenarioGaps.id,
-      key: scenarioGaps.key,
-      detector: scenarioGaps.detector,
-      class: scenarioGaps.class,
-      title: scenarioGaps.title,
-      score: scenarioGaps.score,
-    })
-    .from(scenarioGaps)
-    .where(
-      and(
-        eq(scenarioGaps.projectId, projectId),
-        eq(scenarioGaps.status, 'open'),
-        or(inArray(scenarioGaps.key, [...gapKeys]), like(scenarioGaps.key, `%${base}`)),
-      ),
-    );
+  const mutedDetectors = await loadMutedDetectors(db, projectId);
+  const gapRows = (
+    await db
+      .select({
+        id: scenarioGaps.id,
+        key: scenarioGaps.key,
+        detector: scenarioGaps.detector,
+        class: scenarioGaps.class,
+        title: scenarioGaps.title,
+        score: scenarioGaps.score,
+      })
+      .from(scenarioGaps)
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.status, 'open'),
+          or(inArray(scenarioGaps.key, [...gapKeys]), like(scenarioGaps.key, `%${base}`)),
+        ),
+      )
+  ).filter((g) => !mutedDetectors.has(g.detector));
   const fileSubjects = itemsOfFile(
     gapRows.map((g) => subjectFromGapKey(g.key)).flatMap((s) => (s.kind === 'file' ? [{ ...s, path: s.key }] : [])),
     path,

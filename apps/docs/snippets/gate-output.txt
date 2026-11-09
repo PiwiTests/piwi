@@ -1,0 +1,6 @@
+✖ Piwi gate failed — checkout run #412
+  248 tests, 3 failed, 1 new, 0 newly flaky, 2 flaky
+  1 failing test is quarantined and did not count
+  ✖ 1 required @critical test failed: pays by card
+  ✖ 1 new regression (limit 0)
+  https://piwi.example.com/test-runs/412

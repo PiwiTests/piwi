@@ -97,7 +97,7 @@ export function waitForStepReady(): Promise<void> {
 
 /** The locator the spec would write for a step, or null when none was recorded. */
 export function locatorFor(step: RecordedStep): string | null {
-  return stepLocator(step.target, { locators: 'stable' });
+  return stepLocator(step.target, { locators: 'stable' }, step);
 }
 
 /**

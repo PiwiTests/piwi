@@ -10,6 +10,7 @@
  * Event payload shapes are identical to the server SSE messages so the
  * subscribing components can share their handling code between modes.
  */
+import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 
 const CHANNEL_NAME = 'piwi-demo-run-events';
 
@@ -17,6 +18,9 @@ const CHANNEL_NAME = 'piwi-demo-run-events';
 export interface DemoRunEvent {
   type:
     | 'test-begin'
+    | 'test-stuck'
+    | 'test-stopped'
+    | 'test-resumed'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'
@@ -62,7 +66,11 @@ export function publishDemoRunEvent(runId: number, event: DemoRunEvent): void {
   getPublishChannel().postMessage({ scope: 'run', runId, event } satisfies DemoEventMessage);
 }
 
+/** The global events after which the analytics test filters memoized over the run's project are stale. */
+const STALE_TEST_FILTER_EVENTS = new Set<DemoGlobalEvent['type']>(['run-finished', 'run-submitted', 'rollup-updated']);
+
 export function publishDemoGlobalEvent(event: DemoGlobalEvent): void {
+  if (STALE_TEST_FILTER_EVENTS.has(event.type)) dropProjectTestFilters(event.projectId);
   getPublishChannel().postMessage({ scope: 'global', event } satisfies DemoEventMessage);
 }
 

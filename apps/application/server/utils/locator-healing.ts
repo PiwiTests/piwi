@@ -144,6 +144,9 @@ function buildHealingResult(
  */
 const DIFF_RENAME_SCORE = 95;
 
+/** Snapshot rows per multi-row upsert in `upsertLocatorSnapshots`. */
+const SNAPSHOT_UPSERT_CHUNK = 500;
+
 /**
  * The run's stored `likely` break whose chain is the failing chain and whose
  * call sites include the failing one (any, when the error names no call site),
@@ -855,11 +858,12 @@ export async function upsertLocatorSnapshots(
     });
   }
 
+  // A run's batch can hold thousands of call sites: written in slices, under the bound-parameter limit of one statement.
   const rows = [...rowByKey.values()];
-  if (rows.length > 0) {
+  for (let i = 0; i < rows.length; i += SNAPSHOT_UPSERT_CHUNK) {
     await db
       .insert(locatorSnapshots)
-      .values(rows)
+      .values(rows.slice(i, i + SNAPSHOT_UPSERT_CHUNK))
       .onConflictDoUpdate({
         target: [locatorSnapshots.testCaseId, locatorSnapshots.location],
         set: {

@@ -1,12 +1,11 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { bugReportFromFiles, isBugReportArchive } from '@piwitests/core/bug-report';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ExportAssetReader } from '../../shared/export/types';
 import { parseZipSync } from '../utils/zip';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the handler.
@@ -24,8 +23,7 @@ const ERROR =
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
-  await migrate(db, { migrationsFolder });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([{ id: 1, name: 'Shop' }]);
   await db.insert(schema.testRuns).values([{ id: 1, projectId: 1, status: 'failed', startTime: new Date() }]);
@@ -122,6 +120,18 @@ describe('getExecutionBugReport', () => {
       notReplayed: 1,
       failedStep: 3,
     });
+  });
+
+  test('a passing execution’s only screenshot is not the failure screenshot', async () => {
+    await db
+      .insert(schema.testRunsCases)
+      .values([{ id: 8, testRunId: 1, testCaseId: 1, repeatEachIndex: 1, status: 'passed' }]);
+    await db
+      .insert(schema.files)
+      .values([
+        { testRunsCaseId: 8, testRunId: 1, type: 'attachment', subtype: 'Step 1', label: 'image/png', path: 'p/8.png' },
+      ]);
+    expect((await getExecutionBugReport(db as never, 8))!.screenshotPath).toBeNull();
   });
 
   test('answers null for an execution that does not exist', async () => {

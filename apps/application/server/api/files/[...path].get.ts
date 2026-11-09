@@ -7,17 +7,21 @@ import {
 } from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { resolveStoredTrace } from '../../utils/trace-reconstruct';
+import { traceManifestPath } from '../../utils/trace-manifest';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
+import { storedFileVisible } from '../../utils/stored-file-visibility';
 import { etagMatches } from '../../utils/json-etag';
+import { parseByteRange } from '../../utils/byte-range';
+import { escapesStorageRoot } from '../../utils/sanitize-filename';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Files'],
     summary: 'Download a stored file',
     description:
-      'Serves stored files including test reports, trace archives, and attachments. Supports trace ZIP reconstruction from slim blobs and gzip decompression for report archives.',
+      'Serves stored files including test reports, trace archives, and attachments. Supports trace ZIP reconstruction from slim blobs and gzip decompression for report archives. A file served as stored answers a single `Range` with 206.',
     parameters: [
       { name: 'path', in: 'path', required: true, schema: { type: 'string' } },
       {
@@ -65,7 +69,7 @@ export default eventHandler(async (event) => {
   }
 
   // Security: Prevent path traversal
-  if (path.includes('..') || path.startsWith('/')) {
+  if (escapesStorageRoot(path)) {
     throw apiError({
       statusCode: 403,
       message: 'Invalid file path',
@@ -77,7 +81,11 @@ export default eventHandler(async (event) => {
   const projectMatch = path.match(/^project-(\d+)\//);
   const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
   if (projectMatch) {
-    await requireProjectAccess(event, Number(projectMatch[1]));
+    const user = await requireProjectAccess(event, Number(projectMatch[1]));
+    // Another person's private run's files read as missing.
+    if (!(await storedFileVisible(await getDatabase(), Number(projectMatch[1]), path, user.id))) {
+      throw apiError({ statusCode: 404, message: 'File not found' });
+    }
   } else if (bugReportMatch) {
     await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');
   } else {
@@ -225,6 +233,31 @@ export default eventHandler(async (event) => {
     setResponseHeader(event, 'Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
   }
 
+  /**
+   * Stream a stored file as it is, never holding it whole: the bytes of a
+   * single `Range` with 206, 416 for a range past its end, the whole file
+   * otherwise (and for a request with `If-Range`, since no validator is sent).
+   */
+  async function streamStored(storedPath: string) {
+    const size = (await storage.fileSize(storedPath)) ?? 0;
+    setResponseHeader(event, 'Accept-Ranges', 'bytes');
+    const range = getRequestHeader(event, 'if-range') ? null : parseByteRange(getRequestHeader(event, 'range'), size);
+    if (range === 'unsatisfiable') {
+      setResponseHeader(event, 'Content-Range', `bytes */${size}`);
+      setResponseStatus(event, 416);
+      return null;
+    }
+    if (range) {
+      setResponseStatus(event, 206);
+      setResponseHeader(event, 'Content-Range', `bytes ${range.start}-${range.end}/${size}`);
+    }
+    setResponseHeader(event, 'Content-Length', range ? range.end - range.start + 1 : size);
+    const stream = await storage.readStream(storedPath, range ?? undefined);
+    // A client that goes away (a video player seeking elsewhere) releases the file at once.
+    event.node.res.once('close', () => stream.destroy());
+    return sendStream(event, stream);
+  }
+
   // 1. Try exact path
   if (await storage.exists(path)) {
     const ext = extname(path).toLowerCase();
@@ -238,10 +271,9 @@ export default eventHandler(async (event) => {
       }
     }
 
-    const fileContent = await storage.readFile(path);
-
     // Slim trace blob: reconstruct full ZIP from shared resource pool
     if (ext === '.zip' && path.includes('/blobs/')) {
+      const fileContent = await storage.readFile(path);
       let fullZip: Buffer;
       try {
         fullZip = await resolveStoredTrace(storage, path, fileContent);
@@ -252,12 +284,14 @@ export default eventHandler(async (event) => {
         setResponseHeader(event, 'Cache-Control', 'no-store');
         throw apiError({ statusCode: 503, message: 'The trace could not be read from storage. Try again.' });
       }
-      if (fullZip !== fileContent) {
-        setResponseHeader(event, 'Content-Type', 'application/zip');
-        setResponseHeader(event, 'Content-Length', fullZip.length);
-        return fullZip;
+      if (fullZip === fileContent && (await storage.exists(traceManifestPath(path)))) {
+        // A slim blob whose manifest cannot be parsed goes out as stored, never cached as the trace.
+        removeResponseHeader(event, 'ETag');
+        setResponseHeader(event, 'Cache-Control', 'no-store');
       }
-      // Not a slim blob, or it could not be parsed — fall through to serve it as stored
+      setResponseHeader(event, 'Content-Type', 'application/zip');
+      setResponseHeader(event, 'Content-Length', fullZip.length);
+      return fullZip;
     }
 
     const contentType = resolveContentType(ext);
@@ -266,7 +300,7 @@ export default eventHandler(async (event) => {
     if (wantCompressed && COMPRESSIBLE_IMAGE_TYPES.has(contentType)) {
       try {
         const { default: sharp } = await import('sharp');
-        const compressed = await sharp(fileContent)
+        const compressed = await sharp(await storage.readFile(path))
           .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 90 })
           .toBuffer();
@@ -280,14 +314,13 @@ export default eventHandler(async (event) => {
     }
 
     setResponseHeader(event, 'Content-Type', contentType);
-    setResponseHeader(event, 'Content-Length', fileContent.length);
     applyInlineDisposition(contentType);
     if (contentType === 'text/html') {
-      return prepareHtmlResponse(fileContent);
+      return prepareHtmlResponse(await storage.readFile(path));
     } else if (contentType === 'image/svg+xml') {
       applySvgCsp();
     }
-    return fileContent;
+    return streamStored(path);
   }
 
   // 2. Try path + /index.html (directory without explicit index.html)

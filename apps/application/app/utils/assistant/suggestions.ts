@@ -26,9 +26,9 @@ export const ASSISTANT_PAGE_SUGGESTIONS: Readonly<Record<string, readonly string
   '/failure-clusters/[id]': ['What is the likely cause of this failure?', 'How do I fix it?'],
   '/test-cases/[id]': ['How stable is this test?', 'When did this test start failing?'],
   '/analytics': ['How has the pass rate moved this month?'],
-  '/setup': ['What should I set up next?'],
+  '/settings/capabilities': ['What should I set up next?'],
   '/settings/ai': ['Which model answers my questions?'],
-  '/mcp': ['How do I connect a coding agent?'],
+  '/settings/mcp': ['How do I connect a coding agent?'],
 };
 
 /**

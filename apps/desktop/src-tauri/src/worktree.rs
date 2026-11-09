@@ -31,7 +31,7 @@ use crate::node_path;
 use crate::repro::local_get_json;
 use crate::runner::{
     linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LinkRecord, LocalRuns,
-    RunEventPayload, RUN_EVENT,
+    RunEventPayload, COLOR_ENV, RUN_EVENT,
 };
 
 /// A bisect progress event carried on a `piwi:local-run` event of kind `bisect`.
@@ -319,20 +319,36 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
     root.join(project_id).join(format!("lab-{request_id}.json"))
 }
 
-/// The environment a reproduction, a bisect step and `piwi flake` run with:
-/// this app's server and token, which win over a dashboard named in the user's
-/// environment or a `.env` in the worktree, so a run of an old commit reports
-/// to this app only, and plain output for the tray.
-pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> {
+/// The environment a reproduction, a bisect step and `piwi flake` run with, so
+/// a run of an old commit reports to this app only, and colored output for
+/// the tray ([`COLOR_ENV`]). This app's address and token win over a dashboard
+/// named in the user's environment or a `.env` in the worktree.
+/// `PIWI_DESKTOP_APP=prefer`, with the path of this app's discovery file
+/// (`discovery`), has a reporter or a `piwi` that knows it take the address and
+/// the token together from the file, before a server the Playwright config
+/// names, outside CI. A reporter that predates `prefer` pairs a server its
+/// config names with the token.
+pub(crate) fn flake_lab_env(
+    server: &ServerInfo,
+    discovery: Option<&Path>,
+) -> Vec<(&'static str, String)> {
     vec![
         (
             "PIWI_DASHBOARD_URL",
             format!("http://127.0.0.1:{}", server.port),
         ),
         ("PIWI_API_KEY", server.token.clone()),
-        ("NO_COLOR", "1".into()),
-        ("FORCE_COLOR", "0".into()),
+        ("PIWI_DESKTOP_APP", "prefer".into()),
+        (
+            "PIWI_DESKTOP_CONFIG",
+            discovery
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ),
     ]
+    .into_iter()
+    .chain(COLOR_ENV.map(|(key, value)| (key, value.to_string())))
+    .collect()
 }
 
 /// The environment a reproduction, a bisect step and `piwi flake` run with
@@ -340,13 +356,12 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
 /// (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`), so its window and Piwi Picker can
 /// follow, pause and step it. `attended`: whether a person attends the run (a
 /// reproduction), else its failures go on at once (a bisect, a lab).
-async fn lab_env_with_hub(
-    app: &AppHandle,
-    server: &ServerInfo,
-    id: u32,
-    attended: bool,
-) -> Vec<(&'static str, String)> {
-    let mut env = flake_lab_env(server);
+async fn lab_env_with_hub(app: &AppHandle, id: u32, attended: bool) -> Vec<(&'static str, String)> {
+    let discovery = app.try_state::<crate::DiscoveryFile>();
+    let mut env = flake_lab_env(
+        &server_info(app),
+        discovery.as_ref().map(|file| file.0.as_path()),
+    );
     env.extend(crate::runner::bundled_hub_env(app, id, attended).await);
     env
 }
@@ -457,7 +472,7 @@ pub(crate) fn resolve_tool_in(dirs: &[PathBuf], candidates: &[String]) -> Option
 
 /// The directories searched for a user tool: `PATH`, then the well-known install
 /// locations a GUI app on macOS does not inherit `PATH` for.
-fn tool_search_dirs(app: &AppHandle) -> Vec<PathBuf> {
+pub(crate) fn tool_search_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
@@ -550,7 +565,7 @@ pub(crate) fn discard_leftover_worktrees(app_data_dir: &Path) {
 pub(crate) fn kill_child_tree(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = console_command("taskkill")
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .output();
     }
@@ -572,18 +587,18 @@ pub(crate) fn perform_cleanup(cleanup: &Cleanup, cleaned: &AtomicBool) {
         return;
     }
     if cleanup.bisect {
-        let _ = Command::new(&cleanup.git)
+        let _ = console_command(&cleanup.git)
             .args(["bisect", "reset"])
             .current_dir(&cleanup.worktree)
             .output();
     }
-    let _ = Command::new(&cleanup.git)
+    let _ = console_command(&cleanup.git)
         .arg("-C")
         .arg(&cleanup.folder)
         .args(["worktree", "remove", "--force"])
         .arg(&cleanup.worktree)
         .output();
-    let _ = Command::new(&cleanup.git)
+    let _ = console_command(&cleanup.git)
         .arg("-C")
         .arg(&cleanup.folder)
         .args(["worktree", "prune"])
@@ -595,7 +610,7 @@ pub(crate) fn perform_cleanup(cleanup: &Cleanup, cleaned: &AtomicBool) {
 /// Run a git subcommand and capture its combined stdout+stderr; `Err` carries the
 /// output when git exits non-zero.
 fn git_capture(git: &Path, dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(git)
+    let out = console_command(git)
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -615,7 +630,7 @@ fn git_capture(git: &Path, dir: &Path, args: &[&str]) -> Result<String, String> 
 
 /// Whether a commit is known to the repository at `folder`.
 fn commit_exists(git: &Path, folder: &Path, sha: &str) -> bool {
-    Command::new(git)
+    console_command(git)
         .arg("-C")
         .arg(folder)
         .args(["cat-file", "-e", &format!("{sha}^{{commit}}")])
@@ -636,12 +651,88 @@ fn emit_line(app: &AppHandle, id: u32, kind: &'static str, text: impl Into<Strin
 
 // ── Install / browser / test phases (streaming) ───────────────────────────────
 
-/// Symlink (or junction on Windows) the linked folder's `node_modules` into the
-/// worktree, the cheap path when the lockfile is unchanged.
+/// A command for a console program (git, a package manager, `taskkill`) that opens no console window: the app is a
+/// Windows GUI program, from which each console program would otherwise open one, and closing that window ends it.
+fn console_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+/// The `PATH` a command run in `folder` gets: each `node_modules/.bin` from `folder` up to the root, nearest
+/// first, as npm puts them before a script, then `dirs`, the directories the shell searches for a user tool. A
+/// `webServer` command then finds `vite`, `next` or `npm`, and a package manager's `#!/usr/bin/env node` finds
+/// `node`. A login shell's own additions (a version manager's shims) are not read. `None` when no directory can
+/// be joined into one.
+pub(crate) fn run_path(folder: &Path, dirs: &[PathBuf]) -> Option<String> {
+    let mut all: Vec<PathBuf> = folder
+        .ancestors()
+        .map(|dir| dir.join("node_modules").join(".bin"))
+        .filter(|bin| bin.is_dir())
+        .collect();
+    for dir in dirs {
+        if !all.contains(dir) {
+            all.push(dir.clone());
+        }
+    }
+    std::env::join_paths(all)
+        .ok()
+        .map(|joined| joined.to_string_lossy().into_owned())
+}
+
+/// Whether `path` is a symbolic link itself, without following it.
+pub(crate) fn is_link(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// Remove the link at `path`, never what it points to.
+pub(crate) fn remove_link(path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        std::fs::remove_dir(path).or_else(|_| std::fs::remove_file(path))
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_file(path)
+    }
+}
+
+/// Whether `folder` is the root of a workspace: its `package.json` names `workspaces`, or a
+/// `pnpm-workspace.yaml` sits beside it. Its `node_modules` links the workspace's own packages to their
+/// folders in that checkout, so another checkout cannot borrow it.
+pub(crate) fn declares_workspaces(folder: &Path) -> bool {
+    if folder.join("pnpm-workspace.yaml").is_file() {
+        return true;
+    }
+    std::fs::read_to_string(folder.join("package.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|manifest| manifest.get("workspaces").is_some())
+}
+
+/// `PATH` for a test run spawned in `folder` (`run_path`), as an environment entry; none when it cannot be joined.
+pub(crate) fn run_path_env(app: &AppHandle, folder: &Path) -> Vec<(String, String)> {
+    run_path(folder, &tool_search_dirs(app))
+        .map(|path| vec![("PATH".to_string(), path)])
+        .unwrap_or_default()
+}
+
+/// Symlink the linked folder's `node_modules` into the worktree, the cheap path
+/// when the lockfile is unchanged; on Windows a directory symlink, which needs
+/// Developer Mode or an administrator, else the step installs. A link already
+/// there is that same one.
 fn link_node_modules(folder: &Path, worktree: &Path) -> Result<(), String> {
     let src = folder.join("node_modules");
     let dst = worktree.join("node_modules");
-    if dst.exists() {
+    if is_link(&dst) {
         return Ok(());
     }
     #[cfg(windows)]
@@ -669,8 +760,16 @@ fn install_worktree(
     let folder_lock = folder.join(lockfile);
     let worktree_lock = worktree.join(lockfile);
     let folder_modules = folder.join("node_modules").is_dir();
+    let worktree_modules = worktree.join("node_modules");
 
-    if folder_modules && files_equal(&folder_lock, &worktree_lock) {
+    // The checkout's `node_modules` is borrowed only when nothing else is there yet, or the borrowed link is: a
+    // workspace root's links its packages to the checkout's own folders, which a step at another commit must not run.
+    let installed_here = worktree_modules.exists() && !is_link(&worktree_modules);
+    if folder_modules
+        && !installed_here
+        && !declares_workspaces(folder)
+        && files_equal(&folder_lock, &worktree_lock)
+    {
         match link_node_modules(folder, worktree) {
             Ok(()) => {
                 emit_line(
@@ -690,6 +789,13 @@ fn install_worktree(
         }
     }
 
+    // An install through a borrowed link would rewrite the checkout's own `node_modules`: the link goes first.
+    if is_link(&worktree_modules) {
+        if let Err(e) = remove_link(&worktree_modules) {
+            emit_line(app, id, "error", format!("Could not remove the borrowed node_modules link ({e}): not installing through it."));
+            return false;
+        }
+    }
     let (tool, tool_args) = pm.install_command();
     let Some(bin) = resolve_tool(app, tool) else {
         emit_line(app, id, "error", format!("`{tool}` was not found — install it, or open the linked folder and install dependencies there."));
@@ -762,11 +868,11 @@ fn run_std_streaming(
     if stop.load(Ordering::SeqCst) {
         return None;
     }
-    let mut child = match Command::new(bin)
+    let mut child = match console_command(bin)
         .args(args)
         .current_dir(dir)
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
+        .envs(run_path_env(app, dir))
+        .envs(COLOR_ENV)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -840,8 +946,8 @@ async fn run_sidecar(
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
-            .env("NO_COLOR", "1")
-            .env("FORCE_COLOR", "0")
+            .envs(run_path_env(app, worktree))
+            .envs(COLOR_ENV)
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
@@ -974,7 +1080,7 @@ pub(crate) fn add_worktree_in(
     // Run ids restart at each launch: a folder already there is a leftover of
     // an earlier launch, which no running job owns, and it blocks `add`.
     if worktree.exists() {
-        let _ = Command::new(git)
+        let _ = console_command(git)
             .arg("-C")
             .arg(folder)
             .args(["worktree", "remove", "--force"])
@@ -1024,6 +1130,7 @@ pub async fn desktop_reproduce_here(
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
     let worktree = add_worktree(&app, &git, &folder, &project_id, &commit, id)?;
+    state.label(id, crate::runner::run_label("the reproduction", &folder));
     state.register_job(
         id,
         Job {
@@ -1093,7 +1200,7 @@ async fn reproduce_driver(
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
-/// runs with this app's server and token ([`flake_lab_env`]) and `env`.
+/// runs with [`flake_lab_env`], reporting to this app, and `env`.
 /// `attended`: whether a person attends the run (a reproduction, not a bisect).
 #[allow(clippy::too_many_arguments)]
 async fn run_test_phase(
@@ -1119,7 +1226,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    let mut env_with_app = lab_env_with_hub(app, &server_info(app), id, attended).await;
+    let mut env_with_app = lab_env_with_hub(app, id, attended).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
@@ -1144,9 +1251,6 @@ pub async fn desktop_bisect_here(
         return Err("invalid commit".into());
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
-    // A flake-aware bisect asks `piwi flake verify --bisect` at each step, with
-    // this app's server and token.
-    let flake = flake_test_case_id.map(|id| (id, server_info(&app)));
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     if !commit_exists(&git, &folder, &good) || !commit_exists(&git, &folder, &bad) {
         return Err(format!(
@@ -1155,7 +1259,7 @@ pub async fn desktop_bisect_here(
         ));
     }
     // The good commit must be an ancestor of the bad one for a bisect to make sense.
-    let ancestor = Command::new(&git)
+    let ancestor = console_command(&git)
         .arg("-C")
         .arg(&folder)
         .args(["merge-base", "--is-ancestor", &good, &bad])
@@ -1171,6 +1275,7 @@ pub async fn desktop_bisect_here(
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
     let worktree = add_worktree(&app, &git, &folder, &project_id, &bad, id)?;
+    state.label(id, crate::runner::run_label("the bisect", &folder));
     state.register_job(
         id,
         Job {
@@ -1197,7 +1302,7 @@ pub async fn desktop_bisect_here(
             &bad,
             &args,
             browser.as_deref(),
-            flake.as_ref(),
+            flake_test_case_id,
             origin_ref.as_deref(),
             &stop,
         )
@@ -1218,12 +1323,13 @@ async fn bisect_driver(
     bad: &str,
     args: &[String],
     browser: Option<&str>,
-    flake: Option<&(u64, ServerInfo)>,
+    // A flake-aware bisect asks `piwi flake verify --bisect` for this test at each step.
+    flake: Option<u64>,
     origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
-    if let Some((test_case_id, _)) = flake {
+    if let Some(test_case_id) = flake {
         emit_line(
             app,
             id,
@@ -1294,8 +1400,8 @@ async fn bisect_driver(
         // output the loop reads next.
         let verdict = if !installed || !browser_ok {
             "skip"
-        } else if let Some((test_case_id, server)) = flake {
-            let code = run_flake_step(app, id, folder, worktree, *test_case_id, server, stop).await;
+        } else if let Some(test_case_id) = flake {
+            let code = run_flake_step(app, id, folder, worktree, test_case_id, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1347,7 +1453,8 @@ async fn bisect_driver(
     }
 }
 
-/// This app's server address and token, for the `piwi flake` runs it starts.
+/// This app's server address and token: for the shell's own reads of its
+/// server, and for the runs it starts ([`flake_lab_env`]).
 fn server_info(app: &AppHandle) -> ServerInfo {
     let server = app.state::<ServerInfo>();
     ServerInfo {
@@ -1372,7 +1479,6 @@ async fn run_flake_step(
     folder: &Path,
     worktree: &Path,
     test_case_id: u64,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     if stop.load(Ordering::SeqCst) {
@@ -1383,7 +1489,7 @@ async fn run_flake_step(
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1413,11 +1519,7 @@ pub async fn desktop_flake_lab_here(
     if test_case_id == 0 {
         return Err("invalid test case".into());
     }
-    let server = server_info(&app);
-    let plan_server = ServerInfo {
-        port: server.port,
-        token: server.token.clone(),
-    };
+    let plan_server = server_info(&app);
     let plan = tauri::async_runtime::spawn_blocking(move || {
         local_get_json(
             &plan_server,
@@ -1451,6 +1553,7 @@ pub async fn desktop_flake_lab_here(
         &commit,
         id,
     )?;
+    state.label(id, crate::runner::run_label("the Flake Lab session", &folder));
     state.register_job(
         id,
         Job {
@@ -1476,7 +1579,6 @@ pub async fn desktop_flake_lab_here(
             dirty,
             test_case_id,
             &options,
-            &server,
             &stop,
         )
         .await;
@@ -1505,12 +1607,11 @@ async fn flake_lab_driver(
     dirty: bool,
     test_case_id: u64,
     options: &FlakeLabOptions,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1578,11 +1679,7 @@ pub async fn desktop_flake_lab_job(
     if !crate::repro::valid_request_id(&request_id) {
         return Err("invalid repro request id".into());
     }
-    let server = server_info(&app);
-    let read = ServerInfo {
-        port: server.port,
-        token: server.token.clone(),
-    };
+    let read = server_info(&app);
     let path = format!("/api/desktop/repro-requests/{request_id}");
     let request = tauri::async_runtime::spawn_blocking(move || local_get_json(&read, &path))
         .await
@@ -1614,6 +1711,7 @@ pub async fn desktop_flake_lab_job(
 
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
+    state.label(id, crate::runner::run_label("the Flake Lab job", &folder));
     state.register_job(
         id,
         Job {
@@ -1626,7 +1724,7 @@ pub async fn desktop_flake_lab_job(
 
     tauri::async_runtime::spawn(async move {
         let code = lab_job_driver(
-            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &server, &stop,
+            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &stop,
         )
         .await;
         let _ = std::fs::remove_file(&plan_file);
@@ -1654,12 +1752,11 @@ async fn lab_job_driver(
     commit: &str,
     dirty: bool,
     plan_file: &Path,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
     emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
@@ -1930,17 +2027,28 @@ mod tests {
     }
 
     #[test]
-    fn piwi_flake_reaches_this_app_with_its_token() {
-        let env = flake_lab_env(&ServerInfo {
+    fn a_lab_run_reaches_this_app_and_prefers_its_discovery_file() {
+        let server = ServerInfo {
             port: 43210,
             token: "pd_secret".into(),
-        });
+        };
+        let env = flake_lab_env(&server, Some(Path::new("/home/dev/.piwi/desktop.json")));
         let get = |key: &str| env.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str());
         assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
         assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
-        assert_eq!(get("NO_COLOR"), Some("1"));
+        assert_eq!(get("PIWI_DESKTOP_APP"), Some("prefer"));
+        assert_eq!(
+            get("PIWI_DESKTOP_CONFIG"),
+            Some("/home/dev/.piwi/desktop.json")
+        );
+        assert_eq!(get("FORCE_COLOR"), Some("1"));
+        assert_eq!(get("NO_COLOR"), Some(""));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 4);
+        assert_eq!(env.len(), 6);
+        // With no discovery file written, the reporter looks for one at its default path.
+        let without = flake_lab_env(&server, None);
+        let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");
+        assert_eq!(config.map(|(_, v)| v.as_str()), Some(""));
     }
 
     #[test]
@@ -2279,6 +2387,75 @@ mod tests {
             Some(b.join("git"))
         );
         assert_eq!(resolve_tool_in(&[a], &candidates), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_run_path_puts_each_node_modules_bin_first_nearest_first() {
+        let dir = std::env::temp_dir().join(format!("piwi-run-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("app");
+        std::fs::create_dir_all(folder.join("node_modules/.bin")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/.bin")).unwrap();
+        let tool = dir.join("tools");
+        let path = run_path(
+            &folder,
+            &[tool.clone(), folder.join("node_modules").join(".bin")],
+        )
+        .unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        // A `node_modules/.bin` above the temporary folder, on a machine that has one, comes between them.
+        assert_eq!(
+            dirs[..2],
+            [
+                folder.join("node_modules").join(".bin"),
+                dir.join("node_modules").join(".bin"),
+            ]
+        );
+        assert_eq!(dirs.last(), Some(&tool));
+        assert_eq!(
+            dirs.iter()
+                .filter(|d| **d == folder.join("node_modules").join(".bin"))
+                .count(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_root_is_told_by_its_manifest_or_pnpm_file() {
+        let dir = std::env::temp_dir().join(format!("piwi-workspaces-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), r#"{"name":"app"}"#).unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), r#"{"workspaces":["packages/*"]}"#).unwrap();
+        assert!(declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), "not json").unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("pnpm-workspace.yaml"), "packages: []").unwrap();
+        assert!(declares_workspaces(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_borrowed_link_keeps_what_it_points_to() {
+        let dir = std::env::temp_dir().join(format!("piwi-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("folder");
+        let worktree = dir.join("worktree");
+        std::fs::create_dir_all(folder.join("node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        link_node_modules(&folder, &worktree).unwrap();
+        let link = worktree.join("node_modules");
+        assert!(is_link(&link));
+        assert!(!is_link(&folder.join("node_modules")));
+        assert!(link_node_modules(&folder, &worktree).is_ok());
+        remove_link(&link).unwrap();
+        assert!(!link.exists());
+        assert!(folder.join("node_modules/pkg").is_dir());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

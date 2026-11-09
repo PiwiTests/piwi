@@ -1,12 +1,13 @@
 {
   "name": "@piwitests/desktop",
-  "version": "0.63.0",
+  "version": "0.67.0",
   "private": true,
   "description": "Piwi Dashboard desktop application (Tauri) — bundles the server and runs it locally.",
   "type": "module",
   "scripts": {
     "fetch-node": "node scripts/fetch-node.mjs",
     "stage": "node scripts/stage-server.mjs",
+    "installer-art": "node scripts/installer-art.mjs",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

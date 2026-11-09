@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -66,5 +66,19 @@ describe.runIf(existsSync(dist('index.js')))('built entry (requires a build)', (
     // would complete and accept `testDir` / `use` / `timeout` on an options
     // object the reporter never reads them from.
     expect(types).not.toMatch(/interface PiwiDashboardOptions\s+extends/);
+  });
+
+  it('names no package of this repository in its types but itself: a consumer installs none of them', () => {
+    const files = readdirSync(dist(), { recursive: true, encoding: 'utf-8' }).filter((file) => file.endsWith('.d.ts'));
+    expect(files).toContain('index.d.ts');
+    for (const file of files) {
+      const imports = [
+        ...readFileSync(dist(file), 'utf-8').matchAll(/^(?:import|export)\b[^;]*?['"](@piwitests\/[^'"]+)['"]/gm),
+      ];
+      expect(
+        imports.map((m) => m[1]),
+        file,
+      ).toEqual([]);
+    }
   });
 });

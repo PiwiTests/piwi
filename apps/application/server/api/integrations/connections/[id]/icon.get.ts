@@ -1,17 +1,19 @@
-import { getDatabase } from '../../../../database';
 import { apiError } from '../../../../utils/api-error';
 import { requireAuth } from '../../../../utils/auth';
 import { requireRouteId } from '../../../../utils/project-access';
 import { createTracker } from '../../../../utils/integrations/connections';
+import { requireConnectionAccess } from '../../../../utils/integrations/connection-access';
 import { fetchExternalAvatar, isExternalAvatarUrl, isJiraIconPath } from '../../../../utils/integrations/jira/icons';
 import { iconCache } from '../../../../utils/integrations/picker-cache';
+import { PUBLIC_IMAGE_HEADERS } from '../../../../utils/public-image';
+import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Read a tracker icon',
     description:
-      "An icon the tracker serves behind its own sign-in — an issue type's, a project's avatar — fetched through the connection, so the create-issue modal shows it to a reader who is not signed in to Jira. `path` is the icon's path on the site, as the pickers return it; only Jira's icon and avatar paths are served. A person's avatar on Atlassian's public avatar service or Gravatar is passed as its URL and fetched without the connection's credentials, so the browser never calls a third party. An icon found missing is remembered for an hour; one the tracker could not serve for now (an outage, a rate limit) is not, and answers 502. Cached for an hour. Requires `issue:create` on at least one project (Contributor and above).",
+      "An icon the tracker serves behind its own sign-in — an issue type's, a project's avatar — fetched through the connection, so the create-issue modal shows it to a reader who is not signed in to Jira. `path` is the icon's path on the site, as the pickers return it; only Jira's icon and avatar paths are served. A person's avatar on Atlassian's public avatar service or Gravatar is passed as its URL and fetched without the connection's credentials, so the browser never calls a third party. An icon found missing is remembered for an hour; one the tracker could not serve for now (an outage, a rate limit) is not, and answers 502. Cached for an hour. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.",
     'x-required-permission': 'issue:create',
   },
 });
@@ -19,6 +21,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   await requireAuth(event);
   const id = requireRouteId(event);
+  const db = await requireConnectionAccess(event, id);
   const query = getQuery(event);
   const path = typeof query.path === 'string' ? query.path : '';
   const external = isExternalAvatarUrl(path);
@@ -27,9 +30,9 @@ export default eventHandler(async (event) => {
   const cacheKey = `${id}:${path}`;
   let icon = iconCache.get(cacheKey);
   if (icon === undefined) {
-    const tracker = external ? null : await createTracker(await getDatabase(), id);
+    const tracker = external ? null : await createTracker(db, id);
     if (!external && !tracker) {
-      throw apiError({ statusCode: 404, message: 'Connection not found or has no credentials' });
+      throw apiError({ statusCode: 404, message: CONNECTION_NOT_FOUND });
     }
     try {
       icon = external ? await fetchExternalAvatar(path) : ((await tracker!.fetchIcon?.(path)) ?? null);
@@ -42,12 +45,11 @@ export default eventHandler(async (event) => {
   }
   if (!icon) throw apiError({ statusCode: 404, message: 'Icon not found' });
 
+  // Jira serves most icons as SVG: the headers keep one opened on its own from running a script here.
   setResponseHeaders(event, {
     'Content-Type': icon.mime,
     'Cache-Control': 'private, max-age=86400',
-    'X-Content-Type-Options': 'nosniff',
-    // Jira serves most icons as SVG: opened on its own, one never runs a script here.
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    ...PUBLIC_IMAGE_HEADERS,
   });
   return Buffer.from(icon.bytes);
 });

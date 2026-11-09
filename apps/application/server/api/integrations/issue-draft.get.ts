@@ -3,6 +3,7 @@ import { apiError } from '../../utils/api-error';
 import { requireAuth } from '../../utils/auth';
 import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { buildIssueDraft, type DraftEntityType } from '../../utils/integrations/draft';
+import { filedByName } from '../../utils/integrations/create';
 import { toIssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 
@@ -11,12 +12,12 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Prefilled create-issue draft',
     description:
-      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
+      'The prefilled draft for a failure, a run or one execution — title, fields, body preview — plus any issue that already tracks it. For a run, and for an execution with no failure cluster, `existing` lists the issues already linked to it, and a new one may still be filed. `connectionId` is the connection the project is bound to, the only one its issues are filed through, and null when the project is bound to none, or to one without credentials. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
     'x-required-permission': 'issue:create',
   },
 });
 
-const DRAFT_ENTITY_TYPES: DraftEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
+const DRAFT_ENTITY_TYPES: DraftEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
 
 function boolQuery(value: unknown): boolean | undefined {
   if (value === 'true' || value === '1') return true;
@@ -36,7 +37,7 @@ export default eventHandler(async (event) => {
   // `issue:create` on no project learns nothing about which ids exist.
   const user = await requireAuth(event);
   const db = await getDatabase();
-  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, user.id);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
   if (!(await canAccessProject(db, user, projectId, 'issue:create'))) {
     throw apiError({ statusCode: 403, message: 'No access to this project' });
@@ -54,13 +55,11 @@ export default eventHandler(async (event) => {
   // A share link is public: only a caller who may create one gets it in the ticket.
   if (!(await canAccessProject(db, user, projectId, 'share:create'))) includeOverride.includeShareLink = false;
 
-  const connectionId = query.connectionId ? Number(query.connectionId) : undefined;
-
   const draft = await buildIssueDraft(db, entityType, entityId, {
-    connectionId: connectionId && Number.isInteger(connectionId) ? connectionId : undefined,
     include: includeOverride,
     locale: toIssueLocale(query.locale),
     siteUrl: process.env.PIWI_SITE_URL ?? null,
+    filedBy: filedByName(user),
   });
   if (!draft) throw apiError({ statusCode: 404, message: 'No tracker connected or entity unavailable' });
   return draft;

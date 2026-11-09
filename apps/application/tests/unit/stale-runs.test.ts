@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { GlobalRunEvent } from '../../server/utils/run-events';
+import { migrateToLatest } from './temp-db';
 
 // The finish-time side effects are mocked: only that a settled run fires them matters here.
 const runFinalizeSideEffects = vi.fn(async (_db: unknown, _id: number, _run: unknown) => {});
@@ -14,8 +13,15 @@ vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSide
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helper.
 delete process.env.PIWI_DATABASE_URL;
-const { interruptStaleRuns, settleStaleFinalizingRuns, STALE_TIMEOUT_MS, FINALIZING_TIMEOUT_MS, BATCH_SHARD_WAIT_MS } =
-  await import('../../server/utils/stale-runs');
+const {
+  interruptStaleRuns,
+  settleStaleFinalizingRuns,
+  createReachability,
+  STALE_TIMEOUT_MS,
+  FINALIZING_TIMEOUT_MS,
+  SHARD_WAIT_MS,
+  GLOBAL_SETUP_WAIT_MS,
+} = await import('../../server/utils/stale-runs');
 const { runEventBus } = await import('../../server/utils/run-events');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -23,19 +29,24 @@ const now = Date.now();
 const stale = new Date(now - STALE_TIMEOUT_MS - 60_000);
 const fresh = new Date(now - 10_000);
 const abandoned = new Date(now - FINALIZING_TIMEOUT_MS - 60_000);
-const shardsGone = new Date(now - BATCH_SHARD_WAIT_MS - 60_000);
+const shardsGone = new Date(now - SHARD_WAIT_MS - 60_000);
+const setupGone = new Date(now - GLOBAL_SETUP_WAIT_MS - 60_000);
 
-// Runs 1–2 are in flight and quiet past the timeout; run 3 is finalizing and
+// Runs 1–2 are in flight and quiet past the timeout, run 2 still in its global
+// setup (initializing) past the wait for its reporter to begin it, which run 13
+// is within; run 3 is finalizing and
 // quiet past it too, but still within the wait for its report upload; run 4 is
 // in flight but active; run 5 is quiet but already finished. Runs 6–7 are
 // finalizing and their report upload never came: run 6 kept the status its
 // reporter sent to /finish, run 7 has none stored. Runs 8–9 are sharded runs
 // delivered by batch submissions, which wait for their other shards: run 8 is
-// quiet past the timeout but within that wait, run 9 past it.
+// quiet past the timeout but within that wait, run 9 past it. Runs 10–12 are
+// streamed sharded runs with one of their two shards finished: run 10 has no
+// shard running and waits for the other, run 11 still holds the token of a
+// shard that stopped reporting, and run 12 waited past the shard wait.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
-  await migrate(db, { migrationsFolder });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([
     { id: 1, name: 'Alpha' },
@@ -53,7 +64,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.testRuns).values([
     run(1, 1, 'running', stale),
-    run(2, 2, 'initializing', stale),
+    run(2, 2, 'initializing', setupGone),
     run(3, 1, 'finalizing', stale),
     run(4, 1, 'running', fresh),
     run(5, 1, 'passed', stale),
@@ -65,6 +76,10 @@ beforeAll(async () => {
     { ...run(7, 2, 'finalizing', abandoned), streamToken: null },
     { ...run(8, 2, 'running', stale), streamToken: null, shardTotal: 2, shardsFinished: 1 },
     { ...run(9, 2, 'running', shardsGone), streamToken: null, shardTotal: 2, shardsFinished: 1 },
+    { ...run(10, 2, 'running', stale), shardTotal: 2, shardsFinished: 1, metadata: {} },
+    { ...run(11, 2, 'running', stale), shardTotal: 2, shardsFinished: 1, metadata: { shardTokens: ['digest-11'] } },
+    { ...run(12, 2, 'running', shardsGone), shardTotal: 2, shardsFinished: 1, metadata: {} },
+    run(13, 2, 'initializing', stale),
   ]);
   await db.insert(schema.testCases).values([{ id: 1, projectId: 1, title: 'test 1', filePath: 'a.spec.ts' }]);
   await db
@@ -83,12 +98,14 @@ describe('interruptStaleRuns', () => {
     unsubscribe();
     unsubscribeRun();
 
-    expect([...reaped].sort()).toEqual([1, 2, 9]);
+    expect([...reaped].sort((a, b) => a - b)).toEqual([1, 2, 9, 11, 12]);
     const runEvents = global.filter((e) => e.type === 'run-finished');
     expect([...runEvents].sort((a, b) => a.runId - b.runId)).toEqual([
       { type: 'run-finished', runId: 1, projectId: 1, status: 'interrupted' },
       { type: 'run-finished', runId: 2, projectId: 2, status: 'interrupted' },
       { type: 'run-finished', runId: 9, projectId: 2, status: 'interrupted' },
+      { type: 'run-finished', runId: 11, projectId: 2, status: 'interrupted' },
+      { type: 'run-finished', runId: 12, projectId: 2, status: 'interrupted' },
     ]);
     // Their day's rollup counts them as failed runs at once, not at the nightly reconcile, and says so once per project.
     const rollupEvents = global.filter((e) => e.type === 'rollup-updated');
@@ -98,7 +115,7 @@ describe('interruptStaleRuns', () => {
     const failedOf = (projectId: number) =>
       rollups.filter((r) => r.projectId === projectId && r.part === 'retained').reduce((n, r) => n + r.failedRuns, 0);
     expect(failedOf(1)).toBe(1);
-    expect(failedOf(2)).toBe(2);
+    expect(failedOf(2)).toBe(4);
     // The run's own stream gets the reconciled counts.
     expect(finished).toEqual([expect.objectContaining({ status: 'interrupted', totalTests: 10, passedTests: 1 })]);
 
@@ -114,6 +131,9 @@ describe('interruptStaleRuns', () => {
     expect(byId.get(5)?.status).toBe('passed');
     expect(byId.get(8)?.status).toBe('running');
     expect(byId.get(9)?.status).toBe('interrupted');
+    expect(byId.get(10)?.status).toBe('running');
+    for (const id of [11, 12]) expect(byId.get(id)?.status).toBe('interrupted');
+    expect(byId.get(13)?.status).toBe('initializing');
   });
 
   test('leaves nothing to announce once every stale run is reaped', async () => {
@@ -166,5 +186,74 @@ describe('settleStaleFinalizingRuns', () => {
     runFinalizeSideEffects.mockClear();
     expect(await settleStaleFinalizingRuns(db, now)).toEqual([]);
     expect(runFinalizeSideEffects).not.toHaveBeenCalled();
+  });
+});
+
+describe('after a server restart', () => {
+  // The server was down for ten minutes and has just started: its runs went quiet only because no reporter
+  // could reach it. Run 100 is in flight, run 101 still in its global setup, run 102 waits for its report upload.
+  const downSince = new Date(now - 10 * 60_000);
+  beforeAll(async () => {
+    const run = (id: number, status: string, updatedAt: Date) => ({
+      id,
+      projectId: 1,
+      status,
+      startTime: setupGone,
+      createdAt: setupGone,
+      updatedAt,
+      streamToken: `token-${id}`,
+    });
+    await db
+      .insert(schema.testRuns)
+      .values([
+        run(100, 'running', downSince),
+        run(101, 'initializing', setupGone),
+        { ...run(102, 'finalizing', abandoned), streamToken: null, metadata: { pendingStatus: 'passed' } },
+      ]);
+  });
+
+  const statusOf = async (id: number) =>
+    (await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, id)))[0]?.status;
+
+  test('reaps no run until the server has been reachable for the timeout', async () => {
+    expect(await interruptStaleRuns(db, now, now - 30_000)).toEqual([]);
+    expect(await statusOf(100)).toBe('running');
+
+    // Up for the stale timeout: a run quiet since then is reaped, a run in its global setup still waits its hour.
+    expect(await interruptStaleRuns(db, now, now - STALE_TIMEOUT_MS - 1_000)).toEqual([100]);
+    expect(await statusOf(101)).toBe('initializing');
+    expect(await interruptStaleRuns(db, now, now - GLOBAL_SETUP_WAIT_MS - 1_000)).toEqual([101]);
+  });
+
+  test('settles no finalizing run until the server has been reachable for the upload wait', async () => {
+    expect(await settleStaleFinalizingRuns(db, now, now - 60_000)).toEqual([]);
+    expect(await statusOf(102)).toBe('finalizing');
+    expect(await settleStaleFinalizingRuns(db, now, now - FINALIZING_TIMEOUT_MS - 1_000)).toEqual([102]);
+    expect(await statusOf(102)).toBe('passed');
+  });
+});
+
+describe('createReachability', () => {
+  const interval = 30_000;
+
+  test('counts from the moment the database is ready', () => {
+    const reachability = createReachability(interval);
+    expect(reachability.beginSweep(1_000)).toBeNull();
+    reachability.ready(5_000);
+    expect(reachability.beginSweep(5_000 + interval)).toBe(5_000);
+    expect(reachability.beginSweep(5_000 + 2 * interval)).toBe(5_000);
+  });
+
+  test('starts again after a sweep that failed or began far behind its schedule', () => {
+    const reachability = createReachability(interval);
+    reachability.ready(0);
+    expect(reachability.beginSweep(interval)).toBe(0);
+    reachability.failed(interval + 500);
+    expect(reachability.beginSweep(2 * interval)).toBe(interval + 500);
+
+    // Asleep for ten minutes: the next sweep begins long after the one before.
+    const wake = 2 * interval + 10 * 60_000;
+    expect(reachability.beginSweep(wake)).toBe(wake);
+    expect(reachability.beginSweep(wake + interval)).toBe(wake);
   });
 });

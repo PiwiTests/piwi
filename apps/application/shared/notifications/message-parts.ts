@@ -8,6 +8,8 @@ import { durationApprox, durationShort } from '#shared/relative-time';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import type { StatusColorKey } from '#shared/status-colors';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { STUCK_FACTOR, STUCK_FLOOR_MS, STUCK_HISTORY } from '#shared/stuck-tests';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import {
   clusterOutcome,
   failureTargetPath,
@@ -25,6 +27,7 @@ import {
   type NotificationPayload,
   type RunFinishedPayload,
   type RunHistoryEntry,
+  type TestStuckPayload,
   type TopFailure,
 } from '#shared/notification-events';
 
@@ -98,6 +101,7 @@ export function eventTone(event: NotificationEvent, payload: NotificationPayload
       return 'flaky';
     case 'perf.regression':
     case 'environment.incident':
+    case 'test.stuck':
       return 'warning';
     case 'diagnosis.completed':
     case 'auto_heal.pr_opened':
@@ -264,6 +268,14 @@ export function eventHeadline(event: NotificationEvent, payload: NotificationPay
         rest: ' is open',
       };
     }
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      return text(`Stuck? · ${p.projectName}`, 'A test may be stuck', [
+        p.testTitle,
+        `${durationShort(p.elapsedMs)}, against ${durationShort(p.usualMs)} at most usually`,
+        ...runParts(p),
+      ]);
+    }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;
       const label = `Bug looks fixed · ${p.projectName}`;
@@ -290,8 +302,9 @@ const NOT_REPORTED: StatusColorKey = 'fixme';
 /**
  * A run's tests split by outcome, in the dashboard's order, empty outcomes
  * left out. Flaky tests are a part of the passed ones, counted apart from them.
- * The tests a run counted but never reported (an interrupted run stops before
- * them) come last, as not reported.
+ * The tests the run's interruption cut short, in no outcome, are named as
+ * interrupted, and the tests a run counted but never reported (an interrupted
+ * run stops before them) come last, as not reported.
  */
 export function runSegments(counts: {
   totalTests?: number;
@@ -300,6 +313,7 @@ export function runSegments(counts: {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  interruptedTests?: number;
 }): OutcomeSegment[] {
   const reported: OutcomeSegment[] = [
     { key: 'passed', label: 'passed', count: Math.max(0, (counts.passedTests ?? 0) - (counts.flakyTests ?? 0)) },
@@ -307,6 +321,7 @@ export function runSegments(counts: {
     { key: 'flaky', label: 'flaky', count: counts.flakyTests ?? 0 },
     { key: 'skipped', label: 'skipped', count: counts.skippedTests ?? 0 },
     { key: 'didnotrun', label: "didn't run", count: counts.didNotRunTests ?? 0 },
+    { key: 'interrupted', label: 'interrupted', count: counts.interruptedTests ?? 0 },
   ];
   const sum = reported.reduce((total, s) => total + s.count, 0);
   const missing = (counts.totalTests ?? 0) - sum;
@@ -341,6 +356,7 @@ export const OUTCOME_SQUARES: Record<StatusColorKey, string> = {
   fixme: '⬛',
   didnotrun: '🟧',
   running: '🟦',
+  interrupted: '⬜',
 };
 
 /**
@@ -364,11 +380,11 @@ export function outcomeSquares(segments: OutcomeSegment[], total: number, width 
 
 // ── History ───────────────────────────────────────────────────────────────────
 
-/** A run's status as an outcome color: interrupted in the did-not-run amber. */
+/** A run's status as an outcome color: an interrupted run in the neutral slate of no outcome. */
 export function runStatusKey(status: string): StatusColorKey {
   if (status === 'passed') return 'passed';
   if (status === 'failed' || status === 'timedout') return 'failed';
-  if (status === 'interrupted') return 'didnotrun';
+  if (status === 'interrupted') return 'interrupted';
   return 'skipped';
 }
 
@@ -432,6 +448,7 @@ const RUN_SYMBOLS: Record<StatusColorKey, string> = {
   fixme: '-',
   didnotrun: '!',
   running: '…',
+  interrupted: '-',
 };
 
 /** The history in plain text: one symbol per run, then its sentence. */
@@ -682,6 +699,22 @@ export function eventFacts(event: NotificationEvent, payload: NotificationPayloa
         { label: 'Failed', value: `${p.failedTests} of ${plural(p.totalTests, 'test')}` },
       ];
     }
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      const worker = shownWorkerNumber(p);
+      const where = [
+        p.browserName,
+        p.shardIndex != null ? `shard ${p.shardIndex}` : null,
+        worker != null ? `worker ${worker}` : null,
+      ].filter(Boolean);
+      return [
+        runFact(links, p),
+        ...(p.location ? [{ label: 'Test', value: p.location, code: true }] : []),
+        ...(where.length ? [{ label: 'Running in', value: where.join(', ') }] : []),
+        ...(p.owners?.length ? [{ label: 'Owners', value: p.owners.join(', ') }] : []),
+        ...(p.ciUrl ? [{ label: 'CI build', value: 'Open the build', url: p.ciUrl }] : []),
+      ];
+    }
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return [
@@ -712,8 +745,17 @@ export function eventSentences(event: NotificationEvent, payload: NotificationPa
       return ['The usual time is the median of the last runs on the same branch and environment.'];
     case 'cluster.new': {
       const p = payload as ClusterNewPayload;
+      const several = (p.affectedCases ?? 0) > 1;
+      if (p.firstSeenRunId != null) {
+        const first = `first seen in run #${p.firstSeenRunId}, which sent no notification of it`;
+        return [
+          several
+            ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, ${first}.`
+            : `A test of run #${p.runId} failed with an error ${first}.`,
+        ];
+      }
       return [
-        (p.affectedCases ?? 0) > 1
+        several
           ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, one no earlier run produced, so Piwi grouped them in one cluster.`
           : `A test of run #${p.runId} failed with an error no earlier run produced.`,
       ];
@@ -742,6 +784,10 @@ export function eventSentences(event: NotificationEvent, payload: NotificationPa
         INCIDENT_NOTE,
       ];
     }
+    case 'test.stuck':
+      return [
+        `The test has run more than ${STUCK_FACTOR} times as long as its longest pass among its last ${STUCK_HISTORY}, and over ${STUCK_FLOOR_MS / 60_000} minutes. It is still running: the run page shows the step it is in, and its live view, when the project has it on, what it waits for.`,
+      ];
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return [
@@ -813,6 +859,13 @@ function actionsOf(event: NotificationEvent, payload: NotificationPayload, links
     case 'environment.incident':
     case 'bug.looks_fixed':
       return [{ label: 'Open the run', url: links.run((payload as EnvironmentIncidentPayload).runId) }];
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      return [
+        { label: 'Open the test in its run', url: links.path(notificationTargetPath(event, p)!) },
+        ...(p.ciUrl ? [{ label: 'Open the CI build', url: p.ciUrl }] : []),
+      ];
+    }
     case 'diagnosis.completed': {
       const p = payload as DiagnosisCompletedPayload;
       const path = notificationTargetPath(event, p);

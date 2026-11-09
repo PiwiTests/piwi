@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `live_view_masks` text;

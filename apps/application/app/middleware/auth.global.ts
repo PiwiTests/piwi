@@ -36,21 +36,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
     if (!allowed) return navigateTo('/');
   }
 
-  // Setup configures how results reach this instance and, in the desktop build,
-  // exposes the local access token — admin-only. The sidebar hides the link, and
-  // this stops a non-admin reaching it by typing the URL. The endpoint behind it
-  // (`/api/setup-status`) needs `settings:manage` server-side; this is only the
-  // affordance. Note the early returns above: with auth disabled every visitor is
-  // a virtual admin, which is what keeps Setup reachable on a default install.
-  if (to.path === '/setup' && !isAdmin.value) {
-    return navigateTo('/');
-  }
-
-  // Settings pages needing an instance permission (Users, Tags, Storage, AI…)
-  // follow the same rule: the nav hides them, and this stops a direct URL
+  // Settings pages needing an instance permission (Users, Tags, Storage, AI,
+  // the Setup pages…): the nav hides them, and this stops a direct URL
   // rendering a page whose every API call would 403. The server checks the
   // permission on those endpoints; `/settings` itself redirects to the first
-  // page the viewer may open.
+  // page the viewer may open. Note the early returns above: with auth disabled
+  // every visitor is a virtual admin, which keeps them reachable on a default
+  // install.
   if (!canOpenSettingsPath(to.path, access.value)) {
     return navigateTo('/settings');
   }

@@ -2,10 +2,11 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -18,9 +19,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
 });
@@ -42,17 +41,19 @@ async function addAttempt(
   createdAt?: Date,
   testCaseId = 1,
 ): Promise<void> {
-  await db.insert(schema.testRunsCases).values({
-    ...(createdAt ? { createdAt } : {}),
-    testRunId,
-    testCaseId,
-    status,
-    retries,
-    duration: 1_000,
-    error,
-    browserName: project,
-    browser: { projectName: project, browserName: project },
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      ...(createdAt ? { createdAt } : {}),
+      testRunId,
+      testCaseId,
+      status,
+      retries,
+      duration: 1_000,
+      error,
+      browserName: project,
+      browser: { projectName: project, browserName: project },
+    }),
+  );
 }
 
 describe('classifyAndPersistFlakyRootCause', () => {

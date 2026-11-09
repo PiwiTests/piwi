@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { CoverageCapture, CoverageFile } from '@piwitests/core/coverage';
+import type { CoverageCapture, CoverageFile, LineRange } from '@piwitests/core/coverage';
 import {
   bestExplanation,
   compactFileCoverage,
@@ -11,7 +11,6 @@ import {
   nearestTest,
   parseTargetLines,
   reachOfTargets,
-  subtractLineRanges,
   varyingCode,
   type CoverageDivergenceAnswer,
   type VariationExecution,
@@ -29,29 +28,6 @@ const capture = (files: CoverageFile[], incomplete = false): CoverageCapture =>
   incomplete ? { v: 1, files, incomplete: true } : { v: 1, files };
 
 describe('range helpers', () => {
-  test('subtracts ranges', () => {
-    expect(
-      subtractLineRanges(
-        [
-          [1, 10],
-          [20, 30],
-        ],
-        [
-          [3, 4],
-          [8, 22],
-          [25, 25],
-        ],
-      ),
-    ).toEqual([
-      [1, 2],
-      [5, 7],
-      [23, 24],
-      [26, 30],
-    ]);
-    expect(subtractLineRanges([[1, 5]], [])).toEqual([[1, 5]]);
-    expect(subtractLineRanges([[1, 5]], [[1, 9]])).toEqual([]);
-  });
-
   test('parses target lines', () => {
     expect(parseTargetLines('57-59, 63,58')).toEqual([
       [57, 59],
@@ -408,6 +384,21 @@ describe('reachOfTargets', () => {
       ran: [[79, 80]],
       notRan: [[81, 82]],
     });
+  });
+
+  test('a callback nested in a function that ran, and never called, did not run', () => {
+    const page = { path: 'src/Checkout.vue', runtime: 'browser', blob: A, functions: [[1, 30]] } as CoverageFile;
+    const allFunctions: LineRange[] = [
+      [1, 30],
+      [10, 14],
+    ];
+    expect(reachOfTargets(page, true, [[10, 14]], null, allFunctions)).toMatchObject({
+      granularity: 'functions',
+      ran: [],
+      notRan: [[10, 14]],
+      allRan: false,
+    });
+    expect(reachOfTargets(page, true, [[16, 20]], null, allFunctions)).toMatchObject({ ran: [[16, 20]], allRan: true });
   });
 });
 

@@ -14,9 +14,9 @@ const props = defineProps<{
   title: string;
   description?: string | null;
   tags?: TagInfo[];
-  /** The newest run within the filters; null when none matches them. */
+  /** The newest run within the filters that ran to its end, else the newest of any status; null when none matches them. */
   latestRun: TestRunSummary | null;
-  /** The pass rate of the last `passRateRuns` runs within the filters, in percent. */
+  /** The pass rate of the last `passRateRuns` runs within the filters that ran to their end, in percent. */
   passRate: number | null;
   passRateRuns: number;
   /** Whether the project has any run at all, filters aside. */

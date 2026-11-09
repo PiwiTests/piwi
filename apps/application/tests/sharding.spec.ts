@@ -4,6 +4,8 @@ import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('Sharding API Tests', () => {
   const INSTANCE_ID = 'sharding-test-instance-e2e';
+  // Both shards report this start to `/finish`: they ran side by side.
+  const SHARDS_START = new Date().toISOString();
   let runId: number;
   let tokenShard0: string;
   let tokenShard1: string;
@@ -172,6 +174,7 @@ test.describe.serial('Sharding API Tests', () => {
       data: {
         streamToken: tokenShard1,
         status: 'failed',
+        startTime: SHARDS_START,
         duration: 5000,
         totalTests: 1,
         passedTests: 0,
@@ -202,6 +205,7 @@ test.describe.serial('Sharding API Tests', () => {
       data: {
         streamToken: tokenShard0,
         status: 'passed',
+        startTime: SHARDS_START,
         duration: 4000,
         totalTests: 2,
         passedTests: 2,
@@ -233,7 +237,8 @@ test.describe.serial('Sharding API Tests', () => {
     expect(data.shardTotal).toBe(2);
     expect(data.instanceId).toBe(INSTANCE_ID);
 
-    // Duration should be the max of both shards
+    // The run lasts from the first shard's start to the last shard's end: with
+    // both started together, as long as its longest shard.
     expect(data.duration).toBe(5000);
 
     // streamToken must be cleared after finalization

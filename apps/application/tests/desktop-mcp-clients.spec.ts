@@ -99,15 +99,15 @@ async function installFakeBridge(page: Page) {
 
 test.describe('Desktop MCP client configuration', () => {
   test('the card does not exist without the bridge', async ({ page }) => {
-    await page.goto('/mcp');
+    await page.goto('/settings/mcp');
     await waitForHydration(page);
-    await expect(page.getByRole('heading', { name: 'MCP server' }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Client setup' })).toBeVisible();
     await expect(page.getByText('Connect a client on this machine')).toHaveCount(0);
   });
 
   test('shows detected clients and connects one', async ({ page }) => {
     await installFakeBridge(page);
-    await page.goto('/mcp');
+    await page.goto('/settings/mcp');
     await waitForHydration(page);
 
     await expect(page.getByText('Connect a client on this machine')).toBeVisible();

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
-import { desktopPagePath } from '#shared/desktop-handoff';
+import { desktopPagePath, desktopSessionTarget } from '#shared/desktop-handoff';
 import {
   DESKTOP_HANDOFF_CSP,
   isOutsideNavigation,
@@ -8,6 +8,25 @@ import {
   requestDesktopOpen,
   subscribeDesktopOpenRequests,
 } from '../../server/utils/desktop-handoff';
+
+describe('desktopSessionTarget', () => {
+  it('shows the page a link named once the window is signed in', () => {
+    expect(desktopSessionTarget('/test-runs/146?tab=changes')).toBe('/test-runs/146?tab=changes');
+    expect(desktopSessionTarget('/settings')).toBe('/settings');
+  });
+
+  it('shows the home page for anything that is not a dashboard page', () => {
+    expect(desktopSessionTarget(undefined)).toBe('/');
+    expect(desktopSessionTarget(['/settings', '/projects'])).toBe('/');
+    expect(desktopSessionTarget('//evil.example/')).toBe('/');
+    expect(desktopSessionTarget('https://evil.example/')).toBe('/');
+    expect(desktopSessionTarget('/api/test-runs')).toBe('/');
+    expect(desktopSessionTarget('/__piwi/session?token=x')).toBe('/');
+    // A browser drops a tab or a line break from a URL: `/<tab>/host` would read as `//host`.
+    expect(desktopSessionTarget('/\t/evil.example/x')).toBe('/');
+    expect(desktopSessionTarget('/settings\r\nSet-Cookie: x=1')).toBe('/');
+  });
+});
 
 describe('desktopPagePath', () => {
   it('keeps a dashboard page with its query', () => {
@@ -32,9 +51,31 @@ describe('desktopPagePath', () => {
     expect(desktopPagePath('/favicon.ico')).toBeNull();
   });
 
+  it('refuses a dot segment, written as is or percent-encoded', () => {
+    for (const url of [
+      '/a/../api/desktop/run-target',
+      '/a/%2e%2e/_nuxt/x',
+      '/a/%2E%2E/_nuxt/x',
+      '/a/.%2e/api/x',
+      '/a/%2e./api/x',
+      '/a/./b',
+      '/a/%2e/b',
+      '/a/..\\api',
+      '/a/../api?x=1',
+    ]) {
+      expect(desktopPagePath(url), url).toBeNull();
+    }
+    expect(desktopSessionTarget('/a/%2e%2e/api/x')).toBe('/');
+    expect(desktopPagePath('/a.b/..c/d')).toBe('/a.b/..c/d');
+    expect(desktopPagePath('/test-runs/1?next=/../x')).toBe('/test-runs/1?next=/../x');
+  });
+
   it('refuses anything that could leave the origin', () => {
     expect(desktopPagePath('//evil.example/test-runs/1')).toBeNull();
     expect(desktopPagePath('/\\evil.example')).toBeNull();
+    expect(desktopPagePath('/\t/evil.example')).toBeNull();
+    expect(desktopPagePath('/\n/evil.example')).toBeNull();
+    expect(desktopPagePath('/settings\u007f')).toBeNull();
     expect(desktopPagePath('https://evil.example/')).toBeNull();
     expect(desktopPagePath('javascript:alert(1)')).toBeNull();
     expect(desktopPagePath('')).toBeNull();

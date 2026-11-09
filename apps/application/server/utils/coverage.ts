@@ -763,9 +763,10 @@ export async function getFileCoverage(
 }
 
 /**
- * One file of a run's coverage: a coverage file with, for server files, the
- * executable line ranges, and every function known in the file, run or not
- * (the browser's, at `coverage.browser: 'functions'`).
+ * One file of a run's coverage: a coverage file with its executable line
+ * ranges (a server file's, and a browser file's at `coverage.browser:
+ * 'lines'`), and every function known in the file, run or not (the browser's,
+ * at `coverage.browser: 'functions'` and `'lines'`).
  */
 export interface RunCoverageFile extends CoverageFile {
   executable?: LineRange[];
@@ -861,9 +862,9 @@ export interface RunCoverage {
 }
 
 /**
- * A run coverage file with what its version holds: the executable lines of a
- * server file and every function known in it, from `coverage_executable`, or
- * from the row itself for a run stored before versions were.
+ * A run coverage file with what its version holds: its executable lines and
+ * every function known in it, from `coverage_executable`, or from the row
+ * itself for a run stored before versions were.
  */
 export function withFileVersion(file: RunCoverageFile, version: FileVersion | undefined): RunCoverageFile {
   return runFileEntry(
@@ -872,7 +873,7 @@ export function withFileVersion(file: RunCoverageFile, version: FileVersion | un
     file.blob,
     file.functions ?? [],
     file.lines ?? [],
-    version && file.runtime === 'server' ? version.lines : (file.executable ?? []),
+    version ? version.lines : (file.executable ?? []),
     version?.functions ?? file.allFunctions ?? [],
   );
 }
@@ -1114,7 +1115,7 @@ export async function storeRunCoverage(
               path: f.path,
               runtime: f.runtime,
               blob: f.blob,
-              lines: f.runtime === 'server' ? (f.executable ?? []) : [],
+              lines: f.executable ?? [],
               functions: f.allFunctions ?? [],
             },
           ]

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.js';
 import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
@@ -355,7 +356,7 @@ test.describe('the Runs window in another language', () => {
   ];
 
   for (const { language, heading, mock, failed, live } of LANGUAGES) {
-    test(`is in ${language} at a stop, its actions, the requests to mock and the live view included, and nothing in it clips`, async () => {
+    test(`is in ${language} while a test runs and at a stop, its actions, the requests to mock and the live view included, and nothing in it clips`, async () => {
       const { context, extensionId } = await pairedExtension(editor, { language });
       const run = await startRun(editor, 'pays', [...RUN_TAKES]);
       try {
@@ -364,6 +365,12 @@ test.describe('the Runs window in another language', () => {
         await runs.goto(`chrome-extension://${extensionId}/runs.html`);
         await expect(runs.locator('html')).toHaveAttribute('lang', language);
         await expect(runs.getByRole('heading', { level: 1 })).toHaveText(heading);
+        // Running, in a run that cannot be shared: where a test's page shows, and why it cannot be shared.
+        run.worker.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why: LIVE_SHARE_MISSING.local });
+        await expect(runs.locator('.page-hint')).toBeVisible();
+        await expect(runs.locator('.share-refused')).toHaveText(readCatalog(language).runs_shareRefusedLocal!.message);
+        expect(await untranslated(runs)).toEqual([]);
+        expect(await clipped(runs)).toEqual([]);
         stopAtCheckout(run.worker, 1);
         await runs.getByRole('button', { name: mock }).click();
         await answerNext(run.worker, 'requests', { ok: true, message: '', requests: KEPT });

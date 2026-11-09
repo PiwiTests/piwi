@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import type { ParsedTraceImport } from '../../server/utils/trace-import';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules that import the barrel load.
@@ -15,6 +14,9 @@ const { importBlobReportRun, importTraceRun, findImportedRun } = await import('#
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
+const { getTestCase } = await import('#shared/handlers/test-cases');
+const { getProjectTestCases } = await import('#shared/handlers/projects');
+const { loadSelectionCatalog } = await import('#shared/handlers/selections');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 type Port = Parameters<typeof importBlobReportRun>[1];
@@ -22,9 +24,7 @@ let db: Db;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'import-project' });
   testCaseCache.invalidate(1);
   testSuiteCache.invalidate(1);
@@ -61,13 +61,13 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
     totalTests: cases.length,
     passedTests: cases.length,
     failedTests: 0,
-    timedOutTests: 0,
     skippedTests: 0,
     didNotRunTests: 0,
     flakyTests: 0,
     shard: null,
     projectNames: ['chromium'],
     scm: null,
+    runErrors: [],
     cases,
   };
 }
@@ -324,5 +324,142 @@ describe('importTraceRun', () => {
     expect(imported!.createdAt.getTime()).toBe(input.parsed.startedAt);
     const [testCase] = await db.select().from(schema.testCases).where(eq(schema.testCases.title, 'pays'));
     expect(testCase!.tags).toEqual(['checkout']);
+  });
+});
+
+describe('the evidence and counters of an import', () => {
+  test('reads the error context Playwright attached as `_error-context-<n>` before 1.53', async () => {
+    const contexts: string[] = [];
+    const failing: ImportedRunCase = {
+      case: {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        status: 'failed',
+        error: 'Error: boom',
+        line: 10,
+        column: 5,
+        browser: 'chromium',
+      },
+      traces: [],
+      attachments: [{ entry: 'resources/context.markdown', name: '_error-context-0', contentType: 'text/markdown' }],
+    };
+
+    await importBlobReportRun(
+      db as never,
+      port({
+        parseErrorContext: (markdown) => {
+          contexts.push(markdown);
+          return { ariaSnapshot: null, testSource: null };
+        },
+      }),
+      { projectId: 1, parsed: report([failing]), readEntry, importHash: 'f'.repeat(64), source: 'report.zip' },
+    );
+
+    expect(contexts).toEqual(['resources/context.markdown']);
+  });
+
+  test.each([
+    ['fits an index entry, its long title kept whole', 'tests/checkout.spec.ts', ['checkout'], 25],
+    [
+      'is too long for one, its long names shortened',
+      `tests/${'checkout/'.repeat(120)}pay.spec.ts`,
+      Array.from({ length: 40 }, (_, i) => `when the cart holds ${i} items`),
+      30,
+    ],
+  ])('a group of traces counts the attempts of a test whose identity %s', async (_shape, filePath, suitePath, n) => {
+    const title = `pays ${'with every line item and its discount '.repeat(n)}`;
+    const attempt = (importHash: string, status: string) => ({
+      ...traceInput('8'.repeat(64)),
+      importHash,
+      parsed: {
+        ...trace(title),
+        rawFilePath: filePath,
+        case: { ...trace(title).case, filePath, suitePath, status, browser: 'chromium' },
+      },
+    });
+
+    await importTraceRun(db as never, port(), attempt('4'.repeat(64), 'failed'));
+    await importTraceRun(db as never, port(), attempt('5'.repeat(64), 'passed'));
+
+    const executions = await db
+      .select({ retries: schema.testRunsCases.retries })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions).toEqual([{ retries: 0 }, { retries: 1 }]);
+  });
+
+  test('a group of traces counts each test once, by its last attempt in its own browser', async () => {
+    const group = '9'.repeat(64);
+    const attempt = (importHash: string, status: string, browser: string) => ({
+      ...traceInput(group),
+      importHash,
+      parsed: { ...trace('pays'), case: { ...trace('pays').case, status, browser } },
+    });
+
+    await importTraceRun(db as never, port(), attempt('1'.repeat(64), 'failed', 'chromium'));
+    await importTraceRun(db as never, port(), attempt('2'.repeat(64), 'passed', 'chromium'));
+    const result = await importTraceRun(db as never, port(), attempt('3'.repeat(64), 'passed', 'firefox'));
+
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, result.runId));
+    expect(run).toMatchObject({ status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0, flakyTests: 1 });
+    const executions = await db
+      .select({ browserName: schema.testRunsCases.browserName, retries: schema.testRunsCases.retries })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions).toEqual([
+      { browserName: 'chromium', retries: 0 },
+      { browserName: 'chromium', retries: 1 },
+      { browserName: 'firefox', retries: 0 },
+    ]);
+  });
+
+  test("a trace's retry carries the history of the run's attempts, which a test's pages read its flakiness from", async () => {
+    const attempt = (group: string, importHash: string, title: string, status: string) => ({
+      ...traceInput(group),
+      importHash,
+      parsed: { ...trace(title), case: { ...trace(title).case, status, browser: 'chromium' } },
+    });
+    // "pays" passed again on its retry; "refunds" failed, then passed.
+    await importTraceRun(db as never, port(), attempt('a'.repeat(64), '1'.repeat(64), 'pays', 'passed'));
+    await importTraceRun(db as never, port(), attempt('a'.repeat(64), '2'.repeat(64), 'pays', 'passed'));
+    await importTraceRun(db as never, port(), attempt('b'.repeat(64), '3'.repeat(64), 'refunds', 'failed'));
+    await importTraceRun(db as never, port(), attempt('b'.repeat(64), '4'.repeat(64), 'refunds', 'passed'));
+
+    const executions = await db
+      .select({ retries: schema.testRunsCases.retries, attempts: schema.testRunsCases.attempts })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions.map((row) => row.attempts)).toMatchObject([
+      [{ retry: 0, status: 'passed' }],
+      [
+        { retry: 0, status: 'passed' },
+        { retry: 1, status: 'passed' },
+      ],
+      [{ retry: 0, status: 'failed' }],
+      [
+        { retry: 0, status: 'failed' },
+        { retry: 1, status: 'passed' },
+      ],
+    ]);
+
+    const cases = await db.select({ id: schema.testCases.id, title: schema.testCases.title }).from(schema.testCases);
+    const catalog = await getProjectTestCases(db as never, 1);
+    const selection = await loadSelectionCatalog(db as never, 1);
+    for (const [title, flaky] of [
+      ['pays', false],
+      ['refunds', true],
+    ] as const) {
+      const id = cases.find((c) => c.title === title)!.id;
+      const runs = flaky ? 1 : 0;
+      expect(await getTestCase(db as never, id), title).toMatchObject({ flakyRuns: runs, recentFlakyRuns: runs });
+      expect(
+        catalog.items.find((t: any) => t.id === id),
+        title,
+      ).toMatchObject({ status: flaky ? 'flaky' : 'passed', flakyRuns: runs });
+      expect(
+        selection.find((t) => t.id === id),
+        title,
+      ).toMatchObject({ flaky });
+    }
   });
 });

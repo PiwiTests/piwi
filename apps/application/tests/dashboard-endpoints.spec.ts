@@ -65,16 +65,10 @@ test.describe.serial('Latest Run API Tests', () => {
     expect(response.status()).toBe(400);
   });
 
-  test('GET /api/projects/:id/latest-run returns an empty (204) body for an unknown project', async ({ request }) => {
-    // NOTE: unlike most other `[id]` endpoints in this codebase (summary, members,
-    // extract-cases, ...), this handler never checks that the project row actually
-    // exists — `requireProjectAccess` only checks role/scope, which trivially passes
-    // when auth is disabled or the caller has "all" scope, regardless of whether the
-    // project id is real. The query then finds no rows and the handler returns
-    // `null`, which h3 serializes as 204 No Content instead of a 404. This is worth
-    // a second look upstream, but is documented here rather than "fixed" in the test.
-    const response = await request.get('/api/projects/999999/latest-run');
-    expect(response.status()).toBe(204);
+  test('GET /api/projects/:id/latest-run returns 404 for an unknown project', async ({ request }) => {
+    // An id past any a database holds, so a long-lived database or the desktop app has no such project either.
+    const response = await request.get('/api/projects/2000000000/latest-run');
+    expect(response.status()).toBe(404);
   });
 });
 

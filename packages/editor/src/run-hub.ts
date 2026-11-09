@@ -24,7 +24,9 @@
  * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
  * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
  * hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits. A host may join a peer of its own transport (`join`:
+ * close, and only the open connections count toward its limits. Each subscribed WebSocket connection hears the other
+ * live hubs of the machine (`peers`, from the host's `peers`: their addresses, never their tokens) after the runs, and
+ * again each time the list changes, read every `PEERS_MS` while one is subscribed. A host may join a peer of its own transport (`join`:
  * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
  * that said hello does, and counts toward none of the WebSocket's limits.
  */
@@ -35,6 +37,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   HUB_CLOSE,
+  HUB_FEATURES,
   HUB_HELLO_MS,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -46,6 +49,7 @@ import {
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
   MAX_HUB_WARNINGS,
+  hubPeersOf,
   isExtensionOrigin,
   isHubHost,
   parseHubCommand,
@@ -55,12 +59,13 @@ import {
   type HubIntent,
   type HubMessage,
   type HubSession,
+  type LiveHub,
   type ParsedHubCommand,
 } from '@piwitests/core/run-hub';
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import type { LaneViewFrame, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -74,6 +79,8 @@ const CLOSE_GRACE_MS = 1_000;
 const MAX_VIEW_BUFFERED = 1024 * 1024;
 /** The workers a connection keeps the pace of frames for: the oldest is forgotten past it. */
 const MAX_VIEW_PACERS = 32;
+/** How often the hub reads the other live hubs while a WebSocket connection is subscribed. */
+export const PEERS_MS = 5_000;
 
 /** What a run session's view lacks for the Runs page: the command, the folder's label and the project. */
 export interface HubRunInfo {
@@ -97,12 +104,18 @@ export interface RunHubOptions {
   surfacesChanged(): void;
   /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
   forwarded?(): readonly number[];
+  /**
+   * The live hubs of the machine, as the editors' discovery folder names them (this one among them or not): what
+   * `peers` names, without their tokens. None when absent.
+   */
+  peers?(): readonly LiveHub[];
   /** The token `hello` must carry: a new random one by default, the desktop app's own token in its server. */
   token?: string;
   /** Why the connections close as the hub does. */
   closing?: string;
   keepaliveMs?: number;
   helloMs?: number;
+  peersMs?: number;
 }
 
 /** How a peer the host joined hears the hub (`join`), whatever carries the messages. */
@@ -148,12 +161,14 @@ interface Connection {
   pending: number;
   /** It, as a viewer of the live views it watches. */
   viewer: Viewer;
-  /** The pace of the frames it is sent, by run and worker: the latest one waits, no other. */
-  frames: Map<string, LatestPacer<ViewFrame>>;
+  /** The pace of the frames it is sent, by run and worker (or lane): the latest one waits, no other. */
+  frames: Map<string, LatestPacer<ViewFrame> | LatestPacer<LaneViewFrame>>;
   /** The input it sends, in events a second. */
   input: RateWindow;
   /** It left: its WebSocket closed, or the host let its peer go. */
   left: boolean;
+  /** The `peers` message it heard last, as JSON; null before any. */
+  peersHeard: string | null;
 }
 
 /** Cut a connection being closed once `CLOSE_GRACE_MS` passed, unless the other side closed it by then. */
@@ -206,6 +221,7 @@ function textOf(data: RawData): string {
 export class RunHub {
   private readonly connections = new Set<Connection>();
   private readonly keepalive: ReturnType<typeof setInterval>;
+  private readonly peerTimer: ReturnType<typeof setInterval> | null;
 
   private constructor(
     private readonly server: http.Server,
@@ -216,6 +232,8 @@ export class RunHub {
   ) {
     this.keepalive = setInterval(() => this.beat(), options.keepaliveMs ?? HUB_KEEPALIVE_MS);
     this.keepalive.unref();
+    this.peerTimer = options.peers ? setInterval(() => this.pushPeers(), options.peersMs ?? PEERS_MS) : null;
+    this.peerTimer?.unref();
   }
 
   /** The address Piwi Picker connects to: `ws://127.0.0.1:<port>/piwi/hub`. */
@@ -308,20 +326,40 @@ export class RunHub {
    * stop it shows.
    */
   private frame(connection: Connection, frame: ViewFrame): void {
-    const key = `${frame.ref} ${frame.worker}`;
-    let pacer = connection.frames.get(key);
+    this.pace(connection, `${frame.ref} ${frame.worker}`, frame, (latest) => {
+      // A frame of a stop that ended, or that the connection stopped watching, waits no more.
+      if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
+        this.send(connection, { type: 'frame', ...latest });
+      }
+    });
+  }
+
+  /**
+   * A frame of a lane a connection watches: paced as a stop's frames are, and sent only while it watches the lane and
+   * its worker stands where the frame shows.
+   */
+  private laneFrame(connection: Connection, frame: LaneViewFrame): void {
+    this.pace(connection, `${frame.ref} lane ${frame.lane}`, frame, (latest) => {
+      // A frame of a stop that ended, of a worker that left, or of a lane no longer watched waits no more.
+      if (this.options.sessions.laneFrameGoes(connection.viewer, latest)) {
+        this.send(connection, { type: 'lane-frame', ...latest });
+      }
+    });
+  }
+
+  /**
+   * Send `frame` at most `MAX_VIEW_FPS` a second for its `key`, the latest one once the connection's socket left less
+   * than `MAX_VIEW_BUFFERED` unread; `MAX_VIEW_PACERS` keys at most, the oldest let go.
+   */
+  private pace<T>(connection: Connection, key: string, frame: T, send: (latest: T) => void): void {
+    let pacer = connection.frames.get(key) as LatestPacer<T> | undefined;
     if (!pacer) {
-      pacer = new LatestPacer<ViewFrame>({
+      pacer = new LatestPacer<T>({
         intervalMs: 1000 / MAX_VIEW_FPS,
         busy: () => connection.transport.buffered() > MAX_VIEW_BUFFERED,
-        send: (latest) => {
-          // A frame of a stop that ended, or that the connection stopped watching, waits no more.
-          if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
-            this.send(connection, { type: 'frame', ...latest });
-          }
-        },
+        send,
       });
-      connection.frames.set(key, pacer);
+      connection.frames.set(key, pacer as LatestPacer<ViewFrame> | LatestPacer<LaneViewFrame>);
       for (const [oldest, old] of connection.frames) {
         if (connection.frames.size <= MAX_VIEW_PACERS) break;
         old.close();
@@ -350,6 +388,7 @@ export class RunHub {
   /** The service stops: every connection is closed, saying so, and every peer the host joined let go. */
   close(): void {
     clearInterval(this.keepalive);
+    if (this.peerTimer) clearInterval(this.peerTimer);
     for (const connection of this.connections) {
       if (connection.ws) {
         closeWith(connection.ws, HUB_CLOSE.goingAway, this.options.closing ?? 'The editor service stopped.');
@@ -393,10 +432,14 @@ export class RunHub {
       subscribed: false,
       following: false,
       pending: 0,
-      viewer: { frame: (frame) => this.frame(connection, frame) },
+      viewer: {
+        frame: (frame) => this.frame(connection, frame),
+        laneFrame: (frame) => this.laneFrame(connection, frame),
+      },
       frames: new Map(),
       input: new RateWindow(MAX_VIEW_EVENT_RATE),
       left: false,
+      peersHeard: null,
     };
     return connection;
   }
@@ -464,6 +507,7 @@ export class RunHub {
           client: cut(client, MAX_HUB_CLIENT),
           roots: roots.slice(0, MAX_HUB_ROOTS),
           keepaliveMs: this.options.keepaliveMs ?? HUB_KEEPALIVE_MS,
+          features: [...HUB_FEATURES],
         });
         return;
       }
@@ -515,6 +559,7 @@ export class RunHub {
           for (const session of live) {
             this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
           }
+          if (connection.ws) this.tellPeers([connection]);
           if (first) this.options.surfacesChanged();
           return;
         }
@@ -531,7 +576,7 @@ export class RunHub {
           return;
         }
         case 'runControl':
-          if (command.action !== 'pause' && command.since === null) {
+          if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
           }
           return reply(
@@ -593,6 +638,11 @@ export class RunHub {
         }
         case 'share':
           return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'watch': {
+          const { ref, lane, on } = command;
+          reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
+          return this.resend(connection, ref);
+        }
         default:
           return reply(
             await this.options.actions.action(
@@ -620,12 +670,14 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
         ...worker,
+        ...(waiting ? { waiting: { ...waiting, title: cut(waiting.title, MAX_HUB_MESSAGE) ?? '' } } : {}),
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
+      ...(session.runner ? { runner: true } : {}),
       ...(session.live
         ? {
             live: {
@@ -635,7 +687,30 @@ export class RunHub {
             },
           }
         : {}),
+      ...(session.progress ? { progress: session.progress } : {}),
     };
+  }
+
+  /** The subscribed WebSocket connections hear the other live hubs when the list changed since they last did. */
+  private pushPeers(): void {
+    this.tellPeers([...this.connections].filter((c) => c.subscribed && c.ws));
+  }
+
+  /** Each of the connections hears the other live hubs, unless that is what it heard last. */
+  private tellPeers(connections: Connection[]): void {
+    if (!this.options.peers || connections.length === 0) return;
+    let message: HubMessage;
+    try {
+      message = { type: 'peers', hubs: hubPeersOf(this.options.peers(), this.url) };
+    } catch {
+      return;
+    }
+    const json = JSON.stringify(message);
+    for (const connection of connections) {
+      if (connection.peersHeard === json) continue;
+      connection.peersHeard = json;
+      this.send(connection, message);
+    }
   }
 
   /** Send a message through the connection's transport, which drops one that left too much unsent. */

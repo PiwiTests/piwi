@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update project members',
     description:
-      "Replaces the project's direct role bindings (users and groups, one role each) with `entries`; a subject listed twice keeps its last role. Bindings on all projects and the roles users hold through groups are untouched. A Project admin may grant, change and remove the roles their own role on this project lets them grant (403 otherwise); an administrator any. Returns the members in the shape of `GET`. 400 for an unknown user or group, or for an administrator, who opens every project without a binding.",
+      "Replaces the project's direct role bindings (users and groups, one role each) with `entries`; a subject listed twice keeps its last role. Bindings on all projects and the roles users hold through groups are untouched. A Project admin may grant, change and remove the roles their own role on this project lets them grant (403 otherwise); an administrator any. A Project admin names the users `GET /api/users` lists them, and anyone else with their whole `username` (ignoring letter case) in the subject: any other user id is answered like an unknown one. Returns the members in the shape of `GET`. 400 for an unknown user or group, or for an administrator, who opens every project without a binding.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:members',
     requestBody: {
@@ -29,7 +29,14 @@ defineRouteMeta({
                   properties: {
                     subject: {
                       type: 'object',
-                      properties: { type: { type: 'string', enum: ['user', 'group'] }, id: { type: 'integer' } },
+                      properties: {
+                        type: { type: 'string', enum: ['user', 'group'] },
+                        id: { type: 'integer' },
+                        username: {
+                          type: 'string',
+                          description: "A user's whole username, for one the caller's user list leaves out",
+                        },
+                      },
                       required: ['type', 'id'],
                     },
                     role: {

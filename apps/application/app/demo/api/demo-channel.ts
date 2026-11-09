@@ -1,4 +1,4 @@
-/** The demo's one notification channel: the visitor's account email, never sent to. */
+/** The demo's account-email channel: the visitor's own, always listed first and never sent to. */
 export const DEMO_CHANNEL = {
   id: 1,
   name: 'Account email',

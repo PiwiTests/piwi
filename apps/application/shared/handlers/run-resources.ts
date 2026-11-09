@@ -117,11 +117,11 @@ export async function getRunResources(db: DrizzleDB, runId: number): Promise<Run
   const recorded = await findingHistoryByFingerprint(
     db,
     run.projectId,
-    (novelty?.findings ?? []).map((f) => f.fingerprint),
+    (novelty?.findings ?? []).map((f) => f.historyFingerprint),
   );
   const history: Record<string, RunFindingHistory> = {};
-  for (const { fingerprint, isNew } of novelty?.findings ?? []) {
-    const row = recorded.get(fingerprint);
+  for (const { fingerprint, historyFingerprint, isNew } of novelty?.findings ?? []) {
+    const row = recorded.get(historyFingerprint);
     history[fingerprint] = {
       isNew,
       firstSeenRunId: row?.firstSeenRunId ?? null,

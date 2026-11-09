@@ -10,7 +10,7 @@
  * Kept free of server-only imports so the browser and the demo can import it.
  * The `SetupCapabilityId` and `FeatureNeed` references are type-only, so no
  * server code (Drizzle, the schema) rides along into those bundles. Detection
- * queries live in `shared/handlers/`; the copy for the Setup ladder lives in
+ * queries live in `shared/handlers/`; the copy for the capability ladder lives in
  * `app/utils/setup-capabilities.ts`.
  */
 import type { SetupCapabilityId } from '#shared/handlers/setup-status';
@@ -40,7 +40,8 @@ export type CapabilityId =
   | 'resources'
   | 'agent-diagnoses'
   | 'agent-write-log'
-  | 'assistant';
+  | 'assistant'
+  | 'machine-runs';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -48,8 +49,11 @@ export type CapabilityLevel = 'instance' | 'project';
 /** The resolved answer for one capability in one context. */
 export type CapabilityState = 'active' | 'available' | 'declined' | 'not-applicable' | 'undecided';
 
-/** A stored answer. Instance decisions are `declined` only; projects add `enabled`. */
-export type InstanceDecision = 'declined';
+/**
+ * A stored answer. Instance decisions are `declined`, and `enabled` for an opt-in capability only; projects add
+ * `enabled`.
+ */
+export type InstanceDecision = 'declined' | 'enabled';
 export type ProjectDecision = 'declined' | 'enabled';
 
 export interface CapabilityDef {
@@ -71,9 +75,16 @@ export interface CapabilityDef {
   passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
+  /**
+   * Off until an administrator turns it on for the instance (an `enabled` instance decision); a project may still
+   * decline it. Neither data nor a project's `enabled` turns it on, and the server refuses its routes while it is off.
+   */
+  optIn?: boolean;
+  /** An opt-in capability that can be turned on only while sign-in is on (`PIWI_AUTH_ENABLED`). */
+  needsSignIn?: boolean;
   /** The desktop build never offers it: every surface hides it there (`capabilityHidden`). */
   hiddenOnDesktop?: boolean;
-  /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
+  /** Release that introduced it; the capability ladder marks entries newer than the instance's first run. */
   since: string;
   doc: string;
 }
@@ -264,7 +275,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     detection: 'flake-lab',
     passiveData: true,
     since: '0.41.0',
-    doc: 'features/flaky-tests',
+    doc: 'features/flake-lab',
   },
   {
     id: 'resources',
@@ -307,6 +318,18 @@ export const CAPABILITIES: CapabilityDef[] = [
     since: '0.59.0',
     doc: 'features/assistant',
   },
+  {
+    id: 'machine-runs',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: null,
+    optIn: true,
+    needsSignIn: true,
+    hiddenOnDesktop: true,
+    since: '0.68.0',
+    doc: 'features/run-on-my-machine',
+  },
 ];
 
 /** The registry keyed by id, for a direct lookup. */
@@ -337,7 +360,7 @@ export function capabilitiesForModule(module: CapabilityModule): CapabilityId[] 
 }
 
 /**
- * One preset the Home wizard and the Setup page offer under
+ * One preset the Home wizard and Settings → Capabilities offer under
  * "What do you want Piwi for?". `core` is always on and shown without a toggle;
  * the rest are the optional modules a team can decline in one click.
  */
@@ -398,6 +421,10 @@ export interface CapabilityInput {
  * configured-but-empty (available) versus nothing at all (undecided).
  */
 export function resolveCapability(def: CapabilityDef, input: CapabilityInput): CapabilityState {
+  if (def.optIn) {
+    if (input.instanceDecision !== 'enabled' || input.projectDecision === 'declined') return 'declined';
+    return input.evidence ? 'active' : 'available';
+  }
   // A decline reached through the decision hierarchy, evidence aside: a project
   // decline, or — absent a project enable — an instance decline or a declined
   // followed capability. A project enable always overrides an instance decline.
@@ -448,13 +475,20 @@ function isCapabilityId(value: string): value is CapabilityId {
   return CAPABILITY_IDS.has(value);
 }
 
-/** Keep only known ids mapped to `declined`; drop anything else. */
+/** Whether a capability is off until an administrator turns it on (`optIn`). */
+export function isOptInCapability(id: string): boolean {
+  return isCapabilityId(id) && CAPABILITY_BY_ID[id].optIn === true;
+}
+
+/** Keep only known ids mapped to `declined`, or to `enabled` for an opt-in capability; drop anything else. */
 export function parseInstanceDecisions(raw: unknown): Partial<Record<CapabilityId, InstanceDecision>> {
   const decisions = (raw as { decisions?: unknown } | null)?.decisions;
   const out: Partial<Record<CapabilityId, InstanceDecision>> = {};
   if (decisions && typeof decisions === 'object') {
     for (const [id, value] of Object.entries(decisions as Record<string, unknown>)) {
-      if (isCapabilityId(id) && value === 'declined') out[id] = 'declined';
+      if (!isCapabilityId(id)) continue;
+      if (value === 'declined') out[id] = 'declined';
+      else if (value === 'enabled' && isOptInCapability(id)) out[id] = 'enabled';
     }
   }
   return out;
@@ -474,7 +508,8 @@ export function parseProjectDecisions(raw: unknown): Partial<Record<CapabilityId
 /**
  * Fold a patch of decisions onto the current set. A `null` value clears the
  * decision for that id; a known value replaces it. Instance decisions accept
- * only `declined`; project decisions also accept `enabled`.
+ * `declined`, and `enabled` for an opt-in capability; project decisions also
+ * accept `enabled`.
  */
 export function applyDecisionPatch<V extends InstanceDecision | ProjectDecision>(
   current: Partial<Record<CapabilityId, V>>,
@@ -486,7 +521,7 @@ export function applyDecisionPatch<V extends InstanceDecision | ProjectDecision>
     if (!isCapabilityId(id)) continue;
     if (value === null) {
       delete next[id];
-    } else if (value === 'declined' || (allowEnabled && value === 'enabled')) {
+    } else if (value === 'declined' || (value === 'enabled' && (allowEnabled || isOptInCapability(id)))) {
       next[id] = value as V;
     }
   }

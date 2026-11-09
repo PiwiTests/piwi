@@ -112,8 +112,15 @@ describe('buildFailureClues — seeded failure ranking baseline', () => {
 
   test("#587 — cluster #5's latest occurrence, .modal.is-open timeout", () => {
     const report = buildFailureClues(loadInput(587));
-    // Only the other modal test, failing alongside it on another worker.
-    expect(ranking(report)).toEqual([['known-flake-suspect', 'weak']]);
+    // The modal's locator matched nothing; the test is flaky, so no replacement is named and the clue stays medium,
+    // above the other modal test failing alongside it on another worker.
+    expect(ranking(report)).toEqual([
+      ['locator-matched-nothing', 'medium'],
+      ['known-flake-suspect', 'weak'],
+    ]);
+    expect(report.clues[0]!.detail).toBe(
+      "No element matched `locator('.modal.is-open')` at the failure: the page did not show it, or the locator names it differently.",
+    );
     expect(report.story).toBeNull();
   });
 });

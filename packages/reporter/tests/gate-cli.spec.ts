@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -140,7 +140,10 @@ describe('parseGateArgs', () => {
   });
 
   it('reads the connection from the .env of the folders it is given', () => {
-    fs.writeFileSync(path.join(tmpDir, '.env'), 'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_workspace\n');
+    fs.writeFileSync(
+      path.join(tmpDir, '.env'),
+      'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_workspace\n',
+    );
     expect(parseGateArgs(['--run-id', '1'], NO_DESKTOP, [tmpDir])).toMatchObject({
       serverUrl: 'https://piwi.example.com',
       apiKey: 'pd_workspace',
@@ -277,6 +280,23 @@ describe('runGate against a responding dashboard', () => {
       const headers = stub.calls[0]?.init?.headers as Record<string, string> | undefined;
       expect(headers?.['X-Piwi-Client']).toBe('cli');
     } finally {
+      stub.restore();
+    }
+  });
+
+  // A dashboard without PIWI_SITE_URL gives the run's path, which a CI log cannot open.
+  it('prints the run link on the dashboard URL it called when the dashboard gives a path', async () => {
+    const result = gateResult(true);
+    const stub = stubFetch({
+      ok: true,
+      json: () => ({ ...result, facts: { ...result.facts, runUrl: '/test-runs/7' } }),
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runGate(PASSING_ARGS, EMPTY_ENV);
+      expect(log.mock.calls.flat().join('\n')).toContain('  https://piwi.example.com/test-runs/7');
+    } finally {
+      log.mockRestore();
       stub.restore();
     }
   });

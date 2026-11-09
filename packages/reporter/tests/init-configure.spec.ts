@@ -1,7 +1,9 @@
+import * as vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import {
   ensureGitignoreEntry,
   fixturesContents,
+  recordDevDependency,
   upsertEnvKeys,
   wrapPlaywrightConfig,
 } from '../src/cli/configure.js';
@@ -23,7 +25,7 @@ describe('wrapPlaywrightConfig', () => {
     expect(edit.text).toContain("import { wrapConfig } from '@piwitests/reporter'");
     expect(edit.text).toContain('export default wrapConfig(');
     expect(edit.text).toContain('defineConfig({');
-    expect(edit.text).toContain("serverUrl: 'http://localhost:3000',");
+    expect(edit.text).toContain("serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',");
     expect(edit.text).toContain("projectName: 'checkout',");
     // The original Playwright import survives.
     expect(edit.text).toContain("import { defineConfig } from '@playwright/test'");
@@ -51,6 +53,17 @@ export default defineConfig({
     expect(edit.text).toContain('wrapConfig(');
   });
 
+  it('writes a server URL that PIWI_DASHBOARD_URL overrides, so a CI job reports where its variable says', () => {
+    const edit = wrapPlaywrightConfig(CLEAN_CONFIG, { serverUrl: 'http://localhost:3000', projectName: 'checkout' });
+    const options = edit.text.slice(edit.text.lastIndexOf('{\n    serverUrl'), edit.text.lastIndexOf('}') + 1);
+    const serverUrl = (env: Record<string, string>) =>
+      (vm.runInNewContext(`(${options})`, { process: { env } }) as { serverUrl: string }).serverUrl;
+
+    expect(serverUrl({})).toBe('http://localhost:3000');
+    expect(serverUrl({ PIWI_DASHBOARD_URL: 'https://piwi.example.com' })).toBe('https://piwi.example.com');
+    expect(serverUrl({ PIWI_DASHBOARD_URL: '' })).toBe('http://localhost:3000');
+  });
+
   it('writes desktopApp when it is given', () => {
     const edit = wrapPlaywrightConfig(CLEAN_CONFIG, {
       serverUrl: 'https://piwi.example.com',
@@ -58,7 +71,7 @@ export default defineConfig({
       desktopApp: 'prefer',
     });
     expect(edit.text).toContain(
-      "serverUrl: 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
+      "serverUrl: process.env.PIWI_DASHBOARD_URL || 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
     );
     expect(wrapPlaywrightConfig(CLEAN_CONFIG, { projectName: 'checkout' }).text).not.toContain('desktopApp');
   });
@@ -117,6 +130,16 @@ describe('upsertEnvKeys', () => {
     expect(text).toBe(existing);
   });
 
+  it('recognizes a key set with export, or with spaces around the =', () => {
+    const existing = 'export PIWI_API_KEY=pd_existing\nPIWI_DASHBOARD_URL = http://x\n';
+    const { text, added } = upsertEnvKeys(existing, [
+      ['PIWI_DASHBOARD_URL', 'http://y'],
+      ['PIWI_API_KEY', 'pd_new'],
+    ]);
+    expect(added).toEqual([]);
+    expect(text).toBe(existing);
+  });
+
   it('appends a newline before adding when the file lacks one', () => {
     const { text } = upsertEnvKeys('EXISTING=1', [['PIWI_DASHBOARD_URL', 'http://x']]);
     expect(text).toBe('EXISTING=1\nPIWI_DASHBOARD_URL=http://x\n');
@@ -134,5 +157,29 @@ describe('ensureGitignoreEntry', () => {
     const { text, added } = ensureGitignoreEntry('node_modules\n.env\n');
     expect(added).toBe(false);
     expect(text).toBe('node_modules\n.env\n');
+  });
+});
+
+describe('recordDevDependency', () => {
+  it('adds the package to devDependencies in name order, keeping the file\'s indentation and final newline', () => {
+    const source = '{\n    "name": "shop",\n    "devDependencies": {\n        "@playwright/test": "^1.59.0",\n        "typescript": "^5.9.0"\n    }\n}\n';
+    const { text, status } = recordDevDependency(source, '@piwitests/reporter', '^0.64.0');
+    expect(status).toBe('updated');
+    expect(text).toBe(
+      '{\n    "name": "shop",\n    "devDependencies": {\n        "@piwitests/reporter": "^0.64.0",\n' +
+        '        "@playwright/test": "^1.59.0",\n        "typescript": "^5.9.0"\n    }\n}\n',
+    );
+  });
+
+  it('creates devDependencies, and keeps tabs and Windows line endings', () => {
+    const { text } = recordDevDependency('{\r\n\t"name": "shop"\r\n}\r\n', '@piwitests/reporter', '^0.64.0');
+    expect(text).toBe('{\r\n\t"name": "shop",\r\n\t"devDependencies": {\r\n\t\t"@piwitests/reporter": "^0.64.0"\r\n\t}\r\n}\r\n');
+  });
+
+  it('leaves a package.json that lists the package, or that it cannot read, as it is', () => {
+    const listed = '{ "dependencies": { "@piwitests/reporter": "^0.60.0" } }';
+    expect(recordDevDependency(listed, '@piwitests/reporter', '^0.64.0')).toEqual({ text: listed, status: 'already' });
+    expect(recordDevDependency('{ "name": ', '@piwitests/reporter', '^0.64.0')).toEqual({ text: '{ "name": ', status: 'manual' });
+    expect(recordDevDependency('[]', '@piwitests/reporter', '^0.64.0').status).toBe('manual');
   });
 });

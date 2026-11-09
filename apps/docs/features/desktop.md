@@ -9,8 +9,7 @@ lang: en-US
 <Needs desktop />
 
 The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
-bundles the same server as the Docker image in a native window, keeps your data in a local folder, and adds what only
-a local app can do.
+bundles the Docker image's server in a native window and adds what only a local app can do.
 
 ## What it does
 
@@ -32,18 +31,26 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pi
 | **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
-The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in the **Privacy & Security**
-settings; on Windows, **More info** then **Run anyway** in SmartScreen. Linux shows no prompt.
+The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
+Windows, **More info** then **Run anyway** in SmartScreen.
 
-Data lives in the OS app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
+Data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
 on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
 folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
 tokens.
 
-Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches
-it hidden into the tray. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
+Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches
+it hidden into the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
+holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
+take the same keys with Ctrl. The tray lists the tests running from the app, each with Stop. While tests run from
+the app, the machine stays awake, and a failed run bounces the Dock icon or flashes the taskbar button while you look
+away, a bisect or a lab only at its verdict; one the window's tray does not list (a `piwi flake` from a terminal or an
+editor, a probe, another window's, or one from before a reload) never does. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.
+
+It listens on port 3000, or the one set in the `.exe` installer or in **Settings → Desktop app** (`serverPort` in
+`settings.json`), a free one when taken.
 
 ## Sending results to it
 
@@ -51,19 +58,24 @@ While the app runs, the reporter finds it by itself: a config with only a `proje
 address and token the app writes to `~/.piwi/desktop.json` only when nothing else sets a server, so a CI job is never
 redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
 its local runs here with
-[`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
-**Setup** carry once you turn on **CI reports to a team server**.
+[`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the
+**Connect a suite** snippets carry once you turn on **CI reports to a team server**.
 
-When the tests run as another user or in a container, **Setup → Send results to this app** gives the
-address (port 3000 unless taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not the
-config.
+<figure>
+  <img src="/screenshots/setup-connect-desktop.png" alt="The connect wizard in the desktop app: the one init command with no server URL, the fixtures import and the test command, and the CI reports to a team server switch, off">
+  <figcaption>The desktop app's connect wizard: no URL to set.</figcaption>
+</figure>
 
-A dashboard link opened in your browser opens in the app; a tab opened for it closes.
+When the tests run as another user or in a container, **Settings → Desktop app** gives the
+address and the token to configure by hand. Keep the token in `PIWI_API_KEY`.
+
+A dashboard link opened in your browser opens in the app, and its tab closes. A `piwi://open/<page>` link opens its
+page there, starting the app if needed (macOS: from Applications; Linux: after one run).
 
 ## Projects from local folders
 
-**Projects → New project → Choose folder…** creates a project from a checkout on this machine. The app detects the
-name it would report under and checks the setup (a Playwright config, Playwright, the reporter):
+**Projects → New project → Choose folder…** creates a project from a checkout on this machine, named as it would report, and
+checks the setup (a Playwright config, Playwright, the reporter):
 `npx @piwitests/reporter init` in the folder fixes what is missing. The link to the folder
 stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
 **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders;
@@ -76,7 +88,7 @@ A run, an execution, a cluster or a test runs again here, with the folder's own 
 **Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
 
 - **The arrow next to the button** shows the command, runs it once headed, in the inspector or UI mode, and sets its
-  options: tests by `file:line`, title or file, a trace, `--repeat-each` (up to 1,000 in **Run with
+  options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
   options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
   **Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
@@ -84,7 +96,7 @@ A run, an execution, a cluster or a test runs again here, with the folder's own 
   with **Compare with run #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   from Piwi Picker runs there too.
 - **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
-- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure: [Desktop app
+- **Watch, pause and step** each worker from the tray, running or at a stop: [Desktop app
   runs](/features/desktop-runs).
 
 ### Reproducing a failure and finding the breaking commit
@@ -93,15 +105,12 @@ The [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe of a
 linked folder, **without touching your checkout**:
 
 - **Reproduce here** checks out the failing commit in a throwaway
-  [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing your `node_modules`
-  when the lockfile is unchanged) and the browser if missing, and runs the failing test with that commit's own
+  [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
+  unchanged lockfile outside a workspace) and any missing browser, and runs the failing test with that commit's own
   Playwright.
-- **Find the breaking commit here** bisects step by step between the last green commit and the failing one, with live
+- **Find the breaking commit here** bisects between the last green commit and the failing one, with live
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
   first bad commit is linked to your SCM host and recorded on the failure cluster.
-
-The application under test has to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
-bisect exercises test changes only.
 
 ### Jobs from your editor
 
@@ -110,17 +119,6 @@ On a failure of a team instance, the [editor extensions](/features/editor-failur
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
 the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
 gets the verdict and can share it on the team instance with its own key, which the app never holds.
-
-### Reproducing a flake
-
-On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
-out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options
-pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded
-as run from `desktop`.
-
-Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
-runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
-enough clean runs, which tells when a flake started.
 
 ## Importing local files
 
@@ -135,8 +133,8 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
-connects each in one click, writing a `piwi-desktop` entry with the address and token into its config file.
+**Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
+connects each in one click, writing a `piwi-desktop` entry with the address and token into its config.
 It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must
 run. Restart the client after connecting. The page also installs the
@@ -144,9 +142,9 @@ run. Restart the client after connecting. The page also installs the
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart, and checks at
-startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are
-verified against the project's signing key.
+**Settings → About → Updates** checks for a newer release (also at startup), lists what changed since your version,
+breaking changes first, and installs it on restart. The `.exe` needs no admin rights; the `.msi` does. Downloads are
+signature-checked.
 
 ## Limits
 
@@ -154,8 +152,8 @@ verified against the project's signing key.
   [Docker image](/operate/deployment).
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` and your package manager for
   reproduce, bisect (one repository) and the lab.
-- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal) or Jira
-  webhook, and email only with SMTP set.
+- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal),
+  [share links](/features/share-links) or Jira webhook; email only with SMTP set.
 
 ## Related
 

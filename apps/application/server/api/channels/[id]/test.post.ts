@@ -12,6 +12,7 @@ import {
   type ChannelType,
 } from '#shared/notifications/channel-setup';
 import { isAdministrator } from '#shared/permissions';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -47,8 +48,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid channel ID' });
+  const id = requireRouteId(event, 'id', 'channel ID');
 
   const db = await getDatabase();
   const [channel] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, id));

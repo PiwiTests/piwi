@@ -80,7 +80,7 @@ export const HOME_ANCHORS = [
   {
     id: 'get-started-wizard',
     kind: 'block',
-    pages: ['/setup', '/'],
+    pages: ['/settings/connect', '/'],
     parts: [
       { id: 'one-command', describes: 'One command: the reporter’s init command, which sets everything up.' },
       {
@@ -91,10 +91,10 @@ export const HOME_ANCHORS = [
     ],
     describes:
       'The reporter setup wizard: one command, a coding-agent prompt or the steps by hand, each wiring wrapConfig and the capture fixtures.',
-    shownWhen: 'On Setup, and on Home while the instance has no project.',
+    shownWhen: 'In Settings, and on Home while the instance has no project.',
     help: 'home.get-started',
     doc: 'guide/reporter',
-    sample: { route: '/setup' },
+    sample: { route: '/settings/connect' },
   },
 ];
 

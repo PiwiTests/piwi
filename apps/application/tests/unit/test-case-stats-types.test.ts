@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { drizzle as drizzleProxy } from 'drizzle-orm/sqlite-proxy';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient, type InValue } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -43,7 +42,7 @@ const pgLikeDb = drizzleProxy(
   { schema },
 );
 
-/** The word that follows each `FROM ( … )` derived table: its alias, or the next keyword. */
+/** The word that follows each `FROM ( … )` derived table, quoted or not: its alias, or the next keyword. */
 function derivedTableAliases(query: string): string[] {
   const aliases: string[] = [];
   for (const match of query.matchAll(/\bFROM\s*\(/gi)) {
@@ -52,7 +51,7 @@ function derivedTableAliases(query: string): string[] {
       if (query[end] === '(') depth++;
       else if (query[end] === ')' && --depth === 0) break;
     }
-    aliases.push(/^\s*(?:AS\s+)?(\w*)/i.exec(query.slice(end + 1))![1]!);
+    aliases.push(/^\s*(?:AS\s+)?"?(\w*)/i.exec(query.slice(end + 1))![1]!);
   }
   return aliases;
 }
@@ -67,9 +66,7 @@ const at = (minutesAgo: number) => new Date(NOW - minutesAgo * MINUTE);
  * old, one an hour old, and a test with none.
  */
 beforeAll(async () => {
-  await migrate(sqliteDb, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(sqliteDb);
   await sqliteDb.insert(schema.projects).values({ id: 1, name: 'shop' });
   await sqliteDb.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'cart.spec.ts', title: 'adds' });
   const statuses = [...Array(5).fill('passed'), ...Array(2).fill('skipped'), ...Array(5).fill('failed')];
@@ -124,7 +121,7 @@ describe.each([
       flakyRuns: 0,
       recentFlakyRuns: 0,
       avgDuration: 6500,
-      passRate: 58,
+      passRate: 50,
     });
     expect(testCase!.lastRunAt).toEqual(at(1));
   });

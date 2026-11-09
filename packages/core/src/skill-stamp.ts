@@ -6,25 +6,17 @@
  * (outdated, safe to replace) from one a person changed (edited, kept).
  */
 
+import { fnv1a32 } from './hash';
+
 /** The front-matter keys of the stamps. */
 export const SKILL_VERSION_KEY = 'piwi-version';
 export const SKILL_HASH_KEY = 'piwi-hash';
 
 const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 
-/** FNV-1a 32-bit from a seed, as 8 hex characters. */
-function fnv32(input: string, seed: number): string {
-  let h = seed >>> 0;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
 /** Two FNV-1a passes with different seeds, as 16 hex characters: stable and dependency-free. */
 function hash16(input: string): string {
-  return fnv32(input, 0x811c9dc5) + fnv32(input, 0x01000193);
+  return fnv1a32(input) + fnv1a32(input, 0x01000193);
 }
 
 function withoutHashLine(markdown: string): string {

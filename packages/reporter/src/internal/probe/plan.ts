@@ -7,6 +7,7 @@
 
 import type { ProbeFault } from './faults.js';
 import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
+import { compileGlob, type GlobToken } from '@piwitests/core/glob';
 
 /** One (test, route, fault) pair the server's plan asks this run to apply. */
 export interface ProbePlanItem {
@@ -48,11 +49,29 @@ function parseRouteKey(routeKey: string): { method: string; pattern: string } {
   return { method: routeKey.slice(0, space).toUpperCase(), pattern: routeKey.slice(space + 1) };
 }
 
-/** A route pattern's path as a regex: `:id`/`:uuid`/`:param` match one segment. */
-function patternToRegex(pattern: string): RegExp {
+/** A `:name` of a route pattern: `:id`, `:uuid`, `:param`. */
+const ROUTE_PARAM = /:[A-Za-z0-9_]+/y;
+
+/**
+ * A route pattern's path as a matcher of the whole path: each `:name` takes one
+ * or more characters of one segment (what `[^/]+` takes), any other character
+ * itself. `compileGlob` matches in steps that grow with the path's length
+ * times the pattern's.
+ */
+function routePatternMatcher(pattern: string): (path: string) => boolean {
   const path = pattern.split('?')[0] ?? pattern;
-  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z0-9_]+/g, '[^/]+');
-  return new RegExp(`^${escaped}$`);
+  const tokens: GlobToken[] = [];
+  for (let i = 0; i < path.length; i++) {
+    ROUTE_PARAM.lastIndex = i;
+    const param = ROUTE_PARAM.exec(path);
+    if (param) {
+      tokens.push({ kind: 'one', slash: false }, { kind: 'run', slash: false });
+      i += param[0].length - 1;
+    } else {
+      tokens.push({ kind: 'char', char: path[i]! });
+    }
+  }
+  return compileGlob(tokens);
 }
 
 /** True when two describe-block paths are equal element for element. */
@@ -95,7 +114,7 @@ export function requestMatchesRoute(method: string, url: string, routeKey: strin
   } catch {
     path = url.split('?')[0] ?? url;
   }
-  return patternToRegex(pattern).test(path);
+  return routePatternMatcher(pattern)(path);
 }
 
 /** Mutable per-test probe state: first-navigation flag and per-route match count. */

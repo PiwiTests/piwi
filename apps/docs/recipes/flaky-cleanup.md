@@ -1,5 +1,6 @@
 ---
 title: Cut costly flakiness
+titleTemplate: "Flaky Playwright suite: :title | Piwi"
 description: "One afternoon to make an unreliable suite trustworthy: fix the flaky tests that cost the most, one root cause at a time, and quarantine the rest."
 lang: en-US
 ---
@@ -58,7 +59,7 @@ is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run
 
 - Passing runs accumulate as a **streak**; one failure resets it.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
-- **Candidates** (over the API) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
+- **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
 - **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest
   has been there.
 
@@ -79,7 +80,7 @@ wasted CI minutes and root-cause category, highest score first; `get_test_stabil
 for "what should I fix this sprint?" without opening a browser.
 
 **Script it.** Quarantine is a REST resource, so promoting candidates or releasing ready tests can
-be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/docs).
+be a scheduled job. Shapes are in the [API docs](https://piwitests.dev/demo/settings/api).
 
 **No server at all.** If this is your own laptop suite rather than a team's, the
 [desktop app](/features/desktop) runs the same analysis with no Docker and no Node — Windows x64,

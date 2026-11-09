@@ -2,7 +2,7 @@
 # tag's version (apps/desktop/scripts/node-version.mjs reads the first FROM). Dependabot moves the tag and the digest
 # together.
 # Stage 1: Build stage
-FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
+FROM node:24.22.2-alpine3.24@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS builder
 
 WORKDIR /app
 
@@ -11,6 +11,7 @@ COPY package.json package-lock.json ./
 COPY packages/core/package.json ./packages/core/
 COPY packages/picker-dom/package.json ./packages/picker-dom/
 COPY packages/editor/package.json ./packages/editor/
+COPY packages/run-ui/package.json ./packages/run-ui/
 COPY apps/application/package.json ./apps/application/
 COPY packages/reporter/package.json ./packages/reporter/
 COPY integrations/nitro/package.json ./integrations/nitro/
@@ -36,6 +37,10 @@ COPY packages/picker-dom/ ./packages/picker-dom/
 # with the extension's mock generator it bundles (src/shared/mock-code.ts).
 COPY packages/editor/ ./packages/editor/
 COPY apps/extension/src/shared/ ./apps/extension/src/shared/
+
+# The Nuxt layer the application extends (nuxt.config.ts): its components, composables and plugins, and the
+# syntax highlighter the server renders exports with. It ships TypeScript source, so it must be present at build time.
+COPY packages/run-ui/ ./packages/run-ui/
 
 # Copy application source
 COPY apps/application/ ./apps/application/
@@ -74,7 +79,7 @@ RUN set -eux; \
     rm -rf apps/application/.output/public/demo
 
 # Stage 2: Production stage
-FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS production
+FROM node:24.22.2-alpine3.24@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS production
 
 WORKDIR /app
 

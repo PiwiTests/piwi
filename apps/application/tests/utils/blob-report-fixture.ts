@@ -25,9 +25,17 @@ export interface FixtureTest {
     status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
     duration?: number;
     errorMessage?: string;
+    /** The attempt's errors as Playwright lists them, in place of `errorMessage`'s: each at a line of the spec when it names one. */
+    errors?: Array<{ message: string; line?: number; column?: number }>;
     annotations?: Array<{ type: string; description?: string }>;
+    /** Playwright's `test.expectedStatus`; by default `failed` for an attempt annotated `fail`, else `passed`. */
+    expectedStatus?: 'passed' | 'failed';
     /** Attach a `trace` (zip), `screenshot` (png) or `error-context` (markdown). */
     attachments?: Array<{ name: string; contentType: string; body: string }>;
+    /** What the attempt wrote to stdout, chunk by chunk (`onStdIO`): text, or bytes Playwright writes as base64. */
+    stdout?: Array<string | { base64: string }>;
+    /** What the attempt wrote to stderr, as `stdout`. */
+    stderr?: Array<string | { base64: string }>;
   }>;
 }
 
@@ -36,13 +44,31 @@ export interface FixtureOptions {
   rootDir?: string;
   configFile?: string;
   projectName?: string;
+  /** The project's resolved `use` options. */
+  projectUse?: Record<string, unknown>;
   playwrightVersion?: string;
   blobVersion?: number;
   shard?: { current: number; total: number } | null;
   runStatus?: string;
   startTime?: number;
   duration?: number;
+  /** Put each attempt's attachments on its `onTestEnd` result, as Playwright wrote them before 1.53, not in `onAttach`. */
+  attachmentsOnTestEnd?: boolean;
+  /** The errors Playwright reports outside any test (`onError`), as its `TestError`s, after `onBegin`. */
+  runErrors?: unknown[];
+  /** What the run wrote to stdout outside any test (`onStdIO` with no test), after `onBegin`. */
+  outputOutsideTests?: string[];
   tests: FixtureTest[];
+}
+
+/** One `onStdIO` event: a chunk an attempt wrote to one of its streams, or the run outside any test. */
+function stdioEvent(
+  type: 'stdout' | 'stderr',
+  chunk: string | { base64: string },
+  ids: { testId: string; resultId: string } | null,
+) {
+  const data = typeof chunk === 'string' ? { data: chunk, isBase64: false } : { data: chunk.base64, isBase64: true };
+  return { method: 'onStdIO', params: { ...ids, type, ...data } };
 }
 
 /** Build the archive bytes for a blob report describing `options.tests`. */
@@ -52,12 +78,16 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     rootDir = '/repo/tests',
     configFile = '../playwright.config.ts',
     projectName = 'chromium',
+    projectUse = {},
     playwrightVersion = '1.61.1',
     blobVersion = 2,
     shard = null,
     runStatus = 'passed',
     startTime = 1_700_000_000_000,
     duration = 1234,
+    attachmentsOnTestEnd = false,
+    runErrors = [],
+    outputOutsideTests = [],
     tests,
   } = options;
 
@@ -67,8 +97,10 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
       method: 'onConfigure',
       params: { config: { configFile, rootDir, version: playwrightVersion, shard, metadata: {}, workers: 1 } },
     },
-    { method: 'onProject', params: { project: buildProject(projectName, file, tests) } },
+    { method: 'onProject', params: { project: buildProject(projectName, file, tests, projectUse) } },
     { method: 'onBegin' },
+    ...runErrors.map((error) => ({ method: 'onError', params: { error } })),
+    ...outputOutsideTests.map((chunk) => stdioEvent('stdout', chunk, null)),
   ];
 
   const resources: ZipEntry[] = [];
@@ -122,7 +154,12 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         return { name: attachment.name, contentType: attachment.contentType, path };
       });
 
-      if (attachments.length > 0) {
+      for (const chunk of attempt.stdout ?? [])
+        lines.push(stdioEvent('stdout', chunk, { testId: test.testId, resultId }));
+      for (const chunk of attempt.stderr ?? [])
+        lines.push(stdioEvent('stderr', chunk, { testId: test.testId, resultId }));
+
+      if (attachments.length > 0 && !attachmentsOnTestEnd) {
         lines.push({ method: 'onAttach', params: { testId: test.testId, resultId, attachments } });
       }
 
@@ -131,7 +168,8 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         params: {
           test: {
             testId: test.testId,
-            expectedStatus: attempt.annotations?.some((a) => a.type === 'fail') ? 'failed' : 'passed',
+            expectedStatus:
+              attempt.expectedStatus ?? (attempt.annotations?.some((a) => a.type === 'fail') ? 'failed' : 'passed'),
             timeout: test.timeout ?? 30000,
             annotations: [],
           },
@@ -139,16 +177,24 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
             id: resultId,
             duration: attempt.duration ?? 10,
             status: attempt.status,
-            errors: attempt.errorMessage
-              ? [
-                  {
-                    message: attempt.errorMessage,
-                    stack: attempt.errorMessage,
-                    location: { file: `${rootDir}/${file}`, line: test.line ?? 3, column: test.column ?? 5 },
-                  },
-                ]
-              : [],
+            errors: attempt.errors
+              ? attempt.errors.map((error) => ({
+                  message: error.message,
+                  ...(error.line
+                    ? { location: { file: `${rootDir}/${file}`, line: error.line, column: error.column ?? 1 } }
+                    : {}),
+                }))
+              : attempt.errorMessage
+                ? [
+                    {
+                      message: attempt.errorMessage,
+                      stack: attempt.errorMessage,
+                      location: { file: `${rootDir}/${file}`, line: test.line ?? 3, column: test.column ?? 5 },
+                    },
+                  ]
+                : [],
             ...(attempt.annotations ? { annotations: attempt.annotations } : {}),
+            ...(attachmentsOnTestEnd ? { attachments } : {}),
           },
         },
       });
@@ -162,7 +208,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
 }
 
 /** Nest the tests under their describe blocks inside one file suite. */
-function buildProject(projectName: string, file: string, tests: FixtureTest[]) {
+function buildProject(projectName: string, file: string, tests: FixtureTest[], use: Record<string, unknown>) {
   const fileSuite: Record<string, unknown> = {
     title: file,
     location: { file, line: 1, column: 1 },
@@ -193,7 +239,7 @@ function buildProject(projectName: string, file: string, tests: FixtureTest[]) {
     });
   }
 
-  return { name: projectName, timeout: 30000, retries: 1, suites: [fileSuite], use: {} };
+  return { name: projectName, timeout: 30000, retries: 1, suites: [fileSuite], use };
 }
 
 export interface TraceFixtureOptions {
@@ -211,6 +257,8 @@ export interface TraceFixtureOptions {
   consoleEntries?: Array<{ messageType: string; text: string; time: number }>;
   /** Drop the library context, as a test that never opened a page does. */
   omitLibraryContext?: boolean;
+  /** Drop the runner stream, as a trace recorded outside the test runner (`context.tracing`) has none. */
+  omitRunnerContext?: boolean;
 }
 
 /**
@@ -229,6 +277,7 @@ export function buildTraceArchive(options: TraceFixtureOptions = {}): Buffer {
     actions = [{ apiName: 'locator.click', startTime: monotonicTime + 10, endTime: monotonicTime + 60 }],
     consoleEntries = [],
     omitLibraryContext = false,
+    omitRunnerContext = false,
   } = options;
 
   const runner: unknown[] = [
@@ -293,9 +342,9 @@ export function buildTraceArchive(options: TraceFixtureOptions = {}): Buffer {
     library.push({ type: 'console', messageType: entry.messageType, text: entry.text, time: entry.time });
   }
 
-  const entries: ZipEntry[] = [
-    { name: 'test.trace', data: Buffer.from(runner.map((line) => JSON.stringify(line)).join('\n'), 'utf-8') },
-  ];
+  const entries: ZipEntry[] = omitRunnerContext
+    ? []
+    : [{ name: 'test.trace', data: Buffer.from(runner.map((line) => JSON.stringify(line)).join('\n'), 'utf-8') }];
   if (library.length > 0) {
     entries.push({
       name: '0-trace.trace',

@@ -1,0 +1,108 @@
+name: Performance comment
+
+# Posts a pull request's performance comparison (reusable-perf.yml) as one comment on it, updated on every push. It
+# runs once ci.yml's run of the pull request has completed, from the default branch, with a token that may comment: the
+# run of a pull request from a fork only gets a read-only one. It reads the report from that run's `perf-results`
+# artifact and runs nothing of the pull request. The artifact is the pull request's to write, so the comment goes only
+# to an open pull request whose head is still the commit the run measured (the one the artifact names, else the only
+# one), an artifact that holds no report GitHub can post is skipped with a warning, and a fork's report is posted under
+# a note saying it comes from the fork's own run, with its mentions made inert.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# One group per pull request branch, since the runs of every pull request share the default branch's ref. A run waits
+# for the one before it rather than cancelling it: two pull requests from one branch each get their report, and a stale
+# one is not posted (its head is no longer the measured commit).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    name: Comment on the pull request
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      # Reads the run's artifacts.
+      actions: read
+      # Posts and updates the comparison comment.
+      pull-requests: write
+
+    steps:
+      # A run that did not measure (no change to the app, a failed build) has no report.
+      - name: Look for the report
+        id: report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              ...context.repo,
+              run_id: context.payload.workflow_run.id,
+              name: 'perf-results',
+            });
+            if (data.total_count === 0) return core.info('This run has no performance report.');
+            core.setOutput('found', 'true');
+
+      - name: Download the report
+        if: steps.report.outputs.found
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: perf-results
+          path: perf
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The marker must match COMMENT_MARKER in apps/application/scripts/perf/lib/markdown.mjs (perf-suite.test.ts).
+      - name: Comment on the pull request
+        if: steps.report.outputs.found
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- piwi-perf-report -->';
+            // GitHub's limit on a comment's length, in characters.
+            const maxComment = 65536;
+            /** A file of the artifact as text, or null when it is missing, not a file, or larger than a comment can be. */
+            const read = (path) => {
+              try {
+                const stat = fs.statSync(path);
+                return stat.isFile() && stat.size <= maxComment * 4 ? fs.readFileSync(path, 'utf8') : null;
+              } catch {
+                return null;
+              }
+            };
+            const run = context.payload.workflow_run;
+            const owner = run.head_repository?.owner?.login;
+            if (!owner) return core.info('The head repository of this run no longer exists.');
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              ...context.repo,
+              state: 'open',
+              head: `${owner}:${run.head_branch}`,
+              per_page: 100,
+            });
+            const candidates = pulls.filter((p) => p.head.sha === run.head_sha).map((p) => p.number);
+            const namedText = read('perf/pull-request')?.trim() ?? '';
+            const named = /^[1-9][0-9]*$/.test(namedText) ? Number(namedText) : null;
+            const issue_number =
+              named !== null ? (candidates.includes(named) ? named : null) : candidates.length === 1 ? candidates[0] : null;
+            if (issue_number === null) return core.info(`No open pull request measured by this run has ${run.head_sha} as its head.`);
+            const report = read('perf/report.md');
+            if (!report?.startsWith(marker)) return core.warning('perf/report.md is not a performance report.');
+            // A fork's report is what its own code wrote: the comment says so, and no mention in it notifies anyone.
+            const fromFork = run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`;
+            const body = fromFork
+              ? `${marker}\n> [!NOTE]\n> Written by this pull request's own CI run, from a fork.\n` +
+                report.slice(marker.length).replace(/(^|\W)@(?=\w)/g, '$1@\u200b')
+              : report;
+            if (body.length > maxComment) return core.warning('perf/report.md is too long for a comment.');
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker));
+            if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number, body });

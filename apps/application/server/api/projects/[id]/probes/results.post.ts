@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Record the outcomes of a probe run',
     description:
-      'Writes the probe ledger and a `checks` edge per (test, route) pair from a `piwi probe` run: whether the test noticed the injected fault. Requires a reporter API key.',
+      'Writes the probe ledger from a `piwi probe` run: whether each test noticed its injected fault. A noticed or not-noticed result of a fault that breaks a response also sets the `checks` edge of its (test, route) pair; an inconclusive one, or a delay, never replaces it. Requires a reporter API key.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'run:submit',
   },

@@ -18,6 +18,7 @@ import type { DrizzleDB } from './db';
 import { holdsAnywhere, isAdministrator, type AccessSummary } from '../permissions';
 import { analyticsScopeToQuery, parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
 import { queryHasScope } from '../analytics/scope-state';
+import { parseRouteId } from '../route-id';
 import {
   applyWidgetScope,
   BUILTIN_DASHBOARDS,
@@ -94,11 +95,12 @@ function canShareDashboards(actor: DashboardActor): boolean {
 /** A dashboard reference: a built-in key or a saved dashboard id. */
 export type DashboardRef = { kind: 'builtin'; key: BuiltinDashboardKey } | { kind: 'saved'; id: number };
 
+/** A built-in key, or a saved dashboard's id read as a route reads one (`parseRouteId`); null for anything else. */
 function parseDashboardRef(raw: unknown): DashboardRef | null {
   const value = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
   if (isBuiltinDashboardKey(value)) return { kind: 'builtin', key: value };
-  if (/^\d+$/.test(value) && Number(value) > 0) return { kind: 'saved', id: Number(value) };
-  return null;
+  const id = parseRouteId(value);
+  return id === null ? null : { kind: 'saved', id };
 }
 
 function dashboardRefString(ref: DashboardRef): string {

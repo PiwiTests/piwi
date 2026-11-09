@@ -4,9 +4,12 @@ import {
   INBOX_QUEUES,
   clusterInQueue,
   countQueues,
-  isSnoozedBack,
+  showsSnoozedBack,
   effectiveAssignee,
   groupIncidentClusters,
+  inboxIdentity,
+  keepInboxFocus,
+  moveInboxFocus,
   type InboxQueue,
   type SnoozeOption,
   type UserIdentity,
@@ -15,9 +18,11 @@ import type { OpenFailureCluster } from '~~/types/api';
 
 const props = defineProps<{
   clusters: OpenFailureCluster[];
+  /** How many clusters seen only in developers' own runs the list leaves out (`seenOnlyLocally`). */
+  localOnlyHidden?: number;
 }>();
 
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{ changed: []; 'include-local': [include: boolean] }>();
 
 const toast = useToast();
 const route = useRoute();
@@ -27,6 +32,29 @@ const { hasTracker } = useTrackerStatus();
 
 // ── What the viewer may do on each cluster's project ─────────────────────────
 // Each action shows to the holders of the permission its route declares there.
+/**
+ * The note on the clusters seen only in developers' own runs: how many the list leaves out, or that it lists some; null
+ * when there is nothing to say. Only a list that includes them marks them, so the note stays while it is fetched again.
+ */
+const localNote = computed(() => {
+  const hidden = props.localOnlyHidden ?? 0;
+  if (hidden > 0) {
+    return {
+      text: `${hidden} ${hidden === 1 ? 'failure' : 'failures'} seen only in developers' local runs ${hidden === 1 ? 'is' : 'are'} left out.`,
+      action: hidden === 1 ? 'Show it' : 'Show them',
+      include: true,
+    };
+  }
+  if (props.clusters.some((c) => c.seenOnlyLocally)) {
+    return {
+      text: "Failures seen only in developers' local runs are listed.",
+      action: 'Leave them out',
+      include: false,
+    };
+  }
+  return null;
+});
+
 const canTriage = (c: OpenFailureCluster) => can('triage:write', c.projectId);
 const canQuarantine = (c: OpenFailureCluster) => can('quarantine:write', c.projectId);
 const canLink = (c: OpenFailureCluster) => can('link:write', c.projectId);
@@ -50,7 +78,7 @@ const queue = computed<InboxQueue>({
     if (value === 'all') delete query.queue;
     else query.queue = value;
     router.replace({ query });
-    selectedIndex.value = -1;
+    focusedId.value = null;
   },
 });
 
@@ -88,10 +116,10 @@ onMounted(() => {
   }
 });
 
-const user = computed<UserIdentity | null>(() => {
-  const u = authState.value.user;
-  return u ? { name: u.name ?? null, username: u.username ?? null } : null;
-});
+const user = computed<UserIdentity | null>(() => inboxIdentity(authState.value.user));
+
+/** The name "Assign to me" writes: none without a signed-in user (authentication off), so the action is not offered. */
+const myAssigneeName = computed(() => user.value?.name ?? user.value?.username ?? null);
 
 const queueCtx = computed(() => ({ user: user.value, lastVisitMs: lastVisitMs.value }));
 
@@ -144,9 +172,14 @@ const hints = computed(() => {
   };
 });
 
-watch([visibleRows, queue], () => {
-  if (selectedIndex.value >= visibleRows.value.length) selectedIndex.value = visibleRows.value.length - 1;
-});
+// The list reloads and reorders on every run event: the focus stays on its
+// cluster, and moves to the row in its place when that cluster leaves.
+watch(
+  () => visibleRows.value.map((c) => c.id),
+  (ids, previousIds) => {
+    focusedId.value = keepInboxFocus(ids, previousIds ?? [], focusedId.value);
+  },
+);
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
 
@@ -184,9 +217,11 @@ const knownPeople = computed(() => {
 
 // ── Selection ────────────────────────────────────────────────────────────────
 
-const selectedIndex = ref(-1);
+/** The cluster the keyboard acts on, by id, so a reorder never retargets a key. */
+const focusedId = ref<number | null>(null);
 const selectedIds = ref(new Set<number>());
 
+/** The selected clusters of this queue: what a bulk action applies to, and what the bar counts. */
 const selectedClusters = computed(() => rows.value.filter((c) => selectedIds.value.has(c.id)));
 const bulkCanTriage = computed(() => selectedClusters.value.every(canTriage));
 const bulkCanQuarantine = computed(() => selectedClusters.value.every(canQuarantine));
@@ -202,10 +237,12 @@ function toggleSelect(cluster: OpenFailureCluster): void {
 function extendSelection(dir: 1 | -1): void {
   const list = visibleRows.value;
   if (list.length === 0) return;
-  if (selectedIndex.value < 0) selectedIndex.value = 0;
-  const next = Math.min(list.length - 1, Math.max(0, selectedIndex.value + dir));
-  selectedIndex.value = next;
-  const target = list[next];
+  focusedId.value = moveInboxFocus(
+    list.map((c) => c.id),
+    focusedId.value,
+    dir,
+  );
+  const target = list.find((c) => c.id === focusedId.value);
   if (target && canSelect(target)) {
     const set = new Set(selectedIds.value);
     set.add(target.id);
@@ -299,9 +336,11 @@ async function assign(cluster: OpenFailureCluster, assignee: string | null): Pro
 async function quarantine(cluster: OpenFailureCluster): Promise<void> {
   if (!canQuarantine(cluster)) return;
   try {
-    const res = await $fetch<{ tests: number }>(`/api/failure-clusters/${cluster.id}/quarantine`, { method: 'POST' });
+    const res = await $fetch<{ tests: number; quarantined: number }>(`/api/failure-clusters/${cluster.id}/quarantine`, {
+      method: 'POST',
+    });
     toast.add({
-      title: `Quarantined ${res.tests} ${res.tests === 1 ? 'test' : 'tests'}`,
+      title: `Quarantined ${res.quarantined} ${res.quarantined === 1 ? 'test' : 'tests'}`,
       description: describeCluster(cluster),
       color: 'success',
     });
@@ -466,18 +505,19 @@ function onKeydown(e: KeyboardEvent): void {
   }
   if (list.length === 0) return;
 
-  const sel = () => list[selectedIndex.value];
+  const sel = () => list.find((c) => c.id === focusedId.value);
+  const ids = list.map((c) => c.id);
 
   switch (e.key) {
     case 'j':
       e.preventDefault();
       if (e.shiftKey) extendSelection(1);
-      else selectedIndex.value = Math.min(list.length - 1, Math.max(0, selectedIndex.value + 1));
+      else focusedId.value = moveInboxFocus(ids, focusedId.value, 1);
       break;
     case 'k':
       e.preventDefault();
       if (e.shiftKey) extendSelection(-1);
-      else selectedIndex.value = Math.max(0, (selectedIndex.value < 0 ? 0 : selectedIndex.value) - 1);
+      else focusedId.value = moveInboxFocus(ids, focusedId.value, -1);
       break;
     case 'x': {
       const c = sel();
@@ -611,10 +651,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
     <!-- Bulk bar -->
     <div
-      v-if="selectedIds.size > 0"
+      v-if="selectedClusters.length > 0"
       class="mb-2 flex flex-wrap items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
     >
-      <span class="font-medium tabular-nums">{{ selectedIds.size }} selected</span>
+      <span class="font-medium tabular-nums">{{ selectedClusters.length }} selected</span>
       <div class="ml-auto flex flex-wrap items-center gap-1">
         <template v-if="bulkCanTriage">
           <UButton
@@ -640,10 +680,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           v-if="bulkCanTriage"
           :items="[
             [
-              {
-                label: 'Assign to me',
-                onSelect: () => bulk('assign', { assignee: user?.name ?? user?.username ?? null }),
-              },
+              ...(myAssigneeName
+                ? [{ label: 'Assign to me', onSelect: () => bulk('assign', { assignee: myAssigneeName }) }]
+                : []),
               { label: 'Unassign', onSelect: () => bulk('assign', { assignee: null }) },
             ],
           ]"
@@ -723,27 +762,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     <p v-if="rows.length === 0 && incidentRows.length === 0" class="py-3 text-sm text-gray-500 dark:text-gray-400">
       {{
         queue === 'all'
-          ? 'No open failure clusters — nothing needs triage right now.'
+          ? (localOnlyHidden ?? 0) > 0
+            ? "No open failure clusters outside developers' local runs."
+            : 'No open failure clusters — nothing needs triage right now.'
           : 'Nothing in this queue right now.'
       }}
     </p>
 
     <div v-if="rows.length > 0" class="divide-y divide-gray-100 dark:divide-gray-800">
       <div
-        v-for="(cluster, index) in visibleRows"
+        v-for="cluster in visibleRows"
         :key="cluster.id"
         role="button"
         tabindex="0"
         :data-cluster-row="cluster.id"
         data-tour="failure-inbox-row"
-        :aria-current="index === selectedIndex ? 'true' : undefined"
+        :aria-current="cluster.id === focusedId ? 'true' : undefined"
         class="group flex flex-col gap-2 py-3 px-2 -mx-2 rounded-md cursor-pointer sm:flex-row sm:items-center sm:gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/60"
         :class="[
-          index === selectedIndex ? 'bg-primary/5 ring-1 ring-primary/30' : '',
+          cluster.id === focusedId ? 'bg-primary/5 ring-1 ring-primary/30' : '',
           selectedIds.has(cluster.id) ? 'bg-primary/5' : '',
         ]"
         @click="open(cluster)"
-        @mouseenter="selectedIndex = index"
+        @mouseenter="focusedId = cluster.id"
         @keydown.enter="open(cluster)"
       >
         <!-- Select checkbox -->
@@ -784,7 +825,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             <UBadge v-if="cluster.quarantinedCount > 0" color="warning" variant="subtle" size="xs" class="gap-1">
               <UIcon name="i-lucide-shield" class="size-3" />Quarantined
             </UBadge>
-            <UBadge v-if="isSnoozedBack(cluster)" color="info" variant="subtle" size="xs" class="gap-1">
+            <UBadge v-if="showsSnoozedBack(cluster, lastVisitMs)" color="info" variant="subtle" size="xs" class="gap-1">
               <UIcon name="i-lucide-alarm-clock" class="size-3" />Snoozed, back
             </UBadge>
             <UBadge v-if="cluster.mergeSuggestionPending" color="neutral" variant="subtle" size="xs" class="gap-1">
@@ -819,6 +860,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 }}</span>
               </template>
             </ClientOnly>
+            <template v-if="cluster.seenOnlyLocally">
+              <span class="shrink-0">·</span>
+              <span class="whitespace-nowrap" data-local-only>local runs only</span>
+            </template>
           </div>
         </div>
 
@@ -885,10 +930,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                   <option v-for="p in knownPeople" :key="p" :value="p" />
                 </datalist>
                 <div class="flex items-center justify-between gap-1">
-                  <UButton size="xs" variant="soft" @click="assign(cluster, user?.name ?? user?.username ?? null)">
+                  <UButton v-if="myAssigneeName" size="xs" variant="soft" @click="assign(cluster, myAssigneeName)">
                     Assign to me
                   </UButton>
-                  <div class="flex gap-1">
+                  <div class="flex gap-1 ml-auto">
                     <UButton
                       v-if="cluster.assignee"
                       size="xs"
@@ -963,6 +1008,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </div>
       </div>
     </div>
+
+    <!-- The clusters seen only in developers' own runs: work in progress, left out of the team's list unless asked.
+         One paragraph and one button whose words change, so the button keeps the focus. -->
+    <p v-if="localNote" class="mt-3 text-xs text-muted" data-local-note>
+      {{ localNote.text }}
+      <button
+        type="button"
+        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+        @click="emit('include-local', localNote.include)"
+      >
+        {{ localNote.action }}
+      </button>
+    </p>
 
     <!-- Keyboard hints (hidden on touch) -->
     <p

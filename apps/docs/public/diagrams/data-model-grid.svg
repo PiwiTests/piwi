@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 482" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
+  <defs>
+    <marker id="dmn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="dmd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="dma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="481" rx="12"/>
+  <text class="t" x="24" y="38">One project, as a grid</text>
+  <text class="s" x="24" y="62">A project holds one suite’s results: runs are columns, test cases are rows, executions fill the cells.</text>
+  <text class="h" x="22" y="92">TEST CASES</text>
+  <text class="h" x="248" y="92">TEST RUNS</text>
+  <text class="m" x="332" y="92">one npx playwright test each, its shards merged</text>
+
+  <!-- The runs: one column each -->
+  <rect class="box" x="248" y="104" width="150" height="44" rx="8"/>
+  <text class="lb" x="323" y="132" text-anchor="middle">Run 41</text>
+  <rect class="box" x="406" y="104" width="150" height="44" rx="8"/>
+  <text class="lb" x="481" y="132" text-anchor="middle">Run 42</text>
+  <rect class="box" x="564" y="104" width="150" height="44" rx="8"/>
+  <text class="lb" x="639" y="132" text-anchor="middle">Run 43</text>
+  <rect class="box" x="722" y="104" width="150" height="44" rx="8"/>
+  <text class="lb" x="797" y="132" text-anchor="middle">Run 44</text>
+
+  <!-- The test cases: one row each, and their executions in each run -->
+  <rect class="box" x="22" y="156" width="214" height="56" rx="8"/>
+  <text class="l ink" x="36" y="180">signs in</text>
+  <text class="mono m" x="36" y="199">auth.spec.ts</text>
+  <rect class="chip" x="248" y="156" width="150" height="56" rx="8"/>
+  <rect class="okd" x="294" y="173" width="22" height="22" rx="5"/>
+  <rect class="okd" x="330" y="173" width="22" height="22" rx="5"/>
+  <rect class="chip" x="406" y="156" width="150" height="56" rx="8"/>
+  <rect class="fcd" x="438" y="173" width="22" height="22" rx="5"/>
+  <rect class="okd" x="466" y="173" width="22" height="22" rx="5"/>
+  <rect class="okd" x="502" y="173" width="22" height="22" rx="5"/>
+  <rect class="chip" x="564" y="156" width="150" height="56" rx="8"/>
+  <rect class="okd" x="610" y="173" width="22" height="22" rx="5"/>
+  <rect class="okd" x="646" y="173" width="22" height="22" rx="5"/>
+  <rect class="chip" x="722" y="156" width="150" height="56" rx="8"/>
+  <rect class="okd" x="768" y="173" width="22" height="22" rx="5"/>
+  <rect class="okd" x="804" y="173" width="22" height="22" rx="5"/>
+  <rect class="box" x="22" y="218" width="214" height="56" rx="8"/>
+  <text class="l ink" x="36" y="242">applies the discount code</text>
+  <text class="mono m" x="36" y="261">checkout.spec.ts</text>
+  <rect class="chip" x="248" y="218" width="150" height="56" rx="8"/>
+  <rect class="okd" x="294" y="235" width="22" height="22" rx="5"/>
+  <rect class="okd" x="330" y="235" width="22" height="22" rx="5"/>
+  <rect class="chip" x="406" y="218" width="150" height="56" rx="8"/>
+  <rect class="okd" x="452" y="235" width="22" height="22" rx="5"/>
+  <rect class="okd" x="488" y="235" width="22" height="22" rx="5"/>
+  <rect class="chip" x="564" y="218" width="150" height="56" rx="8"/>
+  <rect class="fcd" x="610" y="235" width="22" height="22" rx="5"/>
+  <rect class="fcd" x="646" y="235" width="22" height="22" rx="5"/>
+  <rect class="chip" x="722" y="218" width="150" height="56" rx="8"/>
+  <rect class="fcd" x="768" y="235" width="22" height="22" rx="5"/>
+  <rect class="fcd" x="804" y="235" width="22" height="22" rx="5"/>
+  <rect class="box" x="22" y="280" width="214" height="56" rx="8"/>
+  <text class="l ink" x="36" y="304">pays by card</text>
+  <text class="mono m" x="36" y="323">checkout.spec.ts</text>
+  <rect class="chip" x="248" y="280" width="150" height="56" rx="8"/>
+  <rect class="okd" x="294" y="297" width="22" height="22" rx="5"/>
+  <rect class="okd" x="330" y="297" width="22" height="22" rx="5"/>
+  <rect class="chip" x="406" y="280" width="150" height="56" rx="8"/>
+  <rect class="okd" x="452" y="297" width="22" height="22" rx="5"/>
+  <rect class="okd" x="488" y="297" width="22" height="22" rx="5"/>
+  <rect class="chip" x="564" y="280" width="150" height="56" rx="8"/>
+  <rect class="okd" x="610" y="297" width="22" height="22" rx="5"/>
+  <rect class="okd" x="646" y="297" width="22" height="22" rx="5"/>
+  <rect class="chip" x="722" y="280" width="150" height="56" rx="8"/>
+  <rect class="fcd" x="768" y="297" width="22" height="22" rx="5"/>
+  <rect class="fcd" x="804" y="297" width="22" height="22" rx="5"/>
+  <rect class="box" x="22" y="342" width="214" height="56" rx="8"/>
+  <text class="l ink" x="36" y="366">lists past orders</text>
+  <text class="mono m" x="36" y="385">orders.spec.ts</text>
+  <rect class="chip" x="248" y="342" width="150" height="56" rx="8"/>
+  <rect class="okd" x="294" y="359" width="22" height="22" rx="5"/>
+  <rect class="okd" x="330" y="359" width="22" height="22" rx="5"/>
+  <rect class="chip" x="406" y="342" width="150" height="56" rx="8"/>
+  <rect class="okd" x="452" y="359" width="22" height="22" rx="5"/>
+  <rect class="okd" x="488" y="359" width="22" height="22" rx="5"/>
+  <rect class="chip" x="564" y="342" width="150" height="56" rx="8"/>
+  <rect class="okd" x="610" y="359" width="22" height="22" rx="5"/>
+  <rect class="okd" x="646" y="359" width="22" height="22" rx="5"/>
+  <rect class="chip" x="722" y="342" width="150" height="56" rx="8"/>
+  <rect class="okd" x="768" y="359" width="22" height="22" rx="5"/>
+  <rect class="okd" x="804" y="359" width="22" height="22" rx="5"/>
+
+  <!-- One failure cluster: the same error, across test cases and runs -->
+  <path class="clu" d="M 560 214 L 876 214 L 876 340 L 718 340 L 718 277 L 560 277 Z"/>
+
+  <!-- Legend -->
+  <rect class="okd" x="22" y="415" width="18" height="18" rx="4"/>
+  <rect class="fcd" x="46" y="415" width="18" height="18" rx="4"/>
+  <text class="l" x="74" y="430">An execution: one attempt of one test case, on one browser, in one run. A retry is another one.</text>
+  <rect class="clu" x="22" y="443" width="42" height="18" rx="4"/>
+  <text class="l" x="74" y="458">A failure cluster: the executions that failed the same way, whatever their test case or run.</text>
+</svg>

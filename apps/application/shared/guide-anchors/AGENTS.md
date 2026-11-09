@@ -16,7 +16,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 - **One element per anchor.** Its `data-tour` value is static, kebab-case and names the content. It is set on exactly
   one element in one component: a template's `data-tour="…"`, or a static `'data-tour': '…'` key the component hands
   on (an item of a Nuxt UI menu, a `NavbarActions` action's `attrs`, a static `attrs` map spread with `v-bind`, as
-  `settings/ai.vue`'s `ROLE_META` and `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
+  `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
   string: the source test reads literals. An element can carry both `data-tour` and the harness's `data-shot`.
 - **A demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.**
 - **`pages` lists the patterns of `app/pages` it renders on, the main one first**, or `['*']` alone for the layout and
@@ -99,7 +99,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
   would shift the layout around it. The engine scrolls the target's panels itself and stubs driver.js's own call on the
   target and the popover.
 - **driver.js, its CSS and `app/assets/css/guide.css` load only when the first guide starts** (`loadEngine`): never
-  import them statically.
+  import them statically. `goTo` awaits them before it draws anything, the pointer on the way included.
 - **The popover's attributes are what the checks read**: `data-guide`, `data-guide-stop`, `data-guide-anchor` (empty
   when the stop shows centered), `data-guide-settled` once settled, `lang` and the run's `dataset`. Keep them.
 - **A stop whose anchor sits in what an `open` step opened (`opensLayer`) marks its popover `data-dismissable-layer`**,

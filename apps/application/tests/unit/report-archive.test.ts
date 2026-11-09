@@ -1,13 +1,12 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
-import { fileURLToPath } from 'node:url';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helpers.
@@ -97,9 +96,7 @@ describe('readReportArchiveIndex', () => {
   beforeEach(async () => {
     clearReportArchiveCache();
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values([
       { id: 1, name: 'Alpha' },
       { id: 2, name: 'Beta' },

@@ -66,6 +66,29 @@ describe('the debug run’s pure half', () => {
     expect(debugTest(twice, 'tests/cart.spec.ts', 'basket › adds a mug')).toMatchObject({ line: 16 });
   });
 
+  test('finds a test whose title is computed by the text its `${…}` parts stand for', () => {
+    const cards = [
+      "test.describe('checkout', () => {",
+      "  for (const card of ['visa', 'amex']) {",
+      '    test(`pays with ${card}`, async ({ page }) => {});',
+      '  }',
+      "  test('pays with visa', async ({ page }) => {});",
+      '});',
+      '',
+    ].join('\n');
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › pays with amex')).toMatchObject({ line: 2 });
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'pays with amex')).toMatchObject({ line: 2 });
+    // A title written as the run reported it is that test, before any computed one.
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › pays with visa')).toMatchObject({ line: 4 });
+    // A title of computed parts alone stands for no title in particular.
+    expect(debugTest('test(`${tc.name}`, async () => {});\n', 'tests/data.spec.ts', 'refunds')).toBe(
+      'No test of tests/data.spec.ts is titled “refunds” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its `${…}` parts.',
+    );
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › refunds')).toBe(
+      'No test of tests/pay.spec.ts is titled “checkout › refunds” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its `${…}` parts.',
+    );
+  });
+
   test('runs the test alone, in its project when one is named, with one worker', () => {
     expect(debugArgs('tests/cart.spec.ts:5', 'chromium')).toEqual([
       'tests/cart.spec.ts:5',
@@ -73,6 +96,27 @@ describe('the debug run’s pure half', () => {
       '--workers=1',
     ]);
     expect(debugArgs('tests/cart.spec.ts:5', null)).toEqual(['tests/cart.spec.ts:5', '--workers=1']);
+    // A computed title stands for each test its line declares: the run's title narrows them, its characters a
+    // pattern or a shell reads standing as `.`.
+    const computed = { title: 'pays with ${card}', suite: ['checkout'] };
+    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'checkout › pays with amex')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--grep=pays with amex',
+      '--workers=1',
+    ]);
+    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'pays with (amex) $5.50')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--grep=pays with .amex. .5.50',
+      '--workers=1',
+    ]);
+    // A computed describe block's title narrows them when the run named it.
+    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays', suite: ['as ${user}'] }, 'as alice › pays')).toEqual(
+      ['tests/pay.spec.ts:3', '--grep=as alice', '--workers=1'],
+    );
+    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays with amex', suite: [] }, 'pays with amex')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--workers=1',
+    ]);
   });
 
   test('checks each field a client sends, and refuses text a message could read as markup', () => {
@@ -328,6 +372,42 @@ describe('a debug run through the service', () => {
       expect(await counting).toMatchObject({ count: 1 });
     } finally {
       other.socket.destroy();
+    }
+  });
+
+  test('says a suggestion the worker counted without outlining it, the bar showing, without the outline', async () => {
+    const unseen = await debugCommand();
+    const third = workerOf(unseen);
+    try {
+      third.stopAt(1, 7, true);
+      const asked = await third.next('request');
+      third.send({
+        type: 'answer',
+        request: asked.request,
+        what: 'locator',
+        value: { ok: true, message: '1 element matches.', count: 1, outlined: false },
+      });
+      await waitFor(() =>
+        svc.notices.find((n) => n.message === `Piwi's suggested locator: ${SUGGESTED}. 1 element matches.`),
+      );
+      const since = svc.latest(unseen.ref!)!.workers[0]!.stop!.since;
+      const counting = svc.client.sendRequest('piwi/locatorAtCaret', {
+        ref: unseen.ref,
+        since,
+        uri: uri('tests/pages/cart.page.ts'),
+        line: 6,
+      }) as Promise<LocatorAtCaretResult>;
+      const own = await third.next('request', 1);
+      expect(own).toMatchObject({ locator: "getByRole('button', { name: 'Add' })" });
+      third.send({
+        type: 'answer',
+        request: own.request,
+        what: 'locator',
+        value: { ok: true, message: '1 element matches.', count: 1, outlined: true },
+      });
+      expect(await counting).toMatchObject({ count: 1 });
+    } finally {
+      third.socket.destroy();
     }
   });
 

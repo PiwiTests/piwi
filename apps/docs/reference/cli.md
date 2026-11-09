@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, flake, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, rerun, probe, flake, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
@@ -24,8 +24,10 @@ npx @piwitests/reporter <command> [options]
 | [`skills`](#skills) | Install the Piwi agent skills into this project |
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
 | [`report`](#report) | Print a [quality report](/features/quality-reports) as Markdown, PDF, HTML, CSV or JSON |
+| [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
+| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/ci-rerun) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
@@ -43,6 +45,14 @@ Wire a Playwright project up to a dashboard. It installs the reporter as a dev d
 
 The `.env` it writes sits next to the Playwright config, where `npx playwright test` reads it: the reporter takes `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` from it for whatever the config and the environment leave unset, so the config needs no dotenv loading ([Values from `.env`](/reference/reporter-options#values-from-env)). The file stays out of git; in CI, set the same variables as secrets.
 
+When git already tracks that `.env`, adding it to `.gitignore` would not untrack it, so `init` writes no API key into it: the `env` step is reported as `manual`, and the rest of the setup goes on. Set `PIWI_API_KEY` in the environment (in CI, as a secret), or untrack the file with `git rm --cached .env` and run `init` again. The same goes for a `.env` in a repository git gives no answer about (git missing, or refusing a repository another user owns): make `git ls-files .env` work there, or set the key in the environment. Nor does `init` write the key through a `.env` that is a link (symbolic or hard) to another file: put a file of its own in its place. With `PIWI_API_KEY` set in the environment and no `--api-key`, such a `.env` needs no key, and `init` reports the step as done.
+
+In a monorepo, run `init` in the package that holds the Playwright config, or point `--cwd` at it: every step then applies to that package, with the package manager its workspace's root names (the `packageManager` field or the lockfile). Run at the root of a workspace (`workspaces` in `package.json`, as npm, Yarn and Bun declare one, or a `pnpm-workspace.yaml`) that holds no Playwright config of its own, `init` looks for the workspace packages that hold one:
+
+- **One**: it wires that package, and says which.
+- **Several**: in a terminal, it lists them and asks which one to wire. In CI, without a terminal or with `--json`, it wires none, names them, and asks you to run it again with `--cwd <package>`; the JSON plan lists them under `workspace.packages`.
+- **None**: it reports the missing config, as in any other folder.
+
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
@@ -53,9 +63,9 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 | `--no-server-url` | Write no URL into the config: the reporter finds the [desktop app](/features/desktop) running on the machine, or reads `PIWI_DASHBOARD_URL` |
 | `--project <name>` | Project name to report under (default: your package/folder name) |
 | `--desktop-app <mode>` | Write [`desktopApp`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server) into the config: `prefer` sends local runs to the desktop app while it runs, and CI runs to `--server-url`; `fallback` or `off` |
-| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it. Omit to leave a `.env.example` placeholder you fill in yourself |
+| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it; never into a `.env` git tracks or cannot say it does not, nor through a link. Omit to leave a `.env.example` placeholder you fill in yourself |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
-| `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the four workflow skills) |
+| `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the six workflow skills) |
 | `--skills-dir <path>` | Directory to install skills into (default: `.claude/skills`) |
 | `--skills-only` | Only install skills; do not touch the config or env |
 | `--no-skills` | Configure the project but install no skills |
@@ -194,7 +204,8 @@ npx @piwitests/reporter run smoke -- --workers=4
 npx @piwitests/reporter run impact --base origin/main
 ```
 
-**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `2` could not resolve.
+**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `128` plus the signal's number when the runner stops
+Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwright could not start.
 
 | Flag | Description |
 |---|---|
@@ -224,6 +235,28 @@ no `--shard` of its own, since the resolved tests are already the shard's. A `se
 arguments to `playwright test` sets `PIWI_SHARD` itself, to the same `i/n` it gave `--shard`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
+
+## `rerun`
+
+Run the tests a [CI re-run](/features/ci-rerun) dispatched from the dashboard asked for,
+in a GitLab, Bitbucket or Jenkins job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
+each one double-quoted (`"tests/login.spec.ts:10" --project="chromium"`). `rerun` splits them as they were quoted,
+without reading them through a shell, and starts `playwright test` with them, followed by any arguments given on its
+own command line, after an optional `--`. The same command works on Linux, macOS and Windows runners.
+
+```bash
+npx @piwitests/reporter rerun --workers=2
+```
+
+`PIWI_RERUN_ARGS` set and empty runs the whole suite. Unset, the command fails instead: the job did not receive the
+variable, and running everything would hide it.
+
+| Flag | Description |
+|---|---|
+| `-h`, `--help` | Show help (as the first argument only; any other argument goes to `playwright test`) |
+
+**Exit codes:** Playwright's own · `128` plus the signal's number when the runner stops Playwright (`143` for
+`SIGTERM`) · `2` `PIWI_RERUN_ARGS` is unset or holds a quote left open, or Playwright could not start.
 
 ## `probe`
 
@@ -415,8 +448,8 @@ npx @piwitests/reporter bug 37 --write
 | `-h`, `--help` | Show help |
 
 **Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
-did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read or the file
-could not be written.
+did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read, the file
+could not be written, or Playwright could not start or was stopped by a signal.
 
 ## Related
 

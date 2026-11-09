@@ -73,18 +73,21 @@ export function unfurlProviderForProvider(
  * Construct a provider for a URL, loading config from DB if needed. `readable`
  * is the projects the caller can read: the instance SCM token reads only a
  * repository one of them is pinned to, and any other SCM link is unfurled with
- * no token, as a public one.
+ * no token, as a public one. `projectConnectionId` is the connection the link's
+ * project is bound to: a Jira URL is read through it alone, and only when the
+ * URL is on its site.
  */
 export async function createUnfurlProvider(
   url: string,
   db: DbClient,
   readable: ProjectScope,
+  projectConnectionId: number | null = null,
 ): Promise<UnfurlProvider | null> {
   const providerType = detectProvider(url);
 
-  // Jira reads its config from the matching connection; Confluence is unreachable.
+  // Jira reads through the project's own connection; Confluence is unreachable.
   if (providerType === 'jira') {
-    const config = await resolveJiraUnfurlConfig(db, url);
+    const config = await resolveJiraUnfurlConfig(db, url, projectConnectionId);
     return config ? unfurlProviderForProvider(providerType, url, config) : null;
   }
   if (providerType === 'confluence') {
@@ -105,11 +108,17 @@ export async function createUnfurlProvider(
  * Main unfurl entry point.
  * Tries rich (API-based) unfurl first when a database connection is available,
  * falls back to generic OpenGraph parsing. `readable` is the projects the
- * caller can read (see {@link createUnfurlProvider}).
+ * caller can read, and `projectConnectionId` the connection the link's project
+ * is bound to (see {@link createUnfurlProvider}).
  */
-export async function unfurlUrl(url: string, db?: DbClient, readable: ProjectScope = new Set()): Promise<UnfurlResult> {
+export async function unfurlUrl(
+  url: string,
+  db?: DbClient,
+  readable: ProjectScope = new Set(),
+  projectConnectionId: number | null = null,
+): Promise<UnfurlResult> {
   if (db) {
-    const provider = await createUnfurlProvider(url, db, readable);
+    const provider = await createUnfurlProvider(url, db, readable, projectConnectionId);
     if (provider) {
       const key = extractKey(url, detectProvider(url));
       const result = await provider.unfurl(url, key);

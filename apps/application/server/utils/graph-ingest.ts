@@ -12,7 +12,7 @@
  * graph.
  */
 
-import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   graphNodes,
   graphEdges,
@@ -51,6 +51,7 @@ import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
 import { isLabRun } from '#shared/handlers/probes';
+import { completeRunSql, eligibleRunSql } from '#shared/run-eligibility';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
 
@@ -919,7 +920,8 @@ const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
  * a naive "last 30 runs" does) lets thirty pull-request runs with no default-branch
  * run in between prune every canonical node, wiping the graph and closing every
  * gap built on it. A node backing any open, snoozed or accepted gap is kept so
- * triage never loses its subject.
+ * triage never loses its subject, except a surface-drift gap: that gap holds
+ * only while its node is in the graph, and closes once the node is pruned.
  *
  * The node's row is kept but stamped `pruned_at` — the bulk (its `reaches` edges)
  * is deleted, and keeping the row preserves `first_seen` so a re-appearance is
@@ -936,10 +938,12 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .where(eq(projects.id, projectId));
     const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
 
-    // Runs on the default branch that are not lab runs. Scan a bounded window
-    // and drop lab runs before taking the floor. A run whose branch is unknown
-    // counts only in a project that never recorded a branch: elsewhere it may be
-    // a pull-request run, and counting it would age canonical nodes it never saw.
+    // Complete runs on the default branch that are not lab runs, the ones the
+    // detectors read as evidence (`test-map`): a partial run says nothing about a
+    // node it did not reach. Scan a bounded window and drop lab runs before
+    // taking the floor. A run whose branch is unknown counts only in a project
+    // that never recorded a branch: elsewhere it may be a pull-request run, and
+    // counting it would age canonical nodes it never saw.
     const branchKnown = await projectHasKnownBranch(db, projectId);
     const onDefault = branchKnown
       ? eq(testRuns.branch, defaultBranch)
@@ -947,7 +951,7 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
     const canonicalRuns = await db
       .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(and(eq(testRuns.projectId, projectId), onDefault))
+      .where(and(eq(testRuns.projectId, projectId), onDefault, eligibleRunSql('test-map'), completeRunSql()))
       .orderBy(sql`${testRuns.id} desc`)
       .limit(STALE_NODE_RUN_SCAN);
     const canonical = canonicalRuns.filter((r) => !isLabRun(r.metadata)).slice(0, STALE_NODE_RUNS);
@@ -968,13 +972,20 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       );
     if (stale.length === 0) continue;
 
-    // Keep any node that backs a live gap — open, snoozed or accepted, any
-    // detector — so pruning never strips the subject out from under triage and
-    // lets the recompute close it.
+    // Keep any node that backs a live gap — open, snoozed or accepted — so
+    // pruning never strips the subject out from under triage and lets the
+    // recompute close it. A surface-drift gap keeps no node: it is raised while
+    // its node is in the graph, so the recompute after this prune closes it.
     const liveGaps = await db
       .select({ key: scenarioGaps.key })
       .from(scenarioGaps)
-      .where(and(eq(scenarioGaps.projectId, projectId), inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted'])));
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+          ne(scenarioGaps.detector, 'surface-drift'),
+        ),
+      );
     const keptSubjects = new Set(
       liveGaps.map((g) => {
         const s = subjectFromGapKey(g.key);

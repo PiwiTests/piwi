@@ -142,6 +142,7 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  MCP_FORMATS,
   RUNS_MCP_FORMATS,
   RUNS_MCP_LABEL,
   agentsTokenKey,
@@ -184,8 +185,10 @@ import {
   liveHubsHere,
   loopbackPort,
   onLoopback,
+  oneStartAtATime,
   sendPairing,
   startSendListener,
+  takeSavedPort,
   type PairingStore,
   type SendListener,
   type SendResult,
@@ -271,6 +274,10 @@ export interface PiwiApi {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
+  workerView(): PausedPageView | null;
+  /** A message of the worker panel's script, as it posts it. */
+  workerMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
@@ -856,7 +863,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
-  const listen = async (port: number) => {
+  const startListener = async (port: number) => {
     sendListener = await startSendListener({
       port,
       token: () => sendStore.token,
@@ -872,11 +879,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     });
     return sendListener;
   };
-  // Another window may hold the port: that window keeps the pairing. A remote window forwards it again, as it was.
-  if (sendStore.port && sendStore.token) {
-    const started = await listen(sendStore.port).catch(() => null);
-    if (started && vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
-  }
+  // A pairing asked while another start is on its way waits for that one.
+  const listen = oneStartAtATime(startListener);
+  // Another window may hold the port: that window keeps the pairing, and this one takes the port once it lets it go.
+  // A remote window forwards it again, as it was.
+  const savedPort = takeSavedPort({
+    // Another window may have paired since this one started: the port and the token are read again each time.
+    saved: async () => {
+      sendStore.port = context.globalState.get<number>(SEND_PORT);
+      sendStore.token = (await context.secrets.get(SEND_TOKEN)) ?? '';
+      return sendStore;
+    },
+    listener: () => sendListener,
+    listen,
+    started: (started) => {
+      if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+    },
+  });
+  context.subscriptions.push(savedPort);
+  // A pairing another window makes is this window's too: a run's pairing here never mints another token over it.
+  context.subscriptions.push(
+    context.secrets.onDidChange((change) => {
+      if (change.key !== SEND_TOKEN) return;
+      void context.secrets.get(SEND_TOKEN).then((token) => {
+        sendStore.token = token ?? '';
+      });
+    }),
+  );
+  await savedPort.ready;
   const pairing = sendPairing({
     store: sendStore,
     listener: () => sendListener,
@@ -1259,13 +1289,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         viewColumn: vscode.ViewColumn.Beside,
       });
     }),
-    vscode.commands.registerCommand('piwi.copyMcpConfiguration', async () => {
+    // The format the configuration is copied in: chosen, or named by the command's argument.
+    vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
         void vscode.window.showWarningMessage('Piwi: connect to an instance first.');
         return;
       }
-      await vscode.env.clipboard.writeText(mcpConfiguration(servers.servers));
+      const format: RunsMcpFormat | undefined = MCP_FORMATS.some((f) => f.format === asked)
+        ? (asked as RunsMcpFormat)
+        : (
+            await vscode.window.showQuickPick(
+              MCP_FORMATS.map((f) => ({ label: f.label, detail: f.detail, format: f.format })),
+              { title: 'Piwi: copy the MCP server configuration for' },
+            )
+          )?.format;
+      if (!format) return;
+      await vscode.env.clipboard.writeText(mcpConfiguration(servers.servers, format));
       void vscode.window.showInformationMessage(
         `Piwi: the MCP configuration is on the clipboard. ${mcpAuthorizationNote(servers.servers)}`.trimEnd(),
       );
@@ -1429,7 +1469,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor.",
       );
     }),
     { dispose: () => void sendListener?.close() },
@@ -1505,6 +1545,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
     pausedPage: () => runControl.pausedPage(),
+    workerView: () => runControl.workerView(),
+    workerMessage: (message) => runControl.workerMessage(message),
     pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
     agents: () => agents,
@@ -1574,7 +1616,8 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
       const edit = new vscode.WorkspaceEdit();
       edit.replace(uri, new vscode.Range(start.line, start.character, end.line, end.character), answer.edit.newText);
       if (await vscode.workspace.applyEdit(edit)) {
-        void vscode.window.showInformationMessage(pickNotice(at, 'replaced'));
+        // The line the locator landed on, which edits made since the run may have moved from the run's.
+        void vscode.window.showInformationMessage(pickNotice({ file: at.file, line: start.line + 1 }, 'replaced'));
         return { inserted: true, file: uri.scheme === 'file' ? uri.fsPath : null };
       }
     }

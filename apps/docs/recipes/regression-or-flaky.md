@@ -1,5 +1,6 @@
 ---
 title: Regression or flake?
+titleTemplate: "Playwright test failing: :title | Piwi"
 description: "Decide in a minute whether a red test is your regression or a known flake, from the run's changes and the test's own history."
 lang: en-US
 ---
@@ -17,7 +18,7 @@ and sorts the failures for you. The distinction you want is right there in the h
 
 - **New failures** — this test was passing on the baseline and is failing now.
 - **Still failing** — it was already failing before your change.
-- **Newly flaky / passed on retry** — it passed but needed a retry.
+- **Newly flaky / passed on retry** — it passed after an earlier attempt failed.
 
 <figure>
   <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, new failures, newly flaky tests, slower and faster tests, and the commits landed since the baseline">
@@ -34,8 +35,8 @@ green. Open the test case and read its **status history** and **stability trend*
 rate, and duration bucketed over time.
 
 <figure>
-  <img src="/screenshots/test-case-detail.png" alt="Test case detail page with summary stats, duration trend, status history, and recent executions">
-  <figcaption>Test case detail — the run-by-run status history is what separates "this has always been shaky" from "this broke on Tuesday".</figcaption>
+  <img src="/screenshots/tour-test-history.png" alt="A test case page: run stats, the duration trend with a status strip under it, and the recent executions">
+  <figcaption>Test case history: the status strip is what separates "this has always been shaky" from "this broke on Tuesday".</figcaption>
 </figure>
 
 Read it like this:

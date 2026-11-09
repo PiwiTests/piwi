@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { HandbackKind, HandbackOutcome, HandbackSubjectType } from '#shared/handback-outcomes';
 import type { AnalyticsHandbacks } from '#shared/analytics/types';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The hand-back metrics against a SQLite database: each value from the
@@ -125,9 +124,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-handback-metrics-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   subjectSeq = 0;
   clusterSeq = 0;
   await db.insert(schema.projects).values([

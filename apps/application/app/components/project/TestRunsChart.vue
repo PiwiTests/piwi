@@ -5,6 +5,7 @@ import {
   barGeometry,
   dayTickIndices,
   formatTickDate,
+  runStatusCounts,
   stackSegments,
   timeToOrdinalX,
 } from '~/utils/chart';
@@ -31,35 +32,19 @@ const chartData = computed(() => {
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
     .slice(-30);
 
-  return sortedRuns.map((run) => {
-    const flaky = run.flakyTests || 0;
-    const passed = run.passedTests || 0;
-    const skipped = run.skippedTests || 0;
-    // Fixme skips are a subset of skipped, carved out the same way.
-    const fixme = Math.min(run.fixmeTests || 0, skipped);
-    return {
-      id: run.id,
-      date: new Date(run.startTime),
-      // Flaky tests are counted as a subset of passed by the reporter (they
-      // passed on retry), so carve them out of the passed segment. Stacking
-      // flaky on top of the full passed count would double-count them and
-      // inflate the bar past the run's real total.
-      passed: Math.max(0, passed - flaky),
-      failed: run.failedTests || 0,
-      skipped: skipped - fixme,
-      fixme,
-      didNotRun: run.didNotRunTests || 0,
-      flaky,
-      total: run.totalTests || 0,
-      status: run.status,
-    };
-  });
+  return sortedRuns.map((run) => ({
+    id: run.id,
+    date: new Date(run.startTime),
+    ...runStatusCounts(run),
+    total: run.totalTests || 0,
+    status: run.status,
+  }));
 });
 
 type DataPoint = (typeof chartData)['value'][number];
 
 const yMax = computed(() =>
-  Math.max(1, ...chartData.value.map((d) => d.passed + d.failed + d.skipped + d.fixme + d.didNotRun + d.flaky)),
+  Math.max(1, ...chartData.value.map((d) => RUN_STATUS_SERIES.reduce((sum, s) => sum + d[s.key], 0))),
 );
 
 const dates = computed(() => chartData.value.map((d) => d.date));

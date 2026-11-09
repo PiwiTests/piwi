@@ -168,7 +168,7 @@ async function saveEdit() {
     await refreshSubs();
     editingSub.value = null;
   } catch (e) {
-    toast.add({ title: 'Update failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Update failed', description: errorMessage(e), color: 'error' });
   } finally {
     savingEdit.value = false;
   }
@@ -229,7 +229,7 @@ async function subscribe() {
       demoNotifications?.scheduleFor(props.projectId, props.projectLabel || 'this project', selectedEvents.value);
     }
   } catch (e) {
-    toast.add({ title: 'Subscribe failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Subscribe failed', description: errorMessage(e), color: 'error' });
   } finally {
     subscribing.value = false;
   }
@@ -244,7 +244,7 @@ async function unsubscribe(id: number) {
       demoNotifications?.cancelFor(props.projectId);
     }
   } catch (e) {
-    toast.add({ title: 'Failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed', description: errorMessage(e), color: 'error' });
   }
 }
 
@@ -257,7 +257,7 @@ async function toggleMute(sub: Subscription) {
     });
     await refreshSubs();
   } catch (e) {
-    toast.add({ title: 'Failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed', description: errorMessage(e), color: 'error' });
   }
 }
 

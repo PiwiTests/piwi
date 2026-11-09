@@ -11,6 +11,11 @@ as you do it: steps inside a test, a page object's method or a helper function, 
 works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 [Piwi plugin](./jetbrains), and needs no instance, no desktop app and no browser extension.
 
+<figure>
+  <video src="/videos/editor-recording-loop.mp4" autoplay loop muted playsinline controls aria-label="VS Code beside the browser the project's Playwright opened: Piwi: Record here at a blank line of a test, then a coupon typed and applied and the total checked in the browser, each step written in the test as it is made, the coupon's two steps becoming a call to the page object's applyCoupon, and Stop ending the recording with Run and Verify ×3 offered"></video>
+  <figcaption>Record here: the steps written as you go, folded into your page object's method.</figcaption>
+</figure>
+
 ## Start a recording
 
 | Editor | Record at the cursor | Record a new test file |
@@ -27,8 +32,8 @@ Before the browser opens, the editor asks for:
 3. **The Playwright project**, when the config has several. The browser gets its `use` options: `baseURL`,
    `storageState`, the viewport and device, the locale, the extra headers and `testIdAttribute`.
 
-The editor offers your last answers again. A new test file is offered next to the file you are in, and the recording
-writes a whole spec into it.
+The editor offers your last answers. A new spec goes beside the one at hand, else in `testDir`, and receives the whole
+recording.
 
 ## While it records
 
@@ -95,12 +100,11 @@ recorded, lands at the editor's cursor too:
 3. A picked locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
    [Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
    locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen).
+   [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one.
 
-The editor listens on the loopback interface only, answers only a request addressed to `127.0.0.1` or `localhost` at
-its port, and accepts one only with the token. Before Piwi Picker sends the token, the editor proves it holds it, so
-another program that took the port is sent nothing. With several VS Code windows open, the one that paired receives.
-With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
+The editor answers on your machine alone, and proves it holds the token before Piwi Picker sends it; with several VS
+Code windows open, the one holding the paired port receives: [Piwi Picker and your editor](./editor-pairing). With no
+editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
 Containers), the pairing address is the local end of a port VS Code forwards to the listener, listed in the Ports
 view, and Piwi Picker's Runs window lists that window's runs: [Remote development](/guide/remote-development).
 

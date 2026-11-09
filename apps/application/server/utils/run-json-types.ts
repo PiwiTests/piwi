@@ -1,5 +1,5 @@
 import type { BrowserConfig } from '#shared/types';
-import type { RunOrigin } from '@piwitests/core/wire';
+import type { RunInteractive, RunOrigin } from '@piwitests/core/wire';
 import type { ServerLogEntry, ServerSpanEntry } from '~~/types/api';
 
 /**
@@ -66,11 +66,26 @@ export interface RunMetadata {
    * provider → this hint → `'main'`).
    */
   defaultBranch?: string | null;
-  ci?: { provider?: string | null; pipelineId?: string | null; buildNumber?: string | null } | null;
+  ci?: {
+    provider?: string | null;
+    pipelineId?: string | null;
+    buildNumber?: string | null;
+    /** The build's page (Jenkins' `BUILD_URL`). */
+    buildUrl?: string | null;
+    /** The CI's own repository, `owner/repo` (GitHub Actions, Bitbucket Pipelines). */
+    repository?: string | null;
+  } | null;
   /** What launched the run (`PIWI_ORIGIN`); read through `runOrigin` in `#shared/run-eligibility`. */
   piwiOrigin?: RunOrigin | null;
+  /** The launcher's name for the run (`PIWI_RUN_REF`); read through `runLauncherRef` in `#shared/run-eligibility`. */
+  piwiRunRef?: string | null;
+  /** The local hub that steers the run (`RunInteractive`), kept as `parseRunInteractive` reads it. */
+  piwiInteractive?: RunInteractive | null;
   htmlReport?: {
-    projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
+    projects?: Array<{
+      name?: string | null;
+      use?: { browserName?: string | null; baseURL?: string | null } | null;
+    }>;
   } | null;
 }
 

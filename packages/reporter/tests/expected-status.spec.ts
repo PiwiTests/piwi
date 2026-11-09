@@ -51,6 +51,14 @@ describe('expectedStatus on the wire', () => {
     expect(sent.expectedStatus).toBe('failed');
   });
 
+  it('sends a passing test that pushed a `fail` annotation itself as passed, as Playwright reports it', async () => {
+    // `test.info().annotations.push({ type: 'fail' })` leaves Playwright's expected status at `passed`.
+    const sent = await submitOne({ annotations: [{ type: 'fail', description: 'JIRA-12' }], expectedStatus: 'passed' }, 'passed');
+    expect(sent.status).toBe('passed');
+    expect(sent.expectedStatus).toBe('passed');
+    expect(sent.error ?? null).toBeNull();
+  });
+
   it('sends passed for an ordinary test', async () => {
     const sent = await submitOne({ annotations: [], expectedStatus: 'passed' }, 'passed');
     expect(sent.expectedStatus).toBe('passed');

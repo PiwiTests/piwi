@@ -11,6 +11,7 @@ export type EvidenceTabValue =
   | 'source'
   | 'network'
   | 'console'
+  | 'output'
   | 'state'
   | 'performance'
   | 'locators';

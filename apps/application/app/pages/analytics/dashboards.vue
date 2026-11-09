@@ -282,7 +282,7 @@ function rowMenu(d: DashboardSummary) {
 
       <UModal v-model:open="newOpen" title="New dashboard">
         <template #body>
-          <form class="space-y-4" data-testid="new-dashboard" @submit.prevent="create">
+          <form class="space-y-4" data-testid="new-dashboard" method="post" @submit.prevent="create">
             <UFormField label="Name" required>
               <UInput v-model="newName" class="w-full" placeholder="Checkout team" data-testid="new-dashboard-name" />
             </UFormField>

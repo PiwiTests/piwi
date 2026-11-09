@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp, eventHandler, toWebHandler } from 'h3';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
@@ -17,6 +15,7 @@ import {
   getEncryptionKey,
 } from '../../server/utils/crypto';
 import { createConnection } from '../../server/utils/integrations/connections';
+import { migrateToLatest } from './temp-db';
 
 const KEY = 'unit-test-secret-key-not-for-production';
 const GENERATE_COMMAND = `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`;
@@ -81,9 +80,7 @@ describe('creating a connection without PIWI_SECRET_KEY', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'piwi-crypto-'));
     client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
     const db = drizzle(client, { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     dbc = db as unknown as DbClient;
   });
 

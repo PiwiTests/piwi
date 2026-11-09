@@ -20,38 +20,59 @@ declare global {
   interface Window {
     __piwiOpenPageInvocations: FakeInvocation[];
     __piwiDesktopEvents: string[];
+    /** Deliver a shell event to the page's listeners, as the shell's `emit_to` does. */
+    __piwiShellEmit: (event: string, payload: unknown) => void;
   }
 }
 
-/** Fake the shell bridge for a window labelled `label`, and record every desktop-stream message the page receives. */
-async function installFakeBridge(page: Page, label: string) {
-  await page.addInitScript((windowLabel) => {
-    const invocations: FakeInvocation[] = [];
-    const events: string[] = [];
-    Object.assign(window, { __piwiOpenPageInvocations: invocations, __piwiDesktopEvents: events });
-    Object.assign(window, {
-      __TAURI__: {
-        core: {
-          invoke: async (cmd: string, args?: Record<string, unknown>) => {
-            invocations.push({ cmd, args });
-            if (cmd === 'desktop_take_pending_open_files') return [];
-            return null;
-          },
+/**
+ * Fake the shell bridge for a window labelled `label`, holding `linkedPage` for the page to take, and record every
+ * desktop-stream message the page receives.
+ */
+async function installFakeBridge(page: Page, label: string, linkedPage: string | null = null) {
+  await page.addInitScript(
+    ([windowLabel, heldPage]) => {
+      const invocations: FakeInvocation[] = [];
+      const events: string[] = [];
+      const listeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
+      Object.assign(window, {
+        __piwiOpenPageInvocations: invocations,
+        __piwiDesktopEvents: events,
+        __piwiShellEmit: (event: string, payload: unknown) => {
+          for (const handler of listeners.get(event) ?? []) handler({ payload });
         },
-        event: { listen: async () => () => {} },
-        window: { getCurrentWindow: () => ({ label: windowLabel }) },
-      },
-    });
-    const NativeEventSource = window.EventSource;
-    window.EventSource = class extends NativeEventSource {
-      constructor(url: string | URL, init?: EventSourceInit) {
-        super(url, init);
-        if (String(url).includes('/api/desktop/events')) {
-          this.addEventListener('message', (event) => events.push((event as MessageEvent<string>).data));
+      });
+      Object.assign(window, {
+        __TAURI__: {
+          core: {
+            invoke: async (cmd: string, args?: Record<string, unknown>) => {
+              invocations.push({ cmd, args });
+              if (cmd === 'desktop_take_pending_open_files') return [];
+              if (cmd === 'desktop_take_linked_page') return heldPage;
+              return null;
+            },
+          },
+          event: {
+            listen: async (event: string, handler: (event: { payload: unknown }) => void) => {
+              listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+              return () => {};
+            },
+          },
+          window: { getCurrentWindow: () => ({ label: windowLabel }) },
+        },
+      });
+      const NativeEventSource = window.EventSource;
+      window.EventSource = class extends NativeEventSource {
+        constructor(url: string | URL, init?: EventSourceInit) {
+          super(url, init);
+          if (String(url).includes('/api/desktop/events')) {
+            this.addEventListener('message', (event) => events.push((event as MessageEvent<string>).data));
+          }
         }
-      }
-    };
-  }, label);
+      };
+    },
+    [label, linkedPage] as const,
+  );
 }
 
 /** Hold the desktop event stream until `send` is called, then deliver `messages` on it. */
@@ -98,6 +119,46 @@ test.describe('Desktop window shows a page opened outside the app', () => {
     await expect.poll(() => page.evaluate(() => window.__piwiDesktopEvents.length)).toBe(1);
     expect(new URL(page.url()).pathname).toBe('/');
     expect(await invokedCommands(page)).not.toContain('desktop_bring_to_front');
+  });
+
+  test('the shell opens a page with its own event, under the same path check', async ({ page }) => {
+    await installFakeBridge(page, 'main');
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await page.evaluate(() => window.__piwiShellEmit('piwi:open-page', '//evil.example/settings'));
+    expect(new URL(page.url()).pathname).toBe('/');
+    expect(await invokedCommands(page)).not.toContain('desktop_bring_to_front');
+
+    await page.evaluate(() => window.__piwiShellEmit('piwi:open-page', '/settings/about'));
+    await expect(page).toHaveURL(/\/settings\/about$/);
+    await expect.poll(() => invokedCommands(page)).toContain('desktop_bring_to_front');
+  });
+
+  test('a link the shell held while the page loaded opens once the page listens', async ({ page }) => {
+    await installFakeBridge(page, 'main', '/settings/about');
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await expect(page).toHaveURL(/\/settings\/about$/);
+    const commands = await invokedCommands(page);
+    expect(commands).toContain('desktop_take_linked_page');
+    expect(commands).toContain('desktop_bring_to_front');
+  });
+
+  test('the Ctrl shortcuts open Settings, ask the shell for files, and go back', async ({ page }) => {
+    await installFakeBridge(page, 'main');
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await page.keyboard.press('Control+O');
+    await expect.poll(() => invokedCommands(page)).toContain('desktop_pick_files_to_open');
+
+    await page.keyboard.press('Control+Comma');
+    await expect(page).toHaveURL(/\/settings/);
+
+    await page.keyboard.press('Control+BracketLeft');
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/');
   });
 
   test('another shell window ignores it', async ({ page }) => {

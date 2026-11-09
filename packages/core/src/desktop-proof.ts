@@ -1,11 +1,9 @@
 /**
- * How Piwi Picker checks that the program at the desktop app's paired address
- * is that app before it sends the app's token there. The extension sends
- * `/api/health` a random challenge in {@link DESKTOP_CHALLENGE_HEADER}; the
- * app answers in {@link DESKTOP_PROOF_HEADER} with {@link desktopTokenProof}:
- * an HMAC of the challenge keyed by its token, for the loopback port it
- * answers on. Another program on that port holds no token, and one that relays
- * the challenge to the app on another port gets a proof for that other port.
+ * How Piwi Picker, and the shells of the desktop app and of Piwi Runner, check that the program at the desktop app's
+ * address is that app before they send its token there. The caller sends `/api/health` a random challenge in
+ * {@link DESKTOP_CHALLENGE_HEADER}; the app answers in {@link DESKTOP_PROOF_HEADER} with {@link desktopTokenProof}:
+ * an HMAC of the challenge keyed by its token, for the loopback port it answers on. Another program on that port
+ * holds no token, and one that relays the challenge to the app on another port gets a proof for that other port.
  */
 import { hmacSha256Hex, randomHex } from './hmac';
 

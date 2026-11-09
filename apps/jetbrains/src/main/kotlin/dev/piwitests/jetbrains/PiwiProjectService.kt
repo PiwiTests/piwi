@@ -46,6 +46,7 @@ import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.psi.PsiManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
+import com.intellij.xdebugger.breakpoints.SuspendPolicy
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
 import java.nio.file.Files
 import java.nio.file.Path
@@ -419,7 +420,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints.mapNotNull { breakpoint ->
                     val line = breakpoint as? XLineBreakpoint<*> ?: return@mapNotNull null
                     val url = line.fileUrl
-                    if (!line.isEnabled || !url.startsWith("file://")) null else Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line, line)
+                    // A breakpoint that does not suspend, a logging one, never stops the test.
+                    if (!line.isEnabled || line.suspendPolicy == SuspendPolicy.NONE || !url.startsWith("file://")) {
+                        null
+                    } else {
+                        Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line, line)
+                    }
                 }
             },
         )

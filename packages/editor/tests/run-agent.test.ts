@@ -955,7 +955,7 @@ describe('what an agent reads of the page', () => {
     const followed = await call('run_follow', { run, after: cursor, wait: 0 });
     for (const answer of [listed, followed]) expect(JSON.stringify(answer)).not.toContain('hunter2');
     expect(followed.piwi.events.find((e: { kind: string }) => e.kind === 'call')).toMatchObject({
-      title: 'Fill "<hidden>"',
+      title: `Fill "<hidden>" getByLabel('Password')`,
     });
     expect(listed.piwi.runs.find((r: { run: string }) => r.run === run).workers[0].stop.title).toBe(
       `Fill "<hidden>" getByLabel('Password')`,

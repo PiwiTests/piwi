@@ -34,8 +34,9 @@ in-app assistant).
   API hosts, and GitLab only on `gitlab.com` or a host listed in `PIWI_SCM_GITLAB_HOSTS`
   (`tests/unit/scm-token-host.test.ts`).
 - **A method added to `ScmProvider` is added to `LocalGitProvider` too** (`server/utils/scm/local-git.ts`). On the
-  desktop app with no SCM token, `createScmProvider` returns it for a project linked to a clone: it reads history with
-  git in that folder and wraps the host's provider for the rest. A read tries git first and falls back to the host;
+  desktop app with no SCM token, or for a host Piwi has no client for, `createScmProvider` returns it for a project
+  linked to a clone: it reads history with git in that folder and wraps the host's provider for the rest
+  (`NoHostProvider`, which finds nothing and writes nothing, for a host with none). A read tries git first and falls back to the host;
   anything else is passed to the host. Without the override, the base class's no-op default compiles and silently
   turns the feature off on the desktop app.
 
@@ -43,17 +44,29 @@ in-app assistant).
 
 - **The grouping key is `computeErrorFingerprint`** (`shared/error-fingerprint.ts`): a hash of the error type, the
   normalized message and the masked locator, from `extractErrorSignature` (`@piwitests/core/error-signature`, shared
-  with the reporter's flake mode). **The top stack frame is not hashed** (it is kept as `topFrameFile` for display), so
-  one root cause reached from several spec files groups into one cluster. A new volatile token is masked in
-  `maskVolatile` (message) or `maskSelector` (locator), both in `packages/core/src/error-signature.ts`.
+  with the reporter's flake mode). A new volatile token is masked in `maskVolatile` (message) or `maskSelector`
+  (locator), both in `packages/core/src/error-signature.ts`.
+- **The top stack frame is hashed only for a generic failure** (`isGenericFailure`: no locator, and a matcher whose
+  values are all masked, a test timeout or a bare `TypeError`/`ReferenceError` line), as `topFrameFile` through
+  `maskPaths`. Any other failure groups across spec files, so one root cause reached through a shared helper or page
+  object stays one cluster (`tests/unit/error-fingerprint.test.ts`).
 - **A normalization change bumps `FINGERPRINT_VERSION`** and makes the same change to
   `shared/demo/demo-fingerprint.mjs#computeDemoFingerprint`, regex for regex: the seed generator runs under plain Node,
   which cannot load the TypeScript module, and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run
-  `npm run app:seed:demo`.
+  `npm run app:seed:demo`. `shared/error-fingerprint-v4.ts` stays as it is: the aliases stored without a sample hold
+  version 4 fingerprints, which `backfillAliasSamples` matches with it.
+- **A change to `maskVolatile` or `condenseErrorText` also bumps `EMBEDDING_INPUT_VERSION`**
+  (`server/utils/cluster-similarity.ts`): they shape the text embedded for cluster similarity, and the bump re-embeds
+  the stored vectors. `tests/unit/cluster-similarity.test.ts` pins that text.
 - **A version bump keeps triage state.** At startup, `reclusterFailureFingerprints()`
   (`shared/handlers/failure-cluster-recluster.ts`) computes each cluster's fingerprint again from its stored
-  `fingerprintSample` (`sampleError` for older rows), and updates it in place or merges it into the cluster it now
-  matches (`mergeFailureClusters()`).
+  `fingerprintSample` (`sampleError` for older rows), then each alias's from the sample it keeps, moves the per-test
+  routes with them, and merges two clusters a recomputed fingerprint joins (`mergeFailureClusters()`). Ingest hashes
+  the text a new cluster keeps as `fingerprintSample`, so the recluster reads what ingest read.
+- **Hiding more of a test's error also hides it in the stored samples, before the recluster.** Ingest hashes the error
+  as `hiddenErrorText` leaves it, and a sample stored earlier keeps the old text, so its cluster would fork: a pass like
+  `hideSecretShapesInClusterSamples` (`error-secrets-backfill.ts`, under a setting of its own) runs once at startup
+  ahead of `reclusterFailureFingerprints` (`tests/unit/failure-cluster-recluster-ingest.test.ts`).
 
 ## Locator healing
 
@@ -216,11 +229,16 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **The window's stream counts what the window has not read.** `runs/events.get.ts` writes to the response itself, its
   sink's `buffered()` being `res.writableLength`, so a frame waits past 1 MB unread and the stream is cut past 32 MB, as
   the hub does with a WebSocket; a `ReadableStream` handed to h3 counts nothing (`desktop-runs-events.test.ts`).
+- **The run target's part of the window's streams and the session is the editor service's.** `desktop/events.get.ts`
+  and `desktop/notifications.get.ts` call `openWindowStream` and `openShellStream`, and `__piwi/session.get.ts` sets
+  the answer of `answerSession` (`@piwitests/editor/run-target-stream`, `run-target-session`): never a copy of what they
+  say or of the token check. These streams hand h3 a `ReadableStream`, so they count nothing unread, unlike
+  `runs/events.get.ts` (`desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
   (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
-  its disk text, and refused once the file was written since the run's first worker connected.
+  its disk text, and refused once the file was written since the run's first connection opened.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
   **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref

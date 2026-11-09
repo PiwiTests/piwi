@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { markers, testRuns } from '../../server/database/schema';
 import type { KeepSource } from '../types';
 import { normalizeKeepReason } from '../run-keep';
+import { isPrivateRunOrigin } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
 /** The keep columns of a run nothing protects. */
@@ -30,15 +31,19 @@ export function keptRunDeleteMessage(runId: number): string {
 /**
  * Keep a run forever: retention never deletes it. Keeping a run that is
  * already kept only replaces its reason, and only when one is given — the
- * original time, author and source stay.
+ * original time, author and source stay. A private run is never kept.
  */
 export async function keepRun(
   db: DrizzleDB,
   runId: number,
   input: { source: KeepSource; userId?: number | null; reason?: string | null },
 ): Promise<void> {
-  const [run] = await db.select({ keptAt: testRuns.keptAt }).from(testRuns).where(eq(testRuns.id, runId));
+  const [run] = await db
+    .select({ keptAt: testRuns.keptAt, origin: testRuns.origin })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
   if (!run) throw new Error('Test run not found');
+  if (isPrivateRunOrigin(run.origin)) return;
 
   if (run.keptAt) {
     if (input.reason !== undefined) {

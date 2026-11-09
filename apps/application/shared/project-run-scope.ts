@@ -1,10 +1,11 @@
 /**
  * The runs a project page reads: the environments, branches and run kinds its
- * Filters block picks. Every tab that reads run history follows it, in SQL
- * through `projectRunScopeConditions` (`shared/handlers/project-run-scope.ts`)
- * and in the browser through `runInProjectScope`, so the runs table, the test
- * catalog, the failures, the Flake Lab and the performance trends read the same
- * runs.
+ * Filters block picks. Every tab that reads run history follows it in SQL
+ * through `projectRunScopeConditions` (`shared/handlers/project-run-scope.ts`),
+ * so the runs table, the test catalog, the failures, the Flake Lab and the
+ * performance trends read the same runs; the browser matches the runs it
+ * already holds (the kept runs, the runs the filters hide) through
+ * `runInProjectScope`.
  *
  * With no branch picked the scope reads the project's default branch and the
  * runs that report no branch; `allBranches` reads every branch. The query keys

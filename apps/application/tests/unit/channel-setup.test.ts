@@ -170,6 +170,7 @@ describe('looksPrivateHost', () => {
   test.each([
     'localhost',
     '127.0.0.1',
+    '0.0.0.0',
     '10.1.2.3',
     '172.20.0.1',
     '192.168.1.1',
@@ -180,6 +181,9 @@ describe('looksPrivateHost', () => {
     '[::1]',
   ])('%s is local-only', (host) => {
     expect(looksPrivateHost(host)).toBe(true);
+  });
+  test('an empty host is not a local name', () => {
+    expect(looksPrivateHost('')).toBe(false);
   });
   test.each(['piwi.example.com', '8.8.8.8', '172.32.0.1', 'hooks.slack.com'])('%s is public', (host) => {
     expect(looksPrivateHost(host)).toBe(false);

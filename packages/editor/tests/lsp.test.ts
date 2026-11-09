@@ -33,6 +33,7 @@ import type {
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
+  NewTestFileResult,
   RunCommand,
   RunEnded,
   RunStatusResult,
@@ -374,6 +375,7 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // No failed count, as an older instance sends it: every run is in the pass rate.
               id: 3,
               title: 'removes a row',
               filePath: 'tests/rows.spec.ts',
@@ -396,6 +398,25 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Fskipped.spec.ts') {
+      // A test skipped on every run, and one with no run.
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              id: 31,
+              title: 'pays',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'skipped',
+              totalRuns: 3,
+              passedRuns: 0,
+              failedRuns: 0,
+            },
+            { id: 32, title: 'refunds', filePath: 'tests/skipped.spec.ts', status: 'passed', totalRuns: 0 },
+          ],
+        }),
+      );
+    }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Funread.spec.ts') {
       // One test of one title, two of another, in describe blocks the spec builds at run time.
       return res.end(
@@ -413,12 +434,14 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // Two skipped runs, in no pass rate.
               id: 1,
               title: 'pays',
               filePath: 'tests/checkout.spec.ts',
               status: 'passed',
-              totalRuns: 50,
+              totalRuns: 52,
               passedRuns: 48,
+              failedRuns: 2,
             },
           ],
         }),
@@ -1235,6 +1258,22 @@ describe('the Piwi language server', () => {
       }),
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/described.spec.ts') } });
+  });
+
+  test('gives no pass rate to a test with no passed or failed run', async () => {
+    const skipped = [
+      "import { test } from '@playwright/test';",
+      "test('pays', async () => {});",
+      "test('refunds', async () => {});",
+      '',
+    ].join('\n');
+    await open('tests/skipped.spec.ts', skipped);
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/skipped.spec.ts') })) as FileSummary;
+    expect(spec.lines.map((l) => [l.line, l.title])).toEqual([
+      [1, 'no pass rate (no passed or failed run) · skipped'],
+      [2, 'no pass rate (no passed or failed run)'],
+    ]);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
   });
 
   test('advises on the timeout of the only case of a title when its describe blocks do not read', async () => {
@@ -2580,13 +2619,32 @@ describe('runs as they happen', () => {
     expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
     expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
 
-    // It passes on its second attempt: flaky.
+    // It passes again on a retry of its serial group: the instance says no attempt failed, so it passed.
     pushRunEvent(60, 'test-completed', {
       title: 'pays',
       filePath: 'tests/checkout.spec.ts',
       testCaseId: 1,
       status: 'passed',
       retries: 1,
+      passedAfterFailure: false,
+      browser: 'chromium',
+    });
+    await waitFor(() =>
+      statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'passed' ? true : undefined,
+    );
+
+    // It passes on its third attempt, after a failed one, as an older instance's attempt history tells: flaky.
+    pushRunEvent(60, 'test-completed', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+      retries: 2,
+      attempts: [
+        { retry: 0, status: 'passed' },
+        { retry: 1, status: 'failed' },
+        { retry: 2, status: 'passed' },
+      ],
       browser: 'chromium',
     });
     await waitFor(() =>
@@ -2730,7 +2788,7 @@ describe('runs as they happen', () => {
         severity: 'warning',
         message: `The run ended (exit code 0) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
       },
-      { root: dir, severity: 'information', message: 'Passed 3 of 3: tests/checkout.spec.ts:3' },
+      { root: dir, severity: 'information', message: 'None of 3 runs failed: tests/checkout.spec.ts:3' },
     ]);
   });
 
@@ -3673,6 +3731,13 @@ describe('the configs of one repository reading one project', () => {
     fs.rmSync(repo, { recursive: true, force: true });
   });
 
+  /** The failures once both configs read their latest run, which each reads after its locator index. */
+  const readFailures = () =>
+    waitFor(async () => {
+      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+      return failures.tree.length === 2 && failures.tree.every((n) => n.children.length > 0) ? failures : undefined;
+    });
+
   test('download its locator index once, and show each failure once, from the config of its spec', async () => {
     const status = await waitFor(async () => {
       const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
@@ -3680,7 +3745,7 @@ describe('the configs of one repository reading one project', () => {
     });
     expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
     expect(downloads).toBe(1);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     const shown = failures.items.filter((f) => f.title === 'removes a row');
     expect(shown.map((f) => [f.root, f.uri])).toEqual([
       [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
@@ -3694,7 +3759,7 @@ describe('the configs of one repository reading one project', () => {
       [repo, path.basename(repo)],
       [admin, 'admin'],
     ]);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     expect(failures.tree.map((n) => [n.key, n.kind, n.label, n.description, n.root])).toEqual([
       [`context:${repo}`, 'context', path.basename(repo), 'Acme Mugs · 1 failing', repo],
       [`context:${admin}`, 'context', 'admin', 'Acme Mugs · 0 failing', admin],
@@ -3708,6 +3773,16 @@ describe('the configs of one repository reading one project', () => {
     expect(leaves([other!])).toEqual([]);
     expect(failures).toMatchObject({ runLabel: null, failing: 1 });
     expect(failures).not.toHaveProperty('run');
+  });
+
+  test('answer where Record a new test file goes from the config whose folder is at hand', async () => {
+    const admin = path.join(repo, 'admin');
+    for (const at of [pathToFileURL(admin).href, `${pathToFileURL(admin).href}/`]) {
+      expect(await twoClient.sendRequest('piwi/newTestFile', { uri: at })).toEqual({
+        uri: pathToFileURL(path.join(admin, 'recorded.spec.ts')).href,
+        root: admin,
+      });
+    }
   });
 
   test('read its latest run and its flaky tests once for the refresh they make together', async () => {
@@ -4056,6 +4131,40 @@ describe('recording from the editor', () => {
     expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
   });
 
+  test('answers where Record a new test file creates its spec, in the projects’ test folder as Playwright reads it', async () => {
+    const asked = (params: object) => recorder.sendRequest('piwi/newTestFile', params) as Promise<NewTestFileResult>;
+    // The workspace's root at hand: the test folder Playwright resolved, with the suffix its specs use.
+    expect(await asked({ uri: pathToFileURL(dir).href })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    // A page object at hand: the test folder holding it.
+    expect(await asked({ uri: uri('tests/pages/checkout.page.ts') })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    expect(await asked({})).toMatchObject({ root: dir });
+    // A spec at hand in the test folder: beside it, with its suffix; one outside every test folder: the test folder.
+    const extra = ['tests/admin/users.test.ts', 'examples/demo.spec.ts'];
+    for (const file of extra) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), '');
+    }
+    try {
+      expect(await asked({ uri: uri('tests/admin/users.test.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'admin', 'recorded.test.ts')).href,
+        root: dir,
+      });
+      expect(await asked({ uri: uri('examples/demo.spec.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+        root: dir,
+      });
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/admin'), { recursive: true, force: true });
+      fs.rmSync(path.join(dir, 'examples'), { recursive: true, force: true });
+    }
+  });
+
   test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {
     const steps = toStepsDocument(
       buildSession([goto('https://shop.test/checkout'), pay('https://shop.test/checkout')], 1),
@@ -4090,6 +4199,51 @@ describe('recording from the editor', () => {
     })) as RenderStepsResult;
     expect(comments.code).toContain("  // Needs: import { CheckoutPage } from 'tests/pages/checkout.page.ts';");
     expect(comments.importEdit).toBeUndefined();
+  });
+
+  test('renders steps sent outside any test as a new test, with the test import a file without one needs', async () => {
+    const steps = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1));
+    await openHere(
+      'tests/between.spec.ts',
+      ["import { test } from '@playwright/test';", '', "test('recorded flow', async ({ page }) => {});", '', ''].join(
+        '\n',
+      ),
+    );
+    const between = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/between.spec.ts'),
+      steps,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(between.code.split('\n')[0]).toBe("test('recorded flow 2', async ({ page }) => {");
+    expect(between.code).toContain("  await page.getByRole('button', { name: 'Pay now' }).click();");
+    expect(between.importEdit).toBeNull();
+
+    await openHere('tests/empty.spec.ts', '');
+    const empty = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/empty.spec.ts'),
+      steps,
+      line: 0,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(empty.code.split('\n')[0]).toBe("test('recorded flow', async ({ page }) => {");
+    // A recording's own title the file holds already takes a number.
+    const titled = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1), { title: 'pays' });
+    await openHere(
+      'tests/titled.spec.ts',
+      "import { test } from '@playwright/test';\n\ntest('pays', async () => {});\n\n",
+    );
+    const again = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/titled.spec.ts'),
+      steps: titled,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(again.code.split('\n')[0]).toBe("test('pays 2', async ({ page }) => {");
+    expect(empty.importEdit?.newText).toContain("import { test } from '@playwright/test';");
   });
 
   test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {

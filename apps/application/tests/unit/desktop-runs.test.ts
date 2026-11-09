@@ -14,7 +14,14 @@ import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
-import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import {
+  parseHubToRun,
+  type HubToRun,
+  type RunFeature,
+  type RunTake,
+  type RunToHub,
+} from '@piwitests/core/run-channel';
+import { writeDiscovery } from '@piwitests/editor/discovery';
 import type { ToolResult } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
@@ -47,6 +54,8 @@ const SPEC =
 
 let folder = '';
 let worktree = '';
+/** The editors' discovery folder the hub names its peers from. */
+let editors = '';
 let runs: DesktopRuns;
 let channel: { path: string; token: string };
 
@@ -88,7 +97,7 @@ class Worker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  attach(ref: string, token = channel.token, workerIndex = 0, more: RunTake[] = []): this {
+  attach(ref: string, token = channel.token, workerIndex = 0, more: RunTake[] = [], features: RunFeature[] = []): this {
     this.send({
       type: 'run-attach',
       token,
@@ -101,6 +110,7 @@ class Worker {
       reporter: '0.62.0',
       takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'view', 'input', 'pick-at', ...more],
       holds: ['failure'],
+      ...(features.length ? { features } : {}),
     });
     return this;
   }
@@ -248,6 +258,8 @@ async function paired(): Promise<Picker> {
 beforeAll(async () => {
   folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-runs-')));
   worktree = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-worktree-')));
+  editors = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-editors-')));
+  fs.chmodSync(editors, 0o700);
   fs.mkdirSync(path.join(folder, 'tests'));
   fs.writeFileSync(path.join(folder, 'tests', 'checkout.spec.ts'), SPEC);
   fs.mkdirSync(path.join(worktree, 'tests'));
@@ -262,6 +274,8 @@ beforeAll(async () => {
     lingerMs: 50,
     requestMs: 2000,
     agentIdleMs: AGENT_IDLE_MS,
+    editorsDir: editors,
+    peersMs: 50,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -270,6 +284,7 @@ afterAll(() => {
   runs?.close();
   fs.rmSync(folder, { recursive: true, force: true });
   fs.rmSync(worktree, { recursive: true, force: true });
+  fs.rmSync(editors, { recursive: true, force: true });
 });
 
 describe('the run channel the shell names in a run', () => {
@@ -368,8 +383,46 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
+        features: ['peers', 'lanes'],
       },
     ]);
+  });
+
+  it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
+    const picker = await paired();
+    const raw: string[] = [];
+    picker.socket.on('message', (data) => void raw.push(String(data)));
+    picker.send({ type: 'subscribe', id: 1 });
+    expect(await waitFor(() => picker.messages.find((m) => m.type === 'peers'))).toEqual({ type: 'peers', hubs: [] });
+    writeDiscovery(editors, {
+      pid: process.pid,
+      host: os.hostname(),
+      version: '0.67.0',
+      client: 'Visual Studio Code',
+      startedAt: '2026-11-05T10:00:00.000Z',
+      roots: ['/work/shop'],
+      hub: { url: 'ws://127.0.0.1:54001/piwi/hub', token: 'token-of-the-editor-hub' },
+      runChannel: null,
+      recorderBundle: null,
+    });
+    const named = await waitFor(() => picker.messages.find((m) => m.type === 'peers' && m.hubs.length === 1));
+    expect(named).toEqual({
+      type: 'peers',
+      hubs: [
+        {
+          url: 'ws://127.0.0.1:54001/piwi/hub',
+          pid: process.pid,
+          version: '0.67.0',
+          client: 'Visual Studio Code',
+          roots: ['/work/shop'],
+          startedAt: '2026-11-05T10:00:00.000Z',
+        },
+      ],
+    });
+    // What the hub sends names no token: the reader would drop one anyway.
+    expect(raw.join('\n')).not.toContain('token-of-the-editor-hub');
+    for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
+    picker.socket.close();
   });
 
   it('opens only for an extension that names it as this machine, and after hello with the desktop token', async () => {
@@ -397,6 +450,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
+      features: ['peers', 'lanes'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -467,7 +521,8 @@ describe('the hub Piwi Picker reaches', () => {
     picker.send({ type: 'runControl', id: 9, ref: 'desktop-99', worker: null, action: 'pause', since: null });
     expect(await picker.answer(9)).toMatchObject({
       ok: false,
-      message: 'No worker of this run is connected to the desktop app.',
+      message:
+        "No worker of this run is connected to the desktop app: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
     });
     worker.socket.destroy();
     picker.socket.close();
@@ -553,6 +608,42 @@ describe('a failure no pause bar shows', () => {
 });
 
 describe('the window', () => {
+  it('hears how many runs the hub has live, as a run starts and once it ended, with no stream of its own', async () => {
+    // The runs of the tests before end once they lingered.
+    await waitFor(() => runs.liveRunCount() === 0);
+    const heard: number[] = [];
+    const off = runs.onLiveRunCount((live) => heard.push(live));
+    const worker = new Worker(folder).attach('desktop-21');
+    worker.begin();
+    await waitFor(() => heard.length === 1);
+    expect(runs.liveRunCount()).toBe(1);
+    // Its workers gone, the run ends once it lingered.
+    worker.socket.destroy();
+    await waitFor(() => heard.length === 2);
+    expect(heard).toEqual([1, 0]);
+    off();
+    const again = new Worker(folder).attach('desktop-22');
+    again.begin();
+    await waitFor(() => runs.liveRunCount() === 1);
+    again.socket.destroy();
+    await waitFor(() => runs.liveRunCount() === 0);
+    expect(heard).toEqual([1, 0]);
+  });
+
+  it('hears that every run live as its stream opened was sent, after them', async () => {
+    const worker = new Worker(folder).attach('desktop-17');
+    worker.begin();
+    await waitFor(() => runs.sessions.current().some((s) => s.ref === 'desktop-17'));
+    const window = await openWindow();
+    const listed = window.events.findIndex((e) => e.type === 'listed');
+    const run = window.events.findIndex((e) => e.type === 'session' && e.session.ref === 'desktop-17');
+    expect(run).toBeGreaterThan(0);
+    expect(listed).toBeGreaterThan(run);
+    expect(window.events.filter((e) => e.type === 'listed')).toHaveLength(1);
+    window.close();
+    worker.socket.destroy();
+  });
+
   it('names its stream, and refuses a command of a stream that is not open or that is no command', async () => {
     const window = await openWindow();
     expect(window.events[0]).toEqual({ type: 'hello', viewer: window.viewer });
@@ -634,6 +725,95 @@ describe('the window', () => {
     const stopped = await worker.request('view', 1);
     expect(stopped).toMatchObject({ on: false });
     other.close();
+    worker.socket.destroy();
+  });
+  it('watches a worker’s lane as its test runs and at its stop, its frames to that window alone', async () => {
+    const window = await openWindow();
+    const other = await openWindow();
+    const worker = new Worker(folder).attach('desktop-15', channel.token, 0, [], ['view-lane']);
+    worker.begin();
+    // Its reporter shows its lane while a test runs: the worker says so among what it takes.
+    const running = await waitFor(() => window.session('desktop-15')?.workers[0]?.test && window.session('desktop-15'));
+    expect(running.workers[0]!.intents).toContain('watch');
+    const lane = { ref: 'desktop-15', lane: 0 };
+
+    const watching = window.command({ type: 'watch', id: 2, ...lane, on: true });
+    const asked = await worker.request('view-lane');
+    expect(asked).toMatchObject({ on: true });
+    worker.send({
+      type: 'answer',
+      request: asked.request,
+      what: 'view-lane',
+      value: { ok: true, message: 'The live view is on.' },
+    });
+    expect(await watching).toMatchObject({ ok: true });
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: null, width: 800, height: 600, data: '/9j/AA==' });
+    await waitFor(() => window.events.find((e) => e.type === 'lane-frame'));
+    expect(window.events.find((e) => e.type === 'lane-frame')).toEqual({
+      type: 'lane-frame',
+      ...lane,
+      worker: 0,
+      test: 'id-pays',
+      since: null,
+      width: 800,
+      height: 600,
+      data: '/9j/AA==',
+    });
+    // Another window that does not watch the lane gets none of its frames.
+    expect(other.events.some((e) => e.type === 'lane-frame')).toBe(false);
+
+    // At a stop, the lane shows the stop: the window watches it through the lane, its input included, as with `view`.
+    worker.stop(1);
+    const stop = await waitFor(() => window.session('desktop-15')?.workers[0]?.stop ?? undefined);
+    expect(stop.intents).toEqual(['assert-region', 'mock', 'view', 'input', 'pick-at']);
+    expect(other.session('desktop-15')!.workers[0]!.stop!.intents).toEqual(['mock', 'view', 'pick-at']);
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: 1, width: 800, height: 600, data: '/9j/AB==' });
+    const framed = await waitFor(() =>
+      window.events.find((e) => e.type === 'lane-frame' && 'data' in e && e.data === '/9j/AB=='),
+    );
+    expect(framed).toMatchObject({ since: stop.since, worker: 0 });
+    const played = window.command({
+      type: 'input',
+      id: 3,
+      ref: 'desktop-15',
+      worker: 0,
+      since: stop.since,
+      events: [{ type: 'mouse', action: 'click', x: 10, y: 20, button: 'left', clickCount: 1 }],
+    });
+    const input = await worker.request('input');
+    worker.send({ type: 'answer', request: input.request, what: 'input', value: { ok: true, message: 'Played.' } });
+    expect(await played).toMatchObject({ ok: true });
+    // Why the lane sends no frame comes too.
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: 1, refused: 'Each image of the page is too long.' });
+    expect(await waitFor(() => window.events.find((e) => e.type === 'lane-frame' && 'refused' in e))).toMatchObject({
+      ...lane,
+      since: stop.since,
+      refused: 'Each image of the page is too long.',
+    });
+
+    // Watched no more: the worker stops its lane view.
+    expect(await window.command({ type: 'watch', id: 4, ...lane, on: false })).toMatchObject({ ok: true });
+    expect(await worker.request('view-lane', 1)).toMatchObject({ on: false });
+    window.close();
+    other.close();
+    worker.socket.destroy();
+  });
+
+  it('refuses to watch the lane of a worker whose reporter shows a stopped test alone, saying why', async () => {
+    const window = await openWindow();
+    const worker = new Worker(folder).attach('desktop-16');
+    worker.begin();
+    const running = await waitFor(() => window.session('desktop-16')?.workers[0]?.test && window.session('desktop-16'));
+    expect(running.workers[0]!.intents).not.toContain('watch');
+    expect(await window.command({ type: 'watch', id: 2, ref: 'desktop-16', lane: 0, on: true })).toMatchObject({
+      ok: false,
+      message: 'Update the reporter to watch a running test: this one shows a stopped test alone.',
+    });
+    expect(await window.command({ type: 'watch', id: 3, ref: 'desktop-16', lane: -1, on: true })).toMatchObject({
+      ok: false,
+    });
+    expect(worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane')).toBe(false);
+    window.close();
     worker.socket.destroy();
   });
 });

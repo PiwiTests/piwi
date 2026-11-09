@@ -5,6 +5,7 @@
  */
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { pathToFileURL } from 'node:url';
@@ -79,6 +80,8 @@ export async function service(
   const stop = startServer(createConnection(toServer, toClient), {
     env: { PIWI_DESKTOP_CONFIG: '/nonexistent' },
     publish: (discovery) => void published.push(discovery),
+    // No editor of this machine is a peer of the service under test.
+    editorsDir: path.join(os.tmpdir(), 'piwi-no-editors-here'),
     ...options,
   });
   const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
@@ -159,13 +162,17 @@ export class FakeWorker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  /** Its `run-attach`; `holds` undefined for a reporter that predates them. */
+  /**
+   * Its `run-attach`; `holds` undefined for a reporter that predates them, and `runner` for a run the editor's own test
+   * runner started.
+   */
   attach(
     token: string,
     ref: string,
     workerIndex = 0,
     takes: RunTake[] = ['pick', 'record'],
     holds: RunHold[] | undefined = ['failure'],
+    runner = false,
   ): this {
     this.send({
       type: 'run-attach',
@@ -179,6 +186,7 @@ export class FakeWorker {
       reporter: '0.60.0',
       takes,
       ...(holds ? { holds } : {}),
+      ...(runner ? { runner: true as const } : {}),
     });
     return this;
   }

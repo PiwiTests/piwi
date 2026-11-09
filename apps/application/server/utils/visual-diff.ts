@@ -90,17 +90,29 @@ export function diffRawImages(
 
 /** Strip Playwright's status prefixes and ordinal suffixes for name matching. */
 function normalizeShotName(row: ScreenshotFileRow): string {
-  const base = (row.subtype || row.path.split('/').pop() || '').toLowerCase();
-  return base
+  return shotName(row)
     .replace(/\.(png|jpe?g|gif|webp)$/, '')
     .replace(/^test-(failed|finished|passed)-?/, '')
     .replace(/-?\d+$/, '');
 }
 
-/** Pick the baseline screenshot that best matches the failing one (name, else newest). */
-function pickBaselineShot(failing: ScreenshotFileRow, candidates: ScreenshotFileRow[]): ScreenshotFileRow {
-  const wanted = normalizeShotName(failing);
-  return candidates.find((c) => normalizeShotName(c) === wanted) ?? candidates[0]!;
+/** A screenshot's own name: its attachment name, else its file name. */
+function shotName(row: ScreenshotFileRow): string {
+  return (row.subtype || row.path.split('/').pop() || '').toLowerCase();
+}
+
+/**
+ * Pick the baseline screenshot that best matches the failing one: the same name, else the same name once Playwright's
+ * prefixes and ordinals are stripped, else the newest. Candidates are newest first.
+ */
+export function pickBaselineShot(failing: ScreenshotFileRow, candidates: ScreenshotFileRow[]): ScreenshotFileRow {
+  const name = shotName(failing);
+  const normalized = normalizeShotName(failing);
+  return (
+    candidates.find((c) => shotName(c) === name) ??
+    candidates.find((c) => normalizeShotName(c) === normalized) ??
+    candidates[0]!
+  );
 }
 
 async function loadRawImage(path: string): Promise<RawImage | null> {

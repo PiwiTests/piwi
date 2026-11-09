@@ -1,10 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 delete process.env.PIWI_CI_MINUTE_COST;
@@ -28,7 +27,7 @@ async function channels() {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'checkout' },
     { id: 2, name: 'search', capabilities: { 'test-map': 'declined' } },
@@ -152,6 +151,23 @@ describe('report schedules', () => {
       ['Email to me@example.test', { kind: 'viewer' }],
       ["Email to admin's address", { kind: 'user', name: 'admin' }],
     ]);
+  });
+
+  test('refuses file globs past the limits of a selection, naming the limit', async () => {
+    const files = Array.from({ length: 101 }, (_, i) => `tests/${i}.spec.ts`).join(',');
+    await expect(createWeekly({ scope: { files } })).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Invalid schedule: scope.files must hold at most 100 globs',
+    });
+    const view = await createWeekly({ scope: { files: 'tests/a.spec.ts' } });
+    const ctx = { actor: admin, channels: await channels(), access: 'all' as const, timeZone: 'UTC', now: NOW };
+    const patch = reports.parseScheduleBody(reports.reportSchedulePatchSchema, {
+      scope: { files: `tests/${'*'.repeat(495)}` },
+    });
+    await expect(reports.updateReportSchedule(db as any, view.id, patch, ctx)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Invalid schedule: scope.files: a glob must be at most 500 characters',
+    });
   });
 
   test('a partial update keeps the scope and the comparison it does not name', async () => {

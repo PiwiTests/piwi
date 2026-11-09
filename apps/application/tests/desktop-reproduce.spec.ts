@@ -84,7 +84,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
                 return ++state.lastRunId;
               case 'desktop_stop_local_tests':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
                 return null;
               default:
                 throw new Error(`unexpected command: ${cmd}`);
@@ -104,6 +104,13 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
 
 function tray(page: Page) {
   return page.getByRole('region', { name: 'Local runs' });
+}
+
+/** Waits until the shell was asked to start the run: events it streams before then name no run. */
+async function spawned(page: Page, cmd: 'desktop_reproduce_here' | 'desktop_bisect_here') {
+  await expect
+    .poll(() => page.evaluate((c) => window.__piwiRepro.invocations.some((i) => i.cmd === c), cmd))
+    .toBe(true);
 }
 
 function section(page: Page) {
@@ -203,6 +210,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await openReproduce(page);
 
     await page.getByRole('button', { name: 'Reproduce here' }).click();
+    await spawned(page, 'desktop_reproduce_here');
     await expect(tray(page)).toBeVisible();
     // A reproduction runs to show its failure: it holds failures from its start.
     await expect(tray(page).getByRole('switch', { name: 'Hold failures' })).toHaveAttribute('aria-checked', 'true');
@@ -231,6 +239,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await openReproduce(page);
 
     await page.getByRole('button', { name: 'Reproduce here' }).click();
+    await spawned(page, 'desktop_reproduce_here');
     await page.evaluate(() => window.__piwiRepro.phase('install'));
     await page.evaluate(() => window.__piwiRepro.line('npm error could not resolve dependency'));
     await page.evaluate(() => window.__piwiRepro.finish(1));
@@ -244,6 +253,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await openReproduce(page);
 
     await page.getByRole('button', { name: 'Find the breaking commit here' }).click();
+    await spawned(page, 'desktop_bisect_here');
     await expect(tray(page)).toBeVisible();
 
     await page.evaluate(() => window.__piwiRepro.phase('bisect'));
@@ -269,6 +279,7 @@ test.describe('Desktop reproduce & bisect', () => {
     await openReproduce(page);
 
     await page.getByRole('button', { name: 'Find the breaking commit here' }).click();
+    await spawned(page, 'desktop_bisect_here');
     await page.evaluate(() => window.__piwiRepro.phase('bisect'));
     await page.evaluate(() => window.__piwiRepro.bisectStep(1, 2, 'deadbee'));
     await page.evaluate(() => window.__piwiRepro.bisectVerdict('deadbee', 'bad'));

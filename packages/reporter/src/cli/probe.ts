@@ -43,6 +43,28 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * The `playwright test` arguments of a probe run: the ones given after `--`,
+ * a `--grep` for the planned tests' titles unless one was given (probe mode acts
+ * only on planned tests; the filter keeps the run cheap), and retries and the
+ * failure limit off. A test that notices its fault fails by design, so a retry
+ * would replay it and a limit would stop the plan partway; on the command line
+ * they win over the config and every project's own `retries`, and a flag given
+ * after `--` wins over them.
+ */
+export function probePlaywrightArgs(playwrightArgs: string[], testTitles: Array<string | null | undefined>): string[] {
+  const given = (...flags: string[]) =>
+    playwrightArgs.some((arg) => flags.some((flag) => arg === flag || arg.startsWith(`${flag}=`)));
+  const grep = testTitles
+    .filter((t): t is string => !!t)
+    .map(escapeRegex)
+    .join('|');
+  const args = [...playwrightArgs];
+  if (grep && !given('--grep', '-g')) args.push('--grep', grep);
+  if (!given('--retries')) args.push('--retries=0');
+  if (!given('--max-failures', '-x')) args.push('--max-failures=0');
+  return args;
+}
 export async function runProbe(argv: string[]): Promise<number> {
   const sep = argv.indexOf('--');
   const own = sep < 0 ? argv : argv.slice(0, sep);
@@ -103,15 +125,10 @@ export async function runProbe(argv: string[]): Promise<number> {
   fs.writeFileSync(planFile, JSON.stringify(plan));
   fs.writeFileSync(resultsFile, '');
 
-  // Narrow the run to the probed tests when their titles are known; probe mode
-  // only acts on matched tests, but a filter keeps the run cheap.
-  const grep = plan.items
-    .map((i) => i.testTitle)
-    .filter(Boolean)
-    .map(escapeRegex)
-    .join('|');
-  const pwArgs = [...playwrightArgs];
-  if (grep && !playwrightArgs.includes('--grep') && !playwrightArgs.includes('-g')) pwArgs.push('--grep', grep);
+  const pwArgs = probePlaywrightArgs(
+    playwrightArgs,
+    plan.items.map((i) => i.testTitle),
+  );
 
   const childEnv: NodeJS.ProcessEnv = {
     ...env,

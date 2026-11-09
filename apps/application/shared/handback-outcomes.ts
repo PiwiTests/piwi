@@ -4,6 +4,8 @@
  * tools and the metrics read them.
  */
 
+import { fnv1a32 } from '@piwitests/core/hash';
+
 /** What was handed back. */
 export const HANDBACK_KINDS = [
   'locator-heal',
@@ -93,11 +95,5 @@ export interface HandbackActor {
 
 /** FNV-1a 32-bit as 8 hex characters: a short, stable key for what was suggested. */
 export function suggestionHash(parts: ReadonlyArray<string | number | null | undefined>): string {
-  const input = parts.map((p) => (p == null ? '' : String(p))).join('\u0000');
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
+  return fnv1a32(parts.map((p) => (p == null ? '' : String(p))).join('\u0000'));
 }

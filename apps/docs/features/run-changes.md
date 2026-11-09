@@ -16,6 +16,11 @@ Every section reads the **same baseline**, so the "new failures" count is comput
 
 By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
 
+<figure>
+  <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment; with no passing run, the same rungs for the last failed run">
+  <figcaption>Six rungs, tried in order: the first with an earlier passing run gives the baseline.</figcaption>
+</figure>
+
 ### When no earlier run passed
 
 A project that has never had a green run still gets a comparison. When no earlier full run passed, the tab walks the same ladder again for the **last failed run** and says so: _"No earlier full run passed; the last failed run on feature/x in staging."_ The sections read the same way against it: **New failures** are the tests that passed in that run and fail here, **Still failing** the ones that failed in both. Timed-out and interrupted runs stopped before the suite ended, so they are never picked automatically.
@@ -31,14 +36,14 @@ Two ways to compare against something else:
 - **Base branch** — take the baseline from one branch only: its last passing run, else its last failed run, same environment first. The list offers every branch with an earlier full run that passed or failed, so it appears once a branch other than this run's own has one. Deep-linkable as `?baseBranch=<name>`.
 - **Run** — compare against one earlier run, whatever its branch, environment or outcome. The list shows the 50 runs before this one, each with its branch, environment, start time and outcome, partial runs marked; type a branch or environment name to filter it. Deep-linkable as `?baseline=<runId>`, so a link to a comparison reopens the same two runs. **Previous run** is the shortcut for the run just before this one.
 
-**Automatic** returns to the default choice. The same options exist on the REST API (see the [API docs](https://piwitests.dev/demo/docs)), where `earlierRuns` lists the runs that can be passed as `baseline`, and on the MCP `get_run_insights` tool (`baseBranch`).
+**Automatic** returns to the default choice. The same options exist on the REST API (see the [API docs](https://piwitests.dev/demo/settings/api)), where `earlierRuns` lists the runs that can be passed as `baseline`, and on the MCP `get_run_insights` tool (`baseBranch`).
 
 ## What it shows
 
 - **New failures** — passed in the baseline, failing here.
 - **Fixed** — failed in the baseline, passing here.
 - **Still failing** — failing in both.
-- **Newly flaky / passed on retry** — passed here but needed a retry.
+- **Newly flaky / passed on retry** — passed here after an earlier attempt failed.
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
@@ -58,6 +63,10 @@ compare. Playwright 1.64's `--shuffle` schedules test files, and the tests of fi
 order, and the run keeps its seed: the run's **Details** shows it as **Order**, and clicking the seed copies
 `--shuffle <seed>`, which runs the same tests on the same workers in the same order again. Against a baseline that was
 not shuffled, or the other way round, the Changes tab lists the **Test order** under Environment changes.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * A project's combined coverage at one commit (`/projects/:id/coverage`
- * without `?file=`), read top to bottom: the share of lines every suite ran
+ * A project's combined coverage at one commit (the Coverage tab's Code
+ * view), read top to bottom: the share of lines every suite ran
  * together, each suite's share on the same lines and each named area's, then
  * the files. Every bar splits lines the way the source marks do, by the kinds
  * of suite that ran them, in the colors of one legend.
@@ -20,6 +20,7 @@
  * detail was removed shows its stored totals, suites and areas, and the files
  * give way to a link to the commit that superseded it.
  */
+import { coverageTabLink } from '~/utils/coverage-tab';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
 import { downloadBlob } from '~/utils/chart-export';
@@ -42,6 +43,8 @@ import {
 const props = defineProps<{
   projectId: number;
   summary: CoverageSummary;
+  /** The branch read when the address names none: the project filters' one branch. */
+  branch?: string | null;
 }>();
 
 const { isHidden } = await useProjectCapabilities(props.projectId);
@@ -57,16 +60,21 @@ const meta = computed(() =>
   ].filter((line): line is string => !!line),
 );
 
-/** What every link keeps: the commit when the page pins one, the branch and the area. */
+/**
+ * What every link keeps: the commit when the page pins one, the branch and the
+ * area. A link within the view keeps the address's branch only, so the filters
+ * still choose it; a link to a file carries the branch read.
+ */
 const linkContext = computed<CoverageLinkContext>(() => ({
   commit: typeof route.query.commit === 'string' && route.query.commit ? props.summary.commit : null,
-  branch: typeof route.query.branch === 'string' ? route.query.branch : null,
+  branch: typeof route.query.branch === 'string' ? route.query.branch : (props.branch ?? null),
   area: props.summary.area,
 }));
 
-/** A link to this page with other query values, the commit, branch and area kept. */
+/** A link to this view with other query values, the commit, the address's branch and the area kept. */
 function pageLink(query: Record<string, string | undefined>) {
-  return coverageLink(props.projectId, linkContext.value, query);
+  const branch = typeof route.query.branch === 'string' ? route.query.branch : null;
+  return coverageLink(props.projectId, { ...linkContext.value, branch }, query);
 }
 
 function fileLink(path: string) {
@@ -373,7 +381,7 @@ const exportItems = [
             </ol>
             <p v-if="!isHidden('test-map')" class="text-xs text-muted" data-testid="coverage-test-map-pointer">
               Lines say what ran; the Test Map’s
-              <NuxtLink :to="`/projects/${projectId}?tab=gaps`" :class="SENTENCE_LINK_CLASS">scenario gaps</NuxtLink>
+              <NuxtLink :to="coverageTabLink(projectId, 'gaps')" :class="SENTENCE_LINK_CLASS">scenario gaps</NuxtLink>
               say which tests to write.
             </p>
           </div>

@@ -1,5 +1,5 @@
 /**
- * UI copy for the Setup page's capability ladder.
+ * UI copy for the capability ladder of Settings → Capabilities.
  *
  * Single source of truth for what each optional capability is, why you'd want
  * it, and how to switch it on. Keyed by `SetupCapabilityId` so a capability
@@ -129,7 +129,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     how: 'Always available — open the MCP server page for the URL and one-click setup for every client.',
     icon: 'i-lucide-bot',
     doc: 'features/mcp',
-    to: '/mcp',
+    to: '/settings/mcp',
     toLabel: 'Open MCP setup',
   },
   {
@@ -226,7 +226,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Scenario gaps',
     summary:
       'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
-    how: "Automatic — the map builds from your runs, and gaps appear on a project's Gaps tab as reach accrues.",
+    how: "Automatic — the map builds from your runs, and gaps appear on a project's Coverage tab as reach accrues.",
     icon: 'i-lucide-map',
     doc: 'features/scenario-gaps',
   },

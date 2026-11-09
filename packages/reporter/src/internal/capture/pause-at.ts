@@ -1,12 +1,24 @@
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
-import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
-import { isCi } from './inspect-on-failure.js';
+import {
+  pauseAnswered,
+  removeStopHighlight,
+  showPauseBar,
+  showStopHighlight,
+  takePauseState,
+  type PauseBarArg,
+  type PauseChoice,
+} from '@piwitests/picker-dom';
+import { detectCi } from '../support/ci.js';
+import { pauseBarShows } from './page-view.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
+import { playwrightVersionAtLeast } from '../support/playwright-version.js';
 
 /**
  * Breakpoints from the editor: `PIWI_PAUSE_AT` lists lines (`file:line`,
@@ -25,9 +37,18 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
  * own debugger (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
+/** A call site's line (`file:line`) as two are compared: without case on Windows, whose file names ignore it. */
+export function lineKey(line: string, windows: boolean = process.platform === 'win32'): string {
+  return windows ? line.toLowerCase() : line;
+}
+
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
 export class PauseSet {
-  constructor(private readonly lines: ReadonlySet<string>) {}
+  private readonly lines: ReadonlySet<string>;
+
+  constructor(lines: ReadonlySet<string>) {
+    this.lines = new Set([...lines].map((line) => lineKey(line)));
+  }
 
   get size(): number {
     return this.lines.size;
@@ -37,20 +58,39 @@ export class PauseSet {
   matches(callerLocation: string | null): boolean {
     if (!callerLocation) return false;
     const col = callerLocation.lastIndexOf(':');
-    return col > 0 && this.lines.has(callerLocation.slice(0, col));
+    return col > 0 && this.lines.has(lineKey(callerLocation.slice(0, col)));
   }
 }
 
 export const NO_BREAKPOINTS = new PauseSet(new Set());
 
-/** A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes. */
+/**
+ * A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes, and
+ * through the links it goes through, as a stack frame names the file Node loaded.
+ */
 function callSiteFile(file: string, cwd: string): string {
   const slashed = file.replace(/\\/g, '/');
   const absolute = path.isAbsolute(file) || path.isAbsolute(slashed) || /^[A-Za-z]:\//.test(slashed);
-  let rel = absolute ? path.relative(cwd, file) : path.normalize(slashed);
+  const resolved = path.resolve(cwd, absolute ? file : slashed);
+  const real = realPath(resolved);
+  let rel =
+    real !== null && real !== resolved
+      ? path.relative(realPath(cwd) ?? cwd, real)
+      : absolute
+        ? path.relative(cwd, file)
+        : path.normalize(slashed);
   rel = rel.split(path.sep).join('/').replace(/\\/g, '/');
   if (rel.startsWith('./')) rel = rel.slice(2);
   return rel;
+}
+
+/** The file `file` names once every link on its way is followed; null when it does not exist. */
+function realPath(file: string): string | null {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -151,9 +191,12 @@ export function placeLine(place: Place, cwd: string = process.cwd()): string {
 
 /** Everything the pause gate reads, as plain values. */
 export interface PauseGate {
-  /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
-  ci: string | undefined;
-  /** `testInfo.project.use.headless`: must be explicitly `false` (headed). */
+  /** Whether the run is a CI job, as `detectCi` reads the environment. */
+  ci: boolean;
+  /**
+   * The test's `headless` fixture, which `test.use`, `launchOptions.headless` and `--headed` set, else
+   * `testInfo.project.use.headless`: must be explicitly `false` (headed).
+   */
   headless: unknown;
   /** Raw `PWDEBUG` env value: Playwright's Inspector drives the debugger unless it is unset, empty, `0`, `false` or `console`. */
   pwdebug?: string | undefined;
@@ -165,16 +208,32 @@ export interface PauseGate {
 
 type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
 
-export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
+/** The gate of a test, with its `headless` fixture's value when the caller has it. */
+export function pauseGateFromTestInfo(testInfo: TestInfo, headless?: unknown): PauseGate {
   const use = (testInfo.project?.use ?? {}) as { headless?: unknown };
   // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
   const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
-  return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG, debug };
+  return {
+    ci: detectCi(process.env),
+    headless: headless !== undefined ? headless : use.headless,
+    pwdebug: process.env.PWDEBUG,
+    debug,
+  };
+}
+
+/**
+ * Whether something may pause the test, in CI too: breakpoints from the editor (`PIWI_PAUSE_AT`), or Playwright's
+ * Inspector or debugger (`PWDEBUG`, `--debug`).
+ */
+export function mayPause(gate: PauseGate): boolean {
+  if (process.env.PIWI_PAUSE_AT) return true;
+  if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug)) return true;
+  return typeof gate.debug === 'string' && gate.debug.length > 0;
 }
 
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
-  if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';
+  if (gate.ci) return 'running under CI — breakpoints pause local runs only';
   if (gate.headless !== false && !gate.channel)
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))
@@ -234,7 +293,7 @@ export function atStop(state: PauseState, callSite: string | null): { show: Stop
       ? 'step'
       : state.pause
         ? 'pause'
-        : state.runTo !== null && callSiteLine(callSite) === state.runTo
+        : state.runTo !== null && lineKey(callSiteLine(callSite)) === lineKey(state.runTo)
           ? 'run-to'
           : atBreakpoint(state, callSite)
             ? 'breakpoint'
@@ -288,6 +347,14 @@ export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
 
 /** Why a test ended at a stop (End the test) is skipped, as its `skip` annotation reads. */
 export const ENDED_REASON = 'Ended from Piwi';
+
+/**
+ * Whether Playwright `version` (`testInfo.config.version`) gives a call up as the `signal` among its options aborts
+ * (1.62): an older one drops the option and runs the call.
+ */
+export function takesEndSignal(version: string | undefined): boolean {
+  return playwrightVersionAtLeast(version, '1.62');
+}
 
 /**
  * Where the locator methods the capture fixtures delegate take their options, when not first: `fill(value,
@@ -397,10 +464,31 @@ function syncInspectorSwitch(): void {
   if (closed && process.env[NO_INSPECTOR_ENV] === undefined) {
     process.env[NO_INSPECTOR_ENV] = '1';
     inspectorSwitch.set = true;
+    clearSwitchAtStop();
   } else if (!closed && inspectorSwitch.set) {
-    if (process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
-    inspectorSwitch.set = false;
+    clearSwitch();
   }
+}
+
+/** Clear the switch Piwi set. */
+function clearSwitch(): void {
+  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  inspectorSwitch.set = false;
+}
+
+let clearsAtStop = false;
+
+/**
+ * Clear the switch as the worker stops, before Playwright compares the worker's environment (its `__stop__` message)
+ * with the one it started with: what changed there reaches the projects that depend on this worker's, and the switch
+ * is this worker's alone.
+ */
+function clearSwitchAtStop(): void {
+  if (clearsAtStop) return;
+  clearsAtStop = true;
+  process.prependListener('message', (message: unknown) => {
+    if ((message as { method?: unknown } | null)?.method === '__stop__') clearSwitch();
+  });
 }
 
 /**
@@ -431,7 +519,7 @@ export async function withInspector<T>(run: () => Promise<T>): Promise<T> {
 
 /** Test-only: the switch as a fresh worker has it. */
 export function resetInspectorSwitch(): void {
-  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  clearSwitch();
   Object.assign(inspectorSwitch, { set: false, watching: false, wrapped: false, open: 0 });
 }
 
@@ -580,11 +668,8 @@ export interface PausePoint {
   call: string;
   /** The attempt, 1-based, when the test is retried; null on the first attempt. */
   attempt: number | null;
-  /**
-   * The element the call acts on, highlighted while stopped; null for none. Its highlight may answer something to
-   * `dispose()` of, which hides it.
-   */
-  target: { highlight?: () => Promise<unknown> } | null;
+  /** The element the call acts on, highlighted while stopped (`highlightAtStop`); null for none. */
+  target: { highlight(): StopHighlight } | null;
   /** The test failed at `location` (`call` says how): no call is about to run, and the bar offers no Step nor Finish. */
   failure?: boolean;
   /** The test can end at this stop, skipped (End the test): the bar offers it. */
@@ -703,6 +788,97 @@ export async function viewHere(
   }
 }
 
+/** A highlight Piwi draws at a stop (`highlightAtStop`). */
+export interface StopHighlight {
+  /** Whether its first draw shows a box: none for a locator that matches nothing shown, nor for a page that has none. */
+  shown: Promise<boolean>;
+  /** Take it down, a draw that comes after included, `TAKE_DOWN_MS` at most: whether one showed. */
+  hide(): Promise<boolean>;
+}
+
+/** How often a stop's highlight finds its locator's matches anew: an element the page renders meanwhile gets its box. */
+const REDRAW_MS = 500;
+
+/** How many highlights this worker drew at stops: each one's name in its page. */
+let stopHighlights = 0;
+
+/** What a frame hop of a locator's selector reads: the part before it names the iframe, the part after its contents. */
+const FRAME_HOP = ' >> internal:control=enter-frame >> ';
+
+/**
+ * Where `locator` finds its elements: the frame its last frame hop enters (`frameLocator`, `contentFrame`), found
+ * through the first iframe the part before it matches, and the selector there; `locator`'s own frame and selector
+ * when it has no hop. Read from Playwright's client (`_frame`, `_selector`), feature-checked: null when it says
+ * neither, or when the iframe is not there.
+ */
+async function frameOf(locator: Locator): Promise<{ frame: Frame; selector: string } | null> {
+  const own = locator as unknown as { _frame?: Frame; _selector?: unknown };
+  if (!own._frame || typeof own._selector !== 'string') return null;
+  const at = own._selector.lastIndexOf(FRAME_HOP);
+  if (at < 0) return { frame: own._frame, selector: own._selector };
+  const [iframe] = await own._frame.locator(own._selector.slice(0, at)).first().elementHandles();
+  if (!iframe) return null;
+  try {
+    const frame = await iframe.contentFrame();
+    return frame ? { frame, selector: own._selector.slice(at + FRAME_HOP.length) } : null;
+  } finally {
+    await iframe.dispose().catch(() => undefined);
+  }
+}
+
+/**
+ * Highlight `locator`'s matches in `page` at a stop, as `what` (the stopped call's element, a count's matches), labelled
+ * `label` (the locator, as source): Piwi draws them itself, in its own layer of the frame the locator enters
+ * (`frameOf`, `showStopHighlight`), never through Playwright's highlight, so the test's own highlights and screencast
+ * overlays stay as they are. It finds the matches anew every `REDRAW_MS` until it is taken down, as Playwright's own
+ * highlight does, so an element the page renders or replaces meanwhile is boxed. The take-down runs in each frame it
+ * drew in, whatever the locator matches there by then. Its page calls are internal; neither rejects.
+ */
+export function highlightAtStop(page: Page, locator: Locator, what: 'call' | 'count', label: string): StopHighlight {
+  const id = `${what}-${++stopHighlights}`;
+  const arg = { id, kind: what, label };
+  /** The frames it drew in, which its take-down reaches. */
+  const drawnIn = new Set<Frame>();
+  let hidden = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const draw = async (): Promise<number> => {
+    const target = await frameOf(locator);
+    if (hidden) return 0;
+    if (!target) return locator.evaluateAll(showStopHighlight, arg);
+    drawnIn.add(target.frame);
+    return target.frame.locator(target.selector).evaluateAll(showStopHighlight, arg);
+  };
+  const again = (): void => {
+    if (hidden || page.isClosed?.()) return;
+    timer = setTimeout(
+      () =>
+        void internalCall(page, draw)
+          .catch(() => 0)
+          .then(again),
+      REDRAW_MS,
+    );
+    timer.unref?.();
+  };
+  const first = internalCall(page, draw).catch(() => 0);
+  void first.then(again);
+  const removeIn = (frame: Frame): Promise<boolean> =>
+    internalCall(page, async () => frame.evaluate(removeStopHighlight, id)).catch(() => false);
+  return {
+    shown: first.then((boxes) => boxes > 0),
+    hide: async () => {
+      hidden = true;
+      clearTimeout(timer);
+      try {
+        const frames = drawnIn.size ? [...drawnIn] : [page.mainFrame()];
+        const removed = await within(Promise.all(frames.map(removeIn)), TAKE_DOWN_MS);
+        return removed?.includes(true) ?? false;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
@@ -713,8 +889,10 @@ export async function viewHere(
  * that ends the stop: `resume`, `step`, `finish` or `end`; `resume` when the page breaks or `ended` aborts (the test
  * ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and the
  * recording then end at once, whether the bar or an intent started them, leaving nothing of theirs in the page. The bar
- * and the highlight are gone once it returns, unless the page stops answering: no page call holds it past `ended` but
- * taking them down, for `TAKE_DOWN_MS` at most. Every page call it makes must run inside an internal call.
+ * and the highlight are gone once it returns, unless the page stops answering (a highlight its frame draws later
+ * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. The page's live
+ * views paint the bar over from the moment it is drawn until it is known to be down (`pauseBarShows`). Every page call
+ * it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -726,19 +904,20 @@ export async function pauseHere(
   intents?: BarIntents,
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
-  let shown: unknown = null;
+  let highlight: StopHighlight | null = null;
+  /** Tells the page's live views that the bar drawn last came down. */
+  let barDown: (() => void) | null = null;
   try {
-    const highlight = point.target?.highlight;
-    if (typeof highlight === 'function') {
-      const highlighted = Promise.resolve()
-        .then(() => highlight.call(point.target))
-        .catch(() => null);
-      shown = (await within(highlighted, HIGHLIGHT_MS)) ?? null;
+    if (point.target) {
+      highlight = point.target.highlight();
+      await within(highlight.shown, HIGHLIGHT_MS);
     }
+    // The bar and the terminal name the call without the text it types.
+    const call = hideSecretsInText(hideTypedText(point.call));
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
       attempt: point.attempt,
-      action: point.call,
+      action: call,
       locator: null,
       record: !!onRecord,
       ...(point.failure ? { failure: true } : {}),
@@ -748,7 +927,7 @@ export async function pauseHere(
       point.failure
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
             `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
-        : `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
+        : `[piwi] Paused at ${callSiteLine(point.location)} before ${call}` +
             `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''}, Finish` +
             `${point.end ? ' or End the test' : ''} in the browser (Esc resumes).`,
     );
@@ -758,13 +937,16 @@ export async function pauseHere(
     for (;;) {
       try {
         if (ended?.aborted) return 'resume';
-        await unlessEnded(page.evaluate(showPauseBar, arg), ended);
+        const drawn = page.evaluate(showPauseBar, arg);
+        barDown = pauseBarShows(page, drawn);
+        await unlessEnded(drawn, ended);
         const answered = page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }).then(() => null);
         const intent = await unlessEnded(intents ? Promise.race([answered, intents.wait()]) : answered, ended);
         intents?.answered();
         if (ended?.aborted) return 'resume';
         const taken = (await unlessEnded(page.evaluate(takePauseState), ended)) as PauseChoice | null | undefined;
         if (ended?.aborted) return 'resume';
+        barDown();
         const choice = taken ?? intent ?? null;
         // An intent's pick or recording runs in the test's window: it comes to the front first.
         const raised = intent && choice === intent ? page.bringToFront().catch(() => undefined) : null;
@@ -790,6 +972,8 @@ export async function pauseHere(
         const picked = await pickLocator(page, probe, null, ended).catch(() => null);
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
+        // The document the bar was drawn in is gone, or the page broke.
+        barDown?.();
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
         await unlessEnded(
           page.waitForLoadState('domcontentloaded').catch(() => undefined),
@@ -800,19 +984,13 @@ export async function pauseHere(
   } catch {
     return 'resume';
   } finally {
-    const takeDown = async (): Promise<void> => {
-      try {
-        // A bar the stop ended under without its answer is taken down here.
-        if (ended?.aborted) await page.evaluate(takePauseState);
-        const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-        // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
-        const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-        if (typeof dispose === 'function') await dispose.call(shown);
-        else if (typeof hide === 'function') await hide.call(page);
-      } catch {
-        // The page may be gone.
-      }
-    };
-    await within(takeDown(), TAKE_DOWN_MS);
+    // A bar the stop ended under without its answer, and the bar's own highlight, are taken down together, before the
+    // test goes on, `TAKE_DOWN_MS` at most: a highlight its frame draws later than that draws nothing. The page may be
+    // gone.
+    await Promise.all([
+      ended?.aborted ? within(page.evaluate(takePauseState), TAKE_DOWN_MS).catch(() => undefined) : undefined,
+      highlight?.hide(),
+    ]);
+    barDown?.();
   }
 }

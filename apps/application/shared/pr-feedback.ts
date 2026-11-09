@@ -86,10 +86,11 @@ export interface PrFailureEntry {
   owner?: string | null;
   /**
    * Set when this test is also flaky on the default branch, so the comment can
-   * exonerate a failure the change probably did not cause. `flakinessRate` is
-   * the test's flaky rate over recent default-branch runs (0–1).
+   * exonerate a failure the change probably did not cause. `flakinessScore` is
+   * the test's flakiness score on recent default-branch runs (1–100), as the
+   * flaky tests list ranks it.
    */
-  flakyOnDefaultBranch?: { branch: string; flakinessRate: number } | null;
+  flakyOnDefaultBranch?: { branch: string; flakinessScore: number } | null;
 }
 
 export interface PrSummaryInput {
@@ -106,7 +107,7 @@ export interface PrSummaryInput {
   newRegressions: PrFailureEntry[];
   /** Failures that were already failing before this change. */
   preExisting: PrFailureEntry[];
-  /** Tests that passed only after a retry in this run. */
+  /** Tests that passed in this run after an earlier attempt failed. */
   flaky: PrFailureEntry[];
   /** `test.fail()` tests that passed: the bug each reproduces looks fixed. */
   looksFixed?: Array<{
@@ -136,7 +137,7 @@ export interface PrSummaryInput {
   selection?: { key: string; testCount: number } | null;
   /** Locks held on two shards at once in this run — the guarantee sharding is meant to keep. */
   splitLocks?: string[] | null;
-  /** True when no previous green run existed to compare against. */
+  /** True when a previous green run existed to compare against. */
   hasBaseline: boolean;
   /** Failures of tests that are currently quarantined, counted in `failedTests`. */
   quarantinedFailures?: number;
@@ -171,7 +172,8 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
   const lines = nl.leaks.slice(0, MAX_LEAKS_LISTED).map((finding) => {
     const view = findingView(finding);
     const facts = view.facts.slice(0, 3).join(' · ');
-    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}`;
+    const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
+    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse}`;
   });
   const blocks = [
     `#### 🟠 Left open by this change (${n})`,
@@ -193,8 +195,8 @@ export interface PrChangeCoverageFile {
   reach: ChangeReach;
   /** The file's changed lines as the head commit's coverage counts them, when it counts some. */
   lines?: ChangedLines | null;
-  /** A one-line suggestion for the scenario to write, when there is one. */
-  draftTitle?: string | null;
+  /** The file's *changed, unreached* gap, which the comment links to, when there is one. */
+  gapId?: number | null;
 }
 
 export interface PrChangeCoverageTicket {
@@ -222,6 +224,12 @@ export interface PrChangeCoverage {
   filesTruncated?: boolean;
   /** The changed lines the head commit's combined coverage counts. */
   patchCoverage?: PatchCoverage | null;
+  /** The project the gaps are in, for their links. */
+  projectId?: number | null;
+  /** The pull request the gaps are tagged with, for the link to all of them. */
+  prNumber?: number | null;
+  /** The gaps the change-time detectors raised on the change: new error paths, new controls, an intent no test names. */
+  changeTimeGaps?: number;
 }
 
 /**
@@ -278,17 +286,18 @@ function notCountedLine(cc: PrChangeCoverage): string | null {
 
 /** Whether the section has something to say: counted files to show, or changed lines the coverage counts. */
 export function hasChangeCoverage(cc: PrChangeCoverage): boolean {
-  return (cc.fileReach && cc.totalFiles > 0) || cc.patchCoverage != null;
+  return (cc.fileReach && cc.totalFiles > 0) || cc.patchCoverage != null || (cc.changeTimeGaps ?? 0) > 0;
 }
 
 /**
  * Render the uncovered-changes section: the changed files no test reached,
- * grouped by ticket, each with a draft suggestion, then the changed lines no
- * suite ran of the files the coverage counts. The files are the Test Map's
+ * grouped by ticket, each with a link to its gap, then the changed lines no
+ * suite ran of the files the coverage counts, then the gaps the change-time
+ * detectors raised. The files are the Test Map's
  * part (`fileReach`), the lines coverage's; returns null when neither has
  * anything to say.
  */
-export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
+export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null = null): string | null {
   if (!hasChangeCoverage(cc)) return null;
   const patch = cc.patchCoverage ?? null;
   const all = cc.tickets.flatMap((group) => group.files);
@@ -316,7 +325,9 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
         listed++;
         let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
         if (file.lines) line += ` · ${unreachedLinesText(file.lines)}`;
-        if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
+        if (file.gapId != null && cc.projectId != null && origin) {
+          line += `\n  → [open its gap](${origin}/projects/${cc.projectId}?tab=coverage&gap=${file.gapId}): **Accept** copies a draft test`;
+        }
         lines.push(line);
       }
       if (lines.length === 0) continue;
@@ -325,6 +336,14 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
     }
     const hidden = cc.uncoveredFiles - listed;
     if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  }
+
+  // The change-time gaps: what the change adds that no test names.
+  const raised = cc.changeTimeGaps ?? 0;
+  if (raised > 0) {
+    const link = origin && cc.projectId != null && cc.prNumber != null ? gapsOfPullRequestUrl(origin, cc) : null;
+    const what = `${raised} ${raised === 1 ? 'gap' : 'gaps'} this change adds: a new error path, a new control or an intent no test names`;
+    blocks.push(link ? `${what}, [on the Coverage tab](${link}).` : `${what}.`);
   }
 
   // The changed lines no suite ran, of the files a test reached or, without the file list, of every file.
@@ -483,8 +502,8 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       line += `\n  💡 Try ${codeSpan(entry.suggestedLocator)} instead.`;
     }
     if (entry.flakyOnDefaultBranch) {
-      const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
-      line += `\n  🎲 Also flaky on ${codeSpan(entry.flakyOnDefaultBranch.branch)} (~${pct}% of recent runs) — likely not yours.`;
+      const { branch, flakinessScore } = entry.flakyOnDefaultBranch;
+      line += `\n  🎲 Also flaky on ${codeSpan(branch)} (flakiness score ${flakinessScore}/100) — likely not yours.`;
     }
     if (entry.issue) {
       line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
@@ -554,7 +573,7 @@ export function buildPrComment(input: PrSummaryInput): string {
 
   if (input.flaky.length > 0) {
     sections.push(
-      `#### 🟡 Flaky (${input.flaky.length})\nPassed only after a retry.\n\n${renderFailureList(input.flaky, input.runUrl)}`,
+      `#### 🟡 Flaky (${input.flaky.length})\nPassed after an earlier attempt failed.\n\n${renderFailureList(input.flaky, input.runUrl)}`,
     );
   }
 
@@ -617,7 +636,7 @@ export function buildPrComment(input: PrSummaryInput): string {
   }
 
   if (input.changeCoverage) {
-    const section = renderChangeCoverage(input.changeCoverage);
+    const section = renderChangeCoverage(input.changeCoverage, originOf(input.runUrl));
     if (section) sections.push(section);
   }
 
@@ -669,15 +688,27 @@ export function countedFailures(input: FailureCounts): number {
 }
 
 /**
+ * True when the change left an uncovered change: a counted file no test reached,
+ * shown while the Test Map's part of the section is. Changed lines no suite ran
+ * stay in the section and the change-coverage status, and never make a comment
+ * on their own.
+ */
+export function hasUncoveredChanges(cc: PrChangeCoverage | null | undefined): boolean {
+  return !!cc && cc.fileReach && cc.uncoveredFiles > 0;
+}
+
+/**
  * True when `onlyOnFailure` keeps the comment off a run: no failure counts
- * against it (`countedFailures`), it fixed no cluster and it opened no new leak.
+ * against it (`countedFailures`), it fixed no cluster, it opened no new leak and
+ * its change left no uncovered change.
  */
 export function isQuietRun(settings: Pick<PrFeedbackSettings, 'onlyOnFailure'>, summary: PrSummaryInput): boolean {
   return (
     settings.onlyOnFailure &&
     countedFailures(summary) === 0 &&
     (summary.fixedClusters?.length ?? 0) === 0 &&
-    (summary.newLeaks?.leaks.length ?? 0) === 0
+    (summary.newLeaks?.leaks.length ?? 0) === 0 &&
+    !hasUncoveredChanges(summary.changeCoverage)
   );
 }
 
@@ -707,6 +738,22 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  * Build the informational commit status for change coverage. Warn-only in this
  * release, so the state is always `success` — it reports, it never blocks.
  */
+/**
+ * Where the change-coverage status leads: the Coverage tab on the pull request's
+ * gaps, when its change raised some and they carry its number; else the run.
+ */
+export function changeCoverageStatusUrl(cc: PrChangeCoverage, runUrl: string): string {
+  const origin = originOf(runUrl);
+  const gaps = (cc.fileReach ? cc.uncoveredFiles : 0) + (cc.changeTimeGaps ?? 0);
+  if (!origin || gaps === 0 || cc.projectId == null || cc.prNumber == null) return runUrl;
+  return gapsOfPullRequestUrl(origin, cc);
+}
+
+/** The Coverage tab on the gaps a pull request's change raised. */
+function gapsOfPullRequestUrl(origin: string, cc: PrChangeCoverage): string {
+  return `${origin}/projects/${cc.projectId}?tab=coverage&gapPr=${cc.prNumber}`;
+}
+
 export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
   const parts: string[] = [];
   if (cc.fileReach && cc.totalFiles > 0) {

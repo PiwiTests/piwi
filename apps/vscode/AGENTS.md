@@ -32,8 +32,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
 - **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
-  to the cursor, Finish and End the test pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the
-  editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
+  to the cursor, Finish and End the test at a stop pass the stop's `since` (End the test while a Pause waits, `give-up`,
+  answers no stop, and a command naming one never reaches it: `endChoice`); Run to the cursor and
+  `piwi/setRunBreakpoints` map the editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by
+  `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control); the service's side: [Controls, breakpoints and the paused
   page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **The code a stop makes is one workspace edit, made only in the version of its document the service placed it in**
@@ -60,6 +62,22 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
+- **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
+  control, a code action, a press, key or pick on a page, never a pointer moving; never one only watched), or while no
+  other held stop's file was opened and no Step or Run to the cursor from the editor waits, `RESERVED_MS` at most; any
+  other opens beside the editor in use, never over a panel. The paused page keeps a held stop, then waits as long for
+  the stepped slot.** `StopsShown` decides (a refusal, `ok: false`, undoing what nothing changed since, and the stops
+  shown again after it or after acting ends a wait) and `run-view.ts` opens, as in the JetBrains plugin; checked by
+  `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
+  ([Run control](ARCHITECTURE.md#run-control))
+- **A key, or a command naming no stop, acts for a control within `RESUMED_KEY_MS` of an answer, until another stop of
+  that slot opens or its run holds the slot no more, on a stop of the answered slot or on none, whatever the caret says;
+  else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks**
+  (`StopsShown.choose`, as the JetBrains plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
+  ([Run control](ARCHITECTURE.md#run-control))
+- **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
+  closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
+  `tests/run-control.test.ts`.
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
@@ -107,9 +125,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run is shared live on the team instance only from the person's command, after a modal warning the first time in
   the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
-- **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
-  takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
-  `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").
+- **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
+  Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
+  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
+  for the paused page, another stop shown in it ends or restarts its watch, never a focus change
+  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
@@ -133,7 +154,7 @@ npm run vscode:package            # dist/piwi.vsix
   `CHANGELOG.md`, so a commit with the `ide` scope is what puts a line in it.
   ([Changelog](ARCHITECTURE.md#changelog))
 - **Screenshots**: `scripts/take-screenshots.mjs` recaptures `apps/docs/public/screenshots/vscode-*.png`; run it under
-  Xvfb at twice the window size. Its fixture is shared with the JetBrains plugin's script, so a change to the fixture
+  Xvfb at twice the window size. `scripts/record-loop.mjs` films the docs' recording loop. Its fixture is shared with the JetBrains plugin's script, so a change to the fixture
   means recapturing both sets. ([Screenshots](ARCHITECTURE.md#screenshots))
 - **Nightly suite** (`tests/e2e/`): find elements by ARIA role and name, and clear the notification toasts before a step
   opens a menu or a hover (`clearNotifications`). ([Nightly suite](ARCHITECTURE.md#nightly-suite))
@@ -153,8 +174,8 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/send-listener.ts`: the Send to editor endpoint.
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
-- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
-  half.
+- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
+  panel (**Piwi: worker N**); `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

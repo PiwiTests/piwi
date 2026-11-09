@@ -1,7 +1,7 @@
 /**
  * Combined coverage end to end: a run of a commit records its run coverage
  * and its test's coverage, a unit-test report of the same commit is uploaded,
- * and the project's coverage page, the run's header and the file view count
+ * and the Coverage tab's Code view, the run's header and the file view count
  * both on the run's executable lines. The overview stays in place while it
  * reads another folder, a file opened from it reads its tests' coverage, the
  * links keep the pinned commit and the area, and a line is selected from the
@@ -126,11 +126,13 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
     (url) => url.pathname.endsWith(`/projects/${projectId}/source`) && url.searchParams.get('blob') === BLOB,
     (route) => route.fulfill({ json: { path: 'src/Shop.cs', blob: BLOB, content: SOURCE } }),
   );
+  // The overview's old address leads to the Coverage tab's Code view.
   await page.goto(`/projects/${projectId}/coverage`);
   // The first visit compiles the page on a dev server: give it time.
   await expect(page.getByTestId('coverage-totals')).toContainText('83.3% of 6 executable lines ran, across 2 suites.', {
     timeout: 30_000,
   });
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=coverage&view=code$`));
   await expect(page.locator('[data-area="api"]')).toContainText('83.3%');
   await expect(page.locator('[data-area="api"]')).toContainText('unit-back 50.0% · e2e 33.3%');
   await expect(page.getByTestId('coverage-suites').locator('[data-suite]')).toHaveCount(2);
@@ -164,7 +166,7 @@ test('combines a uploaded unit report with the commit’s run coverage', async (
   await expect(page.getByRole('button', { name: 'Line 6: End to end only', exact: true })).toBeVisible();
 
   // A pinned commit and an area stay through the links: to a file, and back to its folder.
-  await page.goto(`/projects/${projectId}/coverage?commit=${COMMIT}&area=api`);
+  await page.goto(`/projects/${projectId}?tab=coverage&view=code&commit=${COMMIT}&area=api`);
   await expect(page.locator('[data-area="api"]').getByRole('link')).toHaveAttribute('aria-current', 'true', {
     timeout: 30_000,
   });
@@ -259,7 +261,7 @@ test('keeps only the totals of a branch push a newer one superseded, and says wh
   expect((await firstSummary()).totals.executedLines).toBe(7);
 
   // The branch's newest push carries the front end's suite from the first.
-  await page.goto(`/projects/${projectId}/coverage?branch=${encodeURIComponent(BRANCH)}`);
+  await page.goto(`/projects/${projectId}?tab=coverage&view=code&branch=${encodeURIComponent(BRANCH)}`);
   const notes = page.getByTestId('coverage-notes');
   await expect(notes.locator('[data-note="carried"]')).toHaveText(
     'unit-front: 1 file carried from feed010, an earlier commit.',
@@ -320,7 +322,7 @@ test('flags a run whose backend restarted, and notes it in its commit’s covera
     { timeout: 30_000 },
   );
 
-  await page.goto(`/projects/${projectId}/coverage?commit=${RESTART_COMMIT}`);
+  await page.goto(`/projects/${projectId}?tab=coverage&view=code&commit=${RESTART_COMMIT}`);
   const note = page.getByTestId('coverage-notes').locator('[data-note="runs-incomplete"]');
   await expect(note).toContainText(`e2e: incomplete: the backend restarted during run #${runId}.`, {
     timeout: 30_000,

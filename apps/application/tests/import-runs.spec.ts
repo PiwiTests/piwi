@@ -341,9 +341,10 @@ test.describe('Trace file import', () => {
     // Every trace lands in the same run, which grows as they arrive.
     expect(second.runId).toBe(first.runId);
     expect(third.runId).toBe(first.runId);
-    expect(third.totalTests).toBe(3);
+    // The run counts each test once, from its final attempt: `opens an order` failed on both of its attempts.
+    expect(third.totalTests).toBe(2);
     expect(third.passedTests).toBe(1);
-    expect(third.failedTests).toBe(2);
+    expect(third.failedTests).toBe(1);
     // A failing execution makes the whole run failed.
     expect(third.runStatus).toBe('failed');
     // The run spans from the earliest trace to the end of the latest.

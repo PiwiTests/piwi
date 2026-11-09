@@ -42,6 +42,14 @@ export interface SendEmailOptions {
 let _transport: Transporter | null = null;
 let _warnedMissingSiteUrl = false;
 
+/**
+ * How long the SMTP transport waits for the connection, for the server's
+ * greeting, and for any reply once talking, in ms. The outbox sends its rows one
+ * after another, so a server that never answers holds every channel queued
+ * behind the email this long at most.
+ */
+const SMTP_TIMEOUTS = { connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000 };
+
 export function getSmtpConfig(): SmtpConfig {
   const host = process.env.PIWI_SMTP_HOST || '';
   const user = process.env.PIWI_SMTP_USER || '';
@@ -73,6 +81,7 @@ async function getTransport(): Promise<Transporter> {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
+    ...SMTP_TIMEOUTS,
     // Only authenticate when credentials are set; an auth block with empty
     // values would make nodemailer attempt AUTH against auth-less relays.
     ...(cfg.user && pass ? { auth: { user: cfg.user, pass } } : {}),
@@ -125,31 +134,44 @@ function emailLayout(title: string, body: string): { html: string; text: string 
   return { html: layoutEmail(escapeHtml(title), body, siteUrl()), text: title };
 }
 
-export function renderPasswordResetEmail(token: string): { html: string; text: string } {
+/** The line naming the account an invite or a reset link is for: sign-in asks for the username, never the address. */
+function usernameLine(username: string): { html: string; text: string } {
+  return {
+    html: `<p style="margin:0 0 24px;color:#52525b;">Your username is <strong>${escapeHtml(username)}</strong>. Sign in with it and your password.</p>`,
+    text: `Your username is ${username}. Sign in with it and your password.`,
+  };
+}
+
+export function renderPasswordResetEmail(token: string, username: string): { html: string; text: string } {
   const url = `${siteUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+  const account = usernameLine(username);
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Reset your password</h2>
-    <p style="margin:0 0 24px;color:#52525b;">Click the button below to reset your password. This link expires in 1 hour.</p>
+    <p style="margin:0 0 16px;color:#52525b;">Click the button below to reset your password. This link expires in 1 hour.</p>
+    ${account.html}
     ${emailButton(url, 'Reset password')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">If you didn't request this, ignore this email — your account is safe.</p>
     <p style="margin:8px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout('Reset your password', body);
-  const text = `Reset your password\n\nClick the link below to reset your password. This link expires in 1 hour.\n\n${url}\n\nIf you didn't request this, ignore this email.`;
+  const text = `Reset your password\n\nClick the link below to reset your password. This link expires in 1 hour.\n\n${account.text}\n\n${url}\n\nIf you didn't request this, ignore this email.`;
   return { html, text };
 }
 
-export function renderInviteEmail(token: string, invitedBy?: string): { html: string; text: string } {
+export function renderInviteEmail(token: string, username: string, invitedBy?: string): { html: string; text: string } {
   const url = `${siteUrl()}/reset-password?token=${encodeURIComponent(token)}&mode=invite`;
+  const account = usernameLine(username);
   const byLine = invitedBy
-    ? `<p style="margin:0 0 24px;color:#52525b;">You were invited by <strong>${escapeHtml(invitedBy)}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
-    : `<p style="margin:0 0 24px;color:#52525b;">Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`;
+    ? `<p style="margin:0 0 16px;color:#52525b;">You were invited by <strong>${escapeHtml(invitedBy)}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
+    : `<p style="margin:0 0 16px;color:#52525b;">Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`;
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">You've been invited to Piwi Dashboard</h2>
     ${byLine}
+    ${account.html}
     ${emailButton(url, 'Set password &amp; activate')}
     <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;">Link: <a href="${url}" style="color:#18181b;">${url}</a></p>`;
   const { html } = emailLayout("You've been invited to Piwi Dashboard", body);
-  const text = `You've been invited to Piwi Dashboard\n\nClick the link below to set your password and activate your account. This link expires in 72 hours.\n\n${url}`;
+  const byText = invitedBy ? `You were invited by ${invitedBy}. ` : '';
+  const text = `You've been invited to Piwi Dashboard\n\n${byText}Click the link below to set your password and activate your account. This link expires in 72 hours.\n\n${account.text}\n\n${url}`;
   return { html, text };
 }
 

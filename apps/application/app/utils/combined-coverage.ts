@@ -7,6 +7,7 @@
 import { lineInRanges, type LineRange } from '@piwitests/core/coverage';
 import type { CoverageDataNote, CoverageRatios, CoverageSummary } from '~~/server/utils/coverage-summary';
 import type { RunCoverageGap } from '#shared/run-coverage-gaps';
+import { coverageTabLink } from './coverage-tab';
 
 /** A count with thousands separators, the same in every locale so the server and the browser agree. */
 export function formatCount(n: number): string {
@@ -183,21 +184,25 @@ export interface CoverageLinkContext {
   area?: string | null;
 }
 
-/** A link to the coverage page with `query`, the commit, branch and area of `context` kept. */
+/**
+ * A link to the project's coverage with `query`, the commit, branch and area of
+ * `context` kept: a file's coverage page when `query` names a `file`, else the
+ * Coverage tab's Code view.
+ */
 export function coverageLink(
   projectId: number,
   context: CoverageLinkContext,
   query: Record<string, string | undefined> = {},
 ): { path: string; query: Record<string, string | undefined> } {
-  return {
-    path: `/projects/${projectId}/coverage`,
-    query: {
-      commit: context.commit || undefined,
-      branch: context.branch || undefined,
-      area: context.area || undefined,
-      ...query,
-    },
+  const kept = {
+    commit: context.commit || undefined,
+    branch: context.branch || undefined,
+    area: context.area || undefined,
+    ...query,
   };
+  return query.file
+    ? { path: `/projects/${projectId}/coverage`, query: kept }
+    : coverageTabLink(projectId, 'code', kept);
 }
 
 /** A file's view, marked by the suites that ran each line, at the same commit, branch and area. */

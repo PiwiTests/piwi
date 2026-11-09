@@ -75,7 +75,8 @@ afterAll(() => {
 const PAGES = [
   '/',
   '/projects',
-  '/setup',
+  '/settings/connect',
+  '/settings/capabilities',
   '/projects/[id]',
   '/test-runs/[id]',
   '/test-run-cases/[id]',
@@ -442,7 +443,7 @@ describe('where something is', () => {
 
   // The seed's project 4 declines markers and the Test Map; project 1 decides neither.
   test.each([
-    ['Where is the Gaps tab?', 'project-gaps-tab'],
+    ['Where is the Gaps tab?', 'coverage-gaps-view'],
     ['Where are the markers on the runs timeline?', 'project-markers'],
   ])('%s points at %s on a project, and not on one that declines its capability', async (question, anchor) => {
     const stopsOn = async (route: string) =>

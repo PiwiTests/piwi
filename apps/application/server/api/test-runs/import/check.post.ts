@@ -3,7 +3,7 @@ import { getDatabase } from '../../../database';
 import { projects } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
 import { getProjectScope, scopeAllows } from '../../../utils/project-access';
-import { resolveMaxUploadBytes } from '../../../utils/upload-limits';
+import { resolveMaxImportBytes } from '../../../utils/upload-limits';
 import { findImportedHashes, judgeImportFiles } from '#shared/handlers/import-runs';
 import type { ImportCheckResponse } from '#shared/import.types';
 
@@ -59,7 +59,7 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
-  const maxBytes = resolveMaxUploadBytes();
+  const maxBytes = resolveMaxImportBytes();
 
   const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName));
   const project = existingProjects[0];

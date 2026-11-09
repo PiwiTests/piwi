@@ -13,13 +13,17 @@ export const SELECTION_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** The largest window `failedInLastRuns` may look back over. */
 export const MAX_FAILED_IN_LAST_RUNS = 25;
 
+/** The most globs one `files` list holds, and the longest glob. */
+export const MAX_FILE_GLOBS = 100;
+export const MAX_FILE_GLOB_LENGTH = 500;
+
 const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
 const VALID_RANK_BY = new Set(['failureLikelihood', 'recentFailure', 'priority', 'slowest', 'fastest']);
 
 /** Predicate keys and their runtime kind, so an unknown key is caught. */
 const PREDICATE_KINDS: Record<
   keyof SelectionPredicateGroup,
-  'stringArray' | 'idArray' | 'priorityArray' | 'string' | 'boolean' | 'rate' | 'nonNegative' | 'window'
+  'stringArray' | 'globArray' | 'idArray' | 'priorityArray' | 'string' | 'boolean' | 'rate' | 'nonNegative' | 'window'
 > = {
   ids: 'idArray',
   tags: 'stringArray',
@@ -27,7 +31,7 @@ const PREDICATE_KINDS: Record<
   owner: 'stringArray',
   priority: 'priorityArray',
   feature: 'stringArray',
-  files: 'stringArray',
+  files: 'globArray',
   suitePath: 'string',
   text: 'string',
   quarantined: 'boolean',
@@ -60,10 +64,13 @@ function validateGroup(group: unknown, where: string, errors: string[]): void {
     }
     switch (kind) {
       case 'stringArray':
+      case 'globArray':
         if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
           errors.push(`${where}.${key} must be an array of strings`);
         } else if (value.length === 0) {
           errors.push(`${where}.${key} must not be empty`);
+        } else if (kind === 'globArray') {
+          errors.push(...fileGlobsErrors(value, `${where}.${key}`));
         }
         break;
       case 'idArray':
@@ -97,6 +104,21 @@ function validateGroup(group: unknown, where: string, errors: string[]): void {
         break;
     }
   }
+}
+
+/** What a `files` list past its limits answers, one message per limit broken; empty within them. */
+export function fileGlobsErrors(globs: readonly string[], where: string): string[] {
+  const errors: string[] = [];
+  if (globs.length > MAX_FILE_GLOBS) errors.push(`${where} must hold at most ${MAX_FILE_GLOBS} globs`);
+  if (globs.some((glob) => glob.length > MAX_FILE_GLOB_LENGTH)) {
+    errors.push(`${where}: a glob must be at most ${MAX_FILE_GLOB_LENGTH} characters`);
+  }
+  return errors;
+}
+
+/** A `files` list read within its limits: its first 100 globs of at most 500 characters. */
+export function withinFileGlobLimits(globs: readonly string[]): string[] {
+  return globs.filter((glob) => glob.length <= MAX_FILE_GLOB_LENGTH).slice(0, MAX_FILE_GLOBS);
 }
 
 function validateIdArray(value: unknown, where: string, errors: string[]): void {

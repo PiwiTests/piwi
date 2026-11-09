@@ -23,7 +23,10 @@ export interface PiwiDashboardOptions {
   // ── Connection ─────────────────────────────────────────────────────────────
   /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
   enabled?: boolean;
-  /** URL of the Piwi Dashboard server */
+  /**
+   * URL of the Piwi Dashboard server: a whole `http://` or `https://` address. Any other value leaves the reporter
+   * off, with a warning.
+   */
   serverUrl?: string;
   /**
    * When results go to the Piwi desktop app running on this machine instead.
@@ -44,17 +47,23 @@ export interface PiwiDashboardOptions {
   /**
    * Time budget (ms) for the reporter's end-of-run work: delivering the last
    * live events, uploading the remaining traces and attachments, and submitting
-   * the run. When it runs out, the reporter stops waiting for the dashboard and
-   * saves the run's results locally; the next run for the project uploads them,
-   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
-   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`.
+   * the run. The uploads stop a minute before it ends (a quarter of a shorter
+   * budget), so a streamed run is still finished. When it runs out, the
+   * reporter stops waiting for the dashboard and saves the run's results
+   * locally; the next run for the project uploads them, without traces or
+   * attachments. Defaults to `900000` (15 minutes). Set to `0` for no limit.
+   * Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too: a value
+   * that is not a number (`15m`) is ignored, with a warning.
    */
   submitTimeout?: number;
 
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
   uploadTraces?: boolean;
-  /** Upload the Playwright HTML report. Defaults to `true`. */
+  /**
+   * Upload the HTML report Playwright's `html` reporter writes during the run, from its `outputFolder` (or
+   * `PLAYWRIGHT_HTML_OUTPUT_DIR`); a report an earlier run left there is never uploaded. Defaults to `true`.
+   */
   uploadReport?: boolean;
   /** Upload each test's trace and attachments as soon as the test finishes (streaming mode only). Defaults to `true`. */
   liveFileUploads?: boolean;
@@ -71,12 +80,20 @@ export interface PiwiDashboardOptions {
   collectScmInfo?: boolean;
   /** Auto-collect CI environment info. Defaults to `true`. */
   collectCiInfo?: boolean;
+  /**
+   * Record where the run executed: the runner's time zone, locale, OS, Node.js version and CI image, each browser as
+   * its page reports itself (with the capture fixtures), and each instrumented server under test. The dashboard
+   * shows when they change between runs or shards. Defaults to `true`. Can also be forced off with
+   * `PIWI_COLLECT_ENVIRONMENT_INFO=false`.
+   */
+  collectEnvironmentInfo?: boolean;
   /** Collect step timings, network requests and web vitals. Defaults to `true`. */
   collectPerformanceMetrics?: boolean;
   /**
    * Capture per-action locator snapshots that power failure-time healing
-   * suggestions. Adds a small per-action cost (one DOM read, sometimes an ARIA
-   * snapshot) in the test worker. Defaults to `true`; automatically disabled
+   * suggestions. Adds a small per-action cost (one DOM read, rarely two,
+   * sometimes an ARIA snapshot) and one DOM read per new document in the test
+   * worker. Defaults to `true`; automatically disabled
    * when `collectPerformanceMetrics` is `false` (the reporter discards the data
    * in that case anyway). Can also be forced off with `PIWI_CAPTURE_LOCATORS=false`.
    */
@@ -139,11 +156,14 @@ export interface PiwiDashboardOptions {
      * functions ran, from Chromium's JavaScript coverage, which is what
      * `captureCodeReach: true` records; `'functions'` adds the start and end
      * line of each function that ran, read through the dev server's modules or
-     * the bundle's source maps; `'off'` records nothing. Paths, and line numbers
-     * with `'functions'`, are sent, never source code or hit counts. Defaults to
-     * `'off'`. Can also be set with `PIWI_COVERAGE_BROWSER`.
+     * the bundle's source maps; `'lines'` also adds the lines that ran and the
+     * executable lines of each file, from V8's block coverage, which slows the
+     * page's script down more than function coverage does; `'off'` records
+     * nothing. Paths, and line numbers with `'functions'` and `'lines'`, are
+     * sent, never source code or hit counts. Defaults to `'off'`. Can also be set
+     * with `PIWI_COVERAGE_BROWSER`.
      */
-    browser?: 'off' | 'files' | 'functions';
+    browser?: 'off' | 'files' | 'functions' | 'lines';
     /**
      * What the server side records, from a backend built with Piwi's coverage
      * instrumentation (ASP.NET Core: `-p:PiwiCoverage=true`), which names each
@@ -262,16 +282,20 @@ export interface PiwiDashboardOptions {
    * `trace` options on the top-level `use` block so a failing test keeps a
    * screenshot (`'only-on-failure'`) and a trace (`'retain-on-failure'`) even
    * without the capture fixtures — the trace alone unlocks the DOM snapshot,
-   * full call stack, full network with bodies and the visual diff. On Playwright
-   * 1.63 or later the trace default also turns on the per-action aria tree
-   * (`snapshots: { dom: true, aria: true }`), which adds the accessibility tree
-   * before and after each action at negligible size. The `screen` snapshot kind
-   * (a PNG per action, the trace's biggest cost) stays opt-in — set it yourself
-   * with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true,
-   * aria: true, screen: true } } }`. Only fills options the config leaves unset;
-   * an explicit value (including `'off'`) and per-project `use` blocks are never
-   * touched. Defaults to `true`. Set to `false` (or `PIWI_DEFAULT_CAPTURE=false`)
-   * to opt out and let Playwright's own defaults stand.
+   * full call stack, full network with bodies and the visual diff. The trace
+   * records DOM snapshots, not ARIA snapshots. To record those too (Playwright
+   * 1.63+), for the in-execution page diff and the accessibility tree at the
+   * failing action, set the trace yourself: `use: { trace: { mode: 'retain-on-failure',
+   * snapshots: { dom: true, aria: true } } }`. They cost run time on every
+   * attempt, passing ones included: Playwright waits for up to three ARIA
+   * snapshots per input action, each hundreds of milliseconds on a large page
+   * (ten clicks on a 1,000-row table took 8,967 ms with them against 1,021 ms
+   * without, on Playwright 1.64.1 and Chromium). Add `screen: true` for a PNG
+   * per action, the trace's biggest storage cost. Only fills options the config
+   * leaves unset; an explicit value (including `'off'`) and per-project `use`
+   * blocks are never touched. Defaults to `true`. Set to `false` (or
+   * `PIWI_DEFAULT_CAPTURE=false`) to opt out and let Playwright's own defaults
+   * stand.
    */
   defaultCapture?: boolean;
 
@@ -323,7 +347,14 @@ export interface PiwiDashboardOptions {
   pickLocatorOnFailure?: boolean;
 
   // ── Streaming ──────────────────────────────────────────────────────────────
-  /** Enable live streaming of results (falls back to batch if unsupported). Defaults to `true`. */
+  /**
+   * Enable live streaming of results (falls back to batch if unsupported). An
+   * interrupted stream is retried until it catches up. Live events the
+   * dashboard refuses, or has not taken two and a half minutes after they first
+   * failed, leave the live view so the later ones flow; when test results are
+   * among the events the dashboard never took, the run is sent again as a batch
+   * at its end. Defaults to `true`.
+   */
   streaming?: boolean;
   /**
    * Number of queued events that triggers a send during streaming: test starts
@@ -348,7 +379,7 @@ export interface PiwiDashboardOptions {
 
   // ── CI gate ────────────────────────────────────────────────────────────────
   /**
-   * Fail the run when any test was flaky (passed only after a retry). Forwarded
+   * Fail the run when any test was flaky (one attempt failed and another passed). Forwarded
    * to Playwright's native `failOnFlakyTests` config option (Playwright 1.52+)
    * when the reporter is installed via `wrapConfig`, so a flaky-only run exits
    * non-zero without any server round-trip. Defaults to `false`. Can also be

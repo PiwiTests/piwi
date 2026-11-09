@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { PROJECT } from '../../shared/test-project-names';
 import { DEFAULT_EXPORT_MAX_CASES, MAX_EXPORT_MAX_CASES } from '../../shared/export/limits';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { getFailureCluster, CLUSTER_DETAIL_TESTS_LIMIT } = await import('../../shared/handlers/failure-clusters');
@@ -68,7 +67,7 @@ async function quarantine(testCaseIds: number[]): Promise<void> {
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
 });
 
 describe('getFailureCluster affected tests', () => {
@@ -109,6 +108,17 @@ describe('getFailureCluster affected tests', () => {
     expect(cluster.affectedTestCases).toHaveLength(CLUSTER_DETAIL_TESTS_LIMIT);
     expect(cluster.clusterState.kind).toBe('quarantined');
     expect(cluster.clusterState.sentence).toContain(`All ${AFFECTED} tests are quarantined`);
+  });
+
+  test('counts the quarantined tests beyond the listed page, so the page knows what is left to quarantine', async () => {
+    const ids = await seedCluster();
+    // The tail of the cluster, past the listed page.
+    await quarantine(ids.slice(CLUSTER_DETAIL_TESTS_LIMIT));
+
+    const cluster = (await getFailureCluster(db, CLUSTER_ID))!;
+
+    expect(cluster.affectedTestCases.some((t) => t.quarantined)).toBe(false);
+    expect(cluster.quarantinedTests).toBe(AFFECTED - CLUSTER_DETAIL_TESTS_LIMIT);
   });
 
   test('counts only the tests that are quarantined and not released', async () => {

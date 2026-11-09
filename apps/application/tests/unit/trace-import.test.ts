@@ -141,6 +141,30 @@ describe('parseTraceArchive', () => {
     expect(parsed.case.error).toContain('at /repo/tests/checkout.spec.ts:15:20');
   });
 
+  test("passes a test that caught an action's error, as the runner recorded it", async () => {
+    const parsed = await parse(
+      buildTraceArchive({
+        actions: [
+          { apiName: 'locator.click', startTime: 1010, endTime: 1310, error: 'TimeoutError: Timeout 300ms exceeded.' },
+          { apiName: 'locator.fill', startTime: 1320, endTime: 1400 },
+        ],
+      }),
+    );
+    expect(parsed.case.status).toBe('passed');
+    expect(parsed.case.error).toBeNull();
+  });
+
+  test("fails a trace recorded outside the runner on an action's error", async () => {
+    const parsed = await parse(
+      buildTraceArchive({
+        omitRunnerContext: true,
+        actions: [{ apiName: 'locator.click', startTime: 1010, endTime: 1310, error: 'Error: element is detached' }],
+      }),
+    );
+    expect(parsed.case.status).toBe('failed');
+    expect(parsed.case.error).toContain('element is detached');
+  });
+
   test('records a timeout as its own status', async () => {
     const parsed = await parse(buildTraceArchive({ error: { message: 'Test timeout of 30000ms exceeded.' } }));
     expect(parsed.case.status).toBe('timedOut');

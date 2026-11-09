@@ -2,6 +2,7 @@ import { getDatabase } from '../../database';
 import { updateTag } from '#shared/handlers/tags';
 import { z } from 'zod';
 import { requireAuth } from '../../utils/auth';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -21,10 +22,7 @@ const updateTagSchema = z.object({
 export default eventHandler(async (event) => {
   await requireAuth(event);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) {
-    throw apiError({ statusCode: 400, message: 'Invalid tag ID' });
-  }
+  const id = requireRouteId(event, 'id', 'tag ID');
 
   const body = await readBody(event);
   const validation = updateTagSchema.safeParse(body);

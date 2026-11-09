@@ -1,9 +1,9 @@
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
-import { useSession, updateSession, clearSession as h3ClearSession } from 'h3';
+import { useSession, updateSession, clearSession as h3ClearSession, setResponseHeader } from 'h3';
 import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, notExists, sql } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -17,9 +17,12 @@ import {
 } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
 import { bearerToken } from './bearer';
+import { createConcurrencyLimit } from './concurrency-limit';
+import { clientNetwork, rateLimitClientIp } from './rate-limit';
 
 declare module 'h3' {
   interface H3EventContext {
@@ -42,11 +45,13 @@ interface ScryptCost {
   p: number;
 }
 
-/** The cost new password hashes use. */
+/** The cost new password hashes use, and the highest a stored hash may declare. */
 const SCRYPT_COST: ScryptCost = { log2N: 17, r: 8, p: 1 };
 /** The cost of a hash in the `salt:key` form, which carries no parameters: Node's scrypt defaults. */
 const UNENCODED_SCRYPT_COST: ScryptCost = { log2N: 14, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
+/** The random bytes of a new hash's salt, stored as hex. */
+const SCRYPT_SALT_BYTES = 16;
 
 interface PasswordHash extends ScryptCost {
   salt: string;
@@ -58,7 +63,7 @@ const HEX = /^[0-9a-f]+$/;
 /**
  * Read a stored password hash: `scrypt$<log2N>$<r>$<p>$<salt>$<key>`, or the
  * `<salt>:<key>` form hashed at {@link UNENCODED_SCRYPT_COST}. Null for anything
- * else, including a cost outside the bounds a sign-in may spend.
+ * else. The cost it reads may lie outside {@link withinWrittenCost}.
  */
 function parsePasswordHash(hash: string): PasswordHash | null {
   const parts = hash.split('$');
@@ -74,32 +79,105 @@ function parsePasswordHash(hash: string): PasswordHash | null {
     cost = UNENCODED_SCRYPT_COST;
     [salt, key] = pair;
   }
-  const { log2N, r, p } = cost;
-  const inBounds = (n: number, min: number, max: number) => Number.isInteger(n) && n >= min && n <= max;
-  if (!inBounds(log2N, 10, 20) || !inBounds(r, 1, 32) || !inBounds(p, 1, 16)) return null;
-  if (!salt || !key || key.length % 2 !== 0 || !HEX.test(key) || !inBounds(key.length / 2, 16, 128)) return null;
+  if (![cost.log2N, cost.r, cost.p].every(Number.isInteger)) return null;
+  if (!salt || !key || key.length % 2 !== 0 || !HEX.test(key)) return null;
   return { ...cost, salt, key: Buffer.from(key, 'hex') };
 }
 
-/** scrypt's derived key of `password` at `cost`, with the memory bound the cost needs. */
-function deriveKey(password: string, salt: string, cost: ScryptCost, keyLength: number): Promise<Buffer> {
-  const N = 2 ** cost.log2N;
-  return scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r });
+/**
+ * Whether a stored hash stays within what {@link hashPassword} writes, the only
+ * hashes a password is checked against: N at most 2^17, r at most 8, p at most 1,
+ * a key of 16 to {@link SCRYPT_KEY_LENGTH} bytes and a salt no longer than
+ * {@link SCRYPT_SALT_BYTES} in hex. Every hash Piwi has written passes, the
+ * `salt:key` form at Node's defaults included.
+ */
+function withinWrittenCost({ log2N, r, p, salt, key }: PasswordHash): boolean {
+  const inBounds = (n: number, min: number, max: number) => n >= min && n <= max;
+  return (
+    inBounds(log2N, 10, SCRYPT_COST.log2N) &&
+    inBounds(r, 1, SCRYPT_COST.r) &&
+    inBounds(p, 1, SCRYPT_COST.p) &&
+    inBounds(key.length, 16, SCRYPT_KEY_LENGTH) &&
+    salt.length <= 2 * SCRYPT_SALT_BYTES
+  );
 }
 
-/** Hash a password with scrypt at {@link SCRYPT_COST}, the cost encoded in the result. */
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex');
-  const key = await deriveKey(password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
+/** Whether this process has logged a stored hash outside {@link withinWrittenCost}. */
+let costlyHashLogged = false;
+
+/**
+ * Every password hash and check of the process, two at a time: one at
+ * {@link SCRYPT_COST} holds 128 MiB (128 · N · r bytes) while it runs. Up to 32
+ * more wait their turn in order; past that, the request is refused. One client
+ * (its address, an IPv6 one by its /64 network: {@link clientNetwork}) holds at
+ * most 4 of those places, running or waiting; past them, its request is refused.
+ */
+const passwordHashing = createConcurrencyLimit(2, 32, 4);
+const PASSWORD_HASHING_RETRY_AFTER_SEC = 5;
+
+/**
+ * scrypt's derived key of `password` at `cost`, with the memory bound the cost
+ * needs, run within {@link passwordHashing} under the share of `event`'s
+ * client. Refuses with 503 and a `Retry-After` header on `event` when too many
+ * hashes already wait, or the client already holds its share.
+ */
+async function deriveKey(
+  event: H3Event,
+  password: string,
+  salt: string,
+  cost: ScryptCost,
+  keyLength: number,
+): Promise<Buffer> {
+  const N = 2 ** cost.log2N;
+  const derived = passwordHashing(
+    () => scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r }),
+    clientNetwork(rateLimitClientIp(event)),
+  );
+  if (!derived) {
+    setResponseHeader(event, 'Retry-After', PASSWORD_HASHING_RETRY_AFTER_SEC);
+    throw apiError({
+      statusCode: 503,
+      message: 'The server is checking too many passwords at once. Try again in a few seconds.',
+    });
+  }
+  return derived;
+}
+
+/**
+ * Hash a password with scrypt at {@link SCRYPT_COST}, the cost encoded in the
+ * result. `event` is the request a busy server's 503 answers.
+ */
+export async function hashPassword(event: H3Event, password: string): Promise<string> {
+  const salt = randomBytes(SCRYPT_SALT_BYTES).toString('hex');
+  const key = await deriveKey(event, password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
   const { log2N, r, p } = SCRYPT_COST;
   return `scrypt$${log2N}$${r}$${p}$${salt}$${key.toString('hex')}`;
 }
 
-/** Whether `password` matches `hash`, in either stored form. */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+/**
+ * Whether `password` matches `hash`, in either stored form. A hash outside
+ * {@link withinWrittenCost} never reaches scrypt and fails as a wrong password
+ * does; the first one a process meets logs a warning naming `userId`, the
+ * account it belongs to. `event` is the request a busy server's 503 answers.
+ */
+export async function verifyPassword(
+  event: H3Event,
+  password: string,
+  hash: string,
+  userId?: number,
+): Promise<boolean> {
   const parsed = parsePasswordHash(hash);
   if (!parsed) return false;
-  const key = await deriveKey(password, parsed.salt, parsed, parsed.key.length);
+  if (!withinWrittenCost(parsed)) {
+    if (!costlyHashLogged) {
+      costlyHashLogged = true;
+      console.warn(
+        `[auth] The stored password hash of user ${userId ?? 'unknown'} declares a scrypt cost above what Piwi writes: its password is refused until it is reset`,
+      );
+    }
+    return false;
+  }
+  const key = await deriveKey(event, password, parsed.salt, parsed, parsed.key.length);
   return timingSafeEqual(key, parsed.key);
 }
 
@@ -109,6 +187,7 @@ export function passwordNeedsRehash(hash: string): boolean {
   return (
     !hash.startsWith('scrypt$') ||
     !parsed ||
+    !withinWrittenCost(parsed) ||
     parsed.log2N !== SCRYPT_COST.log2N ||
     parsed.r !== SCRYPT_COST.r ||
     parsed.p !== SCRYPT_COST.p
@@ -242,7 +321,7 @@ export async function revokeUserSessions(userId: number): Promise<number> {
 const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT_COST.log2N}$${SCRYPT_COST.r}$${SCRYPT_COST.p}$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
 // Verify user credentials and return user
-export async function verifyUser(username: string, password: string): Promise<User | null> {
+export async function verifyUser(event: H3Event, username: string, password: string): Promise<User | null> {
   const db = await getDatabase();
   const userResults = await db.select().from(users).where(eq(users.username, username));
   const user = userResults[0];
@@ -252,18 +331,18 @@ export async function verifyUser(username: string, password: string): Promise<Us
   // scrypt verification against a dummy hash, so login timing can't be used to
   // enumerate which usernames are registered.
   if (!user || !user.password) {
-    await verifyPassword(password, DUMMY_PASSWORD_HASH);
+    await verifyPassword(event, password, DUMMY_PASSWORD_HASH);
     return null;
   }
 
-  const valid = await verifyPassword(password, user.password);
+  const valid = await verifyPassword(event, password, user.password, user.id);
   if (!valid) {
     return null;
   }
 
   if (passwordNeedsRehash(user.password)) {
     // Rewrite the hash at the current cost, unless the password changed meanwhile.
-    const rehashed = await hashPassword(password);
+    const rehashed = await hashPassword(event, password);
     await db
       .update(users)
       .set({ password: rehashed })
@@ -296,9 +375,15 @@ export async function usernameTaken(username: string): Promise<boolean> {
   return existing.length > 0;
 }
 
-export async function createUser(username: string, password: string, role: InstanceRole, name?: string): Promise<User> {
+export async function createUser(
+  event: H3Event,
+  username: string,
+  password: string,
+  role: InstanceRole,
+  name?: string,
+): Promise<User> {
   const db = await getDatabase();
-  const hashedPassword = await hashPassword(password);
+  const hashedPassword = await hashPassword(event, password);
 
   const result = await db
     .insert(users)
@@ -331,39 +416,45 @@ export function setupTokenMatches(given: unknown): boolean {
   return timingSafeEqual(Buffer.from(hashToken(given.trim()), 'hex'), Buffer.from(hashToken(expected), 'hex'));
 }
 
-/** The setup record: `claimed` while a setup creates the administrator, anything else once one did. */
+/**
+ * The setup record: `open` until a setup claims it, `claimed` while a setup
+ * creates the administrator, `true` once one did.
+ */
 const INITIAL_SETUP_KEY = 'initial_setup_completed';
+const SETUP_OPEN = 'open';
 const SETUP_CLAIMED = 'claimed';
 
 /**
- * Atomically claim first-admin setup, returning true for exactly one caller.
+ * Atomically claim first-admin setup, returning true for exactly one caller,
+ * and only while no administrator exists.
  *
  * `needsInitialSetup` (a SELECT) and `createUser` (a later INSERT) are separate
  * statements, so two concurrent `POST /api/auth/setup` requests could both see
- * no administrator and each create one. The first claim inserts the setup
- * record with `INSERT ... ON CONFLICT DO NOTHING`, which SQLite and PostgreSQL
- * resolve atomically, so the other callers conflict and get false. A record
- * left by an earlier, finished setup (its administrator since gone) is taken
- * over by one caller, with an UPDATE that only changes a record not claimed
- * yet. Callers gate on `needsInitialSetup()` first, so a finished setup is only
- * taken over while no administrator exists.
+ * no administrator and each create one. The claim is one UPDATE of the setup
+ * record (inserted first as `open` when missing) that matches only a record not
+ * claimed yet, and only while no administrator exists: SQLite and PostgreSQL
+ * apply it atomically, so one caller changes the record and the others match
+ * nothing. A record left by an earlier, finished setup is taken over the same
+ * way once its administrator is gone.
  */
 export async function claimInitialSetup(db?: DrizzleDB): Promise<boolean> {
   const database = db ?? (await getDatabase());
   const now = new Date();
-  const inserted = await database
+  await database
     .insert(appSettings)
-    .values({ key: INITIAL_SETUP_KEY, value: SETUP_CLAIMED, updatedAt: now })
-    .onConflictDoNothing({ target: appSettings.key })
-    .returning({ key: appSettings.key });
-  if (inserted.length > 0) return true;
+    .values({ key: INITIAL_SETUP_KEY, value: SETUP_OPEN, updatedAt: now })
+    .onConflictDoNothing({ target: appSettings.key });
 
-  const taken = await database
+  const administrators = database
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, InstanceRole.ADMINISTRATOR));
+  const claimed = await database
     .update(appSettings)
     .set({ value: SETUP_CLAIMED, updatedAt: now })
-    .where(and(eq(appSettings.key, INITIAL_SETUP_KEY), ne(appSettings.value, SETUP_CLAIMED)))
+    .where(and(eq(appSettings.key, INITIAL_SETUP_KEY), ne(appSettings.value, SETUP_CLAIMED), notExists(administrators)))
     .returning({ key: appSettings.key });
-  return taken.length > 0;
+  return claimed.length > 0;
 }
 
 /** Record that the claimed setup created its administrator. */
@@ -422,17 +513,29 @@ export function generateApiKey(): { plaintext: string; hash: string; prefix: str
 /**
  * Look up a user by a plaintext API key value.
  * Updates `last_used_at` on a successful match.
- * Returns null if the key does not exist, is expired, or belongs to no user.
+ * Returns null if the key does not exist, is expired, belongs to no user, or
+ * holds only some permissions (a target key), which never acts as its owner.
  */
 export async function getUserByApiKey(plaintext: string): Promise<User | null> {
-  return (await resolveApiKey(plaintext))?.user ?? null;
+  const resolved = await resolveApiKey(plaintext);
+  return resolved && !resolved.permissions ? resolved.user : null;
+}
+
+/** An API key resolved to its owner, with the only permissions it holds when it holds some only. */
+export interface ResolvedApiKey {
+  user: User;
+  keyId: number;
+  /** Null for a key that carries its owner's access; else the only permissions it holds (`['run:receive']`). */
+  permissions: string[] | null;
 }
 
 /**
- * Look up the user and the key id of a plaintext API key value, under the same
- * rules as {@link getUserByApiKey}.
+ * Look up the user and the key id of a plaintext API key value: null when the
+ * key does not exist, is expired or belongs to no user. A key that holds only
+ * some permissions resolves too; every caller but the target routes' helper
+ * refuses it.
  */
-export async function resolveApiKey(plaintext: string): Promise<{ user: User; keyId: number } | null> {
+export async function resolveApiKey(plaintext: string): Promise<ResolvedApiKey | null> {
   if (!plaintext.startsWith(API_KEY_PREFIX)) {
     return null;
   }
@@ -459,7 +562,11 @@ export async function resolveApiKey(plaintext: string): Promise<{ user: User; ke
   }
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
-  return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
+  if (!userResults[0]) return null;
+  // Only a null column carries the owner's access; any other value that is not a list of permissions is refused.
+  if (key.permissions != null && !Array.isArray(key.permissions)) return null;
+  const permissions = key.permissions == null ? null : (key.permissions as unknown[]).map(String);
+  return { user: userResults[0], keyId: key.id, permissions };
 }
 
 /**
@@ -494,6 +601,7 @@ function virtualAdministrator(): User {
     role: InstanceRole.ADMINISTRATOR,
     name: 'System',
     avatarUrl: null,
+    avatarKey: null,
     oauthProvider: null,
     oauthProviderId: null,
     email: null,
@@ -560,6 +668,13 @@ export async function requireAuth(event: H3Event, permission?: RoutePermission |
         message: 'Invalid or expired API key',
       });
     }
+    // A key that holds only some permissions (a target key) serves its own routes alone, never as its owner.
+    if (resolved.permissions) {
+      throw apiError({
+        statusCode: 403,
+        message: 'This key belongs to a connected app and serves only that app’s routes',
+      });
+    }
     user = resolved.user;
     // The key a request was made with, for the records that name who acted (the agents' write log).
     event.context.apiKeyId = resolved.keyId;
@@ -587,6 +702,33 @@ export async function requireAuth(event: H3Event, permission?: RoutePermission |
   return user;
 }
 
+/**
+ * Refuse (403) a request that `requireAuth` authenticated with an API key. Call
+ * it after `requireAuth`, on a change to the caller's own credentials or email.
+ */
+export function refuseApiKey(event: H3Event): void {
+  if (event.context.apiKeyId !== undefined) {
+    throw apiError({
+      statusCode: 403,
+      message: 'A signed-in session is required: an API key cannot change account credentials or create new ones',
+    });
+  }
+}
+
+/**
+ * `requireAuth` for a route that changes the caller's credentials or creates a
+ * credential (an API key, a connected client): the caller signs in with a
+ * session, never an API key (403). With authentication off, every caller passes.
+ */
+export async function requireSessionAuth(
+  event: H3Event,
+  permission?: RoutePermission | RoutePermission[],
+): Promise<User> {
+  const user = await requireAuth(event, permission);
+  refuseApiKey(event);
+  return user;
+}
+
 /** The signed-in user as `GET /api/auth/me` and `POST /api/auth/login` return them (`AuthUser`). */
 export async function authUserView(db: DrizzleDB, user: User) {
   const access = await getUserAccessCached(db, user);
@@ -596,6 +738,8 @@ export async function authUserView(db: DrizzleDB, user: User) {
     role: access.instanceRole,
     name: user.name,
     avatarUrl: user.avatarUrl,
+    avatarVersion: accountPictureVersion(user),
+    avatarUploaded: Boolean(user.avatarKey),
     email: user.email,
     emailVerified: user.emailVerified,
     oauthProvider: user.oauthProvider,

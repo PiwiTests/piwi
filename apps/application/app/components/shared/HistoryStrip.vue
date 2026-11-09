@@ -6,6 +6,7 @@
  * execution. No chart, no table — the full history lives on the test page.
  */
 import type { TestCaseHistoryPoint } from '~~/types/api';
+import { historyStreak } from '~/utils/history-streak';
 
 const props = withDefaults(
   defineProps<{
@@ -21,38 +22,11 @@ const props = withDefaults(
   { currentId: null, compact: false },
 );
 
-const isFail = (s?: string | null) => s === 'failed' || s === 'timedOut' || s === 'timedout';
-
 /** Oldest → newest, capped at 24, for the strip. */
 const strip = computed(() => props.history.slice(0, 24).slice().reverse());
 
-/**
- * The failing streak and the most recent green run, anchored to the execution
- * being viewed (not the newest one) so an older execution reached via a deep
- * link gets a verdict about itself. History is desc by run start, so entries
- * after the anchor index are older.
- */
-const streak = computed(() => {
-  const h = props.history;
-  if (!h.length) return null;
-  const anchor = Math.max(
-    0,
-    h.findIndex((p) => p.id === props.currentId),
-  );
-  let count = 0;
-  for (let i = anchor; i < h.length; i++) {
-    if (isFail(h[i]!.status)) count++;
-    else break;
-  }
-  let lastPass: TestCaseHistoryPoint | null = null;
-  for (let i = anchor + 1; i < h.length; i++) {
-    if (h[i]!.status === 'passed') {
-      lastPass = h[i]!;
-      break;
-    }
-  }
-  return { count, lastPass, total: h.length, anchorPassed: h[anchor]?.status === 'passed' };
-});
+/** The verdict about the execution being viewed (`historyStreak`). */
+const streak = computed(() => historyStreak(props.history, props.currentId));
 
 const stripLabelId = useId();
 </script>
@@ -72,15 +46,15 @@ const stripLabelId = useId();
         <UTooltip
           v-for="point in strip"
           :key="point.id"
-          :text="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
+          :text="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.passedAfterFailure)}`"
         >
           <NuxtLink
             :to="`/test-run-cases/${point.id}`"
-            :aria-label="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
+            :aria-label="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.passedAfterFailure)}`"
             :aria-current="point.id === currentId ? 'true' : undefined"
             class="size-3.5 rounded-sm inline-block transition-opacity hover:opacity-80 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :class="[
-              statusPalette(point.status, point.retries).bg,
+              statusPalette(point.status, point.passedAfterFailure).bg,
               point.id === currentId ? CURRENT_ITEM_RING_CLASS : '',
             ]"
           />

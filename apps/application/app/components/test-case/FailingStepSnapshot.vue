@@ -42,27 +42,32 @@ import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 import { useDomSnapshot, type DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import DomSnapshotFrame from './DomSnapshotFrame.vue';
 
-const props = defineProps<{
-  testRunsCaseId: number;
-  /** The execution's attachments — the screenshot of the failing page when the trace has no 1.63 `screen` snapshot. */
-  attachments?: AttachmentInfo[] | null;
-  /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
-  ariaSnapshot?: string | null;
-  /** Why the ARIA tree is absent, for the Screen tab's empty view. */
-  ariaState?: EvidenceState | null;
-  /** The ARIA tree was recovered from the trace rather than the capture fixtures. */
-  ariaDerived?: boolean;
-  /** The Screen tab's version: every view listed, every attached screenshot, larger frames. */
-  full?: boolean;
-  /** Views listed after the page's own; each renders the slot named by its `value`. */
-  extraViews?: Array<{ value: string; label: string; shown: boolean }>;
-  /** The failing step's label; the trace's action title stands in without it. */
-  step?: string | null;
-  /** The error raised at the failure, shown beside the enlarged page at the failure. */
-  error?: string | null;
-  /** The test, named in the enlarged screenshot's details. */
-  subject?: LightboxSubject | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    testRunsCaseId: number;
+    /** The execution's attachments — the screenshot of the failing page when the trace has no 1.63 `screen` snapshot. */
+    attachments?: AttachmentInfo[] | null;
+    /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
+    ariaSnapshot?: string | null;
+    /** Why the ARIA tree is absent, for the Screen tab's empty view. */
+    ariaState?: EvidenceState | null;
+    /** The ARIA tree was recovered from the trace rather than the capture fixtures. */
+    ariaDerived?: boolean;
+    /** The Screen tab's version: every view listed, every attached screenshot, larger frames. */
+    full?: boolean;
+    /** Views listed after the page's own; each renders the slot named by its `value`. */
+    extraViews?: Array<{ value: string; label: string; shown: boolean }>;
+    /** The failing step's label; the trace's action title stands in without it. */
+    step?: string | null;
+    /** The error raised at the failure, shown beside the enlarged page at the failure. */
+    error?: string | null;
+    /** The execution failed: only a failed execution has a page at the failure to show. */
+    failed?: boolean;
+    /** The test, named in the enlarged screenshot's details. */
+    subject?: LightboxSubject | null;
+  }>(),
+  { failed: true },
+);
 
 /** The view on show; null lets the component open on the first view with content. */
 const view = defineModel<string | null>('view', { default: null });
@@ -74,15 +79,17 @@ const {
   snapshotUrl,
   pending: traceSnapshotsPending,
 } = useTraceSnapshots(() => props.testRunsCaseId);
+// The trace's failing step. With no failing action the trace names the last one, so only a failed execution has one.
+const failedStep = computed(() => (props.failed ? failingStep.value : null));
 
 // ── Screenshot ──────────────────────────────────────────────────────────────
 type Shot = LightboxImage & { failed: boolean };
 
-const stepLabel = computed(() => props.step || failingStep.value?.title || null);
+const stepLabel = computed(() => props.step || failedStep.value?.title || null);
 const errorText = computed(() => props.error || null);
 
 const traceShots = computed<Shot[]>(() => {
-  const step = failingStep.value;
+  const step = failedStep.value;
   if (!step) return [];
   const list: Shot[] = [];
   if (step.screen.before) {
@@ -109,7 +116,9 @@ const attachedImages = computed(() =>
   (props.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType)),
 );
 // The attached screenshot of the page the test failed on, when one is known to be.
-const failureImage = computed(() => failurePageScreenshot(attachedImages.value, (att) => att.name));
+const failureImage = computed(() =>
+  failurePageScreenshot(attachedImages.value, (att) => att.name, { failed: props.failed }),
+);
 // Playwright names each of its screenshots `screenshot`: the file name tells them apart.
 function shotName(att: AttachmentInfo): string {
   if (att.name === FAILURE_SCREENSHOT_ATTACHMENT) return 'Page the test failed on';
@@ -117,7 +126,7 @@ function shotName(att: AttachmentInfo): string {
   return att.path.split('/').pop() || att.path;
 }
 const attachedShots = computed<Shot[]>(() =>
-  failurePageFirst(attachedImages.value, (att) => att.name).map((att) => ({
+  failurePageFirst(attachedImages.value, (att) => att.name, { failed: props.failed }).map((att) => ({
     src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
     name: shotName(att),
     failed: false,
@@ -125,7 +134,7 @@ const attachedShots = computed<Shot[]>(() =>
 );
 // Several screenshots, none known to show the page the test failed on.
 const unplacedShots = computed(
-  () => !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
+  () => props.failed && !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
 );
 
 // The failing step's screenshots: the trace's pair, else the attached screenshot
@@ -146,7 +155,7 @@ const lightboxIndex = ref<number | null>(null);
 // The DOM of the same moment as the screenshot at the failure, asked for once
 // the trace's screenshots are known; the failure-time DOM without them.
 const domAt = computed<DomSnapshotMoment | null>(() => {
-  const step = failingStep.value;
+  const step = failedStep.value;
   if (!step || !traceShots.value.length) return null;
   return { callId: step.callId, phase: step.screen.after ? 'after' : 'before' };
 });
@@ -156,7 +165,10 @@ const dom = useDomSnapshot(
   () => !traceSnapshotsPending.value,
 );
 const hasDom = computed(() => dom.hasDom.value);
-const domCaption = computed(() => (domAt.value?.phase === 'before' ? 'Before the failing action' : 'At the failure'));
+const domCaption = computed(() => {
+  if (!props.failed) return 'At the end of the test';
+  return domAt.value?.phase === 'before' ? 'Before the failing action' : 'At the failure';
+});
 // The rendered page loads the first time the DOM view opens, then stays.
 const domOpened = ref(false);
 
@@ -326,7 +338,7 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
     <figure v-if="domOpened && hasDom" v-show="activeView === 'dom'" class="min-w-0 space-y-1">
       <figcaption class="flex items-center gap-1 text-xs text-muted">
         <span
-          v-if="domAt?.phase !== 'before'"
+          v-if="failed && domAt?.phase !== 'before'"
           class="inline-block size-1.5 shrink-0 rounded-full"
           :class="STATUS_PALETTE.failed.bg"
           aria-hidden="true"

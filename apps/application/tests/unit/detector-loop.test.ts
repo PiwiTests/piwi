@@ -1,12 +1,16 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { computeDetectorPrecision, isDetectorMuted, MUTE_MIN_VERDICTS } from '../../shared/handlers/detector-precision';
-import { detectMatrix, detectEscapedDefect } from '../../shared/handlers/scenario-gaps';
+import {
+  detectMatrix,
+  detectEscapedDefect,
+  detectFixedWithoutTest,
+  exposureFactorsFor,
+} from '../../shared/handlers/scenario-gaps';
 import { selectWeeklyDigest } from '../../shared/handlers/gap-digest';
+import { migrateToLatest } from './temp-db';
 
 describe('computeDetectorPrecision / isDetectorMuted', () => {
   test('folds for/against into precision and mutes below threshold with enough verdicts', () => {
@@ -22,6 +26,21 @@ describe('computeDetectorPrecision / isDetectorMuted', () => {
     expect(successOnly.muted).toBe(true); // below 60% over 20+ verdicts
     const drift = result.find((r) => r.detector === 'surface-drift')!;
     expect(drift.muted).toBe(false); // only one verdict
+  });
+
+  test('counts the gaps raised on a pull request and the ones it acted on, beside the verdicts', () => {
+    const result = computeDetectorPrecision(
+      [{ detector: 'changed-unreached', verdict: 'for' }],
+      [
+        { detector: 'changed-unreached', actedOn: true },
+        { detector: 'changed-unreached', actedOn: false },
+        { detector: 'new-error-path', actedOn: true },
+      ],
+    );
+    expect(result.map((r) => [r.detector, r.verdicts, r.pullRequestGaps, r.actedOn])).toEqual([
+      ['changed-unreached', 1, 2, 1],
+      ['new-error-path', 0, 1, 1],
+    ]);
   });
 
   test('does not mute below the minimum verdict count', () => {
@@ -112,6 +131,16 @@ describe('detectEscapedDefect', () => {
   });
 });
 
+describe('detectFixedWithoutTest and escape history', () => {
+  test('a bug report closed with no test naming it is a gap on its page, which shares its escape history', () => {
+    const [gap] = detectFixedWithoutTest([{ id: 7, title: 'refund rounds down', pageKey: '/refunds' }]);
+    expect(gap).toMatchObject({ detector: 'fixed-without-test', key: 'bug:7', pages: ['/refunds'] });
+    expect(gap!.evidence[0]).toContain('piwi:bug 7');
+    expect(exposureFactorsFor(gap!, { escapedPages: new Set(['/refunds']) }).escapeHistory).toBe(1);
+    expect(exposureFactorsFor(gap!, { escapedPages: new Set(['/orders']) }).escapeHistory).toBe(0.1);
+  });
+});
+
 describe('selectWeeklyDigest', () => {
   const gaps = [
     { projectId: 1, projectName: 'A', id: 1, title: 'g1', class: 'blind-spot', score: 0.9, createdAt: 100 },
@@ -158,9 +187,7 @@ describe('loadDetectorPrecision (DB)', () => {
   beforeEach(async () => {
     delete process.env.PIWI_DATABASE_URL;
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'p' });
   });
 
@@ -191,6 +218,35 @@ describe('loadDetectorPrecision (DB)', () => {
     expect(s.for).toBe(1);
     expect(s.against).toBe(1);
     expect(s.verdicts).toBe(2); // not-worth-testing is neutral
+  });
+
+  test('a gap covered elsewhere was no missing test, and a reasonless dismissal says nothing', async () => {
+    const gap = (key: string, dismissReason: string | null, kind = 'gap') => ({
+      projectId: 1,
+      detector: 'declared-never-hit',
+      kind,
+      class: 'blind-spot',
+      key,
+      title: 't',
+      status: 'dismissed',
+      dismissReason,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('a', 'covered-elsewhere'), gap('b', null), gap('c', 'covered-elsewhere', 'finding')]);
+    const [s] = await loadDetectorPrecisionFor(db);
+    expect(s).toMatchObject({ detector: 'declared-never-hit', for: 0, against: 1, verdicts: 1 });
+  });
+
+  test('a dismissal without a reason records none', async () => {
+    const { triageGap } = await import('../../shared/handlers/scenario-gaps');
+    const [row] = await db
+      .insert(schema.scenarioGaps)
+      .values({ projectId: 1, detector: 'success-only', class: 'blind-spot', key: 'GET /a', title: 't' })
+      .returning({ id: schema.scenarioGaps.id });
+    await triageGap(db, 1, row!.id, { verb: 'dismiss' });
+    const [after] = await db.select().from(schema.scenarioGaps);
+    expect(after).toMatchObject({ status: 'dismissed', dismissReason: null });
   });
 });
 

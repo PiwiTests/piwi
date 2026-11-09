@@ -1,4 +1,6 @@
-import { getProjectScope, requireResolvedProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
+import { getDatabase } from '../../database';
+import { requireAuth } from '../../utils/auth';
+import { getProjectScope, requireProjectPermission, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { createLinkSchema } from '#shared/handlers/links';
 import { createEnrichedLink } from '../../utils/integrations/link-create';
 
@@ -7,12 +9,13 @@ defineRouteMeta({
     tags: ['Links'],
     summary: 'Create an entity link',
     description:
-      'Attach an external URL to a run, test-case run, test case, or failure cluster. Provider is auto-detected from the URL.',
+      "Attach an external URL to a run, test-case run, test case, failure cluster or bug report. Provider is auto-detected from the URL. A tracker issue on the site of the connection the entity's project is bound to is read through that connection (title, status) and kept in sync; any other URL, one on another connection's site included, is stored as a plain link that Piwi never reads or writes through a connection.",
     'x-required-permission': 'link:write',
   },
 });
 
 export default eventHandler(async (event) => {
+  const user = await requireAuth(event);
   const body = await readBody(event);
   const validation = createLinkSchema.safeParse(body);
 
@@ -25,12 +28,10 @@ export default eventHandler(async (event) => {
   }
 
   const { entityType, entityId, url, title } = validation.data;
-  const { db, user } = await requireResolvedProjectAccess(
-    event,
-    entityId,
-    (database, id) => resolveLinkEntityProjectId(database, entityType, id),
-    'Entity',
-  );
+  const db = await getDatabase();
+  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId, user.id);
+  if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
+  await requireProjectPermission(event, projectId);
   const readable = await getProjectScope(db, user, 'project:read');
 
   let link: Awaited<ReturnType<typeof createEnrichedLink>>;

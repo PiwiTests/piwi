@@ -16,7 +16,6 @@ design records that often ship without touching `plans/`, and the committed `adr
 |------|------|
 | `plans/roadmap.md` | Ranked **Build next** table · **Quick fixes** · **Active plans** / **Parked plans** tables · **Later** (one-liners by theme) · **Strategy notes** |
 | `plans/shipped.md` | The shipped ledger (newest block first) + the **Archived plans** index |
-| `plans/exploration-findings.md` | **Open** findings (re-verified each audit) + **Resolved** log |
 | `plans/rejected-ideas.md` | Ideas set aside on purpose, each with the reason |
 | `plans/active/` | Plans with open work that is next |
 | `plans/later/` | Parked plans |
@@ -90,7 +89,7 @@ Then:
 
 - **Build next**: a ranked table (`#`, What, Why now, Effort S/M/L, Where the spec is). Keep it to ~8 rows; every row
   links a plan, a proposal, or a `research/` section.
-- **Quick fixes**: small verified-open items, each traceable to a finding in `exploration-findings.md`.
+- **Quick fixes**: small verified-open items, each linking the GitHub issue that tracks it.
 - **Active plans** / **Parked plans**: one row per file in `active/` and `later/`; committed proposals with an open
   remainder are listed under *Active plans* in their own table.
 - **Later**: one-liners grouped by theme, no checklists. Items graduate to *Build next* by getting a plan or a spec link.
@@ -99,20 +98,10 @@ Then:
 
 ### 6. Capture findings
 
-Append bugs, inconsistencies or tech debt found during the assessment to `plans/exploration-findings.md` under
-**Open**, in this form; move fixed findings to **Resolved** with the date (one line each), and promote notable ones to
-_Quick fixes_ in `plans/roadmap.md` when they change priorities.
-
-```markdown
-## [Date] — [Exploration type/area]
-
-### Finding: [Brief title]
-
-- **File/Component**: location in codebase
-- **Issue**: what is wrong
-- **Impact**: severity and effect
-- **Suggested fix**: recommended action (omit if obvious)
-```
+Report bugs, inconsistencies or tech debt found during the assessment as the root `AGENTS.md` says (*Report what you
+find*): one GitHub issue each after searching for an existing one, and a security finding to the user only. Close an
+issue whose finding the audit sees fixed, and promote notable ones to _Quick fixes_ in `plans/roadmap.md` when they
+change priorities.
 
 ### 7. Start a plan from a *Build next* item
 

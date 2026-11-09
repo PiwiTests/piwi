@@ -2,12 +2,13 @@
 /**
  * The run's coverage, as facts of the run header: its commit's combined
  * coverage, "Coverage 71.4% of 12,480 lines · 3 suites", linking to the
- * project's coverage page at that commit ("· totals only" when a newer commit
+ * Coverage tab’s Code view at that commit ("· totals only" when a newer commit
  * superseded its files), and, when part of the run's server coverage is
  * missing, the flag "Coverage incomplete: the backend restarted during the
  * run", its title saying what each backend lost. Nothing when the commit has
  * no coverage and the run's is whole.
  */
+import { coverageTabLink } from '~/utils/coverage-tab';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import type { RunCoverageGap } from '#shared/run-coverage-gaps';
 import { coverageGapDetail, coverageGapHeadline, formatPercent, plural } from '~/utils/combined-coverage';
@@ -30,7 +31,7 @@ const gapTitle = computed(() => (props.gaps ?? []).map((g) => coverageGapDetail(
   <template v-if="summary">
     <span class="text-dimmed">·</span>
     <NuxtLink
-      :to="{ path: `/projects/${projectId}/coverage`, query: { commit: summary.commit } }"
+      :to="coverageTabLink(projectId, 'code', { commit: summary.commit })"
       class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
       :title="
         summary.detailRemoved

@@ -21,9 +21,9 @@ lists its locators, ranked and checked against the page as it is, the same list 
 shows:
 
 ```
-getByRole('button', { name: 'Apply coupon' })     ✓ unique · stable
-getByTestId('apply-coupon')                        ✓ unique · stable
-locator('.btn').nth(2)                             ⚠ unique by position · brittle: position, CSS class
+getByTestId('cart-button')                        ✓ unique · stable
+getByRole('button', { name: 'Cart, 2 items' })    ✓ unique · could break: number in text
+getByText('🛒 2')                                 ✓ unique · stable
 ```
 
 <figure>
@@ -119,3 +119,10 @@ too closely for that, the labels left over are not drawn and the panel says how 
 each kind, and **Role** shows the labels of one role only. Hidden elements get no label, as `getByRole` does not find them. Press
 **Esc** or `V` again to turn it off. The [lint overlay](./lint-overlay) stays for suggesting the test ids to
 add.
+
+## Related
+
+- [Browser extension](./extension): install Piwi Picker and connect it
+- [Pick an element](./pick-an-element): the ranked locators of any element on the page
+- [Mock and slow down requests](./mock-requests): answer, slow down or fail the page's requests
+- [Lint overlay](./lint-overlay): the elements a test would struggle to find

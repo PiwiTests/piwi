@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Piwi Dashboard",
-  "version": "0.63.0",
+  "version": "0.67.0",
   "identifier": "io.piwitests.dashboard",
   "build": {
     "frontendDist": "../src"
@@ -17,6 +17,8 @@
         "minWidth": 720,
         "minHeight": 540,
         "resizable": true,
+        "backgroundThrottling": "disabled",
+        "zoomHotkeysEnabled": true,
         "url": "index.html"
       }
     ],
@@ -79,6 +81,7 @@
       "resources/app-server"
     ],
     "category": "DeveloperTool",
+    "copyright": "Copyright © 2025-present Fabien Ménager",
     "shortDescription": "A permanent home for your Playwright test results.",
     "longDescription": "Piwi Dashboard keeps every Playwright run — traces, reports, flaky-test scoring, failure clustering, and locator healing — in a local dashboard that runs entirely on your machine. No server to set up, no data leaving your computer.",
     "macOS": {
@@ -88,11 +91,27 @@
     },
     "windows": {
       "wix": {
-        "language": "en-US"
+        "language": "en-US",
+        "bannerPath": "windows/msi-banner.bmp",
+        "dialogImagePath": "windows/msi-dialog.bmp"
       },
       "nsis": {
         "installMode": "currentUser",
-        "installerHooks": "windows/installer-hooks.nsh"
+        "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/installer-header.bmp",
+        "uninstallerHeaderImage": "windows/installer-header.bmp",
+        "sidebarImage": "windows/installer-sidebar.bmp"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "piwi"
+        ]
       }
     }
   }

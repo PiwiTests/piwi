@@ -26,7 +26,7 @@ const item = computed(() => props.state.item);
 const swatchStyle = computed(() => {
   const hovered = item.value;
   if (!hovered) return {};
-  if (hovered.kind === 'test') return { backgroundColor: timelineStatusColor(hovered.status, hovered.retries) };
+  if (hovered.kind === 'test') return { backgroundColor: timelineStatusColor(hovered.status, hovered.flaky) };
   if (hovered.kind === 'step')
     return { backgroundColor: timelineStepColor(hovered.category ?? 'other', hovered.status === 'failed') };
   if (hovered.kind === 'wait') {
@@ -70,14 +70,14 @@ const attemptList = computed<TimelineItem[]>(() => {
 /** One row per attempt: its own status, when it started on the run's axis, how long it took and where. */
 const attemptRows = computed(() =>
   attemptList.value.map((attempt) => {
-    const color = timelineStatusColor(attempt.status, attempt.retries);
+    const color = timelineStatusColor(attempt.status, attempt.flaky);
     return {
       key: attempt.key,
       label: `Attempt ${(attempt.retries ?? 0) + 1}`,
       status: formatStatusLabel(attempt.status),
       // A retried attempt's dot is an outline, like its bar.
       dot: attempt.retried ? { borderColor: color, borderWidth: '1.5px' } : { backgroundColor: color },
-      facts: `at ${formatTimelineTime(attempt.start)} · ${formatTimelineTime(attempt.duration)} · Worker ${attempt.slot ?? attempt.workerIndex}`,
+      facts: `at ${formatTimelineTime(attempt.start)} · ${formatTimelineTime(attempt.duration)} · Worker ${attempt.slot != null ? attempt.slot + 1 : attempt.workerIndex}`,
       current: attempt.key === item.value?.key,
     };
   }),
@@ -88,7 +88,7 @@ const attemptsOutcome = computed(() => {
   const last = attemptList.value[attemptList.value.length - 1];
   if (!last) return null;
   const number = (last.retries ?? 0) + 1;
-  switch (statusPaletteKey(last.status, last.retries)) {
+  switch (statusPaletteKey(last.status, last.flaky)) {
     case 'flaky':
       return `Passed on attempt ${number}`;
     case 'failed':
@@ -186,10 +186,11 @@ const positionStyle = computed(() => {
       </div>
       <div class="flex items-center gap-3 text-gray-500">
         <span v-if="item.kind === 'pause'">{{ pauseReasonText(item.status) }}</span>
-        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.retries) }}</span>
+        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
-          Worker {{ item.slot ?? item.workerIndex }}<template v-if="processLabel"> · {{ processLabel }}</template>
+          Worker {{ item.slot != null ? item.slot + 1 : item.workerIndex
+          }}<template v-if="processLabel"> · {{ processLabel }}</template>
         </span>
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>
       </div>

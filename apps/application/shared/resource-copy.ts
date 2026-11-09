@@ -26,6 +26,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export const VERDICT_LABEL: Record<ResourceVerdict, string> = {
   leaked: 'Leaked',
+  lingering: 'Lingering',
   idle: 'Never used',
   piling: 'Piling up',
   handle: 'Left running',
@@ -72,6 +73,8 @@ export interface FindingView {
   site: string | null;
   /** The facts, in the order the summary prints them. */
   facts: string[];
+  /** Leaked and lingering: the `file:line` of the last call a test made on it, where its close belongs. */
+  lastUse: string | null;
 }
 
 /** One finding as a row reads it. */
@@ -98,6 +101,12 @@ export function findingView(finding: WireResourceFinding): FindingView {
         facts.push(`${formatCpuTime(finding.afterTestCpuMs!)} of page CPU after its test`);
       break;
     }
+    case 'lingering':
+      if (finding.count > 1) facts.push(`${finding.count} ${KIND_LABEL[finding.kind]}s`);
+      if (finding.pages) facts.push(`with ${plural(finding.pages, 'page')}`);
+      if (finding.tests) facts.push(plural(finding.tests, 'test'));
+      facts.push(`open ${formatCpuTime(finding.heldMs ?? 0)} after its last use`);
+      break;
     case 'idle':
       facts.push(plural(finding.count, 'page'));
       if (finding.tests) facts.push(plural(finding.tests, 'test'));
@@ -122,5 +131,6 @@ export function findingView(finding: WireResourceFinding): FindingView {
     where: finding.verdict === 'handle' ? null : finding.where,
     site: finding.site ?? null,
     facts,
+    lastUse: finding.lastUse ?? null,
   };
 }

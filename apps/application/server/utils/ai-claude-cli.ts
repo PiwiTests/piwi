@@ -83,17 +83,21 @@ export function cliCommand(binary: string, args: string[]): { command: string; a
  * This is a fast pre-check; the login-shell lookup below covers version managers
  * (nvm/fnm/asdf/…) and any other location a user's shell knows about.
  */
-function fallbackDirs(): string[] {
-  const home = homedir();
-  if (isWindows) {
-    const appData = process.env.APPDATA || join(home, 'AppData', 'Roaming');
-    const localAppData = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
+export function fallbackDirs(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  if (platform === 'win32') {
+    const appData = env.APPDATA || win32.join(home, 'AppData', 'Roaming');
+    const localAppData = env.LOCALAPPDATA || win32.join(home, 'AppData', 'Local');
     return [
-      join(localAppData, 'Microsoft', 'WinGet', 'Links'), // winget shims
-      join(appData, 'npm'), // npm global
-      join(localAppData, 'Programs', 'claude'),
-      join(home, '.claude', 'local'),
-      join(home, '.claude', 'bin'),
+      win32.join(home, '.local', 'bin'), // the native installer
+      win32.join(localAppData, 'Microsoft', 'WinGet', 'Links'), // winget shims
+      win32.join(appData, 'npm'), // npm global
+      win32.join(localAppData, 'Programs', 'claude'),
+      win32.join(home, '.claude', 'local'),
+      win32.join(home, '.claude', 'bin'),
     ];
   }
   const dirs = [
@@ -108,7 +112,7 @@ function fallbackDirs(): string[] {
     join(home, '.asdf', 'shims'),
     '/usr/bin',
   ];
-  const npmPrefix = process.env.npm_config_prefix || process.env.PREFIX;
+  const npmPrefix = env.npm_config_prefix || env.PREFIX;
   if (npmPrefix) dirs.push(join(npmPrefix, 'bin'));
   // Each nvm-managed Node version has its own bin dir.
   dirs.push(...globNodeVersionBins(join(home, '.nvm', 'versions', 'node')));

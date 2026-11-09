@@ -53,6 +53,8 @@ export interface ClusterDiagnosisStore {
   // Diagnosis state
   diagnosis: Ref<FailureDiagnosis | null>;
   posting: Ref<boolean>;
+  /** Read the stored diagnosis again; a read that fails keeps the one shown. */
+  fetchDiagnosis: () => Promise<void>;
   runDiagnosis: (opts?: { force?: boolean; additionalContext?: string; images?: DiagnoseImage[] }) => Promise<void>;
 }
 
@@ -219,8 +221,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     } catch (err: unknown) {
       const status = (err as { statusCode?: number })?.statusCode;
       if (status === 409) startPoll();
-      else
-        toast.add({ title: 'Diagnosis failed', description: String((err as Error)?.message ?? err), color: 'error' });
+      else toast.add({ title: 'Diagnosis failed', description: errorMessage(err), color: 'error' });
     } finally {
       posting.value = false;
     }
@@ -304,6 +305,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     loadSuspectLines,
     diagnosis,
     posting,
+    fetchDiagnosis,
     runDiagnosis,
   };
 }

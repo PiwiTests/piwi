@@ -82,7 +82,7 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
 
 - **Only this machine, only this window.** The server answers a request to its own address on `127.0.0.1` with the
   token, and refuses any other name for the machine and any request a browser sends (it carries an `Origin`). It serves
-  the runs this window started, and those [started in a terminal](./terminal-runs) that follow it, and nothing of an
+  the runs this window started, and those [started outside Piwi](./terminal-runs) that follow it, and nothing of an
   instance.
 - **Only a stopped page, only the actions named.** An action needs the stop it answers, and goes nowhere once the test
   went on. The tools take a closed set of arguments; none evaluates code, reads a file or runs a command. Code reaches
@@ -93,8 +93,8 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   between two markers that share a random value the page cannot know, and every tool's description tells the agent to
   read it as data, never as instructions. An image comes after a line that says it is the page's too.
 - **Secrets stay hidden.** The value of a password field, a one-time code and a card's number or security code is
-  never sent: its line in the snapshot reads `<hidden>`, in every frame, the image masks the field, and no assertion
-  writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
+  never sent: its line in the snapshot reads `<hidden>`, in every frame, the image paints over the field (a page zoomed
+  in gets no image), and no assertion writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
   hidden, as on Piwi's other surfaces.
 - **You watch it happen.** The agent's stops show in the editor and the Runs window as yours do, the editor's as
   `Paused by the agent · …`; its first action at a stop says so in a notification; the code it has written names it
@@ -117,8 +117,8 @@ its pages and run code in them. It is shared until the test ends, and no agent c
 ## Limits
 
 - **A remote window** (SSH, a dev container, Gateway) runs the server on the remote machine: an agent there reaches it.
-- An action needs Playwright 1.64 or later and a `@piwitests/reporter` at least as recent as the editor extension; at
-  an older one's stops, the tools say what it cannot do.
+- An action needs a `@piwitests/reporter` at least as recent as the editor extension; at an older one's stops, the
+  tools say what it cannot do.
 
 ## Related
 

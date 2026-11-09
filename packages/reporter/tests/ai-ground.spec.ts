@@ -4,6 +4,7 @@ import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { chainToStructured, groundElement, refLocator } from '../src/internal/ai/ground.js';
 import { ariaSnapshotBestEffort } from '../src/internal/capture/capture-fixtures.js';
 import { buildLocator } from '../src/internal/ai/interpreter.js';
+import { playwrightAtLeast } from './_helpers.js';
 
 const PAGE = `
   <main>
@@ -84,9 +85,12 @@ describe('groundElement', () => {
     const { page, refs } = await pageWithRefs(/button "Save"/);
     expect(refs).toHaveLength(2);
     const compiled = await groundElement(page, { role: 'button', name: 'Save', ref: refs[1] }, {});
+    // The scope is Playwright's normalize(): the dialog's role from 1.63, its label before.
+    const scope = playwrightAtLeast('1.63')
+      ? { method: 'getByRole', args: ['dialog', { name: 'Edit profile' }] }
+      : { method: 'getByLabel', args: ['Edit profile'] };
     expect(compiled?.locator).toEqual({
-      method: 'getByRole',
-      args: ['dialog', { name: 'Edit profile' }],
+      ...scope,
       chain: [{ method: 'getByRole', args: ['button', { name: 'Save' }] }],
     });
     expect(compiled?.fingerprint).toMatchObject({ role: 'button', name: 'Save' });
