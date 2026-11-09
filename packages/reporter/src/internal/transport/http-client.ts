@@ -37,7 +37,7 @@ export class DesktopNotProvenError extends Error {
     super(
       proof === 'unreachable'
         ? `The desktop app at ${serverUrl} did not answer, so its token is not sent and nothing is uploaded.`
-        : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token, so nothing is uploaded. Restart the desktop app, or name another instance with a server URL and an API key.`,
+        : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token, so nothing is uploaded. Restart or update the desktop app, or name another instance with a server URL and an API key.`,
     );
     this.name = 'DesktopNotProvenError';
     if (proof === 'unreachable') this.code = 'ECONNREFUSED';

@@ -80,6 +80,7 @@ describe("the desktop app's token", () => {
     const client = new PiwiClient({ serverUrl: desktop.url, apiKey: desktop.token, project: '' });
     await expect(client.projects()).rejects.toBeInstanceOf(DesktopNotProvenError);
     await expect(client.projects()).rejects.toThrow(/did not prove/);
+    await expect(client.projects()).rejects.toThrow(/Restart or update the desktop app/);
     expect(other.carried).toEqual([]);
   });
 

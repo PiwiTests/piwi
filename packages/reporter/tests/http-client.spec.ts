@@ -494,7 +494,9 @@ describe('HttpClient (against fake http.Server)', () => {
           /token is not sent to http:\/\/127\.0\.0\.1:\d+/,
         );
         await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
-        expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health']);
+        // An app older than this reporter does not answer the proof, so the line says to update it too.
+        await expect(client.postJSON('/api/c', {}, TOKEN)).rejects.toThrow(/Restart or update the desktop app/);
+        expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health', '/api/health']);
         expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
       } finally {
         await close(server);

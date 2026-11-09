@@ -65,7 +65,7 @@ export class DesktopNotProvenError extends Error {
     super(
       proof === 'unreachable'
         ? `The desktop app at ${serverUrl} did not answer, so its token is not sent.`
-        : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token. Restart the desktop app.`,
+        : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token. Restart or update the desktop app.`,
     );
     this.name = 'DesktopNotProvenError';
   }
