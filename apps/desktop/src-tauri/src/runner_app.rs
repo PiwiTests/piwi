@@ -4,14 +4,14 @@
 //   1. creates a per-user data folder for the folder links, the log and the settings,
 //   2. spawns the Runner host (`apps/runner/server`) as a Node sidecar on a free loopback port,
 //   3. waits for `GET /api/health` to answer its challenge with the proof of the token,
-//   4. points the window at the host through the one-time token bootstrap (`/__piwi/session`).
+//   4. points the window at the host through a single-use session code (`/__piwi/session?code=…`).
 // There is no database, tray icon, updater or reporter discovery file: Runner is not a Piwi server, and nothing on
 // this machine may take it for one. Everything binds 127.0.0.1.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::json;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
@@ -22,11 +22,12 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
-    hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs,
-    random_hex_32, run_app_menu_action, show_splash_status, shut_down, supervise_server,
+    app_menu_action, append_log, bring_to_front, follow_notifications,
+    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
+    random_hex_32, reapply_splash_status, run_app_menu_action, show_splash_status, shut_down, supervise_server,
     LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
+use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
 /// The app's name, in its menu and in the questions it asks.
@@ -37,6 +38,14 @@ const LOG_FILE: &str = "runner.log";
 /// The splash's status line once the host takes longer than `READY_TIMEOUT_SECS`.
 const SPLASH_SLOW: &str =
     "The local host is taking longer than usual to start. Still waiting: the window opens once it is up.";
+/// The splash's status line while the host restarts.
+const SPLASH_RESTARTING: &str = "The local host stopped. Restarting it: the window opens again once it is up.";
+/// How the wait for the host's proof paces itself.
+const PROOF_PACE: ProofPace = ProofPace {
+    slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
+    poll: Duration::from_millis(250),
+    slow_poll: Duration::from_millis(1000),
+};
 /// The splash's status line once the supervisor stopped restarting the host.
 const SPLASH_STOPPED: &str =
     "The local host stopped and could not be restarted. Quit and relaunch Piwi Runner.";
@@ -212,11 +221,12 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
+                })
+                .on_page_load(|webview, payload| {
+                    if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        reapply_splash_status(webview);
+                    }
                 })
                 .build(),
         );
@@ -251,6 +261,10 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let log_path = log_dir.join(LOG_FILE);
             append_log(&log_path, "----- launch -----");
             app.manage(LogFile(log_path.clone()));
+            app.manage(Session::new(
+                app.get_webview_window("main").and_then(|w| w.url().ok()),
+                app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
+            ));
 
             // Nothing outlives this launch: the token is made now and kept nowhere.
             let token = random_hex_32();
@@ -294,6 +308,16 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     move |app| spawn_host(app, &host),
                     initial,
                     shutting_down.clone(),
+                    ServerSession {
+                        port,
+                        token: token.clone(),
+                        texts: SplashTexts {
+                            restarting: SPLASH_RESTARTING,
+                            slow: SPLASH_SLOW,
+                            stopped: SPLASH_STOPPED,
+                        },
+                        pace: &PROOF_PACE,
+                    },
                 );
             } else {
                 crate::give_up_server(app.handle());
@@ -305,23 +329,23 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             let nav_handle = app.handle().clone();
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let started = Instant::now();
-                let mut slow = false;
-                let ready = loop {
-                    if health_ok(port, &token) {
-                        break true;
-                    }
-                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-                    if gave_up || quitting.load(Ordering::SeqCst) {
-                        break false;
-                    }
-                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
-                        slow = true;
+                let proved = session::await_first_proof(
+                    port,
+                    &token,
+                    &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<Session>() {
+                            session.mark_opened();
+                        }
+                    },
+                    || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
+                    || {
                         append_log(&log_path, "host not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
-                    }
-                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
-                };
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
+                    },
+                );
+                let ready = proved.is_some();
                 append_log(
                     &log_path,
                     if ready {
@@ -332,18 +356,25 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 );
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
-                follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
-                let bootstrap_url = bootstrap_url(port, &token, None);
-                let inner = nav_handle.clone();
-                let _ = nav_handle.run_on_main_thread(move || {
-                    if let Some(w) = inner.get_webview_window("main") {
-                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                    }
-                });
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
+                let server = ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, None, holds) {
+                    append_log(&log_path, &format!("no session code: {error}"));
+                }
             });
 
             #[cfg(target_os = "macos")]

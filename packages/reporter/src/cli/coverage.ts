@@ -24,7 +24,7 @@ import {
   type CoverageScope,
 } from '@piwitests/core/coverage-scope';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 import { hashPaths, readCheckout, readInventory } from '../internal/coverage-upload/git-inventory.js';
 import {
   expandPattern,
@@ -283,7 +283,7 @@ function authHeaders(apiKey: string | null): Record<string, string> {
 
 /** The project's coverage scope from the dashboard; the default when the project names none. */
 async function fetchScope(args: CoverageUploadArgs, projectId: number): Promise<CoverageScope> {
-  const res = await fetch(`${args.serverUrl}/api/projects/${projectId}`, { headers: authHeaders(args.apiKey) });
+  const res = await cliFetch(`${args.serverUrl}/api/projects/${projectId}`, { headers: authHeaders(args.apiKey) });
   if (!res.ok) throw new Error(`Could not read the project (dashboard returned ${res.status})`);
   const body = (await res.json()) as { coverageScope?: unknown; project?: { coverageScope?: unknown } };
   const raw = body.coverageScope ?? body.project?.coverageScope;
@@ -375,7 +375,7 @@ export async function uploadCoverage(
   }
 
   for (const part of parts) {
-    const res = await fetch(`${args.serverUrl}/api/projects/${projectId}/coverage-reports`, {
+    const res = await cliFetch(`${args.serverUrl}/api/projects/${projectId}/coverage-reports`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(args.apiKey) },
       body: JSON.stringify(part),

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import type { Locator, Page } from '@playwright/test';
 import {
   lazyLocator,
@@ -364,5 +367,123 @@ describe('ServerStepResolver', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  describe("with the desktop app's token", () => {
+    const TOKEN = 'pd_desktop_token';
+    const request: StepResolutionRequest = {
+      kind: 'locator',
+      template: 'x',
+      paramNames: [],
+      ariaSnapshot: '',
+      history: [],
+    };
+
+    /** A server that proves `proves` (or nothing) and records the key of every other request. */
+    async function serve(proves: string | null) {
+      const seen: Array<[string | undefined, string | undefined]> = [];
+      const server = http.createServer(async (req, res) => {
+        const challenge = req.headers['x-piwi-desktop-challenge'];
+        if (req.url === '/api/health' && typeof challenge === 'string' && proves) {
+          const proof = await desktopTokenProof(proves, (server.address() as AddressInfo).port, challenge);
+          res.setHeader('x-piwi-desktop-proof', proof);
+        }
+        seen.push([req.url, req.headers['x-api-key'] as string | undefined]);
+        req.resume();
+        res.setHeader('Content-Type', 'application/json');
+        res.end('{"done":true}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      return { url, seen, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+    }
+
+    it('sends the token after the server proves it holds it, for each step', async () => {
+      const app = await serve(TOKEN);
+      try {
+        const resolver = new ServerStepResolver(app.url, TOKEN, TOKEN);
+        await resolver.resolveStep(request);
+        await resolver.resolveStep(request);
+        expect(app.seen).toEqual([
+          ['/api/health', undefined],
+          ['/api/ai/step-resolution', TOKEN],
+          ['/api/health', undefined],
+          ['/api/ai/step-resolution', TOKEN],
+        ]);
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('follows no redirect of a step that carries the token', async () => {
+      const reached: string[] = [];
+      const elsewhere = http.createServer((req, res) => {
+        reached.push(req.url ?? '');
+        req.resume();
+        res.end('{"done":true}');
+      });
+      await new Promise<void>((resolve) => elsewhere.listen(0, '127.0.0.1', resolve));
+      const target = `http://127.0.0.1:${(elsewhere.address() as AddressInfo).port}/landing`;
+      const app = http.createServer(async (req, res) => {
+        req.resume();
+        if (req.url === '/api/health') {
+          const proof = await desktopTokenProof(
+            TOKEN,
+            (app.address() as AddressInfo).port,
+            String(req.headers['x-piwi-desktop-challenge']),
+          );
+          res.writeHead(200, { 'x-piwi-desktop-proof': proof });
+          res.end('{}');
+          return;
+        }
+        res.writeHead(307, { Location: target });
+        res.end();
+      });
+      await new Promise<void>((resolve) => app.listen(0, '127.0.0.1', resolve));
+      try {
+        const resolver = new ServerStepResolver(`http://127.0.0.1:${(app.address() as AddressInfo).port}`, TOKEN, TOKEN);
+        await expect(resolver.resolveStep(request)).rejects.toThrow();
+        expect(reached).toEqual([]);
+      } finally {
+        await new Promise<void>((resolve) => app.close(() => resolve()));
+        await new Promise<void>((resolve) => elsewhere.close(() => resolve()));
+      }
+    });
+
+    it('sends no token to a server that replaced the app between two steps', async () => {
+      const app = await serve(TOKEN);
+      const resolver = new ServerStepResolver(app.url, TOKEN, TOKEN);
+      await resolver.resolveStep(request);
+      await app.close();
+
+      const impostor = http.createServer((req, res) => {
+        seenByImpostor.push([req.url, req.headers['x-api-key'] as string | undefined]);
+        req.resume();
+        res.end('{}');
+      });
+      const seenByImpostor: Array<[string | undefined, string | undefined]> = [];
+      await new Promise<void>((resolve) => impostor.listen(Number(new URL(app.url).port), '127.0.0.1', resolve));
+      try {
+        await expect(resolver.resolveStep(request)).rejects.toThrow(/token is not sent/);
+        expect(seenByImpostor).toEqual([['/api/health', undefined]]);
+      } finally {
+        await new Promise<void>((resolve) => impostor.close(() => resolve()));
+      }
+    });
+
+    it('sends no token to a server that does not prove it, and sends another key without a check', async () => {
+      const impostor = await serve(null);
+      try {
+        await expect(new ServerStepResolver(impostor.url, TOKEN, TOKEN).resolveStep(request)).rejects.toThrow(
+          /token is not sent/,
+        );
+        expect(impostor.seen).toEqual([['/api/health', undefined]]);
+        impostor.seen.length = 0;
+        await new ServerStepResolver(impostor.url, 'pd_team_key', null).resolveStep(request);
+        expect(impostor.seen).toEqual([['/api/ai/step-resolution', 'pd_team_key']]);
+      } finally {
+        await impostor.close();
+      }
+    });
   });
 });

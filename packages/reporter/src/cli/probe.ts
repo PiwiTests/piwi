@@ -9,7 +9,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 import { PIWI_ENV_KEYS, PIWI_PROBE_ENV } from '../internal/config/env.js';
@@ -104,7 +104,7 @@ export async function runProbe(argv: string[]): Promise<number> {
   const planUrl = `${serverUrl}/api/projects/${projectId}/probes/plan${budget ? `?budget=${encodeURIComponent(budget)}` : ''}`;
   let plan: ProbePlan;
   try {
-    const res = await fetch(planUrl, { headers: authHeaders });
+    const res = await cliFetch(planUrl, { headers: authHeaders });
     if (!res.ok) throw new Error(`dashboard returned ${res.status}`);
     plan = (await res.json()) as ProbePlan;
   } catch (e) {
@@ -168,7 +168,7 @@ export async function runProbe(argv: string[]): Promise<number> {
   }
 
   try {
-    const res = await fetch(`${serverUrl}/api/projects/${projectId}/probes/results`, {
+    const res = await cliFetch(`${serverUrl}/api/projects/${projectId}/probes/results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify({ runId, results }),

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
-import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from './desktop.js';
 import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
 import { applyRequestedRunEnv, namesRequestedRun, readRequestedRun } from './requested-run.js';
@@ -53,6 +53,7 @@ const DEFAULTS: PiwiDashboardOptions = {
 export const PIWI_ENV_KEYS = {
   serverUrl: 'PIWI_DASHBOARD_URL',
   desktopApp: 'PIWI_DESKTOP_APP',
+  desktopKey: 'PIWI_DESKTOP_KEY',
   projectName: 'PIWI_PROJECT_NAME',
   verbose: 'PIWI_VERBOSE',
   apiKey: 'PIWI_API_KEY',
@@ -364,6 +365,7 @@ export function desktopAppMode(option: unknown, envValue: string | undefined): D
 }
 
 let desktopDiscovered = false;
+let desktopTokenHeld = false;
 let requestedRunInstance: string | null = null;
 let requestedRunError: string | null = null;
 let desktopReplacedServerUrl: string | null = null;
@@ -389,6 +391,15 @@ export function ignoredEnvValues(): readonly IgnoredEnvValue[] {
  */
 export function usedDesktopDiscovery(): boolean {
   return desktopDiscovered;
+}
+
+/**
+ * Whether the API key of the last `resolveOptions` call is the desktop app's token: the discovery file gave it, or
+ * the run was started by the app, which sets `PIWI_DESKTOP_KEY=1` beside its `PIWI_API_KEY`. The reporter sends such
+ * a key only to a server that proved it holds the token.
+ */
+export function usedDesktopToken(): boolean {
+  return desktopTokenHeld;
 }
 
 /**
@@ -483,6 +494,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   // an explicit config, a `.env` value or a CI secret is never redirected;
   // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
+  desktopTokenHeld = false;
   desktopReplacedServerUrl = null;
   // Over everything else: a run a team instance asked for goes to that instance, with its request token alone.
   const requested = readRequestedRun(env);
@@ -505,6 +517,16 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
       desktopDiscovered = true;
     }
   }
+  // A key equal to the token in the discovery file is the app's, wherever it was set: it is held to the proof too,
+  // also when the pid in the file is gone, since something else may hold the port by then.
+  desktopTokenHeld =
+    desktopDiscovered ||
+    (env[PIWI_ENV_KEYS.desktopKey] === '1' &&
+      !!env[PIWI_ENV_KEYS.apiKey] &&
+      mergedRaw.apiKey === env[PIWI_ENV_KEYS.apiKey]) ||
+    (typeof mergedRaw.apiKey === 'string' &&
+      mergedRaw.apiKey !== '' &&
+      readDesktopToken(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) === mergedRaw.apiKey);
 
   // Coverage is nested, so each of its variables fills the member the options leave unset.
   type CoverageOptions = NonNullable<PiwiDashboardOptions['coverage']>;
@@ -531,6 +553,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   if (Object.keys(externalId).length > 0) mergedRaw.externalId = externalId;
 
   if (requested && 'instance' in requested) {
+    desktopTokenHeld = false;
     mergedRaw.serverUrl = requested.instance;
     mergedRaw.apiKey = requested.token;
     mergedRaw.username = null;

@@ -6,7 +6,7 @@ works, the build prerequisites, the end-to-end tests, signing and the update cha
 
 The shell is a [Tauri](https://tauri.app) window around **the same built Nuxt/Nitro server** shipped as the Docker
 image and `@piwitests/server`. The Rust code (`src-tauri/src/`) spawns that server as a **Node sidecar** on a loopback
-port, waits for `GET /api/health`, then points the window at it through a one-time token bootstrap (`/__piwi/session`).
+port, waits for `GET /api/health`, then points the window at it through a single-use session code (`/__piwi/session?code=…`).
 The installers (Windows `.msi` and `.exe`, macOS `.dmg`, Linux `.deb` / `.rpm` / `.AppImage`) are built from the same
 shell and are feature-equivalent.
 
@@ -17,6 +17,14 @@ shell and are feature-equivalent.
 - **The window trusts only the sidecar it spawned.**
   - The readiness probe sends a fresh challenge, and the shell loads the session bootstrap only after `/api/health`
     answers it with the proof of the desktop token (`x-piwi-desktop-proof`, checked in constant time).
+  - The shell sends the token to the sidecar only on the connection that proved it (`connect_proving_token`): the
+    proof and the token request travel on one keep-alive connection, and a server that ends the connection after the
+    proof gets no token on a new one.
+  - When the sidecar exits, every window on its origin leaves it (`session.rs`): the main window goes to the bundled
+    splash and the others close. The session bootstrap loads again only after the restarted process proves the token;
+    a proof that never comes leaves the window on the splash with its status set. A load whose sidecar exited
+    again, or whose supervisor gave up, after the proof passed is dropped on the thread that navigates
+    (`proof_holds`), and a restart's splash text never shows a hidden window.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
   - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
@@ -75,6 +83,9 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+  They also carry `PIWI_DESKTOP_KEY=1`, which marks `PIWI_API_KEY` as the app's token: a reporter or `piwi` that knows
+  the marker sends it only after the server proves it holds it (`proveDesktopServer`), the same proof the discovery
+  file's token gets.
 
 - **A run a team instance asked for starts from the bundled server's launch, never from the window's words**
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
@@ -95,11 +106,14 @@ shell and are feature-equivalent.
   They ship separately, so changing the path or the shape means changing all of them; a new field is fine, since
   every reader ignores the ones it does not know.
 
-- **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
-  one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
-  breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
-  JSON-RPC on stdin/stdout. It sends the token only through `connect_proving_token` and only to `127.0.0.1`
-  (`mcp_stdio.rs`).
+- **`piwi-desktop mcp-stdio` is a published entry point.** The one-click setup of every MCP client (`mcp_clients.rs`)
+  writes that command into the client's config on the user's machine, with no URL and no token, so the argument can
+  only be added to and the bridge keeps speaking newline-delimited JSON-RPC on stdin/stdout
+  ([the rest](ARCHITECTURE.md#mcp-client-configs)).
+- **The token is never in a URL.** The shell asks the server for a session code on the proven connection
+  (`POST /api/desktop/run-target/session-code`, shell-only), and `/__piwi/session?code=…` takes it once, within 30
+  seconds, to set the cookie. A used, expired or unknown code, and the token itself, open nothing; a server that gives
+  no code gets no session.
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install

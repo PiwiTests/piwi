@@ -383,6 +383,16 @@ describe('the shell’s routes', () => {
     expect(body.node.req.readableDidRead).toBe(false);
   });
 
+  test('give a session code to the shell only, and answer 404 on the server build', async () => {
+    const mint = (await import('../../server/api/desktop/run-target/session-code.post')).default as Route;
+    const json = { 'content-type': 'application/json' };
+    await expect(mint(asked({ ...json, origin: 'http://127.0.0.1:3000' }))).rejects.toMatchObject({ statusCode: 403 });
+    await expect(mint(asked({}))).rejects.toMatchObject({ statusCode: 415 });
+    expect(await mint(asked(json, {}, '{}'))).toEqual({ code: expect.stringMatching(/^pds_[0-9a-f]{64}$/) });
+    delete process.env.PIWI_DESKTOP_TOKEN;
+    await expect(mint(asked(json, {}, '{}'))).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   test('answer 404 on the server build', async () => {
     delete process.env.PIWI_DESKTOP_TOKEN;
     const status = (await import('../../server/api/desktop/run-target/index.get')).default as Route;

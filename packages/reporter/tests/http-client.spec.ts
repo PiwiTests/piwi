@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -434,6 +435,205 @@ describe('HttpClient (against fake http.Server)', () => {
         (server as any).closeAllConnections?.();
         server.close();
         await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
+  describe("the desktop app's token", () => {
+    const TOKEN = 'pd_desktop_token';
+
+    /** A server that answers the health check with `proofOf(challenge, port)` and everything else with `{}`. */
+    async function desktopServer(proofOf: (challenge: string, port: number) => Promise<string | null>, status = 200) {
+      const started = await startServer(() => undefined);
+      const port = Number(new URL(started.url).port);
+      started.server.removeAllListeners('request');
+      started.server.on('request', async (req, res) => {
+        const rec = { method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, body: '' };
+        started.requests.push(rec);
+        if (req.url === '/api/health') {
+          const proof = await proofOf(String(req.headers['x-piwi-desktop-challenge'] ?? ''), port);
+          res.writeHead(status, proof ? { 'x-piwi-desktop-proof': proof } : {});
+          res.end('{}');
+          return;
+        }
+        req.resume();
+        req.on('end', () => jsonRes(res, 200, {}));
+      });
+      return started;
+    }
+    const honest = (challenge: string, port: number) => desktopTokenProof(TOKEN, port, challenge);
+    const close = (server: http.Server) => new Promise<void>((r) => server.close(() => r()));
+
+    it('sends the token after the server proved it holds it, with a proof of its own for each request', async () => {
+      const { server, url, requests } = await desktopServer(honest);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await client.postJSON('/api/a', {}, TOKEN);
+        await client.postJSON('/api/b', {}, TOKEN);
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/health', undefined],
+          ['/api/a', `Bearer ${TOKEN}`],
+          ['/api/health', undefined],
+          ['/api/b', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it.each([
+      ['proves it with another token', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 200],
+      ['proves it for another port', (c: string) => desktopTokenProof(TOKEN, 1, c), 200],
+      ['gives no proof', async () => null, 200],
+      ['proves it with another token and an error status', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 503],
+    ])('sends no token to a server that %s', async (_name, proofOf, status) => {
+      const { server, url, requests } = await desktopServer(proofOf, status);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow(
+          /token is not sent to http:\/\/127\.0\.0\.1:\d+/,
+        );
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        // An app older than this reporter does not answer the proof, so the line says to update it too.
+        await expect(client.postJSON('/api/c', {}, TOKEN)).rejects.toThrow(/Restart or update the desktop app/);
+        expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health', '/api/health']);
+        expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends the token to a server that proved it while its health check answered an error, and gives that error to the request', async () => {
+      const { server, url, requests } = await desktopServer(honest, 503);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await expect(client.postJSON('/api/a', {}, TOKEN)).resolves.toEqual({});
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/health', undefined],
+          ['/api/a', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends no token when the check gets an error and no proof, and asks again with the next request', async () => {
+      const { server, url, requests } = await desktopServer(async () => null, 503);
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        const first = await client.postJSON('/api/a', {}, TOKEN).catch((error) => error);
+        expect((first as { code?: string }).code).toBe('ECONNREFUSED');
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow('did not answer');
+        expect(requests.map((r) => r.url)).toEqual(['/api/health', '/api/health']);
+        expect(requests.every((r) => r.headers['authorization'] === undefined)).toBe(true);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends no token when nothing answers the check, and asks again with the next request', async () => {
+      const { server, url, requests } = await desktopServer(honest);
+      await close(server);
+      const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+      await expect(client.postJSON('/api/a', {}, TOKEN)).rejects.toThrow('did not answer');
+      await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow('did not answer');
+      expect(requests).toHaveLength(0);
+    });
+
+    it('fails a server that did not answer like a connection that never opened, and one that did not prove it for good', async () => {
+      const gone = await desktopServer(honest);
+      await close(gone.server);
+      const down = await new HttpClient(gone.url, new Logger(false), 30000, 1000, TOKEN)
+        .postJSON('/api/a', {}, TOKEN)
+        .catch((error) => error);
+      expect((down as { code?: string }).code).toBe('ECONNREFUSED');
+
+      const silent = await desktopServer(async () => null);
+      try {
+        const refused = await new HttpClient(silent.url, new Logger(false), 30000, 1000, TOKEN)
+          .postJSON('/api/a', {}, TOKEN)
+          .catch((error) => error);
+        expect(refused.name).toBe('DesktopNotProvenError');
+        expect((refused as { code?: string }).code).toBeUndefined();
+      } finally {
+        await close(silent.server);
+      }
+    });
+
+    it('sends no token after a failed connection to a server that cannot prove it', async () => {
+      const first = await desktopServer(honest);
+      const client = new HttpClient(first.url, new Logger(false), 30000, 1000, TOKEN);
+      await client.postJSON('/api/a', {}, TOKEN);
+      await close(first.server);
+      await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow();
+
+      const replaced: Array<[string | undefined, string | undefined]> = [];
+      const impostor = http.createServer((req, res) => {
+        replaced.push([req.url, req.headers['authorization']]);
+        req.resume();
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => impostor.listen(Number(new URL(first.url).port), '127.0.0.1', resolve));
+      try {
+        await expect(client.postJSON('/api/c', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(replaced).toEqual([['/api/health', undefined]]);
+      } finally {
+        await close(impostor);
+      }
+    });
+
+    it('shares a proof still being asked between requests that start together', async () => {
+      const { server, url, requests } = await desktopServer(async (c, p) => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return honest(c, p);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await Promise.all([client.postJSON('/api/a', {}, TOKEN), client.postJSON('/api/b', {}, TOKEN)]);
+        expect(requests.filter((r) => r.url === '/api/health')).toHaveLength(1);
+        expect(requests.filter((r) => r.headers['authorization'] === `Bearer ${TOKEN}`)).toHaveLength(2);
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('sends no token to a server that replaced the app with no request failing in between', async () => {
+      const first = await desktopServer(honest);
+      const client = new HttpClient(first.url, new Logger(false), 30000, 1000, TOKEN);
+      await client.postJSON('/api/a', {}, TOKEN);
+      await close(first.server);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const replaced: Array<[string | undefined, string | undefined]> = [];
+      const impostor = http.createServer((req, res) => {
+        replaced.push([req.url, req.headers['authorization']]);
+        req.resume();
+        res.end('{}');
+      });
+      await new Promise<void>((resolve) => impostor.listen(Number(new URL(first.url).port), '127.0.0.1', resolve));
+      try {
+        await expect(client.postJSON('/api/b', {}, TOKEN)).rejects.toThrow(/did not prove it holds the token/);
+        expect(replaced).toEqual([['/api/health', undefined]]);
+      } finally {
+        await close(impostor);
+      }
+    });
+
+    it('makes no check for a request that carries another credential, or for a client that holds no desktop token', async () => {
+      const { server, url, requests } = await desktopServer(async () => null);
+      try {
+        const held = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+        await held.postJSON('/api/a', {}, 'pd_someone_else');
+        await held.postJSON('/api/b', {}, null);
+        const plain = new HttpClient(url, new Logger(false));
+        await plain.postJSON('/api/c', {}, TOKEN);
+        expect(requests.map((r) => [r.url, r.headers['authorization']])).toEqual([
+          ['/api/a', 'Bearer pd_someone_else'],
+          ['/api/b', undefined],
+          ['/api/c', `Bearer ${TOKEN}`],
+        ]);
+      } finally {
+        await close(server);
       }
     });
   });

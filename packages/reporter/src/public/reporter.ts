@@ -12,6 +12,7 @@ import type {
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  usedDesktopToken,
   requestedRunProblem,
   requestedRunTarget,
   desktopReplacedServer,
@@ -358,7 +359,13 @@ export class PiwiDashboardReporter {
 
     const logger = new Logger(this.options.verbose ?? false);
     this.logger = logger;
-    this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', logger);
+    this.httpClient = new HttpClient(
+      this.options.serverUrl ?? 'http://localhost:3000',
+      logger,
+      undefined,
+      undefined,
+      usedDesktopToken() ? (this.options.apiKey ?? null) : null,
+    );
     this.fileHandler = new FileHandler(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
     this.recovery = new CrashRecovery(this.httpClient.baseUrl, this.options.projectName!, logger);

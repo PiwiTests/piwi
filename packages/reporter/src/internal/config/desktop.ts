@@ -44,14 +44,32 @@ function processAlive(pid: number): boolean {
  * hand-edited file must not take a test run down.
  */
 export function readDesktopConfig(filePath: string): DesktopConfig | null {
+  const file = readDesktopFile(filePath);
+  if (!file) return null;
+  if (file.pid !== null && !processAlive(file.pid)) return null;
+  return { url: file.url, token: file.token };
+}
+
+/**
+ * The token in the discovery file, whether or not the app that wrote it still runs: `null` only when the file is
+ * absent, unreadable or malformed. A key equal to it is the app's, so it is held to the proof of the server it goes
+ * to, and the app that wrote it may be gone while something else holds the port. The app deletes the file on a clean
+ * quit, so this reaches a key as long as the file exists.
+ */
+export function readDesktopToken(filePath: string): string | null {
+  return readDesktopFile(filePath)?.token ?? null;
+}
+
+/** The fields of the discovery file the readers use; `pid` is null when the file names none. */
+function readDesktopFile(filePath: string): (DesktopConfig & { pid: number | null }) | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const url = parsed?.url;
     const token = parsed?.token;
     if (typeof url !== 'string' || !url) return null;
     if (typeof token !== 'string' || !token) return null;
-    if (Number.isInteger(parsed?.pid) && parsed.pid > 0 && !processAlive(parsed.pid)) return null;
-    return { url, token };
+    const pid = Number.isInteger(parsed?.pid) && parsed.pid > 0 ? (parsed.pid as number) : null;
+    return { url, token, pid };
   } catch {
     return null;
   }

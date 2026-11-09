@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { originEnv } from '../internal/config/env.js';
 import { failureDetail } from '../internal/transport/http-client.js';
-import { connectionFolders, gitRoot, resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, connectionFolders, gitRoot, resolveCliConnection } from '../internal/support/connection.js';
 import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0;
@@ -123,7 +123,7 @@ async function fetchBugSpec(
   const url = `${args.serverUrl}/api/bug-reports/${args.id}/spec?mode=${args.mode}${dir}`;
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await cliFetch(url, {
       headers: args.apiKey ? { 'X-API-Key': args.apiKey } : {},
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

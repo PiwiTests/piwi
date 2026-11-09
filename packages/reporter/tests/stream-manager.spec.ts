@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as path from 'node:path';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
@@ -7,8 +8,10 @@ import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
-import { HttpError } from '../src/internal/transport/http-client.js';
+import { DesktopNotProvenError, HttpClient, HttpError } from '../src/internal/transport/http-client.js';
 import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
+import { Logger } from '../src/internal/support/logger.js';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } from '../src/types/wire.js';
 
@@ -1167,6 +1170,34 @@ describe('StreamManager start asked again', () => {
     await drain(sm);
   });
 
+  it('gives the registered run up at once when the server did not prove the desktop token, and asks again when it did not answer', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new DesktopNotProvenError('http://localhost:3000', 'unproven');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(requests).toEqual(['/api/test-runs/5/begin']);
+    expect(sm.enabled).toBe(false);
+    await drain(sm);
+
+    cleanup();
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const asked: string[] = [];
+    const again = makeManager(async (url) => {
+      asked.push(url);
+      if (asked.length === 1) throw new DesktopNotProvenError('http://localhost:3000', 'unreachable');
+      return { runId: 5, streamToken: 'tok' };
+    });
+    again.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(asked).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
+    expect(again.runId).toBe(5);
+    await drain(again);
+  });
+
   it.each([400, 403, 404])('gives the stream up at once on a %i, keeping no event for it', async (status) => {
     const requests: string[] = [];
     const sm = makeManager(async (url) => {
@@ -1246,4 +1277,59 @@ describe('StreamManager start asked again', () => {
     expect(sent).toEqual(['queued']);
     expect(linesWith('Streaming started 20 s late')).toHaveLength(1);
   });
+});
+
+describe("StreamManager with the desktop app's token", () => {
+  const TOKEN = 'pd_desktop_token';
+  beforeEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+  });
+
+  it('keeps asking for /begin through a database error that came with a correct proof, and does not end live streaming', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const seen: { url: string; authorization: string | undefined }[] = [];
+    let begins = 0;
+    const server = http.createServer(async (req, res) => {
+      req.resume();
+      seen.push({ url: req.url ?? '', authorization: req.headers['authorization'] as string | undefined });
+      if (req.url === '/api/health') {
+        const port = (server.address() as { port: number }).port;
+        const proof = await desktopTokenProof(TOKEN, port, String(req.headers['x-piwi-desktop-challenge']));
+        res.writeHead(503, { 'x-piwi-desktop-proof': proof });
+        res.end('{}');
+        return;
+      }
+      begins++;
+      res.writeHead(begins === 1 ? 503 : 200, { 'Content-Type': 'application/json' });
+      res.end(begins === 1 ? '{}' : JSON.stringify({ runId: 5, streamToken: 'tok' }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+      const sm = new StreamManager(
+        client,
+        new StreamBuffer(projectName),
+        new CrashRecovery(url, projectName),
+        {} as any,
+        new FileHandler(),
+        makeOptions({ serverUrl: url, apiKey: TOKEN, streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+      );
+      sm.start(new Date().toISOString(), {}, 'instance');
+      await sm.startPromise;
+      expect(sm.enabled).toBe(true);
+      expect(sm.runId).toBe(5);
+      expect(begins).toBe(2);
+      expect(seen.filter((r) => r.url.endsWith('/begin')).map((r) => r.authorization)).toEqual([
+        `Bearer ${TOKEN}`,
+        `Bearer ${TOKEN}`,
+      ]);
+      await sm.drain();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      fs.rmSync(recoveryFilePath(url, projectName), { force: true });
+    }
+  }, 15_000);
 });

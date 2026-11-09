@@ -20,6 +20,7 @@ mod private_fs;
 mod repro;
 mod run_target;
 mod runner;
+mod session;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;
@@ -100,9 +101,17 @@ const READY_TIMEOUT_SECS: u64 = 60;
 /// The splash's status line once the server takes longer than `READY_TIMEOUT_SECS`.
 const SPLASH_SLOW: &str =
     "The local server is taking longer than usual to start. Still waiting: the window opens the dashboard once it is up.";
+/// The splash's status line while the server restarts.
+const SPLASH_RESTARTING: &str = "The local server stopped. Restarting it: the window opens the dashboard again once it is up.";
 /// The splash's status line once the supervisor stopped restarting the server.
 const SPLASH_STOPPED: &str =
     "The local server stopped and could not be restarted. Quit and relaunch, or open the logs from the tray.";
+/// How the wait for the server's proof paces itself.
+const PROOF_PACE: session::ProofPace = session::ProofPace {
+    slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
+    poll: Duration::from_millis(250),
+    slow_poll: Duration::from_millis(1000),
+};
 /// Backoff before each auto-restart of a crashed server, capped at the last value.
 const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
 /// Stop auto-restarting once the server has crashed this many times inside
@@ -152,7 +161,7 @@ struct ShuttingDown(Arc<AtomicBool>);
 
 /// Set once the supervisor stopped restarting the server: the readiness wait ends then.
 #[derive(Default)]
-struct ServerGaveUp(AtomicBool);
+pub(crate) struct ServerGaveUp(AtomicBool);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -345,11 +354,12 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     }
 }
 
-/// The URL that signs the window in to the server (`/__piwi/session`), then
-/// shows `page`, or the home page.
-fn bootstrap_url(port: u16, token: &str, page: Option<&str>) -> String {
+/// The URL that signs the window in to the server (`/__piwi/session`) with the
+/// single-use session `code`, then shows `page`, or the home page. The access
+/// token is never in it.
+fn bootstrap_url(port: u16, code: &str, page: Option<&str>) -> String {
     let mut url = tauri::Url::parse(&format!("http://127.0.0.1:{port}/__piwi/session")).expect("a valid URL");
-    url.query_pairs_mut().append_pair("token", token);
+    url.query_pairs_mut().append_pair("code", code);
     if let Some(page) = page {
         url.query_pairs_mut().append_pair("to", page);
     }
@@ -755,14 +765,123 @@ fn health_ok(port: u16, token: &str) -> bool {
     health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
+/// The most a proof response may hold, head and body together.
+const MAX_PROOF_RESPONSE: usize = 16 * 1024;
+
 /// Open a connection to the server on `port` for a request that carries `token`, once the
-/// server has proved it holds the token (`health_ok`). Every request the shell makes with the
-/// token goes through here, so the token never reaches another process that took the port.
+/// server has proved on that connection that it holds the token (`health_ok`'s challenge). The
+/// connection is kept open and returned, so the request with the token goes to the process that
+/// proved it, never to one that took the port after the proof. A server that answers the proof
+/// and ends the connection gets nothing: the caller opens no other. Every request the shell makes
+/// with the token goes through here, the request for the webview's session code
+/// (`session::session_url`) included: the webview's own request carries the code, never the token.
 pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
-    if !health_ok(port, token) {
-        return Err("the local server is not answering".to_string());
+    use std::io::{Read, Write};
+    const NOT_ANSWERING: &str = "the local server is not answering";
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT)
+        .map_err(|_| NOT_ANSWERING.to_string())?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let challenge = random_hex_32();
+    let request = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: keep-alive\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).map_err(|_| NOT_ANSWERING.to_string())?;
+    let mut received = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let (head, exact) = loop {
+        if let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+            let body = &received[end + 4..];
+            let head = String::from_utf8_lossy(&received[..end]).to_string();
+            match response_body_len(&head, body) {
+                Ok(Some(len)) => break (head, len == body.len()),
+                Ok(None) => {}
+                Err(()) => return Err(NOT_ANSWERING.to_string()),
+            }
+        }
+        if received.len() > MAX_PROOF_RESPONSE {
+            return Err(NOT_ANSWERING.to_string());
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return Err(NOT_ANSWERING.to_string()),
+            Ok(n) => received.extend_from_slice(&chunk[..n]),
+        }
+    };
+    if !exact
+        || head_has_connection_close(&head)
+        || !health_response_proves(&head, token, port, &challenge)
+        || !connection_is_open(&stream)
+    {
+        return Err(NOT_ANSWERING.to_string());
     }
-    std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())
+    let _ = stream.set_read_timeout(None);
+    Ok(stream)
+}
+
+/// How many bytes of `body` the response with `head` has, when `body` holds all of it: `Some`, or
+/// `None` when more is to come. A response whose end is not framed (no `Content-Length`, not chunked) is
+/// `Err`: it ends only with the connection.
+fn response_body_len(head: &str, body: &[u8]) -> Result<Option<usize>, ()> {
+    let header = |wanted: &str| {
+        head.split("\r\n").skip(1).find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim().eq_ignore_ascii_case(wanted).then(|| value.trim().to_string())
+        })
+    };
+    if header("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked")) {
+        return Ok(chunked_body_len(body));
+    }
+    let len: usize = header("content-length").ok_or(())?.parse().map_err(|_| ())?;
+    Ok((body.len() >= len).then_some(len))
+}
+
+/// The length of the chunked body at the start of `body` through its last chunk and trailer, or
+/// `None` while it is incomplete or unreadable.
+fn chunked_body_len(body: &[u8]) -> Option<usize> {
+    let mut at = 0;
+    loop {
+        let line_end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+        let size_text = std::str::from_utf8(&body[at..line_end]).ok()?;
+        let size = usize::from_str_radix(size_text.split(';').next()?.trim(), 16).ok()?;
+        at = line_end + 2;
+        if size == 0 {
+            // Trailer lines, then the empty line.
+            loop {
+                let end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+                let empty = end == at;
+                at = end + 2;
+                if empty {
+                    return Some(at);
+                }
+            }
+        }
+        at = at.checked_add(size)?.checked_add(2)?;
+        if body.len() < at {
+            return None;
+        }
+    }
+}
+
+/// Whether a response head says the server ends the connection after it.
+fn head_has_connection_close(head: &str) -> bool {
+    head.split("\r\n").skip(1).any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("connection") && value.to_ascii_lowercase().contains("close")
+        })
+    })
+}
+
+/// Whether the peer still holds `stream` open with nothing more to say: a closed or reset
+/// connection, or bytes nobody asked for, is not one to send a token on.
+fn connection_is_open(stream: &std::net::TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return false;
+    }
+    let open = matches!(
+        stream.peek(&mut [0u8; 1]),
+        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+    );
+    stream.set_nonblocking(false).is_ok() && open
 }
 
 /// Whether a raw `/api/health` response is a 200 carrying, in
@@ -853,6 +972,24 @@ fn main_window_may_navigate(
         "file" => false,
         _ => true,
     }
+}
+
+/// The port of the sidecar the dashboard window may navigate to: none while its session is not live, so history
+/// and a page's reload cannot return to the sidecar's origin without a proof.
+pub(crate) fn live_sidecar_port(app: &AppHandle) -> Option<u16> {
+    let port = app.try_state::<mcp_clients::ServerInfo>().map(|s| s.port);
+    app.try_state::<session::Session>().and_then(|session| session.sidecar_port(port))
+}
+
+/// A window of the sidecar's origin that was just built stays only if the session is still live on `port`: when the
+/// sidecar exited since the live check, `leave_server` has already closed the other windows and this one, built
+/// after, would stay on the dead origin, so `close` runs and the open fails.
+fn keep_window_if_live(live: Option<u16>, port: u16, close: impl FnOnce()) -> Result<(), String> {
+    if live == Some(port) {
+        return Ok(());
+    }
+    close();
+    Err("the server is not running".into())
 }
 
 /// The IPC grants of the dashboard (`runtime-capabilities/remote.json`), scoped
@@ -1131,6 +1268,25 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
     }
 }
 
+/// What the supervisor does about a sidecar that exited without a deliberate quit.
+#[derive(Debug, PartialEq)]
+struct CrashDecision {
+    /// The crashes counted so far are older than `RESTART_WINDOW_SECS`: count from this one.
+    new_window: bool,
+    /// The sidecar crashed `MAX_RESTARTS_IN_WINDOW` times inside the window: stop restarting it.
+    give_up: bool,
+    /// How long to wait before starting it again.
+    backoff: Duration,
+}
+
+/// The decision after a crash, given the `restarts` already made in the window and how long ago the window began.
+fn crash_decision(restarts: u32, window_age: Duration) -> CrashDecision {
+    let new_window = window_age > Duration::from_secs(RESTART_WINDOW_SECS);
+    let restarts = if new_window { 0 } else { restarts };
+    let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+    CrashDecision { new_window, give_up: restarts >= MAX_RESTARTS_IN_WINDOW, backoff: Duration::from_secs(backoff) }
+}
+
 /// Own the sidecar for the life of the app: tee its output to the log and, when
 /// it exits without a deliberate quit (an OOM crash, say), restart it on the same
 /// port and token with a capped backoff so the window is never left pointed at a
@@ -1144,6 +1300,7 @@ fn supervise_server(
     respawn: impl Fn(&AppHandle) -> Option<(Receiver<CommandEvent>, CommandChild)> + Send + 'static,
     initial: (Receiver<CommandEvent>, CommandChild),
     shutting_down: Arc<AtomicBool>,
+    server: session::ServerSession,
 ) {
     let (mut rx, child) = initial;
     app.state::<ServerProcess>().0.lock().unwrap().replace(child);
@@ -1184,24 +1341,30 @@ fn supervise_server(
 
             // A server that stayed up past the window has recovered; forget older
             // crashes so a much later, isolated crash still gets the full budget.
-            if window_start.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+            let decision = crash_decision(restarts, window_start.elapsed());
+            if decision.new_window {
                 restarts = 0;
                 window_start = Instant::now();
             }
-            if restarts >= MAX_RESTARTS_IN_WINDOW {
+            if decision.give_up {
                 append_log(
                     &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
+                // The give-up is marked before the session ends, so a proof read earlier no longer stands when it does.
                 give_up_server(&app);
+                session::server_gave_up(&app, &server);
                 break;
             }
 
-            let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+            let restart = session::server_stopped(&app, &server);
             restarts += 1;
-            append_log(&log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            append_log(
+                &log_path,
+                &format!("[server] restarting in {}s (attempt {restarts})", decision.backoff.as_secs()),
+            );
             let _ = app.emit("server-status", "restarting");
-            std::thread::sleep(Duration::from_secs(backoff));
+            std::thread::sleep(decision.backoff);
 
             if shutting_down.load(Ordering::SeqCst) {
                 break;
@@ -1211,10 +1374,11 @@ fn supervise_server(
                 Some((new_rx, new_child)) => {
                     app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
                     rx = new_rx;
-                    let _ = app.emit("server-status", "ready");
+                    session::server_restarted(&app, server.clone(), restart, shutting_down.clone());
                 }
                 None => {
                     give_up_server(&app);
+                    session::server_gave_up(&app, &server);
                     break;
                 }
             }
@@ -1406,16 +1570,30 @@ fn splash_status_script(text: &str) -> String {
     )
 }
 
-/// Write `text` in the splash's status line and bring the window up: a launch
-/// to the tray hides it.
-fn show_splash_status(app: &AppHandle, text: &'static str) {
+/// Write `text` in the splash's status line. With `reveal`, bring the window up too: a launch to the tray hides
+/// it, and a server that does not start is news the person has to see. Without it the window stays as it was, so
+/// a restart after a crash does not open a window the person closed to the tray.
+fn show_splash_status(app: &AppHandle, text: &'static str, reveal: bool) {
+    if let Some(session) = app.try_state::<session::Session>() {
+        session.set_status(Some(text));
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
             let _ = w.eval(&splash_status_script(text));
-            let _ = w.show();
+            if reveal {
+                let _ = w.show();
+            }
         }
     });
+}
+
+/// Write the splash's status line again once the splash loads: a status set while the window was still
+/// leaving the server's page would be lost.
+pub(crate) fn reapply_splash_status(webview: &tauri::Webview) {
+    if let Some(text) = webview.try_state::<session::Session>().and_then(|s| s.status()) {
+        let _ = webview.eval(&splash_status_script(text));
+    }
 }
 
 /// Everything leaving the app must undo: remember the window state, stop the
@@ -1778,7 +1956,7 @@ static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
 #[tauri::command]
 async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
@@ -1789,6 +1967,9 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     // In debug mode, open the inspector on the new window too (the trace viewer,
     // an attachment) so it can be debugged like the main window.
     if app.try_state::<DebugMode>().is_some_and(|d| d.0) {
@@ -1840,7 +2021,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
     if !is_output_window_name(&name) {
         return Err("invalid output window name".into());
     }
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     let url = tauri::Url::parse(&format!(
         "{}/desktop/run-output?name={name}",
         sidecar_origin(port)
@@ -1851,7 +2032,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         "{OUTPUT_WINDOW_PREFIX}{name}_{}",
         AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
     );
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+    let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
         .title("Piwi Dashboard")
         .inner_size(960.0, 640.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
@@ -1861,6 +2042,9 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         .on_navigation(move |url| is_sidecar_url(url, port))
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     Ok(label)
 }
 
@@ -2821,15 +3005,14 @@ pub fn run() {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<mcp_clients::ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
                 })
                 // A new page in the dashboard window leaves no one to feed the
                 // run output windows: they close.
                 .on_page_load(|webview, payload| {
+                    if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        reapply_splash_status(webview);
+                    }
                     if webview.label() == "main"
                         && payload.event() == tauri::webview::PageLoadEvent::Started
                     {
@@ -2954,6 +3137,10 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            app.manage(session::Session::new(
+                app.get_webview_window("main").and_then(|w| w.url().ok()),
+                app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
+            ));
             #[cfg(not(target_os = "macos"))]
             report_notification_clicks(app.handle());
 
@@ -2973,9 +3160,11 @@ pub fn run() {
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
-            // MCP client configs written on earlier launches embed the URL and
-            // token — bring any that drifted (a different port this launch)
-            // back in line before a client tries the dead address.
+            // Rewrite this app's own `piwi-desktop` entry in a client config
+            // when it is the bridge entry whose command names this app and no
+            // longer exists, or exactly the older URL-and-token shape; any other
+            // entry is left as is. Nothing is written from a dev build or a
+            // place that does not last (a disk image, a translocated copy).
             mcp_clients::heal_configured_clients(app.handle());
 
             // --- publish connection details for the Playwright reporter ---
@@ -3075,6 +3264,16 @@ pub fn run() {
                     move |app| spawn_server_process(app, &respawn_config),
                     initial,
                     shutting_down.clone(),
+                    session::ServerSession {
+                        port,
+                        token: token.clone(),
+                        texts: session::SplashTexts {
+                            restarting: SPLASH_RESTARTING,
+                            slow: SPLASH_SLOW,
+                            stopped: SPLASH_STOPPED,
+                        },
+                        pace: &PROOF_PACE,
+                    },
                 );
             } else {
                 give_up_server(app.handle());
@@ -3087,30 +3286,30 @@ pub fn run() {
             let ready_log = log_path.clone();
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let started = Instant::now();
-                let mut slow = false;
-                let ready = loop {
-                    if health_ok(port, &token) {
-                        break true;
-                    }
-                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-                    if gave_up || quitting.load(Ordering::SeqCst) {
-                        break false;
-                    }
-                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
-                        slow = true;
+                let proved = session::await_first_proof(
+                    port,
+                    &token,
+                    &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<session::Session>() {
+                            session.mark_opened();
+                        }
+                    },
+                    || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
+                    || {
                         append_log(&ready_log, "server not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
-                    }
-                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
-                };
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
+                    },
+                );
+                let ready = proved.is_some();
                 append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
                 // Startup has settled: look for an update and announce one
                 // (a no-op when the build cannot update or the user opted out).
                 tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
@@ -3118,13 +3317,22 @@ pub fn run() {
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
-                let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
-                let inner = nav_handle.clone();
-                let _ = nav_handle.run_on_main_thread(move || {
-                    if let Some(w) = inner.get_webview_window("main") {
-                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                    }
-                });
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
+                // The session code is asked over a connection that proved the token; no code, no session. A few
+                // tries while the proof holds, then the stopped splash.
+                let server = session::ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: session::SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, page.as_deref(), holds) {
+                    append_log(&ready_log, &format!("no session code: {error}"));
+                }
             });
 
             // --- tray ---
@@ -3387,9 +3595,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{
+        crash_decision, CrashDecision,
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        connect_proving_token, decode_hex, health_ok, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
+        connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3523,10 +3734,10 @@ mod tests {
 
     #[test]
     fn the_bootstrap_carries_the_page_to_show() {
-        assert_eq!(bootstrap_url(3000, "pd_x", None), "http://127.0.0.1:3000/__piwi/session?token=pd_x");
+        assert_eq!(bootstrap_url(3000, "pds_x", None), "http://127.0.0.1:3000/__piwi/session?code=pds_x");
         assert_eq!(
-            bootstrap_url(3000, "pd_x", Some("/test-runs/146?tab=changes&x='")),
-            "http://127.0.0.1:3000/__piwi/session?token=pd_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
+            bootstrap_url(3000, "pds_x", Some("/test-runs/146?tab=changes&x='")),
+            "http://127.0.0.1:3000/__piwi/session?code=pds_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
         );
     }
 
@@ -3638,42 +3849,59 @@ mod tests {
         }
     }
 
+    /// Read one request's head from `stream`, and the body its `Content-Length` announces.
+    pub(crate) fn read_request_from(stream: &mut std::net::TcpStream) -> String {
+        use std::io::Read;
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let announced = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + announced {
+                    break;
+                }
+            }
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).to_string()
+    }
+
+    /// The proof response of a server that holds `token`, for the challenge in `request`.
+    pub(crate) fn proof_response(request: &str, token: &str, port: u16) -> String {
+        let challenge = request
+            .lines()
+            .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            .unwrap_or_default();
+        health_answer(
+            "200 OK",
+            &format!("x-piwi-desktop-proof: {}", proof_of(token, port, challenge)),
+        )
+    }
+
     /// A server on a free loopback port that holds `token`: it answers the readiness probe with the
-    /// proof, then `response` to the request after it. The handle yields that request.
+    /// proof, then `response` to the request after it, on the same connection. The handle yields
+    /// that request.
     pub(crate) fn serve_as_holder_of(
         token: &'static str,
         response: Vec<u8>,
     ) -> (u16, std::thread::JoinHandle<String>) {
-        use std::io::{Read, Write};
+        use std::io::Write;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
-            let read_request = |stream: &mut std::net::TcpStream| {
-                let mut request = Vec::new();
-                let mut buf = [0u8; 1024];
-                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                    let n = stream.read(&mut buf).unwrap();
-                    if n == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&buf[..n]);
-                }
-                String::from_utf8_lossy(&request).to_string()
-            };
-            let (mut probe, _) = listener.accept().unwrap();
-            let asked = read_request(&mut probe);
-            let challenge = asked
-                .lines()
-                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
-                .unwrap()
-                .to_string();
-            let proof = proof_of(token, port, &challenge);
-            probe
-                .write_all(health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}")).as_bytes())
-                .unwrap();
-            drop(probe);
             let (mut stream, _) = listener.accept().unwrap();
-            let request = read_request(&mut stream);
+            let asked = read_request_from(&mut stream);
+            stream.write_all(proof_response(&asked, token, port).as_bytes()).unwrap();
+            let request = read_request_from(&mut stream);
             stream.write_all(&response).unwrap();
             request
         });
@@ -3707,6 +3935,115 @@ mod tests {
         let (port, holder) = serve_as_holder_of("pd_x", Vec::new());
         assert!(connect_proving_token(port, "pd_x").is_ok());
         let _ = holder.join();
+    }
+
+    /// A server that holds `token` and counts the connections it accepts: it proves itself on the
+    /// first and, when `keep_open`, answers the request after the proof on it with `after` (else
+    /// ends the connection). The handle yields the connections accepted and the requests seen on
+    /// the first.
+    fn serve_counting_connections(
+        token: &'static str,
+        keep_open: bool,
+        proof_headers: &'static str,
+        after: &'static str,
+    ) -> (u16, std::thread::JoinHandle<(usize, Vec<String>)>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut accepted = 1;
+            let mut seen = Vec::new();
+            let (mut first, _) = listener.accept().unwrap();
+            let asked = read_request_from(&mut first);
+            let mut answer = proof_response(&asked, token, port);
+            if !proof_headers.is_empty() {
+                answer = answer.replacen("\r\n\r\n", &format!("\r\n{proof_headers}\r\n\r\n"), 1);
+            }
+            seen.push(asked);
+            first.write_all(answer.as_bytes()).unwrap();
+            if keep_open {
+                seen.push(read_request_from(&mut first));
+                first.write_all(after.as_bytes()).unwrap();
+            } else {
+                drop(first);
+            }
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + Duration::from_millis(400);
+            while std::time::Instant::now() < until {
+                if listener.accept().is_ok() {
+                    accepted += 1;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            (accepted, seen)
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn the_proof_and_the_token_request_travel_on_one_connection() {
+        use std::io::{Read, Write};
+        let (port, server) = serve_counting_connections(
+            "pd_x",
+            true,
+            "",
+            "HTTP/1.1 200 OK\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}",
+        );
+        let mut stream = connect_proving_token(port, "pd_x").unwrap();
+        stream
+            .write_all(b"GET /api/x HTTP/1.0\r\nx-piwi-token: pd_x\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).unwrap();
+        assert!(answer.ends_with("{\"ok\":true}"), "{answer}");
+        let (accepted, seen) = server.join().unwrap();
+        assert_eq!(accepted, 1, "the proof and the token request share a connection");
+        assert!(seen[0].starts_with("GET /api/health HTTP/1.1\r\n"), "{seen:?}");
+        assert!(!seen[0].to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        assert!(seen[1].contains("x-piwi-token: pd_x"), "{seen:?}");
+    }
+
+    #[test]
+    fn a_server_that_ends_the_connection_after_the_proof_gets_no_token() {
+        for (keep_open, headers) in [(false, ""), (true, "connection: close")] {
+            let (port, server) = serve_counting_connections("pd_x", keep_open, headers, "");
+            let error = connect_proving_token(port, "pd_x");
+            assert_eq!(error.unwrap_err(), "the local server is not answering");
+            let (accepted, seen) = server.join().unwrap();
+            assert_eq!(accepted, 1, "no other connection is opened for the token");
+            assert!(!seen.join("").to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        }
+    }
+
+    #[test]
+    fn a_connection_the_peer_closed_is_not_open() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (peer, _) = listener.accept().unwrap();
+        assert!(connection_is_open(&client));
+        drop(peer);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!connection_is_open(&client));
+    }
+
+    #[test]
+    fn a_proof_response_is_read_to_its_framed_end() {
+        let sized = "HTTP/1.1 200 OK\r\nContent-Length: 2";
+        assert_eq!(response_body_len(sized, b"{}"), Ok(Some(2)));
+        assert_eq!(response_body_len(sized, b"{"), Ok(None));
+        // Bytes beyond the body are counted out, for the caller to refuse.
+        assert_eq!(response_body_len(sized, b"{}extra"), Ok(Some(2)));
+        // A body that ends with the connection has no end to read to.
+        assert_eq!(response_body_len("HTTP/1.1 200 OK", b"{}"), Err(()));
+        assert_eq!(response_body_len("HTTP/1.1 200 OK\r\nContent-Length: x", b""), Err(()));
+        let chunked = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked";
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n\r\n"), Ok(Some(12)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\nx: y\r\n\r\n"), Ok(Some(18)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"zz\r\n"), Ok(None));
+        assert!(head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: Close"));
+        assert!(!head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: keep-alive"));
     }
 
     fn download_dir(test: &str) -> std::path::PathBuf {
@@ -4092,7 +4429,7 @@ mod tests {
     const PROOF_4318: &str = "bd60241a0312fff0960cb18ebc24dc439b0f32cb3a1d82bf1a13d65367acf0ad";
 
     fn health_answer(status: &str, headers: &str) -> String {
-        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}\r\n\r\n{{}}")
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: 2\r\n{headers}\r\n\r\n{{}}")
     }
 
     #[test]
@@ -4382,5 +4719,33 @@ mod tests {
             ]
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The supervisor restarts a crashed sidecar with a growing backoff, gives up at the fifth crash inside the
+    /// window, and starts counting again once the window has passed.
+    #[test]
+    fn a_sidecar_that_crashes_again_and_again_is_given_up_on() {
+        let age = Duration::from_secs(10);
+        let mut seen = Vec::new();
+        let mut restarts = 0;
+        loop {
+            let decision = crash_decision(restarts, age);
+            if decision.give_up {
+                break;
+            }
+            seen.push(decision.backoff.as_secs());
+            restarts += 1;
+        }
+        assert_eq!(seen, vec![1, 2, 4, 8, 8]);
+        assert_eq!(restarts, 5);
+
+        // The window passed since the first crash: the older crashes no longer count.
+        assert_eq!(
+            crash_decision(5, Duration::from_secs(61)),
+            CrashDecision { new_window: true, give_up: false, backoff: Duration::from_secs(1) }
+        );
+        assert!(!crash_decision(5, Duration::from_secs(60)).new_window);
+        assert!(crash_decision(5, Duration::from_secs(60)).give_up);
+        assert!(!crash_decision(4, Duration::from_secs(60)).give_up);
     }
 }

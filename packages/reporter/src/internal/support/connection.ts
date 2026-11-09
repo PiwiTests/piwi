@@ -3,8 +3,10 @@
  * workspace `.env` files, then the desktop app's discovery file, in that order
  * (`resolvePiwiConnection` in `@piwitests/core/dotenv` keeps each key with the
  * URL it came with). `PIWI_DESKTOP_APP` places the desktop app with the
- * reporter's three modes: `off` never reads it, `prefer` puts it before the
- * environment and the `.env` outside CI (a `--server-url` flag still wins), and
+ * reporter's three modes: `off` never adopts it (the file is still read for its
+ * token when a key is set, so a key equal to it is held to the proof), `prefer`
+ * puts it before the environment and the `.env` outside CI (a `--server-url`
+ * flag still wins), and
  * `fallback`, the default, uses it only when no flag, variable or `.env` names
  * a URL or an API key. The `desktopApp` option of the Playwright config is not
  * read: the mode comes from `PIWI_DESKTOP_APP` alone.
@@ -13,9 +15,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
-import { defaultDesktopConfigPath, readDesktopConfig } from '../config/desktop.js';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from '../config/desktop.js';
 import { readDotEnv } from '../config/dotenv.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_ENV_KEYS, desktopAppMode } from '../config/env.js';
+import { DesktopNotProvenError } from '../transport/http-client.js';
 import { detectCi } from './ci.js';
 
 const CONFIG_NAMES = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.cjs'];
@@ -103,12 +107,15 @@ export function resolveCliConnection(
   const urlSet = Boolean(flags.serverUrl || env[PIWI_ENV_KEYS.serverUrl] || dotEnv[PIWI_ENV_KEYS.serverUrl]);
   const keySet = Boolean(flags.apiKey || env[PIWI_ENV_KEYS.apiKey] || anyKey);
   const readDesktop = mode !== 'off' && (preferLocally || urlSet || !keySet);
-  const desktop = readDesktop ? readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath()) : null;
+  const discoveryPath = env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath();
+  const desktop = readDesktop ? readDesktopConfig(discoveryPath) : null;
+  // A key equal to the file's token is the app's even when the app that wrote it is gone.
+  const desktopToken = keySet ? readDesktopToken(discoveryPath) : (desktop?.token ?? null);
   const preferDesktop = desktop !== null && preferLocally;
   const connection = resolvePiwiConnection(
     preferDesktop
-      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop }
-      : { flags, env, dotEnv, desktop },
+      ? { flags, env: projectOf(env), dotEnv: projectOf(dotEnv), desktop, desktopToken }
+      : { flags, env, dotEnv, desktop, desktopToken },
   );
   if (connection && flags.apiKey && connection.apiKey !== flags.apiKey) {
     const from = !preferDesktop && dotEnv[PIWI_ENV_KEYS.serverUrl] ? 'a .env file' : 'the desktop app';
@@ -116,5 +123,38 @@ export function resolveCliConnection(
       `${command}: --api-key is not sent to ${connection.serverUrl}, which comes from ${from}: a key goes only to the URL given with it. Pass --server-url to name the instance the key is for.`,
     );
   }
+  if (connection?.desktop && connection.apiKey) desktopKeys.add(keyAt(connection.serverUrl, connection.apiKey));
   return connection;
+}
+
+/** The desktop app's keys the commands resolved, each with the server it belongs to. */
+const desktopKeys = new Set<string>();
+const proofsInFlight = shareInFlight<DesktopProof>();
+
+function keyAt(serverUrl: string, key: string): string {
+  try {
+    return `${new URL(serverUrl).origin}\n${key}`;
+  } catch {
+    return `${serverUrl}\n${key}`;
+  }
+}
+
+/**
+ * `fetch` for the commands. A request that carries the desktop app's key, in `X-API-Key` or as a bearer token, goes
+ * out only after the server behind the URL proved it holds that key, a proof of its own for each request; otherwise it
+ * throws and nothing is sent, and a redirect is not followed. Any other request is `fetch`.
+ */
+export async function cliFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  const keys = [headers.get('x-api-key'), /^Bearer\s+(.+)$/i.exec(headers.get('authorization') ?? '')?.[1]];
+  let carriesDesktopKey = false;
+  for (const key of new Set(keys.filter((value): value is string => !!value))) {
+    const target = keyAt(String(input), key);
+    if (!desktopKeys.has(target)) continue;
+    carriesDesktopKey = true;
+    const serverUrl = new URL(input).origin;
+    const proof = await proofsInFlight(target, () => proveDesktopServer(serverUrl, key));
+    if (proof !== 'proven') throw new DesktopNotProvenError(serverUrl, proof);
+  }
+  return fetch(input, carriesDesktopKey ? { ...init, redirect: 'error' } : init);
 }
