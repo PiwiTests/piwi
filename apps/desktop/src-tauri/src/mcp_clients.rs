@@ -319,9 +319,14 @@ fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'st
     }
 }
 
-/// Whether `current` is `expected` with the command of a copy of this app that exists.
+/// Whether `current` is `expected` with the command of a copy of this app that exists: a path that holds a file. A
+/// bare name never is one, as nothing here looks it up on the `PATH`, so an entry with just `piwi-desktop` is not
+/// connected until it is written again.
 fn runs_another_copy(current: &Value, expected: &Value) -> bool {
-    differs_only_in_command(current, expected) && command_of(current).is_some_and(|command| !command_is_gone(command))
+    differs_only_in_command(current, expected) && command_of(current).is_some_and(|command| {
+        let path = Path::new(command);
+        path.components().count() > 1 && path.exists()
+    })
 }
 
 /// Whether an entry is one only this app would have written under `piwi`: a
@@ -1717,6 +1722,29 @@ mod tests {
             std::fs::write(&path, doc.to_string()).unwrap();
             assert_eq!(client_status("cursor", &path, &dir.0, &expected, None).status, "stale");
         }
+    }
+
+    /// A command that is just a name, as `piwi-desktop`, is not a copy of the app that exists: nothing looks it up on
+    /// the `PATH`, so the entry reads as stale (and Update writes the path), not connected. A path that holds a file is.
+    #[test]
+    fn an_entry_with_a_bare_command_name_is_not_connected() {
+        let dir = TempDir::new("status-bare");
+        let installed = dir.mkdir("Applications").join(APP_BINARY);
+        std::fs::write(&installed, "").unwrap();
+        let expected = entry_for("cursor");
+        let path = dir.join("cursor.json");
+        let status_of_command = |command: &str| {
+            let doc = json!({ "mcpServers": { "piwi-desktop": stdio_entry_for("cursor", command) } });
+            std::fs::write(&path, doc.to_string()).unwrap();
+            client_status("cursor", &path, &dir.0, &expected, None).status
+        };
+        for bare in [APP_BINARY, "piwi-desktop.exe", "Piwi-Desktop"] {
+            assert_eq!(status_of_command(bare), "stale", "{bare}");
+        }
+        assert_eq!(status_of_command(&installed.to_string_lossy()), "connected");
+        assert_eq!(status_of_command(&here()), "connected");
+        // A bare name that happens to name a file in the working directory is still not a place.
+        assert!(!runs_another_copy(&stdio_entry_for("cursor", APP_BINARY), &expected));
     }
 
     /// Connect and Disconnect both refuse to write from a place that does not last: the file and its backup stay as
