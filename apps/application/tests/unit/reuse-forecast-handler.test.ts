@@ -63,8 +63,14 @@ function execution(
   };
 }
 
-async function addRun(id: number, branch: string, cases: ReturnType<typeof execution>[], origin = 'ci'): Promise<void> {
-  const start = Date.now() + id * HOUR;
+async function addRun(
+  id: number,
+  branch: string,
+  cases: ReturnType<typeof execution>[],
+  origin = 'ci',
+  commit = String(id).repeat(40),
+): Promise<void> {
+  const start = Date.now() - (10 - id) * HOUR;
   await db.insert(schema.testRuns).values({
     id,
     projectId: 1,
@@ -72,7 +78,8 @@ async function addRun(id: number, branch: string, cases: ReturnType<typeof execu
     startTime: new Date(start),
     branch,
     origin,
-    metadata: { scm: { commit: String(id).repeat(40), branch }, piwiOrigin: { kind: origin } },
+    commit,
+    metadata: { scm: { commit, branch }, piwiOrigin: { kind: origin } },
     totalTests: cases.length,
   });
   await persistRunCases(db as never, 1, id, cases);
@@ -96,6 +103,18 @@ beforeAll(async () => {
   await addRun(4, 'feature/coupons', [cart('b', 7), execution('logs in', { start: 8 })]);
   // Run 5, a `piwi bug` run, is read by no forecast.
   await addRun(5, 'main', [cart('b', 9)], 'bug');
+  // Run 6 re-runs run 2's commit: the cart passes after a retry, and login fails before it reaches any covered code.
+  await addRun(
+    6,
+    'main',
+    [
+      execution('adds to cart', { start: 10, status: 'failed', files: [file(CART, 'a')] }),
+      execution('adds to cart', { start: 11, retries: 1, files: [file(CART, 'a')] }),
+      execution('logs in', { start: 12, status: 'failed' }),
+    ],
+    'ci',
+    '2'.repeat(40),
+  );
 });
 
 afterAll(async () => {
@@ -107,12 +126,12 @@ describe('getReuseForecast', () => {
     const forecast = await getReuseForecast(db as never, 1);
     expect(forecast.defaultBranch).toBe('main');
     expect(forecast.truncated).toBe(false);
-    // Reusable: cart in run 2 and run 4, login in run 2 and run 3 (failed).
-    expect(forecast.total).toMatchObject({ results: 8, comparable: 7, reusable: 4, failed: 1, flaky: 0 });
-    expect(forecast.total.durationMs).toBe(16_000);
-    expect(forecast.total.reusableDurationMs).toBe(8_000);
+    // Reusable: the cart in runs 2, 4 and 6 (retried), login in runs 2, 3 (failed) and 6 (failed at run 2's commit).
+    expect(forecast.total).toMatchObject({ results: 10, comparable: 8, reusable: 6, failed: 2, flaky: 1 });
+    expect(forecast.total.durationMs).toBe(22_000);
+    expect(forecast.total.reusableDurationMs).toBe(14_000);
     const [main, others] = forecast.scopes;
-    expect(main).toMatchObject({ scope: 'default-branch', results: 6, reusable: 3, failed: 1 });
+    expect(main).toMatchObject({ scope: 'default-branch', results: 8, reusable: 5, failed: 2, flaky: 1 });
     expect(others).toMatchObject({ scope: 'other-branches', results: 2, comparable: 1, reusable: 1, failed: 0 });
   });
 
@@ -122,15 +141,16 @@ describe('getReuseForecast', () => {
       .select({ id: schema.testCases.id })
       .from(schema.testCases)
       .where(eq(schema.testCases.title, 'logs in'));
-    expect(forecast.tests).toHaveLength(1);
+    expect(forecast.tests).toHaveLength(2);
     expect(forecast.tests[0]).toMatchObject({
       testCaseId: login!.id,
       title: 'logs in',
       filePath: 'tests/shop.spec.ts',
       browserName: 'chromium',
-      failed: 1,
+      failed: 2,
       flaky: 0,
     });
+    expect(forecast.tests[1]).toMatchObject({ title: 'adds to cart', failed: 0, flaky: 1 });
     const [source] = await db
       .select({ runId: schema.testRunsCases.testRunId })
       .from(schema.testRunsCases)
@@ -141,8 +161,8 @@ describe('getReuseForecast', () => {
 
   test('a project that stopped running keeps the 30 days before its latest result', async () => {
     const forecast = await getReuseForecast(db as never, 1, { now: new Date(Date.now() + 60 * 24 * HOUR) });
-    expect(forecast.total).toMatchObject({ results: 8, reusable: 4 });
-    expect(Date.parse(forecast.to)).toBeLessThan(Date.now() + 10 * HOUR);
+    expect(forecast.total).toMatchObject({ results: 10, reusable: 6 });
+    expect(Date.parse(forecast.to)).toBeLessThanOrEqual(Date.now());
   });
 
   test('a window that ended before the runs counts nothing', async () => {

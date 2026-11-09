@@ -20,12 +20,13 @@ changed. It lives on a project's **Selections** tab and in the `get_reuse_foreca
 
 ## What counts as reusable
 
-The forecast reads the 30 days before the project's latest result. A result is **reusable** when an earlier result of
-the same test, in the same Playwright project and another run:
+The forecast reads the 30 days before the project's latest run. A result is **reusable** when an earlier result of
+the same test, in the same Playwright project and another run, passed on its first attempt, is at most 14 days older,
+and either:
 
-- passed on its first attempt,
-- is at most 14 days older,
-- and recorded file versions (runtime, path and git blob) that are all among the versions the result itself ran.
+- recorded file versions (runtime, path and git blob) that are all among the versions the result itself ran;
+- or ran at the same commit, both runs on CI, which also counts a failure that stopped before reaching code the pass
+  ran.
 
 The code that pass ran had not changed, so a run could have skipped the result and kept the pass. The card gives the
 share of test time that was reusable, split between the [default branch](/features/branches) and the other branches

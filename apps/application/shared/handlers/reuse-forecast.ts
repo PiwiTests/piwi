@@ -9,7 +9,7 @@ import { coverageFragments, testCases, testRuns, testRunsCases } from '../../ser
 import { resolveCasePayloadContents } from '../../server/utils/case-payloads';
 import { parseCoveragePayload } from '../../server/utils/coverage';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { eligibleRunSql } from '../run-eligibility';
+import { CI_RUN_ORIGINS, eligibleRunSql } from '../run-eligibility';
 import {
   fileVersionId,
   forecastReuse,
@@ -21,15 +21,16 @@ import {
   type ReuseScope,
   type ReuseScopeForecast,
 } from '../reuse-forecast';
-import { isFailedStatus } from '../utils/test-counts';
+import { attemptKey, finalAttempts, isFailedStatus } from '../utils/test-counts';
 import type { DrizzleDB } from './db';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Attempts the forecast reads at most, the most recent first. */
+/** Attempts the forecast reads at most, from the most recent run back. */
 const MAX_ATTEMPTS = 100_000;
 /** Tests with identical-code failures the answer lists at most. */
 const MAX_LISTED_TESTS = 20;
 const ID_CHUNK = 500;
+const CI_ORIGINS: ReadonlySet<string> = new Set(CI_RUN_ORIGINS);
 
 export interface ReuseForecastTest {
   testCaseId: number;
@@ -50,7 +51,7 @@ export interface ReuseForecast {
   maxSourceAgeDays: number;
   /** Start of the window the counts cover, ISO 8601; later than `windowDays` before `to` when the read was truncated. */
   from: string;
-  /** End of the window: the project's latest result, ISO 8601. */
+  /** End of the window: the start of the project's latest run, ISO 8601. */
   to: string;
   /** The branch whose results count as `default-branch`. */
   defaultBranch: string;
@@ -60,7 +61,7 @@ export interface ReuseForecast {
   tests: ReuseForecastTest[];
   /** Tests with identical-code failures beyond those listed. */
   moreTests: number;
-  /** True when the window held more attempts than the forecast reads, so it covers the most recent ones only. */
+  /** True when the window held more attempts than the forecast reads, so it covers the most recent runs only. */
   truncated: boolean;
 }
 
@@ -71,13 +72,14 @@ interface AttemptRow {
   browserName: string | null;
   repeatEachIndex: number;
   retries: number | null;
-  finalAttempt: boolean;
   status: string;
   passedAfterFailure: boolean;
   duration: number | null;
-  createdAt: Date;
   payloadId: number | null;
+  startTime: Date;
   branch: string | null;
+  commit: string | null;
+  origin: string;
 }
 
 function outcomeOf(row: AttemptRow): ReuseOutcome | null {
@@ -85,11 +87,15 @@ function outcomeOf(row: AttemptRow): ReuseOutcome | null {
   return isFailedStatus(row.status) ? 'failed' : null;
 }
 
-/** The file versions each coverage payload names, or null when they cannot be compared. */
+/**
+ * The file versions each coverage payload names, or null when they cannot be
+ * compared. Versions are interned as numbers, and payloads naming the same
+ * versions share one set.
+ */
 async function loadPayloadVersions(
   db: DrizzleDB,
   payloadIds: number[],
-): Promise<Map<number, ReadonlySet<string> | null>> {
+): Promise<Map<number, ReadonlySet<number> | null>> {
   const contents = await resolveCasePayloadContents(db, payloadIds);
   const parsed = new Map<number, number[] | null>();
   for (const id of payloadIds) {
@@ -97,7 +103,8 @@ async function loadPayloadVersions(
     parsed.set(id, payload && !payload.incomplete && payload.fragmentIds.length > 0 ? payload.fragmentIds : null);
   }
   const fragmentIds = [...new Set([...parsed.values()].flatMap((ids) => ids ?? []))];
-  const versions = new Map<number, string | null>();
+  const interned = new Map<string, number>();
+  const versions = new Map<number, number | null>();
   for (let i = 0; i < fragmentIds.length; i += ID_CHUNK) {
     const rows = await db
       .select({
@@ -108,25 +115,34 @@ async function loadPayloadVersions(
       })
       .from(coverageFragments)
       .where(inArray(coverageFragments.id, fragmentIds.slice(i, i + ID_CHUNK)));
-    for (const row of rows) versions.set(row.id, row.blob ? fileVersionId(row.runtime, row.path, row.blob) : null);
+    for (const row of rows) {
+      if (!row.blob) {
+        versions.set(row.id, null);
+        continue;
+      }
+      const key = fileVersionId(row.runtime, row.path, row.blob);
+      let version = interned.get(key);
+      if (version === undefined) interned.set(key, (version = interned.size));
+      versions.set(row.id, version);
+    }
   }
-  const out = new Map<number, ReadonlySet<string> | null>();
+  const shared = new Map<string, ReadonlySet<number>>();
+  const out = new Map<number, ReadonlySet<number> | null>();
   for (const [payloadId, ids] of parsed) {
-    if (!ids) {
+    const set: number[] = [];
+    for (const id of ids ?? []) {
+      const version = versions.get(id);
+      if (version == null) break;
+      set.push(version);
+    }
+    if (!ids || set.length < ids.length) {
       out.set(payloadId, null);
       continue;
     }
-    const set = new Set<string>();
-    let comparable = true;
-    for (const id of ids) {
-      const version = versions.get(id);
-      if (!version) {
-        comparable = false;
-        break;
-      }
-      set.add(version);
-    }
-    out.set(payloadId, comparable ? set : null);
+    const key = [...new Set(set)].sort((a, b) => a - b).join(',');
+    let versionSet = shared.get(key);
+    if (!versionSet) shared.set(key, (versionSet = new Set(set)));
+    out.set(payloadId, versionSet);
   }
   return out;
 }
@@ -141,19 +157,18 @@ export async function getReuseForecast(
   projectId: number,
   opts: { now?: Date } = {},
 ): Promise<ReuseForecast> {
-  const now = opts.now?.getTime() ?? Date.now();
-  const projectResults = and(
+  const now = opts.now ?? new Date();
+  const projectRuns = and(
     eq(testRuns.projectId, projectId),
-    lte(testRunsCases.createdAt, new Date(now)),
+    lte(testRuns.startTime, now),
     eligibleRunSql('pass-reuse'),
   );
-  // The window ends at the project's latest result, so a project that stopped running still has its last 30 days.
+  // The window ends at the project's latest run, so a project that stopped running still has its last 30 days.
   const [latest] = await db
-    .select({ at: max(testRunsCases.createdAt) })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-    .where(projectResults);
-  const end = latest?.at ? new Date(latest.at).getTime() : now;
+    .select({ at: max(testRuns.startTime) })
+    .from(testRuns)
+    .where(projectRuns);
+  const end = latest?.at ? new Date(latest.at).getTime() : now.getTime();
   const windowFrom = end - REUSE_FORECAST_WINDOW_DAYS * DAY_MS;
   const maxSourceAgeMs = REUSE_FORECAST_MAX_SOURCE_AGE_DAYS * DAY_MS;
 
@@ -165,64 +180,63 @@ export async function getReuseForecast(
       browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
-      finalAttempt: testRunsCases.finalAttempt,
       status: testRunsCases.status,
       passedAfterFailure: testRunsCases.passedAfterFailure,
       duration: testRunsCases.duration,
-      createdAt: testRunsCases.createdAt,
       payloadId: testRunsCases.coveragePayloadId,
+      startTime: testRuns.startTime,
       branch: testRuns.branch,
+      commit: testRuns.commit,
+      origin: testRuns.origin,
     })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-    .where(and(projectResults, gte(testRunsCases.createdAt, new Date(windowFrom - maxSourceAgeMs))))
-    .orderBy(desc(testRunsCases.id))
+    .from(testRuns)
+    .innerJoin(testRunsCases, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(projectRuns, gte(testRuns.startTime, new Date(windowFrom - maxSourceAgeMs))))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(MAX_ATTEMPTS + 1);
   const truncated = fetched.length > MAX_ATTEMPTS;
-  const attempts = truncated ? fetched.slice(0, MAX_ATTEMPTS) : fetched;
+  // A truncated read keeps whole runs: the last run it reached is dropped, being partly read, unless it is the only one.
+  const wholeRuns = truncated ? fetched.filter((row) => row.runId !== fetched[fetched.length - 1]!.runId) : fetched;
+  const attempts = wholeRuns.length > 0 ? wholeRuns : fetched.slice(0, MAX_ATTEMPTS);
 
-  // One result per run, test, Playwright project and repetition: its final attempt, and the time of all its attempts.
-  const results = new Map<string, { final: AttemptRow; durationMs: number }>();
+  const byRun = new Map<number, AttemptRow[]>();
   for (const row of attempts) {
-    const key = `${row.runId}\x00${row.testCaseId}\x00${row.browserName ?? ''}\x00${row.repeatEachIndex}`;
-    const entry = results.get(key);
-    if (!entry) {
-      results.set(key, { final: row, durationMs: row.duration ?? 0 });
-      continue;
-    }
-    entry.durationMs += row.duration ?? 0;
-    const isLater =
-      (row.finalAttempt && !entry.final.finalAttempt) ||
-      (row.finalAttempt === entry.final.finalAttempt && (row.retries ?? 0) > (entry.final.retries ?? 0));
-    if (isLater) entry.final = row;
+    const rows = byRun.get(row.runId);
+    if (rows) rows.push(row);
+    else byRun.set(row.runId, [row]);
   }
 
   const defaultBranch = await projectDefaultBranch(db, projectId);
-  const payloadIds = [
-    ...new Set([...results.values()].flatMap((r) => (r.final.payloadId == null ? [] : [r.final.payloadId]))),
-  ];
+  const payloadIds = [...new Set(attempts.flatMap((row) => (row.payloadId == null ? [] : [row.payloadId])))];
   const versions = await loadPayloadVersions(db, payloadIds);
 
   const forecastResults: ForecastResult[] = [];
-  for (const { final, durationMs } of results.values()) {
-    const outcome = outcomeOf(final);
-    if (!outcome) continue;
-    forecastResults.push({
-      executionId: final.id,
-      runId: final.runId,
-      testCaseId: final.testCaseId,
-      browserName: final.browserName ?? '',
-      at: final.createdAt.getTime(),
-      scope: !final.branch || final.branch === defaultBranch ? 'default-branch' : 'other-branches',
-      outcome,
-      durationMs,
-      versions: final.payloadId == null ? null : (versions.get(final.payloadId) ?? null),
-    });
+  for (const rows of byRun.values()) {
+    const durations = new Map<string, number>();
+    for (const row of rows) durations.set(attemptKey(row), (durations.get(attemptKey(row)) ?? 0) + (row.duration ?? 0));
+    for (const final of finalAttempts(rows)) {
+      const outcome = outcomeOf(final);
+      if (!outcome) continue;
+      forecastResults.push({
+        executionId: final.id,
+        runId: final.runId,
+        testCaseId: final.testCaseId,
+        browserName: final.browserName ?? '',
+        at: final.startTime.getTime(),
+        scope: !final.branch || final.branch === defaultBranch ? 'default-branch' : 'other-branches',
+        outcome,
+        durationMs: durations.get(attemptKey(final)) ?? 0,
+        versions: final.payloadId == null ? null : (versions.get(final.payloadId) ?? null),
+        ciCommit: final.commit && CI_ORIGINS.has(final.origin) ? final.commit : null,
+      });
+    }
   }
 
-  // A truncated read covers the window from its oldest attempt on.
-  const oldest = attempts.length > 0 ? attempts[attempts.length - 1]!.createdAt.getTime() : windowFrom;
-  const from = truncated ? Math.max(windowFrom, oldest) : windowFrom;
+  // A truncated read counts only the runs with a full source window behind them, or, when even one run fills the
+  // read, every run it holds.
+  const oldest = attempts.length > 0 ? attempts[attempts.length - 1]!.startTime.getTime() : windowFrom;
+  const withSources = Math.max(windowFrom, oldest + maxSourceAgeMs);
+  const from = truncated ? (withSources <= end ? withSources : oldest) : windowFrom;
   const core = forecastReuse(forecastResults, { from, maxSourceAgeMs });
 
   const listed = core.tests.slice(0, MAX_LISTED_TESTS);

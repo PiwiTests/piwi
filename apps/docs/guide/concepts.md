@@ -412,7 +412,7 @@ question by line: the share of the changed lines that ran. See [Uncovered change
 
 A test result whose code had already passed unchanged: an earlier first-attempt pass of the same test and Playwright
 project, at most 14 days older, recorded file versions (path and git blob) that are all among the versions this result
-ran. A reusable result that failed is an **identical-code failure**: the test, its data or its environment caused it.
+ran, or ran at the same commit on CI. A reusable result that failed is an **identical-code failure**: the test, its data or its environment caused it.
 See [Reuse forecast](/features/reuse-forecast).
 
 ### Suspect lines

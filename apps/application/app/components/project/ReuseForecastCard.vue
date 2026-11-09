@@ -45,15 +45,11 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
   <SectionCard
     title="Pass reuse forecast"
     icon="i-lucide-recycle"
-    :subtitle="`The test time of the last ${forecast?.windowDays ?? 30} days that ran code identical to an earlier first-attempt pass, at most ${forecast?.maxSourceAgeDays ?? 14} days old: what a run could have skipped.`"
+    :subtitle="`The test time of the ${forecast?.windowDays ?? 30} days before the latest run that ran code identical to an earlier first-attempt pass, at most ${forecast?.maxSourceAgeDays ?? 14} days old: what a run could have skipped.`"
     data-shot="reuse-forecast"
   >
     <LoadingState v-if="loading && !forecast" />
-    <EmptyState
-      v-else-if="!total || total.results === 0"
-      icon="i-lucide-recycle"
-      text="No test results in the last 30 days."
-    />
+    <EmptyState v-else-if="!total || total.results === 0" icon="i-lucide-recycle" text="No test results to read yet." />
     <EmptyState
       v-else-if="!hasComparable"
       icon="i-lucide-recycle"
@@ -82,10 +78,12 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
 
       <div class="space-y-1">
         <p class="text-sm text-highlighted leading-relaxed">
-          {{ share(total.reusableDurationMs, total.durationMs) }} of the test time ({{
-            formatLongDuration(total.reusableDurationMs)
-          }}
-          of {{ formatLongDuration(total.durationMs) }}) ran code identical to an earlier pass.
+          {{ share(total.reusableDurationMs, total.durationMs) }} of the test time (<span
+            :title="`${total.reusableDurationMs} ms`"
+            >{{ formatLongDuration(total.reusableDurationMs) }}</span
+          >
+          of <span :title="`${total.durationMs} ms`">{{ formatLongDuration(total.durationMs) }}</span
+          >) ran code identical to an earlier pass.
           <template v-if="total.failed + total.flaky === 0">None of those results failed.</template>
           <template v-else>
             Of those results, {{ total.failed }} failed and {{ total.flaky }} passed only on a retry: reuse would have
@@ -93,11 +91,15 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
           </template>
         </p>
         <p class="text-xs text-muted">
-          An upper bound: changes to test code and configuration are not seen yet.
+          Results from <ClientDate :date="forecast!.from" date-only /> to <ClientDate :date="forecast!.to" date-only />.
+          An upper bound: the comparison covers the application files coverage records, not test code or configuration.
           <template v-if="uncomparable > 0">
             {{ uncomparable }} of {{ total.results }} results recorded no coverage with file versions and count as run.
           </template>
-          <template v-if="forecast?.truncated">Read from the most recent results only.</template>
+          <template v-if="forecast?.truncated"
+            >The project has more results than the forecast reads at once, so it covers the most recent runs
+            only.</template
+          >
         </p>
       </div>
 
@@ -113,13 +115,18 @@ const scopes = computed(() => (forecast.value?.scopes ?? []).filter((s) => s.res
             :key="`${test.testCaseId}-${test.browserName}`"
             class="py-1.5 flex items-start justify-between gap-3"
           >
-            <NuxtLink :to="`/test-run-cases/${test.lastExecutionId}`" class="min-w-0 text-primary hover:underline">
-              <span class="block text-sm">{{ test.title }}</span>
-              <span class="block text-xs text-muted font-mono">
-                <span class="break-all">{{ test.filePath }}</span>
+            <div class="min-w-0">
+              <NuxtLink
+                :to="`/test-run-cases/${test.lastExecutionId}`"
+                class="block text-sm text-primary hover:underline"
+              >
+                {{ test.title }}
+              </NuxtLink>
+              <span class="block text-xs text-muted">
+                <OpenInIdeLink :file-path="test.filePath" :project-key="projectId" inline />
                 <span v-if="test.browserName" class="whitespace-nowrap"> · {{ test.browserName }}</span>
               </span>
-            </NuxtLink>
+            </div>
             <span class="shrink-0 text-xs text-muted text-right">
               {{
                 [test.failed ? `${test.failed} failed` : '', test.flaky ? `${test.flaky} retried` : '']

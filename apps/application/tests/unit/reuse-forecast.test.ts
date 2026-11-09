@@ -19,6 +19,7 @@ function result(overrides: Partial<ForecastResult> & { at: number }): ForecastRe
     outcome: 'passed',
     durationMs: 1_000,
     versions: new Set([v('src/cart.ts', 'a'), v('src/api.ts', 'b')]),
+    ciCommit: null,
     ...overrides,
   };
 }
@@ -103,6 +104,37 @@ describe('forecastReuse', () => {
       OPTS,
     );
     expect(out.total).toMatchObject({ results: 5, comparable: 3, reusable: 0 });
+  });
+
+  test('any pass of the last 14 days counts, not only the newest', () => {
+    const out = forecastReuse(
+      [
+        result({ at: T0 + DAY }),
+        result({
+          at: T0 + 2 * DAY,
+          scope: 'other-branches',
+          versions: new Set([v('src/cart.ts', 'c'), v('src/api.ts', 'b')]),
+        }),
+        result({ at: T0 + 3 * DAY }),
+      ],
+      OPTS,
+    );
+    expect(out.total.reusable).toBe(1);
+    expect(out.scopes['default-branch'].reusable).toBe(1);
+  });
+
+  test('a failure that stopped early is reusable at the CI commit of a pass, and only there', () => {
+    const early = new Set([v('src/cart.ts', 'a')]);
+    const out = forecastReuse(
+      [
+        result({ at: T0 + DAY, ciCommit: 'c1' }),
+        result({ at: T0 + 2 * DAY, ciCommit: 'c1', outcome: 'failed', versions: early }),
+        result({ at: T0 + 3 * DAY, ciCommit: 'c2', outcome: 'failed', versions: early }),
+        result({ at: T0 + 4 * DAY, ciCommit: null, outcome: 'failed', versions: null }),
+      ],
+      OPTS,
+    );
+    expect(out.total).toMatchObject({ results: 4, comparable: 3, reusable: 1, failed: 1 });
   });
 
   test('failures and retried passes with the code unchanged are counted and listed by test', () => {
