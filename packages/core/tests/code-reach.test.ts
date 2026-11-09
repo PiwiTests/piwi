@@ -413,6 +413,72 @@ describe('block coverage at line granularity', () => {
     ]);
   });
 
+  test('through a map, `} else {` ran with the branch its `}` closes', () => {
+    // One segment per token, as magic-string and Rollup map them: the `}` ends the branch that ran, `else` and `{`
+    // start the one that did not.
+    const branches = 'function pick(ok) {\n  if (ok) {\n    a();\n  } else {\n    b();\n  }\n}\npick(true);\n';
+    const find = (text: string, from = 0) => branches.indexOf(text, from);
+    const picked: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/pick.js',
+      source: branches,
+      functions: [
+        { functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: branches.length, count: 1 }] },
+        {
+          functionName: 'pick',
+          isBlockCoverage: true,
+          ranges: [
+            { startOffset: 0, endOffset: find('}\npick') + 1, count: 1 },
+            { startOffset: find(' else'), endOffset: find('}', find('b()')) + 1, count: 0 },
+          ],
+        },
+      ],
+    };
+    const segments: Array<Array<[number, number]>> = branches
+      .split('\n')
+      .slice(0, 8)
+      .map((text, i) => {
+        const at = text.length - text.trimStart().length;
+        return text.trim() === '} else {'
+          ? [
+              [at, i],
+              [at + 1, i],
+              [at + 7, i],
+            ]
+          : [[at, i]];
+      });
+    expect([...scriptLines(picked, executedOffsets(picked.functions), mapOf(segments))]).toEqual([
+      [
+        0,
+        {
+          executable: [[1, 8]],
+          lines: [
+            [1, 4],
+            [7, 8],
+          ],
+        },
+      ],
+    ]);
+  });
+
+  test('through a map, segments at one column read the same code', () => {
+    // Two original lines map to the start of the same generated line.
+    const call = 'foo();\n';
+    const once: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/once.js',
+      source: call,
+      functions: [{ functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: 6, count: 1 }] }],
+    };
+    const map = mapOf([
+      [
+        [0, 0],
+        [0, 1],
+      ],
+    ]);
+    expect([...scriptLines(once, executedOffsets(once.functions), map)]).toEqual([
+      [0, { executable: [[1, 2]], lines: [[1, 2]] }],
+    ]);
+  });
+
   test('without a map, a line ran when any function holding code on it ran', () => {
     const two = 'const a = () => 1, b = () => 2;\nb();\n';
     const callbacks: JsCoverageEntry = {

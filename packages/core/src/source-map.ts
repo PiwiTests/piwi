@@ -43,8 +43,8 @@ export interface SourceMapLookup {
   ): [number, number] | null;
   /**
    * Visit every segment that maps to a source, in generated order: its 0-based generated line and column, its
-   * source index, its original 0-based line, and the generated column the next segment on its line starts at, where
-   * it ends (-1 for the last one, which runs to the line's end).
+   * source index, its original 0-based line, and the generated column it ends at: the next column after its own that
+   * a segment on its line starts at, -1 when none does and it runs to the line's end.
    */
   forEachMapping(
     visit: (line: number, column: number, source: number, originalLine: number, end: number) => void,
@@ -245,7 +245,9 @@ export function decodeSourceMap(raw: RawSourceMap): SourceMapLookup | null {
         const stop = segments.lineStarts[line + 1]!;
         for (let i = segments.lineStarts[line]!; i < stop; i++) {
           const source = segments.sources[i]!;
-          const end = i + 1 < stop ? segments.columns[i + 1]! : -1;
+          let next = i + 1;
+          while (next < stop && segments.columns[next]! <= segments.columns[i]!) next++;
+          const end = next < stop ? segments.columns[next]! : -1;
           if (source >= 0) visit(line, segments.columns[i]!, source, segments.originalLines[i]!, end);
         }
       }

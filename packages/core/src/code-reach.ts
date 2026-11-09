@@ -14,8 +14,8 @@
  * At line granularity, V8's block coverage tells which code ran inside a
  * function: at each offset, the innermost range around it (a function or a
  * block) gives its count. A source line is executable when a source map
- * segment maps to it, and it ran when one of those segments starts at an
- * offset that ran. A script with no map counts the lines holding code inside
+ * segment holding code maps to it, and it ran when one of those segments ran
+ * at its first character of code ({@link scriptLines}). A script with no map counts the lines holding code inside
  * the functions V8 lists, its top level left out, and one of them ran when
  * code on it ran.
  *
@@ -61,7 +61,10 @@ export interface ScriptText {
  * text from its column to the next segment's on its line, or to the line's end.
  */
 export interface SegmentCode {
-  /** The offset of the segment's first character that is not whitespace; -1 for a segment over whitespace alone. */
+  /**
+   * The offset of the segment's first character that is not whitespace; -1 for a segment with no code: whitespace
+   * alone, or nothing, past the end of its line or of the script.
+   */
   offsets: Int32Array;
   /** 1 for a segment whose code is closing punctuation alone: `}`, `)`, `]`, `,` and `;`. */
   closing: Uint8Array;
@@ -332,24 +335,23 @@ function toLineRanges(lines: Iterable<number>): LineRange[] {
 }
 
 /**
- * What the segments mapped to one original line tell, as bits: whether one holds code and whether one of those ran,
- * whether one holds closing punctuation alone and whether the first of those ran.
+ * What the segments mapped to one original line tell, as bits: whether one holding code ran, whether one holds
+ * closing punctuation alone, and whether the first of those ran.
  */
-const LINE_CODE = 1;
-const LINE_CODE_RAN = 2;
-const LINE_CLOSING = 4;
-const LINE_CLOSING_RAN = 8;
+const LINE_CODE_RAN = 1;
+const LINE_CLOSING = 2;
+const LINE_CLOSING_RAN = 4;
 
 /**
  * A script's executable lines and those that ran, per source, from the offsets
  * that ran ({@link executedOffsets}). Through a source map, by the index of the
  * source: the original lines a segment holding code maps to, a segment over
- * whitespace alone counting for none (a bundler maps a line's indentation to the
- * line before it). A line ran when one of its segments ran at its first
- * character of code; a line whose segments hold closing punctuation alone (`},`)
- * ran when its first one did, as the `}` closes the block that line ends. Without
- * the code under each segment (`text.segments`, or the source), a segment counts
- * at its column. Without a map, under index -1: the lines
+ * whitespace alone counting for none. A segment ran when its first character of
+ * code ran; of the segments holding closing punctuation alone (`}`, `)`, `]`,
+ * `,`, `;`), only a line's first one counts. A line ran when one of its
+ * segments that counts ran: `},` ran with the block its `}` closes, `} else {`
+ * with either branch. Without the code under each segment (`text.segments`, or
+ * the source), a segment counts at its column. Without a map, under index -1: the lines
  * of the script's own text with code on them (`text.code`) inside the functions
  * its coverage lists, its top level left out; a line ran when an offset of its
  * code ran. Empty when the text is not known.
@@ -380,16 +382,16 @@ export function scriptLines(
       const state = lines.get(originalLine) ?? 0;
       const ran = offset < read.length && ranBetween(executed, offset, offset + 1);
       if (known && segments.closing[index]) {
-        // The first closing segment of the line decides for it; later ones close the code around it.
+        // The line's first closing segment counts; later ones close the code around it.
         lines.set(originalLine, state & LINE_CLOSING ? state : state | LINE_CLOSING | (ran ? LINE_CLOSING_RAN : 0));
       } else {
-        lines.set(originalLine, state | LINE_CODE | (ran ? LINE_CODE_RAN : 0));
+        lines.set(originalLine, state | (ran ? LINE_CODE_RAN : 0));
       }
     });
     for (const [source, lines] of states) {
       const ran: number[] = [];
       for (const [line, state] of lines) {
-        if (state & LINE_CODE ? state & LINE_CODE_RAN : state & LINE_CLOSING_RAN) ran.push(line);
+        if (state & (LINE_CODE_RAN | LINE_CLOSING_RAN)) ran.push(line);
       }
       out.set(source, { executable: toLineRanges(lines.keys()), lines: toLineRanges(ran) });
     }
