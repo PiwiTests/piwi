@@ -12,7 +12,21 @@ use std::path::Path;
 /// Owner read/write.
 const PRIVATE_FILE_MODE: u32 = 0o600;
 /// Owner read/write/search.
+#[cfg(unix)]
 const PRIVATE_DIR_MODE: u32 = 0o700;
+
+/// A `DirBuilder` whose folders are open to their owner only.
+pub(crate) fn private_dir_builder() -> std::fs::DirBuilder {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(PRIVATE_DIR_MODE);
+        builder
+    }
+    #[cfg(not(unix))]
+    std::fs::DirBuilder::new()
+}
 
 /// Create `dir` (and its missing parents) and restrict `dir` itself to its
 /// owner. An existing folder is tightened too: only folders this app owns are
@@ -23,10 +37,7 @@ pub(crate) fn create_private_dir(dir: &Path) -> io::Result<()> {
         if let Some(parent) = dir.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut builder = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, PRIVATE_DIR_MODE);
-        match builder.create(dir) {
+        match private_dir_builder().create(dir) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists && dir.is_dir() => {}
             Err(e) => return Err(e),
