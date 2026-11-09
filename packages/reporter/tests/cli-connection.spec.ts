@@ -219,7 +219,7 @@ describe('cliFetch', () => {
     return resolveCliConnection({}, { PIWI_DESKTOP_CONFIG: file, ...env }, [])!;
   };
 
-  it('sends the desktop key after the server proved it holds the key, and asks once', async () => {
+  it('sends the desktop key after the server proved it holds the key, with a proof of its own for each request', async () => {
     const connection = desktopConnection();
     const headers = { 'X-API-Key': connection.apiKey! };
     expect((await cliFetch(`${connection.serverUrl}/api/a`, { headers })).status).toBe(200);
@@ -227,8 +227,30 @@ describe('cliFetch', () => {
     expect(seen.map((r) => [r.url, r.key])).toEqual([
       ['/api/health', undefined],
       ['/api/a', 'pd_desktop'],
+      ['/api/health', undefined],
       ['/api/b', 'pd_desktop'],
     ]);
+  });
+
+  it('sends no key once the server stopped proving it, with no request failing in between', async () => {
+    const connection = desktopConnection();
+    const headers = { 'X-API-Key': connection.apiKey! };
+    await cliFetch(`${connection.serverUrl}/api/a`, { headers });
+    answer = async () => null;
+    seen.length = 0;
+    await expect(cliFetch(`${connection.serverUrl}/api/b`, { headers })).rejects.toThrow(/token is not sent/);
+    expect(seen.map((r) => [r.url, r.key])).toEqual([['/api/health', undefined]]);
+  });
+
+  it('asks for the proof when the desktop key is in one header and another key is in the other', async () => {
+    answer = async () => null;
+    const connection = desktopConnection();
+    await expect(
+      cliFetch(`${connection.serverUrl}/api/a`, {
+        headers: { 'X-API-Key': 'pd_someone_else', Authorization: `Bearer ${connection.apiKey}` },
+      }),
+    ).rejects.toThrow(/token is not sent/);
+    expect(seen.map((r) => r.url)).toEqual(['/api/health']);
   });
 
   it('asks for the proof of a desktop key carried as a bearer token too', async () => {

@@ -121,7 +121,6 @@ export function readDesktopDiscovery(env: Record<string, string | undefined>): D
   const discovery = readJson(desktopConfigPath(env)) as {
     url?: unknown;
     token?: unknown;
-    pid?: unknown;
     projects?: unknown;
   } | null;
   if (!discovery || typeof discovery.url !== 'string' || typeof discovery.token !== 'string') return null;
@@ -131,7 +130,7 @@ export function readDesktopDiscovery(env: Record<string, string | undefined>): D
       )
     : [];
   const url = discovery.url.replace(/\/+$/, '');
-  holdDesktopToken(url, discovery.token, typeof discovery.pid === 'number' ? discovery.pid : null);
+  holdDesktopToken(url, discovery.token);
   return { url, token: discovery.token, projects };
 }
 

@@ -7,7 +7,7 @@ import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
-import { HttpError } from '../src/internal/transport/http-client.js';
+import { DesktopNotProvenError, HttpError } from '../src/internal/transport/http-client.js';
 import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } from '../src/types/wire.js';
@@ -1165,6 +1165,34 @@ describe('StreamManager start asked again', () => {
     expect(requests).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
     expect(linesWith('began the run on an earlier try whose answer was lost')).toHaveLength(1);
     await drain(sm);
+  });
+
+  it('gives the registered run up at once when the server did not prove the desktop token, and asks again when it did not answer', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new DesktopNotProvenError('http://localhost:3000', 'unproven');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(requests).toEqual(['/api/test-runs/5/begin']);
+    expect(sm.enabled).toBe(false);
+    await drain(sm);
+
+    cleanup();
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const asked: string[] = [];
+    const again = makeManager(async (url) => {
+      asked.push(url);
+      if (asked.length === 1) throw new DesktopNotProvenError('http://localhost:3000', 'unreachable');
+      return { runId: 5, streamToken: 'tok' };
+    });
+    again.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(asked).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
+    expect(again.runId).toBe(5);
+    await drain(again);
   });
 
   it.each([400, 403, 404])('gives the stream up at once on a %i, keeping no event for it', async (status) => {

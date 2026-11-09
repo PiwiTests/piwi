@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
-import { proveDesktopServer } from '@piwitests/core/desktop-proof';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../config/desktop.js';
 import { readDotEnv } from '../config/dotenv.js';
 import { PIWI_DESKTOP_CONFIG_ENV, PIWI_ENV_KEYS, desktopAppMode } from '../config/env.js';
@@ -124,8 +124,7 @@ export function resolveCliConnection(
 
 /** The desktop app's keys the commands resolved, each with the server it belongs to. */
 const desktopKeys = new Set<string>();
-/** Those of them whose server proved it holds the key. */
-const provenKeys = new Set<string>();
+const proofsInFlight = shareInFlight<DesktopProof>();
 
 function keyAt(serverUrl: string, key: string): string {
   try {
@@ -137,18 +136,18 @@ function keyAt(serverUrl: string, key: string): string {
 
 /**
  * `fetch` for the commands. A request that carries the desktop app's key, in `X-API-Key` or as a bearer token, goes
- * out only after the server behind the URL proved it holds that key; otherwise it throws and nothing is sent. Any
- * other request is `fetch`.
+ * out only after the server behind the URL proved it holds that key, a proof of its own for each request; otherwise it
+ * throws and nothing is sent. Any other request is `fetch`.
  */
 export async function cliFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
-  const key = headers.get('x-api-key') ?? /^Bearer\s+(.+)$/i.exec(headers.get('authorization') ?? '')?.[1] ?? null;
-  const target = key ? keyAt(String(input), key) : null;
-  if (key && target && desktopKeys.has(target) && !provenKeys.has(target)) {
+  const keys = [headers.get('x-api-key'), /^Bearer\s+(.+)$/i.exec(headers.get('authorization') ?? '')?.[1]];
+  for (const key of new Set(keys.filter((value): value is string => !!value))) {
+    const target = keyAt(String(input), key);
+    if (!desktopKeys.has(target)) continue;
     const serverUrl = new URL(input).origin;
-    const proof = await proveDesktopServer(serverUrl, key);
+    const proof = await proofsInFlight(target, () => proveDesktopServer(serverUrl, key));
     if (proof !== 'proven') throw new DesktopNotProvenError(serverUrl, proof);
-    provenKeys.add(target);
   }
   return fetch(input, init);
 }

@@ -86,3 +86,21 @@ export async function proveDesktopServer(
   const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
   return sameHex(proof, await desktopTokenProof(token, port, challenge)) ? 'proven' : 'unproven';
 }
+
+/**
+ * A function that runs `check` for `key` and hands every caller that arrives while it is running the same answer. An
+ * answer that has arrived is not kept: the next call runs `check` again, so each request that carries the token follows
+ * its own proof.
+ */
+export function shareInFlight<T>(): (key: string, check: () => Promise<T>) => Promise<T> {
+  const running = new Map<string, Promise<T>>();
+  return (key, check) => {
+    const existing = running.get(key);
+    if (existing) return existing;
+    const started = check().finally(() => {
+      if (running.get(key) === started) running.delete(key);
+    });
+    running.set(key, started);
+    return started;
+  };
+}

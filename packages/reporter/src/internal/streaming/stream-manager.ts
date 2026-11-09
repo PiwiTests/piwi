@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { errorMessage } from '../support/errors.js';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError, runTokenHeaders } from '../transport/http-client.js';
+import { DesktopNotProvenError, HttpError, runTokenHeaders } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
@@ -953,9 +953,10 @@ function isStatus(error: unknown, status: number): boolean {
 
 /**
  * A refusal of a stream's request that no retry changes: a client error other than a timeout (408) or a rate limit
- * (429).
+ * (429), or a server that did not prove it holds the desktop token (one that did not answer is asked again).
  */
 function refuses(error: unknown): boolean {
+  if (error instanceof DesktopNotProvenError) return error.code === undefined;
   return error instanceof HttpError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 }
 

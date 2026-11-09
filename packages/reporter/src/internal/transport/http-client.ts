@@ -2,7 +2,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
 import FormData from 'form-data';
-import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
 import { REQUEST_TOKEN_PREFIX } from '@piwitests/core/run-request';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
@@ -369,31 +369,19 @@ export class HttpClient {
   private async request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     if (!this.desktopToken || opts.auth !== this.desktopToken) return this.send(method, pathname, opts);
     await this.requireDesktopProof();
-    try {
-      const res = await this.send(method, pathname, opts);
-      if (res.status === 401 || res.status === 403) this.desktopProof = null;
-      return res;
-    } catch (error) {
-      this.desktopProof = null;
-      throw error;
-    }
+    return this.send(method, pathname, opts);
   }
 
-  private desktopProof: Promise<void> | null = null;
+  private readonly proofsInFlight = shareInFlight<DesktopProof>();
 
   /**
-   * Resolves once the server proved it holds the desktop token; the first request that carries the token asks, and a
-   * proof or a refusal stands for the later ones. A server that did not answer is asked again by the next request, and
-   * so is one after a request that carried the token failed or was refused with 401 or 403.
+   * Resolves once the server proved it holds the desktop token. Each request that carries the token asks for its own
+   * proof; requests that arrive while a proof is being asked share it, and a proof that has arrived is never used for
+   * a later request.
    */
-  private requireDesktopProof(): Promise<void> {
-    this.desktopProof ??= (async () => {
-      const proof = await proveDesktopServer(this.serverUrl, this.desktopToken!);
-      if (proof === 'proven') return;
-      if (proof === 'unreachable') this.desktopProof = null;
-      throw new DesktopNotProvenError(this.serverUrl, proof);
-    })();
-    return this.desktopProof;
+  private async requireDesktopProof(): Promise<void> {
+    const proof = await this.proofsInFlight('proof', () => proveDesktopServer(this.serverUrl, this.desktopToken!));
+    if (proof !== 'proven') throw new DesktopNotProvenError(this.serverUrl, proof);
   }
 
   private send(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {

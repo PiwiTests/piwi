@@ -6,6 +6,7 @@ import {
   isDesktopChallenge,
   newDesktopChallenge,
   proveDesktopServer,
+  shareInFlight,
   type ProofRequest,
 } from '../src/desktop-proof';
 
@@ -79,5 +80,29 @@ describe('proving the desktop server', () => {
     };
     expect(await proveDesktopServer('http://127.0.0.1:3000', token, { request: refused })).toBe('unreachable');
     expect(await proveDesktopServer('not a url', token, { request: refused })).toBe('unreachable');
+  });
+});
+
+describe('a proof shared while it is in flight', () => {
+  test('gives callers that arrive while it runs one answer, and runs again for a later caller', async () => {
+    const share = shareInFlight<string>();
+    let runs = 0;
+    const check = async () => {
+      runs++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return `answer ${runs}`;
+    };
+    const together = await Promise.all([share('a', check), share('a', check)]);
+    expect(together).toEqual(['answer 1', 'answer 1']);
+    expect(await share('a', check)).toBe('answer 2');
+    expect(runs).toBe(2);
+  });
+
+  test('keeps nothing for a check that failed, and keeps keys apart', async () => {
+    const share = shareInFlight<string>();
+    await expect(share('a', () => Promise.reject(new Error('down')))).rejects.toThrow('down');
+    expect(await share('a', async () => 'up')).toBe('up');
+    const [one, two] = await Promise.all([share('x', async () => 'x'), share('y', async () => 'y')]);
+    expect([one, two]).toEqual(['x', 'y']);
   });
 });

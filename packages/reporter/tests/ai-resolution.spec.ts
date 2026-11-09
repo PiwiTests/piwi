@@ -398,7 +398,7 @@ describe('ServerStepResolver', () => {
       return { url, seen, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
     }
 
-    it('sends the token after the server proves it holds it', async () => {
+    it('sends the token after the server proves it holds it, for each step', async () => {
       const app = await serve(TOKEN);
       try {
         const resolver = new ServerStepResolver(app.url, TOKEN, TOKEN);
@@ -407,10 +407,32 @@ describe('ServerStepResolver', () => {
         expect(app.seen).toEqual([
           ['/api/health', undefined],
           ['/api/ai/step-resolution', TOKEN],
+          ['/api/health', undefined],
           ['/api/ai/step-resolution', TOKEN],
         ]);
       } finally {
         await app.close();
+      }
+    });
+
+    it('sends no token to a server that replaced the app between two steps', async () => {
+      const app = await serve(TOKEN);
+      const resolver = new ServerStepResolver(app.url, TOKEN, TOKEN);
+      await resolver.resolveStep(request);
+      await app.close();
+
+      const impostor = http.createServer((req, res) => {
+        seenByImpostor.push([req.url, req.headers['x-api-key'] as string | undefined]);
+        req.resume();
+        res.end('{}');
+      });
+      const seenByImpostor: Array<[string | undefined, string | undefined]> = [];
+      await new Promise<void>((resolve) => impostor.listen(Number(new URL(app.url).port), '127.0.0.1', resolve));
+      try {
+        await expect(resolver.resolveStep(request)).rejects.toThrow(/token is not sent/);
+        expect(seenByImpostor).toEqual([['/api/health', undefined]]);
+      } finally {
+        await new Promise<void>((resolve) => impostor.close(() => resolve()));
       }
     });
 

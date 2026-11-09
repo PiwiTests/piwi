@@ -6,7 +6,7 @@
  *
  * The desktop app's token goes out only after the server at its address proves it holds the token.
  */
-import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
 import { EnvHttpProxyAgent, fetch as proxiedFetch, type Dispatcher } from 'undici';
 
 /** Whether an environment names a proxy for http or https. */
@@ -37,8 +37,8 @@ function proxyAgent(env: Record<string, string | undefined>): Dispatcher | null 
   return agent.dispatcher;
 }
 
-/** The desktop token the service read from the app's discovery file, by `origin\ntoken`, and what its server proved. */
-const desktopTokens = new Map<string, Promise<DesktopProof> | null>();
+/** The desktop tokens the service read from the app's discovery file, by `origin\ntoken`. */
+const desktopTokens = new Set<string>();
 
 const tokenKey = (serverUrl: string, token: string): string | null => {
   try {
@@ -48,30 +48,15 @@ const tokenKey = (serverUrl: string, token: string): string | null => {
   }
 };
 
-/** The process id the discovery file named when each held token was last read. */
-const desktopPids = new Map<string, number | null>();
-
-/**
- * Mark `token` as the desktop app's at `serverUrl`: a request that carries it waits for the server's proof. `pid` is the
- * process the discovery file names; a different one than the last read means the app restarted, so the proof is asked again.
- */
-export function holdDesktopToken(serverUrl: string, token: string, pid: number | null = null): void {
+/** Mark `token` as the desktop app's at `serverUrl`: a request that carries it waits for the server's proof. */
+export function holdDesktopToken(serverUrl: string, token: string): void {
   const key = tokenKey(serverUrl, token);
-  if (!key) return;
-  if (!desktopTokens.has(key) || desktopPids.get(key) !== pid) desktopTokens.set(key, null);
-  desktopPids.set(key, pid);
+  if (key) desktopTokens.add(key);
 }
 
-/** Drop the proof of a held token, so the next request that carries it asks the server again. */
-function forgetProof(serverUrl: string, token: string): void {
-  const key = tokenKey(serverUrl, token);
-  if (key && desktopTokens.has(key)) desktopTokens.set(key, null);
-}
-
-/** Forget the desktop tokens held and their proofs. */
+/** Forget the desktop tokens held. */
 export function forgetDesktopTokens(): void {
   desktopTokens.clear();
-  desktopPids.clear();
 }
 
 /** The error of a request that would carry the desktop token to a server that did not prove it holds the token. */
@@ -86,32 +71,27 @@ export class DesktopNotProvenError extends Error {
   }
 }
 
+const proofsInFlight = shareInFlight<DesktopProof>();
+
 /**
  * Resolves when the server at `serverUrl` proved it holds `token`, when `token` is the desktop app's; rejects with
- * {@link DesktopNotProvenError} when it did not. A proof is asked once; an unreachable server, a request that carried the
- * token and failed to connect or was refused (401, 403), and a restart of the app (a new process id in its discovery
- * file) each make the next request ask again.
+ * {@link DesktopNotProvenError} when it did not. Each request that carries the token asks for its own proof; requests
+ * that arrive while a proof is being asked share it, and a proof that has arrived is never used for a later request.
  */
 export async function requireDesktopProof(serverUrl: string, token: string): Promise<void> {
   const key = tokenKey(serverUrl, token);
   if (!key || !desktopTokens.has(key)) return;
   const origin = key.slice(0, key.indexOf('\n'));
-  let proof = desktopTokens.get(key) ?? null;
-  if (!proof) {
-    proof = proveDesktopServer(origin, token);
-    desktopTokens.set(key, proof);
-  }
-  const result = await proof;
-  if (result === 'proven') return;
-  if (result === 'unreachable') desktopTokens.set(key, null);
-  throw new DesktopNotProvenError(origin, result);
+  const result = await proofsInFlight(key, () => proveDesktopServer(origin, token));
+  if (result !== 'proven') throw new DesktopNotProvenError(origin, result);
 }
 
-/** The key a request carries in `X-API-Key` or as a bearer token; null with neither. */
-function carriedKey(headers: RequestInit['headers'] | undefined): string | null {
-  if (!headers) return null;
+/** The keys a request carries, in `X-API-Key` and as a bearer token. */
+function carriedKeys(headers: RequestInit['headers'] | undefined): string[] {
+  if (!headers) return [];
   const read = new Headers(headers);
-  return read.get('x-api-key') ?? /^Bearer\s+(.+)$/i.exec(read.get('authorization') ?? '')?.[1] ?? null;
+  const keys = [read.get('x-api-key'), /^Bearer\s+(.+)$/i.exec(read.get('authorization') ?? '')?.[1]];
+  return [...new Set(keys.filter((key): key is string => !!key))];
 }
 
 /**
@@ -119,16 +99,8 @@ function carriedKey(headers: RequestInit['headers'] | undefined): string | null 
  * A request that carries the desktop app's token waits for the server's proof first.
  */
 export async function instanceFetch(url: string, init: RequestInit = {}, env = process.env): Promise<Response> {
-  const key = carriedKey(init.headers);
-  if (key) await requireDesktopProof(url, key);
-  try {
-    const response = await send(url, init, env);
-    if (key && (response.status === 401 || response.status === 403)) forgetProof(url, key);
-    return response;
-  } catch (error) {
-    if (key) forgetProof(url, key);
-    throw error;
-  }
+  for (const key of carriedKeys(init.headers)) await requireDesktopProof(url, key);
+  return send(url, init, env);
 }
 
 function send(url: string, init: RequestInit, env: Record<string, string | undefined>): Promise<Response> {

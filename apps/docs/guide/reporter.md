@@ -120,7 +120,7 @@ uploads to the [desktop app](/features/desktop) on the same machine, which publi
 to `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs. `PIWI_DESKTOP_CONFIG`
 overrides the path. A CI job or a project pointed elsewhere is never redirected unless it opts in below.
 
-The token goes to the address only after the server there proves it holds it: before the first upload the reporter
+The token goes only to a server that proves it holds it: before each request that carries it, the reporter
 sends a one-time challenge to `/api/health` and checks the answer's proof. With no proof, or the wrong one, no
 token is sent, nothing is uploaded and the reporter says so in one line. A run the app starts itself (a reproduction or
 flake lab) exports `PIWI_DESKTOP_KEY=1` beside `PIWI_API_KEY`, marking the key as the app's and holding it to the

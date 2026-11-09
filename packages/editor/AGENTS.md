@@ -92,9 +92,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#connection-order-and-watching-head))
 - **The desktop app's token goes out only after the server proves it holds it.** `readDesktopDiscovery` registers
   the token (`holdDesktopToken`); `instanceFetch` waits for `requireDesktopProof` (the shared `proveDesktopServer`)
-  before a request whose `X-API-Key` or bearer is a registered token, and `piwi/mcp` leaves out a desktop server that
-  did not prove it. A rejected or 401/403 request that carried the token, and a new `pid` in the discovery file, drop
-  the proof so the next request asks again. Every request goes through `instanceFetch`; a new call site must too. Checked by
+  before a request whose `X-API-Key` or bearer is a registered token (either header), and `piwi/mcp` leaves out a
+  desktop server that did not prove it. Each such request asks for its own proof; requests that start while a proof is
+  being asked share it (`shareInFlight`), and a proof that has arrived is never used again. Every request goes through `instanceFetch`; a new call site must too. Checked by
   `tests/desktop-token-proof.test.ts` and `tests/lsp.test.ts` ("the desktop app’s MCP server for the agent").
 - **The desktop app sits beside a shared instance, never replaces it.** `piwi/status` keeps the named instance
   (`instance`) and says whether the app runs (`desktopUrl`), so Connect offers both. Checked by `tests/lsp.test.ts`
