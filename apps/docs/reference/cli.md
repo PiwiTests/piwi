@@ -27,6 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
+| [`plan`](#plan) | Plan a run that reuses the passes whose code has not changed (experimental) |
 | [`rerun`](#rerun) | Run the tests a [CI re-run](/features/ci-rerun) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
@@ -220,6 +221,8 @@ Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwr
 | `--strict` | Fail (exit 2) instead of falling back when unreachable |
 | `--pkg-runner <cmd>` | Package runner for the printed command (default `npx`) |
 | `--json` | Print the full resolution as JSON (`select` only) |
+| `--reuse` | Experimental, `run` only: [plan](#plan) the selection with pass reuse, then run only the tests the plan keeps. `full` plans the whole suite. Not with `--shard` |
+| `--plan <id>` | Experimental, `run` only: run the tests of a stored [plan](#plan), or with `--shard` one shard of them |
 | `-h`, `--help` | Show help |
 
 Pass extra Playwright arguments after `--`: `piwi run smoke -- --headed --workers=1`.
@@ -235,6 +238,33 @@ no `--shard` of its own, since the resolved tests are already the shard's. A `se
 arguments to `playwright test` sets `PIWI_SHARD` itself, to the same `i/n` it gave `--shard`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
+
+## `plan`
+
+**Experimental.** Plan a run that skips each test whose code has not changed since it last passed, and print the
+plan's id. Needs the pass reuse capability, which an administrator turns on in Settings. `<key>` is a saved or built-in
+selection, or `full` for the whole suite. The dashboard names the commits of each test's newest reusable pass; `plan`
+diffs the working tree against each one, fetching a commit a shallow clone lacks, and the dashboard keeps a test only
+when the change reaches its code. How a test is decided: [Reuse forecast](/features/reuse-forecast#skipping-reusable-tests).
+
+```bash
+npx @piwitests/reporter plan full
+npx @piwitests/reporter run --plan 42 --shard 2/4
+```
+
+In a CI matrix, one job runs `plan` and hands the id to the shard jobs, so every shard reads the same plan. A plan is
+kept for 24 hours. `run --plan` runs the full suite (sharded by Playwright with `--shard`) when the dashboard cannot be
+reached, or exits `2` under `--strict`; a plan that reuses every test starts no run.
+
+| Flag | Description |
+|---|---|
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
+| `--json` | Print the plan as JSON instead of its id |
+| `-h`, `--help` | Show help |
+
+**Exit codes:** `0` planned · `2` could not plan.
 
 ## `rerun`
 

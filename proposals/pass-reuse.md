@@ -12,7 +12,13 @@ the `pass-reuse` run use), `GET /api/projects/:id/selections/reuse-forecast` and
 card, `get_reuse_forecast`, and the [Reuse forecast](../apps/docs/features/reuse-forecast.md) page. Its window ends at
 the project's latest run, so a project that stopped running keeps its last 30 days, and a result also matches a pass
 at the same CI commit, so a failure that stopped before reaching the code its pass ran still counts. Imported runs
-carry no coverage, so they never serve as sources without a rule of their own. PRs 2 to 6 are not started. The contracts it would add are entry D66 of
+carry no coverage, so they never serve as sources without a rule of their own. PR 2 is built, behind the opt-in `pass-reuse` capability: the reporter's `scm.worktree`,
+the `run_plans` table, the rule in `server/utils/pass-reuse.ts`, the routes under `/api/projects/:id/run-plans`, and
+`piwi plan` with `piwi run --reuse` and `--plan`. It departs from the design in three places: the run's fingerprint is
+the Playwright version alone (the browser revisions, the operating system and the environment wait for the wire's
+`reuse` object of PR 3); a test is reused only when its source run passed every one of its Playwright projects; and the
+check against the source's own coverage is at file level (a changed file the source ran keeps the test), with impact's
+line level applied to the other tests' coverage. PRs 3 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**

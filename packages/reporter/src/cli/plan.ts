@@ -118,6 +118,11 @@ function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string):
   };
 }
 
+/** The project's id, from its name or id. */
+function projectIdOf(args: PlanArgs): Promise<number> {
+  return resolveProjectId({ serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project, key: '' });
+}
+
 function tryGit(args: string[]): string | null {
   try {
     return git(args).trim() || null;
@@ -205,7 +210,7 @@ export async function runPlanCommand(argv: string[], env: NodeJS.ProcessEnv = pr
     return EXIT_ERROR;
   }
   try {
-    const projectId = await resolveProjectId(args);
+    const projectId = await projectIdOf(args);
     const plan = await makePlan(args, projectId, args.key!);
     console.error(`piwi plan: ${describePlan(plan)}`);
     console.log(args.json ? JSON.stringify(plan, null, 2) : String(plan.id));
@@ -265,7 +270,7 @@ export async function runPlannedRun(argv: string[], env: NodeJS.ProcessEnv = pro
   let projectId: number;
   let planId: number;
   try {
-    projectId = await resolveProjectId(args);
+    projectId = await projectIdOf(args);
     if (args.planId !== null) planId = args.planId;
     else {
       const plan = await makePlan(args, projectId, args.key!);

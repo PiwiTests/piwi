@@ -212,7 +212,7 @@ export function fetchPlanSources(
   playwrightVersion: string | null,
 ): Promise<{ candidates: number; commits: Array<{ commit: string; tests: number }> }> {
   return planRequest(
-    `${options.serverUrl}/api/projects/${projectId}/plans/sources`,
+    `${options.serverUrl}/api/projects/${projectId}/run-plans/sources`,
     { method: 'POST', body: JSON.stringify({ selection, playwrightVersion }) },
     options.apiKey,
     'finding the passes to reuse',
@@ -232,7 +232,7 @@ export function createPlan(
   },
 ): Promise<CreatedPlan> {
   return planRequest(
-    `${options.serverUrl}/api/projects/${projectId}/plans`,
+    `${options.serverUrl}/api/projects/${projectId}/run-plans`,
     { method: 'POST', body: JSON.stringify(body) },
     options.apiKey,
     'planning the run',
@@ -251,7 +251,7 @@ export function fetchPlan(
   if (options.order) query.set('order', options.order);
   const suffix = query.size > 0 ? `?${query}` : '';
   return planRequest(
-    `${options.serverUrl}/api/projects/${projectId}/plans/${planId}${suffix}`,
+    `${options.serverUrl}/api/projects/${projectId}/run-plans/${planId}${suffix}`,
     { method: 'GET' },
     options.apiKey,
     `reading plan ${planId}`,

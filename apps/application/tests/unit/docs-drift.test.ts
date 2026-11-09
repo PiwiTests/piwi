@@ -481,6 +481,7 @@ describe('hand-written reference pages match the code', () => {
     gate: '`gate`',
     'quality-report': '`report`',
     select: '{#select-run}',
+    plan: '`plan`',
     rerun: '`rerun`',
     probe: '`probe`',
     flake: '`flake`',

@@ -51,6 +51,17 @@ with the failing execution and the pass it matched, which is strong evidence whe
 - **Runs that do not count**: Flake Lab, probe, bisect, reproduction, `piwi bug` and private runs, and runs flagged
   as an [environment incident](/features/environment-incidents).
 
+## Skipping reusable tests
+
+**Experimental.** With the pass reuse capability on, `piwi plan` and `piwi run --reuse` skip the tests the forecast
+would count as reusable, with a stricter rule. A test's pass stands in for it only when that pass came from a clean
+checkout of a commit, with the same Playwright version, and every result of the test in that run passed on its first
+attempt with coverage naming its file versions. The working tree is diffed against that commit: the test runs when
+[impact from that diff](/features/change-impact) selects it, when a changed file maps to no test, or when a file the
+pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
+executions, or tagged `@no-reuse` always runs. The skipped tests are not recorded in the run. Commands:
+[`plan`](/reference/cli#plan). Design record: [pass reuse](https://github.com/PiwiTests/piwi/blob/main/proposals/pass-reuse.md).
+
 ## Related
 
 - [Test selections](/features/test-selection): saved subsets, balanced shards and the CI guard

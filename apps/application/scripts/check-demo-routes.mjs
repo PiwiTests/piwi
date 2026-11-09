@@ -39,9 +39,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/auth/avatar', // the signed-in user's profile picture; the demo stores no upload and its users sign in with no provider, so none has one
   'POST /api/test-runs/:id/gate', // CI gate policy — there is no pipeline to gate in a browser demo
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
-  'POST /api/projects/:id/plans/sources', // pass reuse — plans need a local git diff the browser demo cannot produce
-  'POST /api/projects/:id/plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
-  'GET /api/projects/:id/plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/plans` stores
+  'POST /api/projects/:id/run-plans/sources', // pass reuse — plans need a local git diff the browser demo cannot produce
+  'POST /api/projects/:id/run-plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
+  'GET /api/projects/:id/run-plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/run-plans` stores
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
