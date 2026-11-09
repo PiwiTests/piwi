@@ -799,6 +799,33 @@ mod tests {
         assert!(main_window_may_navigate(&url("tauri://localhost/index.html"), session.sidecar_port(Some(3000)), None));
     }
 
+    /// An auxiliary or output window built just as the sidecar exited is closed, not left on the dead origin; one
+    /// built while the session is live stays.
+    #[test]
+    fn a_window_built_after_the_sidecar_exited_is_closed() {
+        let session = Session::new(None, None);
+        begin_session(Some(&session), &always(), || {});
+        let closed = std::cell::Cell::new(false);
+        let live = |session: &Session| session.sidecar_port(Some(3000));
+
+        assert!(crate::keep_window_if_live(live(&session), 3000, || closed.set(true)).is_ok());
+        assert!(!closed.get());
+
+        session.exited();
+        assert!(crate::keep_window_if_live(live(&session), 3000, || closed.set(true)).is_err());
+        assert!(closed.get());
+
+        closed.set(false);
+        begin_session(Some(&session), &always(), || {});
+        session.gave_up();
+        assert!(crate::keep_window_if_live(live(&session), 3000, || closed.set(true)).is_err());
+        assert!(closed.get());
+        // Another port is not the sidecar this window was opened for.
+        closed.set(false);
+        assert!(crate::keep_window_if_live(Some(3001), 3000, || closed.set(true)).is_err());
+        assert!(closed.get());
+    }
+
     /// A proof that no longer stands when the load runs leaves the session not live.
     #[test]
     fn a_stale_proof_does_not_make_the_session_live() {

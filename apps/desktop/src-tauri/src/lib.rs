@@ -981,6 +981,17 @@ pub(crate) fn live_sidecar_port(app: &AppHandle) -> Option<u16> {
     app.try_state::<session::Session>().and_then(|session| session.sidecar_port(port))
 }
 
+/// A window of the sidecar's origin that was just built stays only if the session is still live on `port`: when the
+/// sidecar exited since the live check, `leave_server` has already closed the other windows and this one, built
+/// after, would stay on the dead origin, so `close` runs and the open fails.
+fn keep_window_if_live(live: Option<u16>, port: u16, close: impl FnOnce()) -> Result<(), String> {
+    if live == Some(port) {
+        return Ok(());
+    }
+    close();
+    Err("the server is not running".into())
+}
+
 /// The IPC grants of the dashboard (`runtime-capabilities/remote.json`), scoped
 /// to the exact origin of the sidecar this launch spawned.
 fn remote_capability(port: u16) -> String {
@@ -1934,6 +1945,9 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     // In debug mode, open the inspector on the new window too (the trace viewer,
     // an attachment) so it can be debugged like the main window.
     if app.try_state::<DebugMode>().is_some_and(|d| d.0) {
@@ -1996,7 +2010,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         "{OUTPUT_WINDOW_PREFIX}{name}_{}",
         AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
     );
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+    let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
         .title("Piwi Dashboard")
         .inner_size(960.0, 640.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
@@ -2006,6 +2020,9 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         .on_navigation(move |url| is_sidecar_url(url, port))
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     Ok(label)
 }
 
