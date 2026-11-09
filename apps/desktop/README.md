@@ -160,11 +160,11 @@ channel, so a per-user install pulls a per-user update.
     accepts it. One that comes while the dashboard page loads, or after the
     server exits (`SessionWindows::hold_links`), waits until the page listens
     and takes it (`desktop_take_linked_page`), the restarted session's page
-    included; after that, a link goes to the window as `piwi:open-page`
-    (`open_links`). A second launch hands
-    its link to the running app through single-instance's `deep-link` feature.
-    Only the `open` host is read, so a link shows a page and never acts, and a
-    launch whose first argument is a link acts on no other argument
+    included; while the session is not live, no page takes it. After that, a
+    link goes to the window as `piwi:open-page` (`open_links`). A second launch
+    hands its link to the running app through single-instance's `deep-link`
+    feature. Only the `open` host is read, so a link shows a page and never
+    acts, and a launch whose first argument is a link acts on no other argument
     (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
     it can split.
 

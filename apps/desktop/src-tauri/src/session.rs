@@ -292,15 +292,12 @@ pub(crate) fn server_stopped(app: &AppHandle, server: &ServerSession) -> u64 {
     stopped_for_restart(app, session.as_deref(), server.texts.restarting)
 }
 
-/// Links wait first, so none reaches the page of the sidecar that exited; then the session ends, and the windows
-/// leave the sidecar's origin once a session was opened.
+/// The session ends first, so no page of the sidecar that exited takes a link or is sent one; then links wait for the
+/// next dashboard page, and the windows leave the sidecar's origin once a session was opened.
 fn stopped_for_restart<W: SessionWindows>(windows: &W, session: Option<&Session>, text: &'static str) -> u64 {
+    let restart = session.map_or(0, Session::exited);
     windows.hold_links();
-    let Some(session) = session else {
-        return 0;
-    };
-    let restart = session.exited();
-    if session.opened.load(Ordering::SeqCst) {
+    if session.is_some_and(|session| session.opened.load(Ordering::SeqCst)) {
         windows.leave_server(text);
     }
     restart
@@ -505,6 +502,8 @@ mod tests {
     struct Recorder {
         told: RefCell<Vec<String>>,
         loads: RefCell<Vec<(String, ProofHolds)>>,
+        /// When set, the session whose state a hold of links records.
+        session: Option<Arc<Session>>,
     }
 
     impl Recorder {
@@ -523,7 +522,11 @@ mod tests {
 
     impl SessionWindows for Recorder {
         fn hold_links(&self) {
-            self.told.borrow_mut().push("hold links".to_string());
+            let told = match &self.session {
+                Some(session) => format!("hold links, live: {}", session.is_live()),
+                None => "hold links".to_string(),
+            };
+            self.told.borrow_mut().push(told);
         }
         fn leave_server(&self, text: &'static str) {
             self.told.borrow_mut().push(format!("leave: {text}"));
@@ -901,7 +904,7 @@ mod tests {
     }
 
     /// A link that comes after the sidecar exited is held before the window leaves its page, whether or not a
-    /// session was opened.
+    /// session was opened, and only once the session ended, so no page of that sidecar takes one in between.
     #[test]
     fn the_sidecar_exiting_holds_links_before_the_window_leaves_it() {
         let session = Session::new(None, None);
@@ -917,6 +920,13 @@ mod tests {
         let windows = Recorder::default();
         assert_eq!(stopped_for_restart(&windows, None, "restarting"), 0);
         assert_eq!(*windows.told.borrow(), vec!["hold links".to_string()]);
+
+        let session = Arc::new(Session::new(None, None));
+        session.opened.store(true, Ordering::SeqCst);
+        assert!(session.go_live_if(&always()));
+        let windows = Recorder { session: Some(session.clone()), ..Recorder::default() };
+        assert_eq!(stopped_for_restart(&windows, Some(&session), "restarting"), 1);
+        assert_eq!(*windows.told.borrow(), vec!["hold links, live: false".to_string(), "leave: restarting".to_string()]);
     }
 
     /// The dashboard window reaches the sidecar's origin only while a proof held for the session it loaded.
