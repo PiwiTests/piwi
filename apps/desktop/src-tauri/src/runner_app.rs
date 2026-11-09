@@ -332,19 +332,24 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             // splash says, and ends when the supervisor gives up or the app quits.
             let nav_handle = app.handle().clone();
             let quitting = shutting_down.clone();
-            // Read before the wait: a host that exits after its proof passes makes the load below stale.
-            let generation = session::generation_of(&nav_handle);
             std::thread::spawn(move || {
-                let ready = session::wait_for_proof(
+                let proved = session::await_first_proof(
                     port,
                     &token,
                     &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<Session>() {
+                            session.mark_opened();
+                        }
+                    },
                     || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
                     || {
                         append_log(&log_path, "host not ready yet, still waiting");
                         show_splash_status(&nav_handle, SPLASH_SLOW, true);
                     },
                 );
+                let ready = proved.is_some();
                 append_log(
                     &log_path,
                     if ready {
@@ -359,11 +364,8 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     }
                     return;
                 }
-                let holds = session::proof_holds(&nav_handle, generation, quitting.clone());
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting);
-                if let Some(session) = nav_handle.try_state::<Session>() {
-                    session.mark_opened();
-                }
                 nav_handle.load_session(bootstrap_url(port, &token, None), holds);
             });
 

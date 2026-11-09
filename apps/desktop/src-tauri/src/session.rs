@@ -47,7 +47,7 @@ impl Session {
         *self.status.lock().unwrap()
     }
 
-    /// The number of sidecar exits so far: a proof belongs to the generation read before it was asked for.
+    /// The number of sidecar exits so far: a proof belongs to the generation read once the session counts the exits.
     pub(crate) fn generation(&self) -> u64 {
         self.restarts.load(Ordering::SeqCst)
     }
@@ -70,7 +70,7 @@ pub(crate) fn when_proof_holds(holds: &ProofHolds, then: impl FnOnce()) {
     }
 }
 
-/// The generation to read before waiting for a proof (see `proof_holds`); 0 without a session.
+/// The generation a proof is held to (see `proof_holds` and `await_first_proof`); 0 without a session.
 pub(crate) fn generation_of(app: &AppHandle) -> u64 {
     app.try_state::<Session>().map_or(0, |session| session.generation())
 }
@@ -96,8 +96,8 @@ fn is_splash_page(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
 pub(crate) trait SessionWindows {
     /// Every window on the sidecar's origin leaves it, and the splash shows `text`.
     fn leave_server(&self, text: &'static str);
-    /// The splash shows `text`.
-    fn show_splash(&self, text: &'static str);
+    /// The splash shows `text`; with `reveal`, the window comes up too.
+    fn show_splash(&self, text: &'static str, reveal: bool);
     /// The dashboard window loads the sidecar's session from `bootstrap_url`, unless `holds` says on the thread that
     /// navigates that the proof no longer stands: the sidecar may have exited since it passed.
     fn load_session(&self, bootstrap_url: String, holds: ProofHolds);
@@ -123,8 +123,8 @@ impl SessionWindows for AppHandle {
         show_splash_status(self, text, false);
     }
 
-    fn show_splash(&self, text: &'static str) {
-        show_splash_status(self, text, false);
+    fn show_splash(&self, text: &'static str, reveal: bool) {
+        show_splash_status(self, text, reveal);
     }
 
     fn load_session(&self, bootstrap_url: String, holds: ProofHolds) {
@@ -175,6 +175,35 @@ pub(crate) fn wait_for_proof(
     }
 }
 
+/// Wait for the first proof of the sidecar and settle which process it belongs to. A passing proof marks the session
+/// opened, so a sidecar that exits after it is the restart's to bring back (`server_stopped`, `server_restarted`);
+/// the generation is read after that, and a second proof must pass at it. A sidecar that exited before the first proof
+/// leaves the generation of the process that proved last, and the wait goes on. Returns the generation the proof
+/// belongs to, or None once `stop` says to give up.
+pub(crate) fn await_first_proof(
+    port: u16,
+    token: &str,
+    pace: &ProofPace,
+    generation: impl Fn() -> u64,
+    mark_opened: impl Fn(),
+    stop: impl Fn() -> bool,
+    mut on_slow: impl FnMut(),
+) -> Option<u64> {
+    loop {
+        if !wait_for_proof(port, token, pace, &stop, &mut on_slow) {
+            return None;
+        }
+        mark_opened();
+        let at = generation();
+        if health_ok(port, token) {
+            return Some(at);
+        }
+        if stop() {
+            return None;
+        }
+    }
+}
+
 /// The texts the splash shows for a server that is stopped, slow to come back, or gone.
 #[derive(Clone, Copy)]
 pub(crate) struct SplashTexts {
@@ -220,11 +249,25 @@ pub(crate) fn server_restarted(app: &AppHandle, server: ServerSession, restart: 
         let superseded = || !session.unchanged_since(restart);
         let gave_up = || app.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
         let holds = proof_holds(&app, restart, quitting.clone());
-        let proved = resume_session(&app, &server, |windows| windows.show_splash(server.texts.slow), holds);
-        if !proved && !superseded() && !quitting.load(Ordering::SeqCst) && gave_up() {
-            app.show_splash(server.texts.stopped);
-        }
+        let proved = resume_session(&app, &server, |windows| windows.show_splash(server.texts.slow, false), holds);
+        say_stopped(&app, server.texts.stopped, proved, superseded(), quitting.load(Ordering::SeqCst), gave_up());
     });
+}
+
+/// A wait for a restarted server's proof ended without one: when it ended because the supervisor gave up, the splash
+/// says the server stopped and the window comes up, since a restart in progress is not news but this is. Nothing is
+/// said when a later restart took over the wait or the app is quitting.
+fn say_stopped<W: SessionWindows>(
+    windows: &W,
+    text: &'static str,
+    proved: bool,
+    superseded: bool,
+    quitting: bool,
+    gave_up: bool,
+) {
+    if !proved && !superseded && !quitting && gave_up {
+        windows.show_splash(text, true);
+    }
 }
 
 /// Wait for the restarted server's proof, then load its session. A server that never proves gets no session, and the
@@ -294,8 +337,8 @@ mod tests {
         fn leave_server(&self, text: &'static str) {
             self.told.borrow_mut().push(format!("leave: {text}"));
         }
-        fn show_splash(&self, text: &'static str) {
-            self.told.borrow_mut().push(format!("splash: {text}"));
+        fn show_splash(&self, text: &'static str, reveal: bool) {
+            self.told.borrow_mut().push(format!("splash: {text}{}", if reveal { " (revealed)" } else { "" }));
         }
         fn load_session(&self, bootstrap_url: String, holds: ProofHolds) {
             self.loads.borrow_mut().push((bootstrap_url, holds));
@@ -306,30 +349,33 @@ mod tests {
     fn serve_health(token: &'static str, honest: bool) -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { return };
-                let request = read_request_from(&mut stream);
-                let challenge = request
-                    .lines()
-                    .find_map(|l| l.strip_prefix("x-piwi-desktop-challenge: "))
-                    .unwrap_or_default()
-                    .to_string();
-                let proof = if honest { proof_of(token, port, &challenge) } else { proof_of("other", port, &challenge) };
-                let _ = stream.write_all(
-                    format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}")
-                        .as_bytes(),
-                );
-            }
-        });
+        std::thread::spawn(move || answer_proofs(listener, token, honest));
         port
+    }
+
+    fn answer_proofs(listener: std::net::TcpListener, token: &'static str, honest: bool) {
+        let port = listener.local_addr().unwrap().port();
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let request = read_request_from(&mut stream);
+            let challenge = request
+                .lines()
+                .find_map(|l| l.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap_or_default()
+                .to_string();
+            let proof = if honest { proof_of(token, port, &challenge) } else { proof_of("other", port, &challenge) };
+            let _ = stream.write_all(
+                format!("HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\nx-piwi-desktop-proof: {proof}\r\n\r\n{{}}")
+                    .as_bytes(),
+            );
+        }
     }
 
     #[test]
     fn the_session_loads_after_the_restarted_server_proves_the_token() {
         let port = serve_health("pd_token", true);
         let windows = Recorder::default();
-        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow"), always());
+        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow", false), always());
         assert!(proved);
         windows.run_main_thread();
         assert_eq!(
@@ -371,6 +417,71 @@ mod tests {
         assert!(windows.loads.borrow().is_empty());
     }
 
+    /// A sidecar that exits before its first proof and starts again: the proof that passes is the new process's, and
+    /// the load that follows is held to the generation read once that proof passed.
+    #[test]
+    fn a_sidecar_that_exited_before_its_first_proof_still_gets_the_session() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let session = Arc::new(Session::new(None, None));
+        let waiting = {
+            let session = session.clone();
+            std::thread::spawn(move || {
+                await_first_proof(
+                    port,
+                    "pd_token",
+                    &PACE,
+                    || session.generation(),
+                    || session.mark_opened(),
+                    || false,
+                    || {},
+                )
+            })
+        };
+        // The first sidecar exits before any proof; the restarted one proves the token on the same port.
+        std::thread::sleep(Duration::from_millis(30));
+        session.restarts.fetch_add(1, Ordering::SeqCst);
+        let restarted = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        std::thread::spawn(move || answer_proofs(restarted, "pd_token", true));
+        let at = waiting.join().unwrap().expect("the restarted sidecar proved the token");
+        assert_eq!(at, 1);
+        assert!(session.opened.load(Ordering::SeqCst));
+        assert!(session.unchanged_since(at));
+    }
+
+    #[test]
+    fn the_first_proof_wait_ends_when_told_to_stop() {
+        let port = serve_health("pd_token", false);
+        let session = Session::new(None, None);
+        let checks = AtomicU64::new(0);
+        let at = await_first_proof(
+            port,
+            "pd_token",
+            &PACE,
+            || session.generation(),
+            || session.mark_opened(),
+            || checks.fetch_add(1, Ordering::SeqCst) >= 4,
+            || {},
+        );
+        assert_eq!(at, None);
+        assert!(!session.opened.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn the_window_comes_up_only_when_the_supervisor_gave_up_on_the_server() {
+        let said = |proved, superseded, quitting, gave_up| {
+            let windows = Recorder::default();
+            say_stopped(&windows, "stopped", proved, superseded, quitting, gave_up);
+            windows.told.take()
+        };
+        assert_eq!(said(false, false, false, true), vec!["splash: stopped (revealed)".to_string()]);
+        assert!(said(false, false, false, false).is_empty());
+        assert!(said(true, false, false, true).is_empty());
+        assert!(said(false, true, false, true).is_empty());
+        assert!(said(false, false, true, true).is_empty());
+    }
+
     #[test]
     fn a_session_counts_the_exits_after_the_generation_read() {
         let session = Session::new(None, None);
@@ -390,7 +501,7 @@ mod tests {
             let checks = checks.clone();
             Arc::new(move || checks.fetch_add(1, Ordering::SeqCst) < 8)
         };
-        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow"), holds);
+        let proved = resume_session(&windows, &server(port, "pd_token"), |w| w.show_splash("slow", false), holds);
         assert!(!proved);
         windows.run_main_thread();
         let told = windows.told.borrow();

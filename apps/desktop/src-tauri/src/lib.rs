@@ -3236,19 +3236,24 @@ pub fn run() {
             let nav_handle = app.handle().clone();
             let ready_log = log_path.clone();
             let quitting = shutting_down.clone();
-            // Read before the wait: a sidecar that exits after its proof passes makes the load below stale.
-            let generation = session::generation_of(&nav_handle);
             std::thread::spawn(move || {
-                let ready = session::wait_for_proof(
+                let proved = session::await_first_proof(
                     port,
                     &token,
                     &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<session::Session>() {
+                            session.mark_opened();
+                        }
+                    },
                     || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
                     || {
                         append_log(&ready_log, "server not ready yet, still waiting");
                         show_splash_status(&nav_handle, SPLASH_SLOW, true);
                     },
                 );
+                let ready = proved.is_some();
                 append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
                 // Startup has settled: look for an update and announce one
                 // (a no-op when the build cannot update or the user opted out).
@@ -3263,10 +3268,7 @@ pub fn run() {
                 follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
-                if let Some(session) = nav_handle.try_state::<session::Session>() {
-                    session.mark_opened();
-                }
-                let holds = session::proof_holds(&nav_handle, generation, quitting.clone());
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
                 session::SessionWindows::load_session(&nav_handle, bootstrap_url(port, &token, page.as_deref()), holds);
             });
 
