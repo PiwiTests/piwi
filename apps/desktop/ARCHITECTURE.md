@@ -23,13 +23,14 @@ need the detail behind one of them.
   temporary folder is compared with the app's path after both are resolved by the file system (`within`), so a Windows
   8.3 short name does not hide it. An entry that is the bridge command of another copy of the app that still exists,
   the installed app while this one runs from a disk image, reads as connected, with the reason shown, not as stale
-  (`runs_another_copy`).
+  (`runs_another_copy`). Only a path that holds a file is a copy: a bare command name (`piwi-desktop`) is not looked
+  up on the `PATH`, so such an entry reads as stale and is left alone by the startup repair.
 - **Connect.** It removes an entry only when the entry holds this app's token or is the bridge
   (`is_local_piwi_entry`), so a self-hosted Piwi on `localhost` with another key stays.
 - **The file.** The first backup is kept as it is (`<name>.piwi-backup.json`, created new, owner-only); a backup of an
-  older entry holds no token, and a backup an older build left is rewritten without the token and owner-only when its
-  entry is rewritten (`scrub_backup`). The backup name replaces the file's extension: `mcp.json` is kept as
-  `mcp.piwi-backup.json`. The order of the keys survives (`serde_json` `preserve_order`; remove with
+  older entry holds no token, and a backup an older build left is rewritten without the token and owner-only at
+  startup, beside every client's config whether or not it is rewritten (`scrub_backup` in `heal_clients`). The backup
+  name replaces the file's extension: `mcp.json` is kept as `mcp.piwi-backup.json`. The order of the keys survives (`serde_json` `preserve_order`; remove with
   `shift_remove`), as do the mode and the symlink of the file. A file that does not parse, or starts with a byte-order
   mark, is not rewritten and reads as manual. The file is compared with what was read right before the rename
   (`write_keeping_mode_checked`), so a change in between is not overwritten. Connect and Disconnect pass the text they
