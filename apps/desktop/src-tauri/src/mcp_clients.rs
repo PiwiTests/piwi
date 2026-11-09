@@ -18,9 +18,10 @@
 // Editing another app's config is done conservatively:
 //   - only strict JSON is ever rewritten — a file that does not parse (JSONC
 //     with comments, trailing commas) is reported as `manual` and left alone;
-//   - the previous content is copied to `<name>.piwi-backup.json` (the file's
-//     extension replaced) before a write, and a backup an older build left is
-//     rewritten without this app's token, owner-only;
+//   - the previous content is copied to `<stem>.piwi-backup.json` (the file's
+//     extension replaced: `mcp.json` becomes `mcp.piwi-backup.json`) before a
+//     write, and a backup an older build left is rewritten without this app's
+//     token, owner-only;
 //   - the file is replaced through a temporary copy, keeping its permissions
 //     (owner-only for a new file);
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
@@ -34,7 +35,8 @@
 // removes no other entry, and it writes a file only if that file is unchanged since it
 // was read. A bridge entry with any other field, or any other edit, is left as it is
 // and reads as stale until the person connects again. It writes nothing from a
-// development build or a temporary location (`location_problem`). Both rewrites keep
+// development build or a temporary location (`location_problem`), and nor do Connect and
+// Disconnect. Both rewrites keep
 // the first backup, with this app's token taken out of it.
 
 use std::ffi::OsStr;
@@ -61,6 +63,8 @@ const PIWI_ENTRY_KEY: &str = "piwi-desktop";
 const LEGACY_ENTRY_KEY: &str = "piwi";
 
 /// The name of this app's executable, without an extension: what the command of an entry of ours ends in.
+/// The product name as it starts an AppImage file name, lowercase, without spaces, dashes or underscores.
+const APP_PRODUCT: &str = if cfg!(feature = "runner") { "piwirunner" } else { "piwidashboard" };
 const APP_BINARY: &str = if cfg!(feature = "runner") { "piwi-runner" } else { "piwi-desktop" };
 
 /// Why no entry is written while the app runs from a place that does not last.
@@ -125,12 +129,7 @@ fn stdio_entry_for(id: &str, command: &str) -> Value {
 /// name is a last resort that at least resolves if the app is on PATH.
 fn bridge_command() -> String {
     let exe = std::env::current_exe().ok();
-    let appimage = if cfg!(target_os = "linux") {
-        std::env::var_os("APPIMAGE")
-    } else {
-        None
-    };
-    bridge_path(exe.as_deref(), appimage.as_deref(), &std::env::temp_dir())
+    bridge_path(exe.as_deref(), running_appimage().as_deref(), &std::env::temp_dir())
 }
 
 /// `exe` as a command another app can spawn. An AppImage runs from a mount
@@ -306,16 +305,23 @@ pub struct McpClientStatus {
     detail: Option<String>,
 }
 
-/// Pure classification of a client's parsed config against the live entry.
+/// Pure classification of a client's parsed config against the live entry. An entry that is `expected` except for
+/// a command that names this app and still exists (another copy of it, or the installed app while this one runs
+/// from a disk image) is connected too.
 fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'static str {
     match existing
         .and_then(|v| v.get(container))
         .and_then(|c| c.get(PIWI_ENTRY_KEY))
     {
         None => "not_connected",
-        Some(current) if current == expected => "connected",
+        Some(current) if current == expected || runs_another_copy(current, expected) => "connected",
         Some(_) => "stale",
     }
+}
+
+/// Whether `current` is `expected` with the command of a copy of this app that exists.
+fn runs_another_copy(current: &Value, expected: &Value) -> bool {
+    differs_only_in_command(current, expected) && command_of(current).is_some_and(|command| !command_is_gone(command))
 }
 
 /// Whether an entry is one only this app would have written under `piwi`: a
@@ -341,10 +347,35 @@ fn command_of(value: &Value) -> Option<&str> {
     }
 }
 
-/// Whether `command` ends in this app's executable name, with or without `.exe`, in any case.
+/// Whether `command` names this app: its executable name, with or without `.exe`, in any case, or an AppImage file
+/// (see `names_this_app_as`).
 fn names_this_app(command: &str) -> bool {
-    let file = command.rsplit(['/', '\\']).next().unwrap_or_default().to_ascii_lowercase();
-    file.strip_suffix(".exe").unwrap_or(&file) == APP_BINARY
+    names_this_app_as(command, running_appimage().as_deref())
+}
+
+/// The AppImage file this app was started from, on Linux.
+fn running_appimage() -> Option<std::ffi::OsString> {
+    if cfg!(target_os = "linux") {
+        std::env::var_os("APPIMAGE")
+    } else {
+        None
+    }
+}
+
+/// `names_this_app` given the AppImage file the app runs from, if any. An AppImage entry (`bridge_command` writes the
+/// file, not the executable in its mount) names this app when its file has the name of the running one, or is
+/// an `.AppImage` named for the product, whatever its version or architecture: a moved or renamed copy then heals.
+fn names_this_app_as(command: &str, appimage: Option<&OsStr>) -> bool {
+    let name = |path: &str| path.rsplit(['/', '\\']).next().unwrap_or_default().to_ascii_lowercase();
+    let file = name(command);
+    if file.strip_suffix(".exe").unwrap_or(&file) == APP_BINARY {
+        return true;
+    }
+    if appimage.and_then(OsStr::to_str).is_some_and(|image| !file.is_empty() && name(image) == file) {
+        return true;
+    }
+    let compact: String = file.chars().filter(|c| !matches!(c, ' ' | '_' | '-')).collect();
+    file.ends_with(".appimage") && compact.starts_with(APP_PRODUCT)
 }
 
 /// Whether an entry runs this app's executable in bridge mode.
@@ -368,10 +399,18 @@ fn location_problem(command: &str, dev: bool, temp: &Path) -> Option<&'static st
     let translocated = path
         .components()
         .any(|part| part.as_os_str() == "AppTranslocation");
-    if on_volume || translocated || path.starts_with(temp) {
+    if on_volume || translocated || within(path, temp) {
         return Some(MOVE_APP_REASON);
     }
     None
+}
+
+/// Whether `path` is inside `dir`, comparing the paths as the file system names them: Windows gives the temporary
+/// folder as an 8.3 short path (`C:\Users\RUNNER~1\…`) where the executable has the long one, and macOS lists
+/// `/var` for `/private/var`. A path that does not exist is compared as given.
+fn within(path: &Path, dir: &Path) -> bool {
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    path.starts_with(dir) || (path.is_absolute() && real(path).starts_with(real(dir)))
 }
 
 /// `location_problem` for the app running now.
@@ -441,15 +480,19 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>, toke
 }
 
 fn read_config(path: &Path) -> Result<Option<Value>, String> {
-    let raw = match std::fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.to_string()),
-    };
+    match std::fs::read_to_string(path) {
+        Ok(raw) => parse_config(&raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// The config in `raw`: none when it is blank, an error when it is not plain JSON.
+fn parse_config(raw: &str) -> Result<Option<Value>, String> {
     if raw.trim().is_empty() {
         return Ok(None);
     }
-    serde_json::from_str::<Value>(&raw).map(Some).map_err(|_| {
+    serde_json::from_str::<Value>(raw).map(Some).map_err(|_| {
         "the file is not plain JSON (comments or trailing commas?) — add the entry manually"
             .to_string()
     })
@@ -493,9 +536,13 @@ fn client_status(
             },
         }
     };
+    let ours_exactly = matches!(&read, Ok(Some(doc))
+        if doc.get(container_key(id)).and_then(|servers| servers.get(PIWI_ENTRY_KEY)) == Some(expected));
     let detail = match (status, read) {
         ("manual", Err(reason)) => Some(reason),
         ("manual", Ok(_)) => problem.map(str::to_string),
+        // Connected through another copy of the app: it cannot be changed from here.
+        ("connected", Ok(_)) if !ours_exactly => problem.map(str::to_string),
         _ => None,
     };
     McpClientStatus {
@@ -569,24 +616,55 @@ fn write_config(path: &Path, doc: &Value, token: &str, expected: Option<&str>) -
 
 fn set_entry(app: &AppHandle, id: &str, connect: bool) -> Result<McpClientStatus, String> {
     let (config_path, detect_dir) = paths_of(app, id).ok_or("unknown client")?;
+    let token = app.try_state::<ServerInfo>().map(|info| info.token.clone()).unwrap_or_default();
+    change_entry(id, &config_path, &detect_dir, connect, &token, running_location_problem())?;
+    Ok(status_of(app, id))
+}
+
+/// Connect (`connect`) or disconnect client `id`, whose config is at `config_path`. Neither writes while the app
+/// runs from a place that does not last (`problem`, see `location_problem`).
+fn change_entry(
+    id: &str,
+    config_path: &Path,
+    detect_dir: &Path,
+    connect: bool,
+    token: &str,
+    problem: Option<&'static str>,
+) -> Result<(), String> {
+    change_entry_checked(id, config_path, detect_dir, connect, token, problem, || {})
+}
+
+/// `change_entry`, running `before_write` between the read and the write.
+fn change_entry_checked(
+    id: &str,
+    config_path: &Path,
+    detect_dir: &Path,
+    connect: bool,
+    token: &str,
+    problem: Option<&'static str>,
+    before_write: impl FnOnce(),
+) -> Result<(), String> {
     if !detect_dir.exists() && !config_path.is_file() {
         return Err(format!("{} does not appear to be installed", label_of(id)));
     }
-    if connect {
-        if let Some(reason) = running_location_problem() {
-            return Err(reason.to_string());
-        }
+    if let Some(reason) = problem {
+        return Err(reason.to_string());
     }
-    let token = app.try_state::<ServerInfo>().map(|info| info.token.clone()).unwrap_or_default();
-    let existing = read_config(&config_path)?.unwrap_or_else(|| json!({}));
-    let entry = if connect {
-        Some(entry_for(id))
-    } else {
-        None
+    let raw = match std::fs::read_to_string(config_path) {
+        Ok(raw) => Some(raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.to_string()),
     };
-    let doc = merge_piwi_entry(existing, container_key(id), entry, &token);
-    write_config(&config_path, &doc, &token, None)?;
-    Ok(status_of(app, id))
+    let existing = parse_config(raw.as_deref().unwrap_or_default())?.unwrap_or_else(|| json!({}));
+    let entry = if connect { Some(entry_for(id)) } else { None };
+    let doc = merge_piwi_entry(existing, container_key(id), entry, token);
+    before_write();
+    // Written only if the file still holds the text read: another app may have changed it meanwhile.
+    if write_config(config_path, &doc, token, raw.as_deref())? {
+        Ok(())
+    } else {
+        Err(format!("{} changed its config file meanwhile; try again", label_of(id)))
+    }
 }
 
 /// The entry older builds wrote for client `id` at `url`: the loopback URL and this app's token as a bearer header.
@@ -1511,6 +1589,128 @@ mod tests {
                 assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "{id} with {command}");
                 assert!(!backup_of(&path).exists(), "{id} with {command} wrote a backup");
             }
+        }
+    }
+
+    /// An AppImage entry heals like any other: the file of the running AppImage, or an AppImage named for the product,
+    /// names this app wherever it lived, and another program's `.AppImage` does not.
+    #[test]
+    fn an_appimage_command_names_this_app() {
+        let image = OsStr::new("/home/ada/Apps/My Piwi.AppImage");
+        let product = if cfg!(feature = "runner") { "Piwi_Runner" } else { "Piwi_Dashboard" };
+        assert!(names_this_app_as("/old/Apps/My Piwi.AppImage", Some(image)));
+        assert!(names_this_app_as(&format!("/old/{product}_0.70.0_amd64.AppImage"), None));
+        assert!(names_this_app_as(&format!("/old/{}.appimage", product.replace('_', " ")), None));
+        assert!(!names_this_app_as("/old/Apps/My Piwi.AppImage", None));
+        assert!(!names_this_app_as("/old/Other_App_1.0_amd64.AppImage", Some(image)));
+        assert!(!names_this_app_as(&format!("/old/{product}.zip"), Some(image)));
+        let other = if cfg!(feature = "runner") { "Piwi_Dashboard" } else { "Piwi_Runner" };
+        assert!(!names_this_app_as(&format!("/old/{other}.AppImage"), None));
+        assert!(!names_this_app_as("", Some(OsStr::new(""))));
+
+        // A moved AppImage is repointed, and Connect retires a legacy `piwi` bridge entry that points at one.
+        let dir = TempDir::new("heal-appimage");
+        let old = format!("/old/{product}_0.70.0_amd64.AppImage");
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", &old));
+        assert!(heal_client_file("cursor", &path, TOKEN, "/new/Apps/Piwi.AppImage"));
+        let legacy = json!({ "command": old, "args": ["mcp-stdio"] });
+        assert!(is_own_bridge_entry(&legacy));
+    }
+
+    /// The temporary folder and the app's path are compared as the file system names them, so a short or linked name
+    /// of the folder still finds the app inside it.
+    #[cfg(unix)]
+    #[test]
+    fn a_temporary_folder_given_by_another_name_still_holds_the_app() {
+        let dir = TempDir::new("location-link");
+        let real = dir.mkdir("real-temp");
+        let exe = real.join(APP_BINARY);
+        std::fs::write(&exe, "").unwrap();
+        let alias = dir.join("alias-temp");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        let command = exe.to_string_lossy().to_string();
+        assert_eq!(location_problem(&command, false, &alias), Some(MOVE_APP_REASON));
+        assert_eq!(location_problem(&command, false, &dir.join("elsewhere")), None);
+        // A bare name is not a place.
+        assert_eq!(location_problem(APP_BINARY, false, &alias), None);
+    }
+
+    /// An app connected from the installed copy and started again from a disk image reads as connected, not stale or
+    /// manual, with the reason it cannot be changed from here; once the installed copy is gone it reads as stale.
+    #[test]
+    fn an_entry_that_runs_a_copy_of_the_app_that_exists_reads_as_connected() {
+        let dir = TempDir::new("status-copy");
+        let installed = dir.mkdir("Applications").join(APP_BINARY);
+        std::fs::write(&installed, "").unwrap();
+        let expected = entry_for("cursor");
+        let path = dir.join("cursor.json");
+        let write = |command: &str| {
+            let doc = json!({ "mcpServers": { "piwi-desktop": stdio_entry_for("cursor", command) } });
+            std::fs::write(&path, doc.to_string()).unwrap();
+        };
+        write(&installed.to_string_lossy());
+        for problem in [None, Some(MOVE_APP_REASON)] {
+            let status = client_status("cursor", &path, &dir.0, &expected, problem);
+            assert_eq!(status.status, "connected", "{problem:?}");
+            assert_eq!(status.detail, problem.map(str::to_string));
+        }
+        write(&here());
+        let status = client_status("cursor", &path, &dir.0, &expected, Some(MOVE_APP_REASON));
+        assert_eq!((status.status, status.detail), ("connected", None));
+
+        std::fs::remove_file(&installed).unwrap();
+        write(&installed.to_string_lossy());
+        assert_eq!(client_status("cursor", &path, &dir.0, &expected, None).status, "stale");
+        // Another program's command, or an entry with an added field, is not this app.
+        for entry in [
+            stdio_entry_for("cursor", "/usr/local/bin/my-wrapper"),
+            json!({ "command": installed.to_string_lossy(), "args": ["mcp-stdio"], "env": { "A": "b" } }),
+        ] {
+            let doc = json!({ "mcpServers": { "piwi-desktop": entry } });
+            std::fs::write(&path, doc.to_string()).unwrap();
+            assert_eq!(client_status("cursor", &path, &dir.0, &expected, None).status, "stale");
+        }
+    }
+
+    /// Connect and Disconnect both refuse to write from a place that does not last: the file and its backup stay as
+    /// they are. From the installed app they write.
+    #[test]
+    fn connect_and_disconnect_write_nothing_from_a_place_that_does_not_last() {
+        let dir = TempDir::new("change-location");
+        for connect in [true, false] {
+            let (path, before) = config_with(&dir, "cursor", stdio_entry_for("cursor", &moved_from()));
+            for problem in [MOVE_APP_REASON, DEV_BUILD_REASON] {
+                let result = change_entry("cursor", &path, &dir.0, connect, TOKEN, Some(problem));
+                assert_eq!(result, Err(problem.to_string()), "connect {connect}");
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+                assert!(!backup_of(&path).exists());
+            }
+        }
+        let (path, _) = config_with(&dir, "cursor", stdio_entry_for("cursor", &moved_from()));
+        change_entry("cursor", &path, &dir.0, false, TOKEN, None).unwrap();
+        let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(doc["mcpServers"].get("piwi-desktop").is_none());
+        assert!(doc["mcpServers"].get("other").is_some());
+        change_entry("cursor", &path, &dir.0, true, TOKEN, None).unwrap();
+        let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(doc["mcpServers"]["piwi-desktop"], entry_for("cursor"));
+    }
+
+    /// Connect and Disconnect replace the file only if it still holds the text they read: a change another app made in
+    /// between stays, and nothing is backed up for a write that did not happen.
+    #[test]
+    fn connect_does_not_overwrite_a_change_made_while_it_ran() {
+        let dir = TempDir::new("change-race");
+        for connect in [true, false] {
+            let (path, before) = config_with(&dir, "claude-code", stdio_entry_for("claude-code", &moved_from()));
+            let _ = std::fs::remove_file(backup_of(&path));
+            let theirs = before.replace("\"npx\"", "\"uvx\"");
+            let result = change_entry_checked("claude-code", &path, &dir.0, connect, TOKEN, None, || {
+                std::fs::write(&path, &theirs).unwrap();
+            });
+            assert!(result.is_err(), "connect {connect}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), theirs);
+            assert!(!backup_of(&path).exists());
         }
     }
 

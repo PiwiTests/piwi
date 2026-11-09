@@ -107,11 +107,9 @@ shell and are feature-equivalent.
   every reader ignores the ones it does not know.
 
 - **`piwi-desktop mcp-stdio` is a published entry point.** The one-click setup of every MCP client (`mcp_clients.rs`)
-  writes that command into the client's config on the user's machine, with no URL and no token. The argument can only
-  be added to, and the bridge keeps speaking newline-delimited JSON-RPC on stdin/stdout. The startup heal rewrites
-  only an entry that runs this app's own executable, never from a place that does not last
-  ([how](ARCHITECTURE.md#mcp-client-configs)). The bridge sends the token only through `connect_proving_token` and
-  only to `127.0.0.1`.
+  writes that command into the client's config on the user's machine, with no URL and no token, so the argument can
+  only be added to and the bridge keeps speaking newline-delimited JSON-RPC on stdin/stdout
+  ([the rest](ARCHITECTURE.md#mcp-client-configs)).
 - **The token is never in a URL.** The shell asks the server for a session code on the proven connection
   (`POST /api/desktop/run-target/session-code`, shell-only), and `/__piwi/session?code=…` takes it once, within 30
   seconds, to set the cookie. A used, expired or unknown code, and the token itself, open nothing; a server that gives

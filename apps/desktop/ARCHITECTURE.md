@@ -14,18 +14,28 @@ need the detail behind one of them.
   longer exists on disk (`command_is_gone`). It also rewrites an entry that is exactly the older shape: a loopback
   `/mcp` URL with this app's token as the only header (`is_old_url_entry`). Any other entry, an edited one or one with
   an added field included, such as a wrapper of the user's own that passes `mcp-stdio`, reads as stale and is replaced
-  only when the user connects the client again. An AppImage entry is not healed.
+  only when the user connects the client again. An AppImage entry holds the AppImage file (`APPIMAGE`), not the
+  executable in its mount, and `names_this_app` accepts the file of the running AppImage or an `.AppImage` named for
+  the product, so a moved or renamed AppImage heals and Connect retires a legacy `piwi` bridge entry that points at one.
 - **Where from.** Nothing is written from a place that does not last: a macOS `AppTranslocation` path, a mounted
-  volume (`/Volumes/…`), a running dev build (`tauri::is_dev()`). The client reads as manual, with the reason the card
-  shows (`location_problem`).
+  volume (`/Volumes/…`), the temporary folder, a running dev build (`tauri::is_dev()`). That covers the startup heal,
+  Connect and Disconnect alike. The client reads as manual, with the reason the card shows (`location_problem`). The
+  temporary folder is compared with the app's path after both are resolved by the file system (`within`), so a Windows
+  8.3 short name does not hide it. An entry that is the bridge command of another copy of the app that still exists,
+  the installed app while this one runs from a disk image, reads as connected, with the reason shown, not as stale
+  (`runs_another_copy`).
 - **Connect.** It removes an entry only when the entry holds this app's token or is the bridge
   (`is_local_piwi_entry`), so a self-hosted Piwi on `localhost` with another key stays.
 - **The file.** The first backup is kept as it is (`<name>.piwi-backup.json`, created new, owner-only); a backup of an
   older entry holds no token, and a backup an older build left is rewritten without the token and owner-only when its
-  entry is rewritten (`scrub_backup`). The order of the keys survives (`serde_json` `preserve_order`; remove with
+  entry is rewritten (`scrub_backup`). The backup name replaces the file's extension: `mcp.json` is kept as
+  `mcp.piwi-backup.json`. The order of the keys survives (`serde_json` `preserve_order`; remove with
   `shift_remove`), as do the mode and the symlink of the file. A file that does not parse, or starts with a byte-order
   mark, is not rewritten and reads as manual. The file is compared with what was read right before the rename
-  (`write_keeping_mode_checked`), so a change in between is not overwritten.
+  (`write_keeping_mode_checked`), so a change in between is not overwritten. Connect and Disconnect pass the text they
+  read for the same check and report a file that changed meanwhile.
+- **The bridge.** `piwi-desktop mcp-stdio` sends the token only through `connect_proving_token`, and only to
+  `127.0.0.1`.
 
 ## Server session
 

@@ -135,8 +135,11 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 **Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI and
 connects each in one click, writing a `piwi-desktop` entry that runs the app's built-in bridge
 (`piwi-desktop mcp-stdio`) as a local command. No address or token is copied; the bridge finds the app at start and
-sends the token only to a server that proves it holds it. The app must run. It writes only its own entry and keeps the first backup (`<file>.piwi-backup.json` beside the
-config). When the app moves, it points that entry at itself again at startup, as it does for an earlier version's
+sends the token only to a server that proves it holds it. The app must run. It writes only its own entry and keeps the first backup beside the
+config, named with the file's extension replaced (`mcp.json` is kept as `mcp.piwi-backup.json`). Run from a disk image
+(DMG), a translocated copy or a development build, it writes nothing, for Connect, Disconnect and the startup repair
+alike: each client shows **Manual setup** with the reason, or **Connected** if the installed app is the one it points
+at. Move the app to Applications to change them. When the app moves, it points that entry at itself again at startup, as it does for an earlier version's
 address-and-token entry; nothing else is touched. One you edited, even by one field, shows **Needs update**, and
 **Update** replaces it. Restart the client after the entry changes. The page also installs the [agent skills](/features/agent-skills) into a linked folder.
 
