@@ -155,6 +155,12 @@ struct ShuttingDown(Arc<AtomicBool>);
 #[derive(Default)]
 struct ServerGaveUp(AtomicBool);
 
+/// What the server's latest start said before it stopped: its last error line on
+/// stderr (`server_error_line`), or its exit code. The splash shows it once the
+/// supervisor gives up.
+#[derive(Default)]
+struct ServerLastError(Mutex<Option<String>>);
+
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
 
@@ -1154,6 +1160,7 @@ fn supervise_server(
         let mut window_start = Instant::now();
 
         loop {
+            set_server_error(&app, None);
             // Drain the sidecar's output (no console in a release build) until it
             // exits or the channel closes.
             while let Some(event) = rx.blocking_recv() {
@@ -1162,16 +1169,24 @@ fn supervise_server(
                         &log_path,
                         &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
-                    CommandEvent::Stderr(line) => append_log(
-                        &log_path,
-                        &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
-                    ),
+                    CommandEvent::Stderr(line) => {
+                        let line = String::from_utf8_lossy(&line);
+                        if let Some(error) = server_error_line(&line) {
+                            set_server_error(&app, Some(error));
+                        }
+                        append_log(&log_path, &format!("[server:err] {}", line.trim_end()));
+                    }
                     CommandEvent::Error(err) => append_log(&log_path, &format!("[server:proc] {err}")),
                     CommandEvent::Terminated(payload) => {
                         append_log(
                             &log_path,
                             &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
                         );
+                        if server_error(&app).is_none() {
+                            if let Some(code) = payload.code {
+                                set_server_error(&app, Some(format!("exit code {code}.")));
+                            }
+                        }
                         break;
                     }
                     _ => {}
@@ -1407,16 +1422,85 @@ fn splash_status_script(text: &str) -> String {
     )
 }
 
+/// The script writing `text` in the splash page's status line and stopping its
+/// spinner: the server is down and nothing is loading any more.
+fn splash_stopped_script(text: &str) -> String {
+    format!(
+        "{}var p=document.querySelector('.spinner');if(p){{p.style.display='none';}}",
+        splash_status_script(text)
+    )
+}
+
 /// Write `text` in the splash's status line and bring the window up: a launch
 /// to the tray hides it.
 fn show_splash_status(app: &AppHandle, text: &'static str) {
+    eval_on_splash(app, splash_status_script(text));
+}
+
+/// Say on the splash that the server stopped for good: `stopped`, then the last
+/// error of its latest start and where its log is.
+fn show_server_stopped(app: &AppHandle, stopped: &str) {
+    let log_path = app.try_state::<LogFile>().map(|log| log.0.clone());
+    let text = stopped_status(stopped, server_error(app).as_deref(), log_path.as_deref());
+    eval_on_splash(app, splash_stopped_script(&text));
+}
+
+fn eval_on_splash(app: &AppHandle, script: String) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
-            let _ = w.eval(&splash_status_script(text));
+            let _ = w.eval(&script);
             let _ = w.show();
         }
     });
+}
+
+/// The splash's status once the server stopped: `stopped`, then what the server
+/// said last and the log's path, each when known.
+fn stopped_status(stopped: &str, last_error: Option<&str>, log_path: Option<&Path>) -> String {
+    let mut text = stopped.to_string();
+    if let Some(error) = last_error {
+        text.push_str(&format!(" Last error: {error}"));
+    }
+    if let Some(path) = log_path {
+        text.push_str(&format!(" Log: {}", node_path(path)));
+    }
+    text
+}
+
+/// The longest error line the splash shows, in characters.
+const SPLASH_ERROR_MAX_CHARS: usize = 300;
+
+/// The server's stderr line worth showing when it stops: one that names an
+/// error, not a stack frame, the source line Node prints above an uncaught
+/// error, or Node's version banner. Capped at `SPLASH_ERROR_MAX_CHARS`.
+fn server_error_line(line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.starts_with("at ") || line.starts_with("throw ") || line.starts_with("Node.js ") {
+        return None;
+    }
+    if !line.contains("Error") && !line.contains("error") {
+        return None;
+    }
+    if line.chars().count() <= SPLASH_ERROR_MAX_CHARS {
+        return Some(line.to_string());
+    }
+    let mut capped: String = line.chars().take(SPLASH_ERROR_MAX_CHARS).collect();
+    capped.push('…');
+    Some(capped)
+}
+
+fn server_error(app: &AppHandle) -> Option<String> {
+    app.try_state::<ServerLastError>()
+        .and_then(|state| state.0.lock().ok().and_then(|error| error.clone()))
+}
+
+fn set_server_error(app: &AppHandle, error: Option<String>) {
+    if let Some(state) = app.try_state::<ServerLastError>() {
+        if let Ok(mut last) = state.0.lock() {
+            *last = error;
+        }
+    }
 }
 
 /// Everything leaving the app must undo: remember the window state, stop the
@@ -2931,6 +3015,7 @@ pub fn run() {
         ])
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())
+        .manage(ServerLastError::default())
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
@@ -3122,7 +3207,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_server_stopped(&nav_handle, SPLASH_STOPPED);
                     }
                     return;
                 }
@@ -3415,7 +3500,7 @@ mod tests {
         DOCS_URL, NEW_ISSUE_URL,
         args_to_act_on, bootstrap_url, link_page, LinkedPage,
         notification_wanted, read_event_stream, NotificationChoices, ServerNotification,
-        parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
+        parse_retention_env, rotated_log_path, server_error_line, splash_status_script, splash_stopped_script, stopped_status, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
@@ -4093,6 +4178,39 @@ mod tests {
         ] {
             assert!(!is_known_launcher(family, bad), "{family} {bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn the_stopped_splash_names_the_last_error_and_the_log() {
+        let log = Path::new(r"\\?\C:\Users\me\AppData\Roaming\io.piwitests.dashboard\logs\server.log");
+        assert_eq!(
+            stopped_status("The server stopped.", Some("Error: listen EACCES"), Some(log)),
+            r"The server stopped. Last error: Error: listen EACCES Log: C:\Users\me\AppData\Roaming\io.piwitests.dashboard\logs\server.log"
+        );
+        assert_eq!(stopped_status("The server stopped.", None, None), "The server stopped.");
+        let script = splash_stopped_script("Stopped.");
+        assert!(script.starts_with(&splash_status_script("Stopped.")), "{script}");
+        assert!(script.ends_with("if(p){p.style.display='none';}"), "{script}");
+    }
+
+    #[test]
+    fn the_splash_shows_the_line_naming_the_error_not_the_stack() {
+        let listen = "Error: listen EADDRINUSE: address already in use 127.0.0.1:3000";
+        assert_eq!(server_error_line(&format!("{listen}\r\n")).as_deref(), Some(listen));
+        let migration = "[Database] Migration error: SqliteError: disk I/O error";
+        assert_eq!(server_error_line(migration).as_deref(), Some(migration));
+        for other in [
+            "    at Server.setupListenHandle [as _listen2] (node:net:1908:16)",
+            "        throw er; // Unhandled 'error' event",
+            "Node.js v24.11.0",
+            "[Storage] Initializing local storage",
+            "",
+        ] {
+            assert_eq!(server_error_line(other), None, "{other}");
+        }
+        let long = server_error_line(&format!("Error: {}", "é".repeat(400))).unwrap();
+        assert_eq!(long.chars().count(), 301);
+        assert!(long.ends_with('…'));
     }
 
     #[test]

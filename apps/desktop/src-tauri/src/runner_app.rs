@@ -24,8 +24,8 @@ use crate::mcp_clients::ServerInfo;
 use crate::{
     app_menu_action, append_log, bootstrap_url, bring_to_front, follow_notifications, health_ok,
     hold_close_for_local_runs, main_window_may_navigate, node_path, private_fs,
-    random_hex_32, run_app_menu_action, show_splash_status, shut_down, supervise_server,
-    LogFile, QuitConfirmed, ServerGaveUp, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
+    random_hex_32, run_app_menu_action, show_server_stopped, show_splash_status, shut_down, supervise_server,
+    LogFile, QuitConfirmed, ServerGaveUp, ServerLastError, ServerProcess, ShuttingDown, READY_TIMEOUT_SECS,
 };
 use crate::{desktop_bring_to_front, desktop_open_external, run_target, runner};
 
@@ -239,6 +239,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         ])
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())
+        .manage(ServerLastError::default())
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
@@ -332,7 +333,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 );
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_server_stopped(&nav_handle, SPLASH_STOPPED);
                     }
                     return;
                 }
