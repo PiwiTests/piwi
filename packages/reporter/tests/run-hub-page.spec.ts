@@ -74,6 +74,6 @@ describe('the run’s page on the hub', () => {
       { type: 'run-page', id: 78, url: `${PAGE}78` },
       { type: 'run-page', id: 79, url: `${PAGE}79` },
     ]);
-    expect(heard.at(-1)?.type).toBe('run-end');
+    expect(heard[heard.length - 1]?.type).toBe('run-end');
   });
 });
