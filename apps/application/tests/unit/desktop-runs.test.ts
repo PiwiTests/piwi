@@ -383,7 +383,7 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes'],
+        features: ['peers', 'lanes', 'hold'],
       },
     ]);
   });
@@ -450,7 +450,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes'],
+      features: ['peers', 'lanes', 'hold'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -592,17 +592,27 @@ describe('a failure no pause bar shows', () => {
     window.close();
   });
 
-  it('waits while a Runs window of Piwi Picker follows the runs', async () => {
+  it('waits in a run whose Hold failures Piwi Picker turned on, not because a Runs window follows the runs', async () => {
     const picker = await paired();
     picker.send({ type: 'subscribe', id: 1 });
     picker.send({ type: 'follow', id: 2, on: true });
     await picker.answer(2);
+    // Followed, the run's Hold failures still off: its failure goes on at once.
     const worker = new Worker(folder).attach('desktop-6');
     worker.begin();
+    await waitFor(() => picker.session('desktop-6')?.hold?.on === false);
     worker.stop(1, 'failure');
-    await waitFor(() => picker.session('desktop-6')?.workers[0]?.stop?.reason === 'failure');
-    picker.socket.close();
     expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+    picker.send({ type: 'hold', id: 3, ref: 'desktop-6', on: true });
+    expect(await picker.answer(3)).toMatchObject({ ok: true });
+    await waitFor(() => picker.session('desktop-6')?.hold?.on === true);
+    expect(picker.session('desktop-6')?.hold).toEqual({ on: true, by: 'person' });
+    worker.send({ type: 'running', stop: 1 });
+    worker.stop(2, 'failure');
+    await waitFor(() => picker.session('desktop-6')?.workers[0]?.stop?.reason === 'failure');
+    // Its last surface gone, nobody can answer it: it goes on.
+    picker.socket.close();
+    expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
     worker.socket.destroy();
   });
 });

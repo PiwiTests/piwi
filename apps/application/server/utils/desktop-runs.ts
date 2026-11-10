@@ -13,10 +13,10 @@
  *    paired Piwi Picker holds since **Allow**, and `GET /api/desktop/live` names the hub to a request carrying it;
  *  - the app's window is a peer of that hub (`RunHub.join`) through routes behind the desktop guard: it hears what
  *    Piwi Picker hears, sends the same commands, and alone receives the code made at a stop, to copy (`stop-code`);
- *  - a failure no pause bar shows is held in a run whose **Hold failures** the window turned on (`show`), or while a
- *    Runs window of Piwi Picker follows the runs (`follow`); otherwise it goes on at once, and always in a run nobody attends (a Flake
- *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
- *    hear that they hold no failure;
+ *  - a failure no pause bar shows is held in a run whose **Hold failures** is on: the window turns it on or off
+ *    (`show`), as Piwi Picker (`hold`) and an agent may, and it goes off as the last window showing the run closes;
+ *    otherwise it goes on at once, and always in a run nobody attends (a Flake Lab, a bisect, a lab job, a run
+ *    repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers hear that they hold no failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
  *    linked folder alone, and refused once the file was written since the run's first connection opened (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
@@ -192,7 +192,7 @@ export interface DesktopRunsOptions {
 interface RunWindow {
   peer: HubPeer;
   sink: DesktopRunSink;
-  /** The runs whose Hold failures it turned on: a failure no pause bar shows is held in them. */
+  /** The runs whose Hold failures it turned on: the last window of a run to close turns it off. */
   shows: Set<string>;
 }
 
@@ -288,8 +288,6 @@ export class DesktopRuns {
         'refused' in region
           ? this.actions.regionRefused(stop, region.refused)
           : this.actions.region(stop, region.locator, region.snapshot),
-      watched: (ref) => [...this.windows.values()].some((window) => window.shows.has(ref)),
-      followed: () => !!this.hub?.follows(),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
       // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
@@ -487,18 +485,18 @@ export class DesktopRuns {
       if (typeof value.ref !== 'string' || !REF.test(value.ref))
         return answer(false, 'The command needs the ref of a run.');
       if (typeof value.on !== 'boolean') return answer(false, 'on must be true or false.');
-      const had = window.shows.has(value.ref);
       if (value.on) window.shows.add(value.ref);
       else window.shows.delete(value.ref);
-      if (had !== value.on) this.sessions.surfacesChanged();
       if (isUnattendedDesktopRun(value.ref)) {
         return answer(true, 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.');
       }
+      // The window's Hold failures is the run's own: another window, Piwi Picker or an agent may change it after.
+      this.sessions.hold({ ref: value.ref, on: value.on }, 'person');
       return answer(
         true,
         value.on
           ? 'A failure no pause bar shows waits for an answer in this run while the window shows it.'
-          : 'A failure of this run no pause bar shows goes on unless Piwi Picker follows the runs.',
+          : 'A failure of this run no pause bar shows goes on at once.',
       );
     }
     const parsed = parseHubCommand(JSON.stringify(value));
@@ -523,7 +521,12 @@ export class DesktopRuns {
     if (!window) return;
     this.windows.delete(viewer);
     window.peer.leave();
-    if (window.shows.size) this.sessions.surfacesChanged();
+    // A run no other window shows has its Hold failures turned off with the last one.
+    for (const ref of window.shows) {
+      if (![...this.windows.values()].some((other) => other.shows.has(ref))) {
+        this.sessions.hold({ ref, on: false }, 'person');
+      }
+    }
   }
 
   private liveCountChanged(): void {
