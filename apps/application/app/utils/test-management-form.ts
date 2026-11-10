@@ -122,6 +122,24 @@ export function setTypedStatus(form: TestManagementForm, field: StatusField, raw
   return true;
 }
 
+/** Set or clear the optional flaky status; the picker reports a cleared value as null. */
+export function setFlakyStatus(form: TestManagementForm, value: string | null | undefined): void {
+  form.statuses.flaky = typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * The form after another connection is chosen. Another connection means other projects and folders, so the old ones
+ * do not carry over; a binding made from None starts with Dry run on.
+ */
+export function applyConnectionChange(form: TestManagementForm, previous: number): void {
+  if (previous) {
+    form.providerProjectKey = '';
+    form.folderId = '';
+  } else if (form.connectionId) {
+    form.dryRun = true;
+  }
+}
+
 export interface TestManagementFormProblems {
   project: string | null;
   nameTemplate: string | null;

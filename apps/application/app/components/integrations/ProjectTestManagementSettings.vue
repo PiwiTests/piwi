@@ -14,7 +14,9 @@ import {
 import type { TestManagementConnectionSummary } from '#shared/integrations/types';
 import type { TestManagementPickerOptions } from '#shared/integrations/test-management-picker';
 import {
+  applyConnectionChange,
   hasTestManagementProblem,
+  setFlakyStatus,
   setTypedProject,
   setTypedStatus,
   testManagementFromForm,
@@ -85,6 +87,11 @@ function createStatus(field: StatusField, raw: string) {
     toast.add({ title: 'That status name is too long', color: 'warning' });
   }
 }
+
+const flakyStatus = computed({
+  get: () => form.statuses.flaky || undefined,
+  set: (value: string | null | undefined) => setFlakyStatus(form, value),
+});
 
 const problems = computed(() => testManagementProblems(form));
 const dirty = computed(() => JSON.stringify(testManagementFromForm(form)) !== savedJson.value);
@@ -163,10 +170,7 @@ watch(
   () => form.connectionId,
   (_, previous) => {
     if (loading.value) return;
-    if (previous) {
-      form.providerProjectKey = '';
-      form.folderId = '';
-    }
+    applyConnectionChange(form, previous);
     void loadOptions();
   },
 );
@@ -216,6 +220,16 @@ onMounted(load);
           data-testid="test-management-truthful-copy"
         />
 
+        <UAlert
+          v-if="bound && optionsError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          title="The tool’s projects, statuses and folders could not be read"
+          :description="optionsError"
+          data-testid="test-management-options-error"
+        />
+
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField label="Connection">
             <USelectMenu
@@ -226,12 +240,7 @@ onMounted(load);
               data-testid="test-management-connection"
             />
           </UFormField>
-          <UFormField
-            label="Project"
-            :error="problems.project ?? undefined"
-            :help="optionsError ?? undefined"
-            :class="{ 'opacity-60': !bound }"
-          >
+          <UFormField label="Project" :error="problems.project ?? undefined" :class="{ 'opacity-60': !bound }">
             <USelectMenu
               v-model="form.providerProjectKey"
               :items="projectItems"
@@ -332,11 +341,13 @@ onMounted(load);
               </UFormField>
               <UFormField label="Flaky (optional)" :error="problems.flaky ?? undefined">
                 <USelectMenu
-                  v-model="form.statuses.flaky"
+                  v-model="flakyStatus"
                   :items="statusItems"
                   searchable
                   create-item
+                  clear
                   placeholder="None"
+                  data-testid="test-management-status-flaky"
                   class="w-full"
                   @create="(name: string) => createStatus('flaky', name)"
                 />

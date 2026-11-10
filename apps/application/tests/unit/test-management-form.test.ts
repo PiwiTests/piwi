@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { emptyTestManagementBinding, resolveTestManagementBinding } from '#shared/integrations/test-management-binding';
 import {
+  applyConnectionChange,
   hasTestManagementProblem,
+  setFlakyStatus,
   setTypedProject,
   setTypedStatus,
   testManagementFromForm,
@@ -148,5 +150,46 @@ describe('a project key or status typed into a picker', () => {
     expect(setTypedStatus(form, 'fail', 'x'.repeat(256))).toBe(false);
     expect(form.statuses.fail).toBe('Fail');
     expect(setTypedStatus(form, 'fail', 'x'.repeat(255))).toBe(true);
+  });
+});
+
+describe('setFlakyStatus', () => {
+  test('a cleared picker (null) leaves no flaky status and the form saves it as null', () => {
+    const form = bound();
+    setFlakyStatus(form, 'Flaky');
+    expect(form.statuses.flaky).toBe('Flaky');
+    setFlakyStatus(form, null);
+    expect(form.statuses.flaky).toBe('');
+    expect((testManagementFromForm(form) as { statuses: { flaky: unknown } }).statuses.flaky).toBeNull();
+  });
+
+  test('clearing the status while flaky tests are reported as it is a form problem, not a crash', () => {
+    const form = bound();
+    form.flakyAs = 'flaky';
+    setFlakyStatus(form, 'Flaky');
+    expect(testManagementProblems(form).flaky).toBeNull();
+    setFlakyStatus(form, undefined);
+    expect(testManagementProblems(form).flaky).toMatch(/Name the status/);
+  });
+});
+
+describe('applyConnectionChange', () => {
+  test('a first connection after None starts with dry run on', () => {
+    const form = bound();
+    form.dryRun = false;
+    form.connectionId = 0;
+    applyConnectionChange(form, 4);
+    expect(form.dryRun).toBe(false);
+    form.connectionId = 9;
+    applyConnectionChange(form, 0);
+    expect(form.dryRun).toBe(true);
+  });
+
+  test('another connection drops the project and folder of the old one and keeps dry run', () => {
+    const form = bound();
+    form.dryRun = false;
+    form.connectionId = 9;
+    applyConnectionChange(form, 4);
+    expect(form).toMatchObject({ providerProjectKey: '', folderId: '', dryRun: false });
   });
 });

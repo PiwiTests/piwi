@@ -221,6 +221,59 @@ test.describe('Zephyr Scale — binding and catalog', () => {
     }
   });
 
+  test('the form takes a typed project, clears the flaky status, starts a new binding with dry run on and shows an options error', async ({
+    page,
+  }) => {
+    test.setTimeout(3 * 60_000);
+    await page.goto(`${server!.baseUrl}/projects/${projectId}?tab=settings&section=test-management`);
+    await waitForHydration(page);
+    await expect(page.getByTestId('test-management-binding')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('test-management-options-error')).toHaveCount(0);
+
+    // Dry run off is unsaved state; None and then a connection again starts over with it on.
+    const dryRun = page.getByTestId('test-management-dry-run');
+    await dryRun.click();
+    await expect(dryRun).not.toBeChecked();
+    await page.getByTestId('test-management-connection').click();
+    await page.getByRole('option', { name: /None — unbound/ }).click();
+    await expect(dryRun).toHaveCount(0);
+    await page.getByTestId('test-management-connection').click();
+    await page.getByRole('option', { name: /Zephyr \(sample\)/ }).click();
+    await expect(dryRun).toBeChecked();
+
+    // A project key the tool does not list is typed, upper-cased and kept.
+    await page.getByTestId('test-management-project').click();
+    await page.getByRole('combobox').last().fill('zzz');
+    await page.getByRole('option', { name: /Use ZZZ/ }).click();
+    await expect(page.getByTestId('test-management-project')).toContainText('ZZZ');
+
+    // The flaky status can be set and cleared.
+    const flaky = page.getByTestId('test-management-status-flaky');
+    await flaky.click();
+    await page.getByRole('option', { name: 'In Progress' }).click();
+    await expect(flaky).toContainText('In Progress');
+    await flaky.locator('xpath=..').locator('[data-slot="trailingClear"]').click();
+    await expect(flaky).not.toContainText('In Progress');
+    await expect(flaky).toContainText('None');
+
+    // A failed read of the tool's options is an error above the form.
+    await page.route('**/test-management/options**', (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          statusCode: 502,
+          statusMessage: 'The tool did not answer',
+          message: 'The tool did not answer',
+        }),
+      }),
+    );
+    await page.getByTestId('test-management-project').click();
+    await page.getByRole('combobox').last().fill('zzz2');
+    await page.getByRole('option', { name: /Use ZZZ2/ }).click();
+    await expect(page.getByTestId('test-management-options-error')).toContainText('The tool did not answer');
+  });
+
   test('saving the tracker binding leaves the test management binding in place', async ({ playwright }) => {
     const api = await playwright.request.newContext({ baseURL: server!.baseUrl });
     const put = await api.put(`/api/projects/${projectId}/integrations`, { data: { connectionId: null } });
