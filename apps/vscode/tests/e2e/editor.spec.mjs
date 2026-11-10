@@ -130,6 +130,7 @@ test('the spec’s lens counts the spec’s own tests', async () => {
 });
 
 test('a spec’s editor title offers Record here, and its Run button the spec’s runs', async () => {
+  await clearNotifications(page);
   await openFile(page, SPEC_FILE);
   const actions = page.locator('.editor-actions');
   await expect(actions.getByRole('button', { name: 'Record here' })).toBeVisible();

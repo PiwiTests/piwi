@@ -55,23 +55,24 @@ unexplained), [Q13](#q13) in part (every JetBrains balloon titled Piwi, in a gro
 text formatted, a gear on the run notices, Don't Show Again on VS Code's other messages, and a platform test of every
 balloon's group: one reads the first run's; confirmations are a balloon group of their own, the new UI drawing no status
 bar text under its navigation bar), [Q10](#q10) (a spec's editor title in VS Code: one Piwi button by state, Stop
-recording, else Resume at a stop, else Record here, the other controls in its '…' menu, and the test at the cursor,
-Verify ×3 and the spec under its Run button, each with the concept table's codicon, [AC5](#ac5); the other commands'
-icons are [Q9](#q9)'s), and every command, setting and action id of both editors registered in D25 and held to the
-manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as
-#1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that
-commit: no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's
-worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8;
-#1122's four items are built. It cites and does not restate
-[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
-(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
-[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
-[extension-ux-audit.md](extension-ux-audit.md). The live-run study, [live-runs.md](live-runs.md), is proposed alongside
-this one: this document owns where each editor hosts a run (the status item, the menus, the Run tab, the Runs view and
-tab, the stop line, the gutter marks, the keys, the paused page) and the debug-session question ([LI10](#li10)); the
-study owns the live model, the words of watching and its phases P0 to P11, and builds in those phases what the two
-documents share. A pull request that builds part of §12 updates this paragraph; the one that ships its last step moves
-the document to `adr/`.
+recording, else Resume at a stop, else Record here, the run's other controls and the recording's in its '…' menu as the
+palette offers them, and the spec, the test at the cursor and Verify ×3 under its Run button, [AC5](#ac5), with the VS
+Code half of [LR3](#lr3)'s title; each button a glyph no other command has, Re-run failing taking the table's
+`$(run-errors)` and the recording's controls the table's recording glyphs; the other commands' icons are [Q9](#q9)'s),
+and every command, setting and action id of both editors registered in D25 and held to the manifests (#1124). Nothing
+here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11).
+Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding
+was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a
+Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's four items are
+built. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
+[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
+[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,
+[live-runs.md](live-runs.md), is proposed alongside this one: this document owns where each editor hosts a run (the
+status item, the menus, the Run tab, the Runs view and tab, the stop line, the gutter marks, the keys, the paused page)
+and the debug-session question ([LI10](#li10)); the study owns the live model, the words of watching and its phases P0
+to P11, and builds in those phases what the two documents share. A pull request that builds part of §12 updates this
+paragraph; the one that ships its last step moves the document to `adr/`.
 
 **Summary.**
 
