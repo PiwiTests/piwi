@@ -28,6 +28,11 @@ export interface ZephyrClientOptions {
   timeoutMs?: number;
   /** Ends every request still running when it aborts: the budget of a whole check, across its pages. */
   signal?: AbortSignal;
+  /**
+   * Awaited before each request is sent, outside its time budget: the hook a per-connection limiter spaces requests
+   * with. Left out, requests go at once (the pre-save check has no connection to limit).
+   */
+  beforeRequest?: () => Promise<void>;
 }
 
 /** The most results Zephyr returns in one call. */
@@ -176,7 +181,11 @@ export class ZephyrScaleClient implements TestManagementProvider {
     private readonly apiToken: string,
     private readonly timeoutMs: number,
     private readonly signal: AbortSignal | undefined,
+    private readonly beforeRequest: (() => Promise<void>) | undefined,
   ) {}
+
+  /** The case statuses of a project, read once per client: a catalog read asks for them with each page. */
+  private readonly caseStatusCache = new Map<string, Promise<Map<number, string>>>();
 
   /**
    * A client on a region's host, or null for a region the registry does not list or a token that cannot be sent as
@@ -197,6 +206,7 @@ export class ZephyrScaleClient implements TestManagementProvider {
       token,
       options.timeoutMs ?? ZEPHYR_REQUEST_TIMEOUT_MS,
       options.signal,
+      options.beforeRequest,
     );
   }
 
@@ -213,6 +223,7 @@ export class ZephyrScaleClient implements TestManagementProvider {
         ZEPHYR_TIMEOUT_STATUS,
         `Zephyr Scale did not answer within ${this.timeoutMs / 1000} seconds`,
       );
+    await this.beforeRequest?.();
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}?${query}`, {
@@ -267,9 +278,16 @@ export class ZephyrScaleClient implements TestManagementProvider {
   }
 
   /** The names of a project's test case statuses by ID: one call, however many cases a page holds. */
-  private async caseStatusNames(projectKey: string): Promise<Map<number, string>> {
-    const statuses = await this.getAll<ZephyrStatus>('/statuses', { projectKey, statusType: 'TEST_CASE' });
-    return new Map(statuses.map((s) => [s.id, s.name]));
+  private caseStatusNames(projectKey: string): Promise<Map<number, string>> {
+    const cached = this.caseStatusCache.get(projectKey);
+    if (cached) return cached;
+    const read = this.getAll<ZephyrStatus>('/statuses', { projectKey, statusType: 'TEST_CASE' }).then(
+      (statuses) => new Map(statuses.map((s) => [s.id, s.name])),
+    );
+    this.caseStatusCache.set(projectKey, read);
+    // A failed read is not remembered: the next page asks again.
+    read.catch(() => this.caseStatusCache.delete(projectKey));
+    return read;
   }
 
   async listCases(projectKey: string, page: PageCursor): Promise<TmPage<TmCase>> {

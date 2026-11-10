@@ -362,7 +362,7 @@ function retryAfterMs(err: unknown): number | null {
 }
 
 /** How long a 429 holds its connection when the provider names no wait of its own. */
-const RATE_LIMIT_PAUSE_MS = 60 * 1000;
+export const RATE_LIMIT_PAUSE_MS = 60 * 1000;
 
 /**
  * When each rate-limited connection may be called again, as this server process learned it. Every attempt reads it
@@ -372,7 +372,7 @@ const RATE_LIMIT_PAUSE_MS = 60 * 1000;
 const connectionPauses = new Map<number, number>();
 
 /** The moment a rate-limited connection may be called again, or null when it is not paused. */
-function connectionPausedUntil(connectionId: number, now: Date): Date | null {
+export function connectionPausedUntil(connectionId: number, now: Date): Date | null {
   const until = connectionPauses.get(connectionId);
   if (until == null) return null;
   if (until <= now.getTime()) {
@@ -384,22 +384,34 @@ function connectionPausedUntil(connectionId: number, now: Date): Date | null {
 
 /**
  * Pause a connection the provider rate limited, for as long as it asked (`RATE_LIMIT_PAUSE_MS` when it named no wait):
- * no attempt calls it before then, and its other pending actions are moved to that moment.
+ * no attempt calls it before then, and its pending actions, but `exceptActionId`, are moved to that moment. The catalog
+ * read pauses a connection the same way, with no action of its own.
  */
-async function pauseConnection(db: DbClient, action: IntegrationAction, waitMs: number, now: Date): Promise<void> {
+export async function pauseConnectionById(
+  db: DbClient,
+  connectionId: number,
+  waitMs: number,
+  now: Date,
+  exceptActionId?: number,
+): Promise<void> {
   const until = new Date(now.getTime() + waitMs);
-  connectionPauses.set(action.connectionId, Math.max(connectionPauses.get(action.connectionId) ?? 0, until.getTime()));
+  connectionPauses.set(connectionId, Math.max(connectionPauses.get(connectionId) ?? 0, until.getTime()));
   await db
     .update(integrationActions)
     .set({ scheduledFor: until })
     .where(
       and(
-        eq(integrationActions.connectionId, action.connectionId),
+        eq(integrationActions.connectionId, connectionId),
         eq(integrationActions.status, 'pending'),
-        ne(integrationActions.id, action.id),
+        ...(exceptActionId === undefined ? [] : [ne(integrationActions.id, exceptActionId)]),
         lt(integrationActions.scheduledFor, until),
       ),
     );
+}
+
+/** {@link pauseConnectionById} for the connection of an action that was rate limited. */
+async function pauseConnection(db: DbClient, action: IntegrationAction, waitMs: number, now: Date): Promise<void> {
+  await pauseConnectionById(db, action.connectionId, waitMs, now, action.id);
 }
 
 /** Put an action back until its connection's pause ends, without counting an attempt or calling the provider. */

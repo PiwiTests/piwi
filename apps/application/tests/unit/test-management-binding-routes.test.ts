@@ -16,6 +16,8 @@ import { recordRouteMeta, underRoutePermission, type RouteAccessState, type Rout
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
+// The pickers share the connection's request limiter; this fast rate keeps the stubbed calls from waiting on it.
+process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
 
 const state = vi.hoisted(() => ({ db: null, caller: null, routePermission: [] }) as RouteAccessState);
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
@@ -131,6 +133,7 @@ afterAll(async () => {
   await close();
   vi.unstubAllGlobals();
   delete process.env.PIWI_SECRET_KEY;
+  delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
 });
 beforeEach(async () => {
   state.caller = projectAdmin;

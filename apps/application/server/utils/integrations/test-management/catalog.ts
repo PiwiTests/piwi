@@ -1,6 +1,7 @@
 /**
  * Reading the stored test case catalog: a cached copy of the case keys of a provider project, kept in
- * `test_management_cases`. These reads touch the database only, so a screen can ask as often as it needs.
+ * `test_management_cases`. These reads touch the database only, so a screen can ask as often as it needs. The read from
+ * the tool is in `catalog-refresh.ts`.
  */
 import { and, count, eq, inArray, max } from 'drizzle-orm';
 import type { DbClient } from '../../../database';

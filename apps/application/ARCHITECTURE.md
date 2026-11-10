@@ -416,6 +416,7 @@ Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTask
 | Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
 | Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
 | Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
+| Hourly          | `integrations:test-management-catalog` (reads the test case catalog of a bound test management project that was not read in a day)              |
 | Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
 
 ### Code the server and the demo share

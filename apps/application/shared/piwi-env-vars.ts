@@ -41,6 +41,11 @@ import {
   MIN_INTEGRATIONS_SYNC_MINUTES,
   MAX_INTEGRATIONS_SYNC_MINUTES,
 } from '#shared/integrations/sync-config';
+import {
+  DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+} from '#shared/integrations/test-management-limits';
 
 export type PiwiEnvVarCategory =
   | 'general'
@@ -1397,6 +1402,18 @@ export const PIWI_ENV_VARS = {
     since: '0.68.0',
     relevantWhen: { PIWI_ZEPHYR_API_TOKEN: '*' },
     notes: 'Any other value is logged and ignored, and the region stays `us`.',
+  },
+  PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE: {
+    description:
+      'How many requests a minute Piwi sends to a test management tool (Zephyr Scale Cloud) per connection: the test case catalog read, the pickers and the Refresh catalog button share this budget.',
+    category: 'integrations',
+    type: 'number',
+    default: String(DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE),
+    min: MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+    max: MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+    since: '0.68.0',
+    docs: 'operate/zephyr-scale',
+    notes: 'A value that is not a whole number in range is logged once and the default is used.',
   },
   PIWI_INTEGRATIONS_SYNC_MINUTES: {
     description: 'How often, in minutes, Piwi reads ticket statuses back from the tracker.',

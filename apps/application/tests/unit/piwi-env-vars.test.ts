@@ -27,6 +27,11 @@ import {
   MIN_INTEGRATIONS_SYNC_MINUTES,
   MAX_INTEGRATIONS_SYNC_MINUTES,
 } from '#shared/integrations/sync-config';
+import {
+  DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+  MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
+} from '#shared/integrations/test-management-limits';
 
 const ROOT = resolve(__dirname, '../..');
 
@@ -267,6 +272,15 @@ describe('PIWI_ENV_VARS registry', () => {
     expect(meta.default).toBe(String(DEFAULT_INTEGRATIONS_SYNC_MINUTES));
     expect(meta.min).toBe(MIN_INTEGRATIONS_SYNC_MINUTES);
     expect(meta.max).toBe(MAX_INTEGRATIONS_SYNC_MINUTES);
+  });
+
+  test('registry default and clamps for the test management request rate match the code constants', () => {
+    const meta = PIWI_ENV_VARS.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
+    expect(meta.type).toBe('number');
+    expect(meta.default).toBe(String(DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE));
+    expect(meta.min).toBe(MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
+    expect(meta.max).toBe(MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
+    expect(meta.since).toBe('0.68.0');
   });
 
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {

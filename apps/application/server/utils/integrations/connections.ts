@@ -37,6 +37,7 @@ import {
   type ZephyrClientOptions,
 } from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
+import { limiterForConnection } from './test-management/limiter';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
 const ENV_JIRA_NAME = 'Jira (environment)';
@@ -395,7 +396,9 @@ export function testManagementForRow(
   const credentials = resolveTestManagementCredentials(row);
   if (!credentials) return null;
   const region = (row.config as Record<string, unknown> | null)?.region;
-  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, options) : null;
+  // Every call of a saved connection goes through its limiter, whoever makes it.
+  const limited: ZephyrClientOptions = { beforeRequest: () => limiterForConnection(row.id).wait(), ...options };
+  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, limited) : null;
 }
 
 /** Every tracker connection with usable credentials — what drives the UI entry points. */
@@ -510,6 +513,17 @@ async function recordTest(
           }
         : { status: 'failed', lastCheckedAt: now, lastError: outcome.error, updatedAt: now },
     )
+    .where(eq(integrationConnections.id, id));
+}
+
+/**
+ * Record the outcome of a read of a connection that is not a sign-in test: the reason it failed on the row, or null to
+ * clear an earlier one. The connection's status is left as it is: a timeout does not make a token bad.
+ */
+export async function recordConnectionError(db: DbClient, id: number, error: string | null): Promise<void> {
+  await db
+    .update(integrationConnections)
+    .set({ lastError: error, updatedAt: new Date() })
     .where(eq(integrationConnections.id, id));
 }
 
