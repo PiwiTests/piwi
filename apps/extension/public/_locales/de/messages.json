@@ -6639,6 +6639,12 @@
   "runs_pickTitle": {
     "message": "Einen Locator im Fenster des Tests wählen: Er ersetzt den in dieser Zeile"
   },
+  "runs_front": {
+    "message": "Browser zeigen"
+  },
+  "runs_frontTitle": {
+    "message": "Das Browserfenster des Tests in den Vordergrund holen"
+  },
   "runs_runControls": {
     "message": "Steuerung des Laufs"
   },

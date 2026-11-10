@@ -1072,6 +1072,33 @@ test.describe('code from a stop', () => {
   });
 });
 
+test('Show the browser brings a headed stop’s window to the front, and is not offered at a headless one', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const card = liveRun(runs);
+    const { ref, channel } = await editor.svc.command();
+    const worker = laneWorker(editor, channel, ref, 0, ['view-lane', 'give-up', 'front']);
+    worker.begin('pays');
+    try {
+      stopAtCheckout(worker, 1);
+      const show = card.getByRole('button', { name: 'Show the browser' });
+      await expect(show).toHaveAttribute('title', 'Bring the test’s browser window to the front');
+      await show.click();
+      const asked = await answerNext(worker, 'front', { ok: true, message: "The test's window is in front." });
+      expect(asked).toMatchObject({ what: 'front', stop: 1 });
+      worker.send({ type: 'running', stop: 1 });
+      stopAtCheckout(worker, 2, { bar: false });
+      await expect(card.getByRole('button', { name: 'Resume' })).toBeVisible();
+      await expect(show).toHaveCount(0);
+    } finally {
+      await endRun({ ref, worker });
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 /** The actions in the test's window a headless stop takes once watched. */
 const WATCH_TO_USE = ['Pick', 'Record', 'Assert', 'Assert a region'];
 

@@ -7877,6 +7877,14 @@
     "message": "Pick a locator in the test’s window: it replaces the one on this line",
     "description": "Runs window, the Pick button’s tooltip."
   },
+  "runs_front": {
+    "message": "Show the browser",
+    "description": "Runs window, button on a test stopped in a headed run: brings the test’s browser window to the front."
+  },
+  "runs_frontTitle": {
+    "message": "Bring the test’s browser window to the front",
+    "description": "Runs window, the Show the browser button’s tooltip."
+  },
   "runs_runControls": {
     "message": "Run controls",
     "description": "Runs window, the accessible name of the row of a run’s own controls (Pause all, Resume all)."

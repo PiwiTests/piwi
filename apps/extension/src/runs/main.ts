@@ -2024,6 +2024,7 @@ const CONTROLS = {
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
   end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop', tone: 'remove' },
   'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop', tone: 'remove' },
+  front: { label: 'runs_front', title: 'runs_frontTitle', icon: 'browser', tone: 'ghost' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick', tone: 'ghost' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record', tone: 'ghost' },
   assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle', tone: 'ghost' },
@@ -2038,7 +2039,7 @@ const CONTROLS = {
 type Control = keyof typeof CONTROLS;
 
 /** The controls that steer the test, on a row of their own above the code a stop can write. */
-const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'give-up', 'pause']);
+const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'front', 'end', 'give-up', 'pause']);
 
 /** The controls that move a stopped test on, joined in one group at the start of the steering row. */
 const JOINED: ReadonlySet<Control> = new Set(['resume', 'step', 'finish']);
@@ -2063,7 +2064,7 @@ function moreShown(key: string, since: string | null): boolean {
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
- * it as it failed), and End the test where the stop takes it; then the actions the stop takes from this window
+ * it as it failed), Show the browser at a stop its pause bar shows, and End the test where the stop takes it; then the actions the stop takes from this window
  * (`stopIntents`): Pick, Record, Assert and Assert a region, which start in the test's window where the pause bar
  * shows, or through the live view this window watches at a headless stop, those it takes once watched (`held`) among
  * them, and Mock a request.
@@ -2074,6 +2075,8 @@ function controlsOf(worker: HubWorker, stop: HubStop | null, held: readonly Cont
     return worker.pausing ? (worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : []) : ['pause'];
   const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
   const intents = stopIntents(worker, stop);
+  // Show the browser, at a stop its pause bar shows, where its worker takes it.
+  if (intents.includes('front')) controls.push('front');
   if (intents.includes('end')) controls.push('end');
   controls.push(...IN_WINDOW.filter((what) => intents.includes(what) || held.includes(what)));
   if (intents.includes('mock')) controls.push('mock');
