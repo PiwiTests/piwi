@@ -91,7 +91,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     const request = parseRunsRequest(raw);
     if (!request) return;
     if (request.type === 'window') runsWindows.set(port, request.windowId);
-    else if (request.type === 'find') void runHubs.find();
+    else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
     else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
@@ -119,7 +119,7 @@ async function openRunsWindowId(url: string): Promise<number | null> {
   }
 }
 
-/** Where the person left the last Runs window, when it was kept; null to open beside the test's window. */
+/** Where the person left the last Runs window, when it was kept; null to let the browser place it. */
 async function keptBounds(): Promise<ReturnType<typeof readRunsBounds>> {
   try {
     return readRunsBounds((await chrome.storage.local.get(RUNS_BOUNDS_KEY))[RUNS_BOUNDS_KEY]);
@@ -149,7 +149,7 @@ export async function openRunsWindow(): Promise<{ ok: boolean }> {
       await chrome.windows.create({ url, type: 'popup', ...place, focused: true });
       return { ok: true };
     } catch {
-      // A place the browser refuses (a screen gone): beside the test's window.
+      // A place the browser refuses (a screen gone): where the browser places it.
     }
   }
   return { ok: false };
@@ -184,6 +184,4 @@ export function startRunHubs(): void {
     }
     serveRunsPort(port);
   });
-  // What the run shortcut does, for the e2e suite, which cannot press a shortcut the browser holds.
-  (globalThis as { __piwiRunShortcut?: () => Promise<unknown> }).__piwiRunShortcut = () => runHubs.shortcut();
 }

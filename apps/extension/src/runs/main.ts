@@ -193,6 +193,8 @@ function connect(): void {
   opened.onMessage.addListener((event: RunsEvent) => {
     if (event?.type === 'state') {
       showState(event.state);
+    } else if (event?.type === 'found') {
+      stopLooking();
     } else if (event?.type === 'code') {
       heardCode(event);
     } else if (event?.type === 'frame') {
@@ -1141,6 +1143,8 @@ async function pickOnImage(
 
 // Where the person leaves the window, kept as it closes, is resized or loses the focus: the next one opens there.
 function keepBounds(): void {
+  // A maximized or full-screen window keeps the place it had before: its size is the screen's.
+  if (window.outerWidth >= screen.availWidth && window.outerHeight >= screen.availHeight) return;
   const bounds = readRunsBounds({
     left: window.screenX,
     top: window.screenY,
@@ -1158,29 +1162,27 @@ window.addEventListener('blur', keepBounds);
 window.addEventListener('pagehide', keepBounds);
 
 // Resume, Step and Finish on the debuggers' keys (`stopKeyOf`), for the test whose row holds the focus, else the only
-// stopped test; never while a field takes the keys. Step and Finish wait for a stop that is no failure.
+// stopped test of a hub that answers; never while a field takes the keys, nor at a held failure.
 document.addEventListener('keydown', (event) => {
   if (event.defaultPrevented || !state) return;
   const what = stopKeyOf(event);
   if (!what) return;
+  const anyStopped = state.runs.some((run) => !run.session.ended && run.session.workers.some((w) => w.stop));
+  // F5 reloads the window only while no test is stopped, a field's keys included.
+  if (anyStopped) event.preventDefault();
   const field = event.target instanceof HTMLElement ? event.target.closest('input, textarea, select') : null;
   if (field) return;
   const focused =
     document.activeElement instanceof HTMLElement
       ? (document.activeElement.closest<HTMLElement>('[data-worker]')?.dataset.worker ?? null)
       : null;
-  const target = keyTargetOf(state.runs, focused);
-  const anyStopped = state.runs.some((run) => !run.session.ended && run.session.workers.some((w) => w.stop));
-  // F5 reloads the window only while no test is stopped.
+  const target = keyTargetOf(state.runs, focused, hubAnswers);
   if (!target) {
-    if (anyStopped) {
-      event.preventDefault();
-      announce(t('runs_keyChoose'));
-    }
+    if (anyStopped) announce(t('runs_keyChoose'));
     return;
   }
-  event.preventDefault();
-  if (what !== 'resume' && target.failed) return;
+  // A held failure ends as it failed with Resume: its button alone takes that, never a key pressed out of habit.
+  if (target.failed) return;
   void control(target.run, target.worker, what, target.since);
 });
 
@@ -1574,21 +1576,38 @@ function renderEmpty(current: RunsState): void {
   emptyActions.replaceChildren(...actions.map((action) => emptyActionButton(action, `empty|${action}`)));
 }
 
-/** Look again is asking the editor and the desktop app for their hubs: its buttons say so, for `LOOKING_MS`. */
+/**
+ * Look again is asking the editor and the desktop app for their hubs: its buttons say so until the worker says it found
+ * them (`found`), `LOOKING_SHOWN_MS` at least so the word can be read, `LOOKING_MAX_MS` at most.
+ */
 let looking = false;
-const LOOKING_MS = 1500;
+let lookingSince = 0;
+let lookingEnd: ReturnType<typeof setTimeout> | undefined;
+const LOOKING_SHOWN_MS = 600;
+const LOOKING_MAX_MS = 15_000;
+
+function stopLooking(): void {
+  if (!looking) return;
+  clearTimeout(lookingEnd);
+  lookingEnd = setTimeout(
+    () => {
+      looking = false;
+      render();
+    },
+    Math.max(0, lookingSince + LOOKING_SHOWN_MS - Date.now()),
+  );
+}
 
 /** Look again: the worker asks for the hubs again, and the buttons say it looks, then show what it found. */
 function lookAgain(): void {
   if (looking) return;
   looking = true;
+  lookingSince = Date.now();
   post({ type: 'find' });
   announce(t('runs_looking'));
   render();
-  setTimeout(() => {
-    looking = false;
-    render();
-  }, LOOKING_MS);
+  clearTimeout(lookingEnd);
+  lookingEnd = setTimeout(stopLooking, LOOKING_MAX_MS);
 }
 
 /** Open the settings, or Look again: a button the empty box or a status line shows, named for the focus by `focus`. */
@@ -1790,12 +1809,19 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
     commands: ReadonlyArray<{ worker: number | null; what: 'pause' | 'resume'; since: string | null }>,
   ) => {
     if (runBusy.has(key) || !hubAnswers(run.hub)) return;
+    // Each worker a command names waits for it too, as its own buttons and keys would.
+    const workers = commands.flatMap((c) =>
+      c.worker === null ? [] : [workerKey(run.hub, run.session.ref, { worker: c.worker })],
+    );
+    if (workers.some((worker) => busy.has(worker))) return;
     runBusy.add(key);
+    for (const worker of workers) busy.add(worker);
     render();
     const said = await Promise.all(commands.map((c) => command(run.hub, run.session.ref, c.worker, c.what, c.since)));
     runBusy.delete(key);
-    const refused = said.find((answer) => !answer.ok && answer.message);
-    if (refused) announce(refused.message);
+    for (const worker of workers) busy.delete(worker);
+    const refused = said.find((answer) => !answer.ok);
+    if (refused) announce(failureText(refused));
     render();
   };
   const buttons: HTMLButtonElement[] = [];

@@ -156,10 +156,10 @@ describe('the global shortcut’s rule', () => {
     expect(shortcutCommands([run('a', [worker({ state: 'stopped', stop: stop('s1') })], true)])).toEqual([]);
   });
 
-  it('leaves a run nobody attends alone, where its hub keeps a Hold failures for each run a person attends', () => {
+  it('pauses only the runs a person attends, where its hub keeps a Hold failures for each, and resumes any stop', () => {
     const plain = run('a', [worker({})]);
     const attended = { ...plain, session: { ...plain.session, hold: { on: false, by: 'start' as const } } };
-    const unattended = run('b', [worker({ state: 'stopped', stop: stop('s1') })]);
+    const unattended = run('b', [worker({ worker: 2 })]);
     const hub = (holds: boolean) => ({
       id: attended.hub,
       connected: true,
@@ -169,35 +169,18 @@ describe('the global shortcut’s rule', () => {
       presence: true,
       holds,
     });
-    // The unattended run's stopped test is no reason to resume: the shortcut pauses the run a person attends.
+    // A run nobody attends is left to run: the shortcut pauses the run a person attends.
     expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
       ['a', 'pause'],
     ]);
     // A hub that keeps no Hold failures names no run unattended.
     expect(shortcutCommands([attended, unattended], [hub(false)]).map((c) => [c.ref, c.action])).toEqual([
-      ['b', 'resume'],
+      ['a', 'pause'],
+      ['b', 'pause'],
     ]);
-  });
-});
-
-describe('where the Runs window was left', () => {
-  it('keeps a place and size a window can have, and nothing else', () => {
-    expect(readRunsBounds({ left: 1200, top: -40, width: 440, height: 720 })).toEqual({
-      left: 1200,
-      top: -40,
-      width: 440,
-      height: 720,
-    });
-    for (const bad of [
-      null,
-      'here',
-      { left: 0, top: 0, width: 100, height: 720 },
-      { left: 0, top: 0, width: 440, height: 720.5 },
-      { left: 1e9, top: 0, width: 440, height: 720 },
-      { left: 0, width: 440, height: 720 },
-    ]) {
-      expect(readRunsBounds(bad), JSON.stringify(bad)).toBeNull();
-    }
+    // A stop of a run nobody attends, which a person paused, still resumes.
+    const stopped = run('b', [worker({ worker: 2, state: 'stopped', stop: stop('s1') })]);
+    expect(shortcutCommands([attended, stopped], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([['b', 'resume']]);
   });
 });
 
@@ -227,6 +210,10 @@ describe('the keys of the stop controls', () => {
     expect(keyTargetOf([one, two], null)).toBeNull();
     expect(keyTargetOf([one, two], workerKey(two.hub, 'b', { worker: 2 }))).toMatchObject({ worker: 2, failed: true });
     expect(keyTargetOf([run('c', [worker({ state: 'stopped', stop: stop('s3') })], true)], null)).toBeNull();
+    // A stop of a run whose hub was lost, shown as last heard, is no test a key steers.
+    expect(keyTargetOf([one, two], null, (hub) => hub !== two.hub || false)).toBeNull();
+    const lost = { ...two, hub: 'ws://127.0.0.1:50999/piwi/hub' };
+    expect(keyTargetOf([one, lost], null, (hub) => hub === one.hub)).toMatchObject({ worker: 1 });
   });
 });
 

@@ -258,7 +258,9 @@ export type RunsEvent =
   | ({ type: 'view-ended' } & RunsView)
   | ({ type: 'lane-frame' } & RunsLaneFrame)
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
-  | ({ type: 'lane-ended' } & RunsLane);
+  | ({ type: 'lane-ended' } & RunsLane)
+  /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
+  | { type: 'found' };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -506,12 +508,12 @@ export function attendedRun(run: RunsRun, hubs: readonly RunsHub[]): boolean {
 }
 
 /**
- * What the global shortcut does: resume every stopped test, each at the stop it stands at; with none stopped, pause
- * every run with a worker, each worker before its next call. Nothing when no run is live, and nothing to a run nobody
- * attends (`attendedRun`), whose tests are left to run.
+ * What the global shortcut does: resume every stopped test, each at the stop it stands at, a run nobody attends
+ * included (a person paused it); with none stopped, pause every run a person attends (`attendedRun`) with a worker,
+ * each worker before its next call, the others left to run. Nothing when no run is live.
  */
 export function shortcutCommands(runs: readonly RunsRun[], hubs: readonly RunsHub[] = []): ShortcutCommand[] {
-  const live = runs.filter((run) => !run.session.ended && attendedRun(run, hubs));
+  const live = runs.filter((run) => !run.session.ended);
   const stopped = live.flatMap(({ hub, session }) =>
     session.workers.flatMap((worker): ShortcutCommand[] =>
       worker.state === 'stopped' && worker.stop
@@ -521,7 +523,7 @@ export function shortcutCommands(runs: readonly RunsRun[], hubs: readonly RunsHu
   );
   if (stopped.length > 0) return stopped;
   return live
-    .filter(({ session }) => session.workers.length > 0)
+    .filter((run) => run.session.workers.length > 0 && attendedRun(run, hubs))
     .map(({ hub, session }) => ({ hub, ref: session.ref, worker: null, action: 'pause', since: null }));
 }
 
@@ -596,11 +598,16 @@ export interface KeyTarget {
 
 /**
  * The stopped test a key steers: the one whose row holds the focus (`focused`, its `workerKey`), else the only stopped
- * test of the live runs; null when there is none, or several and the focus is in none of them.
+ * test of the live runs whose hub answers (`answering`, by hub id); null when there is none, or several and the focus
+ * is in none of them.
  */
-export function keyTargetOf(runs: readonly RunsRun[], focused: string | null): KeyTarget | null {
+export function keyTargetOf(
+  runs: readonly RunsRun[],
+  focused: string | null,
+  answering: (hub: string) => boolean = () => true,
+): KeyTarget | null {
   const stopped = runs.flatMap((run) =>
-    run.session.ended
+    run.session.ended || !answering(run.hub)
       ? []
       : run.session.workers.flatMap((worker): KeyTarget[] =>
           worker.state === 'stopped' && worker.stop
