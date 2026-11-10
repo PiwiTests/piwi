@@ -38,8 +38,8 @@ export interface SummaryLine {
   /** 0-based line the text sits above. */
   line: number;
   /**
-   * On a test's line, the whole tooltip of its gutter mark after `Piwi:`: its latest result naming the run
-   * (`failing in CI run #124`, `never run`), then its pass rate, quarantine, flaky score and selections.
+   * On a test's line, the text of its gutter mark's tooltip after `Piwi:`: its latest result and the run it is from
+   * (`failing in run #124`, `never run`), then its pass rate, quarantine, flaky score and selections.
    */
   title: string;
   command?: PiwiCommand;

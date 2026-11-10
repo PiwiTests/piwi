@@ -694,7 +694,7 @@ describe('the tests of a file', () => {
         { line: 0, title: '2 tests in Piwi' },
         {
           line: 3,
-          title: 'failing in CI run #124 · passed 1 of 4 runs',
+          title: 'failing in run #124 · passed 1 of 4 runs',
           status: 'failed',
           endLine: 6,
           failure: {
@@ -719,7 +719,7 @@ describe('the tests of a file', () => {
         line: 3,
         failingUntil: 6,
         failingLine: 5,
-        hover: '**Piwi**: failing in CI run #124 · passed 1 of 4 runs',
+        hover: '**Piwi**: failing in run #124 · passed 1 of 4 runs',
         dashboardUrl: 'http://piwi/test-cases/9',
         testCaseId: 9,
       },
@@ -789,14 +789,14 @@ describe('the tests of a file', () => {
     const [edited] = testDecorations([
       {
         line: 3,
-        title: 'failing in CI run #124, edited since · passed 1 of 4 runs',
+        title: 'failing in run #124, its line edited since · passed 1 of 4 runs',
         status: 'failed',
         endLine: 6,
         failure: { ...failure, state: 'edited' },
       },
     ]);
     expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
-    expect(edited!.hover).toBe('**Piwi**: failing in CI run #124, edited since · passed 1 of 4 runs');
+    expect(edited!.hover).toBe('**Piwi**: failing in run #124, its line edited since · passed 1 of 4 runs');
   });
 
   test('a test’s hover shows the instance’s text as written', () => {

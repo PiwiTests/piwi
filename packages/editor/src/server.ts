@@ -325,7 +325,6 @@ import {
   type SummaryLine,
   type TestAtParams,
   type TestAtResult,
-  type LiveRun,
   type TestFailure,
   type TestLineStatus,
   type TestsForFile,
@@ -602,32 +601,21 @@ function runLabel(context: PiwiContext, f: BranchFailure): string {
 }
 
 /**
- * What the line of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in CI run
- * #120)`, `fixed locally in your run #124 (…)` when the editor started that run.
+ * What the lens of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in run #120)`,
+ * `fixed locally in your run #124 (…)` when the editor started that run.
  */
 function fixedLabel(context: PiwiContext, r: BranchResolved): string {
   const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
   const run = `${isOwnRun(context, r.runId) ? 'your ' : ''}run #${r.runId}`;
-  return `${where} in ${run} (failing in ${runWords(context, context.failures?.run?.id)})`;
-}
-
-/** A run as a test's line names it: `your run #124`, `CI run #120`, or `local run #124` for another run off CI. */
-function runWords(context: PiwiContext, runId: number | undefined): string {
-  if (runId === undefined) return 'the latest run';
-  if (isOwnRun(context, runId)) return `your run #${runId}`;
-  return `${isCiRun(context, runId) ? 'CI' : 'local'} run #${runId}`;
-}
-
-/** The run in progress as a test's line names it; `the run that just ended` once it ended and before it is read. */
-function liveRunWords(live: LiveRun | null): string {
-  if (!live) return 'the run that just ended';
-  return live.own ? `your run #${live.runId}` : `${live.ci ? 'CI' : 'local'} run #${live.runId}`;
+  return `${where} in ${run} (failing in run #${context.failures?.run?.id ?? ''})`;
 }
 
 /**
- * A test's latest result, as its line's summary leads with it, in the dashboard's words and naming the run:
- * `running in your run #130`, `failing in CI run #124`, `failing in CI run #124, edited since`, `fixed locally in your
- * run #124 (failing in CI run #120)`, `didn't run in its latest run`, `never run`, or `no recent result`.
+ * A test's latest result, as its line's summary leads with it, in the dashboard's words: in the run in progress while
+ * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
+ * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
+ * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
+ * runs`, `never run`, `no recent result`).
  */
 function testVerdict(
   context: PiwiContext,
@@ -637,13 +625,20 @@ function testVerdict(
   failure: TestFailure | undefined,
 ): string {
   const live = context.liveTests.get(found.id);
-  if (live) return `${statusWords(live)} in ${liveRunWords(context.live)}`;
+  if (live && context.live) {
+    const run = `${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
+    return `${live === 'failed' ? 'failing' : statusWords(live)} in ${run}`;
+  }
   if (failed) {
-    const edited = failure?.state === 'edited' ? ', edited since' : '';
-    return `failing in ${runWords(context, failed.runId ?? context.failures?.run?.id)}${edited}`;
+    const otherBranch =
+      context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : '';
+    const edited = failure?.state === 'edited' ? ', its line edited since' : '';
+    return `failing in ${runLabel(context, failed)}${otherBranch}${edited}`;
   }
   if (fixed) return fixedLabel(context, fixed);
   if (!found.status) return 'no recent result';
+  // The catalog calls a test flaky when one of its recent runs was.
+  if (found.status === 'flaky') return 'flaky in recent runs';
   if (found.status === 'never-run') return statusWords(found.status);
   return `${statusWords(found.status)} in its latest run`;
 }
@@ -2974,11 +2969,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
         const verdict = testVerdict(context, found, failed, fixed, failure);
-        // A test with no result has no pass rate to give.
+        // A test the catalog has no run of has no pass rate to give.
         const passRate =
           runs > 0
             ? ` · passed ${passed} of ${plural(runs, 'run')}`
-            : verdict === 'never run' || verdict === 'no recent result'
+            : !found.status || found.status === 'never-run'
               ? ''
               : ' · no pass rate (no passed or failed run)';
         const quarantined = context.quarantined.get(found.id);

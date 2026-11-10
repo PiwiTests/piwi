@@ -409,7 +409,7 @@ beforeAll(async () => {
       );
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Fskipped.spec.ts') {
-      // A test skipped on every run, one never run, one that did not run last, and one with no status.
+      // A test skipped on every run, one never run, one that did not run last, one with no status, and one flaky lately.
       return res.end(
         JSON.stringify({
           items: [
@@ -433,6 +433,15 @@ beforeAll(async () => {
               failedRuns: 0,
             },
             { id: 34, title: 'voids', filePath: 'tests/skipped.spec.ts', status: null, totalRuns: 0 },
+            {
+              id: 35,
+              title: 'holds',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'flaky',
+              totalRuns: 4,
+              passedRuns: 4,
+              failedRuns: 0,
+            },
           ],
         }),
       );
@@ -1288,6 +1297,7 @@ describe('the Piwi language server', () => {
       "test('refunds', async () => {});",
       "test('ships', async () => {});",
       "test('voids', async () => {});",
+      "test('holds', async () => {});",
       '',
     ].join('\n');
     await open('tests/skipped.spec.ts', skipped);
@@ -1297,6 +1307,7 @@ describe('the Piwi language server', () => {
       [2, 'never run', 'unknown'],
       [3, "didn't run in its latest run · passed 2 of 2 runs", 'unknown'],
       [4, 'no recent result', 'unknown'],
+      [5, 'flaky in recent runs · passed 4 of 4 runs', 'flaky'],
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
   });
@@ -2058,7 +2069,7 @@ describe('local runs over the latest CI run', () => {
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
       expect(fixed).toMatchObject({ line: 3, status: 'passed' });
-      expect(fixed.title).toMatch(/^fixed locally in run #42 \(failing in CI run #41\) · passed 6 of 9 runs/);
+      expect(fixed.title).toMatch(/^fixed locally in run #42 \(failing in run #41\) · passed 6 of 9 runs/);
       expect(fixed.failure).toBeUndefined();
       expect(rows.lines.filter((l) => l.title.startsWith('✗'))).toEqual([]);
 
@@ -2171,7 +2182,7 @@ describe('failures follow the edits', () => {
     await open(rows, `// Rows.\n\n${FAILING_SPEC}`);
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
-      [5, 'failing in CI run #41'],
+      [5, 'failing in run #41'],
       [8, "✗ locator('.cart-row').nth(2) was not found"],
       [8, 'Run this test'],
       [8, 'Screenshot'],
@@ -2214,7 +2225,7 @@ describe('failures follow the edits', () => {
     // The test still failed: its lens says so, and that the line it failed at changed since.
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { state: 'edited' } });
-    expect(spec.lines[0]!.title).toMatch(/^failing in CI run #41, edited since · /);
+    expect(spec.lines[0]!.title).toMatch(/^failing in run #41, its line edited since · /);
     expect(spec.lines.map((l) => l.title)).toContain(
       "✎ edited since run #41 · locator('.cart-row').nth(2) was not found",
     );
@@ -3428,6 +3439,13 @@ describe('a branch with no run yet', () => {
       const page = pathToFileURL(path.join(other, 'tests/pages/checkout.page.ts')).href;
       const onPage = await waitFor(() => published.get(page));
       expect(onPage[0]?.message).toContain('run #41 on main');
+      // A test's line says which branch its failure was read on.
+      const rows = pathToFileURL(path.join(other, 'tests/rows.spec.ts')).href;
+      await branchClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: rows, languageId: 'typescript', version: 1, text: FAILING_SPEC },
+      });
+      const spec = (await branchClient.sendRequest('piwi/fileSummary', { uri: rows })) as FileSummary;
+      expect(spec.lines.find((l) => l.status === 'failed')?.title).toMatch(/^failing in run #41 on main · /);
       // Another branch's failure is a warning at most, and an information when the setting says so.
       expect(onPage[0]?.severity).toBe(2);
       const severityAfter = async (failureSeverity: string, severity: number) => {

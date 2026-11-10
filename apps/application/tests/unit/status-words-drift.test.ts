@@ -20,6 +20,8 @@ describe('the words of a test’s status', () => {
       'never-run',
       'interrupted',
       'running',
+      // Any other status is its own word on both sides.
+      'some-new-status',
     ];
     expect(statuses.map(statusWords)).toEqual(statuses.map(formatStatusLabel));
   });

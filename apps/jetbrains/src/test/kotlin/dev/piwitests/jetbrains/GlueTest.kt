@@ -2810,8 +2810,8 @@ class GlueTest {
         )
         // The service's text is shown as text, never as markup.
         assertEquals(
-            "<html>Piwi: failing in CI run #124 · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
-            Glue.testResultTooltip("failing in CI run #124 · <img src=x onerror=alert(1)> & more"),
+            "<html>Piwi: failing in run #124 · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
+            Glue.testResultTooltip("failing in run #124 · <img src=x onerror=alert(1)> & more"),
         )
         assertEquals("<html>Piwi</html>", Glue.testResultTooltip(null))
         val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
