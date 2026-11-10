@@ -32,7 +32,7 @@ import {
   startStub,
   writeWorkspace,
 } from '../../vscode/scripts/lib/editor-fixture.mjs';
-import { cutWindow, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
+import { countPixels, cutWindow, imageSize, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(here, '..');
@@ -215,8 +215,8 @@ function writeIdeDirs(root, ide) {
 </application>
 `,
   );
-  // No code author hints above the declarations: the fixture's one commit would sign every line, and the summaries
-  // the plugin adds above the tests are the point.
+  // No code author hints or usage counts above the declarations: the fixture's one commit would sign every line, and
+  // the summaries the plugin adds above the tests are the point.
   fs.writeFileSync(
     path.join(options, 'editor.xml'),
     `<application>
@@ -227,6 +227,8 @@ function writeIdeDirs(root, ide) {
     <option name="disabledCodeVisionProviderIds">
       <set>
         <option value="vcs.code.vision" />
+        <option value="js.references" />
+        <option value="references" />
       </set>
     </option>
   </component>
@@ -319,14 +321,45 @@ function xinput(...commands) {
   });
 }
 
-/** The screen as it stands, the window alone (the screen around it is black), written at the window's width. */
-async function shoot(name, dir = outDir) {
+/**
+ * Whether the status bar draws Piwi's item as failing, as `PiwiStatusBar` does for the fixture's failures: the
+ * `TestFailed` icon's amber and the error color of its label, counted in the right part of the status bar of a window
+ * captured at `SCALE`.
+ */
+async function statusItemFailing(window) {
+  const { width, height } = await imageSize(window);
+  const bar = {
+    left: Math.round(width * 0.4),
+    top: height - 40 * SCALE,
+    width: Math.round(width * 0.6),
+    height: 40 * SCALE,
+  };
+  const red = await countPixels(window, bar, (r, g, b) => r > 170 && g < 120 && b < 120);
+  const amber = await countPixels(window, bar, (r, g, b) => r > 200 && g > 130 && g < 200 && b < 90);
+  return { red, amber, failing: red >= 200 && amber >= 16 };
+}
+
+/**
+ * The screen as it stands, the window alone (the screen around it is black), written at the window's width. With
+ * `failing`, the image is written only once the status bar draws the item as failing.
+ */
+async function shoot(name, { dir = outDir, failing = false } = {}) {
   const raw = path.join(os.tmpdir(), `piwi-jetbrains-${name}-${process.pid}.png`);
   execFileSync('import', ['-display', DISPLAY, '-window', 'root', raw]);
+  const window = await cutWindow(raw);
+  fs.rmSync(raw, { force: true });
+  if (failing) {
+    const status = await statusItemFailing(window);
+    if (!status.failing) {
+      throw new Error(
+        `The status bar draws Piwi's item without its failing icon and color (${status.red} red and ${status.amber} ` +
+          `amber pixels): ${name} is not written. Run with --probe to see the window.`,
+      );
+    }
+  }
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `jetbrains-${name}.png`);
-  await writeAtWidth(await cutWindow(raw), WINDOW.width, file);
-  fs.rmSync(raw, { force: true });
+  await writeAtWidth(window, WINDOW.width, file);
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
 }
 
@@ -467,9 +500,12 @@ const SCENES = {
     async run() {
       xinput('key', KEYS.hideToolWindows.xinput);
       await sleep(1500);
+      // The spec's own line sits above its first line, which opening the file at line 1 scrolls out of sight.
+      xinput('move', 1400, 600, 'sleep', 0.3, 'click', 4, 'click', 4, 'click', 4);
+      await sleep(1000);
       xinput('key', KEYS.piwiToolWindow.xinput);
       await sleep(4000);
-      await shoot('failures');
+      await shoot('failures', { failing: true });
     },
   },
 
@@ -486,7 +522,7 @@ const SCENES = {
       await sleep(1500);
       xinput('key', 'alt+Return');
       await sleep(3000);
-      await shoot('heal');
+      await shoot('heal', { failing: true });
       xinput('key', 'Escape');
       await sleep(500);
     },
@@ -535,7 +571,7 @@ async function main() {
     if (xvfbFailure) throw xvfbFailure;
     if (probe) {
       // The probe's capture is not an illustration: it goes to the temp directory.
-      await withIde(run, SCENES.heal, () => shoot('probe', os.tmpdir()));
+      await withIde(run, SCENES.heal, () => shoot('probe', { dir: os.tmpdir() }));
       return;
     }
     const unknown = only.filter((name) => !(name in SCENES));

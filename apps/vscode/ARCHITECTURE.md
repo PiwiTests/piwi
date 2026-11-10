@@ -823,7 +823,8 @@ the `ide` scope is what puts a line in it. The file is gitignored, and `.vscodei
 by the docs, the README and the Marketplace README. It:
 
 - opens the fixture project of `scripts/lib/editor-fixture.mjs` (a small shop's suite with one brittle locator, two CI
-  failures and a local run since) against the stub instance the same module serves;
+  failures and a local run since) against the stub instance the same module serves, which answers each spec's cases
+  as an instance does (the nightly suite checks the spec's lens counts its own three tests);
 - runs the VS Code that `scripts/lib/vscode-window.mjs` downloads, at the release `VSCODE_VERSION` pins (moved on
   purpose, since the workbench's DOM changes between releases);
 - drives the window with Playwright's Electron support.
