@@ -39,6 +39,12 @@ end as it failed; **Pick** replaces the failing locator. **Hold failures**, on e
 **Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
 project whose live view is on, as in the editor: [Share a run live](./share-live).
 
+Each run names who else has it open (**Also open in the desktop app**, **An agent follows this run**), and each worker
+who watches its page (**Watched by you and Visual Studio Code**). One tool drives a stop at a time: an agent that
+paused it or acts on it, else the last whose person clicked, typed or picked there. While another tool drives it or an
+agent follows the run, **Take control** makes it yours: an agent's actions there are refused until you **Give back**. A
+stop an agent asked for reads **Paused by the agent**: [driving a stop](/guide/concepts#presence-driving-a-stop).
+
 ## Code from a stop
 
 The actions under **Code** (the last two in **More** once five show) send code to the editor, which writes it at the
@@ -119,15 +125,10 @@ runs](./desktop-runs).
 ## Limits
 
 - **The top frame.** Pick on the image refuses an element inside an iframe.
-- **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
-  size and quality; when none can start, it is an image of the page twice a second.
-- **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a
-  second; when even that is too heavy, the window says so in place of the view.
+- **What a view shows.** A test's own screencast, a heavy page, a popup, a download and a dialog: [Watch a running
+  test](./watch-running-test#limits).
 - **No input method.** Characters an input method composes (Chinese, Japanese, Korean) do not reach the page; paste
   them instead.
-- **The test's own page alone.** A popup the page opens is not shown.
-  A download your click starts and a dialog the page opens go to the test as its own would: Playwright deletes the
-  download with the test's context, and dismisses the dialog unless the test handles it.
 - **The middle button stays the window's.** It would open a link in a tab the view does not show; `Shift`+click picks
   instead of clicking.
 

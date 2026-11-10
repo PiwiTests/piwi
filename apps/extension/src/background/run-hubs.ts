@@ -11,7 +11,9 @@
  * answers again or is no longer named; the run shortcut and the popup's count leave them out. What each code written
  * at a stop came to goes to the listeners, with the hub that said it. While a listener (a Runs window) is there, each
  * connection says the runs are followed (`follow`): as the first window opens, on each connection that opens while one
- * is, and `on: false` as the last one closes. It holds no failure: each run's **Hold failures** (`hold`) does.
+ * is, and `on: false` as the last one closes. It holds no failure: each run's **Hold failures** (`hold`) does. A
+ * window drives a stop (`drive`) as this connection: the hub names the connection's own entries `self`, in each run's
+ * `presence`, each worker's `watchers` and each stop's `driver`.
  *
  * The paired desktop app is asked for the hub of the runs its shell starts, which its server is, beside the editor
  * (`desktopHubs`: `GET /api/desktop/live` with the app's token, once the app proved it holds it): its hub is connected
@@ -260,6 +262,7 @@ export class RunHubs {
           client: connection?.welcome?.client ?? hub.client,
           desktop: this.desktopUrls.has(hub.url),
           lanes: !!this.features.get(hub.url)?.includes('lanes'),
+          presence: !!this.features.get(hub.url)?.includes('presence'),
         };
       }),
       runs: [...live, ...ended],
@@ -361,6 +364,11 @@ export class RunHubs {
         return request.on === undefined
           ? Promise.resolve(OFFLINE)
           : connection.command({ type: 'hold', ref, on: request.on });
+      case 'drive':
+        // `parseRunsRequest` takes none without the stop it drives and whether to drive it.
+        return since === null || request.on === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'drive', ref, worker, since, on: request.on });
       default: {
         // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
         if (since === null) return Promise.resolve(OFFLINE);

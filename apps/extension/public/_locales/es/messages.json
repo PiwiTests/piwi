@@ -6690,6 +6690,81 @@
   "runs_holdByAgent": {
     "message": "Fijado por un agente"
   },
+  "runs_presenceOpen": {
+    "message": "También abierta en $tools$",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "Un agente sigue esta ejecución"
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker"
+  },
+  "runs_presenceDesktop": {
+    "message": "la aplicación de escritorio"
+  },
+  "runs_presenceAgent": {
+    "message": "un agente"
+  },
+  "runs_watchedBy": {
+    "message": "Observada por $who$",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "ti"
+  },
+  "runs_driverYou": {
+    "message": "Tú controlas esta parada"
+  },
+  "runs_driverAgent": {
+    "message": "Un agente controla esta parada"
+  },
+  "runs_driverDesktop": {
+    "message": "La aplicación de escritorio controla esta parada"
+  },
+  "runs_driverTool": {
+    "message": "$tool$ controla esta parada",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Tomar el control"
+  },
+  "runs_takeControlTitle": {
+    "message": "Controla tú esta parada: las acciones de un agente aquí esperan hasta que la devuelvas"
+  },
+  "runs_giveBack": {
+    "message": "Devolver"
+  },
+  "runs_giveBackTitle": {
+    "message": "Devolver esta parada: un agente puede volver a actuar en ella"
+  },
+  "runs_stoppedByAgent": {
+    "message": "Pausado por el agente"
+  },
+  "runs_announceDriveTaken": {
+    "message": "Ahora controlas la parada de $test$: el agente espera hasta que la devuelvas.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Código desde esta parada"
   },

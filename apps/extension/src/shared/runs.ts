@@ -72,6 +72,8 @@ export interface RunsHub {
   desktop: boolean;
   /** It shows a lane of a run while it runs (`lanes` among the features it welcomed the worker with). */
   lanes: boolean;
+  /** It says who is present on each run, lane and stop, and takes `drive` (`presence` among its features). */
+  presence: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -94,7 +96,8 @@ export interface RunsState {
  * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; an
  * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
  * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
- * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch).
+ * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch); or
+ * the stop driven from here, an agent's actions there refused, or given back (`drive`, Take control and Give back).
  */
 export type RunsWhat =
   | HubControlAction
@@ -108,7 +111,8 @@ export type RunsWhat =
   | 'pick-at'
   | 'share'
   | 'hold'
-  | 'watch';
+  | 'watch'
+  | 'drive';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -130,6 +134,7 @@ const WHATS: readonly string[] = [
   'hold',
   'watch',
   'give-up',
+  'drive',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -156,7 +161,7 @@ export type RunsRequest =
       request?: number;
       /**
        * For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop; for `watch`:
-       * start watching the lane, or stop.
+       * start watching the lane, or stop; for `drive`: drive the stop, or give it back.
        */
       on?: boolean;
       /** For `watch` alone: the lane, Playwright's `parallelIndex`. */
@@ -274,7 +279,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (worker !== null && !isIndex(worker)) return null;
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
-      if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
+      if ((what === 'image' || what === 'drive' || VIEW_WHATS.includes(what)) && worker === null) return null;
       // Share live and Hold failures name the run alone, and Watch the run and its lane.
       if ((what === 'share' || what === 'hold' || what === 'watch') && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
@@ -289,6 +294,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         view: ['on'],
         share: ['on'],
         hold: ['on'],
+        drive: ['on'],
         watch: ['lane', 'on'],
         input: ['events'],
         'pick-at': ['x', 'y'],
@@ -303,6 +309,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         case 'view':
         case 'share':
         case 'hold':
+        case 'drive':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
         case 'watch':
           return typeof value.on === 'boolean' && isIndex(value.lane)

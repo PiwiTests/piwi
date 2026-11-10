@@ -921,6 +921,12 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (`live.stopped`). A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
   why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
   sentence as the hub said it.
+- From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the
+  window's own `self` entry left out), each worker who watches its page (`watchers`, `self` as "you"), and a stop who
+  drives it (`driver`), each kind in the window's own words (`src/shared/run-presence.ts`). **Take control** shows
+  while another tool drives the stop or an agent follows the run, **Give back** while this connection drives it: the
+  hub's `drive`, naming the stop. Control taken from the agent is read out, and a stop an agent asked for
+  (`stop.by`) reads **Paused by the agent**. All of it hides while the hub is away.
 - While none of a live run's tests stands stopped, a note under its workers says that a test's page shows in the
   window at a stop, and how a test stops (`pageHintOf`: a worker whose reporter takes `view` and whose test can stop;
   for the desktop app's runs, which have no breakpoints, `page.pause()` and **Pause** alone). A run with a worker

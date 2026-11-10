@@ -6690,6 +6690,81 @@
   "runs_holdByAgent": {
     "message": "Definido por um agente"
   },
+  "runs_presenceOpen": {
+    "message": "Também aberta em: $tools$",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "Um agente acompanha esta execução"
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker"
+  },
+  "runs_presenceDesktop": {
+    "message": "o aplicativo de desktop"
+  },
+  "runs_presenceAgent": {
+    "message": "um agente"
+  },
+  "runs_watchedBy": {
+    "message": "Assistida por: $who$",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "você"
+  },
+  "runs_driverYou": {
+    "message": "Você controla esta parada"
+  },
+  "runs_driverAgent": {
+    "message": "Um agente controla esta parada"
+  },
+  "runs_driverDesktop": {
+    "message": "O aplicativo de desktop controla esta parada"
+  },
+  "runs_driverTool": {
+    "message": "$tool$ controla esta parada",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Assumir o controle"
+  },
+  "runs_takeControlTitle": {
+    "message": "Controle você mesmo esta parada: as ações de um agente aqui esperam até você devolvê-la"
+  },
+  "runs_giveBack": {
+    "message": "Devolver"
+  },
+  "runs_giveBackTitle": {
+    "message": "Devolver esta parada: um agente pode agir nela de novo"
+  },
+  "runs_stoppedByAgent": {
+    "message": "Pausado pelo agente"
+  },
+  "runs_announceDriveTaken": {
+    "message": "Agora você controla a parada de $test$: o agente espera até você devolvê-la.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Código a partir desta parada"
   },

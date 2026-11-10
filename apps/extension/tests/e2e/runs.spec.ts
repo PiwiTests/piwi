@@ -1459,6 +1459,68 @@ test.describe('the live view', () => {
     }
   });
 
+  test('says who else has the run open, who watches a stop and who drives it, Take control and Give back moving it', async () => {
+    const theirs = await pairedExtension(editor);
+    const ours = await pairedExtension(editor);
+    try {
+      // A Runs window in another browser, and this one.
+      const other = liveRun(await openRuns(theirs.context, theirs.extensionId));
+      const runs = await openRuns(ours.context, ours.extensionId);
+      const { before } = await shopFrames(ours.context);
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      const input = playInput(run.worker);
+      try {
+        const card = liveRun(runs);
+        await expect(card.getByText('Running')).toBeVisible();
+        // Each window names the other, and leaves itself out.
+        await expect(card.locator('.run-presence')).toHaveText('Also open in Piwi Picker');
+        await expect(other.locator('.run-presence')).toHaveText('Also open in Piwi Picker');
+
+        // Watched here: the window says so, as you; nobody drives the stop and no agent follows the run, so nothing
+        // offers to take it.
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await answerView(run.worker);
+        await expect(card.locator('.watchers')).toHaveText('Watched by you');
+        await expect(other.locator('.watchers')).toHaveText('Watched by Piwi Picker');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+
+        // The editor watches too, and its input drives the stop from there.
+        const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
+        const at = { ref: run.ref, worker: 0, since };
+        expect(await editor.svc.client.sendRequest('piwi/pageView', { ...at, on: true })).toMatchObject({ ok: true });
+        sendFrame(run.worker, 1, before);
+        await expect(card.locator('.watchers')).toHaveText('Watched by you and Test Editor');
+        const typed = { ...at, events: [{ type: 'text', text: 'a' }] };
+        expect(await editor.svc.client.sendRequest('piwi/pageInput', typed)).toMatchObject({ ok: true });
+        await expect(card.locator('.run-driver .driver')).toHaveText('Test Editor drives this stop');
+
+        // Taken here: this window drives it, and the other one hears so.
+        await card.getByRole('button', { name: 'Take control' }).click();
+        await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
+        await expect(runs.locator('#announce')).toHaveText(
+          'You drive this stop: an agent waits until you give it back.',
+        );
+        await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
+        const giveBack = card.getByRole('button', { name: 'Give back' });
+        await expect(giveBack).toHaveAttribute('title', 'Give this stop back: an agent may act on it again');
+        await expect(giveBack).toBeFocused();
+
+        // Given back: nobody drives it.
+        await giveBack.click();
+        await expect(runs.locator('#announce')).toHaveText('You gave this stop back: an agent may act on it.');
+        await expect(card.locator('.run-driver')).toHaveCount(0);
+        await expect(other.locator('.run-driver')).toHaveCount(0);
+      } finally {
+        input.stop();
+        await endRun(run);
+      }
+    } finally {
+      await ours.context.close();
+      await theirs.context.close();
+    }
+  });
+
   test('Watch live stays on as the extension’s worker restarts, and the view is asked again', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
@@ -1706,10 +1768,11 @@ test.describe('watching a running test', () => {
         await expect(card.locator('img.stale')).toHaveCount(0);
         // Watched, Pause and watch has nothing left to do.
         await expect(card.locator('.controls button')).toHaveText(['Pause', 'Watch']);
-        // Its controls above its page, and no stop's image asked of a running test.
+        // Who watches it, its controls above its page, and no stop's image asked of a running test.
+        await expect(card.locator('.watchers')).toHaveText('Watched by you');
         expect(
           await card.locator('.worker').evaluate((item) => [...item.children].map((child) => child.className)),
-        ).toEqual(['state', 'test', 'meta', 'controls', 'page']);
+        ).toEqual(['state', 'test', 'meta', 'watchers', 'controls', 'page']);
         expect(heardRequests(run.worker, 'image')).toEqual([]);
 
         // The test ends: its last frame stays, dimmed and marked as running, until the next test's comes.

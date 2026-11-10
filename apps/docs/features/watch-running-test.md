@@ -47,7 +47,13 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 ## Limits
 
 - **One worker per editor.** The panel or tab watches one worker: watching another moves it there.
-- **The test's `page`.** A popup or a second page the test opens is not shown.
+- **The test's `page`.** A popup or a second page the test opens is not shown. A download a click on the view starts
+  and a dialog the page opens go to the test as its own would: Playwright deletes the download with the test's
+  context, and dismisses the dialog unless the test handles it.
+- **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
+  size and quality; when none can start, it is an image of the page twice a second.
+- **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a second; when even that is
+  too heavy, the view says so in its place.
 - **An older reporter** shows a stopped test alone: the Runs window's row says to update it, and the editors offer no
   Watch for its workers.
 

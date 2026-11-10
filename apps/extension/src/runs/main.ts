@@ -44,6 +44,7 @@ import {
   type RunsView,
   type RunsWhat,
 } from '../shared/runs.js';
+import { driverOf, presenceLine, watchersLine } from '../shared/run-presence.js';
 import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../shared/view-input.js';
 
@@ -154,8 +155,8 @@ const holding = new Set<string>();
 const shareRefusals = new Map<string, string>();
 /** Why the hub did not turn a run's Hold failures over, by run, until it is asked again. */
 const holdRefusals = new Map<string, string>();
-/** Each worker's state and stop as last shown, and the runs live then, for what the live region says. */
-let seen: Map<string, { state: HubWorker['state']; since: string | null }> | null = null;
+/** Each worker's state, stop and its driver as last shown, and the runs live then, for what the live region says. */
+let seen: Map<string, WorkerSeen> | null = null;
 let liveSeen = new Set<string>();
 
 // ── The port to the worker ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1245,9 +1246,19 @@ function showState(next: RunsState): void {
   document.documentElement.dataset.ready = '';
 }
 
-/** Says what changed since the last state: a test stopped or went on, a run ended. Nothing for the first state. */
+/** A worker as the live region last heard of it: its state, its stop, and whether an agent or this window drove it. */
+interface WorkerSeen {
+  state: HubWorker['state'];
+  since: string | null;
+  driver: 'self' | 'agent' | null;
+}
+
+/**
+ * Says what changed since the last state: a test stopped or went on, a run ended, a stop taken here from the agent
+ * that drove it. Nothing for the first state.
+ */
 function announceChanges(next: RunsState): void {
-  const now = new Map<string, { state: HubWorker['state']; since: string | null }>();
+  const now = new Map<string, WorkerSeen>();
   const live = new Set<string>();
   const said: string[] = [];
   for (const run of next.runs) {
@@ -1260,7 +1271,9 @@ function announceChanges(next: RunsState): void {
     for (const worker of run.session.workers) {
       const key = workerKey(run.hub, run.session.ref, worker);
       const since = worker.stop?.since ?? null;
-      now.set(key, { state: worker.state, since });
+      const driver = worker.stop?.driver;
+      const drivenBy = driver?.self ? 'self' : driver?.kind === 'agent' ? 'agent' : null;
+      now.set(key, { state: worker.state, since, driver: drivenBy });
       const before = seen?.get(key);
       const test = worker.test ? testName(worker.test) : runName(run.session);
       if (!seen) continue;
@@ -1273,6 +1286,8 @@ function announceChanges(next: RunsState): void {
         if (isWatched(lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)))) toView = key;
       } else if (before?.state === 'stopped' && worker.state !== 'stopped') {
         said.push(t('runs_announceRunning', { test }));
+      } else if (worker.stop && before?.since === since && before.driver === 'agent' && drivenBy === 'self') {
+        said.push(t('runs_announceDriveTaken', { test }));
       }
     }
   }
@@ -1571,6 +1586,13 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     const { total, done, failed, flaky } = session.progress;
     children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
   }
+  // Who else has the run open, from a hub that says so, while the run goes on and its hub is connected.
+  const present = session.ended || away ? null : presenceLine(session.presence);
+  if (present) {
+    children.push(
+      part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
+    );
+  }
   // Hold failures, from a hub that keeps it for each run, while the run goes on and its hub is connected.
   if (session.hold && !session.ended && !away) {
     const { on, by } = session.hold;
@@ -1817,7 +1839,7 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   const line = element('p', 'state');
   const stop = worker.state === 'stopped' ? worker.stop : null;
   if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
-  else if (stop) iconText(line, 'pause', t(STOP_WORDS[stop.reason]));
+  else if (stop) iconText(line, 'pause', t(stop.by === 'agent' ? 'runs_stoppedByAgent' : STOP_WORDS[stop.reason]));
   else if (worker.pausing && worker.waiting) {
     // How long it has waited, kept up to date each second (`tickWaits`).
     const waited = element('span', 'waited');
@@ -1865,7 +1887,7 @@ const CONTROLS = {
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch'>,
+  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive'>,
   { label: string; title: string; icon: IconName; tone?: 'primary' | 'remove' | 'ghost' }
 >;
 
@@ -2216,6 +2238,7 @@ function renderWorker(
     const shown = {
       state: worker.state,
       reason: stop?.reason ?? null,
+      by: stop?.by ?? null,
       place: stop?.reason === 'failure' ? where : null,
       pausing: worker.pausing,
       waiting: worker.pausing ? (worker.waiting ?? null) : null,
@@ -2261,6 +2284,18 @@ function renderWorker(
       !stop && can
         ? { can, watched: isWatched(lane), pauseWatch: can === 'watch' && !isWatched(lane) && !worker.pausing }
         : null;
+    // Who watches its page, and who drives its stop, as a hub with `presence` says, while it answers.
+    const watchers = away ? null : watchersLine(worker.watchers);
+    if (watchers) {
+      parts.push(part(`${key}|watchers`, watchers, () => iconText(element('p', 'watchers'), 'eye', watchers)));
+    }
+    const driver = stop && hub?.presence && !away ? driverOf(stop) : null;
+    const agentFollows = !!run.session.presence?.some((tool) => tool.kind === 'agent');
+    if (stop && hub?.presence && !away && (driver || agentFollows)) {
+      const drive = part(`${key}|drive`, { since: stop.since, driver }, () => renderDriver(run, worker, stop, driver));
+      markBusy(drive.querySelectorAll('button'), held);
+      parts.push(drive);
+    }
     if (controls.length > 0 || running) {
       // Drawn again for another stop, so each control answers the stop shown; a command on its way leaves them be.
       const failure = stop?.reason === 'failure';
@@ -2341,6 +2376,50 @@ function stopView(stop: HubStop, where: string): HTMLElement {
     element('dt', undefined, t('runs_whereLabel')),
     element('dd', 'place', where),
   );
+}
+
+/**
+ * Who drives a stop, one at a time, with **Take control** while another tool drives it or an agent follows the run,
+ * and **Give back** while this window drives it.
+ */
+function renderDriver(
+  run: RunsRun,
+  worker: HubWorker,
+  stop: HubStop,
+  driver: ReturnType<typeof driverOf>,
+): HTMLElement {
+  const row = element('div', 'run-driver piwi-actions');
+  if (driver)
+    row.append(iconText(element('span', 'driver'), driver.who === 'agent' ? 'sparkles' : 'hand', driver.words));
+  const mine = driver?.who === 'self';
+  const button = makeButton(
+    t(mine ? 'runs_giveBack' : 'runs_takeControl'),
+    (event) => {
+      if (!pressedHeld(event)) void drive(run, worker.worker, stop.since, !mine, driver?.who ?? null);
+    },
+    { icon: mine ? 'undo' : 'hand', small: true, title: t(mine ? 'runs_giveBackTitle' : 'runs_takeControlTitle') },
+  );
+  button.dataset.focus = `${workerKey(run.hub, run.session.ref, worker)}|drive`;
+  row.append(button);
+  return row;
+}
+
+/**
+ * Take control of a stop (`on`), or give it back: a refusal is shown under the test; the answer is read out, but for
+ * control taken from the agent, which the state that follows says (`announceChanges`).
+ */
+async function drive(
+  run: RunsRun,
+  worker: number,
+  since: string,
+  on: boolean,
+  before: 'self' | 'agent' | 'other' | null,
+): Promise<void> {
+  const answer = await send(run, worker, 'drive', since, { on });
+  if (!answer) return;
+  if (!answer.ok) say(workerKey(run.hub, run.session.ref, { worker }), answer, since);
+  else if (answer.message && !(on && before === 'agent')) announce(answer.message);
+  render();
 }
 
 /**

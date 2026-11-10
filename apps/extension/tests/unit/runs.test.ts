@@ -246,6 +246,26 @@ describe('Hold failures, as the worker reads it', () => {
   });
 });
 
+describe('Take control and Give back, as the worker reads them', () => {
+  const command = { type: 'command', id: 8, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 0, since: 's3' };
+
+  it('name the run, the worker and its stop, and whether to drive it', () => {
+    expect(parseRunsRequest({ ...command, what: 'drive', on: true })).toEqual({ ...command, what: 'drive', on: true });
+    expect(parseRunsRequest({ ...command, what: 'drive', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'drive' },
+      { ...command, what: 'drive', on: 'yes' },
+      { ...command, what: 'drive', on: true, since: null },
+      { ...command, what: 'drive', on: true, worker: null },
+      { ...command, what: 'drive', on: true, ref: 'r 1' },
+      { ...command, what: 'drive', on: true, lane: 1 },
+      { ...command, what: 'drive', on: true, x: 1, y: 1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('Share live, as the worker reads it', () => {
   const command = { type: 'command', id: 6, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
 
@@ -358,7 +378,7 @@ describe('what a stop takes from the window', () => {
     const state: RunsState = {
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false }],
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false, presence: false }],
       runs: [
         {
           hub,
@@ -500,7 +520,7 @@ describe('a lane watched while it runs', () => {
     const state = (workers: HubWorker[]): RunsState => ({
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true }],
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true, presence: false }],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
     });
     const lanes: Array<number | null> = [];
