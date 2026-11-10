@@ -637,7 +637,7 @@ describe('coverage in the editor', () => {
         line: 6,
         title: 'Reached by 2 tests · 1 failing',
         command: {
-          title: 'Run them',
+          title: 'Run the 2 tests that reach this function with Piwi, recording its coverage',
           command: 'piwi.runTests',
           arguments: [{ uri: uri(BASKET_FILE), testIds: [11, 12], coverage: 'server' }],
         },
@@ -868,7 +868,7 @@ describe('an instance without coverage', () => {
           line: 0,
           title: 'Reached by 2 tests · 1 failing',
           command: {
-            title: 'Run them',
+            title: 'Run the 2 tests that reach this file with Piwi',
             command: 'piwi.runTests',
             arguments: [{ uri: uri(BASKET_FILE), testIds: [11, 12] }],
           },

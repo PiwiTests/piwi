@@ -480,7 +480,8 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
 `Piwi.StopRun`.
 
 - They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists;
-  the item reads `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
+  the item reads `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`), with the
+  pause's icon, or the error's while every stop held is a failure (`Glue.heldFailuresOnly`).
 - They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
   stop of that slot opens, they act on a stop of the answered slot or on none, whatever the caret or another worker's
   new stop say, so a key pressed again answers no other worker. Otherwise they act on the stop at the caret's line, else

@@ -631,7 +631,7 @@
         },
         {
           "command": "piwi.runSpec",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.record",
@@ -663,15 +663,15 @@
         },
         {
           "command": "piwi.stepRun",
-          "when": "piwi.runStopped"
+          "when": "piwi.runStopped && !piwi.runFailed"
         },
         {
           "command": "piwi.runToCursor",
-          "when": "piwi.runStopped"
+          "when": "piwi.runStopped && !piwi.runFailed"
         },
         {
           "command": "piwi.finishRun",
-          "when": "piwi.runStopped"
+          "when": "piwi.runStopped && !piwi.runFailed"
         },
         {
           "command": "piwi.endTest",
@@ -866,7 +866,7 @@
         {
           "command": "piwi.runSpec",
           "group": "1_run@3",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.runTestsForFile",
@@ -937,18 +937,18 @@
       {
         "command": "piwi.stepRun",
         "key": "f10",
-        "when": "piwi.runStopped && debugState != 'stopped'"
+        "when": "piwi.runStopped && !piwi.runFailed && debugState != 'stopped'"
       },
       {
         "command": "piwi.runToCursor",
         "key": "ctrl+f10",
         "mac": "cmd+f10",
-        "when": "editorTextFocus && piwi.runStopped && debugState != 'stopped'"
+        "when": "editorTextFocus && piwi.runStopped && !piwi.runFailed && debugState != 'stopped'"
       },
       {
         "command": "piwi.finishRun",
         "key": "shift+f11",
-        "when": "piwi.runStopped && debugState != 'stopped'"
+        "when": "piwi.runStopped && !piwi.runFailed && debugState != 'stopped'"
       }
     ],
     "configuration": {
@@ -1144,6 +1144,16 @@
           "light": "editor.stackFrameHighlightBackground",
           "highContrast": "editor.stackFrameHighlightBackground",
           "highContrastLight": "editor.stackFrameHighlightBackground"
+        }
+      },
+      {
+        "id": "piwi.failurePointBackground",
+        "description": "The background of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
+        "defaults": {
+          "dark": "#f8514940",
+          "light": "#f8514933",
+          "highContrast": "#f8514966",
+          "highContrastLight": "#f8514940"
         }
       }
     ],

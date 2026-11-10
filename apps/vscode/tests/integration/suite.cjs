@@ -529,7 +529,6 @@ const tests = {
         "$(debug-pause) Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2",
         'Resume',
         'Step',
-        'Run to cursor',
         'Finish',
       ]) {
         assert.ok(lenses.includes(title), lenses.join(' | '));
@@ -704,7 +703,8 @@ const tests = {
       }, 'the terminal run’s lenses');
       const title = '$(debug-pause) Stopped at a breakpoint · Fill "one" locator(\'input\') · run in a terminal';
       assert.ok(lenses.includes(title), lenses.join(' | '));
-      assert.ok(lenses.includes('End test'), lenses.join(' | '));
+      // End test is in the stop's hover and the palette; the lens row keeps to five entries.
+      assert.ok(!lenses.includes('End test'), lenses.join(' | '));
       await vscode.commands.executeCommand('piwi.endTest');
       await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
     } finally {
@@ -774,9 +774,8 @@ const tests = {
         const titles = await stopLenses(spec, '$(debug-pause) Stopped at a breakpoint · ');
         return titles.length ? titles : null;
       }, 'the paused line’s lenses');
-      for (const title of ['Pick', 'Record', 'Assert', 'Assert region', 'Mock']) {
-        assert.ok(lenses.includes(title), lenses.join(' | '));
-      }
+      // The code actions are one entry of the row, Write code…, which offers them in a pick.
+      assert.ok(lenses.includes('Write code…'), lenses.join(' | '));
 
       // The cursor on the stopped line: its locator counted on the stopped page, at the line's end.
       const asked = await heardOne('the count asked', (m) => m.type === 'request' && m.what === 'locator');
@@ -922,11 +921,7 @@ const tests = {
       assert.deepEqual(failed, [
         "$(error) Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
         'Resume',
-        'Pick',
-        'Record',
-        'Assert',
-        'Assert region',
-        'Mock',
+        'Write code…',
       ]);
       const from = heard.length;
       await vscode.commands.executeCommand('piwi.resumeRun');

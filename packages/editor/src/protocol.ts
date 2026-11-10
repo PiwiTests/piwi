@@ -132,8 +132,13 @@ export interface TestAtParams {
 export interface TestAtResult {
   /** The test whose `test(…)` call spans `line`; null outside every test Piwi knows. */
   test: EditorTest | null;
-  /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
-  spec: { uri: string; testIds: number[] } | null;
+  /**
+   * The spec's tests: those Piwi knows (`testIds`), and the spec as a location without a line (`location`, relative to
+   * the Playwright config's folder, as `RunTestsArgs.locations` takes it), which runs every test of the file as saved,
+   * known to Piwi or not, generated ones included: Run This Spec and the spec's lens run it. Null for a file that is not
+   * a spec under a Playwright config's folder.
+   */
+  spec: { uri: string; testIds: number[]; location: string } | null;
   /**
    * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
    * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,
@@ -303,8 +308,9 @@ export interface RunTestsArgs extends RunStartOptions {
   coverage?: 'server' | 'browser';
   /**
    * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
-   * config `uri` or `root` names), run in place of `testIds`: a test the instance does not know yet, such as one just
-   * recorded, runs too, and the command needs no instance. The spec runs as saved.
+   * config `uri` or `root` names), or a whole spec by its path alone (`TestAtResult.spec.location`), run in place of
+   * `testIds`: a test the instance does not know yet, such as one just recorded, runs too, and the command needs no
+   * instance. The spec runs as saved.
    */
   locations?: string[];
   /**

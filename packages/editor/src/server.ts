@@ -143,6 +143,7 @@ import {
 import { requireDesktopProof } from './http.js';
 import {
   isTestLocation,
+  locationSpec,
   playwrightArgsOf,
   playwrightTestCommand,
   repeatArgs,
@@ -559,6 +560,15 @@ function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
 }
 
 /** Whether a failure is listed from a run that did not run in CI: a run laid over the baseline, or the baseline itself. */
+/**
+ * What a failure diagnostic's message starts with: `Local failure: ` for a developer's own run's, `Edited since run
+ * #120: ` for one whose line changed since `editedSince`, both as `Local failure, edited since your run #42: `.
+ */
+function failureLead(local: boolean, editedSince: string | null): string {
+  if (local) return editedSince ? `Local failure, edited since ${editedSince}: ` : 'Local failure: ';
+  return editedSince ? `Edited since ${editedSince}: ` : '';
+}
+
 function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
   return !isCiRun(context, f.runId ?? context.failures?.run?.id);
 }
@@ -1244,7 +1254,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: edited ? `Edited since ${run}: ${headline} (${where})` : `${headline} (${where})`,
+          // The code stays `ci-failure` for every failure (D25 freezes it); the message names a developer's own run's.
+          message: `${failureLead(isLocalFailure(context, f), edited ? run : null)}${headline} (${where})`,
           data: {
             root: context.root,
             executionId: f.executionId,
@@ -2888,8 +2899,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const lines = text.split(/\r?\n/);
     const pass = placer({ file, text });
-    const run = (testIds: number[], coverage?: RunTestsArgs['coverage']) => ({
-      title: 'Run them',
+    /** A click that runs `testIds`, its title saying which: `Run the 7 tests of this spec with Piwi`. */
+    const run = (testIds: number[], which: string, coverage?: RunTestsArgs['coverage']) => ({
+      title: `Run ${testIds.length === 1 ? 'the test' : `the ${testIds.length} tests`} ${which} with Piwi${coverage ? ', recording its coverage' : ''}`,
       command: 'piwi.runTests' as const,
       arguments: [{ uri: params.uri, testIds, ...(coverage ? { coverage } : {}) } satisfies RunTestsArgs],
     });
@@ -2901,7 +2913,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push({
           line: l.line - 1,
           title: [plural(l.tests.length, 'test'), l.actions.slice(0, 2).join(', '), counts].filter(Boolean).join(' · '),
-          command: run(l.tests.map((t) => t.id)),
+          command: run(
+            l.tests.map((t) => t.id),
+            l.tests.length === 1 ? 'that uses this locator' : 'that use this locator',
+          ),
         });
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
@@ -2919,12 +2934,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
-        const status = fixed
-          ? ` · ${fixedLabel(context, fixed)}`
-          : found.status && found.status !== 'passed'
-            ? ` · ${found.status}`
-            : '';
+        // The client says the latest result in words (failing, flaky, no recent result) before this title.
+        const passRate =
+          runs > 0 ? `passed ${passed} of ${plural(runs, 'run')}` : 'no pass rate (no passed or failed run)';
+        const status = fixed ? ` · ${fixedLabel(context, fixed)}` : '';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
@@ -3005,7 +3018,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            command: run(cases.map((c) => c.id)),
+            // Every test of the spec as saved, by its path, as Run This Spec runs it.
+            command: {
+              title: 'Run every test of this spec with Piwi',
+              command: 'piwi.runTests',
+              arguments: [{ uri: params.uri, testIds: [], locations: [relative!] } satisfies RunTestsArgs],
+            },
           }
         : null;
       return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
@@ -3041,6 +3059,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             .join(' · '),
           command: run(
             tests.map((t) => t.id),
+            tests.length === 1 ? 'that reaches this file' : 'that reach this file',
             recordCoverage,
           ),
         }
@@ -3055,6 +3074,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           title: [`Reached by ${plural(ran.length, 'test')}`, testCounts(ran)].filter(Boolean).join(' · '),
           command: run(
             ran.map((t) => t.id),
+            ran.length === 1 ? 'that reaches this function' : 'that reach this function',
             recordCoverage,
           ),
         },
@@ -3092,7 +3112,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ]
         .filter(Boolean)
         .join(' · '),
-      command: run(page.tests.map((t) => t.id)),
+      command: run(
+        page.tests.map((t) => t.id),
+        page.tests.length === 1 ? 'that acts on this page' : 'that act on this page',
+      ),
     };
     return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
   });
@@ -3130,12 +3153,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
-    const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
+    const lines = (readText(file) ?? '').split(/\r?\n/);
+    const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
     return {
       test: found ? caseToEditorTest(context, found) : null,
-      spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
+      spec: { uri: params.uri, testIds: cases.map((c) => c.id), location: relative },
       location: call ? `${relative}:${call.line + 1}` : null,
     };
   });
@@ -3265,7 +3289,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = file ? relativeTo(context.root, file) : null;
     if (file && relative && SPEC_FILE.test(relative)) specs.add(file);
     for (const location of params?.locations ?? []) {
-      if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
+      if (isTestLocation(location)) specs.add(path.join(context.root, locationSpec(location)));
     }
     const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
     const run: RunCommand = {
@@ -3304,7 +3328,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
     if (!isTestLocation(location)) return false;
-    const spec = location.slice(0, location.lastIndexOf(':'));
+    const spec = locationSpec(location);
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
@@ -3315,10 +3339,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) => {
-        const colon = l.lastIndexOf(':');
-        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
-      });
+      return params.locations.map((l) => `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`);
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);

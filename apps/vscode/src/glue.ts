@@ -33,6 +33,7 @@ import type {
   RunStatusResult,
   RunTestsArgs,
   SpecTest,
+  RunSession,
   StatusResult,
   SummaryLine,
   TestAtResult,
@@ -98,6 +99,8 @@ export interface StatusBarView {
   liveUrl: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
+  /** The text counts a run this editor started (`· yours`): a stop it holds shows instead of its spinner. */
+  ownLive?: boolean;
 }
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
@@ -186,6 +189,26 @@ function updatedLine(run: RunStatus | undefined, now: number): string | null {
 /** The baseline a context compares with, as the tooltip and the failures view name it: `Baseline: CI run #120 on main`. */
 export function baselineLine(label: string | undefined): string | null {
   return label ? `Baseline: ${label}` : null;
+}
+
+/**
+ * The item's text while a run this editor started holds a stop and the item counts that run (`StatusBarView.ownLive`):
+ * no spinner, as no test runs there, but the pause's icon, or the error's while every stop held is a failure. Any other
+ * text is left as it is.
+ */
+export function heldText(text: string, held: 'stop' | 'failure' | null): string {
+  if (!held) return text;
+  return text.replace(/^\$\(sync~spin\)/, held === 'failure' ? '$(error)' : '$(debug-pause)');
+}
+
+/** What the runs this editor started hold: a stop, only failures, or nothing; a terminal's run is the terminal's. */
+export function heldStops(sessions: readonly RunSession[]): 'stop' | 'failure' | null {
+  const stops = sessions
+    .filter((s) => !s.terminal)
+    .flatMap((s) => s.workers ?? [])
+    .flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop] : []));
+  if (!stops.length) return null;
+  return stops.every((s) => s.reason === 'failure') ? 'failure' : 'stop';
 }
 
 /** The item's text while the latest run is read again: its icon spins. */
@@ -376,7 +399,11 @@ export function statusBarView(
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
-    return { ...view, text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}` };
+    return {
+      ...view,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
+      ownLive: !!live?.own,
+    };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
   if (failing > 0) {

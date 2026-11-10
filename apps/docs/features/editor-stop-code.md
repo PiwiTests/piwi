@@ -27,19 +27,17 @@ are on [Pause and step from the editor](./editor-run-control).
 The first four need the pause bar, so a headed browser: a run Piwi starts with breakpoints is headed. **Mock a
 request** works headless too.
 
-- **In VS Code**, they are in the line above the stopped line, after the controls (named **Pick**, **Record**,
-  **Assert**, **Assert region** and **Mock** there), in its hover, in the palette while a stop offers them (**Piwi:
-  Assert in the stopped test's page**, **Piwi: Mock a request of the stopped test**…), and behind the status bar's
-  `</>` item, **Piwi: Write code at the stop…**.
-- **In a JetBrains IDE**, they are links in the inlay above the stopped line (by the same short names), in the
-  gutter icon's menu, in the status bar item's menu, and under **Tools → Piwi** (**Assert at the Stop**, **Mock
-  a Request at the Stop**…).
+- **In VS Code**, they are behind **Write code…** in the line above the stopped line, after the controls, in its hover,
+  in the palette while a stop offers them (**Piwi: Assert in the stopped test's page**, **Piwi: Mock a request of the
+  stopped test**…), and behind the status bar's `</>` item, **Piwi: Write code at the stop…**. - **In a JetBrains IDE**,
+  they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
+  bar item's menu, and under **Tools → Piwi** (**Assert at the Stop**, **Mock a Request at the Stop**…).
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search
 `piwi`). A stop offers only the actions its reporter takes: with one that predates them, none.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-code.png" alt="VS Code: a test paused before it types a coupon; above the line, the controls then Pick, Record, Assert, Assert region and Mock; at the line's end, Piwi: 1 match; at the top, the list of the requests the test made, to mock one">
+  <img src="/screenshots/vscode-run-control-code.png" alt="VS Code: a test paused before it types a coupon; above the line, the controls then Write code…; at the line's end, Piwi: 1 match; at the top, the list of the requests the test made, to mock one">
   <figcaption>Mock a request lists the answers the test received; the line's locator matches one element on the paused page.</figcaption>
 </figure>
 
@@ -117,10 +115,11 @@ line where the error entered the test's code, or at the call a test timeout cut 
 
 `Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
 
-**Resume** lets the test end as it failed (**Step** and **Finish** do the same); **Pick** replaces the failing
-locator, **Record** writes the steps that were missing above the failing line, and the code actions work as at any
-stop. Every attempt that fails is held, never an expected failure. A headless failure in any other run, such as a
-plain **Run**, goes on at once, and the editor shows nothing of it.
+Its line is marked in red. **Resume** lets the test end as it failed (**Step** and **Finish** do the same, so VS Code's
+status bar offers Resume alone); **Pick** replaces the failing locator, **Record** writes the steps that were missing
+above the failing line, and the code actions work as at any stop. Every attempt that fails is held, never an expected
+failure. A headless failure in any other run, such as a plain **Run**, goes on at once, and the editor shows nothing of
+it.
 
 The run reports the failure as it happened. Piwi's evidence of it is the page at the failure: the requests, console
 entries and dialogs of the hold are not recorded. Playwright's own trace and video go on through it.

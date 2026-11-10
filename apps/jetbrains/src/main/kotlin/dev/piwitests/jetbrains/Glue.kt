@@ -885,6 +885,15 @@ object Glue {
         else -> ""
     }
 
+    /**
+     * The end of a tinted line's range: past its line break, so the editor paints the background to its right edge as it
+     * does a whole line's; the line's own end on the last line, which has none.
+     */
+    fun lineEndWithBreak(lineEnd: Int, textLength: Int): Int = if (lineEnd < textLength) lineEnd + 1 else lineEnd
+
+    /** Whether every stop held is a failure: the status item shows the error's icon, not the pause's. */
+    fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
+
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         CONNECT("Connect…", "Piwi.Connect"),

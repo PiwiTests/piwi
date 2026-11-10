@@ -152,6 +152,8 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  heldStops,
+  heldText,
   failingRuns,
   failureRunArgs,
   runVerdict,
@@ -717,10 +719,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /** The run sessions the run control keeps, once it exists. */
+  let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
-    statusItem.text = refreshing ? refreshingText(view.text) : view.text;
+    statusItem.text = refreshing
+      ? refreshingText(view.text)
+      : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
     // How every run of the window starts, with the link that changes it, wherever a config is found.
     const tooltip = new vscode.MarkdownString(
       view.action === 'none' ? view.tooltip : `${view.tooltip}\n\n${runStartLine(runChoices())}`,
@@ -1002,8 +1008,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       execution?.terminate();
       return !!execution;
     },
+    // Once the status is read: before, the item shows the service starting.
+    changed: () => {
+      if (status || runs) render();
+    },
   });
   context.subscriptions.push(runControl);
+  runSessions = () => runControl.sessions();
 
   /** The notices of `RunCommand.notice` already shown: each is shown once. */
   const noticesShown = new Set<string>();
@@ -1071,17 +1082,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return !document?.isDirty || document.save();
   };
 
-  /** Run the tests Piwi knows of the spec (`target`, else the active one) as every test run does, saved first. */
+  /** Run every test of the spec (`target`, else the active one) by its path, as every test run does, saved first. */
   const runSpec = async (target?: vscode.Uri) => {
     const uri = target?.toString() ?? activeUri();
     if (!uri) return;
     const found = await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: 0, character: 0 }).catch(() => null);
-    const testIds = found?.spec?.testIds ?? [];
-    if (!testIds.length) {
-      void vscode.window.showInformationMessage('Piwi: no test of this spec is known yet.');
+    // Every test of the spec as saved, by its path, known to the instance or not.
+    const spec = found?.spec?.location;
+    if (!spec) {
+      void vscode.window.showInformationMessage('Piwi: no Playwright config holds this file.');
       return;
     }
-    if (await saveSpec(uri)) await runTests({ uri, testIds });
+    if (await saveSpec(uri)) await runTests({ uri, testIds: [], locations: [spec] });
   };
 
   /**
@@ -1448,10 +1460,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           // A test's line is drawn in the gutter and its hover, not as a lens above it.
           return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
+            // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
               title: line.title,
               command: line.command?.command ?? '',
               arguments: line.command?.arguments ?? [],
+              ...(line.command?.title ? { tooltip: line.command.title } : {}),
             });
           });
         },

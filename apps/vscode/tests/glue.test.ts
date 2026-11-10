@@ -9,6 +9,7 @@ import type {
   FileEdit,
   LiveRun,
   RunEnded,
+  RunSession,
   RunStatusResult,
   SpecTest,
   StatusResult,
@@ -16,6 +17,8 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  heldStops,
+  heldText,
   NOT_CONNECTED,
   notConnectedNotice,
   DOCUMENT_PATTERN,
@@ -689,7 +692,7 @@ describe('the tests of a file', () => {
         { line: 0, title: '2 tests in Piwi' },
         {
           line: 3,
-          title: 'passed 1/4 · failed',
+          title: 'passed 1 of 4 runs',
           status: 'failed',
           endLine: 6,
           failure: {
@@ -706,7 +709,7 @@ describe('the tests of a file', () => {
           },
           testCaseId: 9,
         },
-        { line: 8, title: 'passed 4/4', status: 'passed', endLine: 10 },
+        { line: 8, title: 'passed 4 of 4 runs', status: 'passed', endLine: 10 },
       ]),
     ).toEqual([
       {
@@ -714,7 +717,7 @@ describe('the tests of a file', () => {
         line: 3,
         failingUntil: 6,
         failingLine: 5,
-        hover: '**Piwi**: failing · passed 1/4 · failed',
+        hover: '**Piwi**: failing · passed 1 of 4 runs',
         dashboardUrl: 'http://piwi/test-cases/9',
         testCaseId: 9,
       },
@@ -723,7 +726,7 @@ describe('the tests of a file', () => {
         line: 8,
         failingUntil: null,
         failingLine: null,
-        hover: '**Piwi**: passing · passed 4/4',
+        hover: '**Piwi**: passing · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
       },
@@ -731,13 +734,13 @@ describe('the tests of a file', () => {
   });
 
   test('a test the run in progress runs shows it, without a tint', () => {
-    expect(testDecorations([{ line: 2, title: 'passed 4/4', status: 'running', endLine: 4 }])).toEqual([
+    expect(testDecorations([{ line: 2, title: 'passed 4 of 4 runs', status: 'running', endLine: 4 }])).toEqual([
       {
         status: 'running',
         line: 2,
         failingUntil: null,
         failingLine: null,
-        hover: '**Piwi**: running · passed 4/4',
+        hover: '**Piwi**: running · passed 4 of 4 runs',
         dashboardUrl: null,
         testCaseId: null,
       },
@@ -748,7 +751,7 @@ describe('the tests of a file', () => {
     const [test] = testDecorations([
       {
         line: 3,
-        title: 'passed 4/4',
+        title: 'passed 4 of 4 runs',
         status: 'passed',
         command: {
           title: 'Open in dashboard',
@@ -761,12 +764,12 @@ describe('the tests of a file', () => {
     const run = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', testIds: [9] }]));
     const open = encodeURIComponent(JSON.stringify(['http://piwi/test-cases/9']));
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
-      `**Piwi**: passing · passed 4/4\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
+      `**Piwi**: passing · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open})`,
     );
     expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests']);
     // A service that gives neither: the result alone.
-    const [bare] = testDecorations([{ line: 3, title: 'passed 4/4', status: 'passed' }]);
-    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: passing · passed 4/4');
+    const [bare] = testDecorations([{ line: 3, title: 'passed 4 of 4 runs', status: 'passed' }]);
+    expect(testHoverMarkdown(bare!, 'file:///w/a.spec.ts')).toBe('**Piwi**: passing · passed 4 of 4 runs');
   });
 
   test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
@@ -778,32 +781,32 @@ describe('the tests of a file', () => {
       url: 'http://piwi/test-run-cases/90',
     };
     const [edited] = testDecorations([
-      { line: 3, title: 'passed 1/4 · failed', status: 'failed', endLine: 6, failure: { ...failure, state: 'edited' } },
+      { line: 3, title: 'passed 1 of 4 runs', status: 'failed', endLine: 6, failure: { ...failure, state: 'edited' } },
     ]);
     expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
-    expect(edited!.hover).toBe('**Piwi**: failing · edited since the run · passed 1/4 · failed');
+    expect(edited!.hover).toBe('**Piwi**: failing · edited since the run · passed 1 of 4 runs');
     const [failing] = testDecorations([
       {
         line: 3,
-        title: 'passed 1/4 · failed',
+        title: 'passed 1 of 4 runs',
         status: 'failed',
         endLine: 6,
         failure: { ...failure, state: 'failing' },
       },
     ]);
-    expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
+    expect(failing!.hover).toBe('**Piwi**: failing · passed 1 of 4 runs');
   });
 
   test('a test’s hover shows the instance’s text as written', () => {
     const [test] = testDecorations([
       {
         line: 2,
-        title: 'passed 3/4 · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
+        title: 'passed 3 of 4 runs · flaky score 40 · [timing](command:piwi.openInDashboard) · in __smoke__',
         status: 'flaky',
       },
     ]);
     expect(test!.hover).toBe(
-      '**Piwi**: flaky · passed 3/4 · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
+      '**Piwi**: flaky · passed 3 of 4 runs · flaky score 40 · \\[timing\\](command:piwi.openInDashboard) · in \\_\\_smoke\\_\\_',
     );
   });
 
@@ -1295,7 +1298,7 @@ describe('the test at a line', () => {
   const uri = 'file:///w/tests/checkout.spec.ts';
   const known: TestAtResult = {
     test: { id: 7, title: 'pays', file: 'tests/checkout.spec.ts', status: 'passed', url: 'http://piwi/test-cases/7' },
-    spec: { uri, testIds: [7] },
+    spec: { uri, testIds: [7], location: 'tests/checkout.spec.ts' },
     location: 'tests/checkout.spec.ts:3',
   };
   const recorded: TestAtResult = { test: null, spec: null, location: 'tests/checkout.spec.ts:12' };
@@ -2115,5 +2118,47 @@ describe('how every run of the window starts', () => {
     expect(runOptionTarget({})).toBe('global');
     expect(runOptionTarget({ workspaceValue: 'off' })).toBe('workspace');
     expect(runOptionTarget({ workspaceValue: false })).toBe('workspace');
+  });
+});
+
+describe('the status item while a run holds a stop', () => {
+  const stopped = (reason: 'breakpoint' | 'failure'): RunSession => ({
+    ref: 'ed-1',
+    root: '/w',
+    ended: false,
+    workers: [
+      {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        test: null,
+        takes: [],
+        watchable: false,
+        pausing: false,
+        waiting: null,
+        stop: {
+          reason,
+          title: 'Click',
+          uri: 'file:///w/a.spec.ts',
+          line: 3,
+          character: 2,
+          locator: null,
+          bar: true,
+          since: '2026-10-25T10:00:00.000Z',
+        },
+      },
+    ],
+  });
+
+  test('stops spinning: the pause icon at a stop, the error icon while every stop held is a failure', () => {
+    const live = '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours';
+    expect(heldStops([])).toBeNull();
+    expect(heldStops([stopped('breakpoint')])).toBe('stop');
+    expect(heldStops([stopped('failure')])).toBe('failure');
+    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
+    expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, null)).toBe(live);
+    expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
   });
 });
