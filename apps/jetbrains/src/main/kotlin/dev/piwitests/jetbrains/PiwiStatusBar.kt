@@ -110,8 +110,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     /**
      * Draws the item again: the recording in progress, where a run started here is stopped or that it is pausing, that
      * it is shared live and how many watch it, how far it is, `Piwi: refreshing…` while the latest run is read again,
-     * else the view of the selected file's context, with its icon and, while its tests fail, the error color. On the
-     * event thread.
+     * else the view of the selected file's context, with its icon and, while its tests fail, the error color. A run's
+     * tooltip says who else has it open. On the event thread.
      */
     fun update() {
         val recording = recording()
@@ -119,6 +119,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val shared = runs()?.let { Glue.liveStatus(it.controls()) }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         val progress = runs()?.let { Glue.runProgressText(it.sessions) }
+        // Who else has the runs open, said in the tooltip of a run's state.
+        val present = runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
         val refreshing = service().refreshing
         val view = view()
         label.text = when {
@@ -140,9 +142,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         label.error = recording == null && stopped == null && shared == null && progress == null && !refreshing && view.error
         label.toolTipText = Glue.htmlTooltip(
             recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
-                ?: stopped?.let { "$it\nClick for the run's controls." }
-                ?: sharedLive?.let { "${Glue.sharedLiveText(it)}\nClick for the run's controls." }
-                ?: progress?.let { "$it\nClick for the run's controls." }
+                ?: stopped?.let { "$it$present\nClick for the run's controls." }
+                ?: sharedLive?.let { "${Glue.sharedLiveText(it)}$present\nClick for the run's controls." }
+                ?: progress?.let { "$it$present\nClick for the run's controls." }
                 ?: view.tooltip,
         )
     }
@@ -224,7 +226,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
      */
     private inner class GoToStopAction(private val stop: Glue.ShownStop) : DumbAwareAction(
         Glue.stopLabel(stop),
-        "Go to the line the test is stopped at",
+        listOfNotNull("Go to the line the test is stopped at", runs()?.let { Glue.stopPresence(stop, it.sessions) }).joinToString(". "),
         if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement,
     ) {
         init {

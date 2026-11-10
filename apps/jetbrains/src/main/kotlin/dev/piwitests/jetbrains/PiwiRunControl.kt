@@ -185,6 +185,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The Paused Page tab, and the stop it shows; on the event thread. */
     private var page: Content? = null
     private var pageStop: String? = null
+    /** The Paused Page tab's caption of its stop as last drawn (`Glue.stopCaption`), which a note may follow. */
+    private var pageCaption = ""
     @Volatile private var watchingPage: PageViewParams? = null
     /** The watch the service accepted: Interact is offered only then. On the event thread. */
     private var acceptedPage: PageViewParams? = null
@@ -535,8 +537,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * Draw each stop at the line it stands on now: a new stop's file opened at its line once found, with the focus as
      * `Glue.StopsShown` decides then (`reveal`), its execution point and an inlay in each editor of its file; the page
      * `Glue.StopsShown` gives in the Paused Page tab, whether its file is found or not, the tab selected unless the
-     * Worker tab is. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a stop
-     * that went on drew goes. On the event thread.
+     * Worker tab is, its caption saying who drives the stop and who watches its page as they change. A file the IDE has
+     * not read yet is looked for on disk off the event thread, then drawn. What a stop that went on drew goes. On the
+     * event thread.
      */
     private fun draw() {
         val stops = stops()
@@ -579,6 +582,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             stopPageView()
             pageStop = null
             (shownPage.component as PausedPagePanel).ended("The test went on.")
+        } else if (shownPage != null && pageStop != null) {
+            // Who drives the stop and who watches its page, as they change.
+            val panel = shownPage.component as PausedPagePanel
+            val caption = byKey[pageStop]?.let { Glue.stopCaption(it, sessions) } ?: pageCaption
+            val shown = panel.caption
+            if (caption != pageCaption && shown != null && shown.startsWith(pageCaption)) {
+                panel.caption(caption + shown.removePrefix(pageCaption))
+                pageCaption = caption
+            }
         }
         if (shownPage != null && pageStop == null && sessions.isEmpty()) (shownPage.component as PausedPagePanel).ended("The run ended.")
         val worker = liveWorkerTab()?.component as? PausedPagePanel
@@ -741,8 +753,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (!visible) { stopPageView(); panel.watching(false) }
             else if (panel.liveWanted && watchingPage == null) watchPage(stop, true)
         }
-        val caption = "${Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${Glue.stopPlace(stop.stop)}"
-        panel.show("$caption · asking the test for its page…", null)
+        pageCaption = Glue.stopCaption(stop, sessions)
+        panel.show("$pageCaption · asking the test for its page…", null)
         if (panel.liveWanted) watchPage(stop, true)
         ApplicationManager.getApplication().executeOnPooledThread {
             val image = remote.pausedPage(PausedPageParams(stop.ref, stop.worker))?.image
@@ -750,15 +762,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             ApplicationManager.getApplication().invokeLater({
                 if (pageStop != key) return@invokeLater
                 if (picture == null) {
-                    if (watchingPage != null) panel.caption(caption)
-                    else panel.show("$caption · the test sent no image of its page", null)
+                    if (watchingPage != null) panel.caption(pageCaption)
+                    else panel.show("$pageCaption · the test sent no image of its page", null)
                     return@invokeLater
                 }
                 val pick = image?.takeIf { Glue.picksOnImage(stop.takes, it) }
                     ?.let { shown -> { x: Int, y: Int -> pickOnImage(stop, panel.viewport ?: shown, panel, panel.image ?: picture, x, y) } }
                 val watching = watchingPage != null && acceptedPage === watchingPage
                 val hasFrame = watching && panel.image != null
-                panel.show(caption, if (watching) panel.image ?: picture else picture, pick, watching)
+                panel.show(pageCaption, if (watching) panel.image ?: picture else picture, pick, watching)
                 if (!hasFrame) panel.viewport = image
                 panel.watching(watching)
                 if (panel.liveWanted && !watching) watchPage(stop, true)
@@ -1884,7 +1896,12 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
 private class ExecutionPointGutter(private val sessions: PiwiRunSessions, private val stop: Glue.ShownStop) : GutterIconRenderer(), DumbAware {
     override fun getIcon() = if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement
 
-    override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner))
+    override fun getTooltipText(): String = Glue.htmlTooltip(
+        listOfNotNull(
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
+            Glue.stopPresence(stop, sessions.sessions),
+        ).joinToString("\n"),
+    )
 
     override fun getPopupMenuActions(): ActionGroup = sessions.stopActions(stop)
 

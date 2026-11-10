@@ -11,9 +11,9 @@ lang: en-US
 A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's own
 commands: no debug session starts, and the IDE's debugger works as usual beside it; so can
 [one started outside Piwi](./terminal-runs). The editor marks the line the test stopped at, as a debugger does, and
-the breakpoints you set or remove reach the run while it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in
-the page answers the same stops, as does Piwi Picker's [Runs window](./runs-window). At a stop, the editor also writes
-code from the page: [Code from a pause](./editor-stop-code).
+the breakpoints you set or remove reach the run while it goes on. The page's
+[pause bar](./editor-breakpoints#pause-a-run) and Piwi Picker's [Runs window](./runs-window) answer the same stops. At
+a stop, the editor also writes code from the page: [Code from a pause](./editor-stop-code).
 
 ## The controls
 
@@ -37,8 +37,8 @@ of an answer, until that worker stops, a key answers no other worker and starts 
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
   menu, whose text starts `Piwi: paused · checkout.page.ts:12` while a test is stopped.
 
-The progress beside them comes from the run itself, so it counts offline and with the desktop app
-([Watch a run](./watch-a-run#how-far-it-is)).
+The progress beside them comes from the run, so it counts offline and with the desktop app
+([Watch a run](./watch-a-run#how-far-it-is)); its tooltip names the other tools that have the run open.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
@@ -94,16 +94,17 @@ the one on the stopped line, and the tab shows the result or refusal.
 
 **Watch live** updates the paused page in the same tab. Choose **Interact** separately to click, scroll or type on
 the page; **Escape** releases the keyboard, and **Shift+click** picks a locator. Watching stops when you hide or close
-the tab, resume the test or switch stops. Interact starts off at each stop. No Picker installation, pairing, project
-live-view setting or extra port forwarding is needed: the preview uses the editor's existing connection. Reporters
-without live-view support keep the still image. To watch a test before it stops, while it runs:
-[Watch a running test](./watch-running-test).
+the tab, resume the test or switch stops. Interact starts off at each stop. The caption says who drives the stop and
+who watches it: input or a pick takes it from an agent ([driving a stop](/guide/concepts#presence-driving-a-stop)).
+The preview needs no Picker installation, pairing, project live-view setting or extra port forwarding: it uses the
+editor's connection. Reporters without live-view support keep the still image. To watch a test while it runs, before
+it stops: [Watch a running test](./watch-running-test).
 
 ## Breakpoints while the run goes on
 
-A breakpoint you add, remove or toggle applies to the run from its next call, in each of its workers, later ones
-included. One that only moves because you edited the lines above it keeps the line the run has, and one you set in an
-edited file applies to that line of the run's code. The breakpoints that count are those a run's start reads: line
+A breakpoint you add, remove or toggle applies to the run from its next call, in every worker, later ones included.
+One that only moves because you edited the lines above it keeps the line the run has, and one you set in an edited file
+applies to that line of the run's code. The breakpoints that count are those a run's start reads: line
 breakpoints in script files under a Playwright config's folder, while `piwi.breakpoints` (**Pause the runs Piwi starts
 at the editor's breakpoints** in a JetBrains IDE) is on. A logpoint, or a breakpoint that does not suspend, never stops
 the test; a condition is not read, so a conditional breakpoint stops at each pass.
@@ -132,8 +133,6 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
 - [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
-- [Watch a running test](./watch-running-test): a worker's page while its test runs.
 - [Share a run live](./share-live): let a teammate watch a run Piwi started, from the editor.
 - [Debug in my editor](./debug-in-editor): such a run, started from a failure's page.
-- [Editor extensions](./editors): what the editor shows from your suite, in both editors.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.
