@@ -388,6 +388,38 @@ describe('refreshTestManagementCatalog', () => {
   });
 });
 
+describe('pruneTestManagementCatalogs', () => {
+  test('removes the cases and read times of a project no binding names, and keeps the rest', async () => {
+    const { pruneTestManagementCatalogs } = await import('../../server/utils/retention');
+    const when = new Date('2026-11-09T09:00:00Z');
+    await db
+      .insert(schema.testManagementCases)
+      .values([
+        old('SHOP-T1', 'Bound', when),
+        { ...old('WEB-T1', 'Unbound', when), projectKey: 'WEB' },
+        { ...old('SHOP-T1', 'Other connection', when), connectionId: secondId },
+      ]);
+    await db.insert(schema.testManagementCatalogReads).values([
+      { connectionId: zephyrId, projectKey: 'SHOP', fetchedAt: when },
+      { connectionId: zephyrId, projectKey: 'WEB', fetchedAt: when },
+    ]);
+    // A disabled binding still names its project, so its catalog stays.
+    await db.insert(schema.projectTestManagement).values({
+      projectId: 10,
+      connectionId: zephyrId,
+      providerProjectKey: 'SHOP',
+      enabled: false,
+    });
+
+    expect(await pruneTestManagementCatalogs(db)).toBe(3);
+    expect((await rows()).map((row) => [row.connectionId, row.projectKey, row.key])).toEqual([
+      [zephyrId, 'SHOP', 'SHOP-T1'],
+    ]);
+    expect((await db.select().from(schema.testManagementCatalogReads)).map((row) => row.projectKey)).toEqual(['SHOP']);
+    expect(await pruneTestManagementCatalogs(db)).toBe(0);
+  });
+});
+
 describe('dueCatalogs and refreshDueCatalogs', () => {
   const bind = (connectionId: number, enabled = true) =>
     db.insert(schema.projectTestManagement).values({
