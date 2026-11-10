@@ -42,8 +42,6 @@ const META: Record<
 const meta = computed(() => META[props.provider]);
 const allowed = computed(() => form.cliAllowed(props.provider));
 const v = computed(() => cli.view(props.provider));
-  () => props.provider === 'claude-cli' && Boolean(cli.claude.status.value?.loggedIn) && !v.value.ready,
-);
 
 const state = computed<{ text: string; dot: string }>(() => {
   if (!v.value.checked) return { text: 'Checking…', dot: 'bg-inverted/30' };

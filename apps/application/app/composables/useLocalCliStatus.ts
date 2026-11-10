@@ -28,7 +28,8 @@ export interface LocalCliView {
 type OtherCli = Exclude<LocalCliProvider, 'claude-cli'>;
 
 const CLAUDE_AUTH: Record<string, string> = {
-  oauth_token: 'Claude subscription',
+  'claude.ai': 'Claude subscription',
+  oauth_token: 'Token',
   api_key: 'API key',
   api_key_helper: 'API key (apiKeyHelper)',
   third_party: 'Cloud provider',
@@ -82,7 +83,7 @@ export function useLocalCliStatus() {
         ready: Boolean(s?.loggedIn) && !s?.error,
         signedIn: Boolean(s?.loggedIn),
         serverSignIn: Boolean(s && !s.desktop),
-        subscription: s?.authMethod === 'oauth_token',
+        subscription: Boolean(s?.loggedIn && !s.apiCredentials),
         version: s?.version ?? null,
         path: s?.binaryPath ?? null,
         account: s?.authMethod ? (CLAUDE_AUTH[s.authMethod] ?? s.authMethod) : null,

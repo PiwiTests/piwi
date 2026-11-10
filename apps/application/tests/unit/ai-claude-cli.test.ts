@@ -236,7 +236,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   });
 
   it('refuses a Claude subscription sign-in outside the desktop app', async () => {
-    process.env.CLAUDE_STUB_AUTH = 'oauth_token';
+    process.env.CLAUDE_STUB_AUTH = 'claude.ai';
     const status = await getClaudeCliStatus({ force: true });
     expect(status.loggedIn).toBe(true);
     expect(status.error).toMatch(/API key/);
@@ -246,11 +246,25 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
   });
 
   it('runs on a Claude subscription inside the desktop app', async () => {
-    process.env.CLAUDE_STUB_AUTH = 'oauth_token';
+    process.env.CLAUDE_STUB_AUTH = 'claude.ai';
     process.env.NUXT_PUBLIC_DESKTOP = 'true';
     const status = await getClaudeCliStatus({ force: true });
     expect(status.error).toBeNull();
     expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
+  });
+
+  it('runs on a server through a gateway token, and refuses a subscription token', async () => {
+    process.env.CLAUDE_STUB_AUTH = 'oauth_token';
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat01-subscription';
+    try {
+      expect((await getClaudeCliStatus({ force: true })).apiCredentials).toBe(false);
+      process.env.ANTHROPIC_AUTH_TOKEN = 'gw-token';
+      expect((await getClaudeCliStatus({ force: true })).apiCredentials).toBe(true);
+      expect((await callClaudeCli(role, { system: 'x', user: 'ping' })).text).toBe('ECHO:ping');
+    } finally {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+    }
   });
 
   it('runs on a server through a cloud provider', async () => {
@@ -606,12 +620,19 @@ describe('launching the CLI without a shell', () => {
 });
 
 describe('usesApiCredentials', () => {
-  it('accepts an API key or a cloud provider, and refuses a subscription or an unknown method', () => {
-    expect(usesApiCredentials({ authMethod: 'api_key', apiProvider: 'firstParty' })).toBe(true);
-    expect(usesApiCredentials({ authMethod: 'api_key_helper', apiProvider: 'firstParty' })).toBe(true);
-    expect(usesApiCredentials({ authMethod: 'third_party', apiProvider: 'vertex' })).toBe(true);
-    expect(usesApiCredentials({ authMethod: 'oauth_token', apiProvider: 'firstParty' })).toBe(false);
-    expect(usesApiCredentials({ authMethod: null, apiProvider: null })).toBe(false);
+  it('accepts an API key, a gateway token or a cloud provider, and refuses a subscription or an unknown method', () => {
+    expect(usesApiCredentials({ authMethod: 'api_key' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'api_key_helper' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'third_party' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { ANTHROPIC_AUTH_TOKEN: 'gw-token' })).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'claude.ai', apiKeySource: '/login managed key' }, {})).toBe(true);
+    expect(usesApiCredentials({ authMethod: 'claude.ai' }, {})).toBe(false);
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x' })).toBe(
+      false,
+    );
+    expect(usesApiCredentials({ authMethod: 'oauth_token' }, { ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-x' })).toBe(false);
+    expect(usesApiCredentials({ authMethod: 'gateway' }, {})).toBe(false);
+    expect(usesApiCredentials({ authMethod: null }, {})).toBe(false);
   });
 });
 
@@ -639,5 +660,7 @@ describe('the CLI environment', () => {
     }
     expect(env.PATH?.split(delimiter)).toContain('/usr/bin');
     expect(cliEnv({ CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws' }).AWS_SECRET_ACCESS_KEY).toBe('aws');
+    expect(cliEnv({ CLAUDE_CODE_USE_FOUNDRY: '1', AZURE_CLIENT_ID: 'id' }).AZURE_CLIENT_ID).toBe('id');
+    expect(cliEnv({ AZURE_CLIENT_SECRET: 'secret' }).AZURE_CLIENT_SECRET).toBeUndefined();
   });
 });

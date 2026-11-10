@@ -1839,10 +1839,12 @@ export interface ClaudeCliStatus {
   version: string | null;
   /** True when `claude auth status` reports a signed-in account. */
   loggedIn: boolean;
-  /** How the CLI is authenticated: "oauth_token" (a Claude subscription), "api_key", "api_key_helper", "third_party". */
+  /** How the CLI is authenticated: "claude.ai" (a Claude subscription), "oauth_token" (a token), "api_key", "api_key_helper", "third_party" (a cloud provider). */
   authMethod: string | null;
   /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex", "foundry". */
   apiProvider: string | null;
+  /** Signed in with an API key, a gateway token or a cloud provider, never a Claude subscription: what a server needs. */
+  apiCredentials: boolean;
   /** A human-readable problem when the CLI is missing, not signed in, or signed in a way this server may not use. */
   error: string | null;
   /** Running usage totals since the server started (live, not persisted). */
