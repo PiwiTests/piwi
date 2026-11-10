@@ -30,9 +30,10 @@ or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **
 **Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
 locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
-stays in the editor. A run of several workers shows one at a time, behind a tab each marked with its state, and has
-**Pause all** and **Resume all** under its name; a stop takes the tab from a worker neither stopped nor watched,
-unless you chose that tab since the stop. Resume, Step and Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
+stays in the editor. A live run of several workers shows one at a time, behind tabs marked with their state, with
+**Pause all** and **Resume all** under its name. A new stop takes the tab from a worker neither stopped nor watched,
+and **Resume** or **End the test** moves it to the next stopped test. Resume, Step and Finish have
+[keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's
 [**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it

@@ -264,6 +264,61 @@ test('a run of several workers pauses and resumes all from its header, and F10 s
   }
 });
 
+test('a run’s tabs keep the stop being answered, move on as it is resumed, and its keys steer only the worker shown', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    // This run alone, the one with tabs: a run of an earlier test may still be listed.
+    const card = liveRun(runs).filter({ has: runs.getByRole('tablist') });
+    const { ref, channel } = await editor.svc.command();
+    const first = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const second = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 1, [...RUN_TAKES]);
+    first.begin('sends the order');
+    second.begin('adds a mug');
+    const selected = card.getByRole('tab', { selected: true });
+    const tab = (name: string) => card.getByRole('tab', { name });
+    try {
+      await expect(card.getByRole('tab')).toHaveText(['worker 1', 'worker 2']);
+      await expect(card.getByRole('tabpanel')).toHaveAccessibleName('worker 1');
+      // A stop takes the tab from a running worker as it comes.
+      second.stopAt(1, 31, true);
+      await expect(selected).toHaveText('worker 2');
+      // Another stop leaves the one being answered shown, its tab marked; a Step there keeps the tab through the run.
+      first.stopAt(1, 30, true);
+      await expect(tab('worker 1')).toHaveAttribute('data-status', 'stopped');
+      await expect(selected).toHaveText('worker 2');
+      await card.getByRole('button', { name: 'Step', exact: true }).click();
+      expect(await second.next('control')).toEqual({ type: 'control', action: 'step', stop: 1 });
+      second.send({ type: 'running', stop: 1 });
+      await expect(tab('worker 2')).toHaveAttribute('data-status', 'running');
+      await expect(selected).toHaveText('worker 2');
+      second.stopAt(2, 32, true);
+      await expect(tab('worker 2')).toHaveAttribute('data-status', 'stopped');
+      // Resumed there, the next stopped test takes the tab.
+      await card.getByRole('button', { name: 'Resume', exact: true }).click();
+      expect(await second.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
+      second.send({ type: 'running', stop: 2 });
+      await expect(selected).toHaveText('worker 1');
+      // A running worker chosen while another stands at its stop stays shown, and a key steers no test behind a tab.
+      await tab('worker 2').click();
+      await expect(selected).toHaveText('worker 2');
+      await runs.keyboard.press('F10');
+      await expect(runs.locator('#announce')).toHaveText(
+        'The stopped test is behind another worker’s tab: open that tab to steer it with a key.',
+      );
+      await runs.waitForTimeout(200);
+      expect(first.heard.filter((m) => m.type === 'control')).toEqual([]);
+      await expect(selected).toHaveText('worker 2');
+    } finally {
+      await editor.svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
+      first.socket.destroy();
+      second.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('End the test ends a stopped test there, and a run started in a terminal or a test runner shows as one', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {

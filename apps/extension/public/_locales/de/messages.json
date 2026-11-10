@@ -6682,6 +6682,9 @@
   "runs_keyChoose": {
     "message": "Mehrere Tests sind angehalten: den Fokus auf den Test setzen, der mit einer Taste gesteuert werden soll."
   },
+  "runs_keyOtherTab": {
+    "message": "Der angehaltene Test liegt hinter dem Tab eines anderen Workers: diesen Tab öffnen, um ihn mit einer Taste zu steuern."
+  },
   "runs_record": {
     "message": "Aufzeichnen"
   },

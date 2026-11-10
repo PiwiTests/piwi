@@ -1035,10 +1035,12 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 ### Run-level controls, keys and the window's place
 
 - A live run of several workers shows one at a time, behind a tab each (`role="tablist"`), marked with its state
-  (`tabState`, `data-state`). Which one is `shownWorkerOf`: the person's choice (`chosenTabs`) or the last shown
-  (`shownTabs`) while it stands at a stop, is watched or no stop came since the choice (the stops standing then are
-  `known`), else the first stop that came, else the first stopped worker. The arrow keys, `Home` and `End` move
-  between the tabs; a key for a stop control steers the one stopped worker shown.
+  (`tabState`, `data-status`), by lane, so the worker Playwright starts in a lane's place keeps its tab. Which one is
+  `shownLaneOf`, kept by run in `tabs` (`RunTabs`): the one shown, the person's choice included, while it stands at a
+  stop or is watched; else, once the person resumed or ended its test there (`advance`), the first stopped worker;
+  else a stop that came since the tabs were last drawn (not in `known`): a stop takes the tab once, as it comes. The
+  arrow keys, `Home` and `End` move between the tabs, each drawn again alone; a `div` with `role="tabpanel"`, named by
+  its tab, holds the list. A key for a stop control steers only a worker shown.
 
 - One row under the run's name holds Hold failures and, for a run of several workers, **Pause all** (the hub's
   `runControl` `pause` with no worker) and **Resume all** (a `resume` for each stopped worker, at its stop), from

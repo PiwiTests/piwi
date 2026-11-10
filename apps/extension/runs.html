@@ -327,36 +327,35 @@
         padding: 0;
         border: 0;
       }
-      /* A live run's workers, one shown at a time: a tab each, marked with its state. */
+      /*
+       * A live run's workers, one shown at a time: a tab each, marked with its state in its tone. The strip's line is
+       * drawn inside it and the selected tab's underline inside the tab, so nothing overflows the strip but its width.
+       */
       .worker-tabs {
         display: flex;
         gap: 2px;
         padding: 6px 12px 0;
         overflow-x: auto;
-        border-bottom: 1px solid var(--border);
+        overflow-y: hidden;
+        box-shadow: inset 0 -1px 0 var(--border);
       }
-      .worker-tabs [role='tab'] {
+      .worker-tabs .piwi-btn[role='tab'] {
         flex-shrink: 0;
-        border-bottom-left-radius: 0;
-        border-bottom-right-radius: 0;
-        margin-bottom: -1px;
-        border-bottom: 2px solid transparent;
+        border-radius: 6px 6px 0 0;
         color: var(--muted);
       }
-      .worker-tabs [role='tab'][aria-selected='true'] {
+      .worker-tabs .piwi-btn[role='tab']:focus-visible {
+        outline-offset: -2px;
+      }
+      .worker-tabs .piwi-btn[role='tab'][aria-selected='true'] {
         color: inherit;
         font-weight: 600;
-        border-bottom-color: var(--accent-fg);
+        box-shadow: inset 0 -2px 0 var(--accent-fg);
       }
-      .worker-tabs [role='tab'][data-state='breakpoint'],
-      .worker-tabs [role='tab'][data-state='step'],
-      .worker-tabs [role='tab'][data-state='pause'],
-      .worker-tabs [role='tab'][data-state='run-to'],
-      .worker-tabs [role='tab'][data-state='page-pause'],
-      .worker-tabs [role='tab'][data-state='other'] {
+      .worker-tabs .piwi-btn[role='tab'][data-status='stopped'] {
         color: var(--stopped);
       }
-      .worker-tabs [role='tab'][data-state='failure'] {
+      .worker-tabs .piwi-btn[role='tab'][data-status='failed'] {
         color: var(--error);
       }
       .workers {
@@ -389,9 +388,12 @@
         flex: 1 1 auto;
         min-width: 0;
       }
+      /* The project and attempt keep to one line, beside the name or under it, wrapping only past the row's width. */
       .test-head .meta {
+        flex: 0 0 auto;
+        max-width: 100%;
         margin-left: auto;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
       }
       /* Where the test stands, in a card of its tone: its state, then the call about to run or the error. */
       .status {
@@ -419,16 +421,18 @@
         font-size: 12px;
         font-weight: 600;
         line-height: 16px;
-        color: var(--tone, var(--running));
+        color: var(--running);
+      }
+      /* The card's words in its tone, and its labels, darkened toward the text so they keep their contrast on its tint. */
+      .status .state {
+        color: color-mix(in srgb, var(--tone) 80%, var(--fg));
+      }
+      .status .stop dt {
+        color: color-mix(in srgb, var(--muted) 80%, var(--fg));
       }
       .state > .piwi-icon {
         width: 14px;
         height: 14px;
-      }
-      .state .worker-number {
-        margin-left: auto;
-        font-weight: 400;
-        color: var(--muted);
       }
       .test {
         margin: 0;

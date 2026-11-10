@@ -7809,7 +7809,7 @@
   },
   "runs_worker": {
     "message": "worker $number$",
-    "description": "Runs window, which of a run’s Playwright workers a test runs in, when there are several. Lower case.",
+    "description": "Runs window, the label of a worker’s tab in a run of several Playwright workers. Lower case.",
     "placeholders": {
       "number": {
         "content": "$1",
@@ -7930,6 +7930,10 @@
   "runs_keyChoose": {
     "message": "Several tests are stopped: move the focus to the one to steer with a key.",
     "description": "Runs window, read out when Resume, Step or Finish was pressed as a key while several tests are stopped and the focus is in none of them."
+  },
+  "runs_keyOtherTab": {
+    "message": "The stopped test is behind another worker’s tab: open that tab to steer it with a key.",
+    "description": "Runs window, read out when a stop key is pressed while the only stopped tests are on worker tabs not shown."
   },
   "runs_record": {
     "message": "Record",

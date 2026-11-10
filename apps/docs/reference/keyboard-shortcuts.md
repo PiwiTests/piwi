@@ -35,7 +35,7 @@ docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field yo
 ## Piwi Picker's Runs window
 
 In [Piwi Picker's Runs window](/features/runs-window), for the stopped test whose row holds the focus, else the only
-stopped test. Step and Finish wait for a stop that is no failure.
+stopped test shown: a run's worker tabs show one worker at a time. Step and Finish wait for a stop that is no failure.
 
 | Keys | Action |
 |---|---|

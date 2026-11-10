@@ -6682,6 +6682,9 @@
   "runs_keyChoose": {
     "message": "Vários testes estão parados: mova o foco para o que deseja controlar com uma tecla."
   },
+  "runs_keyOtherTab": {
+    "message": "O teste parado está na aba de outro worker: abra essa aba para controlá-lo com uma tecla."
+  },
   "runs_record": {
     "message": "Gravar"
   },

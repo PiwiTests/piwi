@@ -6682,6 +6682,9 @@
   "runs_keyChoose": {
     "message": "Hay varios tests detenidos: mueva el foco al que quiere dirigir con una tecla."
   },
+  "runs_keyOtherTab": {
+    "message": "El test detenido está en la pestaña de otro worker: abra esa pestaña para dirigirlo con una tecla."
+  },
   "runs_record": {
     "message": "Grabar"
   },

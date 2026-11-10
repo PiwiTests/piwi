@@ -6571,7 +6571,7 @@
     "message": "Terminer le test maintenant : l’appel où il attend est abandonné si possible, et la suite du test est ignorée"
   },
   "runs_stateFailed": {
-    "message": "Échoué, retenu à sa ligne"
+    "message": "En échec, retenu à sa ligne"
   },
   "runs_stateRunning": {
     "message": "En cours"
@@ -6681,6 +6681,9 @@
   },
   "runs_keyChoose": {
     "message": "Plusieurs tests sont arrêtés : placez le focus sur celui à piloter avec une touche."
+  },
+  "runs_keyOtherTab": {
+    "message": "Le test arrêté est derrière l’onglet d’un autre worker : ouvrez cet onglet pour le piloter avec une touche."
   },
   "runs_record": {
     "message": "Enregistrer"
