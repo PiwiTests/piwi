@@ -40,9 +40,9 @@ on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data lo
 folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM tokens.
 
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
-hidden in the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
-holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
-use Ctrl. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+hidden in the tray. The windows open where you left them. Its
+[keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app) open Settings, import a report, go back and forward
+and zoom; on macOS the app menu holds them and the docs. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
 While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the tray does not list (a `piwi flake` from a terminal or an
 editor, a probe, another window's, or from before a reload) never does. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
@@ -84,11 +84,12 @@ serves its git history without an [SCM token](/guide/source-control#on-the-deskt
 ## Running tests from the app
 
 A run, an execution, a cluster or a test runs again here with the folder's own Playwright, and its button says what:
-**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
+**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (×20 until a failure, traced) on a test case.
 
 - **The arrow** shows the command, runs it once headed, in the inspector or UI mode, and sets its
   options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
-  options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
+  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/desktop-runs#each-worker).
+  The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
   **Settings → Local folder**.
 - **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with

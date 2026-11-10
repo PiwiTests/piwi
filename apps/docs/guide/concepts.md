@@ -239,8 +239,8 @@ to, at `page.pause()`, or at a failure held for a look. Each tool names it by wh
 started with breakpoints, a debug run or a reproduction, off otherwise, and any tool that follows the run turns it on
 or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a failure goes on at
 once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure. Each tool shows it as the last one set it: the desktop
-app's switch turns it off as the app's last window closes only when no other tool set it since.
+`--repeat-each` above 1 that does not stop at its first failure (`--max-failures=1`) and UI mode go on past each
+failure. Each tool shows it as the last one set it: the desktop app's switch turns it off as the app's last window closes only when no other tool set it since.
 
 ### Presence, driving a stop
 
