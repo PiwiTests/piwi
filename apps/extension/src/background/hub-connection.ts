@@ -236,13 +236,14 @@ export class HubConnection {
       return;
     }
     // What the window reads of an answer, each part read field by field by `parseHubMessage`; the hub's id stays here.
-    const { ok, message, image, requests, locator } = answer;
+    const { ok, message, image, requests, locator, taken } = answer;
     waiting.resolve({
       ok,
       message,
       ...(image === undefined ? {} : { image }),
       ...(requests === undefined ? {} : { requests }),
       ...(locator === undefined ? {} : { locator }),
+      ...(taken === undefined ? {} : { taken }),
     });
   }
 

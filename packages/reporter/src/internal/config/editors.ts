@@ -71,9 +71,12 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
   }
   if (isMergeReports(argv)) return 'it merges reports, running no test';
   const forced = !!editor && ['on', 'true', '1', 'yes'].includes(editor);
-  if (!gate.terminal && !forced && !startedByTestRunner(env)) return 'its output goes to no terminal';
+  if (!gate.terminal && !forced && !startedByTestRunner(env)) return NO_TERMINAL;
   return null;
 }
+
+/** Why a run whose output goes to a file or a pipe follows no editor. */
+const NO_TERMINAL = 'its output goes to no terminal';
 
 /** The folder of the editors' discovery files: `PIWI_EDITORS_DIR`, else `~/.piwi/editors`. */
 export function editorsFolder(env: NodeJS.ProcessEnv = process.env): string {
@@ -196,6 +199,26 @@ export function followEditor(
     gate.env[RUN_CHANNEL_ENV] = formatRecordChannel(editor.runChannel);
     gate.env[RUN_REF_ENV] = ref;
     return { editor, ref };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The editor a run would have followed but does not, for the one reason a person would not expect: its output goes to
+ * a file or a pipe (`terminalRunSkip`). Null for a run that follows one, one that runs alone on purpose (CI, a launcher,
+ * `PIWI_EDITOR=off`, Playwright's debugger), and one no editor's workspace holds. Never throws.
+ */
+export function editorNotFollowed(
+  dirs: readonly string[],
+  gate: TerminalRunGate,
+  folder: string = editorsFolder(gate.env),
+): { editor: EditorDiscovery; why: string } | null {
+  try {
+    if (terminalRunSkip(gate) !== NO_TERMINAL) return null;
+    const live = readLiveEditors(folderOnDisk(folder)).filter((editor) => stillServing(editor));
+    const editor = editorForRun(live, dirs, realFolder, process.platform === 'win32');
+    return editor?.runChannel ? { editor, why: NO_TERMINAL } : null;
   } catch {
     return null;
   }

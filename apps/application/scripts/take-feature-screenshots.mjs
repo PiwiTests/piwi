@@ -1039,7 +1039,7 @@ async function shopPageJpeg(context) {
 /**
  * A desktop scene's local run, live on the run page: the run page's Re-run starts it, the played hub names its one
  * worker running `intents` (`playDesktopRunHub` first), the run reports to the app with the reference the app gave it,
- * its test begun on that worker, and **Live in Piwi** opens its page. Answers the tray, the spec's URI, the running
+ * its test begun on that worker, and **Open run #N** opens its page. Answers the tray, the spec's URI, the running
  * worker, a session message of a worker, and `finish`, which ends the live run.
  */
 async function openDesktopLiveRun({ page, base, goto, intents }) {
@@ -1112,7 +1112,7 @@ async function openDesktopLiveRun({ page, base, goto, intents }) {
       browser: { projectName: 'chromium' },
     };
     await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
-    await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
+    await tray.getByRole('link', { name: `Open run #${started.runId}` }).click({ timeout: 60_000 });
   } catch (error) {
     await finish();
     throw error;
@@ -7174,7 +7174,7 @@ const SCENES = [
   {
     name: 'desktop-run-live',
     description:
-      'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+      'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
     tags: ['docs', 'desktop'],
     out: 'docs',
     outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
@@ -7235,6 +7235,8 @@ const SCENES = [
         project: 'checkout-web',
         workers: [worker],
         ended: false,
+        // Its number and page on this app's server, as the run's own process names them.
+        page: { id: 41, url: `${new URL(page.url()).origin}/test-runs/41` },
       };
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);

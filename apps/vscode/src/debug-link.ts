@@ -25,10 +25,15 @@ export interface DebugLink {
   project: string | null;
   /** The failed execution on the instance, whose suggested locator is outlined at the stop. */
   execution: number | null;
+  /** The name the dashboard gave the run, which its page follows the run by; null for none. */
+  ref: string | null;
 }
 
-/** The fields an open link takes; a debug link takes the last five too. */
-const FIELDS = ['file', 'line', 'column', 'root', 'debug', 'spec', 'test', 'playwrightProject', 'execution'];
+/** The fields an open link takes; a debug link takes the last six too. */
+const FIELDS = ['file', 'line', 'column', 'root', 'debug', 'spec', 'test', 'playwrightProject', 'execution', 'ref'];
+
+/** The name a dashboard gives a debug run, which the editor service checks again (`DEBUG_RUN_REF`). */
+const RUN_REF = /^ed-[0-9a-f]{16,32}$/;
 
 /** The longest path, title and project name a link may name. */
 const MAX_PATH = 4096;
@@ -114,6 +119,8 @@ export function debugLink(query: string): DebugLink | { refused: string } {
   if (execution !== undefined && (!POSITIVE.test(execution) || Number(execution) > MAX_EXECUTION)) {
     return { refused: 'execution is not an id' };
   }
+  const ref = params.get('ref')?.trim() || null;
+  if (ref !== null && !RUN_REF.test(ref)) return { refused: 'ref is not a run name the dashboard gives' };
   return {
     file,
     line: Number(line),
@@ -123,6 +130,7 @@ export function debugLink(query: string): DebugLink | { refused: string } {
     title,
     project,
     execution: execution === undefined ? null : Number(execution),
+    ref,
   };
 }
 

@@ -123,8 +123,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val view = view()
         label.text = when {
             recording != null -> Glue.recordingStatus(recording.state, recording.steps, recording.edited, recording.stopping)
-            stopped != null -> stopped
-            shared != null -> shared
+            stopped != null -> Glue.withProgress(stopped, progress)
+            shared != null -> Glue.withProgress(shared, progress)
             progress != null -> progress
             refreshing -> Glue.REFRESHING
             else -> view.text
@@ -192,6 +192,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
                 addAll(registered("Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording"))
                 addSeparator()
             }
+            runs()?.sessions?.let { Glue.runPages(it) }.orEmpty().forEach { (_, page) -> add(OpenRunPageAction(page)) }
             addAll(registered("Piwi.RerunFailing"))
             add(OpenFailuresAction())
             addAll(registered("Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith"))

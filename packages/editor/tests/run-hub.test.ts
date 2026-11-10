@@ -774,6 +774,60 @@ describe('what the hub sends', () => {
     }
   });
 
+  test('names a stop’s line where it stands now, as the editor does, and the run’s page', async () => {
+    const stop = {
+      reason: 'breakpoint' as const,
+      title: 'Click',
+      uri: 'file:///work/shop/tests/cart.spec.ts',
+      line: 4,
+      character: 2,
+      locator: null,
+      bar: true,
+      since: '2026-11-10T10:00:00.000Z',
+    };
+    const page = { id: 78, url: 'https://piwi.example.com/test-runs/78' };
+    const session = {
+      ref: 'ed-1',
+      root: '/work/shop',
+      workers: [
+        { worker: 0, parallelIndex: 0, state: 'stopped', test: null, stop, pausing: false, waiting: null, takes: [] },
+      ],
+      ended: false,
+      page,
+    } as unknown as RunSession;
+    const sessions = {
+      current: () => [session],
+      intentsOf: () => [],
+      stopIntentsOf: () => [],
+      unwatchAll: () => {},
+    } as unknown as RunSessions;
+    const asked: Array<[string, string, number]> = [];
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      sessions,
+      // Two lines were added above the stop since the run started.
+      lineNow: (ref, uri, line) => (asked.push([ref, uri, line]), line + 2),
+    }))!;
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const sent = (await waitFor(() => heard.find((m) => m.type === 'session'))) as Extract<
+        HubMessage,
+        { type: 'session' }
+      >;
+      expect(sent.session.workers[0]?.stop).toMatchObject({ line: 6, uri: stop.uri });
+      expect(sent.session.page).toEqual(page);
+      expect(asked).toEqual([['ed-1', stop.uri, 4]]);
+    } finally {
+      socket.close();
+      own.close();
+    }
+  });
+
   test('tells what a code came to to the connections that follow the runs alone, cut to fit what they read', async () => {
     const long = 'Piwi could not write the check: '.padEnd(MAX_HUB_MESSAGE + 200, 'x');
     const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, long))!;

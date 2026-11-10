@@ -20,8 +20,9 @@ process is the terminal's or the IDE's. It says so as it starts:
 ```
 
 It runs as its config says, headless by default, so the editor shows a stop as
-[a headless run's](./editor-run-control#a-headless-run): an image of its page, which Piwi Picker can watch live. To see
-the browser, add `--headed` to the command, or to the Playwright options of the run configuration.
+[a headless run's](./editor-run-control#a-headless-run): an image of its page, which the editor's paused page and Piwi
+Picker's Runs window can watch live. To see the browser, add `--headed` to the command, or to the Playwright options
+of the run configuration.
 
 ## Which editor
 
@@ -36,7 +37,8 @@ whose runs would connect through a folder another user can open.
 
 - **Only a run whose output goes to a terminal, or that a test runner started**: one that names its reporter's file
   in `PW_TEST_REPORTER`, as a JetBrains IDE's Playwright runner does. Any other, whose output goes to a file or a pipe,
-  runs alone unless it sets `PIWI_EDITOR=on`.
+  runs alone unless it sets `PIWI_EDITOR=on`, and says so once when an editor's workspace holds it
+  ([the terminal's lines](./watch-a-run#the-terminal-s-lines)).
 - **Never** under CI, with Playwright's own debugger (`--debug`, `PWDEBUG=1`) or UI mode, when the run names its own
   `PIWI_RUN_CHANNEL`, or when the desktop app or another launcher started it.
 - **`PIWI_EDITOR=off`** runs it alone.

@@ -159,8 +159,9 @@ What the extension stores:
   (`piwi.agentsPort`).
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
-`piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
-`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed`, `piwi.runCanShare` and `piwi.runCanEnd`
+`piwi.followEditor`, `piwi.hasCoverage`, `piwi.liveRun` (a run in progress the status bar counts has a page),
+`piwi.recording`, `piwi.recordingPaused`, and the run control's `piwi.runActive`, `piwi.runPausable`,
+`piwi.runStopped`, `piwi.runResumed`, `piwi.runCanShare`, `piwi.runCanEnd` and `piwi.runPage` (a run named its page)
 ([Run control](#run-control)).
 
 ## Walkthrough

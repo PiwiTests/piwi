@@ -75,7 +75,17 @@ function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveR
     startedAt: run.startTime,
     own,
     ...(ref ? { ref } : {}),
+    ...(!own && isCiRun(run) ? { ci: true } : {}),
+    ...(run.branch ? { branch: run.branch } : {}),
   };
+}
+
+/** Whether a run is a CI run's: its origin says so, else, for a run that names none, the CI it names. */
+function isCiRun(run: RunDetails): boolean {
+  const origin = parseRunOrigin(run.metadata?.[RUN_ORIGIN_METADATA_KEY]);
+  if (origin) return origin.kind === 'ci' || origin.kind === 'ci-rerun';
+  const ci = run.metadata?.ci;
+  return !!ci && typeof ci === 'object';
 }
 
 const streamKey = (connection: PiwiConnection) => `${connection.serverUrl}\n${connection.apiKey ?? ''}`;
@@ -243,6 +253,8 @@ export interface RunWatchOptions {
   ownRunPollMs?: number;
   /** How long after a command ends its run may take to reach the instance. */
   commandEndWaitMs?: number;
+  /** Whether the run of a command's ref connected to the service: its reporter ran (`RunSessions.heardFrom`). */
+  reporterHeard?: (ref: string) => boolean;
 }
 
 /** A command built with a ref, and the runs carrying that ref the instance holds. */
@@ -271,6 +283,19 @@ interface RefWatch {
    * (`commandStarted`): its runs carry `ref`, and are that command's.
    */
   commandRef: string | null;
+  /**
+   * For a ref the service did not make (a debug link's), when the command was built: a run that started a minute or
+   * more before it carries the ref but is not the command's.
+   */
+  builtAt: number | null;
+}
+
+/** How long before its command was built a run with a ref the service did not make may have started. */
+const BORROWED_REF_SLACK_MS = 60_000;
+
+/** Whether `run` started well before the command of a borrowed ref was built: it is not that command's. */
+function startedBefore(w: RefWatch, run: RunDetails): boolean {
+  return w.builtAt !== null && Date.parse(run.startTime) < w.builtAt - BORROWED_REF_SLACK_MS;
 }
 
 /** The results of a repeated run that its stream brought, counted once each. */
@@ -359,9 +384,10 @@ export class RunWatch {
    * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, every `ownRunPollMs`
    * while the instance's stream is down and `STREAM_POLL_FACTOR` times less often while it is connected, and in the
    * runs the stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`. A command
-   * that runs each test `repeat` times has its runs' results counted.
+   * that runs each test `repeat` times has its runs' results counted. A `borrowed` ref, which a debug link named, finds
+   * no run that started well before the command (`builtAt`).
    */
-  watch(context: PiwiContext, ref: string, repeat: number | null = null): void {
+  watch(context: PiwiContext, ref: string, repeat: number | null = null, borrowed = false): void {
     if (this.disposed || !context.client || !context.project) return;
     const w: RefWatch = {
       context,
@@ -375,6 +401,7 @@ export class RunWatch {
       timer: null,
       repeat,
       commandRef: null,
+      builtAt: borrowed ? Date.now() : null,
     };
     this.watches.set(ref, w);
     for (const [oldest, dropped] of this.watches) {
@@ -440,11 +467,12 @@ export class RunWatch {
     if (!this.current(w)) return false;
     if (ended === null) {
       const code = exitCode === null || exitCode === undefined ? '' : ` (exit code ${exitCode})`;
-      this.options.notice({
-        root: context.root,
-        severity: 'warning',
-        message: `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`,
-      });
+      // A reporter that ran but sent nothing is told apart from a config without it.
+      const message = this.options.reporterHeard?.(w.ref)
+        ? `The run ended${code} but did not reach ${w.serverUrl}, though its Piwi reporter ran: its lines in the run's ` +
+          'output say why (its server address, its key, or an instance that refused it).'
+        : `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`;
+      this.options.notice({ root: context.root, severity: 'warning', message });
     } else {
       w.known.add(ended);
     }
@@ -793,7 +821,7 @@ export class RunWatch {
     const run = await client.runDetails(latest.id).catch(() => null);
     if (!run) return null;
     // An instance that does not read the parameters answers its latest run, whatever launched it.
-    if (editorRef(run) !== w.ref) {
+    if (editorRef(run) !== w.ref || startedBefore(w, run)) {
       w.known.add(run.id);
       return null;
     }
@@ -806,6 +834,10 @@ export class RunWatch {
    */
   private found(w: RefWatch, run: RunDetails): void {
     if (w.found === run.id || w.known.has(run.id)) return;
+    if (startedBefore(w, run)) {
+      w.known.add(run.id);
+      return;
+    }
     if (w.found !== null) w.known.add(w.found);
     w.found = run.id;
     w.carried.add(run.id);

@@ -183,6 +183,8 @@ export interface RunsAnswer {
   requests?: HubKeptRequest[];
   /** For `pick-at`: the locator sent to the editor, null when none was found. */
   locator?: string | null;
+  /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
 }
 
 /**

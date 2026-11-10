@@ -207,6 +207,38 @@ That derived owner is used in [pull-request comments](/features/pr-feedback), on
 A public repository's CODEOWNERS is read without a token; a private one needs an
 [SCM token](./source-control), and without it ownership falls back to annotations alone.
 
+## Live runs
+
+The words every tool uses for a run while it goes ([Watch a run](/features/watch-a-run)).
+
+### Run number
+
+**A run's id on the instance it reports to, `#78`, and its page there.** The reporter learns it as the run starts and
+tells it to the editor or the desktop app that follows the run, so every tool links the same page.
+
+### Run name
+
+**The name a run carries before it has a number** (`piwiRunRef` in its metadata): the one its launcher gave it, an
+editor's ref, a run request's id, else `local-<pid>-<time>` for a run outside CI. A CI run has none: its number names
+it. See [Test metadata](/reference/test-metadata#run-origin).
+
+### Worker
+
+**One of the run's Playwright processes, named by its lane, `Worker 2`.** A lane is Playwright's `parallelIndex`,
+counted from 1 in each shard; a worker Playwright starts again after a failure takes the same lane.
+
+### Stop
+
+**A test standing at a call, waiting to be answered:** at a breakpoint, after a step, at a Pause, at the line it was run
+to, at `page.pause()`, or at a failure held for a look. Each tool names it by why it stopped, in the same words
+(**Stopped at a breakpoint**, **Paused**, …).
+
+### Watch, Share live
+
+**Watch** shows a worker's page as its test runs or stands stopped. **Share live** lets a teammate watch a run on your
+machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
+being shared ([Live view of a run](/features/live-view)).
+
 ## Failures
 
 ### Error fingerprint & failure cluster

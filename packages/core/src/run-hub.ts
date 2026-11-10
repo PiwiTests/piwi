@@ -21,9 +21,11 @@ import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import {
   MAX_RUN_FAILURE_TEXT,
   MAX_STOP_ERROR,
+  readRunPage,
   type KeptRequest,
   type RunCounts,
   type RunEndStatus,
+  type RunPage,
 } from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
@@ -281,6 +283,11 @@ export interface HubSession {
    * `@piwitests/core/run-channel`): absent from a service or a reporter that predates it.
    */
   progress?: HubProgress;
+  /**
+   * The run's page on the instance it reports to, its number and address, once its own process knows it (`run-page`):
+   * absent before, for a run that reports to none, and from a service or a reporter that predates it.
+   */
+  page?: RunPage;
 }
 
 /**
@@ -411,6 +418,8 @@ export interface HubAnswer {
   requests?: HubKeptRequest[];
   /** For `pick-at`: the locator sent to the editor, null when none was found. */
   locator?: string | null;
+  /** For `pick-at`: whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
 }
 
 /** Sent once `hello` was accepted: the service the connection reached. */
@@ -954,6 +963,8 @@ function readSession(value: unknown): HubSession | null {
   if (live) session.live = live;
   const progress = value.progress === undefined ? null : readProgress(value.progress);
   if (progress) session.progress = progress;
+  const page = value.page === undefined ? null : readRunPage(value.page);
+  if (page) session.page = page;
   return session;
 }
 
@@ -1042,6 +1053,7 @@ export function parseHubMessage(text: string): HubMessage | null {
         if (value.locator !== null && str(value.locator, 1000) === null) return null;
         answer.locator = value.locator as string | null;
       }
+      if (typeof value.taken === 'boolean') answer.taken = value.taken;
       if (value.image === undefined) return answer;
       const image = readImage(value.image);
       return image === undefined ? null : { ...answer, image };

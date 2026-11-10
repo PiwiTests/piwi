@@ -170,16 +170,32 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
+        val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
+        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the Latest Run in the Dashboard"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         e.project?.let { url(it) }?.let { BrowserUtil.browse(it) }
     }
 
-    /** The page of the run the status bar shows, for the context of the selected editor's file. */
-    private fun url(project: Project): String? = project.service<PiwiProjectService>().let {
+    /** The run in progress the status bar counts, with its page, for the context of the selected editor's file. */
+    private fun liveRun(project: Project): LiveRun? = project.service<PiwiProjectService>().let {
+        Glue.liveRun(it.status, it.runs, PiwiStatusBarWidget.shownFile(project))?.takeIf { live -> live.url != null }
+    }
+
+    /** The page of the run in progress the status bar counts, else of the run it shows. */
+    private fun url(project: Project): String? = liveRun(project)?.url ?: project.service<PiwiProjectService>().let {
         Glue.statusView(it.status, it.runs, file = PiwiStatusBarWidget.shownFile(project)).url
+    }
+}
+
+/** Opens the page of a run started or followed here, on the instance it reports to: `Open Run #78`. */
+class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}"), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        BrowserUtil.browse(page.url)
     }
 }
 

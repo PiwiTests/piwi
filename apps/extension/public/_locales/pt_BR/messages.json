@@ -6883,6 +6883,21 @@
   "runs_copyRunPage": {
     "message": "Copiar o link da página da execução"
   },
+  "runs_runNumber": {
+    "message": "Execução #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "77"
+      }
+    }
+  },
+  "runs_openRunPage": {
+    "message": "Abrir"
+  },
+  "runs_copyRunPageShort": {
+    "message": "Copiar link"
+  },
   "runs_pageAtStop": {
     "message": "A página de um teste aparece aqui quando ele para: em um ponto de interrupção, em page.pause() ou quando você o pausa. Ver ao vivo a mostra então enquanto ela é desenhada."
   },

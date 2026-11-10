@@ -29,6 +29,7 @@ import type {
   StopRequest,
 } from '@piwitests/editor/protocol';
 import type { ViewInput } from '@piwitests/core/run-view';
+import { RUN_STOP_WORDS } from '@piwitests/editor/protocol';
 
 /**
  * A change of a document's lines: its old lines `start` to `oldEnd` became the lines `start` to `newEnd`. `first`
@@ -520,8 +521,10 @@ export function pausedText(stop: RunStop, test: RunTest | null, terminal = false
   // A run started in a terminal, or by the editor's own test runner, says so: its process is theirs.
   const where = !terminal ? '' : runner ? " · run by the editor's test runner" : ' · run in a terminal';
   if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
-  // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
-  return `Paused${stop.by === 'agent' ? ' by the agent' : ''} · ${stop.title}${attempt}${where}`;
+  // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
+  const reason = stop.reason as Exclude<RunStop['reason'], 'failure'>;
+  const why = stop.by === 'agent' ? 'Paused by the agent' : (RUN_STOP_WORDS[reason] ?? RUN_STOP_WORDS.other);
+  return `${why} · ${stop.title}${attempt}${where}`;
 }
 
 /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
@@ -565,6 +568,7 @@ export const RUN_COMMANDS = {
   share: 'piwi.shareWithPlaywright',
   shareLive: 'piwi.shareRunLive',
   stopSharing: 'piwi.stopSharingRun',
+  openPage: 'piwi.openRunPage',
 } as const;
 
 /** A worker a panel can watch while its test runs: its run, Playwright's worker index, its slot (`lane`), and its words. */
@@ -665,6 +669,37 @@ export interface LiveRun {
   live: RunLive;
 }
 
+/** A run of the sessions whose own process named its page on the instance: `#78`, and the address. */
+export interface RunPageOf {
+  ref: string;
+  id: number;
+  url: string;
+}
+
+/** The runs of the sessions whose page is known, in their order. */
+export function runPagesOf(sessions: Sessions): RunPageOf[] {
+  return [...sessions.values()].flatMap((s) => (s.page ? [{ ref: s.ref, ...s.page }] : []));
+}
+
+/** How a run is named beside its page's link: `Run #78`, else `Run`. */
+export function runName(page: { id: number } | null | undefined): string {
+  return page ? `Run #${page.id}` : 'Run';
+}
+
+/**
+ * The run whose page `piwi.openRunPage` opens: the one it names (`{ ref }`), else the only one with a page, else null
+ * to choose among them.
+ */
+export function runPageTarget(sessions: Sessions, arg: unknown): RunPageOf | null {
+  const pages = runPagesOf(sessions);
+  const ref =
+    arg && typeof arg === 'object' && typeof (arg as { ref?: unknown }).ref === 'string'
+      ? (arg as { ref: string }).ref
+      : null;
+  if (ref) return pages.find((p) => p.ref === ref) ?? null;
+  return pages.length === 1 ? pages[0]! : null;
+}
+
 /** The runs of the sessions whose reporter shares them live, in their order. */
 export function liveRunsOf(sessions: Sessions): LiveRun[] {
   return [...sessions.values()].flatMap((s) => (s.live ? [{ ref: s.ref, live: s.live }] : []));
@@ -707,7 +742,8 @@ export function liveText(live: RunLive): string {
 /**
  * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
  * many they hold, and how many of them failed, for every run kept that says so (none from a reporter that predates
- * it). None while no run says.
+ * it), with the run's number on the instance once one run names it. Its tooltip links to the runs' pages and to a
+ * worker's test; a click watches a worker while one can be, else opens the run's page. None while no run says.
  */
 export function progressItem(sessions: Sessions): ControlItem | null {
   const told = [...sessions.values()].flatMap((s) => (s.progress ? [s.progress] : []));
@@ -722,12 +758,22 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const tests = total === 1 ? 'test' : 'tests';
   const outcomes = [failed ? `${failed} failed` : '', flaky ? `${flaky} flaky` : ''].filter(Boolean).join(', ');
   const watchable = watchableWorkers(sessions).length > 0;
+  const pages = runPagesOf(sessions);
+  const one = told.length === 1 && pages.length === 1 ? pages[0]! : null;
+  const links = [
+    ...pages.map(
+      (p) =>
+        `[Open run #${p.id}](command:${RUN_COMMANDS.openPage}?${encodeURIComponent(JSON.stringify([{ ref: p.ref }]))})`,
+    ),
+    ...(watchable ? [`[Watch a worker's test](command:${RUN_COMMANDS.watch})`] : []),
+  ];
   return {
-    text: `$(beaker) ${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
+    text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
     tooltip:
-      `Piwi: ${told.length === 1 ? 'the run' : `${told.length} runs`} ran ${done} of ${total} ${tests}` +
-      `${outcomes ? `: ${outcomes}` : ''}.${watchable ? " Click to watch a worker's test." : ''}`,
-    command: watchable ? RUN_COMMANDS.watch : null,
+      `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
+      `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${links.length ? `\n\n${links.join(' · ')}` : ''}`,
+    markdown: true,
+    command: watchable ? RUN_COMMANDS.watch : pages.length ? RUN_COMMANDS.openPage : null,
   };
 }
 
@@ -974,6 +1020,8 @@ export interface ControlItem {
   key?: string;
   text: string;
   tooltip: string;
+  /** The tooltip is Markdown whose links run the run controls' commands. */
+  markdown?: boolean;
   command: string | null;
 }
 

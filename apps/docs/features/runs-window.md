@@ -37,7 +37,7 @@ under it. **Resume** lets it end as it failed; **Pick** replaces the failing loc
 
 **Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
 project whose live view is on. The first time in a window, it says what goes out and to whom; shared, the run says
-how many views are open, with its page's link to copy, until **Stop sharing**. A run that cannot be shared says why in
+how many views are open until **Stop sharing**. A run that cannot be shared says why in
 its place: [Share a run live](./share-live).
 
 ## Code from a stop
@@ -97,7 +97,8 @@ A hint under the view says so the first time. What you hold down is let go befor
 
 **Pick on the image**, above the image, or a `Shift`+click on the image or the view, names the element a click
 under the pointer would reach (a dialog or a banner over the page included), without touching the page: the locator
-the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the stopped line's. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
+the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the stopped line's. The window shows that locator, or why there is none, with
+**Copy** when no editor took it. It works on a headed stop's image too. `Esc`
 turns it off. It needs Playwright 1.60 or later, and says so on an older one.
 
 ## The run shortcut

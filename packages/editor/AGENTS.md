@@ -188,6 +188,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   execution, checked one by one (`checkedDebugRun`); `DebugRuns` keeps the line in the run's breakpoints until a worker
   stops there, and never sends it to the client. Checked by `tests/debug-run.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#a-run-that-debugs-a-failure))
+- **A run's page (`run-page`) is kept only on this machine or under an instance its host connects to.** The run's
+  process is the test's, so `RunSessions` drops any other address (`instances`, `isPageOfInstance` in
+  `@piwitests/core/run-channel`); checked by `tests/run-progress.test.ts` ("names the run’s page …").
 - **A run is shared live only as a person asks on a surface, never on an agent's word.** `RunSessions.share` serves
   `piwi/shareRun` and the hub's `share` alone, no tool of `run-agent.ts` reaches it, a worker that connects later
   follows the run's choice, and stopping is never refused. Checked by `tests/run-sessions.test.ts` ("shares a run live

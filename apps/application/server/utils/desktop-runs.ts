@@ -37,6 +37,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
+import { runTargetConnection } from '@piwitests/editor/run-target';
 import type { RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
@@ -249,7 +250,7 @@ class DesktopRunSessions extends RunSessions {
   override async pickAt(params: Parameters<RunSessions['pickAt']>[0]): ReturnType<RunSessions['pickAt']> {
     const picked = await super.pickAt(params);
     return picked.ok && picked.locator
-      ? { ...picked, message: `${picked.locator}: copy it in the desktop app's window.` }
+      ? { ...picked, taken: false, message: `${picked.locator}: copy it in the desktop app's window.` }
       : picked;
   }
 }
@@ -272,6 +273,8 @@ export class DesktopRuns {
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
+      // A run's page is linked on this machine (this app's server), or on the team instance whose requests it runs.
+      instances: () => [runTargetConnection().instance],
       notify: (session) => {
         this.hub?.push(session);
         this.liveCountChanged();

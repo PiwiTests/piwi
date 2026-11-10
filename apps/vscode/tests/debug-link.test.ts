@@ -38,7 +38,13 @@ describe('a debug link', () => {
       title: 'checkout › pays with a coupon',
       project: 'chromium',
       execution: 900,
+      ref: null,
     });
+    // The name the dashboard gave the run, which its page follows it by: `ed-` and hexadecimal digits alone.
+    expect(debugLink(`${query()}&ref=ed-0123456789abcdef`)).toMatchObject({ ref: 'ed-0123456789abcdef' });
+    for (const ref of ['ed-1', 'ed-01234567', 'terminal-1-2', 'ed-0123456789abcdef;x']) {
+      expect(debugLink(`${query()}&ref=${ref}`)).toEqual({ refused: 'ref is not a run name the dashboard gives' });
+    }
     // A title or a path may hold an `&`; the spec is the failing file when the link names none.
     expect(
       debugLink(
@@ -60,6 +66,7 @@ describe('a debug link', () => {
       title: 'adds & removes',
       project: null,
       execution: null,
+      ref: null,
     });
   });
 

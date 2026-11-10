@@ -101,6 +101,18 @@ export interface DebugTarget {
   title: string;
   project?: string | null;
   execution?: number | null;
+  /**
+   * The name the page gives the run (`ed-` then hexadecimal digits, `debugRunRef`), which the editor runs it under and
+   * the page follows it by on the instance.
+   */
+  ref?: string | null;
+}
+
+/** A name for a debug run, as the editor service names its own runs, longer: `ed-` then 16 hexadecimal digits. */
+export function debugRunRef(
+  random: (bytes: Uint8Array<ArrayBuffer>) => ArrayLike<number> = (b) => crypto.getRandomValues(b),
+): string {
+  return `ed-${Array.from(random(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** How a debug link joins a test's describe blocks' titles and its own: the editor service splits them alike. */
@@ -124,7 +136,7 @@ function debugFields(debug: DebugTarget): Array<[string, string]> {
  * needed. `root`, when known, is the folder the path is relative to. Line and
  * column are 1-based. Each value is percent-encoded whole, a space as `%20`.
  * With `debug` (a line is then required), the link is Debug in my editor's:
- * `&debug=1&spec=&test=&playwrightProject=&execution=`.
+ * `ref=` first, where an extension that reads no `ref` skips it, then `&debug=1&spec=&test=&playwrightProject=&execution=`.
  */
 export function buildVscodeExtensionUrl(o: {
   scheme: VscodeScheme;
@@ -134,13 +146,15 @@ export function buildVscodeExtensionUrl(o: {
   root?: string | null;
   debug?: DebugTarget | null;
 }): string {
-  const query = [`file=${encodeURIComponent(toPosixPath(o.path))}`];
+  const debug = o.debug && o.line != null ? o.debug : null;
+  const query = [
+    ...(debug?.ref ? [`ref=${encodeURIComponent(debug.ref)}`] : []),
+    `file=${encodeURIComponent(toPosixPath(o.path))}`,
+  ];
   if (o.line != null) query.push(`line=${o.line}`);
   if (o.line != null && o.column != null) query.push(`column=${o.column}`);
   if (o.root) query.push(`root=${encodeURIComponent(toPosixPath(o.root))}`);
-  if (o.debug && o.line != null) {
-    for (const [name, value] of debugFields(o.debug)) query.push(`${name}=${encodeURIComponent(value)}`);
-  }
+  if (debug) for (const [name, value] of debugFields(debug)) query.push(`${name}=${encodeURIComponent(value)}`);
   return `${o.scheme}://${VSCODE_EXTENSION_ID}/open?${query.join('&')}`;
 }
 
@@ -202,7 +216,10 @@ export function buildPiwiPluginOpenUrl(o: {
   if (o.line != null && o.column != null) query.set('column', String(o.column));
   if (o.project) query.set('project', o.project);
   if (o.check) query.set('check', '1');
-  else if (o.debug && o.line != null) for (const [name, value] of debugFields(o.debug)) query.set(name, value);
+  else if (o.debug && o.line != null) {
+    for (const [name, value] of debugFields(o.debug)) query.set(name, value);
+    if (o.debug.ref) query.set('ref', o.debug.ref);
+  }
   return `http://127.0.0.1:${o.port}/api/piwi/open?${query}`;
 }
 

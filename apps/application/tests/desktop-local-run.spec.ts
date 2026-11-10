@@ -602,7 +602,7 @@ test.describe('Desktop local run', () => {
     expect(res.ok()).toBeTruthy();
     const { runId: testRunId } = await res.json();
 
-    await expect(tray(page).getByRole('link', { name: `Live in Piwi — Run #${testRunId}` })).toBeVisible({
+    await expect(tray(page).getByRole('link', { name: `Open run #${testRunId}` })).toBeVisible({
       timeout: 15000,
     });
     // The run it produced compares with the run its tests come from.
