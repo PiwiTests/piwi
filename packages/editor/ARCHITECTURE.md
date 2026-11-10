@@ -400,7 +400,8 @@ On a spec, `piwi/fileSummary` gives each test's line:
   expression (`suiteUnread`), the only case of its title in the spec; with two or more of that title, none. A test
   whose blocks all read literally and that has no case of its own (a new test) gets none. The `timeout` diagnostics
   match their test the same way;
-- the spec's tests (`casesOf`).
+- the spec's tests: those Piwi knows (`casesOf`), and where every `test(…)` call of the file starts as it stands
+  (`locations`), which **Run this spec** runs, so a test the instance does not know runs too.
 
 **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec** run them. A file that is not
 a spec under a context's folder answers nulls, and a test Piwi does not know answers a location alone.

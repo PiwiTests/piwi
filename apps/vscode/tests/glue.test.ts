@@ -1289,7 +1289,7 @@ describe('the test at a line', () => {
   const uri = 'file:///w/tests/checkout.spec.ts';
   const known: TestAtResult = {
     test: { id: 7, title: 'pays', file: 'tests/checkout.spec.ts', status: 'passed', url: 'http://piwi/test-cases/7' },
-    spec: { uri, testIds: [7] },
+    spec: { uri, testIds: [7], locations: ['tests/checkout.spec.ts:3'] },
     location: 'tests/checkout.spec.ts:3',
   };
   const recorded: TestAtResult = { test: null, spec: null, location: 'tests/checkout.spec.ts:12' };

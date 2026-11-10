@@ -3134,12 +3134,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const relative = file && context ? relativeTo(context.root, file) : null;
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
-    const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
+    const lines = (readText(file) ?? '').split(/\r?\n/);
+    const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
+    const locations = testCalls(lines).map((c) => `${relative}:${c.line + 1}`);
     return {
       test: found ? caseToEditorTest(context, found) : null,
-      spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
+      spec: locations.length ? { uri: params.uri, testIds: cases.map((c) => c.id), locations } : null,
       location: call ? `${relative}:${call.line + 1}` : null,
     };
   });

@@ -187,14 +187,15 @@ object PiwiCommands {
     /**
      * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri` (`piwi/testAt`), as [runTests]
      * does: by its id when Piwi knows it, else by its location, and with `repeat` by its location, that many times; or
-     * with `wholeSpec` the spec's tests Piwi knows. The spec is saved first, since a run reads it from the disk; a
+     * with `wholeSpec` every test of the spec as it stands, by location. The spec is saved first, since a run reads it from the disk; a
      * balloon says when there is no test to run.
      */
     fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null) {
         background(project, "Piwi: finding the test") {
             val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
             val args = if (wholeSpec) {
-                found?.spec?.testIds?.takeIf { it.isNotEmpty() }?.let { RunTestsArgs(uri, it) }
+                // Every test of the spec as it stands, by location, known to the instance or not.
+                found?.spec?.locations?.takeIf { it.isNotEmpty() }?.let { RunTestsArgs(uri, emptyList(), locations = it) }
             } else {
                 Glue.testAtRun(uri, found, repeat)
             }
@@ -202,7 +203,7 @@ object PiwiCommands {
                 saveSpec(project, uri)
                 runTests(project, args)
             } else {
-                notify(project, if (wholeSpec) "No test of this spec is known yet." else "The caret is in no test.")
+                notify(project, if (wholeSpec) "This spec holds no test." else "The caret is in no test.")
             }
         }
     }

@@ -132,8 +132,12 @@ export interface TestAtParams {
 export interface TestAtResult {
   /** The test whose `test(…)` call spans `line`; null outside every test Piwi knows. */
   test: EditorTest | null;
-  /** The spec's tests Piwi knows, which `piwi/runArgs` runs; null for a file that is not a spec or holds none of them. */
-  spec: { uri: string; testIds: number[] } | null;
+  /**
+   * The spec's tests: those Piwi knows (`testIds`), and where every `test(…)` call of the file starts as it stands
+   * (`locations`, as `RunTestsArgs.locations` takes them), known to Piwi or not, which Run This Spec runs. Null for a file
+   * that is not a spec under a Playwright config's folder, or holds no `test(…)` call.
+   */
+  spec: { uri: string; testIds: number[]; locations: string[] } | null;
   /**
    * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
    * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,

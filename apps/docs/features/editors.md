@@ -114,7 +114,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
-| Piwi: Run this spec | Run the tests of the spec Piwi knows |
+| Piwi: Run this spec | Run every test of the spec as it stands |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
 | Piwi: Re-run the failing tests | Run every test still failing: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |

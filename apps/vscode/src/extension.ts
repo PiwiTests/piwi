@@ -1059,12 +1059,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = target?.toString() ?? activeUri();
     if (!uri) return;
     const found = await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: 0, character: 0 }).catch(() => null);
-    const testIds = found?.spec?.testIds ?? [];
-    if (!testIds.length) {
-      void vscode.window.showInformationMessage('Piwi: no test of this spec is known yet.');
+    // Every test of the spec as it stands, by location, known to the instance or not.
+    const locations = found?.spec?.locations ?? [];
+    if (!locations.length) {
+      void vscode.window.showInformationMessage('Piwi: this spec holds no test.');
       return;
     }
-    if (await saveSpec(uri)) await runTests({ uri, testIds });
+    if (await saveSpec(uri)) await runTests({ uri, testIds: [], locations });
   };
 
   /**

@@ -57,8 +57,11 @@ data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? 
 /** `piwi/testAt`: a 0-based position of a spec. */
 data class TestAtParams(val uri: String, val line: Int, val character: Int)
 
-/** The tests of a spec, by id, which `piwi/runArgs` runs. */
-data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
+/**
+ * The tests of a spec: those Piwi knows, by id, and where every `test(…)` call of the file starts as it stands
+ * (`locations`), which Run This Spec runs.
+ */
+data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, val locations: List<String>? = null)
 
 /**
  * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
