@@ -3,7 +3,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parsePausedMs, parseTestStop, type TestStop } from '@piwitests/core/wire';
 import { PIWI_STOP_NOTES_ENV } from '../config/env.js';
-import { appendPrivateFile, privateTempDir, readPrivateFile, writePrivateFile } from './private-file.js';
+import {
+  appendPrivateFile,
+  keepPrivateFileLive,
+  privateTempDir,
+  readPrivateFile,
+  sweepStalePrivateFiles,
+  writePrivateFile,
+} from './private-file.js';
+
+/** How the run's stop notes files are named, a random part following. */
+const STOP_NOTES_PREFIX = 'piwi-stop-notes-';
 
 /**
  * The stops of a run's tests, as their workers tell them to the reporter's own process. A stop shows in a worker, and
@@ -68,7 +78,8 @@ export function readStopNotes(
   hear: (note: StopNote) => void,
   env: NodeJS.ProcessEnv = process.env,
 ): StopNotesReader | null {
-  const file = path.join(privateTempDir(), `piwi-stop-notes-${randomBytes(12).toString('hex')}.txt`);
+  sweepStalePrivateFiles(STOP_NOTES_PREFIX);
+  const file = path.join(privateTempDir(), `${STOP_NOTES_PREFIX}${randomBytes(12).toString('hex')}.txt`);
   try {
     writePrivateFile(file, '');
   } catch {
@@ -82,6 +93,7 @@ export function readStopNotes(
       const found = readPrivateFile(file);
       if (!found || !('text' in found)) return;
       text = found.text;
+      keepPrivateFileLive(file);
     } catch {
       return;
     }

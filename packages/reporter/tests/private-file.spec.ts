@@ -18,6 +18,8 @@ import {
   legacyPrivateTempDir,
   privateTempDir,
   readPrivateFile,
+  STALE_PRIVATE_FILE_MS,
+  sweepStalePrivateFiles,
   writePrivateFile,
 } from '../src/internal/support/private-file.js';
 import type { CompleteStreamEvent } from '../src/types/wire.js';
@@ -203,6 +205,43 @@ describe('a private temp file', () => {
 
   it('reads as absent when there is none', () => {
     expect(readPrivateFile(path.join(dir, 'none.json'))).toBeNull();
+  });
+});
+
+describe('the files a killed run left', () => {
+  /** A file of `dir`, last changed `ageMs` ago. */
+  const fileAged = (name: string, ageMs: number): string => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, 'note\n');
+    const at = new Date(Date.now() - ageMs);
+    fs.utimesSync(file, at, at);
+    return file;
+  };
+
+  it('are removed once unchanged for a day, those of the prefix alone', () => {
+    const stale = fileAged('piwi-stop-notes-old.txt', STALE_PRIVATE_FILE_MS + 60_000);
+    const live = fileAged('piwi-stop-notes-live.txt', STALE_PRIVATE_FILE_MS - 60_000);
+    const other = fileAged('piwi-run-log-old.txt', STALE_PRIVATE_FILE_MS + 60_000);
+    sweepStalePrivateFiles('piwi-stop-notes-', { dir });
+    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(live)).toBe(true);
+    expect(fs.existsSync(other)).toBe(true);
+  });
+
+  it('never remove a link nor what it names', () => {
+    const at = path.join(dir, 'piwi-stop-notes-link.txt');
+    const target = plantLink(at, 'untouched');
+    if (!target) return;
+    const old = new Date(Date.now() - 2 * STALE_PRIVATE_FILE_MS);
+    fs.utimesSync(target, old, old);
+    fs.lutimesSync(at, old, old);
+    sweepStalePrivateFiles('piwi-stop-notes-', { dir });
+    expect(fs.lstatSync(at).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(target, 'utf8')).toBe('untouched');
+  });
+
+  it('leave the folder alone when it cannot be read', () => {
+    expect(() => sweepStalePrivateFiles('piwi-stop-notes-', { dir: path.join(dir, 'missing') })).not.toThrow();
   });
 });
 
