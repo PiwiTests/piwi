@@ -68,6 +68,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
   'POST /api/desktop/run-target/requests/:id/started', // desktop build only; the shell started the requested run
   'POST /api/desktop/run-target/requests/:id/ended', // desktop build only; the requested run's Playwright exited
+  'POST /api/desktop/run-target/session-code', // desktop build only; the shell's single-use code that signs the window in
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section's Extract button is hidden client-side in demo mode, leaving its prompt to copy, instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no

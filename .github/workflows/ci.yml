@@ -835,6 +835,12 @@ jobs:
         with:
           playwright: shell
 
+      # Every server route has a demo handler or is listed as left out of the demo, and a demo route asks for the
+      # permission its server twin declares.
+      - name: Check the demo routes
+        working-directory: apps/application
+        run: npm run app:check:demo
+
       # seed.sql is gitignored, so the build has no database to load until it is
       # generated here — exactly as the docs deploy does before building.
       - name: Generate demo seed data
