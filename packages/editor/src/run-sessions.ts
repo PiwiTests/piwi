@@ -60,6 +60,7 @@ import {
 } from '@piwitests/core/run-channel';
 import { isViewPoint, type ViewInput } from '@piwitests/core/run-view';
 import type {
+  HoldRunParams,
   PausedImage,
   PausedPageParams,
   PausedPageResult,
@@ -67,6 +68,7 @@ import type {
   PickAtResult,
   RunControlParams,
   RunControlResult,
+  RunHoldFailures,
   RunLive,
   RunPage,
   RunProgress,
@@ -293,14 +295,10 @@ export interface RunSessionsOptions {
   onRegion?(stop: StopRef, region: { locator: string; snapshot: string } | { refused: string }): void;
   /**
    * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
-   * or for a spec that calls `page.pause()` (both headed). A failure no bar shows is held in such a run.
+   * or for a spec that calls `page.pause()` (both headed). Its **Hold failures** is on from its start, until a person
+   * or an agent turns it off (`hold`).
    */
   watched?(ref: string): boolean;
-  /**
-   * Whether a person follows the runs in Piwi Picker now (a Runs window open, its hub connection saying so): a failure
-   * no bar shows is held while one does.
-   */
-  followed?(): boolean;
   /**
    * Whether a failure of the run of `ref` may be held at all, whoever watches it: true by default. A run nobody attends
    * (the desktop app's Flake Lab, bisect and lab runs, a run repeating its tests or in UI mode) holds none: its workers
@@ -316,7 +314,8 @@ export interface RunSessionsOptions {
   /**
    * Whether the run of `ref` was started in a terminal, by no command of the host's (a ref it never built): it is shown
    * as one (`RunSession.terminal`), starts with the editor's breakpoints (`setEditorBreakpoints`), and holds a failure
-   * only while a person follows the runs in Piwi Picker (`followed`), so it never waits for nobody. False by default.
+   * only once a person or an agent turns its **Hold failures** on (`hold`), so it never waits for nobody. False by
+   * default.
    */
   terminal?(ref: string): boolean;
   /**
@@ -523,6 +522,8 @@ export class RunSessions {
   private readonly endedCommands = new Set<string>();
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
   private readonly followedRuns = new Set<string>();
+  /** Each run's **Hold failures** as a person or an agent set it, by ref, the latest `MAX_KEPT_RUNS`. */
+  private readonly holdsSet = new Map<string, RunHoldFailures>();
   private lastRequest = 0;
 
   constructor(private readonly options: RunSessionsOptions) {}
@@ -687,8 +688,8 @@ export class RunSessions {
     const own = session;
     socket.on('close', () => this.detach(own, worker));
     if (attach.holds) {
-      // A terminal's run holds a failure only while someone follows the runs: nobody may be there to answer it.
-      const failures = this.holds(attach.ref) && (!session.terminal || !!this.options.followed?.());
+      // A failure stops a worker of a run that may hold one; it goes on at once while its Hold failures is off.
+      const failures = this.holds(attach.ref);
       const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || failures));
       const named = this.options.workerHost?.() ?? this.options.host;
       this.send(worker, { type: 'attached', holds, ...(named ? { host: named } : {}) });
@@ -725,6 +726,51 @@ export class RunSessions {
   /** No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too. */
   unfollowRun(ref: string): void {
     if (this.followedRuns.delete(ref)) this.tellEvents(ref, false);
+  }
+
+  /**
+   * `piwi/holdRun`, the hub's `hold` and an agent's `run_follow`: the run's **Hold failures**, kept for the run of `ref`
+   * whoever set it (`by`), a run whose first worker has not connected yet included. Off, a failure held now goes on.
+   * Refused for a run nobody attends (`holdsFailures`).
+   */
+  hold(params: HoldRunParams, by: 'person' | 'agent'): RunControlResult {
+    if (typeof params?.on !== 'boolean' || typeof params.ref !== 'string' || !params.ref) {
+      return { ok: false, message: 'Hold failures needs the run and on: true or false.' };
+    }
+    if (!this.holds(params.ref)) {
+      return {
+        ok: false,
+        message: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+      };
+    }
+    this.holdsSet.delete(params.ref);
+    this.holdsSet.set(params.ref, { on: params.on, by });
+    for (const oldest of this.holdsSet.keys()) {
+      if (this.holdsSet.size <= MAX_KEPT_RUNS) break;
+      this.holdsSet.delete(oldest);
+    }
+    const session = this.sessions.get(params.ref);
+    if (session) {
+      if (!params.on) {
+        for (const worker of session.workers.values()) {
+          if (worker.stop && !worker.stop.view.bar && worker.stop.view.reason === 'failure') {
+            this.resumeUnanswered(session, worker, worker.stop.place);
+          }
+        }
+      }
+      this.changed(session, true);
+    }
+    return {
+      ok: true,
+      message: params.on
+        ? 'A failure no pause bar shows waits at its line in this run until someone answers it.'
+        : 'A failure of this run no pause bar shows goes on at once.',
+    };
+  }
+
+  /** The run's **Hold failures** now: as a person or an agent set it, else on from its start when built to be watched. */
+  private holdOf(ref: string): RunHoldFailures {
+    return this.holdsSet.get(ref) ?? { on: !!this.options.watched?.(ref), by: 'start' };
   }
 
   /** Have the workers of the run `ref` whose reporter takes it tell their tests' events, or stop. */
@@ -1411,21 +1457,14 @@ export class RunSessions {
     }
   }
 
-  /**
-   * Whether a worker stands at a failure nobody watches: no bar shows it, its run was not started to be watched, and
-   * no Runs window follows the runs. It goes on at once.
-   */
+  /** Whether a worker stands at a failure no bar shows in a run whose **Hold failures** is off: it goes on at once. */
   private unwatchedFailure(session: Session, worker: Worker): boolean {
     return worker.stop?.view.reason === 'failure' && !this.watches(session);
   }
 
-  /**
-   * Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs; never
-   * for a run that holds no failure (`holdsFailures`).
-   */
+  /** Whether the run's failures wait for an answer: its **Hold failures** is on, in a run that may hold one. */
   private watches(session: Session): boolean {
-    if (!this.holds(session.ref)) return false;
-    return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
+    return this.holds(session.ref) && this.holdOf(session.ref).on;
   }
 
   /** Whether a failure of the run of `ref` may be held at all. */
@@ -1794,6 +1833,7 @@ export class RunSessions {
     if (live) view.live = live;
     if (session.progress) view.progress = { ...session.progress };
     if (session.page) view.page = { ...session.page };
+    if (this.holds(session.ref)) view.hold = { ...this.holdOf(session.ref) };
     return view;
   }
 

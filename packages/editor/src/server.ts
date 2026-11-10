@@ -231,6 +231,7 @@ import {
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   SHARE_RUN_REQUEST,
+  HOLD_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -283,6 +284,7 @@ import {
   type StopBindResult,
   type RunControlParams,
   type ShareRunParams,
+  type HoldRunParams,
   type RunControlResult,
   type SetBreakpointsParams,
   type SetRunBreakpointsParams,
@@ -1768,8 +1770,6 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     watched: (ref) => watchedRuns.has(ref),
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
-    // A Runs window open in Piwi Picker: its connection says it follows the runs.
-    followed: () => !!runHub?.follows(),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
     sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
     notice: (root, severity, message) =>
@@ -3729,6 +3729,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(SHARE_RUN_REQUEST, (params: ShareRunParams): RunControlResult => runSessions.share(params));
+  connection.onRequest(HOLD_RUN_REQUEST, (params: HoldRunParams): RunControlResult =>
+    runSessions.hold(params, 'person'),
+  );
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
     runSessions.setBreakpoints(debugRuns.breakpoints(params)),

@@ -427,6 +427,11 @@ export function agentTools(words: AgentWords): ToolDefinition[] {
             maximum: MAX_FOLLOW_WAIT_S,
             description: `How long to wait for a stop or the run's end, in seconds: ${MAX_FOLLOW_WAIT_S} by default.`,
           },
+          hold: {
+            type: 'boolean',
+            description:
+              "The run's Hold failures, as people see it on their surfaces: true, a failed test waits at its line for an answer (run_control's resume ends it as it failed); false, it goes on at once. Left out, it stays as it is.",
+          },
         },
         required: ['run'],
         additionalProperties: false,
@@ -832,7 +837,10 @@ export class RunAgent {
         case 'run_list':
           return this.list(new Args(values as Record<string, unknown>, []));
         case 'run_follow':
-          return await this.follow(new Args(values as Record<string, unknown>, ['run', 'after', 'wait']), signal);
+          return await this.follow(
+            new Args(values as Record<string, unknown>, ['run', 'after', 'wait', 'hold']),
+            signal,
+          );
         case 'run_control':
           return await this.control(
             new Args(values as Record<string, unknown>, ['run', 'worker', 'action', 'stop', 'place', 'wait']),
@@ -1004,7 +1012,11 @@ export class RunAgent {
     const ref = args.run();
     const after = args.integer('after', -1, Number.MAX_SAFE_INTEGER) ?? -1;
     const wait = (args.seconds('wait', MAX_FOLLOW_WAIT_S) ?? MAX_FOLLOW_WAIT_S) * 1000;
+    const asked = args.raw('hold');
+    if (asked !== undefined && typeof asked !== 'boolean') throw new ArgumentError('`hold` is true or false.');
     const { log } = this.known(ref);
+    // The run's Hold failures is the one people see: an agent sets it as a surface does, and the run says so.
+    const held = asked === undefined ? null : this.options.sessions.hold({ ref, on: asked }, 'agent');
     this.startFollowing(ref);
     const since = () => log.events.filter((e) => e.seq > after);
     const settled = () => {
@@ -1035,6 +1047,7 @@ export class RunAgent {
         })),
         next: lastSeq,
         more: fresh.length > events.length,
+        ...(held ? { hold: held.message } : {}),
         ...(after >= 0 && log.events.length && log.events[0]!.seq > after + 1
           ? { missed: `Events before ${log.events[0]!.seq} are no longer kept.` }
           : {}),

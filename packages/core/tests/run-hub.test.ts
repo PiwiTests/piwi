@@ -847,6 +847,37 @@ describe('how far a run is, on the hub', () => {
   });
 });
 
+describe('Hold failures on the hub', () => {
+  test('reads hold, naming the run and whether its failures wait, and refuses one without either', () => {
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1', on: true }))).toEqual({
+      type: 'hold',
+      id: 8,
+      ref: 'ed-1',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1', on: false }))).toMatchObject({ on: false });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed 1', on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'hold', id: 8, ref: 'ed-1' }))).toEqual({
+      type: 'invalid',
+      id: 8,
+      message: 'hold needs on: true to hold the failures, false to let them go on.',
+    });
+  });
+
+  test('has the extension read a run’s hold and who set it, a hub that lists hold, and leave out what it cannot read', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['hold'] }))).toEqual({ ...welcome, features: ['hold'] });
+    const read = (value: unknown) =>
+      (parseHubMessage(json({ type: 'session', session: { ...session, hold: value } })) as { session: HubSession })
+        .session.hold;
+    for (const by of ['start', 'person', 'agent'] as const) expect(read({ on: true, by })).toEqual({ on: true, by });
+    expect(read({ on: false, by: 'person' })).toEqual({ on: false, by: 'person' });
+    for (const broken of [{ on: 'yes', by: 'person' }, { on: true, by: 'robot' }, { on: true }, 'on']) {
+      expect(read(broken), JSON.stringify(broken)).toBeUndefined();
+    }
+  });
+});
+
 describe('the live endpoint', () => {
   test('sits beside the Send to editor endpoint, in both editors', () => {
     expect(liveUrlOf('http://127.0.0.1:43123/piwi/send')).toBe('http://127.0.0.1:43123/piwi/live');

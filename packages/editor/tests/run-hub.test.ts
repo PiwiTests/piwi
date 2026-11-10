@@ -139,7 +139,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes'],
+      features: ['peers', 'lanes', 'hold'],
     });
     client.socket.close();
   });
@@ -297,6 +297,7 @@ describe('the commands', () => {
           },
         ],
         ended: false,
+        hold: { on: false, by: 'start' },
       });
       worker.begin();
       await waitFor(() => (client.session(ref)?.workers[0]?.state === 'running' ? true : undefined));

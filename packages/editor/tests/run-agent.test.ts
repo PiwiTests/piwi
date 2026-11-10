@@ -196,6 +196,25 @@ describe("an agent's tools for the runs of the editor window", () => {
     expect((await call('run_list', { run: ref })).piwi).toEqual({ ok: false, message: 'Unknown argument: run.' });
   });
 
+  test('turn a run’s Hold failures on or off as it follows the run, as a person would on a surface', async () => {
+    const held = await call('run_follow', { run: ref, wait: 0, hold: true });
+    expect(held.piwi).toMatchObject({
+      ok: true,
+      hold: 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+    });
+    expect(await waitFor(() => (ide.latest(ref)?.hold?.by === 'agent' ? ide.latest(ref) : undefined))).toMatchObject({
+      hold: { on: true, by: 'agent' },
+    });
+    expect((await call('run_follow', { run: ref, wait: 0, hold: false })).piwi).toMatchObject({
+      hold: 'A failure of this run no pause bar shows goes on at once.',
+    });
+    expect((await call('run_follow', { run: ref, wait: 0 })).piwi).not.toHaveProperty('hold');
+    expect((await call('run_follow', { run: ref, wait: 0, hold: 'yes' })).piwi).toEqual({
+      ok: false,
+      message: '`hold` is true or false.',
+    });
+  });
+
   test('follow a run: its events since a cursor, the page’s text apart, answered at once at a stop', async () => {
     const first = await call('run_follow', { run: ref, wait: 0 });
     expect(first.piwi).toMatchObject({ ok: true, run: ref, state: 'running' });

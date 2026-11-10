@@ -103,8 +103,7 @@ export interface RunHubOptions {
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
   /**
-   * A subscribed connection came or went, or one began or stopped following the runs: whether a stop no pause bar
-   * shows can be answered, or a failure is held, changed.
+   * A subscribed connection came or went: whether a stop no pause bar shows can be answered changed.
    */
   surfacesChanged(): void;
   /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
@@ -161,7 +160,7 @@ interface Connection {
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
   subscribed: boolean;
-  /** A person follows the runs through it (`follow`): a Runs window is open. */
+  /** A person follows the runs through it (`follow`): a Runs window is open. It holds no failure (`hold` does). */
   following: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
@@ -283,12 +282,6 @@ export class RunHub {
   /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
   answersStops(): boolean {
     for (const connection of this.connections) if (connection.subscribed) return true;
-    return false;
-  }
-
-  /** Whether a person follows the runs through a subscribed connection (`follow`): a failure no bar shows waits then. */
-  follows(): boolean {
-    for (const connection of this.connections) if (connection.subscribed && connection.following) return true;
     return false;
   }
 
@@ -568,18 +561,12 @@ export class RunHub {
           if (first) this.options.surfacesChanged();
           return;
         }
-        case 'follow': {
-          const changed = connection.following !== command.on;
+        case 'follow':
           connection.following = command.on;
-          reply({
+          return reply({
             ok: true,
-            message: command.on
-              ? 'A failure no pause bar shows waits for an answer while this connection follows the runs.'
-              : 'A failure no pause bar shows goes on unless another surface follows the runs.',
+            message: 'Each run’s Hold failures says whether a failure no pause bar shows waits at its line.',
           });
-          if (changed && connection.subscribed) this.options.surfacesChanged();
-          return;
-        }
         case 'runControl':
           if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
@@ -646,6 +633,8 @@ export class RunHub {
         }
         case 'share':
           return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'hold':
+          return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
         case 'watch': {
           const { ref, lane, on } = command;
           reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
@@ -706,6 +695,7 @@ export class RunHub {
         : {}),
       ...(session.progress ? { progress: session.progress } : {}),
       ...(session.page ? { page: session.page } : {}),
+      ...(session.hold ? { hold: { ...session.hold } } : {}),
     };
   }
 
