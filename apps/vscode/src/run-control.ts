@@ -915,6 +915,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text}`)] : [];
   });
   return {
+    name: 'Piwi: Run progress',
     text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
@@ -941,6 +942,7 @@ export function liveItem(sessions: Sessions): ControlItem | null {
         ? liveText(shared[0]!.live)
         : `${shared.length} runs shared live: ${viewers ? `${viewsText(viewers)} open` : 'nobody watches yet'}`;
     return {
+      name: 'Piwi: Share live',
       text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
       tooltip: `Piwi: ${what}. Click to stop sharing ${shared.length === 1 ? 'the run' : 'one'}.`,
       command: RUN_COMMANDS.stopSharing,
@@ -951,6 +953,7 @@ export function liveItem(sessions: Sessions): ControlItem | null {
   const instance = liveInstance(shareable.live);
   const offer = `Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`;
   return {
+    name: 'Piwi: Share live',
     text: '$(broadcast)',
     tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
     command: RUN_COMMANDS.shareLive,
@@ -1108,6 +1111,8 @@ export interface ControlState {
   watchable: boolean;
   /** The call a pausing worker's test waits in before it can stop (the first such worker's): End the test there. */
   waiting: WaitingWorker | null;
+  /** Every stop held is a failure: it goes on with Resume alone, as Step and Finish have no call to run. */
+  failed: boolean;
 }
 
 /**
@@ -1167,13 +1172,19 @@ export function controlState(sessions: Sessions): ControlState {
     holdable: holdableRuns(sessions).length > 0,
     watchable: watchableWorkers(sessions).length > 0,
     waiting: waitingWorkers(sessions)[0] ?? null,
+    failed: stopsOf(sessions).length > 0 && stopsOf(sessions).every((s) => s.stop.reason === 'failure'),
   };
 }
 
-/** A status bar item of the run controls: its icon, its tooltip with its key, and its command (none while pausing). */
+/**
+ * A status bar item of the run controls: its name, its icon, its tooltip, and its command (none while pausing). No
+ * tooltip names a key: the person's keybindings decide them.
+ */
 export interface ControlItem {
   /** Its place among the items, where its command does not name it (`ITEM_ORDER` in `run-view.ts`). */
   key?: string;
+  /** What the status bar's menu and a screen reader call it: `Piwi: Resume`. */
+  name: string;
   text: string;
   tooltip: string;
   /** The tooltip is Markdown whose links run the run controls' commands. */
@@ -1189,7 +1200,7 @@ export interface ControlItem {
 export function controlItems(state: ControlState, now: number = Date.now()): ControlItem[] {
   if (!state.active) return [];
   const stop = state.stoppable
-    ? [{ text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop }]
+    ? [{ name: 'Piwi: Stop', text: '$(debug-stop)', tooltip: 'Piwi: Stop the run', command: RUN_COMMANDS.stop }]
     : [];
   // The call a pausing worker's test waits in, how long it has, and End the test there.
   const waits: ControlItem[] = [];
@@ -1198,12 +1209,14 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
     const waited = waitedFor(since, now);
     waits.push(
       {
+        name: 'Piwi: Pausing',
         text: `$(loading~spin) Pausing…${waited ? ` ${waited}` : ''}`,
         tooltip: `Piwi: the test waits in ${title}${waited ? ` for ${waited}` : ''}, and stops once it returns`,
         command: null,
       },
       {
         key: 'give-up',
+        name: 'Piwi: End the test',
         text: '$(circle-slash)',
         tooltip: endable
           ? `Piwi: End the test now: ${title} is given up, and the rest of the test skipped`
@@ -1215,17 +1228,29 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
   if (state.stopped) {
     const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
-      { text: '$(debug-continue)', tooltip: 'Piwi: Resume (F5)', command: RUN_COMMANDS.resume },
-      { text: '$(debug-step-over)', tooltip: 'Piwi: Step to the next call (F10)', command: RUN_COMMANDS.step },
-      {
-        text: '$(debug-step-out)',
-        tooltip: 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)',
-        command: RUN_COMMANDS.finish,
-      },
+      { name: 'Piwi: Resume', text: '$(debug-continue)', tooltip: 'Piwi: Resume', command: RUN_COMMANDS.resume },
+      // A held failure has no call to step into or finish: it goes on with Resume.
+      ...(state.failed
+        ? []
+        : [
+            {
+              name: 'Piwi: Step',
+              text: '$(debug-step-over)',
+              tooltip: 'Piwi: Step to the next call',
+              command: RUN_COMMANDS.step,
+            },
+            {
+              name: 'Piwi: Finish',
+              text: '$(debug-step-out)',
+              tooltip: 'Piwi: Finish the test without stopping at a breakpoint again',
+              command: RUN_COMMANDS.finish,
+            },
+          ]),
       // End the test answers a stop that can end, else a call a Pause waits in.
       ...(state.endable
         ? [
             {
+              name: 'Piwi: End the test',
               text: '$(circle-slash)',
               tooltip: 'Piwi: End the test here: the rest of it is skipped',
               command: RUN_COMMANDS.end,
@@ -1235,6 +1260,7 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
       ...(titles.length
         ? [
             {
+              name: 'Piwi: Write code at the stop',
               text: '$(code)',
               tooltip: `Piwi: Write code at the stop: ${titles.join(', ')}`,
               command: RUN_COMMANDS.code,
@@ -1246,7 +1272,12 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
   }
   if (state.pausable) {
     return [
-      { text: '$(debug-pause)', tooltip: 'Piwi: Pause the run at its next call', command: RUN_COMMANDS.pause },
+      {
+        name: 'Piwi: Pause',
+        text: '$(debug-pause)',
+        tooltip: 'Piwi: Pause the run at its next call',
+        command: RUN_COMMANDS.pause,
+      },
       ...waits,
       ...stop,
     ];
@@ -1254,7 +1285,12 @@ export function controlItems(state: ControlState, now: number = Date.now()): Con
   if (waits.length) return [...waits, ...stop];
   if (state.pausing) {
     return [
-      { text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null },
+      {
+        name: 'Piwi: Pausing',
+        text: '$(loading~spin) Pausing…',
+        tooltip: 'Piwi: the run stops at its next call',
+        command: null,
+      },
       ...stop,
     ];
   }
@@ -1697,4 +1733,17 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '</body>',
     '</html>',
   ].join('\n');
+}
+
+/**
+ * What a screen reader says of a run control item: its tooltip's first paragraph as plain text, a link's words kept
+ * and its target dropped, never a codicon id.
+ */
+export function accessibleLabel(item: ControlItem): string {
+  const first = item.tooltip.split('\n\n')[0] ?? item.name;
+  return first
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\$\([a-z0-9-~]+\)\s*/g, '')
+    .replace(/\\([\\`*_[\]<>|])/g, '$1')
+    .trim();
 }

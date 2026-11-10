@@ -81,6 +81,7 @@ import {
   breakpointUpdates,
   canEnd,
   canShare,
+  accessibleLabel,
   controlItems,
   controlState,
   heardSession,
@@ -308,7 +309,6 @@ export function registerRunControl(
         vscode.StatusBarAlignment.Left,
         49.99 - ITEM_ORDER.indexOf(key) * 0.001,
       );
-      found.name = 'Piwi run control';
       items.set(key, found);
     }
     return found;
@@ -348,6 +348,8 @@ export function registerRunControl(
       const key = control.key ?? control.command ?? 'pausing';
       shown.add(key);
       const i = item(key);
+      i.name = control.name;
+      i.accessibilityInformation = { label: accessibleLabel(control) };
       i.text = control.text;
       if (control.markdown) {
         const tooltip = new vscode.MarkdownString(control.tooltip);

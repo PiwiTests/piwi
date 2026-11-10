@@ -351,8 +351,10 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
   worker `endChoice` gives, naming no stop); the `piwi.runCanEnd` context key holds in both cases; with no key. The
   status bar shows the call a Pause waits in beside Pause and Stop, with how long it has run, and End the test there.
 
-All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
-as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
+All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows as
+an information message. The commands show in the status bar beside the run's progress (`controlItems`), each item with
+its own name (`Piwi: Resume`) and a screen reader's label from its tooltip without the icon (`accessibleLabel`), no
+tooltip naming a key, and a held failure offering Resume without Step or Finish (`ControlState.failed`); and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
