@@ -1227,15 +1227,15 @@ export interface RunPage {
 export const MAX_RUN_PAGE_URL = 2048;
 
 /**
- * A run's page, field by field: a positive number and an http(s) address with no space, quote or control character;
- * null when it is not one.
+ * A run's page, field by field: a positive number and an http(s) address with no space, quote, control character or
+ * credentials; null when it is not one.
  */
 export function readRunPage(value: unknown): RunPage | null {
   if (!isObject(value)) return null;
   const { id, url } = value;
   if (!isInt(id, 1) || typeof url !== 'string' || url.length > MAX_RUN_PAGE_URL) return null;
   // eslint-disable-next-line no-control-regex -- matches the control characters an address must not hold
-  if (!/^https?:\/\/[^\s"'<>`\\\u0000-\u001f\u007f]+$/.test(url)) return null;
+  if (!/^https?:\/\/[^\s"'<>`\\\u0000-\u001f\u007f]+$/.test(url) || !isPageUrl(url)) return null;
   return { id, url };
 }
 
