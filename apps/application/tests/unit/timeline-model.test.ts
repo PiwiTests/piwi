@@ -680,6 +680,13 @@ describe('stops at the pause bar', () => {
     expect(isHookKind(band.kind)).toBe(false);
   });
 
+  test('reads a stop stored without its reason as at a breakpoint, as the failure timeline does', () => {
+    const tc = paused();
+    tc.stepEvents = tc.stepEvents!.map((e) => (e.category === 'pause' ? { ...e, status: undefined } : e));
+    const band = model([tc]).timelineData.value.find((d) => d.kind === 'pause')!;
+    expect(pauseReasonText(band.status)).toBe('Stopped at a breakpoint');
+  });
+
   test('says why each stop stopped in the run page’s words, and names no origin for a Pause, which any tool sends', () => {
     const reasons = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other', 'newer', null];
     expect(reasons.map(pauseReasonText)).toEqual([

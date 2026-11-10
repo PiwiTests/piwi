@@ -75,18 +75,17 @@ workspace folders. It opens the file at its line and column, and never a file ou
 
 ### Desktop app: direct launch
 
-In the [desktop app](./desktop.md), whatever method you pick, clicking a path first runs your IDE's **command-line
-launcher**:
+In the [desktop app](./desktop.md), whatever method you pick, clicking a path runs your IDE's **command-line
+launcher** before any URL (a JetBrains method or Auto asks the Piwi plugin first):
 
 - VS Code family: `code --goto <file>:<line>:<column>` (or `cursor`, `codium`, `code-insiders`, matching the flavor
   you chose);
 - JetBrains: `<product> --line <line> --column <column> <file>`, where `<product>` is the product tag you set
   (`rider`, `idea`, `webstorm`, …).
 
-Unlike a URL scheme, it reports whether the launcher started, and flags a missing file. It needs a workspace root, or
-the project's [linked folder](./desktop.md), which stands in for it. The app finds the launcher on your
-`PATH`, then where the IDEs install it, since an app started from the Dock or the Start menu does not see the `PATH`
-your shell sets:
+Unlike a URL scheme, it reports whether the launcher started, and flags a missing file. It needs a workspace root or
+the project's [linked folder](./desktop.md). The app finds the launcher on your
+`PATH`, then where the IDEs install it (an app started from the Dock or the Start menu misses your shell's `PATH`):
 
 - **Windows:** the Toolbox scripts folder, then the IDE's `bin` folder under `%LOCALAPPDATA%\Programs` or
   `C:\Program Files\JetBrains`, newest version first; VS Code's `bin` folder.

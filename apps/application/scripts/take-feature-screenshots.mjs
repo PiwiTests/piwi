@@ -2684,11 +2684,11 @@ const SCENES = [
   {
     name: 'open-in-ide-settings',
     description:
-      'The Open in IDE dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
+      'The Open in editor dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
     route: '/',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
-      const item = page.getByRole('menuitem', { name: 'Open in IDE…' });
+      const item = page.getByRole('menuitem', { name: 'Open in editor…' });
       await settle();
       for (let attempt = 0; attempt < 20 && !(await item.isVisible()); attempt++) {
         await page.locator('[data-shot="user-menu"]').click();

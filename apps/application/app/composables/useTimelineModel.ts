@@ -694,7 +694,8 @@ export function useTimelineModel(props: TimelineModelInput): {
               kind,
               testCaseId: tc.executionId,
               title: step.title,
-              status: step.status || 'passed',
+              // A stop's status is its reason: one stored without it was at a breakpoint, as the failure timeline reads it.
+              status: step.status || (kind === 'pause' ? 'breakpoint' : 'passed'),
               workerIndex,
               slot,
               start: stepStart,
