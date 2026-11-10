@@ -14,8 +14,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 
 /**
- * Whether the IDE has its own Playwright runner (WebStorm, IntelliJ IDEA Ultimate and Rider, with the JavaScript
- * plugin's Playwright support): no type of the runner here, so this loads in an IDE without it.
+ * Whether the IDE's JavaScript plugin has its Playwright runner (in WebStorm, IntelliJ IDEA Ultimate and Rider, among
+ * others): no type of the runner here, so this loads in an IDE without it.
  */
 object PlaywrightRunnerGate {
     /** The id of the IDE's Playwright run configuration type. */

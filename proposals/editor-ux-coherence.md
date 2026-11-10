@@ -77,11 +77,12 @@ do, `pauseReasonText` reading `stopWords`, [LR15](#lr15), the editors having tak
 JetBrains method names the Piwi plugin it asks first, [AC14](#ac14); the VS Code method keeps its name, since it
 reaches the Piwi extension only without a workspace root), [Q21](#q21) (both Marketplace listings, the plugin's
 README and the editors page say what Piwi needs, a desktop app, `npx @piwitests/server` or the Docker image, that it
-reads Playwright Test in JavaScript and TypeScript, and that it is self-hosted with zero telemetry, under
-`editor-listings.test.ts`, [ST5](#st5); the coverage page says the plugin is verified for compatibility with Rider,
+reads Playwright Test in JavaScript and TypeScript, and that it is self-hosted with zero telemetry and sends no file of
+the workspace, under `editor-listings.test.ts`, [ST5](#st5); the coverage page says the plugin is verified for compatibility with Rider,
 [RD4](#rd4), whose Rider scene of [M17](#m17) remains; the IDE's Playwright runner named for Rider, documented, and
-its option saying why it is off, [RD5](#rd5); a project with no Playwright config whose `.csproj` references
-Playwright for .NET told so once, [RD6](#rd6)), and every command, setting and action id of both editors registered in D25 and held to the manifests
+its option saying why it is off, [RD5](#rd5); a trusted project with no Playwright config whose MSBuild project, in
+the folders and repository searched for configs, references Playwright for .NET told so once, [RD6](#rd6); the C#
+lines of both listings and the coverage page wait for that scene too), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
@@ -1869,7 +1870,7 @@ in its row unless the row names more, and each quick win lands with the test tha
 | <a id="q18"></a>Q18 | **Run keys give way only to a paused debugger in both editors, and Pause leaves F5 to the debugger in Rider**; VS Code's four keys on `debugState != 'stopped'`, both AGENTS.md bullets updated; a `PiwiRunControlTest` case with a running session | `ide` | [RD1](#rd1), [RD2](#rd2) |
 | <a id="q19"></a>Q19 | **Specs beside a Rider solution open and debug alike**: one list of project roots; a `PiwiOpenHandlerTest` with a sibling `e2e/` | `ide` | [RD3](#rd3) |
 | <a id="q20"></a>Q20 | **Run This Spec runs every test of the file as it stands**, by location; a service test of a spec the instance does not know | `ide` | [AC16](#ac16) |
-| <a id="q21"></a>Q21 | **The listings and the editor pages say what Piwi needs, reads and checks**; `docs-drift.test.ts` holds both listings | `docs` | [ST5](#st5), [RD6](#rd6), [RD5](#rd5), [RD4](#rd4) |
+| <a id="q21"></a>Q21 | **The listings and the editor pages say what Piwi needs, reads and checks**; `editor-listings.test.ts` holds both listings | `docs` | [ST5](#st5), [RD6](#rd6), [RD5](#rd5), [RD4](#rd4) |
 | <a id="q22"></a>Q22 | **The dashboard says Open in editor, and which entry reaches Piwi's plugin**; the localStorage keys kept; `ide-links.test.ts` | `ui` | [AC14](#ac14) |
 | <a id="q23"></a>Q23 | **The desktop app names itself Piwi Desktop, and says Pair**; productName once its upgrade path is checked (§13); a test reads `tauri.conf.json` against `ECOSYSTEM_PIECES` | `desktop` | [AC13](#ac13), [AC15](#ac15) |
 | <a id="q24"></a>Q24 | **One name per worker in both editors**: the stop chooser, JetBrains' Go to rows and both End the test choosers take `workerName(parallelIndex)`; `glue.test.ts` and `GlueTest` | `ide` | [LR17](#lr17) |

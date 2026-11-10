@@ -47,7 +47,7 @@
     the dashboard open at their line in the IDE, and locators picked in the Piwi Picker browser extension land at the
     caret. Piwi's MCP server is one copy away for the AI Assistant.</p>
 
-    <p>Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: its locator index, code reach
+    <p>Self-hosted, zero telemetry. No file of your workspace is sent to the instance: its locator index, code reach
     and latest run are compared with your files locally.</p>
 
     <p>Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API and JavaScript

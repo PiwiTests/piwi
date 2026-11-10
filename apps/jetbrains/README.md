@@ -45,7 +45,7 @@ workspace `.env`, or the Piwi desktop app. Otherwise, **Settings → Tools → P
 clicked in the dashboard open at their line in the IDE, locators picked in the Piwi Picker browser extension land at
 the caret, and Piwi's MCP server is one copy away for the AI Assistant.
 
-Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: its locator index, code reach and
+Self-hosted, zero telemetry. No file of your workspace is sent to the instance: its locator index, code reach and
 latest run are compared with your files locally.
 
 [Editor extensions](https://piwitests.dev/features/editors) documents everything the plugin shows, and

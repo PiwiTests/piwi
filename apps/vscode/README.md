@@ -52,7 +52,7 @@ the Piwi desktop app. Otherwise run **Piwi: Connect** and sign in with the brows
 secret storage. When the desktop app runs beside a shared instance, **Piwi: Connect** switches between them, and
 keeps both.
 
-Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: the project's locator index, code
+Self-hosted, zero telemetry. No file of your workspace is sent to the instance: the project's locator index, code
 reach and latest run are compared with your files locally.
 
 [Editor extensions](https://piwitests.dev/features/editors) documents everything it shows; the same extension exists

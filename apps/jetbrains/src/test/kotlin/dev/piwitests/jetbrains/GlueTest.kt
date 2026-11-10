@@ -2217,19 +2217,50 @@ class GlueTest {
     }
 
     @Test
+    fun `reads a Playwright for dotnet reference in any form MSBuild takes`() {
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.Playwright.NUnit" Version="1.49.0" />""",
+            """<PackageReference Version="1.49.0" Include="Microsoft.Playwright"/>""",
+            """<PackageReference Include="Microsoft.Playwright.Xunit.v3" Version="1.55.0" />""",
+            """<PackageReference Include='Microsoft.Playwright.MSTest.v4' />""",
+            """<PackageReference Include="NUnit; Microsoft.Playwright.NUnit" />""",
+            """<PackageReference Condition="${'$'}(X) > 1" Include="Microsoft.Playwright" />""",
+        )) {
+            assertTrue(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+        for (reference in listOf(
+            """<PackageReference Include="Microsoft.PlaywrightSharp" />""",
+            """<PackageReference Include="NUnit" />""",
+            """<PackageReference Update="Microsoft.Playwright" Version="1.49.0" />""",
+            """<!-- <PackageReference Include="Microsoft.Playwright" /> -->""",
+        )) {
+            assertFalse(reference, Glue.referencesDotnetPlaywright(reference))
+        }
+    }
+
+    @Test
     fun `finds a project referencing Playwright for dotnet where the configs are searched`() {
-        assertTrue(Glue.referencesDotnetPlaywright("""<PackageReference Include="Microsoft.Playwright.NUnit" Version="1.49.0" />"""))
-        assertTrue(Glue.referencesDotnetPlaywright("""<PackageReference Version="1.49.0" Include="Microsoft.Playwright"/>"""))
-        assertFalse(Glue.referencesDotnetPlaywright("""<PackageReference Include="Microsoft.PlaywrightSharp.Extras" />"""))
-        assertFalse(Glue.referencesDotnetPlaywright("""<PackageReference Include="NUnit" />"""))
-        val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.csproj", "node_modules/x/Other.csproj")
+        val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.fsproj", "node_modules/x/Other.csproj")
         assertFalse(Glue.holdsDotnetPlaywright(listOf(dir)))
         Files.writeString(dir.resolve("node_modules/x/Other.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
         assertFalse("a dependency's project is skipped", Glue.holdsDotnetPlaywright(listOf(dir)))
-        Files.writeString(dir.resolve("tests/Shop.E2E/Shop.E2E.csproj"), """<ItemGroup>
+        Files.writeString(dir.resolve("tests/Shop.E2E/Shop.E2E.fsproj"), """<ItemGroup>
             <PackageReference Include="Microsoft.Playwright.MSTest" Version="1.49.0" />
         </ItemGroup>""")
         assertTrue(Glue.holdsDotnetPlaywright(listOf(dir)))
+        val props = tree("Directory.Build.props")
+        Files.writeString(props.resolve("Directory.Build.props"), """<PackageReference Include="Microsoft.Playwright.NUnit" />""")
+        assertTrue("the props every project imports", Glue.holdsDotnetPlaywright(listOf(props)))
+    }
+
+    @Test
+    fun `searches a solution's repository for its dotnet tests`() {
+        val repo = tree(".git/HEAD", "backend/Shop.sln", "tests/Shop.E2E/Shop.E2E.csproj")
+        Files.writeString(repo.resolve("tests/Shop.E2E/Shop.E2E.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        val backend = repo.resolve("backend")
+        assertEquals(listOf(repo), Glue.searchedFolders(listOf(backend), null))
+        assertTrue(Glue.holdsDotnetPlaywright(Glue.searchedFolders(listOf(backend), null)))
+        assertEquals("the home folder's repository holds other projects", listOf(backend), Glue.searchedFolders(listOf(backend), repo))
     }
 
     @Test

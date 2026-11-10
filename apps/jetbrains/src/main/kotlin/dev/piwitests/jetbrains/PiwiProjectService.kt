@@ -294,18 +294,25 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
-     * Once per project, on a pooled thread: a project with no Playwright config whose `.csproj` references Playwright for
-     * .NET hears that Piwi reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`).
+     * Once per project, on a pooled thread: a trusted project with no Playwright config whose MSBuild project, in the
+     * folders the configs are searched, references Playwright for .NET hears that Piwi reads Playwright Test suites in
+     * JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`). One search at a time reads the flag and sets it.
      */
     fun noteDotnetPlaywright(found: Glue.PlaywrightSearch) {
+        if (found.configDirs.isNotEmpty() || !trusted()) return
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance(project)
-        if (found.configDirs.isNotEmpty() || properties.getBoolean(DOTNET_PLAYWRIGHT_NOTED)) return
-        if (!Glue.holdsDotnetPlaywright(found.roots) || gone.value(null)) return
-        properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
-        PiwiNotifier.create(PiwiNotice.OFFER, Glue.DOTNET_PLAYWRIGHT_NOTE)
+        synchronized(dotnetNoteLock) {
+            if (properties.getBoolean(DOTNET_PLAYWRIGHT_NOTED)) return
+            val home = System.getProperty("user.home")?.let { runCatching { Path.of(it) }.getOrNull() }
+            if (!Glue.holdsDotnetPlaywright(Glue.searchedFolders(found.roots, home)) || gone.value(null)) return
+            properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
+        }
+        PiwiNotifier.create(PiwiNotice.RESULT, Glue.DOTNET_PLAYWRIGHT_NOTE)
             .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
             .notify(project)
     }
+
+    private val dotnetNoteLock = Any()
 
     /**
      * Once per installation, the first time a trusted project holds a Playwright config while nothing connects it

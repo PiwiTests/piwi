@@ -173,21 +173,38 @@ object Glue {
         }
     }
 
-    /** A `.csproj` reference to Playwright for .NET: `Microsoft.Playwright`, or its NUnit, MSTest or xUnit package. */
-    private val DOTNET_PLAYWRIGHT =
-        Regex("""<PackageReference\b[^>]*\bInclude\s*=\s*"Microsoft\.Playwright(\.[A-Za-z]+)?"""", RegexOption.IGNORE_CASE)
+    /** An MSBuild `PackageReference` element's `Include`, its other attributes quoted in either quote. */
+    private val PACKAGE_REFERENCE = Regex(
+        """<PackageReference\b(?:[^>"']|"[^"]*"|'[^']*')*?\bInclude\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+        RegexOption.IGNORE_CASE,
+    )
 
-    /** Whether the text of a `.csproj` references Playwright for .NET. */
-    fun referencesDotnetPlaywright(project: String): Boolean = DOTNET_PLAYWRIGHT.containsMatchIn(project)
+    /** A Playwright for .NET package: `Microsoft.Playwright`, or one of its test framework packages (`.NUnit`, `.Xunit.v3`). */
+    private val DOTNET_PLAYWRIGHT_PACKAGE = Regex("""Microsoft\.Playwright(\.[A-Za-z0-9]+)*""", RegexOption.IGNORE_CASE)
 
     /**
-     * Whether a `.csproj` under `roots`, where the Playwright configs are searched, references Playwright for .NET, whose
-     * tests Piwi does not read. A file over a megabyte is not read.
+     * Whether the text of an MSBuild project or `Directory.Build.props` references Playwright for .NET, outside its
+     * comments; an `Include` may list several packages, split by `;`.
+     */
+    fun referencesDotnetPlaywright(project: String): Boolean =
+        PACKAGE_REFERENCE.findAll(project.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")).any { match ->
+            (match.groupValues[1].ifEmpty { match.groupValues[2] }).split(';')
+                .any { DOTNET_PLAYWRIGHT_PACKAGE.matches(it.trim()) }
+        }
+
+    /** Whether a file is an MSBuild project of .NET code, or the props every project of its folder imports. */
+    private fun isMsbuildProject(name: String): Boolean =
+        name.equals("Directory.Build.props", ignoreCase = true) ||
+            listOf(".csproj", ".fsproj", ".vbproj").any { name.endsWith(it, ignoreCase = true) }
+
+    /**
+     * Whether an MSBuild project under `roots` (`searchedFolders`) references Playwright for .NET, whose tests Piwi does
+     * not read. A file over a megabyte is not read.
      */
     fun holdsDotnetPlaywright(roots: List<Path>): Boolean {
         var found = false
         walkSearched(roots) { file ->
-            found = file.fileName.toString().endsWith(".csproj", ignoreCase = true) &&
+            found = isMsbuildProject(file.fileName.toString()) &&
                 runCatching { Files.size(file) <= 1_000_000 && referencesDotnetPlaywright(Files.readString(file)) }.getOrDefault(false)
             found
         }
@@ -207,12 +224,20 @@ object Glue {
         val roots = outermost(folders.filter { Files.isDirectory(it) })
         val dirs = playwrightConfigDirs(roots)
         if (dirs.isNotEmpty()) return PlaywrightSearch(roots, dirs)
-        val homeFolder = home?.toAbsolutePath()?.normalize()
-        val repositories = outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+        val repositories = repositoriesAround(roots, home)
         if (repositories.isEmpty() || repositories == roots) return PlaywrightSearch(roots, dirs)
         val inRepositories = playwrightConfigDirs(repositories)
         return if (inRepositories.isEmpty()) PlaywrightSearch(roots, dirs) else PlaywrightSearch(repositories, inRepositories)
     }
+
+    /** The repositories around `roots`, but one in the home folder or at a drive's root, which hold other projects. */
+    private fun repositoriesAround(roots: List<Path>, home: Path?): List<Path> {
+        val homeFolder = home?.toAbsolutePath()?.normalize()
+        return outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+    }
+
+    /** Every folder `findPlaywright` searches for a project in `roots`: they and the repositories around them. */
+    fun searchedFolders(roots: List<Path>, home: Path?): List<Path> = outermost(roots + repositoriesAround(roots, home))
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
@@ -455,8 +480,8 @@ object Glue {
         "for .NET tests of this project get no failures, results or runs from Piwi in the IDE."
 
     /** Why the settings page's Playwright runner option is off, in an IDE without the runner. */
-    const val NO_PLAYWRIGHT_RUNNER = "This IDE has no Playwright runner (it comes with the JavaScript plugin's " +
-        "Playwright support), so the tests run in the Run tool window's console."
+    const val NO_PLAYWRIGHT_RUNNER = "This IDE's JavaScript plugin has no Playwright runner, so the tests run in the " +
+        "Run tool window's console."
 
     /** Where the docs say which suites Piwi reads: **Learn More** on `DOTNET_PLAYWRIGHT_NOTE`. */
     const val DOTNET_PLAYWRIGHT_DOCS_URL = "https://piwitests.dev/features/jetbrains#install-and-start"

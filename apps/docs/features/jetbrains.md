@@ -78,8 +78,8 @@ The rest is native, and every action is under **Tools → Piwi**:
   says how many elements its locator matches on the stopped page, and a failure held there reads `Failed · …`.
 - **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
   off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
-  tool window's console. WebStorm, IntelliJ IDEA Ultimate and Rider have the runner; in another IDE, the option is off
-  and says why.
+  tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate
+  and Rider; where it lacks one, the option is off and says why.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.

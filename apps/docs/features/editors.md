@@ -31,7 +31,7 @@ and sign in with the browser: [Editor connection](./editor-connection) has the s
 In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in editor](./ide-integration#vs-code-the-piwi-extension).
 
-Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: the project's
+Self-hosted, zero telemetry. No file of your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
 your files locally.
 
