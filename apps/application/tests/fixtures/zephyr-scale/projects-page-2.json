@@ -1,0 +1,16 @@
+{
+  "_spec": "ProjectList",
+  "next": null,
+  "startAt": 2,
+  "maxResults": 2,
+  "total": 3,
+  "isLast": true,
+  "values": [
+    {
+      "id": 10003,
+      "jiraProjectId": 20003,
+      "key": "WEB_APP",
+      "enabled": true
+    }
+  ]
+}

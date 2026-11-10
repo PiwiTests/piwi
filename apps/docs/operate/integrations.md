@@ -8,9 +8,10 @@ lang: en-US
 
 Connect an issue tracker, bind a project to it, and the project's links to the tracker stop being dead URLs: Piwi
 fetches the ticket's title and status through the connection and keeps the badge current when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
-issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
+issues from a failure is [Issue tracking (Jira)](/features/issue-tracking). Zephyr Scale Cloud has
+[its own page](./zephyr-scale).
 
-A connection is instance infrastructure — one row per external system, managed by an administrator, shared
+A connection is instance infrastructure: one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
 with `PIWI_SECRET_KEY`.
 
@@ -38,8 +39,8 @@ Connect Jira** (administrator only) walks through it:
   <figcaption>The Jira connect form: paste a board URL, then sign in with a scoped token.</figcaption>
 </figure>
 
-Once a project is bound to the connection, its links to that site — `https://your-team.atlassian.net/browse/PROJ-123`
-or a Cloud site's own domain — are recognized as Jira issues, unfurl with the summary and a status badge (colored by
+Once a project is bound to the connection, its links to that site (`https://your-team.atlassian.net/browse/PROJ-123`
+or a Cloud site's own domain) are recognized as Jira issues, unfurl with the summary and a status badge (colored by
 the issue's status category), and refresh through it.
 
 ## Permissions the token needs
@@ -90,10 +91,10 @@ assignable-user picker), on top of the account permissions above.
 
 A connection can live in either place:
 
-- **Dashboard-managed** — added on the Integrations page. Editable there; the credential is encrypted in
+- **Dashboard-managed**: added on the Integrations page. Editable there; the credential is encrypted in
   the database and never returned by any endpoint. Saving with the token field left blank keeps the stored
   token.
-- **Environment-managed** — created from the environment at startup when `PIWI_JIRA_BASE_URL`,
+- **Environment-managed**: created from the environment at startup when `PIWI_JIRA_BASE_URL`,
   `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` are all set. It shows a lock badge and is read-only in the
   dashboard: change it by editing the environment and restarting. The token stays in the environment and
   never enters the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
@@ -110,12 +111,12 @@ private hosts. Moving a connection to another site drops its stored credentials.
 
 ## Creating issues from a failure
 
-Once a connection exists, Piwi can **file the ticket for you** — a Jira issue whose body is the failure's fix plan,
+Once a connection exists, Piwi can **file the ticket for you**: a Jira issue whose body is the failure's fix plan,
 linked back as the cluster's known issue. See [Issue tracking (Jira)](/features/issue-tracking) for the create flow,
 the fields, and how the key travels back into the inbox, notifications and pull-request comments.
 
 A connection carries a **default language** for the tickets filed against it (a French Atlassian site can default them
-to French); a project binding overrides it, and the create modal offers a per-issue choice — see
+to French); a project binding overrides it, and the create modal offers a per-issue choice, see
 [Language](/features/issue-tracking#language).
 
 ## Who can do what
@@ -137,7 +138,7 @@ answer records the error on the connection card and does not stop the sweep. An 
 demand with **Sync now** on the Jira card, which says how many links it refreshed and how many it could not read.
 
 The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
-on the binding — see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
+on the binding, see [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
 
 ## Registering the inbound webhook
 
@@ -152,7 +153,7 @@ register a webhook so a close or reopen reflects immediately instead of within t
 3. Piwi looks the issue up by its id in the bound projects' links and refreshes those, applying the resolve/reopen
    policies.
 
-The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
+The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link*; it can never
 create or transition anything. **Regenerate webhook** invalidates the old URL, and **Disable webhook** turns the
 webhook off.
 

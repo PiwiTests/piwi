@@ -3967,6 +3967,95 @@ const SCENES = [
     },
   },
   {
+    name: 'zephyr-integrations-card',
+    description:
+      'Settings → Integrations: the Zephyr Scale Cloud card with a verified connection on the Europe region, beside the Jira card',
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1100 },
+    colorScheme: 'light',
+    async run({ page, goto, shoot, settle }) {
+      // The scene answers the connection list with a canned Zephyr connection; no Zephyr host is contacted.
+      await page.route('**/api/integrations/connections', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const list = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...list,
+            connections: [
+              ...list.connections,
+              {
+                id: 9001,
+                provider: 'zephyr-scale',
+                name: 'Zephyr Scale Cloud (Europe)',
+                baseUrl: 'https://eu.api.zephyrscale.smartbear.com/v2',
+                config: { region: 'eu' },
+                status: 'ok',
+                lastCheckedAt: new Date().toISOString(),
+                lastError: null,
+                managedBy: 'db',
+                hasCredentials: true,
+                credentialValues: {},
+                hasWebhookToken: false,
+                createdAt: null,
+                updatedAt: null,
+              },
+            ],
+          },
+        });
+      });
+      await page.route('**/api/integrations/connections/9001/**', (route) => route.fulfill({ json: { events: [] } }));
+      // A client-side navigation, so the route above answers the page's fetch, not the server render.
+      await goto('/settings');
+      await page.locator('a[href="/settings/integrations"]').first().click();
+      const card = page.locator('[data-shot="integration-zephyr-scale"]');
+      await card.getByText('Zephyr Scale Cloud (Europe)').waitFor({ timeout: 20000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="integration-zephyr-scale"]', pad: 12 });
+    },
+  },
+  {
+    name: 'zephyr-connect-form',
+    description:
+      'Settings → Integrations: the Zephyr Scale Cloud connect form with a region chosen, a token pasted and a passed check',
+    route: '/settings/integrations',
+    viewport: { width: 1280, height: 1100 },
+    colorScheme: 'light',
+    // Run with PIWI_SECRET_KEY set, or the form opens on the "cannot store a token" notice.
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/integrations/connections/check', async (route) => {
+        const body = route.request().postDataJSON();
+        await route.fulfill({
+          json: {
+            baseUrl: 'https://eu.api.zephyrscale.smartbear.com/v2',
+            site: {
+              ok: true,
+              reachable: true,
+              deploymentType: null,
+              title: 'Europe',
+              reportedUrl: null,
+              cloudId: null,
+            },
+            auth: {
+              ok: true,
+              account: { id: `zephyr-scale:${body.region}`, displayName: 'Zephyr Scale Cloud (Europe)' },
+            },
+            projects: { ok: true, count: 3, keys: ['CHK', 'PAY', 'WEB'], hint: null },
+          },
+        });
+      });
+      await page.getByRole('button', { name: 'Connect Zephyr Scale Cloud' }).click();
+      const form = page.locator('[data-shot="zephyr-scale-connection-form"]');
+      await form.waitFor();
+      await form.getByTestId('region').click();
+      await page.getByRole('option', { name: 'Europe' }).click();
+      await form.getByTestId('credential-apiToken').fill('screenshot-token');
+      await form.getByRole('button', { name: 'Check', exact: true }).click();
+      await page.getByTestId('region-check').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="zephyr-scale-connection-form"]', pad: 12 });
+    },
+  },
+  {
     name: 'create-issue-modal',
     description: 'Create issue modal on a cluster: title, fields, include toggles and the fix-plan preview',
     tags: ['docs'],

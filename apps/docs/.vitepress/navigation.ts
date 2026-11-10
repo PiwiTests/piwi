@@ -156,6 +156,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'Localization', link: '/operate/localization' },
       { text: 'Choose what you use', link: '/operate/capabilities' },
       { text: 'Integrations', link: '/operate/integrations' },
+      { text: 'Zephyr Scale Cloud', link: '/operate/zephyr-scale' },
       { text: 'Configuration reference', link: '/reference/configuration' },
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
     ],

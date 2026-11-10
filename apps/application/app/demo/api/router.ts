@@ -3619,7 +3619,7 @@ const routes: RouteEntry[] = [
     },
   },
 
-  // Integrations — one canned Jira connection, answered from constants
+  // Integrations — one canned connection per provider, answered from constants
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections$/,
@@ -3658,14 +3658,14 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     permission: 'connections:manage',
-    handler: async () => testDemoConnection(),
+    handler: async (m) => testDemoConnection(+m[1]!),
   },
   {
     method: 'POST',
     pattern: /^\/api\/integrations\/connections\/check$/,
     permission: 'connections:manage',
     handler: async (_, body) => {
-      const result = checkDemoConnection(body as { baseUrl?: string });
+      const result = checkDemoConnection(body as { provider?: string; baseUrl?: string; region?: string });
       if (!result) throw demoHttpError(400, 'Enter the site address, e.g. https://your-team.atlassian.net');
       return result;
     },
