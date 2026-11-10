@@ -581,15 +581,28 @@ export function holdTarget(
   arg: unknown,
 ): { ref: string; on: boolean } | { candidates: string[] } | { none: string } {
   const named = typeof arg === 'object' && arg !== null ? (arg as { ref?: unknown; on?: unknown }) : {};
-  const held = [...sessions.values()].filter((s) => !s.ended && s.hold);
+  const held = holdableRuns(sessions);
   if (typeof named.ref === 'string') {
     const session = sessions.get(named.ref);
-    if (!session?.hold) return { none: 'that run holds no failure: nobody attends it.' };
+    if (!session || session.ended) return { none: 'that run has ended.' };
+    if (!session.hold) return { none: 'that run holds no failure: nobody attends it.' };
     return { ref: named.ref, on: typeof named.on === 'boolean' ? named.on : !session.hold.on };
   }
   if (!held.length) return { none: 'no run of this window can hold its failures now.' };
   if (held.length === 1) return { ref: held[0]!.ref, on: !held[0]!.hold!.on };
   return { candidates: held.map((s) => s.ref) };
+}
+
+/** The live runs that have a **Hold failures** to turn over, in their order. */
+export function holdableRuns(sessions: Sessions): RunSession[] {
+  return [...sessions.values()].filter((s) => !s.ended && s.hold);
+}
+
+/** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
+export function runLabel(session: RunSession): string {
+  if (session.page) return runName(session.page);
+  const folder = session.root?.split(/[\\/]/).filter(Boolean).pop();
+  return folder ? `Run in ${folder} (${session.ref})` : `Run ${session.ref}`;
 }
 
 /** A run's **Hold failures** in words: whether a failed test waits at its line, and who said so when not its start. */
@@ -795,10 +808,11 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     ...(watchable ? [`[Watch a worker's test](command:${RUN_COMMANDS.watch})`] : []),
   ];
   // Each live run's Hold failures, with the link that turns it over.
-  const holds = [...sessions.values()].flatMap((s) => {
-    if (s.ended || !s.hold) return [];
+  const held = holdableRuns(sessions);
+  const holds = held.flatMap((s) => {
+    if (!s.hold) return [];
     const arg = encodeURIComponent(JSON.stringify([{ ref: s.ref, on: !s.hold.on }]));
-    const name = told.length > 1 && s.page ? `Run #${s.page.id}: ` : '';
+    const name = held.length > 1 ? `${runLabel(s)}: ` : '';
     return [
       `${name}${holdText(s.hold)} · [Turn ${s.hold.on ? 'off' : 'on'}](command:${RUN_COMMANDS.holdFailures}?${arg})`,
     ];
@@ -990,6 +1004,8 @@ export interface ControlState {
   shareable: boolean;
   /** A run is shared live on the team instance: Stop sharing. */
   liveShared: boolean;
+  /** A live run has a Hold failures to turn over. */
+  holdable: boolean;
   /** A worker's reporter shows its page while its test runs: Watch a worker. */
   watchable: boolean;
   /** The call a pausing worker's test waits in before it can stop (the first such worker's): End the test there. */
@@ -1046,6 +1062,7 @@ export function controlState(sessions: Sessions): ControlState {
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
     shareable: stopsOf(sessions).some(canShare),
     liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
+    holdable: holdableRuns(sessions).length > 0,
     watchable: watchableWorkers(sessions).length > 0,
     waiting: waitingWorkers(sessions)[0] ?? null,
   };

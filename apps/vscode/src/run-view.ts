@@ -102,6 +102,7 @@ import {
   shareLiveWarning,
   holdTarget,
   holdText,
+  runLabel,
   sharedText,
   spelledSession,
   stopActions,
@@ -328,6 +329,7 @@ export function registerRunControl(
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
     void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runHoldable', state.holdable);
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
@@ -844,8 +846,8 @@ export function registerRunControl(
         target.candidates.map((ref) => {
           const session = sessions.get(ref);
           return {
-            label: runName(session?.page),
-            description: session?.root ?? ref,
+            label: session ? runLabel(session) : ref,
+            description: session?.root ?? undefined,
             detail: session?.hold ? holdText(session.hold) : undefined,
             ref,
             on: !session?.hold?.on,

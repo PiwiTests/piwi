@@ -1594,6 +1594,17 @@ class GlueTest {
         assertEquals("Hold failures on: a failed test waits at its line", Glue.holdText(RunHoldFailures(true, "start")))
         assertEquals("Hold failures off", Glue.holdText(RunHoldFailures(false, "person")))
         assertEquals("Hold failures on: a failed test waits at its line, as an agent set it", Glue.holdText(RunHoldFailures(true, "agent")))
+        // The action is offered only while a run has one, and says what a click does to the only one.
+        assertEquals(false, Glue.runControls(mapOf("lab-1" to unattended)).holdable)
+        assertEquals("Turn Hold Failures Off", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", true)))))
+        assertEquals("Turn Hold Failures On", Glue.holdActionText(Glue.runControls(mapOf("ed-1" to held("ed-1", false)))))
+        val two = Glue.runControls(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true)))
+        assertEquals(true, two.holdable)
+        assertEquals("Turn Hold Failures On or Off", Glue.holdActionText(two))
+        // The chooser names each run apart: its page, else its folder and ref.
+        assertEquals("Run #42", Glue.runLabel(held("ed-1", true).copy(page = RunPage(42, "https://piwi.example/test-runs/42"))))
+        assertEquals("Run in shop (ed-2)", Glue.runLabel(held("ed-2", true).copy(root = "/work/shop")))
+        assertEquals("Run ed-3", Glue.runLabel(held("ed-3", true)))
     }
 
     @Test

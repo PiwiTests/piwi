@@ -1119,7 +1119,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     object : SimpleListCellRenderer<String>() {
                         override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
                             val session = value?.let { sessions[it] }
-                            text = listOfNotNull(session?.root ?: value, session?.hold?.let { Glue.holdText(it) }).joinToString(" · ")
+                            text = listOfNotNull(session?.let(Glue::runLabel) ?: value, session?.hold?.let { Glue.holdText(it) }).joinToString(" · ")
                         }
                     },
                 )
@@ -2254,7 +2254,13 @@ class ShareRunLiveAction : RunControlAction() {
  * answer; off, it goes on at once. The run keeps it whichever surface set it.
  */
 class HoldFailuresAction : RunControlAction() {
-    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.active
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.holdable
+
+    override fun update(e: AnActionEvent) {
+        super.update(e)
+        val controls = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
+        e.presentation.text = Glue.holdActionText(controls ?: Glue.RunControls(active = false, pausable = false, pausing = false, stopped = false))
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.holdFailures()

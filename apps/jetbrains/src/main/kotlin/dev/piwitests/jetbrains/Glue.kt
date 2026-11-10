@@ -1867,12 +1867,30 @@ object Glue {
 
     /** The only live run that has a Hold failures, turned over; else the runs to choose among; else why none has. */
     fun holdTarget(sessions: Map<String, RunSession>): HoldTarget {
-        val held = sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
+        val held = holdableRuns(sessions)
         return when (held.size) {
             0 -> HoldTarget.None("No run of this project can hold its failures now.")
             1 -> HoldTarget.One(held.single().ref!!, held.single().hold?.on != true)
             else -> HoldTarget.Choose(held.map { it.ref!! })
         }
+    }
+
+    /** The live runs that have a Hold failures to turn over, in their order. */
+    fun holdableRuns(sessions: Map<String, RunSession>): List<RunSession> =
+        sessions.values.filter { !it.ended && it.hold != null && it.ref != null }
+
+    /** A run named apart from the others in a list: its page when it has one, else its folder's name, else its ref. */
+    fun runLabel(session: RunSession): String {
+        session.page?.let { return "Run #${it.id}" }
+        val folder = session.root?.split('/', '\\')?.lastOrNull { it.isNotEmpty() }
+        return if (folder != null) "Run in $folder (${session.ref})" else "Run ${session.ref}"
+    }
+
+    /** The Hold Failures action's text: what a click does to the only live run that has one; else a choice to come. */
+    fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
+        true -> "Turn Hold Failures Off"
+        false -> "Turn Hold Failures On"
+        null -> "Turn Hold Failures On or Off"
     }
 
     /** A run's Hold failures in words: whether a failed test waits at its line, and that an agent set it when one did. */
@@ -1922,6 +1940,10 @@ object Glue {
         val watchable: Boolean = false,
         /** The call a pausing worker's test waits in (the first such worker's): End the Test ends it there. */
         val waiting: RunWaiting? = null,
+        /** A live run has a Hold failures to turn over. */
+        val holdable: Boolean = false,
+        /** The Hold failures of the only live run that has one; null for none or several. */
+        val onlyHold: RunHoldFailures? = null,
     ) {
         val liveShared: Boolean get() = liveViewers != null
     }
@@ -1940,6 +1962,8 @@ object Glue {
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
             watchable = workers.any { it.watchable },
             waiting = workers.firstOrNull { it.pausing && it.waiting != null }?.waiting,
+            holdable = holdableRuns(sessions).isNotEmpty(),
+            onlyHold = holdableRuns(sessions).singleOrNull()?.hold,
         )
     }
 

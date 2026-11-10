@@ -34,6 +34,7 @@ import {
   progressItem,
   holdTarget,
   holdText,
+  runLabel,
   runName,
   runPageTarget,
   frameIsCurrent,
@@ -185,6 +186,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -224,6 +226,7 @@ describe('what the controls offer', () => {
         actions: [],
         shareable: false,
         liveShared: false,
+        holdable: false,
         watchable: false,
         waiting: null,
       });
@@ -243,6 +246,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -332,6 +336,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -413,6 +418,21 @@ describe('Hold failures', () => {
     expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), undefined)).toMatchObject({
       none: expect.any(String),
     });
+    expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), { ref: 'ed-1', on: false })).toEqual({
+      none: 'that run has ended.',
+    });
+    expect(controlState(sessionsOf(held('ed-1', false))).holdable).toBe(true);
+    expect(controlState(sessionsOf(session('lab-1', [worker(0, 'running')]))).holdable).toBe(false);
+  });
+
+  test('names each run in the tooltip once more than one has a Hold failures, page or none', () => {
+    const paged = { ...held('ed-1', true), page: { id: 42, url: 'https://piwi.example/runs/42' } };
+    const unpaged = { ...held('term-2', false), root: '/work/shop' };
+    const tooltip = progressItem(sessionsOf(paged, unpaged))!.tooltip;
+    expect(tooltip).toContain('Run #42: Hold failures on');
+    expect(tooltip).toContain('Run in shop (term-2): Hold failures off');
+    expect(runLabel(held('ed-3', false))).toBe('Run in shop (ed-3)');
+    expect(runLabel({ ...held('ed-3', false), root: null })).toBe('Run ed-3');
   });
 
   test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {

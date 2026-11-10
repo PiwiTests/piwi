@@ -508,7 +508,7 @@
         },
         {
           "command": "piwi.holdFailures",
-          "when": "piwi.runActive"
+          "when": "piwi.runHoldable"
         },
         {
           "command": "piwi.openTrace",
