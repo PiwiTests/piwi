@@ -6,7 +6,8 @@ import type { H3Event } from 'h3';
 import type { DbClient } from '../../../database';
 import { apiError } from '../../api-error';
 import { IntegrationHttpError } from '../http-error';
-import { connectionPausedUntil, pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
+import { pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
+import { connectionPausedUntil } from '../connection-pauses';
 import { isProviderOfKind } from '#shared/integrations/registry';
 import {
   getConnectionRow,

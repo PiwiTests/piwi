@@ -37,6 +37,7 @@ import {
   type ZephyrClientOptions,
 } from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
+import { connectionPausedUntil } from './connection-pauses';
 import { INTERACTIVE_MAX_WAIT_MS, limiterForConnection, RequestLimiterBusyError } from './test-management/limiter';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
@@ -604,9 +605,14 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
 
 /**
  * {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host, the queue
- * for the limiter included, within {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}.
+ * for the limiter included, within {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}. A connection the provider rate limited is
+ * not called until its pause ends.
  */
 async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
+  const paused = connectionPausedUntil(row.id, new Date());
+  if (paused) {
+    return { ok: false, error: `Paused until ${paused.toISOString()}: the provider rate limited this connection` };
+  }
   const client = testManagementForRow(row, {
     timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
     signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),

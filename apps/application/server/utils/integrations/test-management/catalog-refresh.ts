@@ -7,7 +7,8 @@ import type { DbClient } from '../../../database';
 import { projectTestManagement, testManagementCases, testManagementCatalogReads } from '../../../database/schema';
 import { isProviderOfKind } from '#shared/integrations/registry';
 import { IntegrationHttpError } from '../http-error';
-import { connectionPausedUntil, pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
+import { pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
+import { connectionPausedUntil } from '../connection-pauses';
 import {
   getConnectionRow,
   markConnectionFailed,

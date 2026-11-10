@@ -97,7 +97,7 @@ const putTracker = route(await import('../../server/api/projects/[id]/integratio
 const { boundConnectionId } = await import('../../server/utils/integrations/bound-connection');
 const { testManagementOptionsCache, testManagementOptionsFailureCache } =
   await import('../../server/utils/integrations/picker-cache');
-const { connectionPausedUntil } = await import('../../server/utils/integrations/actions');
+const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 const { limiterForConnection, resetLimitersForTests } =
   await import('../../server/utils/integrations/test-management/limiter');
 

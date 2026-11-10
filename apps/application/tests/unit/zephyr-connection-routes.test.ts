@@ -73,7 +73,8 @@ const bind = route(await import('../../server/api/projects/[id]/integrations.put
 const { getSetupStatus } = await import('../../shared/handlers/setup-status');
 const { limiterForConnection, resetLimitersForTests } =
   await import('../../server/utils/integrations/test-management/limiter');
-const { connectionPausedUntil, pauseConnectionById } = await import('../../server/utils/integrations/actions');
+const { pauseConnectionById } = await import('../../server/utils/integrations/actions');
+const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 
 const as = (
   id: number,
@@ -280,6 +281,26 @@ describe('testing a Zephyr connection', () => {
       delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
       resetLimitersForTests();
     }
+  });
+
+  test('still calls Jira for a Jira connection that is paused, which the pause of a test management one does not reach', async () => {
+    const jira = (
+      await create(
+        event({
+          provider: 'jira',
+          name: 'Jira',
+          baseUrl: 'https://example.atlassian.net',
+          credentials: { email: 'ci@example.com', apiToken: 'jira-token' },
+        }),
+      )
+    ).connection;
+    await pauseConnectionById(db, jira.id, 30_000, new Date());
+    sent.length = 0;
+    const result = await test_(at(jira.id));
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).not.toContain('Paused');
+    expect(sent.map((request) => request.where.split('/')[0])).toEqual(['example.atlassian.net']);
+    connectionPausedUntil(jira.id, new Date(Date.now() + 1e10));
   });
 
   test('answers 200 with the error for a refused token, as for Jira, and marks the connection failed', async () => {

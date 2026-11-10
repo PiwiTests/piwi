@@ -37,6 +37,7 @@ import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
 import { createTracker } from './connections';
+import { connectionPausedUntil, holdConnection } from './connection-pauses';
 import { boundConnectionId } from './bound-connection';
 import { JiraError } from './jira/client';
 import { IntegrationHttpError } from './http-error';
@@ -365,24 +366,6 @@ function retryAfterMs(err: unknown): number | null {
 export const RATE_LIMIT_PAUSE_MS = 60 * 1000;
 
 /**
- * When each rate-limited connection may be called again, as this server process learned it. Every attempt reads it
- * before calling the provider (a click and a write made at once included), and a 429 also moves the connection's
- * pending actions in the database, so another process's sweep waits for them too.
- */
-const connectionPauses = new Map<number, number>();
-
-/** The moment a rate-limited connection may be called again, or null when it is not paused. */
-export function connectionPausedUntil(connectionId: number, now: Date): Date | null {
-  const until = connectionPauses.get(connectionId);
-  if (until == null) return null;
-  if (until <= now.getTime()) {
-    connectionPauses.delete(connectionId);
-    return null;
-  }
-  return new Date(until);
-}
-
-/**
  * Pause a connection the provider rate limited, for as long as it asked (`RATE_LIMIT_PAUSE_MS` when it named no wait):
  * no attempt calls it before then, and its pending actions, but `exceptActionId`, are moved to that moment. The catalog
  * read pauses a connection the same way, with no action of its own.
@@ -395,7 +378,7 @@ export async function pauseConnectionById(
   exceptActionId?: number,
 ): Promise<void> {
   const until = new Date(now.getTime() + waitMs);
-  connectionPauses.set(connectionId, Math.max(connectionPauses.get(connectionId) ?? 0, until.getTime()));
+  holdConnection(connectionId, until.getTime());
   await db
     .update(integrationActions)
     .set({ scheduledFor: until })

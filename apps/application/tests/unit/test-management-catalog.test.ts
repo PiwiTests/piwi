@@ -76,7 +76,7 @@ const casesRequests = () => zephyr.paths.filter((p) => p.includes('/testcases'))
 const { readCatalogInfo } = await import('../../server/utils/integrations/test-management/catalog');
 const { refreshTestManagementCatalog, dueCatalogs, refreshDueCatalogs, CATALOG_MAX_AGE_MS } =
   await import('../../server/utils/integrations/test-management/catalog-refresh');
-const { connectionPausedUntil } = await import('../../server/utils/integrations/actions');
+const { connectionPausedUntil } = await import('../../server/utils/integrations/connection-pauses');
 const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
 
 type Route = (event: FakeEvent) => Promise<any>;
