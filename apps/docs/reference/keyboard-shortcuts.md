@@ -21,7 +21,7 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 
 ## Desktop app
 
-In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, and the
+In the [desktop app](/features/desktop)'s dashboard window. On macOS the app menu holds the first four with `⌘`, beside the
 docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field you type in.
 
 | Keys | Action |

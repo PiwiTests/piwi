@@ -40,9 +40,9 @@ on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data lo
 folder** show it. Back up the parent folder while the app is closed: its `secret.key` decrypts stored AI keys and SCM tokens.
 
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
-hidden in the tray. The windows open where you left them. Its
+hidden in the tray. The windows open where you left them. The app's
 [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app) open Settings, import a report, go back and forward
-and zoom; on macOS the app menu holds them and the docs. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+and zoom; on macOS the app menu holds the first four and the docs. The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
 While you look away, a failed run bounces the Dock icon or flashes the taskbar button, a bisect or a lab only at its verdict; a run the tray does not list (a `piwi flake` from a terminal or an
 editor, a probe, another window's, or from before a reload) never does. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
