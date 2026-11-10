@@ -549,7 +549,9 @@ describe('who is present on a run, and who drives its stop', () => {
     expect(latest().workers[0]!.stop!.driver).toEqual({ kind: 'agent', name: 'an agent' });
 
     // A person's input takes it back, and the agent hears so; its actions are refused while they drive it.
-    void h.sessions.input({ ref: 'ed-1', since }, picker, [{ type: 'click', x: 1, y: 1, button: 'left' }]);
+    void h.sessions.input({ ref: 'ed-1', since }, picker, [
+      { type: 'mouse', action: 'click', x: 1, y: 1, button: 'left', clickCount: 1 },
+    ]);
     expect(h.sessions.presenceFor('ed-1', picker)!.workers.get(0)!.driver).toEqual({
       kind: 'picker',
       name: 'Piwi Picker',
