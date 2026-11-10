@@ -1243,7 +1243,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: edited ? `Edited since ${run}: ${headline} (${where})` : `${headline} (${where})`,
+          // The code stays `ci-failure` for every failure (D25 freezes it); the message names a developer's own run's.
+          message: `${edited ? `Edited since ${run}: ` : ''}${isLocalFailure(context, f) ? 'Local failure: ' : ''}${headline} (${where})`,
           data: {
             root: context.root,
             executionId: f.executionId,

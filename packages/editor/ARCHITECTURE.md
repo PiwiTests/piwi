@@ -365,6 +365,9 @@ The diff starts from the files as the run saw them:
   This covers a run on a developer's machine (which ran their files as saved), a run without a commit, a commit the
   repository lacks, and a CI run until its commit's file is read.
 
+Every failure has the code `ci-failure`, which D25 freezes; a failure of a developer's own run says so first in its
+message (`Local failure: …`), as its hover does.
+
 A failure whose line changed since its run:
 
 - is an information, `Edited since run #120: …`, with `data.edited`;

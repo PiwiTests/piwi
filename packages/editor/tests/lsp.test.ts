@@ -2029,7 +2029,7 @@ describe('local runs over the latest CI run', () => {
       const failures = onPage.filter((d) => d.code === 'ci-failure');
       expect(failures).toEqual([
         expect.objectContaining({
-          message: "getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
+          message: "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
           range: expect.objectContaining({ start: { line: 3, character: 2 } }),
           codeDescription: { href: `${url}/test-run-cases/950` },
         }),
@@ -2315,7 +2315,7 @@ describe('failures follow the edits', () => {
       const local = await waitFor(() => onPage((d) => d.message.includes('local run #42')));
       expect(local).toMatchObject({
         severity: 1,
-        message: "locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
+        message: "Local failure: locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
         range: { start: { line: 6, character: 2 } },
       });
     } finally {
@@ -2506,7 +2506,9 @@ describe('runs as they happen', () => {
     const { ended, message } = await endRun(42, startTime);
     // The live run leaves in the notification that brings the failures read once it ended.
     expect(ended.contexts[0]).toMatchObject({ live: null, overlays: 1, failingTests: 2 });
-    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)");
+    expect(message).toBe(
+      "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)",
+    );
     const listed = (await runsClient.sendRequest('piwi/failures')) as FailuresResult;
     expect(listed.items.find((i) => i.runId === 42)).toMatchObject({ source: 'own', state: 'failing' });
   });
@@ -2557,7 +2559,9 @@ describe('runs as they happen', () => {
       );
       expect(live).toMatchObject({ runId: id, status: 'running', own: true });
       const { message } = await endRun(id, startTime);
-      expect(message).toBe(`getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`);
+      expect(message).toBe(
+        `Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`,
+      );
     };
     // Before the command's end is heard of, as in a terminal reused without shell integration.
     await rerun(46, '2026-09-27T12:40:00.000Z');
@@ -2585,7 +2589,9 @@ describe('runs as they happen', () => {
     // It is the second command's run: the client knows it by the ref that command was built with.
     expect(live).toMatchObject({ runId: 48, status: 'running', own: true, ref: second.ref });
     const { message } = await endRun(48, startTime);
-    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    expect(message).toBe(
+      "Local failure: getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)",
+    );
     await waitFor(() => (verdicts.some((v) => v.runId === 48) ? true : undefined));
     expect(verdicts.find((v) => v.runId === 48)?.ref).toBe(second.ref);
     // The instance was never asked for the ref the second command was built with.
@@ -3216,7 +3222,9 @@ describe('the baseline chosen in the editor', () => {
     const onPage = await waitFor(() =>
       baselinePublished.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes('#119')),
     );
-    expect(onPage.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, local run #119)");
+    expect(onPage.message).toBe(
+      "Local failure: locator('.cart-row').nth(2) was not found (removes a row, local run #119)",
+    );
     const hover = (await baselineClient.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
