@@ -15,14 +15,19 @@ and debugged from one list of the project's folders, #1118; Rider's highlighting
 balloon of [RD3](#rd3) are unchecked, and the case is a `GlueTest`, a light fixture having no Rider base path),
 [Q18](#q18) (the run keys give way only to a paused debugger, Pause to a running one and Stop to any, superseding
 run-control.md's rule; Pause on the debugger's Pause key, and Resume's key held two seconds after an answer in the
-JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet) and [Q24](#q24) (one name per worker, #1213),
-with an unproven desktop app told apart from an unreachable one in both status items (#1213), and every command, setting
-and action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
-2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
-the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
-local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four
-items still open. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet) [Q4](#q4) (Settings search finds Piwi's page
+and actions: the release builds the searchable options index, and a contributor adds the words the labels lack, #1119),
+[Q6](#q6) (a project in safe mode says Piwi waits for its trust, and trusting it starts Piwi, #1119), [Q5](#q5) in part
+(Connect on the settings page applies nothing, Disconnect only when something is saved, worded certificate and 404
+errors and labels on top, #1119; the page opening on the connection in use, [ST9](#st9), and one word per refresh with
+Node.js Settings…, [ST18](#st18), remain) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app
+told apart from an unreachable one in both status items (#1213), and every command, setting and action id of both
+editors registered in D25 and held to the manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The
+defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0
+(`0e27d76f`), every line reference moved to that commit: no finding was fixed then; the live-run study's work built part
+of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and
+new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four items still open. It cites and does not
+restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
 [live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,
