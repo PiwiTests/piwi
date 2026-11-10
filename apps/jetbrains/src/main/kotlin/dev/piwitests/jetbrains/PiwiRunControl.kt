@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.ide.BrowserUtil
 import com.intellij.execution.ExecutionListener
 import com.intellij.execution.ExecutionManager
 import com.intellij.execution.configurations.RunProfile
@@ -1092,6 +1093,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 !answer.ok || !on || page == null -> PiwiCommands.notify(project, answer.message.orEmpty())
                 else -> NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
                     .createNotification(answer.message.orEmpty(), NotificationType.INFORMATION)
+                    .addAction(NotificationAction.createSimpleExpiring("Open the Run Page") { BrowserUtil.browse(page) })
                     .addAction(NotificationAction.createSimpleExpiring("Copy the Run Page's Link") {
                         CopyPasteManager.getInstance().setContents(StringSelection(page))
                     })

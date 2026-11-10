@@ -119,6 +119,9 @@ import {
   type RunBreakpoints,
   type RunTarget,
   type ShownStop,
+  runName,
+  runPagesOf,
+  runPageTarget,
 } from './run-control';
 import { placesOf } from './breakpoints';
 import { createWorkerPanel } from './worker-panel';
@@ -316,6 +319,7 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
     void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
+    void vscode.commands.executeCommand('setContext', 'piwi.runPage', runPagesOf(sessions).length > 0);
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
@@ -334,7 +338,11 @@ export function registerRunControl(
       shown.add(key);
       const i = item(key);
       i.text = control.text;
-      i.tooltip = control.tooltip;
+      if (control.markdown) {
+        const tooltip = new vscode.MarkdownString(control.tooltip);
+        tooltip.isTrusted = { enabledCommands: [RUN_COMMANDS.openPage, RUN_COMMANDS.watch] };
+        i.tooltip = tooltip;
+      } else i.tooltip = control.tooltip;
       i.command = control.command ?? undefined;
       i.show();
     }
@@ -852,11 +860,28 @@ export function registerRunControl(
       .catch(() => null);
     if (!answer) return say('the editor service did not answer.');
     if (!answer.ok || !on || !live?.page) return say(answer.message);
+    const open = 'Open the run page';
     const copy = "Copy the run page's link";
     const stop = 'Stop sharing';
-    const picked = await vscode.window.showInformationMessage(`Piwi: ${answer.message}`, copy, stop);
+    const picked = await vscode.window.showInformationMessage(`Piwi: ${answer.message}`, open, copy, stop);
+    if (picked === open) await vscode.env.openExternal(vscode.Uri.parse(live.page));
     if (picked === copy) await vscode.env.clipboard.writeText(live.page);
     if (picked === stop) await shareLive({ ref }, false);
+  };
+
+  /** Opens a run's page on the instance: the one the command names, the only one known, or the one chosen. */
+  const openRunPage = async (arg: unknown) => {
+    let target = runPageTarget(sessions, arg);
+    if (!target) {
+      const pages = runPagesOf(sessions);
+      if (!pages.length) return say('no run named its page on the instance yet.');
+      const picked = await vscode.window.showQuickPick(
+        pages.map((page) => ({ label: runName(page), description: sessions.get(page.ref)?.root ?? page.ref, page })),
+        { placeHolder: 'Open which run?' },
+      );
+      target = picked?.page ?? null;
+    }
+    if (target) await vscode.env.openExternal(vscode.Uri.parse(target.url));
   };
 
   /** The code actions of a stop, to choose one: the command's stop, the caret's or the one chosen. */
@@ -1123,6 +1148,7 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
+    vscode.commands.registerCommand(RUN_COMMANDS.openPage, (arg?: unknown) => openRunPage(arg)),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());

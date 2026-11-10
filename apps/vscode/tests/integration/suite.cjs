@@ -615,7 +615,10 @@ const tests = {
       // A reporter that does not take `pick-at` offers no pick on its image.
       assert.equal(shown.pick, null);
       // The stop's line in the spec as it stands, two lines below the run's.
-      assert.equal(shown.caption, 'Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
+      assert.equal(
+        shown.caption,
+        'Stopped at a breakpoint · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5',
+      );
       assert.deepEqual(api.executionPoints(spec.toString()), [4]);
       await vscode.commands.executeCommand('piwi.resumeRun');
       await heardOne('the resume', (m) => m.type === 'control' && m.action === 'resume' && m.stop === 2);
@@ -674,10 +677,10 @@ const tests = {
         bar: true,
       });
       const lenses = await waitFor(async () => {
-        const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
+        const titles = await stopLenses(spec, '$(debug-pause) Stopped at a breakpoint · ');
         return titles.length ? titles : null;
       }, 'the terminal run’s lenses');
-      const title = '$(debug-pause) Paused · Fill "one" locator(\'input\') · run in a terminal';
+      const title = '$(debug-pause) Stopped at a breakpoint · Fill "one" locator(\'input\') · run in a terminal';
       assert.ok(lenses.includes(title), lenses.join(' | '));
       assert.ok(lenses.includes('End test'), lenses.join(' | '));
       await vscode.commands.executeCommand('piwi.endTest');
@@ -746,7 +749,7 @@ const tests = {
       await waitFor(() => api.executionPoints(spec.toString()).includes(4), 'the execution point');
       const since = stopOf().since;
       const lenses = await waitFor(async () => {
-        const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
+        const titles = await stopLenses(spec, '$(debug-pause) Stopped at a breakpoint · ');
         return titles.length ? titles : null;
       }, 'the paused line’s lenses');
       for (const title of ['Pick', 'Record', 'Assert', 'Assert region', 'Mock']) {

@@ -8171,6 +8171,24 @@
     "message": "Copy the run page’s link",
     "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
   },
+  "runs_runNumber": {
+    "message": "Run #$id$",
+    "description": "Runs window, a run's line under its name: its number on the instance it reports to.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "77"
+      }
+    }
+  },
+  "runs_openRunPage": {
+    "message": "Open",
+    "description": "Runs window, button beside the run's number: opens its page on the instance."
+  },
+  "runs_copyRunPageShort": {
+    "message": "Copy link",
+    "description": "Runs window, button beside the run's number: copies the address of its page on the instance."
+  },
   "runs_pageAtStop": {
     "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
     "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."

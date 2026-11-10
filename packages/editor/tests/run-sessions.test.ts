@@ -88,8 +88,8 @@ describe('a run’s session, with a client that answers stops', () => {
         type: 'breakpoints',
         places: [{ file: 'tests/cart.spec.ts', line: 3 }],
       });
-      // Nobody follows the runs in Piwi Picker: it holds no failure.
-      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [] });
+      // Nobody follows the runs in Piwi Picker: it holds no failure. Its lines name the editor as it named itself.
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [], host: 'Test Editor' });
       expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, root: dir, terminal: true });
       worker.begin();
       worker.stopAt(1, 3);

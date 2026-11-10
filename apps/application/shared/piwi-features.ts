@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Watch a run',
+        summary:
+          'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
+        needs: [],
+        where: 'Test run page, editor status bars, Runs window, desktop app, terminal',
+        doc: 'features/watch-a-run',
+      },
+      {
         title: 'Live view of a run',
         summary:
           'Watch the page each worker of a running CI run, or of a run a developer shares (Share live), is on, beside its step: a few images a second, only while someone watches, to who may open the run, never stored.',

@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import { parseRunToHub, type HubToRun } from '@piwitests/core/run-channel';
+import { parseRunMainToHub, parseRunToHub, type HubToRun, type RunMainToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../src/internal/support/ci.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
@@ -61,6 +61,8 @@ let metadata: Record<string, unknown> = {};
 let watched = true;
 let saidUnwatchedAt = 0;
 const events: Event[] = [];
+/** The pages the run's own process named to the hub. */
+const pages: Array<Extract<RunMainToHub, { type: 'run-page' }>> = [];
 /** When the reporter first heard nobody watches, before the first test's stop ended. */
 let unwatchedBeforeResumeAt = 0;
 let stops = 0;
@@ -119,6 +121,8 @@ beforeAll(async () => {
       'data',
       lineReader(
         (line) => {
+          const main = parseRunMainToHub(line);
+          if (main?.type === 'run-page') pages.push(main);
           const message = parseRunToHub(line);
           if (message?.type === 'test-begin') void onBegin(message.title[message.title.length - 1] ?? '');
           if (message?.type === 'stopped') void onStopped(message.stop);
@@ -239,6 +243,10 @@ describe('a stop told as text', () => {
     expect(resumed?.pausedMs).toBeGreaterThanOrEqual(300);
     // The first test's stop, ended before, is counted in neither.
     expect(stopped!.stop!.pausedMs).toBe(0);
+  });
+
+  it('names the run’s page to the hub once, as the instance named it', () => {
+    expect(pages).toEqual([{ type: 'run-page', id: RUN, url: PAGE }]);
   });
 
   it('prints the page the instance names, and records the run’s own name', () => {

@@ -180,6 +180,7 @@ import {
   openRunChannel,
   runChannelOpen,
   runHost,
+  stopLine,
   tellHub,
   viewEnded,
   type RunControl,
@@ -1946,6 +1947,7 @@ async function showStop(
                 ? `${locator} went to the editor, in place of the locator on the stopped line.`
                 : `${locator}: no editor took it, as this run names no Send to editor pairing that answers.`,
               locator,
+              taken: sent,
             };
           } catch (error) {
             // A page's error may name the address it was at: its credentials stay in the worker.
@@ -2011,11 +2013,7 @@ async function showStop(
       : undefined;
   const shown = withTestTimeoutHeld(testInfo, async (): Promise<PauseAnswer> => {
     if (!bar || !page) {
-      console.log(
-        failure
-          ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in ${runHost()} lets it end as it failed.`
-          : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in ${runHost()}.`,
-      );
+      console.log(stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()));
       if (page && intents && held) {
         const stop = held.stop;
         await internalCall(page, () =>

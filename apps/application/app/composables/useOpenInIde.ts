@@ -29,6 +29,7 @@ import {
   buildPiwiPluginOpenUrl,
   buildVscodeExtensionUrl,
   buildVscodeUrl,
+  debugRunRef,
   jetbrainsPorts,
   joinWorkspacePath,
   pickPiwiPluginAnswer,
@@ -72,6 +73,12 @@ export interface OpenTarget {
   projectName?: string | null;
   /** Per-call method override from the chooser; omit to use the stored default. */
   method?: IdeMethod;
+}
+
+/** What Debug in my editor asked: the IDE it asked, and the name the run gets there, which the page follows it by. */
+export interface DebugAsked {
+  ide: string;
+  ref: string;
 }
 
 /** A failing line to debug in the IDE, and the test to run there (`debugTargetOf`). */
@@ -564,10 +571,13 @@ export function useOpenInIde() {
    * and offer to run the test there, headed, one worker, stopping at that line.
    * Only Piwi's own IDE clients take it: the JetBrains plugin, for every method
    * but VS Code (Auto asks it first, as an open does), and the Piwi extension's
-   * link for VS Code and its forks. The IDE asks before it runs anything.
+   * link for VS Code and its forks. The IDE asks before it runs anything. The run gets a name of the page's
+   * (`debugRunRef`), which the page follows it by: answers the IDE it asked and that name, null when no IDE took it.
    */
-  async function debugInIde(target: DebugInIdeTarget) {
-    if (!import.meta.client) return;
+  async function debugInIde(target: DebugInIdeTarget): Promise<DebugAsked | null> {
+    if (!import.meta.client) return null;
+    const ref = debugRunRef();
+    target = { ...target, debug: { ...target.debug, ref } };
     const method = prefs.value.method;
     const root = resolveRoot(target.projectKey) || null;
     const ctx: IdeSettingsContext = {
@@ -587,8 +597,9 @@ export function useOpenInIde() {
       });
       if (plugin.status === 'opened') {
         const ide = plugin.answer.ide ?? 'JetBrains';
+        const refused = plugin.answer.opened === false;
         toast.add(
-          plugin.answer.opened === false
+          refused
             ? {
                 title: `${ide} refused to debug the test`,
                 description: plugin.answer.error,
@@ -602,7 +613,7 @@ export function useOpenInIde() {
                 icon: 'i-lucide-check',
               },
         );
-        return;
+        return refused ? null : { ide, ref };
       }
       if (plugin.status === 'not-found' || method !== 'auto') {
         const ide = plugin.status === 'not-found' ? (plugin.answer.ide ?? 'JetBrains') : 'JetBrains';
@@ -616,7 +627,7 @@ export function useOpenInIde() {
           icon: 'i-lucide-file-question',
           actions: [configureAction],
         });
-        return;
+        return null;
       }
     }
 
@@ -637,6 +648,7 @@ export function useOpenInIde() {
       icon: 'i-lucide-external-link',
       actions: [configureAction],
     });
+    return { ide: editor, ref };
   }
 
   return {

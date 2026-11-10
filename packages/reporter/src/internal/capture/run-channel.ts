@@ -408,6 +408,25 @@ export function runHost(): string {
   return host ?? 'the editor';
 }
 
+/** What the terminal's stop line says of why a test stands at a call, by the stop's reason. */
+const STOP_LINE_WORDS: Record<Exclude<StopReason, 'failure'>, string> = {
+  breakpoint: 'Stopped at a breakpoint',
+  step: 'Stopped after a step',
+  pause: 'Paused',
+  'run-to': 'Stopped at the line it ran to',
+  'page-pause': 'Stopped at page.pause()',
+};
+
+/**
+ * The terminal's line for a stop no pause bar shows: why the test stopped, where, before which call (`title`, hidden
+ * already), and where to answer it (`where`, the editor's name or `the desktop app`):
+ * `[piwi] Stopped at a breakpoint at tests/cart.spec.ts:12 before Click: Resume, Step or Finish in Visual Studio Code.`
+ */
+export function stopLine(reason: StopReason, place: string, title: string, where: string): string {
+  if (reason === 'failure') return `[piwi] The test failed at ${place}: Resume in ${where} lets it end as it failed.`;
+  return `[piwi] ${STOP_LINE_WORDS[reason]} at ${place} before ${title}: Resume, Step or Finish in ${where}.`;
+}
+
 /** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
 const HIDDEN_ENV = [RUN_CHANNEL_ENV, PIWI_LOCAL_DEBUG_ENV.editorSend] as const;
 

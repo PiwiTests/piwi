@@ -32,6 +32,8 @@ import {
   liveInstance,
   liveItem,
   progressItem,
+  runName,
+  runPageTarget,
   frameIsCurrent,
   waitedFor,
   waitingWorkers,
@@ -363,7 +365,7 @@ describe('what the controls offer', () => {
     const [stop] = stopsOf(sessionsOf(terminal));
     expect(stop!.terminal).toBe(true);
     expect(pausedText(stop!.stop, stop!.test, stop!.terminal)).toBe(
-      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
     );
     expect(stopPick(stop!).label).toContain('· run in a terminal');
     // A run of this window's beside it can be stopped.
@@ -378,7 +380,7 @@ describe('what the controls offer', () => {
     const [stop] = stopsOf(sessionsOf(runner));
     expect(stop).toMatchObject({ terminal: true, runner: true });
     expect(pausedText(stop!.stop, stop!.test, stop!.terminal, stop!.runner)).toBe(
-      "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+      "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
     );
     expect(stopPick(stop!).label).toContain("· run by the editor's test runner");
     // Said of a run the editor started, it says nothing.
@@ -418,20 +420,45 @@ describe('Share live', () => {
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
       text: '$(beaker) 3 of 9',
       tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      markdown: true,
       command: null,
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
       text: '$(beaker) 4 of 10 · $(error) 1',
       tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      markdown: true,
       command: null,
     });
-    // A worker whose reporter shows its running test: a click watches it.
+    // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
       text: '$(beaker) 3 of 9',
-      tooltip: "Piwi: the run ran 3 of 9 tests. Click to watch a worker's test.",
+      tooltip: "Piwi: the run ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+      markdown: true,
       command: RUN_COMMANDS.watch,
     });
+    // A run whose own process named its page: its number, and its page opens from the item and its tooltip.
+    const named = { ...counted('ed-1', 3, 9), page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } };
+    const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
+    expect(progressItem(sessionsOf(named))).toEqual({
+      text: '$(beaker) #78 · 3 of 9',
+      tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\n${link}`,
+      markdown: true,
+      command: RUN_COMMANDS.openPage,
+    });
+    expect(runPageTarget(sessionsOf(named), undefined)).toEqual({
+      ref: 'ed-1',
+      id: 78,
+      url: 'https://piwi.example.com/test-runs/78',
+    });
+    expect(runPageTarget(sessionsOf(named, counted('ed-2', 1, 1)), { ref: 'ed-2' })).toBeNull();
+    const twice = sessionsOf(named, {
+      ...counted('ed-2', 1, 1),
+      page: { id: 79, url: 'https://piwi.example.com/test-runs/79' },
+    });
+    expect(runPageTarget(twice, undefined)).toBeNull();
+    expect(runPageTarget(twice, { ref: 'ed-2' })?.id).toBe(79);
+    expect(runName({ id: 79 })).toBe('Run #79');
   });
 
   test('lists the workers a panel can watch, and those Pause and watch can pause', () => {
@@ -472,7 +499,9 @@ describe('Share live', () => {
     const at = stopsOf(sessionsOf(session('ed-1', [stopped])));
     const shown = laneShown(session('ed-1', [stopped]), 1, at);
     expect(shown.stop).toEqual(at[0]);
-    expect(shown.caption).toBe('Worker 2 · Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8');
+    expect(shown.caption).toBe(
+      'Worker 2 · Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8',
+    );
     const test = running.test!.id;
     expect(frameIsCurrent({ worker: 5, test, since: null }, running)).toBe(true);
     expect(frameIsCurrent({ worker: 5, test, since: null }, stopped)).toBe(false);
@@ -534,11 +563,13 @@ describe('Share live', () => {
 
 describe('a stop', () => {
   test('says what is about to run, and the attempt after the first', () => {
-    expect(pausedText(stopAt(spec, 5), runTest())).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
-    expect(pausedText(stopAt(spec, 5), runTest(1))).toBe(
-      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
+    expect(pausedText(stopAt(spec, 5), runTest())).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
     );
-    expect(pausedText(stopAt(spec, 5), null)).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    expect(pausedText(stopAt(spec, 5), runTest(1))).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
+    );
+    expect(pausedText(stopAt(spec, 5), null)).toBe('Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')');
     // A stop an agent asked for says so.
     expect(pausedText({ ...stopAt(spec, 5), by: 'agent' }, null)).toBe(
       'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\')',
@@ -560,7 +591,7 @@ describe('a stop', () => {
     ]);
     expect(new Set(stops.map(stopKey)).size).toBe(2);
     expect(stopPick(stops[1]!)).toEqual({
-      label: '$(debug-pause) Paused · Fill "WELCOME10" getByLabel(\'Coupon\')',
+      label: '$(debug-pause) Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
       description: 'checkout › pays · checkout.page.ts:9 · worker 3',
     });
   });

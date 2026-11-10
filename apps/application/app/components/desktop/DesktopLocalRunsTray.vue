@@ -335,13 +335,13 @@ function runDetail(run: LocalRun): string {
           <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
             <UButton
               size="xs"
-              color="success"
-              variant="soft"
+              color="neutral"
+              variant="outline"
               icon="i-lucide-external-link"
               :to="`/test-runs/${run.piwiRunId}`"
               @click="trayOpen = false"
             >
-              Live in Piwi — Run #{{ run.piwiRunId }}
+              Open run #{{ run.piwiRunId }}
             </UButton>
             <UButton
               v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"

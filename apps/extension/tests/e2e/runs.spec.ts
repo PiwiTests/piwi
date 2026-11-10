@@ -335,6 +335,15 @@ test('a run says how far it is and how it ended, as its own process says', async
     try {
       const card = liveRun(runs);
       await expect(card.locator('.run-progress')).toHaveText('0 of 3 tests');
+      // Its number and page on the instance, once its process names them.
+      await expect(card.locator('.run-page')).toHaveCount(0);
+      main.send({ type: 'run-page', id: 78, url: 'http://127.0.0.1:7494/test-runs/78' });
+      await expect(card.locator('.run-number')).toHaveText('Run #78');
+      await expect(card.getByRole('button', { name: 'Open' })).toHaveAttribute(
+        'title',
+        'http://127.0.0.1:7494/test-runs/78',
+      );
+      await expect(card.getByRole('button', { name: 'Copy link' })).toBeVisible();
       main.send({ type: 'run-progress', done: 2, failed: 1, flaky: 1, skipped: 0 });
       await expect(card.locator('.run-progress')).toHaveText('2 of 3 tests · 1 failed · 1 flaky');
       main.send({
@@ -355,6 +364,8 @@ test('a run says how far it is and how it ended, as its own process says', async
     await expect(ended.locator('.run-progress')).toHaveText('3 of 3 tests · 1 failed · 1 flaky');
     await expect(ended.locator('.run-ended')).toHaveText('The run failed. First failure: cart › pays');
     await expect(ended.locator('.first-failure')).toHaveAttribute('title', 'expect(locator).toBeVisible() failed');
+    // The run that ended keeps its page.
+    await expect(ended.locator('.run-number')).toHaveText('Run #78');
   } finally {
     await context.close();
   }
@@ -1358,6 +1369,13 @@ test.describe('the live view', () => {
           locator: null,
         });
         await expect(card.locator('.answer')).toHaveText('No element is under that point.');
+        // A locator no editor took is not said to be sent, and is offered to copy.
+        await live.click({ position: await at(live, 0.5, 0.5), modifiers: ['Shift'] });
+        const alone = `${locator}: no editor took it, as this run names no Send to editor pairing that answers.`;
+        await answerNext(run.worker, 'pick-at', { ok: true, message: alone, locator, taken: false });
+        await expect(card.locator('.note').filter({ hasText: 'no editor took it' })).toBeVisible();
+        await expect(card.locator('.note.sent')).toHaveCount(0);
+        await expect(card.getByRole('button', { name: 'Copy', exact: true })).toBeVisible();
       } finally {
         input.stop();
         await endRun(run);

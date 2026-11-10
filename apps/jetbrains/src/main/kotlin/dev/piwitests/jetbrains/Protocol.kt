@@ -160,6 +160,8 @@ data class DebugRun(
     val title: String,
     val project: String? = null,
     val execution: Int? = null,
+    /** The name the dashboard gave the run, which its page follows the run by. */
+    val ref: String? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -252,6 +254,12 @@ data class LiveRun(
     val startedAt: String? = null,
     val own: Boolean = false,
     val ref: String? = null,
+    /** Its page on the instance, which the status bar opens while it runs. */
+    val url: String? = null,
+    /** A CI run's: the status bar says so, never as the person's own tests running. */
+    val ci: Boolean = false,
+    /** The branch it runs on, as it reported it; null for a run that names none. */
+    val branch: String? = null,
 )
 
 /** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
@@ -763,7 +771,12 @@ data class RunSession(
     val runner: Boolean = false,
     val live: RunLive? = null,
     val progress: RunProgress? = null,
+    /** The run's page on the instance once its own process names it: its number there and its address. */
+    val page: RunPage? = null,
 )
+
+/** A run's page on an instance: its number there (`#78`) and its address. */
+data class RunPage(val id: Int = 0, val url: String = "")
 
 /**
  * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
@@ -895,8 +908,16 @@ data class LaneFrame(
  */
 data class PickAtParams(val ref: String, val worker: Int? = null, val since: String, val x: Int, val y: Int)
 
-/** The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from). */
-data class PickAtResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null)
+/**
+ * The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from).
+ * `taken`: whether an editor took the locator; null when the run's reporter does not say.
+ */
+data class PickAtResult(
+    val ok: Boolean = false,
+    val message: String? = null,
+    val locator: String? = null,
+    val taken: Boolean? = null,
+)
 
 /**
  * `piwi/hub`: the address of the service's hub, and, with `forwarded`, the loopback ports of the browser's machine a

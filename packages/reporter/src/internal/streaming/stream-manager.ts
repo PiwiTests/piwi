@@ -183,6 +183,8 @@ export class StreamManager {
   }
   /** Called when the dashboard says someone opened the run. */
   onWatched: (() => void) | null = null;
+  /** Called once the run's stream opened, with the run's id and its page. */
+  onOpened: ((runId: number, runUrl: string) => void) | null = null;
 
   /**
    * @param httpClient  HTTP client for server communication.
@@ -362,13 +364,15 @@ export class StreamManager {
     this._token = token;
     this._enabled = true;
     this.streamBuffer.bindRun(runId);
-    this.logger.info(
-      late
-        ? `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`
-        : `Streaming enabled. Run ID: ${runId}`,
-    );
+    // A stream that opened late says so; one on time is plumbing.
+    if (late) {
+      this.logger.info(
+        `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`,
+      );
+    } else this.logger.debug(`Streaming enabled. Run ID: ${runId}`);
     // The global setup printed it already for the run it registered.
     if (this._runUrl !== shown) this.logger.info(`View live progress: ${this._runUrl}`);
+    this.onOpened?.(runId, this._runUrl);
     this.lastActivityAt = Date.now();
     this.scheduleHeartbeat();
     // Whatever queued while the stream opened goes now, not at the next event or the finalize.

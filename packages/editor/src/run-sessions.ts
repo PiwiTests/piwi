@@ -38,6 +38,7 @@ import {
   type ActAnswer,
   type BindAnswer,
   type HubToRun,
+  isPageOfInstance,
   type IntentAnswer,
   type LocatorAnswer,
   type MockAnswer,
@@ -67,6 +68,7 @@ import type {
   RunControlParams,
   RunControlResult,
   RunLive,
+  RunPage,
   RunProgress,
   RunSession,
   RunStop,
@@ -269,6 +271,11 @@ export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
   /**
+   * The addresses of the instances this host connects to: a run's page (`run-page`) is kept only on this machine or
+   * under one of them (`isPageOfInstance`). None by default.
+   */
+  instances?(): Iterable<string | null | undefined>;
+  /**
    * Whether a surface shows the stops and answers them: the client (`InitializationOptions.runControl`), or a Piwi
    * Picker subscribed to the hub.
    */
@@ -320,6 +327,11 @@ export interface RunSessionsOptions {
   declines?(what: RunIntent): string | null;
   /** What the sentences call the host the workers connect to: `the editor` by default. */
   host?: string;
+  /**
+   * What the workers' own lines call the host, told in `attached` (the editor's name, `Visual Studio Code`); `host`
+   * when it gives none.
+   */
+  workerHost?: () => string | null;
   /** What the sentences call the surfaces of this host that show where a run stops: `this editor` by default. */
   surfaces?: string;
   /**
@@ -410,6 +422,8 @@ interface Session {
   main: net.Socket | null;
   /** How far the run is, as its own process said; null before it said, and from a reporter that predates it. */
   progress: RunProgress | null;
+  /** The run's page on the instance, as its own process named it (`run-page`); null before, or without one. */
+  page: RunPage | null;
 }
 
 /**
@@ -492,8 +506,13 @@ function uriToPath(uri: string): string | null {
   }
 }
 
+/** The refs of runs that connected the service keeps, for a command that ended to say whether its reporter ran. */
+const HEARD_REFS = 200;
+
 export class RunSessions {
   private readonly sessions = new Map<string, Session>();
+  /** The refs of the runs whose reporter connected, latest last, `HEARD_REFS` at most (`heardFrom`). */
+  private readonly heard = new Set<string>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
   private readonly breakpoints = new Map<string, Array<{ file: string; line: number }>>();
   /**
@@ -524,6 +543,11 @@ export class RunSessions {
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
+  /** Whether the reporter of a run of `ref` ran: the run's own process reached the service (`run-begin`). */
+  heardFrom(ref: string): boolean {
+    return this.heard.has(ref);
+  }
+
   /** A new session of the run `ref`, whose working directory is `cwd`. */
   private open(ref: string, cwd: string, runner: boolean): Session {
     const terminal = !!this.options.terminal?.(ref);
@@ -549,6 +573,7 @@ export class RunSessions {
       lanes: new Map(),
       main: null,
       progress: null,
+      page: null,
     };
     this.sessions.set(ref, session);
     // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
@@ -563,6 +588,9 @@ export class RunSessions {
    * goes on while it is connected, between workers too. A second connection of a run while one is open is closed.
    */
   attachMain(socket: net.Socket, begin: RunBegin): (line: string) => void {
+    this.heard.delete(begin.ref);
+    this.heard.add(begin.ref);
+    if (this.heard.size > HEARD_REFS) this.heard.delete(this.heard.values().next().value!);
     const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, begin.runner === true);
     if (session.main && !session.main.destroyed) {
       socket.destroy();
@@ -595,6 +623,12 @@ export class RunSessions {
     return (line) => {
       const message = parseRunMainToHub(line);
       if (!message || message.type === 'run-begin' || session.main !== socket || !session.progress) return;
+      if (message.type === 'run-page') {
+        const { type: _page, ...page } = message;
+        if (!isPageOfInstance(page.url, this.options.instances?.() ?? [])) return;
+        session.page = page;
+        return this.changed(session, true);
+      }
       const { type: _type, ...said } = message;
       session.progress = { ...session.progress, ...said, total: Math.max(session.progress.total, said.done) };
       this.changed(session, message.type === 'run-end');
@@ -656,7 +690,8 @@ export class RunSessions {
       // A terminal's run holds a failure only while someone follows the runs: nobody may be there to answer it.
       const failures = this.holds(attach.ref) && (!session.terminal || !!this.options.followed?.());
       const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || failures));
-      this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
+      const named = this.options.workerHost?.() ?? this.options.host;
+      this.send(worker, { type: 'attached', holds, ...(named ? { host: named } : {}) });
     }
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, attach.ref, breakpoints, session.root);
@@ -1758,6 +1793,7 @@ export class RunSessions {
     const live = this.liveOf(session);
     if (live) view.live = live;
     if (session.progress) view.progress = { ...session.progress };
+    if (session.page) view.page = { ...session.page };
     return view;
   }
 

@@ -5,6 +5,7 @@ import {
   buildPiwiPluginOpenUrl,
   buildVscodeExtensionUrl,
   buildVscodeUrl,
+  debugRunRef,
   debugTargetOf,
   encodePathForUrl,
   failurePlace,
@@ -319,6 +320,33 @@ describe('Debug in my editor', () => {
     expect(buildVscodeExtensionUrl({ scheme: 'vscode', path: 'a.ts', debug })).toBe(
       'vscode://piwitests.piwi/open?file=a.ts',
     );
+    // The name the page gives the run, which it follows the run by, comes first.
+    const named = buildVscodeExtensionUrl({
+      scheme: 'vscode',
+      path: 'a.ts',
+      line: 2,
+      debug: { spec: 'a.spec.ts', title: 'pays', project: 'chromium', execution: 7, ref: 'ed-00ff' },
+    });
+    expect(named).toBe(
+      'vscode://piwitests.piwi/open?ref=ed-00ff&file=a.ts&line=2&debug=1&spec=a.spec.ts&test=pays' +
+        '&playwrightProject=chromium&execution=7',
+    );
+    // An extension that reads no `ref` splits the query only before a field it reads, and skips a first pair it
+    // does not: every other field keeps its value.
+    const known = ['file', 'line', 'column', 'root', 'debug', 'spec', 'test', 'playwrightProject', 'execution'];
+    const namedQuery = decodeURIComponent(named.slice(named.indexOf('?') + 1));
+    const pairs = namedQuery.split(new RegExp(`&(?=(?:${known.join('|')})=)`)).map((pair) => pair.split('='));
+    expect(Object.fromEntries(pairs.filter(([name]) => known.includes(name!)))).toEqual({
+      file: 'a.ts',
+      line: '2',
+      debug: '1',
+      spec: 'a.spec.ts',
+      test: 'pays',
+      playwrightProject: 'chromium',
+      execution: '7',
+    });
+    expect(debugRunRef((bytes) => bytes.fill(171))).toBe('ed-abababababababab');
+    expect(debugRunRef()).toMatch(/^ed-[0-9a-f]{16}$/);
   });
 
   test('the Piwi plugin’s open request gains debug=1 and the test, never on a check', () => {
