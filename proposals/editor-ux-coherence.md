@@ -20,22 +20,27 @@ and actions: the release builds the searchable options index, and a contributor 
 [Q6](#q6) (a project in safe mode says Piwi waits for its trust, and trusting it starts Piwi, #1119), [Q5](#q5) in part
 (Connect on the settings page applies nothing, Disconnect only when something is saved, worded certificate and 404
 errors and labels on top, #1119; the page opening on the connection in use, [ST9](#st9), and one word per refresh with
-Node.js Settings…, [ST18](#st18), remain) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app
-told apart from an unreachable one in both status items (#1213), and every command, setting and action id of both
-editors registered in D25 and held to the manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The
-defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0
-(`0e27d76f`), every line reference moved to that commit: no finding was fixed then; the live-run study's work built part
-of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and
-new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four items still open. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,
-[live-runs.md](live-runs.md), is proposed alongside this one: this document owns where each editor hosts a run (the
-status item, the menus, the Run tab, the Runs view and tab, the stop line, the gutter marks, the keys, the paused page)
-and the debug-session question ([LI10](#li10)); the study owns the live model, the words of watching and its phases P0
-to P11, and builds in those phases what the two documents share. A pull request that builds part of §12 updates this
-paragraph; the one that ships its last step moves the document to `adr/`.
+Node.js Settings…, [ST18](#st18), remain), [Q7](#q7) (both failures views say the state the service reads, an
+unreachable instance, no run, a desktop app to restart or no connection, and the commands that read the instance wait
+for a connection, #1120; [HM7](#hm7)'s '…' menu with Follow as a toggle, Connect…, Settings… and Open Log remains),
+[Q16](#q16) (Piwi: Restart the editor service, and no toast for a failed request, #1120), [HM5](#hm5) of [Q8](#q8) (Open
+in Dashboard on the tool window's selection, #1120), the Paused Page and Worker tabs closing ([LR8](#lr8), #1120) and
+[Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an unreachable one in both status
+items (#1213), and every command, setting and action id of both editors registered in D25 and held to the manifests
+(#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
+#1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
+no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
+views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is
+closed with three of its four items still open. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). The live-run study, [live-runs.md](live-runs.md), is proposed alongside
+this one: this document owns where each editor hosts a run (the status item, the menus, the Run tab, the Runs view and
+tab, the stop line, the gutter marks, the keys, the paused page) and the debug-session question ([LI10](#li10)); the
+study owns the live model, the words of watching and its phases P0 to P11, and builds in those phases what the two
+documents share. A pull request that builds part of §12 updates this paragraph; the one that ships its last step moves
+the document to `adr/`.
 
 **Summary.**
 
