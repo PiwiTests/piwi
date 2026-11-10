@@ -347,6 +347,28 @@ describe('refreshTestManagementCatalog', () => {
     expect((await connectionRow(zephyrId)).lastError).toBeNull();
   });
 
+  test('a success clears a failed status and its error, as a successful test does', async () => {
+    await db
+      .update(schema.integrationConnections)
+      .set({ status: 'failed', lastError: 'Zephyr Scale refused the API token (401)' })
+      .where(eq(schema.integrationConnections.id, zephyrId));
+    expect(await refresh()).toMatchObject({ ok: true });
+    expect(await connectionRow(zephyrId)).toMatchObject({ status: 'ok', lastError: null });
+  });
+
+  test('a failed write is logged and answers a plain sentence, never the database text', async () => {
+    const broken = Object.create(db) as typeof db;
+    broken.transaction = (async () => {
+      throw new Error('insert into "test_management_cases" values ($1, $2) failed: disk I/O error');
+    }) as typeof db.transaction;
+    const result = await refreshTestManagementCatalog(broken, zephyrId, 'SHOP', { sleep });
+    expect(result).toMatchObject({ ok: false, status: 502, error: 'The catalog was read but could not be saved' });
+    const { lastError } = await connectionRow(zephyrId);
+    expect(lastError).toBe('Catalog read failed: The catalog was read but could not be saved');
+    expect(`${result.ok ? '' : result.error} ${lastError}`).not.toContain('insert into');
+    expect(await rows()).toEqual([]);
+  });
+
   test('a read already running for the project is shared, not repeated', async () => {
     const [one, two] = await Promise.all([refresh(), refresh()]);
     expect(one).toBe(two);

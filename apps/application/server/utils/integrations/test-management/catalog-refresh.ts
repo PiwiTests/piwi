@@ -8,7 +8,13 @@ import { projectTestManagement, testManagementCases, testManagementCatalogReads 
 import { isProviderOfKind } from '#shared/integrations/registry';
 import { IntegrationHttpError } from '../http-error';
 import { connectionPausedUntil, pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
-import { getConnectionRow, markConnectionFailed, recordConnectionError, testManagementForRow } from '../connections';
+import {
+  getConnectionRow,
+  markConnectionFailed,
+  markConnectionOk,
+  recordConnectionError,
+  testManagementForRow,
+} from '../connections';
 import { readCatalogInfo } from './catalog';
 import type { PageCursor, TestManagementProvider, TmCase, TmPage } from './types';
 
@@ -37,6 +43,8 @@ export interface CatalogRefreshOptions {
   /** How the read waits out a short rate limit; real time unless a test says otherwise. */
   sleep?: (ms: number) => Promise<void>;
 }
+
+const CATALOG_NOT_STORED = 'The catalog was read but could not be saved';
 
 class RateLimited extends Error {
   constructor(readonly waitMs: number) {
@@ -188,11 +196,9 @@ async function readAndStore(
   }
 
   const fetchedAt = now();
+  let cases: TmCase[];
   try {
-    const cases = await readAllCases(client, projectKey, options.sleep ?? realSleep);
-    await storeCatalog(db, connectionId, projectKey, cases, fetchedAt);
-    if (row.status !== 'failed') await recordConnectionError(db, connectionId, null);
-    return { ok: true, size: cases.length, fetchedAt };
+    cases = await readAllCases(client, projectKey, options.sleep ?? realSleep);
   } catch (err) {
     if (err instanceof RateLimited) {
       await pauseConnectionById(db, connectionId, err.waitMs, now());
@@ -210,6 +216,19 @@ async function readAndStore(
     console.warn(`[integrations:test-management-catalog] connection ${connectionId} project ${projectKey}: ${message}`);
     return { ok: false, status: 502, error: message, pausedUntil: null };
   }
+
+  try {
+    await storeCatalog(db, connectionId, projectKey, cases, fetchedAt);
+  } catch (err) {
+    // What the database said can hold SQL and values: it goes to the log, and the person sees a plain sentence.
+    console.error(`[integrations:test-management-catalog] connection ${connectionId} project ${projectKey}:`, err);
+    await recordConnectionError(db, connectionId, `Catalog read failed: ${CATALOG_NOT_STORED}`);
+    return { ok: false, status: 502, error: CATALOG_NOT_STORED, pausedUntil: null };
+  }
+  // A whole catalog read proves the token works, so it also clears a failure an earlier refusal left.
+  if (row.status === 'failed') await markConnectionOk(db, connectionId);
+  else await recordConnectionError(db, connectionId, null);
+  return { ok: true, size: cases.length, fetchedAt };
 }
 
 export interface DueCatalog {

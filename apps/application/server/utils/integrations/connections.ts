@@ -542,6 +542,14 @@ export async function markConnectionFailed(db: DbClient, id: number, error: stri
   await recordTest(db, id, { ok: false, error });
 }
 
+/**
+ * Record that a provider accepted a connection's credentials by answering a real read (a full catalog read): the
+ * connection shows as ok, and any earlier failure is cleared.
+ */
+export async function markConnectionOk(db: DbClient, id: number): Promise<void> {
+  await recordTest(db, id, { ok: true });
+}
+
 /** Every test management connection with a stored token — what the project's binding form offers. */
 export async function listTestManagementConnections(db: DbClient): Promise<TestManagementConnectionSummary[]> {
   await ensureEnvManagedConnections(db);
