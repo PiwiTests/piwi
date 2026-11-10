@@ -1,7 +1,8 @@
 /**
  * The ids the editor clients freeze at 1.0 (D25 of `proposals/1.0-stabilization.md`): every command, setting and MCP
- * provider id the VS Code extension contributes, and every action id the JetBrains plugin declares, which keybindings,
- * keymaps and settings files name. The register lists each one, and nothing the manifests do not hold.
+ * provider id the VS Code extension contributes, and every action id and notification group the JetBrains plugin
+ * declares, which keybindings, keymaps and settings files name. The register lists each one, and nothing the
+ * manifests do not hold.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -47,6 +48,13 @@ describe('the editor ids D25 freezes', () => {
     const pluginXml = readFileSync(resolve(root, 'apps/jetbrains/src/main/resources/META-INF/plugin.xml'), 'utf8');
     const declared = [...pluginXml.matchAll(/<action id="([^"]+)"/g)].map((m) => m[1]!);
     const registered = idsIn(bullet('- **The JetBrains plugin**'), /^Piwi\.[A-Za-z]+$/);
+    expect(registered).toEqual([...new Set(declared)].sort());
+  });
+
+  test("list every notification group of the JetBrains plugin's plugin.xml", () => {
+    const pluginXml = readFileSync(resolve(root, 'apps/jetbrains/src/main/resources/META-INF/plugin.xml'), 'utf8');
+    const declared = [...pluginXml.matchAll(/<notificationGroup id="([^"]+)"/g)].map((m) => m[1]!);
+    const registered = idsIn(bullet('- **The JetBrains plugin**'), /^Piwi( [a-z]+)?$/);
     expect(registered).toEqual([...new Set(declared)].sort());
   });
 });

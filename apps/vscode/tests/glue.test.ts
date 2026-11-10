@@ -1593,12 +1593,15 @@ describe('the verdict of a run started from the editor', () => {
     expect(verdict?.text).toBe(`Piwi: run #124 · 7 new failures (${titles.join(', ')} and 2 more)`);
   });
 
-  test('a run that fixed everything it ran is an information, without Re-run failing', () => {
-    expect(runVerdict({ ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 })).toEqual({
+  test('a run that fixed everything it ran is an information, without Re-run failing, offering Only on failure', () => {
+    const passing = { ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 };
+    expect(runVerdict(passing)).toEqual({
       severity: 'information',
       text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
-      actions: ['Open the failures', 'Open in dashboard'],
+      actions: ['Open the failures', 'Open in dashboard', 'Only on failure'],
     });
+    // A failing run is shown whatever the choice, so it offers none.
+    expect(runVerdict(ended)?.actions).not.toContain('Only on failure');
   });
 
   test('a run that touched no failure gives its counts', () => {

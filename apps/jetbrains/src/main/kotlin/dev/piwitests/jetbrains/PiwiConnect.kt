@@ -135,7 +135,7 @@ object PiwiConnectFlow {
                 Glue.ConnectTarget.DESKTOP -> return useDesktop(project, desktop)
                 Glue.ConnectTarget.INSTANCE -> {
                     service.useInstance()
-                    PiwiCommands.notify(project, "Connected to ${choice.serverUrl}.")
+                    PiwiNotifier.confirm(project, "Connected to ${choice.serverUrl}.")
                     return true
                 }
                 Glue.ConnectTarget.OTHER -> Unit
@@ -174,7 +174,7 @@ object PiwiConnectFlow {
                 NotificationType.WARNING,
             )
         } else {
-            PiwiCommands.notify(project, "Connected to $picked on $url.")
+            PiwiNotifier.confirm(project, "Connected to $picked on $url.")
         }
         return true
     }
@@ -200,7 +200,7 @@ object PiwiConnectFlow {
         val linked = desktop.linked
         if (linked != null) {
             service.useDesktop(null)
-            PiwiCommands.notify(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
+            PiwiNotifier.confirm(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
             return true
         }
         val names = desktop.projects.orEmpty().map { it.name }
@@ -217,7 +217,7 @@ object PiwiConnectFlow {
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
         service.useDesktop(picked)
-        PiwiCommands.notify(
+        PiwiNotifier.confirm(
             project,
             "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
         )

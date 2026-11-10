@@ -375,10 +375,18 @@ other command, an IDE without the runner, or a run the runner does not take, run
   ends. A rerun keeps the ref, by which the service recognizes it as the editor's own run in the instance's event stream
   ([The editor's own run](../../packages/editor/ARCHITECTURE.md#the-editors-own-run) in the editor service's reference).
 
-**Notifications.** A `piwi/notice` is a balloon (`PiwiCommands.notify`). So is `piwi/runEnded` (`PiwiCommands.runEnded`,
-`Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing** when something fails. The
-run's balloon follows `PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, `never`;
-in `.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting,
+**Notifications.** Every balloon is made by `PiwiNotifier`: titled Piwi, with Piwi's icon, in the group of its kind
+(`PiwiNotice`), each its own row in **Settings → Appearance & Behavior → Notifications**: `Piwi` for results (a run's
+verdict, a job, a recording), `Piwi requests` for what waits for an answer (Debug in my editor, a run shared live, a
+shared browser), sticky, `Piwi suggestions` for an offer made once (the MCP server, the desktop app, the first run), as
+a suggestion, `Piwi problems` for what went wrong, and `Piwi confirmations` for what the person just did (Copied.,
+Connected to …, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an error as a problem, anything
+else, a refusal of the service included, as a result. An information carries Piwi's icon; a warning or an error keeps
+the platform's, which says how serious it is. D25 lists the five group ids, which users' notification settings name. A `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded`
+(`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing**
+when something fails, or **Only on Failure** when nothing does while the setting is `always`. The run's balloon follows
+`PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, `never`; in
+`.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting,
 as `Run #124 · Failed 1 of 3`, a warning when one of the runs failed.
 
 **Diagnostic severity.** The severity of a failure's diagnostic is `PiwiLocalSettings.failureSeverity`

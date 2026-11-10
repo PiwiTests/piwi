@@ -370,6 +370,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            // Each kind has its group, the requests' sticky, a confirmation fading on its own.
+            val groups = com.intellij.notification.NotificationGroupManager.getInstance()
+            assertEquals(
+                PiwiNotice.entries.map { it.group to (if (it == PiwiNotice.REQUEST) "STICKY_BALLOON" else "BALLOON") },
+                PiwiNotice.entries.map { it.group to groups.getNotificationGroup(it.group)!!.displayType.name },
+            )
+            // A warning keeps the platform's icon.
+            assertNull(PiwiNotifier.create(PiwiNotice.PROBLEM, "x", com.intellij.notification.NotificationType.WARNING).icon)
+            // An offer: titled Piwi, with its icon, in the suggestions' group.
+            val offer = shown.single()
+            assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
+            assertNotNull(offer.icon)
+            assertTrue(offer.isSuggestionType)
             assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
