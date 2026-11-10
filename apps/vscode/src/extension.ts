@@ -152,6 +152,7 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  serviceDownView,
   heldStops,
   heldText,
   failingRuns,
@@ -164,6 +165,13 @@ import {
   type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
+  HOLD_FAILURES_CHOICES,
+  type RunStartChoices,
+  runOptionPicks,
+  runOptionTarget,
+  runStartChoices,
+  runStartLine,
+  withRunStart,
   pickNotice,
   statusBarView,
   baselinePicks,
@@ -209,6 +217,9 @@ const LIVE_TESTS_DRAW_MS = 1_000;
 const GUTTER_EDIT_MS = 300;
 /** Pause after a change of the connection's settings or key before it is handed to the service. */
 const CREDENTIALS_WAIT_MS = 250;
+
+/** How long the client stays stopped before the status item says the editor service is not running. */
+const SERVICE_DOWN_MS = 3_000;
 /** Pause after a change of the editor's proxy settings before the service is started again with them. */
 const PROXY_WAIT_MS = 250;
 /** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
@@ -647,6 +658,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.workspace.onDidCloseTextDocument((d) => coverage.delete(d.uri.toString())),
   );
 
+  /** How every run of the window starts: `piwi.runHeaded` and `piwi.runHoldFailures`, read at each run. */
+  const runChoices = (): RunStartChoices => {
+    const settings = vscode.workspace.getConfiguration('piwi');
+    return runStartChoices(settings.get('runHeaded'), settings.get('runHoldFailures'));
+  };
+
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
@@ -706,15 +723,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /**
+   * The editor service is down: its start failed, or it stayed stopped `SERVICE_DOWN_MS` (the client gave up starting
+   * it again). The status item says so.
+   */
+  let serviceDown = false;
+  let downTimer: ReturnType<typeof setTimeout> | null = null;
+  context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
+    const view = serviceDown ? serviceDownView() : statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
     statusItem.text = refreshing
       ? refreshingText(view.text)
       : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
-    const tooltip = new vscode.MarkdownString(view.tooltip);
+    // How every run of the window starts, with the link that changes it, wherever a config is found.
+    const tooltip = new vscode.MarkdownString(
+      view.action === 'none' ? view.tooltip : `${view.tooltip}\n\n${runStartLine(runChoices())}`,
+    );
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
@@ -724,6 +751,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       refresh: 'piwi.refreshRun',
       retry: 'piwi.refresh',
       connect: 'piwi.connect',
+      restart: 'piwi.restartService',
       none: undefined,
     }[view.action];
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
@@ -1029,14 +1057,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /**
-   * Run tests as the service's command for them says; the command started, or null when there is none, said unless
-   * `quiet`.
+   * Run tests as the service's command for them says, started as the person chose for every run of the window
+   * (`withRunStart`); the command started, or null when there is none, said unless `quiet`.
    */
   const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
+    const started = withRunStart(args, runChoices());
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
-      breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
+      breakpoints.length ? { ...started, breakpoints: placesOf(breakpoints) } : started,
     );
     if (!command) {
       if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
@@ -1337,12 +1366,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       );
       if (!picked) return;
       const breakpoints = breakpointsForRun();
-      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
-        uri,
-        key: picked.key,
-        ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
-      });
+      const command = await lc.sendRequest<RunCommand | null>(
+        RUN_SELECTION_REQUEST,
+        withRunStart(
+          { uri, key: picked.key, ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}) },
+          runChoices(),
+        ),
+      );
       if (command) await startRun(command, breakpoints);
+    }),
+    // Run headed, and Hold failures from each run's start, for every run of the window: written where the setting's
+    // value comes from, the workspace's settings when they hold one, else the user's.
+    vscode.commands.registerCommand('piwi.runOptions', async () => {
+      const settings = vscode.workspace.getConfiguration('piwi');
+      const choices = runChoices();
+      const picked = await vscode.window.showQuickPick(runOptionPicks(choices), {
+        placeHolder: 'How every test run of this window starts',
+      });
+      if (!picked) return;
+      const save = (key: string, value: unknown) =>
+        settings.update(
+          key,
+          value,
+          runOptionTarget(settings.inspect(key)) === 'workspace'
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global,
+        );
+      if (picked.option === 'headed') {
+        await save('runHeaded', !choices.headed);
+        return;
+      }
+      const hold = await vscode.window.showQuickPick(
+        HOLD_FAILURES_CHOICES.map((c) => ({
+          label: c.label,
+          description: c.choice === choices.holdFailures ? 'current' : undefined,
+          detail: c.detail,
+          choice: c.choice,
+        })),
+        { placeHolder: "Hold failures from each run's start" },
+      );
+      if (hold) await save('runHoldFailures', hold.choice);
     }),
     vscode.commands.registerCommand('piwi.openLiveRun', async () => {
       if (liveUrl) await vscode.env.openExternal(vscode.Uri.parse(liveUrl));
@@ -1432,6 +1495,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
+      if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
@@ -1474,8 +1538,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
       if (e.newState === State.Running) void agentsChanged();
-      // A service that stopped, the client given up restarting it: the Failures view says so, with Restart.
-      if (e.newState === State.Stopped) void failuresView.read();
+      // A start that failed is down at once; a stop, once the client is still stopped: a restart, or the client's own
+      // after a crash, starts it again within that time.
+      if (downTimer) clearTimeout(downTimer);
+      downTimer = null;
+      const down = () => {
+        serviceDown = true;
+        render();
+        void failuresView.read();
+      };
+      if (e.newState === State.StartFailed) down();
+      else if (e.newState === State.Stopped) {
+        downTimer = setTimeout(() => {
+          downTimer = null;
+          if (lc.state === State.Stopped) down();
+        }, SERVICE_DOWN_MS);
+      } else if (serviceDown) {
+        serviceDown = false;
+        render();
+      }
       if (e.newState === State.Stopped && agents) {
         agents = null;
         runsMcpChanged.fire();

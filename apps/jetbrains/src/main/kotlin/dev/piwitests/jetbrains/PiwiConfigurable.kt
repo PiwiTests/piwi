@@ -28,7 +28,7 @@ import javax.swing.JList
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
  * instance and project saved for this project, whether a key is saved for that instance, when
  * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
- * breakpoints, the severity of a failure in the editor, how the agent signs in to Piwi's MCP server, and the
+ * breakpoints, whether they run headed and hold their failures from their start, the severity of a failure in the editor, how the agent signs in to Piwi's MCP server, and the
  * connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
@@ -126,6 +126,26 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .comment(
                             "A run with a breakpoint in a test or page object runs headed and pauses before the action on " +
                                 "that line. Needs @piwitests/reporter 0.48.0 or later. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
+                    checkBox("Run every test Piwi starts headed, with its browser window shown")
+                        .bindSelected({ local.runHeaded }, { local.runHeaded = it })
+                        .comment(
+                            "A verification too. Otherwise a run is headed with a breakpoint in a spec, a page object or a " +
+                                "fixture, or a page.pause(). Tools → Piwi → Run Headed. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
+                    comboBox(Glue.HOLD_FAILURES_CHOICES, HoldFailuresRenderer())
+                        .label("Hold failures, from each run's start:", LabelPosition.TOP)
+                        .bindItem(
+                            { local.runHoldFailures.takeIf { it in Glue.HOLD_FAILURES_CHOICES } ?: "auto" },
+                            { local.runHoldFailures = it ?: "auto" },
+                        )
+                        .comment(
+                            "Whether a failed test waits at its line for an answer in the run; the run's own Hold Failures " +
+                                "still turns it on or off while it runs. Kept for you only, in .idea/workspace.xml",
                         )
                 }
                 row {
@@ -264,6 +284,13 @@ private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
     }
 }
 
+/** A choice of `PiwiLocalSettings.runHoldFailures`, in words. */
+private class HoldFailuresRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = Glue.holdFailuresLabel(value ?: "auto")
+    }
+}
+
 /** A choice of `PiwiLocalSettings.mcpAuthorization`, in words. */
 private class McpAuthorizationRenderer : SimpleListCellRenderer<String>() {
     override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
@@ -298,7 +325,7 @@ class PiwiSearchableOptions : SearchableOptionContributor() {
 
         val KEYWORDS = listOf(
             "Playwright", "dashboard", "test results", "flaky", "failures", "coverage", "reporter", "breakpoints",
-            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js",
+            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js", "headed", "hold failures",
         )
     }
 }

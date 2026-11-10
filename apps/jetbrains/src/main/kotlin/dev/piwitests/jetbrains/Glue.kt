@@ -57,6 +57,37 @@ object Glue {
         return RunTestsArgs(uri, emptyList(), locations = listOf(location), repeat = repeat)
     }
 
+    /**
+     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
+     */
+    val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
+
+    /** A choice of [HOLD_FAILURES_CHOICES] in words, for a menu or a setting. */
+    fun holdFailuresLabel(choice: String): String = when (choice) {
+        "on" -> "On from each run's start"
+        "off" -> "Off from each run's start"
+        else -> "Auto: on with a breakpoint or a page.pause()"
+    }
+
+    /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
+    fun holdFailuresOption(choice: String): Boolean? = when (choice) {
+        "on" -> true
+        "off" -> false
+        else -> null
+    }
+
+    /**
+     * A run's arguments started as the person chose for every run of the project: headed when `headed`, and Hold
+     * failures as `holdFailures` says ([holdFailuresOption]). A debug run (`debug`) starts as the service builds it.
+     */
+    fun withRunStart(args: RunTestsArgs, headed: Boolean, holdFailures: String): RunTestsArgs =
+        if (args.debug != null) args else args.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
+    /** A saved selection's run, started as [withRunStart] starts a run of tests. */
+    fun withRunStart(params: RunSelectionParams, headed: Boolean, holdFailures: String): RunSelectionParams =
+        params.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS
@@ -863,6 +894,13 @@ object Glue {
     /** Whether every stop held is a failure: the status item shows the error's icon, not the pause's. */
     fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
 
+    /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
+    const val SERVICE_NOT_RUNNING =
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Refresh."
+
+    /** What an action says when the running service did not answer it: the request failed, or took too long. */
+    const val SERVICE_NO_ANSWER = "The Piwi editor service did not answer: idea.log says why."
+
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         CONNECT("Connect…", "Piwi.Connect"),
@@ -1349,7 +1387,7 @@ object Glue {
             PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
-            PickOutcome.NOT_RUNNING -> "$went: the Piwi editor service is not running in this project."
+            PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
             PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
         }
     }

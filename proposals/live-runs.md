@@ -129,11 +129,14 @@ that follow the runs, the desktop app's window, an agent following the run), who
 drives each stop (`presence`, `watchers`, `driver`, each connection's own marked `self`); the agent drives a stop it
 asked for or acted on, a person's input, pick, intent or `drive` takes it, the agent hears `taken` and is refused
 while a person drives; every surface shows it, and the Runs window labels the agent's stops (IO7, RW24). Then the
-desktop app's start options: **Hold failures** set where a run starts (the run button's menu, **Run with options…**,
-a project's defaults) and kept by **Run again**, and a repeated run that offers **Stop at the first failing
-repetition** (`--max-failures=1`), which a person attends, so it can hold that failure; the test page's **Run this
-test** stops at it (DK3 in part, DK4). Watch live still resets with each run. The rest of P6 is proposed: the editors'
-start options, **Show the browser** at a headed stop, one input model, attention and the ambient state, the editors'
+editors' start options: **Run headed** and **Hold failures** chosen for every run of an editor window (`RunStartOptions`,
+VS Code's and the JetBrains plugin's settings and toggles), so a rerun starts the same way (E11); whether a breakpoint
+the run cannot reach (application code) should leave it headless stays open (E10), since no file rule tells it apart
+from a page object reliably. Then the desktop app's start options: **Hold failures** set where a run starts (the run
+button's menu, **Run with options…**, a project's defaults) and kept by **Run again**, and a repeated run that offers
+**Stop at the first failing repetition** (`--max-failures=1`), which a person attends, so it can hold that failure;
+the test page's **Run this test** stops at it (DK3 in part, DK4). Watch live still resets with each run. The rest of
+P6 is proposed: **Show the browser** at a headed stop, one input model, attention and the ambient state, the editors'
 unattended runs and the Runs window's run-level controls. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the

@@ -313,6 +313,7 @@ import {
   type RunStatusResult,
   type SetBaselineParams,
   type RunSelectionParams,
+  type RunStartOptions,
   type ScreenshotParams,
   type ScreenshotResult,
   type SelectionsParams,
@@ -1753,7 +1754,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let agentPrefs: InitializationOptions['agents'] = undefined;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
-  /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
+  /**
+   * The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`) or whose start options
+   * hold their failures, by ref.
+   */
   const watchedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
   const runLines = new RunLines();
@@ -3307,6 +3311,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return run;
   };
 
+  /**
+   * A test run's command as the person chose to start it (`RunStartOptions`): headed when asked, and with Hold failures
+   * on or off from its start when asked, over what its breakpoints and `page.pause()` decided.
+   */
+  const withStartOptions = (command: RunCommand, options: RunStartOptions | undefined): RunCommand => {
+    const run = options?.headed === true ? { ...command, ...headedCommand(command.command, command.args) } : command;
+    // Only a run with a run channel holds a failure.
+    if (run.ref && run.env?.[RUN_CHANNEL_ENV] && typeof options?.holdFailures === 'boolean') {
+      if (options.holdFailures) watchedRuns.add(run.ref);
+      else watchedRuns.delete(run.ref);
+    }
+    return run;
+  };
+
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
     if (!isTestLocation(location)) return false;
@@ -3402,14 +3420,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
+    if (repeat === null) {
+      return withStartOptions(
+        withRecording(context, withBreakpoints(context, run, params.breakpoints), params),
+        params,
+      );
+    }
     const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
     repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
     }
-    return run;
+    // A repeated run runs headless unless asked: it holds no failure, having no run channel.
+    return withStartOptions(run, { headed: params.headed });
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
@@ -3470,7 +3494,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: editorRunEnv(ref),
       ref,
     };
-    return withRecording(context, withBreakpoints(context, run, params.breakpoints));
+    return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);
   });
 
   connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {

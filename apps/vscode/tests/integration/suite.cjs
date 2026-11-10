@@ -190,6 +190,28 @@ const tests = {
     assert.equal(run.env.PIWI_ORIGIN_REF, run.ref);
   },
 
+  async 'Run headed starts every run of the window headed, a verification’s too'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const settings = vscode.workspace.getConfiguration('piwi');
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts')).toString();
+    await settings.update('runHeaded', true, vscode.ConfigurationTarget.Global);
+    try {
+      await vscode.commands.executeCommand('piwi.runTests', { uri: spec, testIds: [1] });
+      assert.equal(api.lastRun().command, 'npx playwright test tests/checkout.spec.ts:3 --headed');
+      await vscode.commands.executeCommand('piwi.runTests', {
+        uri: spec,
+        testIds: [],
+        locations: ['tests/checkout.spec.ts:3'],
+        repeat: 3,
+      });
+      assert.match(api.lastRun().command, /--repeat-each=3 .*--headed$/);
+    } finally {
+      await settings.update('runHeaded', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('piwi.runTests', { uri: spec, testIds: [1] });
+    assert.equal(api.lastRun().command, 'npx playwright test tests/checkout.spec.ts:3');
+  },
+
   async 'hover shows the failure'() {
     const hovers = await vscode.commands.executeCommand(
       'vscode.executeHoverProvider',
@@ -1168,6 +1190,7 @@ const tests = {
       'piwi.runCommand',
       'piwi.copyText',
       'piwi.runSelection',
+      'piwi.runOptions',
       'piwi.record',
       'piwi.recordFile',
       'piwi.stopRecording',

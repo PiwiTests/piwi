@@ -561,7 +561,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
         )
         assertEquals(
-            "The picked locator was inserted at the caret: the Piwi editor service is not running in this project.",
+            "The picked locator was inserted at the caret. ${Glue.SERVICE_NOT_RUNNING}",
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
@@ -2775,6 +2775,31 @@ class GlueTest {
         // Without a location: a test the service knows still runs, but cannot be verified.
         assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known.copy(location = null)))
         assertEquals(null, Glue.testAtRun(uri, known.copy(location = null), 3))
+    }
+
+    @Test
+    fun `every run starts as the person chose, headed and with Hold failures on or off, but a debug run`() {
+        val uri = "file:///w/tests/checkout.spec.ts"
+        val args = RunTestsArgs(uri, listOf(7))
+        assertEquals(args, Glue.withRunStart(args, headed = false, holdFailures = "auto"))
+        assertEquals(args.copy(headed = true), Glue.withRunStart(args, headed = true, holdFailures = "auto"))
+        assertEquals(args.copy(holdFailures = true), Glue.withRunStart(args, headed = false, holdFailures = "on"))
+        assertEquals(args.copy(headed = true, holdFailures = false), Glue.withRunStart(args, headed = true, holdFailures = "off"))
+        // A value outside the choices reads as Auto.
+        assertEquals(args, Glue.withRunStart(args, headed = false, holdFailures = "always"))
+        // A verification takes them too: the service keeps `headed` alone.
+        val verify = RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:3"), repeat = 3)
+        assertEquals(verify.copy(headed = true, holdFailures = true), Glue.withRunStart(verify, headed = true, holdFailures = "on"))
+        val selection = RunSelectionParams(uri, "smoke")
+        assertEquals(selection.copy(headed = true, holdFailures = false), Glue.withRunStart(selection, headed = true, holdFailures = "off"))
+        assertEquals(selection, Glue.withRunStart(selection, headed = false, holdFailures = "auto"))
+        val debug = Glue.debugRunArgs(uri, uri, 4, Glue.DebugRequest(spec = "tests/checkout.spec.ts", title = "pays", project = null, execution = null))
+        assertSame(debug, Glue.withRunStart(debug, headed = true, holdFailures = "off"))
+        // What the service reads: an option left out is no field at all.
+        assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\"}", Gson().toJson(Glue.withRunStart(selection, false, "auto")))
+        assertEquals("{\"uri\":\"$uri\",\"key\":\"smoke\",\"headed\":true,\"holdFailures\":false}", Gson().toJson(Glue.withRunStart(selection, true, "off")))
+        assertEquals(listOf("auto", "on", "off"), Glue.HOLD_FAILURES_CHOICES)
+        assertEquals("Off from each run's start", Glue.holdFailuresLabel("off"))
     }
 
     @Test

@@ -26,6 +26,7 @@ does with it. It is reference material: open the section for the area you change
   - [Playwright runner](#playwright-runner)
   - [Commands and notifications](#commands-and-notifications)
   - [Running the test at the caret](#running-the-test-at-the-caret)
+  - [How a run starts](#how-a-run-starts)
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
   - [Code from a stop](#code-from-a-stop)
@@ -391,6 +392,15 @@ has unsaved changes. Then it runs as `PiwiCommands.runTests` does (`PiwiCommands
 Piwi knows it, else by its location (`Glue.testAtRun`); to verify, by its location, three times (`Glue.VERIFY_REPEAT`).
 When there is no test, a balloon says so. The gutter icon's click stays Open in Dashboard; its right-click menu runs
 and verifies the test the same way.
+
+### How a run starts
+
+Every test run takes the person's start options (`Glue.withRunStart`, `RunStartOptions` in the protocol), kept in
+`PiwiLocalSettings.runHeaded` and `runHoldFailures` (`Glue.HOLD_FAILURES_CHOICES`): `headed = true` when **Run Headed**
+is on, `holdFailures` when Hold failures is On or Off (Auto sends nothing, so the service decides). That covers
+`PiwiCommands.runTests`, a verification included, and **Run Selection…**; a debug run (`RunTestsArgs.debug`) is sent as
+built. **Tools → Piwi → Run Headed** (`Piwi.RunHeaded`, a `ToggleAction`), **Hold Failures from Each Run's Start…**
+(`Piwi.RunHoldFailures`, a popup) and **Settings → Tools → Piwi** change them.
 
 ### Breakpoints
 
@@ -811,9 +821,9 @@ file is opened.
 | Choices made on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
 
 `PiwiLocalSettings` holds the choice of the desktop app and its project, a recording's choices, the failures'
-grouping, the breakpoints setting, the Playwright runner setting, the run notifications, the coverage marks, the
-failure severity, how the agent signs in to Piwi's MCP server, whether the runs are served to agents and the port
-they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
+grouping, the breakpoints setting, the Playwright runner setting, how a run starts (headed, Hold failures), the run
+notifications, the coverage marks, the failure severity, how the agent signs in to Piwi's MCP server, whether the runs
+are served to agents and the port they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
@@ -920,6 +930,12 @@ Nothing blocks the event thread, and nothing in a read action waits on the servi
 - the daemon (Code Vision) waits with `awaitCancellably`, which a write action cancels;
 - `orNull` waits the same way, and a task's Cancel stops it;
 - reads of the disk and of the password safe run on a pooled thread.
+
+A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` with its cause, as a warning at most
+once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
+logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
+`Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Refresh), and
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer.
 
 ## Dynamic plugin loading
 
