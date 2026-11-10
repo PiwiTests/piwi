@@ -39,6 +39,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
   `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
+  D25 of `proposals/1.0-stabilization.md` in the same change
+  (`apps/application/tests/unit/editor-ids-register.test.ts`).
 - **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
   ([Run control](ARCHITECTURE.md#run-control))
 - **The plugin's own requests go through `Lsp4jAccess`, never `getLsp4jServer()`** (deprecated, then removed by
