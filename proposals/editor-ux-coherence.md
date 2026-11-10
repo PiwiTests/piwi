@@ -68,7 +68,11 @@ manifest test in each editor, the stop's code actions in both popups included, [
 the globe until the run node's glyph is drawn; the hand-offs' glyphs at the JetBrains end, [IC11](#ic11); remaining: the
 glyphs Piwi draws, [M4](#m4): JetBrains' Disconnect, Pair, Assert a Region, Mock a Request and Share the Run Live,
 Pause and watch and Stop sharing in both, VS Code's Refresh and Run to the cursor, and JetBrains' Connect, which keeps
-the user icon), and every command, setting and action id of both editors registered in D25 and held to the manifests
+the user icon), [Q14](#q14) (the timelines word each stop as the run page's rows do, `pauseReasonText` reading
+`stopWords`, [LR15](#lr15), the editors having taken the rows' words before), [Q22](#q22) (the dashboard says Open in
+editor wherever it said Open in IDE, its feature page and the help included, and each JetBrains method names the Piwi
+plugin it asks first, [AC14](#ac14); the VS Code method keeps its name, since it reaches the Piwi extension only
+without a workspace root), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker

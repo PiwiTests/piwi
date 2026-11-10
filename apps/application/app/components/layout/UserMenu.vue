@@ -138,7 +138,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
         })),
       },
       {
-        label: 'Open in IDE…',
+        label: 'Open in editor…',
         icon: 'i-lucide-external-link',
         'data-tour': 'user-menu-open-in-ide',
         onSelect: (e: Event) => {

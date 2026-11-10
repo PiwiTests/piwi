@@ -193,7 +193,7 @@ export function jetbrainsPorts(configured: number): number[] {
 
 /**
  * `http://127.0.0.1:<port>/api/piwi/open?file=…` — the Piwi JetBrains plugin's
- * Open in IDE endpoint. `path` is the run's repo-relative path (or an absolute
+ * Open in editor endpoint. `path` is the run's repo-relative path (or an absolute
  * one); `root`, when known, is the folder it is relative to. Line and column are
  * 1-based. With `check`, the IDE only says whether one of its open projects
  * holds the file. With `debug` (a line is then required, and never with
@@ -338,3 +338,14 @@ export function debugTargetOf(
     },
   };
 }
+
+/** How a source path clicked in the dashboard opens in the editor: the person's choice, `auto` by default. */
+export type IdeMethod = 'auto' | 'vscode' | 'jetbrains-url' | 'jetbrains-http';
+
+/** Each method's name in the dashboard: a JetBrains method names the Piwi plugin, which it asks first. */
+export const IDE_METHOD_LABELS: Record<IdeMethod, string> = {
+  auto: 'Auto (try all)',
+  vscode: 'VS Code',
+  'jetbrains-url': 'JetBrains: Piwi plugin, else URL',
+  'jetbrains-http': 'JetBrains: Piwi plugin, else local server',
+};

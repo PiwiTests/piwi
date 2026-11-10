@@ -7,7 +7,7 @@
  * line/column.
  *
  * Lives in `shared/` so the server, the demo router, and the browser (the
- * "open in IDE" affordance) all parse locations the same way.
+ * "open in editor" affordance) all parse locations the same way.
  */
 export function parseLocation(location: string): { filePath: string; line: number | null; column: number | null } {
   let filePath = location;

@@ -215,9 +215,9 @@ test.describe('Test-run-case page', () => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
 
-    // The spec file and line (open in IDE), the describe blocks, then the title.
+    // The spec file and line (open in editor), the describe blocks, then the title.
     let path = page.locator('[data-shot="test-title-path"]');
-    await expect(path.getByRole('button', { name: 'Open tests/checkout.spec.ts:42 in IDE' })).toBeVisible();
+    await expect(path.getByRole('button', { name: 'Open tests/checkout.spec.ts:42 in the editor' })).toBeVisible();
     await expect(path).toContainText('Checkout');
     await expect(path).toContainText('checkout completes');
     await expect(path.getByRole('button', { name: 'Show the full path' })).toHaveCount(0);

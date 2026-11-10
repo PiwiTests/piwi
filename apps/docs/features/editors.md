@@ -26,7 +26,7 @@ the reporter already uses: the `PIWI_*` variables in the environment or the work
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
 In VS Code, the extension also opens a path clicked in the dashboard:
-[Open in IDE](./ide-integration#vs-code-the-piwi-extension).
+[Open in editor](./ide-integration#vs-code-the-piwi-extension).
 
 In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
 machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A

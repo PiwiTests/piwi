@@ -9,7 +9,7 @@ import { desktopContentSecurityPolicy } from '../utils/desktop-csp';
 // scripts are allowed only with the per-response nonce, `strict-dynamic` lets
 // the nonced entry load its chunks, and `connect-src` blocks exfiltration to
 // any other host (it allows only the page's origin, Tauri's IPC endpoint and,
-// for Open in IDE, a JetBrains IDE's built-in server on loopback). It is gated on
+// for Open in editor, a JetBrains IDE's built-in server on loopback). It is gated on
 // `PIWI_DESKTOP_TOKEN`, so the server / Docker / npx deployments (which are not
 // in a native webview) are unaffected.
 export default defineNitroPlugin((nitroApp) => {

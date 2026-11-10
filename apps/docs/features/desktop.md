@@ -78,7 +78,7 @@ page there, starting the app if needed (macOS: from Applications; Linux: after o
 report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` in the
 folder fixes what is missing. The link stays on this machine, under **project page → Settings → Local folder**, with
 the same checks and **Change** and **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/`;
-[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
+[Open in editor](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
 serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app

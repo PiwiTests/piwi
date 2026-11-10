@@ -83,7 +83,7 @@ The rest is native, and every action is under **Tools → Piwi**:
   **…for Claude Code or Cursor** the HTTP entry they read; **Reset the Runs' MCP Server Token** gives it a new token;
   **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
   Stopped Browser with Playwright Tools**, after a warning.
-- **[Open in IDE](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
+- **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
@@ -101,4 +101,4 @@ problems and Piwi confirmations (Copied., Connected to …), so muting one kind 
 
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.
 - [Editor connection](./editor-connection): the instance the plugin reads, and its key.
-- [Open in IDE](./ide-integration): open a path from the dashboard in the IDE.
+- [Open in editor](./ide-integration): open a path from the dashboard in the IDE.
