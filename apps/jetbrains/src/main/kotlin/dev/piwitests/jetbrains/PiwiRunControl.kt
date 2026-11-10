@@ -1034,7 +1034,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         wakeWhenWaited()
         control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { result ->
             // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
-            if (result == null || result.ok) shownStops.taken(token) else if (shownStops.refused(token)) draw()
+            if (result == null || result.ok) {
+                shownStops.taken(token)
+            } else {
+                answeredAt = 0L
+                if (shownStops.refused(token)) draw()
+            }
         }
     }
 
@@ -2042,6 +2047,9 @@ class PiwiRunActionPromoter : ActionPromoter {
 /** **Pause the Run**: every worker of the runs started here stops before its next call; on the debugger's Pause key. */
 class PauseRunAction : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.pausable
+
+    /** The debugger's Pause acts on a running session: Pause gives way to one, not to sessions all suspended. */
+    override fun givesWayTo(debugSessions: List<XDebugSession>) = debugSessions.any { !it.isSuspended }
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.pause()

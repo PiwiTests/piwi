@@ -1724,13 +1724,12 @@ class GlueTest {
         )
         val spec = "/home/me/shop/e2e/tests/checkout.spec.ts"
         assertEquals(null, Glue.debugFileRefusal("checkout.spec.ts", spec, roots, listOf("/home/me/shop/e2e"), true))
-        // The folders the check read before: the project's base path and content roots alone.
-        val narrow = listOf("/home/me/shop/backend/.idea/.idea.Shop", "/home/me/shop/backend")
+        // Within the project's folders, a file still needs a Playwright config's folder above it.
         assertEquals(
-            "checkout.spec.ts is outside the project's folders",
-            Glue.debugFileRefusal("checkout.spec.ts", spec, narrow, listOf("/home/me/shop/e2e"), true),
+            "tools.spec.ts is under no Playwright config's folder",
+            Glue.debugFileRefusal("tools.spec.ts", "/home/me/shop/backend/tools.spec.ts", roots, listOf("/home/me/shop/e2e"), true),
         )
-        // Still nothing outside them.
+        // Nothing outside them.
         assertEquals(
             "evil.spec.ts is outside the project's folders",
             Glue.debugFileRefusal("evil.spec.ts", "/home/me/elsewhere/evil.spec.ts", roots, listOf("/home/me/shop/e2e"), true),

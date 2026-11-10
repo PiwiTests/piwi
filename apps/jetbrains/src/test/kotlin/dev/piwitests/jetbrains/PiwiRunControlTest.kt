@@ -11,6 +11,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
@@ -24,7 +25,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
-import com.intellij.openapi.actionSystem.ex.ActionManagerEx
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
@@ -629,7 +629,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     /**
      * From the keyboard, the controls answering a stop give way only to a suspended debug session, the only kind the
      * debugger's resume and step keys act on, so they still answer a Piwi stop while the backend runs under the
-     * debugger; Pause and Stop give way to any session. Pause is on the debugger's Pause key, and Resume's key stays
+     * debugger; Pause gives way to a running session and Stop to any. Pause is on the debugger's Pause key, and Resume's key stays
      * Piwi's for a moment after an answer, doing nothing without a stop.
      */
     fun testTheRunKeysGiveWayOnlyWhereTheDebuggerTakesThem() {
@@ -642,11 +642,13 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertFalse(id, control.givesWayTo(listOf(running)))
             assertTrue(id, control.givesWayTo(listOf(running, paused)))
         }
-        for (id in listOf("Piwi.PauseRun", "Piwi.StopRun")) {
-            val control = actions.getAction(id) as RunControlAction
-            assertFalse(id, control.givesWayTo(emptyList()))
-            assertTrue(id, control.givesWayTo(listOf(running)))
-        }
+        val pause = actions.getAction("Piwi.PauseRun") as RunControlAction
+        assertFalse(pause.givesWayTo(emptyList()))
+        assertTrue(pause.givesWayTo(listOf(running, paused)))
+        assertFalse("the debugger's Pause acts on no suspended session", pause.givesWayTo(listOf(paused)))
+        val stop = actions.getAction("Piwi.StopRun") as RunControlAction
+        assertFalse(stop.givesWayTo(emptyList()))
+        assertTrue(stop.givesWayTo(listOf(paused)))
         assertEquals("Pause", ActionManagerEx.getInstanceEx().getActionBinding("Piwi.PauseRun"))
         assertEquals("Resume", ActionManagerEx.getInstanceEx().getActionBinding("Piwi.ResumeRun"))
 
