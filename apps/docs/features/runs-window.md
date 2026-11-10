@@ -31,8 +31,8 @@ or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **
 locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
 stays in the editor. A run of several workers shows one at a time, behind a tab each marked with its state, and has
-**Pause all** and **Resume all** under its name; a stop takes the tab only from a worker that is neither stopped nor
-watched. Resume, Step and Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
+**Pause all** and **Resume all** under its name; a stop takes the tab from a worker neither stopped nor watched,
+unless you chose that tab since the stop. Resume, Step and Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's
 [**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it
@@ -59,7 +59,7 @@ and XHR requests, credentials hidden: the one you choose becomes a `page.route`.
 code went to the editor, with what to review in it, or why not.
 
 <figure>
-  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its place, an image of the page, its controls and code actions">
+  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, a card saying where it stopped with the call and its place, its controls and code actions, then the image of the page">
   <figcaption>The Runs window, beside a test stopped at a breakpoint.</figcaption>
 </figure>
 
@@ -82,7 +82,7 @@ At a headless stop, nobody sees the test's page. Watched, the picker, the record
 in the view, and you answer them there as in a headed browser; their code reaches the editor the same way.
 
 <figure>
-  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live pressed, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
+  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live pressed in the page card's head, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
   <figcaption>A headless test's page watched live, with Pick started in it.</figcaption>
 </figure>
 

@@ -7965,6 +7965,10 @@
     "message": "Taking an image of the page…",
     "description": "Runs window, while the image of a stopped page is on its way."
   },
+  "runs_pageCaption": {
+    "message": "The test’s page",
+    "description": "Runs window, the heading of the card that shows the test’s page: the image of a stop, or its live view."
+  },
   "runs_assert": {
     "message": "Assert",
     "description": "Runs window, button on a stopped test: starts the recorder’s Check an element in the test’s window; the editor writes the check. Short: it shares a row with Pick and Record."
@@ -8134,10 +8138,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Error",
-    "description": "Runs window, label before the error a failed test stopped on."
   },
   "runs_announceFailed": {
     "message": "$test$ failed at $place$.",

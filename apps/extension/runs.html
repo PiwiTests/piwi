@@ -267,12 +267,12 @@
         width: 12px;
         height: 12px;
       }
-      /* Who watches a worker's page. */
+      /* Who watches a worker's page: in its page's head, else on a line of its own. */
       .watchers {
         display: flex;
         gap: 6px;
         align-items: center;
-        margin: 6px 0 0;
+        margin: 0;
         font-size: 11.5px;
         line-height: 16px;
         color: var(--muted);
@@ -282,10 +282,11 @@
         width: 12px;
         height: 12px;
       }
-      /* Who drives a stop, with Take control or Give back. */
+      /* Who drives a stop, with Take control or Give back: the page card's foot. */
       .run-driver {
         align-items: center;
-        margin: 6px 0 0;
+        padding: 6px 10px;
+        border-top: 1px solid var(--border);
         font-size: 12px;
       }
       .run-driver .driver {
@@ -363,22 +364,62 @@
         margin: 0;
         padding: 0;
       }
+      /* A worker's parts in one column, one gap between each: the test, its status, its controls, its page. */
       .worker {
-        padding: 10px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
         background: var(--bg);
+      }
+      li.worker > * {
+        margin: 0;
       }
       .worker + .worker {
         border-top: 1px solid var(--border);
+      }
+      /* The test's name, then its project and attempt, on one line where they fit. */
+      .test-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 10px;
+      }
+      .test-head .test {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .test-head .meta {
+        margin-left: auto;
+        white-space: nowrap;
+      }
+      /* Where the test stands, in a card of its tone: its state, then the call about to run or the error. */
+      .status {
+        --tone: var(--running);
+        padding: 8px 10px;
+        border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--border));
+        border-left: 3px solid var(--tone);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--tone) 7%, var(--bg));
+      }
+      .status[data-tone='stopped'] {
+        --tone: var(--stopped);
+      }
+      .status[data-tone='failed'] {
+        --tone: var(--error);
+      }
+      .status[data-tone='between'] {
+        --tone: var(--muted);
       }
       .state {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin: 0 0 4px;
+        margin: 0;
         font-size: 12px;
         font-weight: 600;
         line-height: 16px;
-        color: var(--running);
+        color: var(--tone, var(--running));
       }
       .state > .piwi-icon {
         width: 14px;
@@ -387,12 +428,6 @@
       .state .worker-number {
         margin-left: auto;
         font-weight: 400;
-        color: var(--muted);
-      }
-      .worker[data-state='stopped'] .state {
-        color: var(--stopped);
-      }
-      .worker[data-state='between'] .state {
         color: var(--muted);
       }
       .test {
@@ -419,12 +454,12 @@
         height: 12px;
         margin-top: 2px;
       }
-      /* Where the test stands: the call about to run, and its file and line. */
+      /* Under the state: the call about to run, and its file and line. */
       .stop {
         display: grid;
         grid-template-columns: auto 1fr;
         gap: 2px 8px;
-        margin: 8px 0;
+        margin: 6px 0 0;
         font-size: 12px;
       }
       .stop dt {
@@ -439,29 +474,64 @@
         font-family: var(--mono);
         font-size: 11.5px;
       }
-      /* The stopped page, or a watched lane's, under the controls: an image the hub took, never a page of its own. */
+      /*
+       * The stopped page, or a watched lane's, under the controls, in a card: its head (the caption, then Watch live,
+       * Watch and Pick on the image), the image the hub took (never a page of its own), then what it says of it.
+       */
       .page {
-        margin: 8px 0 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .page-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        min-height: 36px;
+        padding: 4px 6px 4px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      /* The caption, and under it who watches the page. */
+      .page-title {
+        display: flex;
+        flex-direction: column;
+        margin-right: auto;
+        min-width: 0;
+      }
+      .page-caption {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
       }
       .page img {
         display: block;
         width: 100%;
         height: auto;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--surface);
+        background: var(--bg);
       }
       .page p {
         margin: 0;
+        padding: 6px 10px;
         font-size: 11.5px;
         color: var(--muted);
+      }
+      .page-frame + p {
+        border-top: 1px solid var(--border);
+      }
+      /* No image yet: the place the image takes, what it waits for in its middle. */
+      .page-empty {
+        display: grid;
+        place-items: center;
+        aspect-ratio: 16 / 10;
+        text-align: center;
       }
       /* Why a live view ended or was refused, that it starts, and how its input works. */
       .page .view-note {
         display: flex;
         gap: 6px;
         align-items: flex-start;
-        margin-top: 6px;
         line-height: 16px;
       }
       .view-note > .piwi-icon {
@@ -470,17 +540,13 @@
         height: 12px;
         margin-top: 2px;
       }
-      /* Watch live and Pick on the image, above the image. */
-      .page-tools {
-        margin-bottom: 6px;
-      }
       /* The image, or the live view in its place: the width of the window, its aspect kept. */
       .page-frame {
         position: relative;
       }
       .page img.live:focus {
         outline: 2px solid var(--accent-fg);
-        outline-offset: 2px;
+        outline-offset: -2px;
       }
       /* A watched lane's last frame, while it no longer shows where the test stands: dimmed until the next one comes. */
       .page img.stale {
@@ -520,7 +586,6 @@
       .controls {
         display: grid;
         gap: 6px;
-        margin-top: 8px;
       }
       /* Resume, Step and Finish, one group: their borders meet. */
       .controls .joined {
@@ -549,12 +614,9 @@
         font-size: 12px;
         margin-right: 2px;
       }
-      /* A test held where it failed: a stop, not a breakpoint. */
-      .worker[data-failed] .state {
-        color: var(--error);
-      }
       /* A failure's error, its lines as it states them. */
       .stop .error {
+        margin: 0;
         overflow-wrap: anywhere;
         white-space: pre-line;
       }

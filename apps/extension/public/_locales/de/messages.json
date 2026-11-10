@@ -6709,6 +6709,9 @@
   "runs_imageLoading": {
     "message": "Ein Bild der Seite wird aufgenommen…"
   },
+  "runs_pageCaption": {
+    "message": "Seite des Tests"
+  },
   "runs_assert": {
     "message": "Prüfen"
   },
@@ -6843,9 +6846,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Fehler"
   },
   "runs_announceFailed": {
     "message": "$test$ ist bei $place$ fehlgeschlagen.",

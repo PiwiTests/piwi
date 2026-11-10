@@ -185,6 +185,27 @@ describe('the global shortcut’s rule', () => {
   });
 });
 
+describe('where the Runs window was left', () => {
+  it('keeps a place and size a window can have, and nothing else', () => {
+    expect(readRunsBounds({ left: 1200, top: -40, width: 440, height: 720 })).toEqual({
+      left: 1200,
+      top: -40,
+      width: 440,
+      height: 720,
+    });
+    for (const bad of [
+      null,
+      'here',
+      { left: 0, top: 0, width: 100, height: 720 },
+      { left: 0, top: 0, width: 440, height: 720.5 },
+      { left: 1e9, top: 0, width: 440, height: 720 },
+      { left: 0, width: 440, height: 720 },
+    ]) {
+      expect(readRunsBounds(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('the keys of the stop controls', () => {
   const press = (
     key: string,
@@ -223,19 +244,28 @@ describe('the worker a run’s tabs show', () => {
     worker({ worker: w, parallelIndex: w, state: 'stopped', stop: stop(since) });
   const running = (w: number) => worker({ worker: w, parallelIndex: w });
 
-  it('shows the person’s choice while it is stopped or no other is, else the first stopped worker', () => {
-    expect(shownWorkerOf([running(0), running(1)], null, null)).toBe(0);
-    expect(shownWorkerOf([running(0), stopped(1, 's1')], null, null)).toBe(1);
-    expect(shownWorkerOf([running(0), running(1)], 1, null)).toBe(1);
+  it('shows the person’s choice while it is stopped, watched or no stop came since, else the stop that came', () => {
+    const none = { chosen: null, before: null };
+    expect(shownWorkerOf([running(0), running(1)], none)).toBe(0);
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], none)).toBe(1);
+    expect(shownWorkerOf([running(0), running(1)], { chosen: 1, before: null })).toBe(1);
     // A stop elsewhere takes the tab from a running worker, and gives it back once answered.
-    expect(shownWorkerOf([running(0), stopped(1, 's1')], 0, 0)).toBe(1);
-    expect(shownWorkerOf([running(0), running(1)], 0, 1)).toBe(0);
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], { chosen: 0, before: 0 })).toBe(1);
+    expect(shownWorkerOf([running(0), running(1)], { chosen: 0, before: 1 })).toBe(0);
     // Never from a stop being answered, nor from a page being watched.
-    expect(shownWorkerOf([stopped(0, 's0'), stopped(1, 's1')], 0, 0)).toBe(0);
-    expect(shownWorkerOf([running(0), stopped(1, 's1')], 0, 0, (w) => w.worker === 0)).toBe(0);
+    expect(shownWorkerOf([stopped(0, 's0'), stopped(1, 's1')], { chosen: 0, before: 0 })).toBe(0);
+    const watched = (w: HubWorker) => w.worker === 0;
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], { chosen: 0, before: 0, watched })).toBe(0);
+    // A running worker chosen while others stood at stops keeps the tab, until a stop comes since.
+    const known = new Set(['s1', 's2']);
+    const three = [stopped(0, 's1'), stopped(1, 's2'), running(2)];
+    expect(shownWorkerOf(three, { chosen: 2, before: 0, known })).toBe(2);
+    expect(shownWorkerOf([stopped(0, 's1'), stopped(1, 's3'), running(2)], { chosen: 2, before: 2, known })).toBe(1);
+    // Answered, a stop gives the tab to the next one standing.
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], { chosen: null, before: 0 })).toBe(1);
     // A choice of a worker gone from the run falls back to the first.
-    expect(shownWorkerOf([running(0), running(1)], 7, null)).toBe(0);
-    expect(shownWorkerOf([], null, null)).toBeNull();
+    expect(shownWorkerOf([running(0), running(1)], { chosen: 7, before: null })).toBe(0);
+    expect(shownWorkerOf([], none)).toBeNull();
   });
 });
 

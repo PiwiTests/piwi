@@ -547,20 +547,27 @@ export function runLevelControls(run: RunsRun): { pauseAll: boolean; resumeAll: 
 
 /**
  * The worker a live run of several shows behind its tabs, by its `worker`: the one the person chose (`chosen`), else the
- * one shown before (`before`), while it stands at a stop, is watched (`watched`) or no other stands at one; else the
- * first stopped worker, else the first. A stop elsewhere so never takes the tab from one that is answered or watched.
+ * one shown before (`before`), while it stands at a stop, is watched (`watched`) or no stop came since the choice (a
+ * stop whose `since` is not in `known`, the stops standing when the person chose); else the first stop that came since,
+ * else the first stopped worker, else the first. A stop so never takes the tab from one that is answered or watched,
+ * nor a stop the person left for another tab.
  */
 export function shownWorkerOf(
   workers: readonly HubWorker[],
-  chosen: number | null,
-  before: number | null,
-  watched: (worker: HubWorker) => boolean = () => false,
+  shown: {
+    chosen: number | null;
+    before: number | null;
+    watched?: (worker: HubWorker) => boolean;
+    known?: ReadonlySet<string>;
+  },
 ): number | null {
   if (workers.length === 0) return null;
+  const { chosen, before, watched = () => false, known = new Set<string>() } = shown;
   const stopped = workers.filter((w) => w.state === 'stopped' && w.stop);
+  const fresh = stopped.filter((w) => !known.has(w.stop!.since));
   const current = workers.find((w) => w.worker === (chosen ?? before));
-  if (current && (stopped.includes(current) || watched(current) || stopped.length === 0)) return current.worker;
-  return (stopped[0] ?? workers[0]!).worker;
+  if (current && (stopped.includes(current) || watched(current) || fresh.length === 0)) return current.worker;
+  return (fresh[0] ?? stopped[0] ?? workers[0]!).worker;
 }
 
 /** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */

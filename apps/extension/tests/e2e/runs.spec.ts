@@ -957,8 +957,8 @@ test.describe('code from a stop', () => {
         stopAtCheckout(run.worker, 1, { reason: 'failure' });
         await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
         await expect(card.locator('.worker')).toHaveAttribute('data-failed', '');
-        // The error its stop names, under its label, its lines kept.
-        await expect(card.locator('.stop dt')).toHaveText('Error');
+        // The error its stop names, under its place in its red card, its lines kept.
+        await expect(card.locator('.status')).toHaveAttribute('data-tone', 'failed');
         expect(await card.locator('.stop .error').innerText()).toBe(FAILURE_ERROR);
         await expect(runs.locator('#announce')).toHaveText('cart › pays failed at tests/checkout.spec.ts:5.');
         // No Step nor Finish: whatever answers it, the test ends as it failed.
@@ -972,7 +972,7 @@ test.describe('code from a stop', () => {
         run.worker.send({ type: 'running', stop: 1 });
         await expect(card.getByText('Running')).toBeVisible();
         stopAtCheckout(run.worker, 2, { reason: 'failure', error: null });
-        await expect(card.locator('.stop')).toHaveText('Errorexpect(locator).toBeVisible() failed');
+        await expect(card.locator('.stop')).toHaveText('expect(locator).toBeVisible() failed');
       } finally {
         await endRun(run);
       }
@@ -1844,11 +1844,11 @@ test.describe('watching a running test', () => {
         await expect(card.locator('img.stale')).toHaveCount(0);
         // Watched, Pause and watch has nothing left to do.
         await expect(card.locator('.controls button')).toHaveText(['Pause', 'Watch']);
-        // Who watches it, its controls above its page, and no stop's image asked of a running test.
-        await expect(card.locator('.watchers')).toHaveText('Watched by you');
+        // Who watches it in its page's head, its controls above its page, and no stop's image asked of a running test.
+        await expect(card.locator('.page-head .watchers')).toHaveText('Watched by you');
         expect(
           await card.locator('.worker').evaluate((item) => [...item.children].map((child) => child.className)),
-        ).toEqual(['state', 'test', 'meta', 'watchers', 'controls', 'page']);
+        ).toEqual(['test-head', 'status', 'controls', 'page']);
         expect(heardRequests(run.worker, 'image')).toEqual([]);
 
         // The test ends: its last frame stays, dimmed and marked as running, until the next test's comes.

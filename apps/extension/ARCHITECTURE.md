@@ -924,15 +924,19 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - From a hub whose features list `presence` (`RunsHub.presence`), a run says who else has it open (`presence`, the
   window's own `self` entry left out), each worker who watches its page (`watchers`, `self` as "you"), and a stop who
   drives it (`driver`), each kind in the window's own words (`src/shared/run-presence.ts`). **Take control** shows
-  while another tool drives the stop or an agent follows the run, **Give back** while this connection drives it: the
-  hub's `drive`, naming the stop. Control taken from the agent is read out, and a stop an agent asked for
+  while another tool drives the stop or an agent follows the run, **Give back** while this connection drives it and an
+  agent follows the run or another tool has it open: the hub's `drive`, naming the stop. Who watches shows in the
+  page card's head, who drives in its foot, under the image, which it never moves. Control taken from the agent is read out, and a stop an agent asked for
   (`stop.by`) reads **Paused by the agent**. All of it hides while the hub is away.
 - While none of a live run's tests stands stopped, a note under its workers says that a test's page shows in the
   window at a stop, and how a test stops (`pageHintOf`: a worker whose reporter takes `view` and whose test can stop;
   for the desktop app's runs, which have no breakpoints, `page.pause()` and **Pause** alone). A run with a worker
   whose lane can be watched has none: its row's **Watch** says it.
-- A worker's controls come above its page (the stop's image or live view, or its watched lane), so a stop brought
-  into view shows them first.
+- A worker shows, in one column: its test with its project and attempt, a card of where it stands in its tone (`status`,
+  `data-tone`: its state, then the call about to run and its place, or the error it failed with), its controls, then
+  its page (the stop's image or live view, or its watched lane) in a card whose head holds the page's tools and whose
+  empty image keeps its place with what it waits for. The controls come above the page, so a stop brought into view
+  shows them first.
 - In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
   what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
   where the pause bar shows, or at a headless stop while the window watches its live view or its lane; Mock a request
@@ -1032,8 +1036,9 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 
 - A live run of several workers shows one at a time, behind a tab each (`role="tablist"`), marked with its state
   (`tabState`, `data-state`). Which one is `shownWorkerOf`: the person's choice (`chosenTabs`) or the last shown
-  (`shownTabs`) while it stands at a stop, is watched or no other stops, else the first stopped worker. The arrow keys,
-  `Home` and `End` move between the tabs; a key for a stop control steers the one stopped worker shown.
+  (`shownTabs`) while it stands at a stop, is watched or no stop came since the choice (the stops standing then are
+  `known`), else the first stop that came, else the first stopped worker. The arrow keys, `Home` and `End` move
+  between the tabs; a key for a stop control steers the one stopped worker shown.
 
 - One row under the run's name holds Hold failures and, for a run of several workers, **Pause all** (the hub's
   `runControl` `pause` with no worker) and **Resume all** (a `resume` for each stopped worker, at its stop), from
