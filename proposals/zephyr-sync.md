@@ -606,6 +606,8 @@ in `proposals/1.0-stabilization.md`.
 
 ## Documentation
 
+- `apps/docs/operate/zephyr-scale.md` (step 4): the connection, the region, the token and `PIWI_ZEPHYR_*`.
+  `operate/integrations.md` keeps the Jira text and links it. The feature page below links it for the connection.
 - `apps/docs/features/test-management.md`: what it sends and when, mapping with tags, the 20-tag limit, the settings,
   the calls per run, what leaves the server, dry run, limits (no imports, Zephyr Scale Cloud first), and the CI-only
   alternative with Playwright's `junit` reporter for teams without Piwi. It says that with the 2-minute request

@@ -105,7 +105,7 @@ export const INTEGRATION_PROVIDERS = {
         help: 'Create one in Jira: your profile picture → Zephyr API keys.',
       },
     ],
-    docsAnchor: 'operate/integrations#connecting-zephyr-scale-cloud',
+    docsAnchor: 'operate/zephyr-scale',
   },
 } as const satisfies Record<string, IntegrationProviderMeta>;
 

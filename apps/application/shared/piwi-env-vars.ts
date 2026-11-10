@@ -1386,7 +1386,7 @@ export const PIWI_ENV_VARS = {
     category: 'integrations',
     secret: true,
     since: '0.68.0',
-    docs: 'operate/integrations#connecting-zephyr-scale-cloud',
+    docs: 'operate/zephyr-scale',
   },
   PIWI_ZEPHYR_REGION: {
     description: 'Region of the Zephyr Scale Cloud host the token belongs to: "us", "eu", "au" or "de".',
