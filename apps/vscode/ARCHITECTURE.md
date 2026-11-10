@@ -64,11 +64,11 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 **Each file's summary.** The extension asks `piwi/fileSummary` once per text version of a file and per drawing of the
 files (`summaryOf`), and draws it in two places:
 
-- A test's line goes to the gutter: an icon from `media/` and a hover with the test's details, **Run**
+- A test's line goes to the gutter: an icon from `media/` and a hover with the summary the service writes, **Run**
   (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
   `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
-  failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the hover
-  says so.
+  failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
+  service's summary says so.
 - Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`

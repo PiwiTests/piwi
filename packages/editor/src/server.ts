@@ -150,6 +150,7 @@ import {
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { statusWords } from './status-words.js';
 import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
@@ -324,6 +325,7 @@ import {
   type SummaryLine,
   type TestAtParams,
   type TestAtResult,
+  type LiveRun,
   type TestFailure,
   type TestLineStatus,
   type TestsForFile,
@@ -600,13 +602,50 @@ function runLabel(context: PiwiContext, f: BranchFailure): string {
 }
 
 /**
- * What the lens of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in run #120)`,
- * `fixed locally in your run #124 (…)` when the editor started that run.
+ * What the line of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in CI run
+ * #120)`, `fixed locally in your run #124 (…)` when the editor started that run.
  */
 function fixedLabel(context: PiwiContext, r: BranchResolved): string {
   const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
   const run = `${isOwnRun(context, r.runId) ? 'your ' : ''}run #${r.runId}`;
-  return `${where} in ${run} (failing in run #${context.failures?.run?.id ?? ''})`;
+  return `${where} in ${run} (failing in ${runWords(context, context.failures?.run?.id)})`;
+}
+
+/** A run as a test's line names it: `your run #124`, `CI run #120`, or `local run #124` for another run off CI. */
+function runWords(context: PiwiContext, runId: number | undefined): string {
+  if (runId === undefined) return 'the latest run';
+  if (isOwnRun(context, runId)) return `your run #${runId}`;
+  return `${isCiRun(context, runId) ? 'CI' : 'local'} run #${runId}`;
+}
+
+/** The run in progress as a test's line names it; `the run that just ended` once it ended and before it is read. */
+function liveRunWords(live: LiveRun | null): string {
+  if (!live) return 'the run that just ended';
+  return live.own ? `your run #${live.runId}` : `${live.ci ? 'CI' : 'local'} run #${live.runId}`;
+}
+
+/**
+ * A test's latest result, as its line's summary leads with it, in the dashboard's words and naming the run:
+ * `running in your run #130`, `failing in CI run #124`, `failing in CI run #124, edited since`, `fixed locally in your
+ * run #124 (failing in CI run #120)`, `didn't run in its latest run`, `never run`, or `no recent result`.
+ */
+function testVerdict(
+  context: PiwiContext,
+  found: CatalogCase,
+  failed: BranchFailure | undefined,
+  fixed: BranchResolved | undefined,
+  failure: TestFailure | undefined,
+): string {
+  const live = context.liveTests.get(found.id);
+  if (live) return `${statusWords(live)} in ${liveRunWords(context.live)}`;
+  if (failed) {
+    const edited = failure?.state === 'edited' ? ', edited since' : '';
+    return `failing in ${runWords(context, failed.runId ?? context.failures?.run?.id)}${edited}`;
+  }
+  if (fixed) return fixedLabel(context, fixed);
+  if (!found.status) return 'no recent result';
+  if (found.status === 'never-run') return statusWords(found.status);
+  return `${statusWords(found.status)} in its latest run`;
 }
 
 /** What a `piwi/failures` item says launched its run. */
@@ -2934,10 +2973,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        // The client says the latest result in words (failing, flaky, no recent result) before this title.
+        const verdict = testVerdict(context, found, failed, fixed, failure);
+        // A test with no result has no pass rate to give.
         const passRate =
-          runs > 0 ? `passed ${passed} of ${plural(runs, 'run')}` : 'no pass rate (no passed or failed run)';
-        const status = fixed ? ` · ${fixedLabel(context, fixed)}` : '';
+          runs > 0
+            ? ` · passed ${passed} of ${plural(runs, 'run')}`
+            : verdict === 'never run' || verdict === 'no recent result'
+              ? ''
+              : ' · no pass rate (no passed or failed run)';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
@@ -2961,7 +3004,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${verdict}${passRate}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',

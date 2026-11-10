@@ -747,18 +747,9 @@ object Glue {
     /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
     fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
 
-    /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
-    fun testResultTooltip(status: String?, title: String?): String {
-        val result = when (status) {
-            "failed" -> "failing"
-            "flaky" -> "flaky"
-            "passed" -> "passing"
-            "skipped" -> "skipped"
-            "running" -> "running"
-            else -> "no recent result"
-        }
-        return "<html>${escapeHtml(listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · "))}</html>"
-    }
+    /** A test's gutter tooltip: the summary the service writes, its latest result naming the run first, as HTML text. */
+    fun testResultTooltip(title: String?): String =
+        "<html>${escapeHtml(listOfNotNull("Piwi", title?.ifBlank { null }).joinToString(": "))}</html>"
 
     /**
      * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the

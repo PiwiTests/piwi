@@ -37,6 +37,10 @@ export interface FileEdit {
 export interface SummaryLine {
   /** 0-based line the text sits above. */
   line: number;
+  /**
+   * On a test's line, the whole tooltip of its gutter mark after `Piwi:`: its latest result naming the run
+   * (`failing in CI run #124`, `never run`), then its pass rate, quarantine, flaky score and selections.
+   */
   title: string;
   command?: PiwiCommand;
   /**
