@@ -82,7 +82,11 @@ the workspace, under `editor-listings.test.ts`, [ST5](#st5); the coverage page s
 [RD4](#rd4), whose Rider scene of [M17](#m17) remains; the IDE's Playwright runner named for Rider, documented, and
 its option saying why it is off, [RD5](#rd5); a trusted project with no Playwright config whose MSBuild project, in
 the folders and repository searched for configs, references Playwright for .NET told so once, [RD6](#rd6); the C#
-lines of both listings and the coverage page wait for that scene too), and every command, setting and action id of both editors registered in D25 and held to the manifests
+lines of both listings and the coverage page wait for that scene too), [Q23](#q23) in part (the desktop app says Piwi
+Desktop in its windows, tray, taskbar, update dialog, notifications and its MCP bridge's errors, the name
+`ECOSYSTEM_PIECES` gives it, under `desktop-app-name.test.ts`, [AC13](#ac13); its Setup card says Pair with Piwi
+Picker with Picker's link glyph, and Picker's hints name it in every catalog, [AC15](#ac15); remaining: the
+`productName`, which the Start menu, the Dock and Open with show, until §13's item 23 settles the upgrade path), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker

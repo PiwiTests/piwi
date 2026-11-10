@@ -152,7 +152,7 @@ fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, St
         let attempt = match read_endpoint(discovery) {
             Some(endpoint) => post(&endpoint, message),
             None => Err(PostError {
-                message: "Piwi Dashboard is not running — start the app, then reconnect this server"
+                message: "Piwi Desktop is not running — start the app, then reconnect this server"
                     .into(),
                 retryable: true,
                 sent: false,
@@ -213,7 +213,7 @@ const LOOPBACK_HOST: &str = "127.0.0.1";
 fn unreachable(endpoint: &Endpoint, detail: impl Display) -> PostError {
     PostError {
         message: format!(
-            "cannot reach Piwi Dashboard at http://{}:{} ({detail})",
+            "cannot reach Piwi Desktop at http://{}:{} ({detail})",
             endpoint.host, endpoint.port
         ),
         retryable: true,
@@ -276,7 +276,7 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
     let text = String::from_utf8_lossy(raw);
     let Some((head, body)) = text.split_once("\r\n\r\n") else {
         return Err(PostError {
-            message: "Piwi Dashboard sent a malformed HTTP response".into(),
+            message: "Piwi Desktop sent a malformed HTTP response".into(),
             // An empty or truncated response means the connection died mid-flight.
             retryable: true,
             sent: true,
@@ -289,17 +289,17 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
     match status {
         Some(code) if (200..300).contains(&code) => Ok(body.to_string()),
         Some(401) | Some(403) => Err(PostError {
-            message: "Piwi Dashboard rejected the bridge's access token — reconnect Claude Desktop from the app's MCP page".into(),
+            message: "Piwi Desktop rejected the bridge's access token — reconnect Claude Desktop from the app's MCP page".into(),
             retryable: false,
             sent: true,
         }),
         Some(code) => Err(PostError {
-            message: format!("Piwi Dashboard replied {code}"),
+            message: format!("Piwi Desktop replied {code}"),
             retryable: false,
             sent: true,
         }),
         None => Err(PostError {
-            message: "Piwi Dashboard sent a malformed HTTP response".into(),
+            message: "Piwi Desktop sent a malformed HTTP response".into(),
             retryable: true,
             sent: true,
         }),

@@ -978,8 +978,8 @@
     "description": "Options: label of the desktop app's address field."
   },
   "options_desktopUrlHint": {
-    "message": "Shown on the app’s Setup page, under Connect Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
-    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Connect Piwi Picker” name the desktop app’s page and card; “Pair” is options_desktopPair."
+    "message": "Shown on the app’s Setup page, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.",
+    "description": "Settings page, Desktop app card: under the address field. “Setup” and “Pair with Piwi Picker” name the desktop app’s page and card; “Pair” is options_desktopPair."
   },
   "options_desktopPair": {
     "message": "Pair",
@@ -994,7 +994,7 @@
     "description": "Options: label of the desktop app's token field."
   },
   "options_desktopManualHint": {
-    "message": "The token is on the app’s Setup page, under Connect Piwi Picker, beside its address.",
+    "message": "The token is on the app’s Setup page, under Pair with Piwi Picker, beside its address.",
     "description": "Settings page, Desktop app card, Pair by hand: where the token comes from."
   },
   "options_desktopSave": {

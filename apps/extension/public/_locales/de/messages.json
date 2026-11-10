@@ -794,7 +794,7 @@
     "message": "Adresse der Desktop-App"
   },
   "options_desktopUrlHint": {
-    "message": "Steht auf der Einrichtungsseite der App, unter Piwi Picker verbinden. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
+    "message": "Steht auf der Einrichtungsseite der App, unter Mit Piwi Picker koppeln. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
   },
   "options_desktopPair": {
     "message": "Koppeln"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "Das Token steht auf der Einrichtungsseite der App, unter Piwi Picker verbinden, neben ihrer Adresse."
+    "message": "Das Token steht auf der Einrichtungsseite der App, unter Mit Piwi Picker koppeln, neben ihrer Adresse."
   },
   "options_desktopSave": {
     "message": "Speichern und testen"

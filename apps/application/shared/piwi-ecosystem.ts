@@ -51,6 +51,8 @@ export interface EcosystemPiece {
   needs: FeatureNeed[];
   /** Docs page (+ optional `#anchor`), resolved by `docs-drift.test.ts`. */
   doc: string;
+  /** The name its own windows, tray and notifications show, for a piece that has them. */
+  app?: string;
 }
 
 export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
@@ -73,6 +75,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     when: 'One developer running Playwright on their own machine, with no server to operate.',
     needs: ['desktop'],
     doc: 'features/desktop',
+    app: 'Piwi Desktop',
   },
   {
     id: 'demo',

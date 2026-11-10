@@ -17,7 +17,7 @@ const { copy } = useCopy();
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-plug-zap" title="Connect Piwi Picker">
+  <SectionCard icon="i-lucide-link" title="Pair with Piwi Picker">
     <template #subtitle>
       Let the browser extension ask this app to run a bug report with Playwright, in a project linked to its folder.
     </template>

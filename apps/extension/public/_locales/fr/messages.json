@@ -794,7 +794,7 @@
     "message": "Adresse de l’application de bureau"
   },
   "options_desktopUrlHint": {
-    "message": "Affichée sur la page Configuration de l’application, sous Connecter Piwi Picker. Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
+    "message": "Affichée sur la page Configuration de l’application, sous Associer à Piwi Picker. Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Associer"
@@ -806,7 +806,7 @@
     "message": "Jeton"
   },
   "options_desktopManualHint": {
-    "message": "Le jeton se trouve sur la page Configuration de l’application, sous Connecter Piwi Picker, à côté de son adresse."
+    "message": "Le jeton se trouve sur la page Configuration de l’application, sous Associer à Piwi Picker, à côté de son adresse."
   },
   "options_desktopSave": {
     "message": "Enregistrer et tester"
