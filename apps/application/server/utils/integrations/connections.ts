@@ -12,6 +12,7 @@ import type {
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
+  TestManagementConnectionSummary,
   TrackerSummary,
 } from '#shared/integrations/types';
 import {
@@ -510,6 +511,28 @@ async function recordTest(
         : { status: 'failed', lastCheckedAt: now, lastError: outcome.error, updatedAt: now },
     )
     .where(eq(integrationConnections.id, id));
+}
+
+/**
+ * Record that a provider refused a connection's credentials (a 401 from a picker, a catalog read or a test): the
+ * connection shows as failed, with the provider's reason, until the next successful test.
+ */
+export async function markConnectionFailed(db: DbClient, id: number, error: string): Promise<void> {
+  await recordTest(db, id, { ok: false, error });
+}
+
+/** Every test management connection with a stored token — what the project's binding form offers. */
+export async function listTestManagementConnections(db: DbClient): Promise<TestManagementConnectionSummary[]> {
+  await ensureEnvManagedConnections(db);
+  const rows = await db.select().from(integrationConnections).orderBy(integrationConnections.id);
+  return rows
+    .filter((r) => isProviderOfKind(r.provider, 'test-management') && hasStoredCredentials(r))
+    .map((r) => ({
+      id: r.id,
+      provider: r.provider as IntegrationProviderName,
+      name: r.name,
+      status: r.status as ConnectionSummary['status'],
+    }));
 }
 
 /** Verify a connection with the provider's `whoAmI`, recording the outcome. */

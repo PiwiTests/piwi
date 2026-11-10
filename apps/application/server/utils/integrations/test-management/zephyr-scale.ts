@@ -10,6 +10,7 @@ import type {
   TestManagementCredentials,
   TestManagementProvider,
   TmCase,
+  TmFolder,
   TmPage,
   TmProject,
   TmStatus,
@@ -89,6 +90,12 @@ interface ZephyrStatus {
   default?: boolean;
 }
 
+interface ZephyrFolder {
+  id: number;
+  name: string;
+  parentId: number | null;
+}
+
 interface ZephyrTestCase {
   id: number;
   key: string;
@@ -149,6 +156,14 @@ function startAtOf(cursor: PageCursor): number {
 function checkedProjectKey(projectKey: string): string {
   if (!PROJECT_KEY.test(projectKey)) throw new RangeError('Invalid project key');
   return projectKey;
+}
+
+/**
+ * Zephyr documents no web address for a test case: it opens inside a Jira site this connection does not know. Kept
+ * apart from the client so a read of the stored catalog can ask without a token.
+ */
+export function zephyrCaseUrl(): null {
+  return null;
 }
 
 export class ZephyrScaleClient implements TestManagementProvider {
@@ -284,8 +299,20 @@ export class ZephyrScaleClient implements TestManagementProvider {
       .map((s) => ({ id: String(s.id), name: s.name, isDefault: s.default === true }));
   }
 
-  /** Zephyr documents no web address for a test case: it opens inside a Jira site this connection does not know. */
+  /** The test cycle folders of a project: the ones a run is filed under. */
+  async listFolders(projectKey: string): Promise<TmFolder[]> {
+    const folders = await this.getAll<ZephyrFolder>('/folders', {
+      projectKey: checkedProjectKey(projectKey),
+      folderType: 'TEST_CYCLE',
+    });
+    return folders.map((f) => ({
+      id: String(f.id),
+      name: f.name,
+      parentId: f.parentId === null || f.parentId === undefined ? null : String(f.parentId),
+    }));
+  }
+
   caseUrl(): null {
-    return null;
+    return zephyrCaseUrl();
   }
 }
