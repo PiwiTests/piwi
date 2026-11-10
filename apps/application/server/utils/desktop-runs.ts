@@ -52,6 +52,7 @@ import {
   type AgentWords,
   type DiskFile,
   type HubPeer,
+  type RunHoldFailures,
   type StopTarget,
 } from '@piwitests/editor/run-host';
 import {
@@ -158,7 +159,7 @@ const UNATTENDED_FOR_AGENTS =
 /** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
 const NO_WINDOW_FOR_AGENTS =
   "No window of the desktop app is open, and a headless run's stop goes on with none to show it: open the app's " +
-  'window to pause, step or run to a line.';
+  'window to pause, step, run to a line or hold a failure.';
 
 /** What a window's stream takes: the events, what it holds unsent in bytes, and its end. */
 export interface DesktopRunSink {
@@ -192,8 +193,11 @@ export interface DesktopRunsOptions {
 interface RunWindow {
   peer: HubPeer;
   sink: DesktopRunSink;
-  /** The runs whose Hold failures it turned on: the last window of a run to close turns it off. */
-  shows: Set<string>;
+  /**
+   * The runs whose Hold failures it turned on, each with the Hold failures it set: the last window showing a run turns
+   * it off as it stops showing it, unless someone set it since.
+   */
+  shows: Map<string, RunHoldFailures>;
 }
 
 function uriToPath(uri: string): string | null {
@@ -451,7 +455,7 @@ export class DesktopRuns {
     };
     const window: RunWindow = {
       sink,
-      shows: new Set(),
+      shows: new Map(),
       peer: this.hub.join({
         send: (message) => {
           // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
@@ -485,13 +489,16 @@ export class DesktopRuns {
       if (typeof value.ref !== 'string' || !REF.test(value.ref))
         return answer(false, 'The command needs the ref of a run.');
       if (typeof value.on !== 'boolean') return answer(false, 'on must be true or false.');
-      if (value.on) window.shows.add(value.ref);
-      else window.shows.delete(value.ref);
       if (isUnattendedDesktopRun(value.ref)) {
         return answer(true, 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.');
       }
       // The window's Hold failures is the run's own: another window, Piwi Picker or an agent may change it after.
-      this.sessions.hold({ ref: value.ref, on: value.on }, 'person');
+      if (value.on) {
+        this.sessions.hold({ ref: value.ref, on: true }, 'person');
+        window.shows.set(value.ref, this.sessions.holdOf(value.ref));
+      } else {
+        this.stopShowing(window, value.ref);
+      }
       return answer(
         true,
         value.on
@@ -521,12 +528,19 @@ export class DesktopRuns {
     if (!window) return;
     this.windows.delete(viewer);
     window.peer.leave();
-    // A run no other window shows has its Hold failures turned off with the last one.
-    for (const ref of window.shows) {
-      if (![...this.windows.values()].some((other) => other.shows.has(ref))) {
-        this.sessions.hold({ ref, on: false }, 'person');
-      }
-    }
+    for (const ref of [...window.shows.keys()]) this.stopShowing(window, ref);
+  }
+
+  /**
+   * The window shows the run no more: the last window showing it turns its Hold failures off, unless someone set it
+   * since the window did.
+   */
+  private stopShowing(window: RunWindow, ref: string): void {
+    const set = window.shows.get(ref);
+    if (!set) return;
+    window.shows.delete(ref);
+    if ([...this.windows.values()].some((other) => other.shows.has(ref))) return;
+    if (this.sessions.holdOf(ref) === set) this.sessions.hold({ ref, on: false }, 'person');
   }
 
   private liveCountChanged(): void {

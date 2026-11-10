@@ -1017,6 +1017,8 @@ export class RunAgent {
     const { log } = this.known(ref);
     // The run's Hold failures is the one people see: an agent sets it as a surface does, and the run says so.
     const held = asked === undefined ? null : this.options.sessions.hold({ ref, on: asked }, 'agent');
+    // A failure held where no one could answer it goes on at once: the agent hears why with the hold.
+    const goesOn = asked === true && held?.ok ? this.options.stopsGoOn?.(ref) : null;
     this.startFollowing(ref);
     const since = () => log.events.filter((e) => e.seq > after);
     const settled = () => {
@@ -1047,7 +1049,7 @@ export class RunAgent {
         })),
         next: lastSeq,
         more: fresh.length > events.length,
-        ...(held ? { hold: held.message } : {}),
+        ...(held ? { hold: goesOn ? `${held.message} ${goesOn}` : held.message } : {}),
         ...(after >= 0 && log.events.length && log.events[0]!.seq > after + 1
           ? { missed: `Events before ${log.events[0]!.seq} are no longer kept.` }
           : {}),

@@ -17,8 +17,10 @@
  * opens on the worker the run page's **Show its page** names (`showWorker`),
  * its run expanded and the focus on that worker. A running run's **Hold
  * failures** switch, off by default and on from the start for a reproduction,
- * makes a failure no pause bar shows wait at its line (`show`, said by the
- * plugin from the store's `holds`); a run nobody attends (a Flake Lab, a
+ * makes a failure no pause bar shows wait at its line (`hold` for its live
+ * steps, and `show`, said by the plugin from the store's `holds`, for its
+ * steps to come); it shows the run's own, which Piwi Picker or an agent may
+ * change too. A run nobody attends (a Flake Lab, a
  * bisect, a run repeating its tests or in UI mode) holds none, and its switch
  * says why.
  *
@@ -36,6 +38,7 @@ import {
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
 import {
+  desktopHeldSessions,
   desktopRunHoldRefusal,
   desktopRunHolds,
   desktopRunOf,
@@ -165,7 +168,11 @@ function holdsFailures(run: LocalRun): boolean {
   return desktopRunHolds(run, holds.value[run.key], liveSessions.value);
 }
 
+/** The person turns the run's Hold failures over: its live steps at once, the steps to come as they start. */
 function setHold(run: LocalRun, on: boolean) {
+  for (const session of desktopHeldSessions(run, liveSessions.value)) {
+    void hub.command({ type: 'hold', ref: session.ref, on });
+  }
   holds.value = { ...holds.value, [run.key]: on };
 }
 
