@@ -186,6 +186,18 @@ describe('CONNECTION_CHECKS', () => {
     expect(sent).toEqual([]);
   });
 
+  test('Zephyr reports a token a header cannot carry, and keeps the bare site only for no token at all', async () => {
+    for (const apiToken of ['two words', '   ', 'abc\r\nX-Injected: 1']) {
+      const result = await CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken } });
+      expect(result.site.ok).toBe(true);
+      expect(result.auth).toEqual({ ok: false, error: 'The token holds characters a header cannot carry.' });
+      expect(result.projects).toBeUndefined();
+    }
+    const none = await CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken: '' } });
+    expect(none.auth).toBeUndefined();
+    expect(sent).toEqual([]);
+  });
+
   test('Zephyr signs in on the region’s host and counts the enabled projects', async () => {
     accepted = [TOKEN];
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -314,6 +326,15 @@ describe('testConnection', () => {
     expect(sent).toEqual([]);
   });
 
+  test('a stored token a header cannot carry is reported as that, not as no credentials', async () => {
+    const created = await zephyr({ credentials: { apiToken: 'two words' } });
+    expect(await testConnection(db as never, created.id)).toEqual({
+      ok: false,
+      error: 'The token holds characters a header cannot carry.',
+    });
+    expect(sent).toEqual([]);
+  });
+
   test('a Jira connection is still tested through Jira', async () => {
     const created = await jira();
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
@@ -414,6 +435,17 @@ describe('the environment-managed connection', () => {
     const [summary] = await listConnections(db as never);
     expect(await testConnection(db as never, summary!.id)).toMatchObject({ ok: true });
     expect(sent.map((s) => [s.url.host, s.token])).toEqual([['de.api.zephyrscale.smartbear.com', TOKEN]]);
+  });
+
+  test('an environment token a header cannot carry is reported as that, not as no credentials', async () => {
+    process.env.PIWI_ZEPHYR_API_TOKEN = 'two words';
+    const [summary] = await listConnections(db as never);
+    expect(summary).toMatchObject({ managedBy: 'env', hasCredentials: true });
+    expect(await testConnection(db as never, summary!.id)).toEqual({
+      ok: false,
+      error: 'The token holds characters a header cannot carry.',
+    });
+    expect(sent).toEqual([]);
   });
 
   test('follows a change of region in place, keeping the same row', async () => {

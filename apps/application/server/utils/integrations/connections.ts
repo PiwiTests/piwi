@@ -29,7 +29,7 @@ import { JiraClient } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
 import type { IssueTracker, TrackerCredentials } from './types';
-import { ZephyrScaleClient } from './test-management/zephyr-scale';
+import { ZEPHYR_TOKEN_UNUSABLE, ZephyrScaleClient } from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
@@ -534,7 +534,15 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
 /** {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host. */
 async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
   const client = testManagementForRow(row);
-  if (!client) return { ok: false, error: 'No credentials configured for this connection.' };
+  if (!client) {
+    // A token the row holds but the client refuses to send is not the same as no token at all.
+    return {
+      ok: false,
+      error: resolveTestManagementCredentials(row)
+        ? ZEPHYR_TOKEN_UNUSABLE
+        : 'No credentials configured for this connection.',
+    };
+  }
   try {
     const account = await client.whoAmI();
     await recordTest(db, row.id, { ok: true });

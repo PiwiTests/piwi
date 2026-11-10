@@ -5,7 +5,7 @@
 import { INTEGRATION_PROVIDERS } from '#shared/integrations/registry';
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { IntegrationHttpError } from '../http-error';
-import { ZEPHYR_TIMEOUT_STATUS, ZephyrScaleClient } from './zephyr-scale';
+import { ZEPHYR_TIMEOUT_STATUS, ZEPHYR_TOKEN_UNUSABLE, ZephyrScaleClient } from './zephyr-scale';
 import type { TestManagementCredentials } from './types';
 
 /** How many project keys the check reports back. */
@@ -63,7 +63,10 @@ export async function checkZephyrCredentials(
     cloudId: null,
   };
   const client = credentials ? ZephyrScaleClient.forRegion(regionId, credentials) : null;
-  if (!client) return { site };
+  if (!client) {
+    // A token was given but cannot be sent: say so, or the form shows no sign-in line and lets the save through.
+    return credentials?.apiToken ? { site, auth: { ok: false, error: ZEPHYR_TOKEN_UNUSABLE } } : { site };
+  }
 
   let account: { id: string; displayName: string };
   try {

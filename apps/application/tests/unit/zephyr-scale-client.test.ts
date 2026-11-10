@@ -115,9 +115,11 @@ describe('listProjects', () => {
   });
 
   test('stops at the page cap when the server never says it is the last', async () => {
-    fetchMock.mockImplementation(async () =>
-      reply({ ...fixture('projects-page-1'), next: 'https://more', total: undefined }),
-    );
+    // Without the cap this would never end: the stub throws past the cap so a missing cap fails the assertions below.
+    fetchMock.mockImplementation(async () => {
+      if (fetchMock.mock.calls.length > ZEPHYR_MAX_PAGES + 5) throw new Error('the page cap did not stop the read');
+      return reply({ ...fixture('projects-page-1'), next: 'https://more', total: undefined });
+    });
     const read = client().listProjects();
     await expect(read).rejects.toMatchObject({
       status: 502,
@@ -289,6 +291,16 @@ describe('failures', () => {
     );
     expect(err.status).toBe(ZEPHYR_TIMEOUT_STATUS);
     expect(err.message).toBe('Zephyr Scale did not answer within 120 seconds');
+  });
+
+  test('a timeout while the body is read is the same 504, not a body that is not JSON', async () => {
+    for (const name of ['TimeoutError', 'AbortError']) {
+      const response = reply({ values: [] });
+      vi.spyOn(response, 'json').mockRejectedValue(Object.assign(new Error('aborted'), { name }));
+      const err = await failure(response);
+      expect(err.status).toBe(ZEPHYR_TIMEOUT_STATUS);
+      expect(err.message).toBe('Zephyr Scale did not answer within 120 seconds');
+    }
   });
 
   test('an answer that is not JSON on a 200 is an error', async () => {

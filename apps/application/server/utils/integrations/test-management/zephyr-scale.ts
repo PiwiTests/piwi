@@ -38,8 +38,16 @@ const DETAIL_MAX = 500;
 
 const REGIONS = INTEGRATION_PROVIDERS['zephyr-scale'].endpoint.regions;
 
+/** What a token that cannot be sent as a header value is reported as, by the check and by a connection test. */
+export const ZEPHYR_TOKEN_UNUSABLE = 'The token holds characters a header cannot carry.';
+
 /** The status a call that got no answer in time is reported with. */
 export const ZEPHYR_TIMEOUT_STATUS = 504;
+
+/** Whether a failed call ran out of its time budget: the abort signal's `TimeoutError`, or an `AbortError`. */
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+}
 
 /** A Zephyr Scale refusal or failure. Its message never holds the token. */
 export class ZephyrScaleError extends IntegrationHttpError {
@@ -155,6 +163,11 @@ export class ZephyrScaleClient implements TestManagementProvider {
 
   private async get<T>(path: string, params: Record<string, string | number>): Promise<T> {
     const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
+    const timedOut = () =>
+      new ZephyrScaleError(
+        ZEPHYR_TIMEOUT_STATUS,
+        `Zephyr Scale did not answer within ${ZEPHYR_REQUEST_TIMEOUT_MS / 1000} seconds`,
+      );
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}?${query}`, {
@@ -162,18 +175,15 @@ export class ZephyrScaleClient implements TestManagementProvider {
         signal: AbortSignal.timeout(ZEPHYR_REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
-      if (err instanceof Error && err.name === 'TimeoutError') {
-        throw new ZephyrScaleError(
-          ZEPHYR_TIMEOUT_STATUS,
-          `Zephyr Scale did not answer within ${ZEPHYR_REQUEST_TIMEOUT_MS / 1000} seconds`,
-        );
-      }
+      if (isTimeout(err)) throw timedOut();
       throw err;
     }
     if (!response.ok) throw await toZephyrError(response, this.apiToken);
     try {
       return (await response.json()) as T;
-    } catch {
+    } catch (err) {
+      // The same budget covers the body: a stall while it is read is a timeout, not a body that is not JSON.
+      if (isTimeout(err)) throw timedOut();
       throw new ZephyrScaleError(502, 'Zephyr Scale answered with something that is not JSON');
     }
   }

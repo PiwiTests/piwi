@@ -136,8 +136,9 @@ projects, users and issues through that connection only; Project admins, through
 A background task reads every tracked issue back through its project's connection and caches the status, title and
 assignee, so a closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
 [`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
-rounded to whole hours. Each sweep refreshes up to 100 links: those on an open cluster every sweep, those on a resolved or ignored cluster
-at most once a day. A connection that fails to answer records the error on its card and does not stop the sweep.
+rounded to whole hours. Each sweep refreshes up to 100 links: those on an open cluster every sweep, those on a
+resolved or ignored cluster at most once a day. A connection that fails to answer records the error on its card and does
+not stop the sweep.
 **Sync now** on the Jira card runs one sweep on demand. The two-way **policies** are set per project on the binding, see
 [Keep the ticket honest](/features/issue-tracking#keep-the-ticket-honest).
 
