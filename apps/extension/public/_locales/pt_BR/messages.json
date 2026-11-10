@@ -788,13 +788,13 @@
     "message": "Aplicativo de desktop"
   },
   "options_desktopHint": {
-    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. As execuções que ele inicia também aparecem na janela Execuções (Execuções, no menu da extensão)."
+    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Desktop, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. As execuções que ele inicia também aparecem na janela Execuções (Execuções, no menu da extensão)."
   },
   "options_desktopUrl": {
     "message": "Endereço do aplicativo de desktop"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece na página Configuração do aplicativo, em Parear com o Piwi Picker. Parear pede à janela do aplicativo que autorize o Piwi Picker."
+    "message": "Aparece na página Configuração do aplicativo, em “Pair with Piwi Picker”. Parear pede à janela do aplicativo que autorize o Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Parear"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "O token está na página Configuração do aplicativo, em Parear com o Piwi Picker, ao lado do endereço."
+    "message": "O token está na página Configuração do aplicativo, em “Pair with Piwi Picker”, ao lado do endereço."
   },
   "options_desktopSave": {
     "message": "Salvar e testar"

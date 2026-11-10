@@ -55,6 +55,9 @@ export interface EcosystemPiece {
   app?: string;
 }
 
+/** The name the desktop app goes by in its windows, tray and notifications, and on the pages that name it. */
+export const DESKTOP_APP_NAME = 'Piwi Desktop';
+
 export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
   {
     id: 'server',
@@ -75,7 +78,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     when: 'One developer running Playwright on their own machine, with no server to operate.',
     needs: ['desktop'],
     doc: 'features/desktop',
-    app: 'Piwi Desktop',
+    app: DESKTOP_APP_NAME,
   },
   {
     id: 'demo',

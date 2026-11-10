@@ -123,9 +123,9 @@ shell and are feature-equivalent.
   `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
   `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
   keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
-- **The app calls itself Piwi Desktop (`APP_NAME` in `lib.rs`) in its windows, tray, taskbar and notifications**, the
-  name `ECOSYSTEM_PIECES` gives it (`app`); `productName` keeps Piwi Dashboard until the installers' upgrade path is
-  checked. Checked by `apps/application/tests/unit/desktop-app-name.test.ts`.
+- **The app calls itself Piwi Desktop (`APP_NAME` in `lib.rs`, `DESKTOP_APP_NAME` in `shared/piwi-ecosystem.ts`) in its
+  windows, splash, tray, taskbar, questions and notifications**; `productName` keeps Piwi Dashboard, which the OS lists,
+  until the installers' upgrade path is checked. Checked by `apps/application/tests/unit/desktop-app-name.test.ts`.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
   `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
   show them.

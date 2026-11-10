@@ -83,8 +83,9 @@ the workspace, under `editor-listings.test.ts`, [ST5](#st5); the coverage page s
 its option saying why it is off, [RD5](#rd5); a trusted project with no Playwright config whose MSBuild project, in
 the folders and repository searched for configs, references Playwright for .NET told so once, [RD6](#rd6); the C#
 lines of both listings and the coverage page wait for that scene too), [Q23](#q23) in part (the desktop app says Piwi
-Desktop in its windows, tray, taskbar, update dialog, notifications and its MCP bridge's errors, the name
-`ECOSYSTEM_PIECES` gives it, under `desktop-app-name.test.ts`, [AC13](#ac13); its Setup card says Pair with Piwi
+Desktop in its windows, splash, tray, taskbar, quit question, notifications (an update's included) and its MCP bridge's
+errors, and the dashboard's desktop pages and hand-off page say it too, the name `ECOSYSTEM_PIECES` gives it, under
+`desktop-app-name.test.ts`, [AC13](#ac13); its Setup card says Pair with Piwi
 Picker with Picker's link glyph, and Picker's hints name it in every catalog, [AC15](#ac15); remaining: the
 `productName`, which the Start menu, the Dock and Open with show, until §13's item 23 settles the upgrade path), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to

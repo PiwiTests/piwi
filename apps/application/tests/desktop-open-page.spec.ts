@@ -194,7 +194,7 @@ test.describe('Desktop handoff from the system browser', () => {
       const tab = await tabContext.newPage();
       await tab.goto(`${target.baseUrl}/settings/about`);
       await expect(tab.locator('[data-desktop-handoff="shown"]')).toBeVisible();
-      await expect(tab.getByRole('heading', { name: 'Opened in Piwi Dashboard' })).toBeVisible();
+      await expect(tab.getByRole('heading', { name: 'Opened in Piwi Desktop' })).toBeVisible();
     } finally {
       await tabContext.close();
     }

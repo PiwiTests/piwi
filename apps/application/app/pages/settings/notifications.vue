@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { slackDelivery } from '#shared/notifications/channel-setup';
 import {
@@ -19,7 +20,7 @@ const defaultDesktopEvents = DEFAULT_SUBSCRIPTION_EVENTS.map(notificationEventLa
 
 function sendTestNotification() {
   try {
-    new Notification('Piwi Dashboard', { body: 'Test notification: alerts from your projects appear like this.' });
+    new Notification(DESKTOP_APP_NAME, { body: 'Test notification: alerts from your projects appear like this.' });
     toast.add({ title: 'Test notification sent', color: 'success' });
   } catch (e) {
     toast.add({ title: 'Test failed', description: errorMessage(e), color: 'error' });

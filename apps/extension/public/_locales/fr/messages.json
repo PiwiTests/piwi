@@ -788,13 +788,13 @@
     "message": "Application de bureau"
   },
   "options_desktopHint": {
-    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Les exécutions qu’elle lance s’affichent aussi dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension)."
+    "message": "Facultatif. Associé à l’application de bureau Piwi Desktop, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Les exécutions qu’elle lance s’affichent aussi dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension)."
   },
   "options_desktopUrl": {
     "message": "Adresse de l’application de bureau"
   },
   "options_desktopUrlHint": {
-    "message": "Affichée sur la page Configuration de l’application, sous Associer à Piwi Picker. Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
+    "message": "Affichée sur la page Configuration de l’application, sous « Pair with Piwi Picker ». Associer demande à la fenêtre de l’application d’autoriser Piwi Picker."
   },
   "options_desktopPair": {
     "message": "Associer"
@@ -806,7 +806,7 @@
     "message": "Jeton"
   },
   "options_desktopManualHint": {
-    "message": "Le jeton se trouve sur la page Configuration de l’application, sous Associer à Piwi Picker, à côté de son adresse."
+    "message": "Le jeton se trouve sur la page Configuration de l’application, sous « Pair with Piwi Picker », à côté de son adresse."
   },
   "options_desktopSave": {
     "message": "Enregistrer et tester"

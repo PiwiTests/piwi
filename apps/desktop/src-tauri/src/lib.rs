@@ -400,9 +400,9 @@ struct TrayStatusInner {
     run_failed: bool,
 }
 
-/// The name the app goes by in its windows, tray, taskbar and notifications, the editors' and Piwi Picker's
-/// "Piwi Desktop" (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
-/// `tauri.conf.json`'s `productName`.
+/// The name the app goes by in its windows, tray, taskbar, questions and notifications, the one the dashboard and Piwi
+/// Picker use (`ECOSYSTEM_PIECES`' `app` in `apps/application/shared/piwi-ecosystem.ts`). The installed product keeps
+/// `tauri.conf.json`'s `productName`, which the Start menu, the Dock and the app list show.
 pub(crate) const APP_NAME: &str = "Piwi Desktop";
 const TRAY_TOOLTIP_IDLE: &str = "Piwi Desktop (click to open)";
 /// The window's resting title (matches `tauri.conf.json`); run progress prefixes
@@ -2252,7 +2252,7 @@ fn show_server_notification(app: &AppHandle, notification: ServerNotification) {
     if !wanted || main_window_in_front(app) {
         return;
     }
-    // Titled with the app's name, as its other notifications are: the server titles it for a browser tab.
+    // Titled with the app's name: the server's title is the dashboard's, for a browser tab, and the facts are its body.
     let _ = show_notification(app, APP_NAME, &notification.body, None, notification.path.as_deref());
 }
 
@@ -2681,7 +2681,7 @@ fn quit_after_confirming(app: &AppHandle, app_name: &str) {
 }
 
 /// What the desktop app's questions call it ([`quit_question`]).
-const DESKTOP_APP_NAME: &str = "Piwi";
+const DESKTOP_APP_NAME: &str = APP_NAME;
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";

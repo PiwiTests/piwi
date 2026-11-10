@@ -788,13 +788,13 @@
     "message": "Desktop-App"
   },
   "options_desktopHint": {
-    "message": "Optional. Mit der Desktop-App Piwi Dashboard gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen. Die Läufe, die sie startet, erscheinen auch im Fenster „Läufe“ (Läufe, im Menü der Erweiterung)."
+    "message": "Optional. Mit der Desktop-App Piwi Desktop gekoppelt, kann Wiedergabe sie bitten, einen Fehlerbericht mit Playwright in Ihrem Projekt auszuführen. Die Läufe, die sie startet, erscheinen auch im Fenster „Läufe“ (Läufe, im Menü der Erweiterung)."
   },
   "options_desktopUrl": {
     "message": "Adresse der Desktop-App"
   },
   "options_desktopUrlHint": {
-    "message": "Steht auf der Einrichtungsseite der App, unter Mit Piwi Picker koppeln. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
+    "message": "Steht auf der Einrichtungsseite der App, unter „Pair with Piwi Picker“. Koppeln bittet das Fenster der App, Piwi Picker zuzulassen."
   },
   "options_desktopPair": {
     "message": "Koppeln"
@@ -806,7 +806,7 @@
     "message": "Token"
   },
   "options_desktopManualHint": {
-    "message": "Das Token steht auf der Einrichtungsseite der App, unter Mit Piwi Picker koppeln, neben ihrer Adresse."
+    "message": "Das Token steht auf der Einrichtungsseite der App, unter „Pair with Piwi Picker“, neben ihrer Adresse."
   },
   "options_desktopSave": {
     "message": "Speichern und testen"
