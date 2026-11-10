@@ -42,9 +42,10 @@ its place: [Share a run live](./share-live).
 
 ## Code from a stop
 
-The other actions, under **Code** (the last two in **More** once five show), send code to the editor, which
-writes it at the stopped line, when its Piwi extension and your reporter take them. **Pick** and **Record** start the pause bar's **Pick a locator** and **Record here**, **Assert**
-the recorder's **Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes `toMatchAriaSnapshot`.
+The actions under **Code** (the last two in **More** once five show) send code to the editor, which writes it at the
+stopped line, when its Piwi extension and your reporter take them. **Pick** and **Record** start the pause bar's **Pick
+a locator** and **Record here**, **Assert** the recorder's **Check an element**, and **Assert a region** a pick whose
+ARIA snapshot becomes `toMatchAriaSnapshot`.
 They run in the test's page: where the pause bar shows, or, at a headless stop, once you [watch it](#watch-live),
 driven through the view; until then they show held, saying **Watch to use**. **Mock a request** lists the page's fetch
 and XHR requests, credentials hidden: the one you choose becomes a `page.route`. Under the test, the window says the
