@@ -1813,6 +1813,19 @@ class GlueTest {
     }
 
     @Test
+    fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
+        val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
+        assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
+        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.SETTINGS), down.links)
+        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
+        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
+        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
+        assertEquals(Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT)), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
+        assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
+        assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
+    }
+
+    @Test
     fun `connect says why it failed in words, a certificate naming its host and where to trust it`() {
         val pkix = javax.net.ssl.SSLHandshakeException("PKIX path building failed: unable to find valid certification path")
         val certificate = Glue.connectFailure(java.io.IOException("handshake", pkix), null, "https://piwi.corp:8443")

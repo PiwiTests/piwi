@@ -13,6 +13,7 @@ import {
   type FailuresGrouping,
   type FailuresParams,
   type FailuresResult,
+  type FailuresViewState,
   type RunStatusResult,
   type StatusResult,
 } from '@piwitests/editor/protocol';
@@ -24,7 +25,10 @@ const FOLLOW = 'piwi.followEditor';
 const DEBOUNCE_MS = 200;
 
 /** What the view's welcome says while the tree is empty: `piwi.failuresView` in `package.json`'s `viewsWelcome`. */
-type ViewState = 'disconnected' | 'clear' | 'unavailable' | 'failures';
+type ViewState = FailuresViewState | 'unavailable';
+
+/** The states whose sentence, from the service, shows above the welcome's buttons. */
+const MESSAGE_STATES: ReadonlySet<ViewState> = new Set(['norun', 'unreachable', 'desktop-unproven']);
 
 const ICON_COLORS: Record<string, string> = {
   error: 'problemsErrorIcon.foreground',
@@ -123,8 +127,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   /** Draw the failures as the service answered or pushed them (`piwi/failuresChanged`). */
   show(result: FailuresResult): void {
     this.result = result;
-    const connected = !!this.status()?.contexts.some((c) => c.connected);
-    const state: ViewState = result.items.length ? 'failures' : connected ? 'clear' : 'disconnected';
+    const state: ViewState = result.view?.state ?? (result.items.length ? 'failures' : 'disconnected');
     this.render();
     void vscode.commands.executeCommand('setContext', 'piwi.failuresView', state);
   }
@@ -148,10 +151,14 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     const grouping = this.result?.grouping ?? this.grouping;
     this.view.description = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)!.label.toLowerCase()}`;
     const run = this.result?.run;
+    // Without a run, the service's words name the instance or the branch above the welcome's buttons.
+    const view = this.result?.view;
     this.view.message =
       run && !this.result?.items.length
         ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
-        : undefined;
+        : view && MESSAGE_STATES.has(view.state)
+          ? (view.message ?? undefined)
+          : undefined;
     this.changed.fire(undefined);
   }
 

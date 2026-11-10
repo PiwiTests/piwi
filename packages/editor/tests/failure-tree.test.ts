@@ -6,6 +6,8 @@ import {
   failureTree,
   failuresAnswer,
   failuresDrawn,
+  failuresView,
+  type ContextViewState,
   parseFailuresGrouping,
   rerunFailingArgs,
   runLabel,
@@ -439,5 +441,55 @@ describe('a run id typed for A run by id…', () => {
     expect(parseBaselineChoice({ kind: 'run', runId: 118 })).toEqual({ kind: 'run', runId: 118 });
     expect(parseBaselineChoice({ kind: 'run', runId: MAX_RUN_ID + 1 })).toBeNull();
     expect(parseBaselineChoice({ kind: 'run', runId: 0 })).toBeNull();
+  });
+});
+
+describe('failuresView', () => {
+  const ctx = (over: Partial<ContextViewState> = {}): ContextViewState => ({
+    connected: true,
+    hasRun: true,
+    problemKind: null,
+    problem: null,
+    branch: 'main',
+    ...over,
+  });
+
+  test('says nothing beside failures, and names the branch whose latest run has none', () => {
+    expect(failuresView([ctx()], true)).toEqual({ state: 'failures', message: null });
+    expect(failuresView([ctx()], false)).toEqual({ state: 'clear', message: 'No failure in the latest run of main.' });
+  });
+
+  test('tells an instance that does not answer from no connection, and says Piwi tries again', () => {
+    const down = ctx({
+      connected: false,
+      hasRun: false,
+      problemKind: 'unreachable',
+      problem: 'Could not reach https://piwi.corp: connect ECONNREFUSED',
+    });
+    expect(failuresView([down], false)).toEqual({
+      state: 'unreachable',
+      message: 'Could not reach https://piwi.corp: connect ECONNREFUSED. Piwi tries again on its own.',
+    });
+    expect(failuresView([ctx({ connected: false, hasRun: false })], false).state).toBe('disconnected');
+  });
+
+  test('says a desktop app that did not prove its token in its own words', () => {
+    const problem = "The desktop app's token is not sent to http://127.0.0.1:3000: restart or update the desktop app.";
+    expect(
+      failuresView([ctx({ connected: false, hasRun: false, problemKind: 'desktop-unproven', problem })], false),
+    ).toEqual({ state: 'desktop-unproven', message: problem });
+  });
+
+  test('tells a project with no run of its branch from one with no failure', () => {
+    expect(failuresView([ctx({ hasRun: false, branch: 'feature/x' })], false)).toEqual({
+      state: 'norun',
+      message: 'No run of feature/x yet. Run the tests with the Piwi reporter, or compare with another run.',
+    });
+  });
+
+  test('a context with a run comes before one that does not answer', () => {
+    const down = ctx({ connected: false, hasRun: false, problemKind: 'unreachable', problem: 'down' });
+    expect(failuresView([down, ctx()], false).state).toBe('clear');
+    expect(failuresView([down, ctx({ hasRun: false })], false).state).toBe('unreachable');
   });
 });

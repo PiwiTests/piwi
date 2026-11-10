@@ -244,7 +244,9 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
   reveals the active file's first failure.
-- The welcome content follows the `piwi.failuresView` context key.
+- The welcome content follows the `piwi.failuresView` context key, the service's `FailuresResult.view.state` (or
+  `unavailable` when the service does not answer); for `norun`, `unreachable` and `desktop-unproven` the view's message
+  is the service's sentence, and the welcome holds the state's buttons.
 - The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 
 ## Runs

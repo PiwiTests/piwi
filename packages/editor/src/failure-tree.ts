@@ -9,8 +9,10 @@ import type {
   FailuresOverlay,
   FailuresResult,
   FailuresRun,
+  FailuresView,
   FailureTreeIcon,
   FailureTreeNode,
+  ProblemKind,
   RunTestsArgs,
   WorkspaceFailure,
 } from './protocol.js';
@@ -375,4 +377,49 @@ export function failuresAnswer(contexts: ContextFailures[], grouping: FailuresGr
     ...(one.updatedAt ? { updatedAt: one.updatedAt } : {}),
   };
   return { ...view, ...failuresDrawn({ ...view, root: one.root }, grouping) };
+}
+
+/** What `failuresView` reads of a context: whether it reads an instance, a run, and why not. */
+export interface ContextViewState {
+  connected: boolean;
+  /** It read a run of its branch, or runs laid over none. */
+  hasRun: boolean;
+  problemKind: ProblemKind | null;
+  problem: string | null;
+  branch: string | null;
+}
+
+/** A sentence ending with one full stop. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * The state a failures view is in and its words, from the contexts: failures when any fails; else no failure when a
+ * context read a run; else, in this order, the first instance that does not answer, the first desktop app that did not
+ * prove it holds the token, no run of a connected context's branch yet, and no connection.
+ */
+export function failuresView(contexts: ContextViewState[], failing: boolean): FailuresView {
+  if (failing) return { state: 'failures', message: null };
+  const read = contexts.find((c) => c.connected && c.hasRun);
+  if (read) return { state: 'clear', message: `No failure in the latest run of ${read.branch ?? 'this branch'}.` };
+  const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
+  if (unreachable) {
+    return {
+      state: 'unreachable',
+      message: `${sentence(unreachable.problem ?? 'The instance does not answer')} Piwi tries again on its own.`,
+    };
+  }
+  const unproven = contexts.find((c) => c.problemKind === 'desktop-unproven');
+  if (unproven)
+    return { state: 'desktop-unproven', message: sentence(unproven.problem ?? 'Restart or update the desktop app') };
+  const idle = contexts.find((c) => c.connected);
+  if (idle) {
+    return {
+      state: 'norun',
+      message: `No run of ${idle.branch ?? 'this branch'} yet. Run the tests with the Piwi reporter, or compare with another run.`,
+    };
+  }
+  return { state: 'disconnected', message: 'Piwi is not connected to an instance, so it has no run to show.' };
 }

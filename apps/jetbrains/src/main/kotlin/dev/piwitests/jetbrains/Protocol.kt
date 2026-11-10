@@ -444,6 +444,12 @@ data class FailuresParams(val grouping: String? = null)
  * per Playwright config). When several contexts have one, the tree holds a `context` node each, which carries its run,
  * and `run`, `overlays`, `baseline` and `runLabel` are null.
  */
+/**
+ * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, disconnected) and the
+ * sentence it shows for it; null beside failures.
+ */
+data class FailuresView(val state: String = "failures", val message: String? = null)
+
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,
     val run: FailuresRun? = null,
@@ -455,6 +461,7 @@ data class FailuresResult(
     val runLabel: String? = null,
     val failing: Int = 0,
     val rerun: List<RunTestsArgs>? = null,
+    val view: FailuresView? = null,
 )
 
 /** `piwi/runId`: the run id typed for A run by id… (`118`, `#118`); null in the answer when the text is not one. */

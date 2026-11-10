@@ -121,7 +121,13 @@ import {
   runIdOf,
   withServerUrl,
 } from './context.js';
-import { failuresAnswer, parseFailuresGrouping, type ContextFailures } from './failure-tree.js';
+import {
+  failuresAnswer,
+  failuresView,
+  parseFailuresGrouping,
+  type ContextFailures,
+  type ContextViewState,
+} from './failure-tree.js';
 import {
   PiwiClient,
   forgetShared,
@@ -1185,7 +1191,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
-    return failuresAnswer(views, failuresGrouping);
+    const answer = failuresAnswer(views, failuresGrouping);
+    const states = contexts.map((c): ContextViewState => ({
+      connected: !!c.index && !c.problem,
+      hasRun: !!c.failures?.run || !!c.failures?.overlays?.length,
+      problemKind: c.problemKind,
+      problem: c.problem,
+      branch: c.branch,
+    }));
+    return { ...answer, view: failuresView(states, answer.items.length > 0) };
   };
   /** The failures last sent in `piwi/failuresChanged`. */
   let failuresSent = JSON.stringify(failuresAnswer([], 'file'));

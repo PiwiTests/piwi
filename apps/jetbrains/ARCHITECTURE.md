@@ -230,6 +230,8 @@ The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel
 service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the ones VS Code's view has: the run,
 **Your runs since**, then the failures grouped by file, cluster, owner or flat. How the service builds the tree:
 [The failures answer](../../packages/editor/ARCHITECTURE.md#the-failures-answer) in the editor service's reference.
+With no failure, the empty text is `Glue.failuresEmpty` of the state the service says (`FailuresResult.view`), with
+links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare With…).
 
 - **The grouping** is chosen with the toolbar's `ToggleAction`s and kept in `PiwiLocalSettings.failuresGrouping`. It is
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for

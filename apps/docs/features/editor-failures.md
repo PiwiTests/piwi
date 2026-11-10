@@ -106,6 +106,10 @@ dashboard** (the run the status bar shows), **Compare with…** (for the active 
 Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge counts the
 failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a failure.
 
+With no failure to list, the view says why in the same words in both editors: no failure in the run read; no run of
+the branch yet, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
+again on its own too); a desktop app to restart or update; or no connection, with **Connect**.
+
 ## Compare with another run
 
 By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:

@@ -233,6 +233,12 @@ the quick fix (`piwi.copyAgentContext`) names once picked.
 
 ### The failures answer
 
+`piwi/failures` says which state the view is in, with its sentence (`view`, `failuresView`): failures; none in a run
+read (`clear`); no run of a connected context's branch (`norun`); an instance that does not answer (`unreachable`); a
+desktop app that did not prove it holds the token (`desktop-unproven`); no connection (`disconnected`). A context with a
+run comes first, then one that does not answer, so a workspace with one context down still reads clear when another
+read its run. Both clients show the sentence and link their actions for the state.
+
 Each item of `piwi/failures` carries:
 
 - its spec relative to the config, its test, its cluster, its owner, its Playwright project, its duration and whether
