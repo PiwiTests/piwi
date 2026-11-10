@@ -16,6 +16,7 @@ import type {
   PausedImage,
   RunControlAction,
   RunLive,
+  RunPresence,
   RunSession,
   RunStop,
   RunTake,
@@ -611,6 +612,90 @@ export function holdText(hold: NonNullable<RunSession['hold']>): string {
   return hold.on ? `Hold failures on: a failed test waits at its line${by}` : `Hold failures off${by}`;
 }
 
+/** Text shown as itself in a Markdown tooltip: a folder's or a tool's name is never a link nor emphasis. */
+function escapedMarkdown(text: string): string {
+  return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
+}
+
+/** Names in a sentence: `A`, `A and B`, `A, B and C`. */
+function listed(names: readonly string[]): string {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** Each name once, in its first place. */
+function once(names: readonly string[]): string[] {
+  return [...new Set(names)];
+}
+
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Who else has a run open, in words: `Also open in Piwi Picker and the desktop app · An agent follows this run`; null
+ * while no other tool has it open. This editor's own entries (`self`) are left out.
+ */
+export function presenceText(session: RunSession): string | null {
+  const others = (session.presence ?? []).filter((p) => !p.self);
+  const open = once(others.filter((p) => p.kind !== 'agent').map((p) => p.name));
+  const parts = [
+    ...(open.length ? [`Also open in ${listed(open)}`] : []),
+    ...(others.some((p) => p.kind === 'agent') ? ['An agent follows this run'] : []),
+  ];
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * Who watches a worker's page now (`RunWorker.watchers`), in words: `Watched by Piwi Picker and you`, this editor
+ * named last as `you`; null while no other tool watches it.
+ */
+export function watchersText(watchers: readonly RunPresence[] | undefined): string | null {
+  const others = once((watchers ?? []).filter((p) => !p.self).map((p) => p.name));
+  if (!others.length) return null;
+  return `Watched by ${listed([...others, ...((watchers ?? []).some((p) => p.self) ? ['you'] : [])])}`;
+}
+
+/**
+ * Who drives a stop now (`RunStop.driver`), in words: `You drive this stop`, `Piwi Picker drives this stop`, `An agent
+ * drives this stop`; with `interact` (the stop takes input), the agent's says that Interact takes control. Null while
+ * nobody drives it.
+ */
+export function driverText(stop: RunStop, interact = false): string | null {
+  const driver = stop.driver;
+  if (!driver) return null;
+  if (driver.self) return 'You drive this stop';
+  const text = `${capitalized(driver.name)} drives this stop`;
+  return driver.kind === 'agent' && interact ? `${text}: Interact takes control` : text;
+}
+
+/** Who drives a stop and who else watches its worker's page, in words, or nothing; each part led by ` · `. */
+function presentAt(stop: RunStop, takes: readonly RunTake[], worker: RunWorker | null | undefined): string {
+  return [driverText(stop, takes.includes('input')), watchersText(worker?.watchers)]
+    .flatMap((part) => (part ? [` · ${part}`] : []))
+    .join('');
+}
+
+/**
+ * Who drives a stop and who else watches its worker's page, in words (`An agent drives this stop: Interact takes
+ * control · Watched by Piwi Picker and you`); null when nobody does.
+ */
+export function stopPresence(stop: ShownStop, sessions: Sessions): string | null {
+  const worker = sessions.get(stop.ref)?.workers.find((w) => w.worker === stop.worker);
+  return presentAt(stop.stop, stop.takes, worker).slice(3) || null;
+}
+
+/**
+ * The paused page's caption of a stop: what it runs, its file and line, then who drives it and who else watches its
+ * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: Interact takes
+ * control · Watched by Piwi Picker and you`).
+ */
+export function stopCaption(stop: ShownStop, sessions: Sessions): string {
+  const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
+  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
+  const present = stopPresence(stop, sessions);
+  return `${said} · ${file}:${stop.stop.line + 1}${present ? ` · ${present}` : ''}`;
+}
+
 /** A worker a panel can watch while its test runs: its run, Playwright's worker index, its slot (`lane`), and its words. */
 export interface WatchTarget {
   ref: string;
@@ -668,23 +753,28 @@ export interface LaneShown {
 /**
  * What the worker panel watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
  * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops` (the stops at
- * their lines now).
+ * their lines now); then who drives its stop and who else watches its page.
  */
 export function laneShown(session: RunSession | undefined, lane: number, stops: readonly ShownStop[]): LaneShown {
   const name = workerName(lane);
   if (!session || session.ended) return { worker: null, stop: null, caption: `${name} · the run ended.` };
   const worker = session.workers.find((w) => w.parallelIndex === lane) ?? null;
   if (!worker) return { worker: null, stop: null, caption: `${name} · starting…` };
-  if (!worker.test) return { worker, stop: null, caption: `${name} · between tests` };
+  const watched = watchersText(worker.watchers);
+  const seen = watched ? ` · ${watched}` : '';
+  if (!worker.test) return { worker, stop: null, caption: `${name} · between tests${seen}` };
   const title = worker.test.title.join(' › ');
   const stop = stops.find((s) => s.ref === session.ref && s.worker === worker.worker) ?? null;
   if (!stop && worker.pausing && worker.waiting) {
-    return { worker, stop: null, caption: `${name} · Pausing · waits in ${worker.waiting.title} · ${title}` };
+    return { worker, stop: null, caption: `${name} · Pausing · waits in ${worker.waiting.title} · ${title}${seen}` };
   }
-  if (!stop) return { worker, stop: null, caption: `${name} · ${worker.pausing ? 'Pausing' : 'Running'} · ${title}` };
+  if (!stop) {
+    return { worker, stop: null, caption: `${name} · ${worker.pausing ? 'Pausing' : 'Running'} · ${title}${seen}` };
+  }
   const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
   const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
-  return { worker, stop, caption: `${name} · ${said} · ${file}:${stop.stop.line + 1}` };
+  const present = presentAt(stop.stop, stop.takes, worker);
+  return { worker, stop, caption: `${name} · ${said} · ${file}:${stop.stop.line + 1}${present}` };
 }
 
 /**
@@ -783,7 +873,8 @@ export function liveText(live: RunLive): string {
  * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
  * many they hold, and how many of them failed, for every run kept that says so (none from a reporter that predates
  * it), with the run's number on the instance once one run names it. Its tooltip links to the runs' pages and to a
- * worker's test; a click watches a worker while one can be, else opens the run's page. None while no run says.
+ * worker's test, and says who else has each run open; a click watches a worker while one can be, else opens the run's
+ * page. None while no run says.
  */
 export function progressItem(sessions: Sessions): ControlItem | null {
   const told = [...sessions.values()].flatMap((s) => (s.progress ? [s.progress] : []));
@@ -812,17 +903,24 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const holds = held.flatMap((s) => {
     if (!s.hold) return [];
     const arg = encodeURIComponent(JSON.stringify([{ ref: s.ref, on: !s.hold.on }]));
-    const name = held.length > 1 ? `${runLabel(s)}: ` : '';
+    const name = held.length > 1 ? `${escapedMarkdown(runLabel(s))}: ` : '';
     return [
       `${name}${holdText(s.hold)} · [Turn ${s.hold.on ? 'off' : 'on'}](command:${RUN_COMMANDS.holdFailures}?${arg})`,
     ];
+  });
+  // Who else has each run open.
+  const kept = [...sessions.values()];
+  const present = kept.flatMap((s) => {
+    const text = presenceText(s);
+    return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text}`)] : [];
   });
   return {
     text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
       `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${links.length ? `\n\n${links.join(' · ')}` : ''}` +
-      `${holds.length ? `\n\n${holds.join('\n\n')}` : ''}`,
+      `${holds.length ? `\n\n${holds.join('\n\n')}` : ''}` +
+      `${present.length ? `\n\n${present.join('\n\n')}` : ''}`,
     markdown: true,
     command: watchable ? RUN_COMMANDS.watch : pages.length ? RUN_COMMANDS.openPage : null,
   };

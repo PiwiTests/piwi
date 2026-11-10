@@ -98,7 +98,8 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   hidden, as on Piwi's other surfaces.
 - **You watch it happen.** The agent's stops show in the editor and the Runs window as yours do, the editor's as
   `Paused by the agent · …`; its first action at a stop says so in a notification; the code it has written names it
-  (`Piwi wrote the steps the agent took above checkout.spec.ts:30.`). You can take over at any stop.
+  (`Piwi wrote the steps the agent took above checkout.spec.ts:30.`). You can take over at any stop
+  ([driving a stop](/guide/concepts#presence-driving-a-stop)): the agent is refused there and told so.
 
 ## In the desktop app
 

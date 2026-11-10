@@ -2,13 +2,22 @@
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
  * tray a hub session is (`desktopRunRef`, `desktopRunOf`), which live runs report a run's page and which worker runs
  * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), what a worker says and which controls it takes,
- * where a stop stands, and what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are
- * `@piwitests/core/run-hub`'s; the stop's place and error, a test's name and what a stop takes come from the Runs
- * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
- * view's input (`view-input.ts`).
+ * who else has a run open, watches a worker's page or drives its stop, where a stop stands, and what a code made at a
+ * stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s; the stop's place and
+ * error, a test's name and what a stop takes come from the Runs window's own pure half
+ * (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live view's input
+ * (`view-input.ts`).
  */
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
-import type { HubAction, HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type {
+  HubAction,
+  HubCodeAction,
+  HubLive,
+  HubPresence,
+  HubSession,
+  HubStop,
+  HubWorker,
+} from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import { parseLocation } from '#shared/parse-location';
@@ -242,6 +251,67 @@ export function desktopWorkerState(worker: HubWorker, root: string | null): stri
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running' || worker.state === 'other') return 'Running';
   return 'Between tests';
+}
+
+/** Names in a sentence: `A`, `A and B`, `A, B and C`, each once. */
+function namesSaid(names: readonly string[]): string {
+  const once = [...new Set(names)];
+  return once.length < 2 ? (once[0] ?? '') : `${once.slice(0, -1).join(', ')} and ${once.at(-1)}`;
+}
+
+/** A sentence's first letter in capitals. */
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A tool present on a run as the window names it in a sentence: `you` for this window, another of the app's apart. */
+function presenceName(presence: HubPresence): string {
+  if (presence.self) return 'you';
+  if (presence.kind === 'agent') return 'an agent';
+  if (presence.kind === 'desktop') return 'another window of the app';
+  return presence.name;
+}
+
+/**
+ * Who else has a run open, beside this window (`Also open in Piwi Picker · An agent follows this run`); null while
+ * nobody does, and from a hub without `presence`.
+ */
+export function desktopRunPresence(session: Pick<HubSession, 'presence'>): string | null {
+  const others = (session.presence ?? []).filter((presence) => !presence.self);
+  const tools = others.filter((presence) => presence.kind !== 'agent').map(presenceName);
+  const said: string[] = [];
+  if (tools.length) said.push(`Also open in ${namesSaid(tools)}`);
+  if (others.some((presence) => presence.kind === 'agent')) said.push('An agent follows this run');
+  return said.length ? said.join(' · ') : null;
+}
+
+/**
+ * Who watches a worker's page now (`Watched by Piwi Picker and you`), this window last; null while nobody else does,
+ * the window's own view alone being no news.
+ */
+export function desktopWorkerWatchers(worker: Pick<HubWorker, 'watchers'>): string | null {
+  const watchers = worker.watchers ?? [];
+  const others = watchers.filter((presence) => !presence.self);
+  if (!others.length) return null;
+  const names = others.map(presenceName);
+  if (watchers.some((presence) => presence.self)) names.push('you');
+  return `Watched by ${namesSaid(names)}`;
+}
+
+/**
+ * Who drives a worker's stop, and what the window offers there: **Take control** (`drive` on) from another tool, or
+ * while nobody drives it and an agent follows the run (`agentFollows`), and **Give back** what this window drives
+ * (`drive` off). Null while nobody drives and no agent follows.
+ */
+export function desktopStopDriver(
+  stop: Pick<HubStop, 'driver'>,
+  agentFollows = false,
+): { text: string; offer: 'take' | 'give' | null } | null {
+  const driver = stop.driver;
+  if (!driver) return agentFollows ? { text: 'An agent may act on this stop', offer: 'take' } : null;
+  if (driver.self) return { text: 'You drive this stop', offer: 'give' };
+  if (driver.kind === 'agent') return { text: 'An agent drives this stop', offer: 'take' };
+  return { text: `${capitalized(presenceName(driver))} drives this stop`, offer: 'take' };
 }
 
 /**

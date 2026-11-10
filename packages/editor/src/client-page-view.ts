@@ -90,17 +90,27 @@ class FrameSender<F> {
   }
 }
 
+/** A viewer of the editor's client, which presence names by the editor's name as it gave it (`editor`). */
+function editorViewer(editor: () => string | null, viewer: Viewer): Viewer {
+  return Object.defineProperty(viewer, 'who', {
+    get: () => ({ kind: 'editor' as const, name: editor() ?? 'the editor' }),
+    enumerable: true,
+  });
+}
+
 /** One editor panel's viewer of a stop, sharing the run channel with the other local viewers. */
 export class ClientPageView {
   private current: PageViewParams | null = null;
   private readonly held = new HeldInput();
   private readonly sender: FrameSender<PageFrame>;
-  readonly viewer: Viewer = { frame: (frame) => this.frame(frame) };
+  readonly viewer: Viewer;
 
   constructor(
     private readonly sessions: RunSessions,
     notify: (frame: PageFrame) => Promise<void>,
+    editor: () => string | null = () => null,
   ) {
+    this.viewer = editorViewer(editor, { frame: (frame) => this.frame(frame) });
     // The stop may have ended since the frame came, before the paced session change says so.
     this.sender = new FrameSender(
       notify,
@@ -175,12 +185,14 @@ export class ClientLaneView {
   /** The stop the input held down was sent to, which a release goes to. */
   private heldAt: PageInputParams | null = null;
   private readonly sender: FrameSender<LaneFrame>;
-  readonly viewer: Viewer = { frame: () => {}, laneFrame: (frame) => this.frame(frame) };
+  readonly viewer: Viewer;
 
   constructor(
     private readonly sessions: RunSessions,
     notify: (frame: LaneFrame) => Promise<void>,
+    editor: () => string | null = () => null,
   ) {
+    this.viewer = editorViewer(editor, { frame: () => {}, laneFrame: (frame) => this.frame(frame) });
     // The lane's worker may have gone on or left since the frame came, before the paced session change says so.
     this.sender = new FrameSender(
       notify,

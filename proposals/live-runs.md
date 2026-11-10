@@ -124,8 +124,13 @@ own progress, **Watch** and **Watch live** still name one view twice, and Stop s
 D12's split: **Hold failures** is each run's own (`hold {on, by}` on the hub's session, `piwi/holdRun`, the hub's
 command `hold`, `run_follow`'s `hold`), on from the start of a run built to be watched, set from the editors, the Runs
 window, the desktop tray and by agents; the hub's `follow` holds nothing, so an open Runs window no longer holds every
-failure (RW19). The rest of P6 is proposed: presence and one driver, the start options, one input model, attention and
-the ambient state, the editors' unattended runs and the Runs window's run-level controls. The later phases are
+failure (RW19). Then presence and one driver: the hub's feature `presence` names who has each run open (Runs windows
+that follow the runs, the desktop app's window, an agent following the run), who watches each worker's page and who
+drives each stop (`presence`, `watchers`, `driver`, each connection's own marked `self`); the agent drives a stop it
+asked for or acted on, a person's input, pick, intent or `drive` takes it, the agent hears `taken` and is refused
+while a person drives; every surface shows it, and the Runs window labels the agent's stops (IO7, RW24). The rest of
+P6 is proposed: the start options, one input model, attention and the ambient state, the editors' unattended runs and
+the Runs window's run-level controls. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

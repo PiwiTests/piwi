@@ -557,6 +557,61 @@ test.describe('Desktop run live view', () => {
     await expect(team).toHaveAttribute('target', '_blank');
   });
 
+  test('says who else has the run open, who watches a worker’s page and who drives its stop', async ({ page }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const PICKER = { kind: 'picker', name: 'Piwi Picker' };
+    const AGENT = { kind: 'agent', name: 'an agent' };
+    const SELF = { kind: 'desktop', name: 'the desktop app', self: true };
+    const present = (worker: Record<string, unknown>) => {
+      const event = session(worker);
+      return { ...event, session: { ...event.session, presence: [SELF, PICKER, AGENT] } };
+    };
+
+    // The run: who else has it open, this window left out; the worker: who watches its page beside this window.
+    await page.evaluate((event) => window.__hub.send(event), present({ ...RUNNING, watchers: [PICKER, SELF] }));
+    await expect(tray(page).getByTestId('desktop-run-presence')).toHaveText(
+      'Also open in Piwi Picker · An agent follows this run',
+    );
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    await expect(worker.getByTestId('desktop-worker-watchers')).toHaveText('Watched by Piwi Picker and you');
+
+    // A stop the agent asked for and drives: Take control drives it from this window.
+    const agentStop = stopped('s1', { by: 'agent', driver: AGENT });
+    await page.evaluate((event) => window.__hub.send(event), present(agentStop));
+    await expect(worker.getByText('Paused by the agent')).toBeVisible();
+    const driver = worker.getByTestId('desktop-stop-driver');
+    await expect(driver).toContainText('An agent drives this stop');
+    await driver.getByRole('button', { name: 'Take control' }).click();
+    await expect
+      .poll(() => commands.find((c) => c.type === 'drive'))
+      .toMatchObject({ ref: REF, worker: 0, since: 's1', on: true, viewer: VIEWER });
+
+    // This window drives it: Give back lets the agent act again.
+    await page.evaluate((event) => window.__hub.send(event), present(stopped('s1', { by: 'agent', driver: SELF })));
+    await expect(driver).toContainText('You drive this stop');
+    await driver.getByRole('button', { name: 'Give back' }).click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'drive').at(-1))
+      .toMatchObject({ ref: REF, worker: 0, since: 's1', on: false });
+
+    // Another tool's person drives it: said, and the window may take it.
+    await page.evaluate((event) => window.__hub.send(event), present(stopped('s1', { driver: PICKER })));
+    await expect(driver).toContainText('Piwi Picker drives this stop');
+    await expect(driver.getByRole('button', { name: 'Take control' })).toBeVisible();
+
+    // Nobody else on the run: no line.
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect(tray(page).getByTestId('desktop-run-presence')).toHaveCount(0);
+    await expect(worker.getByTestId('desktop-worker-watchers')).toHaveCount(0);
+    await expect(driver).toHaveCount(0);
+  });
+
   test('keeps the keyboard on the controls: Pause while a step runs, Step again at the next stop', async ({ page }) => {
     await installBridge(page);
     const commands = await playHub(page);

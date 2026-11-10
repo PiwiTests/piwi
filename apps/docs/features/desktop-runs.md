@@ -26,8 +26,7 @@ end without stopping again, and [**End the test**](./end-the-test) skips the res
 **Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
 it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
 which runs to show you the failure. It is [the run's own](/guide/concepts#hold-failures), off again as the app's last
-window closes. A run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure.
+window closes. A run [nobody attends](/guide/concepts#hold-failures) never holds one, and its switch says why.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
@@ -58,8 +57,8 @@ update it.
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
 until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
-to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
-to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
+to the tray, and `Tab` leaves the view unless a click into it took the keyboard. Nothing keeps the
+[frames](/guide/concepts#watch-share-live).
 
 **Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
 the test as **Pause** does, watching its worker: the tray opens at the stop, the page live. The row
@@ -113,6 +112,10 @@ What it does shows in the tray: a stop it asked for says so (**Paused by the age
 at a stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under
 **Code from the runs**, to copy, and back to the agent in its answer: no file is written. A run nobody attends is not
 served, so an agent sees no Flake Lab run, bisect or lab job.
+
+The tray names who else is there: the tools that have a run open (**Also open in Piwi Picker · An agent follows this
+run**), who watches a worker's page, and who [drives a stop](/guide/concepts#presence-driving-a-stop): **Take control**
+from an agent, and **Give back**.
 
 An agent pauses, steps or runs to a line only while the app's window is open, in the tray included: a headless stop
 goes on with no window to show it. A stop it asked for goes on two minutes after its last call, so a run never waits

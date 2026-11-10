@@ -51,6 +51,8 @@ interface TrayRun {
 async function plugin(label: string | null = 'main', trays = 1) {
   const wants: boolean[] = [];
   const shows: string[][] = [];
+  const presents: boolean[] = [];
+  const visibility = ref<'visible' | 'hidden'>('visible');
   let stopListener: ((session: HubSession, worker: HubWorker) => void) | null = null;
   let emit: (message: Record<string, unknown>) => void = () => {};
   const runs = ref<TrayRun[]>([]);
@@ -79,6 +81,7 @@ async function plugin(label: string | null = 'main', trays = 1) {
     state,
     want: (on: boolean) => wants.push(on),
     show: (refs: Iterable<string>) => shows.push([...refs]),
+    present: (on: boolean) => presents.push(on),
     onStop: (listener: typeof stopListener) => {
       stopListener = listener;
       return () => {};
@@ -86,6 +89,7 @@ async function plugin(label: string | null = 'main', trays = 1) {
   };
   const useHub = vi.fn(() => hub);
   vi.stubGlobal('useDesktopRunHub', useHub);
+  vi.stubGlobal('useDocumentVisibility', () => visibility);
   vi.stubGlobal('document', { hidden: true, hasFocus: () => false });
   vi.stubGlobal('BroadcastChannel', FakeChannel);
   vi.stubGlobal(
@@ -102,6 +106,8 @@ async function plugin(label: string | null = 'main', trays = 1) {
   return {
     wants,
     shows,
+    presents,
+    visibility,
     runs,
     holds,
     trayOpen,
@@ -232,10 +238,12 @@ describe('the window’s hold on its runs’ hub', () => {
 
   test('with no tray on the page, shows no run live and tells the system of every stop, whatever the focus', async () => {
     // An analytics dashboard in TV mode, or an error page: no layout mounts the tray.
-    const { shows, runs, trayMounts, trayOpen, stop } = await plugin('main', 0);
+    const { shows, presents, visibility, runs, trayMounts, trayOpen, stop } = await plugin('main', 0);
     runs.value = [running(1, 'reproduce', 'desktop-5')];
     await settle();
     expect(shows).toEqual([[]]);
+    // With no tray, the window is present on no run.
+    expect(presents).toEqual([false]);
     vi.stubGlobal('document', { hidden: false, hasFocus: () => true });
     stop(session('desktop-5'), stopped('step'));
     stop(session('desktop-5'), stopped('failure'));
@@ -250,6 +258,11 @@ describe('the window’s hold on its runs’ hub', () => {
     expect(shows.at(-1)).toEqual(['desktop-5']);
     stop(session('desktop-5'), stopped('failure'));
     expect(notes).toHaveLength(2);
+    // Present while the tray shows the runs and the window is not hidden.
+    expect(presents).toEqual([false, true]);
+    visibility.value = 'hidden';
+    await settle();
+    expect(presents).toEqual([false, true, false]);
   });
 
   test('in another window, holds for that window’s own runs alone; in a run’s output window, nothing', async () => {

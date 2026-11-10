@@ -6690,6 +6690,87 @@
   "runs_holdByAgent": {
     "message": "Réglé par un agent"
   },
+  "runs_presenceOpen": {
+    "message": "Aussi ouverte dans $tools$",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "Un agent suit cette exécution"
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker"
+  },
+  "runs_presenceDesktop": {
+    "message": "l’application de bureau"
+  },
+  "runs_presenceAgent": {
+    "message": "un agent"
+  },
+  "runs_watchedBy": {
+    "message": "Regardée par $who$",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "vous"
+  },
+  "runs_driverYou": {
+    "message": "Vous pilotez cet arrêt"
+  },
+  "runs_driverAgent": {
+    "message": "Un agent pilote cet arrêt"
+  },
+  "runs_driverDesktop": {
+    "message": "L’application de bureau pilote cet arrêt"
+  },
+  "runs_driverTool": {
+    "message": "$tool$ pilote cet arrêt",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Prendre la main"
+  },
+  "runs_takeControlTitle": {
+    "message": "Pilotez vous-même cet arrêt : les actions d’un agent y attendent que vous le rendiez"
+  },
+  "runs_giveBack": {
+    "message": "Rendre la main"
+  },
+  "runs_giveBackTitle": {
+    "message": "Rendre cet arrêt : un agent peut de nouveau y agir"
+  },
+  "runs_stoppedByAgent": {
+    "message": "Mis en pause par l’agent"
+  },
+  "runs_stoppedByAgentStep": {
+    "message": "Arrêté après le pas de l’agent"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Arrêté à la ligne demandée par l’agent"
+  },
+  "runs_announceDriveTaken": {
+    "message": "Vous pilotez maintenant l’arrêt de $test$ : l’agent attend que vous le rendiez.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Du code depuis cet arrêt"
   },

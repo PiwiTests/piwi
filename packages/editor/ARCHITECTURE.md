@@ -739,8 +739,8 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
 `recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
-`keepaliveMs`, and what it does beyond every hub (`features`: `peers`). A reader keeps the features it knows; a hub that
-predates the list reads as having none.
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`, `lanes`, `hold`, `presence`). A reader keeps
+the features it knows; a hub that predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -750,7 +750,8 @@ not a boundary.
 **Commands.** Every later message is a command with an `id`, checked field by field (`parseHubCommand`):
 
 - `subscribe`;
-- `follow` (`on`): a person follows the runs there, a Runs window open; it holds nothing;
+- `follow` (`on`): a person follows the runs there, a Runs window open, named in each run's presence; it holds nothing;
+- `drive` (`since`, `on`): the connection drives the stop, or gives it back ([Presence and one driver](#presence-and-one-driver));
 - `hold` (`ref`, `on`): the run's Hold failures, as a person sets it, the hub's feature `hold`
   ([Stops no pause bar shows](#stops-no-pause-bar-shows));
 - `runControl`: `pause`, and `step`, `resume` and `finish` with the `since` they need, as `piwi/runControl` takes them
@@ -819,6 +820,28 @@ not answered the close. A connection being closed holds none of the places count
 A subscribed connection is a surface that answers stops; a run's Hold failures says whether its failures wait
 ([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
 `follow` says a Runs window is open, `view` names one stop.
+
+### Presence and one driver
+
+Every surface shows who else is there (the hub's feature `presence`). `RunSessions` keeps it from its viewers, each
+naming its tool (`Viewer.who`): a hub's WebSocket is Piwi Picker, the desktop app's joined peer its window, the
+editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at `initialize`, and the agent
+`AGENT_VIEWER`.
+
+- **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window, or the desktop app's window
+  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does.
+- **A worker's `watchers`**: the viewers of its lane and of its stop's live view, each tool once.
+- **A stop's `driver`**: one at a time. The agent drives a stop it asked for, and one it acts on (`page_act`) while no
+  person drives it. A person's click, key, text or wheel on the view (never a pointer passing over it), pick on the
+  image, intent or `drive` takes it, and takes it from the agent, which hears `taken` in `run_follow`; while a person
+  drives, the agent's actions, its Resume, Step, Finish and End there, and its turning Hold failures off for that stop
+  are refused or leave it held. The stop a person's Step or Run to comes to stays theirs (`carried`). It is given back
+  by `drive` off, by no longer watching the page, by leaving or no longer following the runs, which the agent hears
+  (`given-back`); the agent's goes as it stops following the run. A person's controls are never refused, and a tool
+  with no name drives nothing.
+
+The editor's client hears the editors' entries marked `self`; the hub marks each connection's own entries for it
+(`presenceFor`), as it does each stop's `intents`.
 
 ### The live view
 

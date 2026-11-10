@@ -109,6 +109,8 @@ let serial = 0;
 /** The runs the window shows live, and those the server was told of on this stream. */
 let shown = new Set<string>();
 let told = new Set<string>();
+/** The window shows the runs to a person now (its tray, while the window is not hidden): each run names it present. */
+let present = false;
 const frameListeners = new Map<string, Set<(frame: DesktopFrame) => void>>();
 /** The latest frame of each view a listener asked for, in memory alone, until the view ends. */
 const latestFrames = new Map<string, DesktopFrame>();
@@ -158,6 +160,7 @@ function heard(text: string): void {
       lanesTold = new Map();
       void tellShown();
       void tellLanesSoon();
+      if (present) void command({ type: 'follow', on: true });
       return;
     case 'stop-code':
       if (typeof value.code === 'object' && value.code) keep({ type: 'stop-code', code: value.code as StopCode });
@@ -418,6 +421,15 @@ export function useDesktopRunHub() {
       wanted = on;
       if (on) open();
       else close();
+    },
+    /**
+     * Whether the window shows the runs to a person now (`on`: its tray, while the window is not hidden): the hub names
+     * it present on each run, said again as the stream opens again, and it gives back the stops it drove once it is not.
+     */
+    present(on: boolean): void {
+      if (on === present) return;
+      present = on;
+      if (viewer) void command({ type: 'follow', on });
     },
     /** The runs the window shows live now: a failure no pause bar shows is held in them. */
     show(refs: Iterable<string>): void {

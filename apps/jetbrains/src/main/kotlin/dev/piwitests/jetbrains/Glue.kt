@@ -1876,26 +1876,103 @@ object Glue {
                 }
         }
 
+    /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
+    private fun listed(names: List<String>): String =
+        if (names.size < 2) names.firstOrNull().orEmpty() else "${names.dropLast(1).joinToString(", ")} and ${names.last()}"
+
+    /**
+     * Who else has a run open, in words: `Also open in Piwi Picker and the desktop app · An agent follows this run`;
+     * null while no other tool has it open. This IDE's own entries (`self`) are left out.
+     */
+    fun presenceText(session: RunSession): String? {
+        val others = session.presence.orEmpty().filter { !it.self }
+        val open = others.filter { it.kind != "agent" }.map { it.name }.distinct()
+        val parts = listOfNotNull(
+            open.takeIf { it.isNotEmpty() }?.let { "Also open in ${listed(it)}" },
+            "An agent follows this run".takeIf { others.any { it.kind == "agent" } },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    /**
+     * Who else has each run open (`presenceText`), one line a run, each named (`runLabel`) when there are several; null
+     * while no other tool has one open.
+     */
+    fun runsPresenceText(sessions: Map<String, RunSession>): String? {
+        val lines = sessions.values.mapNotNull { session ->
+            presenceText(session)?.let { if (sessions.size > 1) "${runLabel(session)}: $it" else it }
+        }
+        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /**
+     * Who watches a worker's page now (`RunWorker.watchers`), in words: `Watched by Piwi Picker and you`, this IDE named
+     * last as `you`; null while no other tool watches it.
+     */
+    fun watchersText(watchers: List<RunPresence>?): String? {
+        val others = watchers.orEmpty().filter { !it.self }.map { it.name }.distinct()
+        if (others.isEmpty()) return null
+        return "Watched by ${listed(others + listOfNotNull("you".takeIf { watchers.orEmpty().any { it.self } }))}"
+    }
+
+    /**
+     * Who drives a stop now (`RunStop.driver`), in words: `You drive this stop`, `Piwi Picker drives this stop`, `An
+     * agent drives this stop`; with `interact` (the stop takes input), the agent's says that Interact takes control.
+     * Null while nobody drives it.
+     */
+    fun driverText(stop: RunStop, interact: Boolean = false): String? {
+        val driver = stop.driver ?: return null
+        if (driver.self) return "You drive this stop"
+        val text = "${driver.name.replaceFirstChar { it.uppercaseChar() }} drives this stop"
+        return if (driver.kind == "agent" && interact) "$text: Interact takes control" else text
+    }
+
+    /** Who drives a stop and who else watches its worker's page, in words; null when nobody does. */
+    private fun presentAt(stop: RunStop, takes: List<String>, worker: RunWorker?): String? =
+        listOfNotNull(driverText(stop, "input" in takes), watchersText(worker?.watchers))
+            .takeIf { it.isNotEmpty() }?.joinToString(" · ")
+
+    /**
+     * Who drives a stop and who else watches its worker's page, in words (`An agent drives this stop: Interact takes
+     * control · Watched by Piwi Picker and you`); null when nobody does.
+     */
+    fun stopPresence(stop: ShownStop, sessions: Map<String, RunSession>): String? =
+        presentAt(stop.stop, stop.takes, sessions[stop.ref]?.workers.orEmpty().firstOrNull { it.worker == stop.worker })
+
+    /**
+     * The Paused Page tab's caption of a stop: what it runs and its place, then who drives it and who else watches its
+     * worker's page (`Paused · Click getByRole('button') · cart.spec.ts:12 · An agent drives this stop: Interact takes
+     * control · Watched by Piwi Picker and you`).
+     */
+    fun stopCaption(stop: ShownStop, sessions: Map<String, RunSession>): String =
+        listOfNotNull(
+            "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}",
+            stopPresence(stop, sessions),
+        ).joinToString(" · ")
+
     /** What a Worker tab says of its slot: the worker there now, its stop, and the caption above the image. */
     data class LaneShown(val worker: RunWorker?, val stop: ShownStop?, val caption: String)
 
     /**
      * What the Worker tab watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
-     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`.
+     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`; then who
+     * drives its stop and who else watches its page.
      */
     fun laneShown(session: RunSession?, lane: Int, stops: List<ShownStop>): LaneShown {
         val name = workerName(lane)
         if (session == null || session.ended) return LaneShown(null, null, "$name · the run ended.")
         val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == lane }
             ?: return LaneShown(null, null, "$name · starting…")
-        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests")
+        val seen = watchersText(worker.watchers)?.let { " · $it" }.orEmpty()
+        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests$seen")
         val title = test.title.orEmpty().joinToString(" › ")
         val stop = stops.firstOrNull { it.ref == session.ref && it.worker == worker.worker }
         if (stop == null && worker.pausing && worker.waiting != null) {
-            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title")
+            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title$seen")
         }
-        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
-        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
+        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title$seen")
+        val present = presentAt(stop.stop, stop.takes, worker)?.let { " · $it" }.orEmpty()
+        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}$present")
     }
 
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */

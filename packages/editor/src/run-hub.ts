@@ -172,6 +172,9 @@ interface Connection {
   peersHeard: string | null;
 }
 
+/** A WebSocket connection's tool, as presence names it: only a browser extension opens one. */
+const PICKER: Viewer['who'] = { kind: 'picker', name: 'Piwi Picker' };
+
 /** Cut a connection being closed once `CLOSE_GRACE_MS` passed, unless the other side closed it by then. */
 function cutSoon(ws: Socket): void {
   if (ws.cutting) return;
@@ -292,19 +295,32 @@ export class RunHub {
     }
   }
 
-  /** A session as one connection hears it: each stop with what it takes from that connection now. */
+  /**
+   * A session as one connection hears it: each stop with what it takes from that connection now, and who is present,
+   * watches and drives, the connection itself marked `self`.
+   */
   private forViewer(session: HubSession, connection: Connection): HubSession {
     const { sessions } = this.options;
+    const present = sessions.presenceFor(session.ref, connection.viewer);
+    const { presence: _presence, ...rest } = session;
     return {
-      ...session,
-      workers: session.workers.map((worker) =>
-        worker.stop
-          ? {
-              ...worker,
-              stop: { ...worker.stop, intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer) },
-            }
-          : worker,
-      ),
+      ...rest,
+      ...(present?.presence.length ? { presence: present.presence } : {}),
+      workers: session.workers.map(({ watchers: _watchers, ...worker }) => {
+        const own = present?.workers.get(worker.worker);
+        const seen = own?.watchers.length ? { watchers: own.watchers } : {};
+        if (!worker.stop) return { ...worker, ...seen };
+        const { driver: _driver, ...stop } = worker.stop;
+        return {
+          ...worker,
+          ...seen,
+          stop: {
+            ...stop,
+            intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer),
+            ...(own?.driver ? { driver: own.driver } : {}),
+          },
+        };
+      }),
     };
   }
 
@@ -402,8 +418,8 @@ export class RunHub {
    * nothing until it subscribes, commands the hub as a WebSocket connection does, and counts toward none of the
    * WebSocket's limits.
    */
-  join(transport: HubTransport): HubPeer {
-    const connection = this.connection(transport, null);
+  join(transport: HubTransport, who?: Viewer['who']): HubPeer {
+    const connection = this.connection(transport, null, who);
     this.connections.add(connection);
     return {
       viewer: connection.viewer,
@@ -420,7 +436,7 @@ export class RunHub {
     };
   }
 
-  private connection(transport: HubTransport, ws: Socket | null): Connection {
+  private connection(transport: HubTransport, ws: Socket | null, who?: Viewer['who']): Connection {
     const connection: Connection = {
       transport,
       ws,
@@ -429,6 +445,7 @@ export class RunHub {
       viewer: {
         frame: (frame) => this.frame(connection, frame),
         laneFrame: (frame) => this.laneFrame(connection, frame),
+        ...(who ? { who } : {}),
       },
       frames: new Map(),
       input: new RateWindow(MAX_VIEW_EVENT_RATE),
@@ -475,7 +492,7 @@ export class RunHub {
 
   private accept(socket: WebSocket): void {
     const ws: Socket = { socket, authenticated: false, alive: true, cutting: false };
-    const connection = this.connection(socketTransport(socket), ws);
+    const connection = this.connection(socketTransport(socket), ws, PICKER);
     this.connections.add(connection);
     const hello = setTimeout(
       () => closeWith(ws, HUB_CLOSE.helloTimeout, 'No hello in time.'),
@@ -558,6 +575,8 @@ export class RunHub {
           return;
         }
         case 'follow':
+          // A Runs window open: each run names it among those present.
+          sessions.presentOn(connection.viewer, command.on);
           return reply({
             ok: true,
             message: 'Each run’s Hold failures says whether a failure no pause bar shows waits at its line.',
@@ -620,7 +639,7 @@ export class RunHub {
         }
         case 'pick-at': {
           const { ref, worker, since, x, y } = command;
-          const picked = await sessions.pickAt({ ref, worker, since, x, y });
+          const picked = await sessions.pickAt({ ref, worker, since, x, y }, connection.viewer);
           return reply(picked, {
             locator: picked.locator,
             ...(picked.taken !== undefined ? { taken: picked.taken } : {}),
@@ -630,6 +649,10 @@ export class RunHub {
           return reply(sessions.share({ ref: command.ref, on: command.on }));
         case 'hold':
           return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
+        case 'drive': {
+          const { ref, worker, since, on } = command;
+          return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));
+        }
         case 'watch': {
           const { ref, lane, on } = command;
           reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));

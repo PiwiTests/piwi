@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type {
   LocatorAtCaretResult,
+  RunPresence,
   RunSession,
   RunStop,
   RunTake,
@@ -53,6 +54,11 @@ import {
   pausedPageViewChange,
   picksOnImage,
   pausedText,
+  presenceText,
+  driverText,
+  watchersText,
+  stopCaption,
+  stopPresence,
   remember,
   requestPicks,
   runStarted,
@@ -655,6 +661,93 @@ describe('a stop', () => {
       label: '$(debug-pause) Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
       description: 'checkout › pays · checkout.page.ts:9 · Worker 2',
     });
+  });
+});
+
+describe('who else is there', () => {
+  const picker: RunPresence = { kind: 'picker', name: 'Piwi Picker' };
+  const desktop: RunPresence = { kind: 'desktop', name: 'the desktop app' };
+  const agent: RunPresence = { kind: 'agent', name: 'an agent' };
+  const me: RunPresence = { kind: 'editor', name: 'Visual Studio Code', self: true };
+
+  test('shows a run’s folder and the tools’ names as text in the progress tooltip, never as a link', () => {
+    const named = (ref: string, root: string): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      root,
+      hold: { on: false, by: 'start' },
+      presence: [{ kind: 'picker', name: 'Piwi Picker' }],
+      progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+    });
+    const tooltip = progressItem(
+      sessionsOf(named('ed-1', '/w/[x](command:piwi.holdFailures)'), named('ed-2', '/w/my_shop_app')),
+    )!.tooltip;
+    expect(tooltip).not.toContain('[x](command:');
+    expect(tooltip).toContain('Run in \\[x\\](command:piwi.holdFailures) (ed-1): Also open in Piwi Picker');
+    expect(tooltip).toContain('Run in my\\_shop\\_app (ed-2): Hold failures off');
+  });
+
+  test('names the tools that have a run open, leaving this editor out', () => {
+    const run = session('ed-1', [worker(0, 'running')]);
+    expect(presenceText(run)).toBeNull();
+    expect(presenceText({ ...run, presence: [me] })).toBeNull();
+    expect(presenceText({ ...run, presence: [picker] })).toBe('Also open in Piwi Picker');
+    expect(presenceText({ ...run, presence: [picker, picker, desktop, agent, me] })).toBe(
+      'Also open in Piwi Picker and the desktop app · An agent follows this run',
+    );
+    expect(presenceText({ ...run, presence: [agent] })).toBe('An agent follows this run');
+    const tooltip = progressItem(
+      sessionsOf({
+        ...run,
+        presence: [picker, agent],
+        progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+      }),
+    )!.tooltip;
+    expect(tooltip).toContain('\n\nAlso open in Piwi Picker · An agent follows this run');
+  });
+
+  test('names who watches a worker’s page, this editor last as you, and nothing while it alone does', () => {
+    expect(watchersText(undefined)).toBeNull();
+    expect(watchersText([me])).toBeNull();
+    expect(watchersText([me, picker])).toBe('Watched by Piwi Picker and you');
+    expect(watchersText([picker, agent, desktop])).toBe('Watched by Piwi Picker, an agent and the desktop app');
+  });
+
+  test('names who drives a stop, and that Interact takes it from the agent', () => {
+    const stop = stopAt(spec, 5, false);
+    expect(driverText(stop)).toBeNull();
+    expect(driverText({ ...stop, driver: me }, true)).toBe('You drive this stop');
+    expect(driverText({ ...stop, driver: picker }, true)).toBe('Piwi Picker drives this stop');
+    expect(driverText({ ...stop, driver: agent })).toBe('An agent drives this stop');
+    expect(driverText({ ...stop, driver: agent }, true)).toBe('An agent drives this stop: Interact takes control');
+  });
+
+  test('says who drives the stop and who watches it in the paused page’s and the worker panel’s captions', () => {
+    const uri = 'file:///work/shop/tests/cart.spec.ts';
+    const stopped = worker(5, 'stopped', {
+      parallelIndex: 1,
+      stop: { ...stopAt(uri, 7, false), by: 'agent', driver: agent },
+      takes: ['input'],
+      watchers: [picker, me],
+    });
+    const sessions = sessionsOf(session('ed-1', [stopped]));
+    const at = stopsOf(sessions);
+    const said = 'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8';
+    const present = 'An agent drives this stop: Interact takes control · Watched by Piwi Picker and you';
+    expect(stopPresence(at[0]!, sessions)).toBe(present);
+    expect(stopCaption(at[0]!, sessions)).toBe(`${said} · ${present}`);
+    expect(laneShown(session('ed-1', [stopped]), 1, at).caption).toBe(`Worker 2 · ${said} · ${present}`);
+    // A stop nobody drives and no other tool watches says neither.
+    const alone = worker(5, 'stopped', { parallelIndex: 1, stop: stopAt(uri, 7, false), watchers: [me] });
+    const quiet = sessionsOf(session('ed-1', [alone]));
+    expect(stopPresence(stopsOf(quiet)[0]!, quiet)).toBeNull();
+    expect(stopCaption(stopsOf(quiet)[0]!, quiet)).toBe(
+      'Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8',
+    );
+    // A running worker's panel says who else watches it.
+    const running = worker(5, 'running', { parallelIndex: 1, watchers: [desktop, me] });
+    expect(laneShown(session('ed-1', [running]), 1, []).caption).toBe(
+      'Worker 2 · Running · checkout › pays · Watched by the desktop app and you',
+    );
   });
 });
 

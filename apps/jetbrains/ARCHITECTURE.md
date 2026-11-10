@@ -857,6 +857,14 @@ gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (
 the browser (`Glue.sharedText`), with **Copy the Command** and **Stop Sharing**. A stop an agent asked for reads
 `Paused by the agent · …` (`RunStop.by`, `Glue.pausedText`).
 
+**Who else is there.** The Paused Page tab's caption (`Glue.stopCaption`, kept as it changes by `draw`), the Worker
+tab's (`Glue.laneShown`), the gutter arrow's tooltip and a stop's entry in the status bar item's menu
+(`Glue.stopPresence`) add who drives the stop (`Glue.driverText`, from `RunStop.driver`: `You drive this stop`, `An
+agent drives this stop: Interact takes control` where the stop takes input) and who else watches its page
+(`Glue.watchersText`, from `RunWorker.watchers`, the IDE itself named `you` and left out when alone). The status bar
+item's tooltip of a run names the other tools that have each run open (`Glue.runsPresenceText`, from
+`RunSession.presence`). Interact's input or a pick takes a stop from the agent: no request of its own.
+
 **Share the Run Live** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
 instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, `RunSession.live`): the only run it
 fits, else the one chosen (`Glue.liveTarget`). The first share in the project since it opened asks what goes out and

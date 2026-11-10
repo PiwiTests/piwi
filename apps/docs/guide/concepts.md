@@ -238,14 +238,25 @@ to, at `page.pause()`, or at a failure held for a look. Each tool names it by wh
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
 started with breakpoints, a debug run or a reproduction, off otherwise, and any tool that follows the run turns it on
 or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a failure goes on at
-once, as without Piwi. A run nobody attends, such as a Flake Lab run, never holds one. Each tool shows it as the
-last one set it: the desktop app's switch turns it off as the app's last window closes only when no other tool set it
-since.
+once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job, a run with
+`--repeat-each` above 1 and UI mode go on past each failure. Each tool shows it as the last one set it: the desktop
+app's switch turns it off as the app's last window closes only when no other tool set it since.
+
+### Presence, driving a stop
+
+**Who else is on a run, and who acts at its stop.** Each tool says which others have the run open (a Runs window, the
+desktop app, an agent that follows it), who watches each worker's page, and who drives a stop. One drives at a time: an
+agent drives a stop it asked for or acted on, and a person takes it by a click or a pick on the page's view, or with
+**Take control**. While a person drives, the agent's actions and controls at that stop are refused and it is told the
+stop was taken; the person gives it back with **Give back**, by no longer watching the page, or by closing the tool. A
+person's Resume, Step and Finish always answer the stop, and the stop a person's Step or Run to comes to stays theirs.
 
 ### Watch, Share live
 
-**Watch** shows a worker's page as its test runs or stands stopped. **Share live** lets a teammate watch a run on your
-machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
+**Watch** shows a worker's page as its test runs or stands stopped. Its frames go from the test's worker only to the
+tools that watch that page (an editor's view, the desktop app's window, Piwi Picker's Runs window), and to the team
+instance while the run is shared live; nothing on your machine keeps them. **Share live** lets a teammate watch a run on
+your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
 being shared ([Live view of a run](/features/live-view)).
 
 ## Failures

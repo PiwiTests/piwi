@@ -139,7 +139,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers', 'lanes', 'hold'],
+      features: ['peers', 'lanes', 'hold', 'presence'],
     });
     client.socket.close();
   });
@@ -605,6 +605,8 @@ function ownHub(
     current: () => [session],
     intentsOf: () => [],
     stopIntentsOf: () => [],
+    presenceFor: () => null,
+    presentOn: () => undefined,
     unwatchAll: () => {},
   } as unknown as RunSessions;
   return RunHub.open({
@@ -754,6 +756,8 @@ describe('what the hub sends', () => {
       current: () => [session],
       intentsOf: () => [],
       stopIntentsOf: () => [],
+      presenceFor: () => null,
+      presentOn: () => undefined,
       unwatchAll: () => {},
     } as unknown as RunSessions;
     const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
@@ -800,6 +804,8 @@ describe('what the hub sends', () => {
       current: () => [session],
       intentsOf: () => [],
       stopIntentsOf: () => [],
+      presenceFor: () => null,
+      presentOn: () => undefined,
       unwatchAll: () => {},
     } as unknown as RunSessions;
     const asked: Array<[string, string, number]> = [];

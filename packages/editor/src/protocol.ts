@@ -1487,6 +1487,24 @@ export interface RunStop {
    * client shows beside the stop. Absent for a stop a person or a breakpoint made.
    */
   by?: 'agent';
+  /**
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the surface whose
+   * person took it (a click, a key or text on its view, a pick, an intent, or a hub's `drive`), which takes it from the
+   * agent. An agent's actions there are refused while a person drives. Absent while nobody drives.
+   */
+  driver?: RunPresence;
+}
+
+/**
+ * A tool present on a run, a lane or a stop: a Runs window of Piwi Picker (`picker`), an editor (`editor`, this client
+ * among them, `self`), the desktop app's window (`desktop`) or an agent through the service's MCP server (`agent`), and
+ * its name as the service knows it (`Visual Studio Code`, `Piwi Picker`).
+ */
+export interface RunPresence {
+  kind: 'picker' | 'editor' | 'desktop' | 'agent';
+  name: string;
+  /** It is the client that hears it. */
+  self?: true;
 }
 
 /** A test a worker runs. */
@@ -1525,6 +1543,8 @@ export interface RunWorker {
   takes: RunTake[];
   /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
   watchable: boolean;
+  /** The tools that watch its page now, its slot's view or its stop's, each viewer once; absent while none does. */
+  watchers?: RunPresence[];
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
@@ -1604,6 +1624,11 @@ export interface RunSession {
    * a run nobody attends, whose failures always go on at once.
    */
   hold?: RunHoldFailures;
+  /**
+   * The tools that have the run open beyond this client: each Runs window that follows the runs, the desktop app's
+   * window, and an agent that follows this run. Absent while none does.
+   */
+  presence?: RunPresence[];
 }
 
 /**

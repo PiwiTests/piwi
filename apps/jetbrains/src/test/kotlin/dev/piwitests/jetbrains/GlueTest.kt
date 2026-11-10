@@ -766,6 +766,67 @@ class GlueTest {
     }
 
     @Test
+    fun `who else is on a run, a worker's page and a stop is said, this IDE as you or left out`() {
+        val picker = RunPresence("picker", "Piwi Picker")
+        val desktop = RunPresence("desktop", "the desktop app")
+        val agent = RunPresence("agent", "an agent")
+        val me = RunPresence("editor", "WebStorm", self = true)
+        // The service's JSON reads with Gson: `self` only on this IDE's own entries.
+        val heard = Gson().fromJson(
+            """{"ref":"ed-1","root":"/w","workers":[{"worker":0,"parallelIndex":0,"state":"running","watchers":[{"kind":"editor","name":"WebStorm","self":true}]}],"ended":false,"presence":[{"kind":"picker","name":"Piwi Picker"}]}""",
+            RunSession::class.java,
+        )
+        assertEquals(listOf(picker), heard.presence)
+        assertEquals(listOf(me), heard.workers!!.single().watchers)
+        val run = session("ed-1", RunWorker(0, 0, "running", runTest()))
+        assertNull(Glue.presenceText(run))
+        assertNull(Glue.presenceText(run.copy(presence = listOf(me))))
+        assertEquals("Also open in Piwi Picker", Glue.presenceText(run.copy(presence = listOf(picker))))
+        assertEquals(
+            "Also open in Piwi Picker and the desktop app · An agent follows this run",
+            Glue.presenceText(run.copy(presence = listOf(picker, picker, desktop, agent, me))),
+        )
+        assertEquals("An agent follows this run", Glue.presenceText(run.copy(presence = listOf(agent))))
+        assertEquals(
+            "Run in shop (ed-1): Also open in Piwi Picker\nRun in shop (ed-2): An agent follows this run",
+            Glue.runsPresenceText(
+                mapOf("ed-1" to run.copy(presence = listOf(picker)), "ed-2" to session("ed-2").copy(presence = listOf(agent)), "ed-3" to session("ed-3")),
+            ),
+        )
+        assertEquals("Also open in Piwi Picker", Glue.runsPresenceText(mapOf("ed-1" to run.copy(presence = listOf(picker)))))
+        assertNull(Glue.runsPresenceText(mapOf("ed-1" to run)))
+        // Watchers: this IDE last as you, nothing while it alone watches.
+        assertNull(Glue.watchersText(null))
+        assertNull(Glue.watchersText(listOf(me)))
+        assertEquals("Watched by Piwi Picker and you", Glue.watchersText(listOf(me, picker)))
+        assertEquals("Watched by Piwi Picker, an agent and the desktop app", Glue.watchersText(listOf(picker, agent, desktop)))
+        // The driver: Interact takes a stop from the agent.
+        val stop = stopAt(specUri, 5, bar = false)
+        assertNull(Glue.driverText(stop))
+        assertEquals("You drive this stop", Glue.driverText(stop.copy(driver = me), interact = true))
+        assertEquals("Piwi Picker drives this stop", Glue.driverText(stop.copy(driver = picker), interact = true))
+        assertEquals("An agent drives this stop", Glue.driverText(stop.copy(driver = agent)))
+        assertEquals("An agent drives this stop: Interact takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
+        // The Paused Page tab's and the Worker tab's captions.
+        val stopped = RunWorker(5, 1, "stopped", runTest(), stop.copy(by = "agent", driver = agent), takes = listOf("input"), watchers = listOf(picker, me))
+        val sessions = mapOf("ed-1" to session("ed-1", stopped))
+        val shown = Glue.stopsOf(sessions).single()
+        val said = "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6"
+        val present = "An agent drives this stop: Interact takes control · Watched by Piwi Picker and you"
+        assertEquals(present, Glue.stopPresence(shown, sessions))
+        assertEquals("$said · $present", Glue.stopCaption(shown, sessions))
+        assertEquals("Worker 2 · $said · $present", Glue.laneShown(sessions["ed-1"], 1, listOf(shown)).caption)
+        // A stop nobody drives and no other tool watches says neither.
+        val alone = mapOf("ed-1" to session("ed-1", RunWorker(5, 1, "stopped", runTest(), stop, watchers = listOf(me))))
+        val quiet = Glue.stopsOf(alone).single()
+        assertNull(Glue.stopPresence(quiet, alone))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", Glue.stopCaption(quiet, alone))
+        // A running worker's tab says who else watches it.
+        val running = session("ed-1", RunWorker(5, 1, "running", runTest(), watchers = listOf(desktop, me)))
+        assertEquals("Worker 2 · Running · checkout › pays · Watched by the desktop app and you", Glue.laneShown(running, 1, emptyList()).caption)
+    }
+
+    @Test
     fun `a Pause that waits for a call says which, and End the Test ends the test there`() {
         val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", specUri, 4, "2026-10-25T10:00:00.000Z", true)
         val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting)))

@@ -6690,6 +6690,87 @@
   "runs_holdByAgent": {
     "message": "Von einem Agenten gesetzt"
   },
+  "runs_presenceOpen": {
+    "message": "Auch geöffnet in $tools$",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "Ein Agent verfolgt diesen Lauf"
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker"
+  },
+  "runs_presenceDesktop": {
+    "message": "der Desktop-App"
+  },
+  "runs_presenceAgent": {
+    "message": "einem Agenten"
+  },
+  "runs_watchedBy": {
+    "message": "Beobachtet von $who$",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "Ihnen"
+  },
+  "runs_driverYou": {
+    "message": "Sie steuern diesen Halt"
+  },
+  "runs_driverAgent": {
+    "message": "Ein Agent steuert diesen Halt"
+  },
+  "runs_driverDesktop": {
+    "message": "Die Desktop-App steuert diesen Halt"
+  },
+  "runs_driverTool": {
+    "message": "$tool$ steuert diesen Halt",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Steuerung übernehmen"
+  },
+  "runs_takeControlTitle": {
+    "message": "Steuern Sie diesen Halt selbst: Die Aktionen eines Agenten hier warten, bis Sie ihn zurückgeben"
+  },
+  "runs_giveBack": {
+    "message": "Zurückgeben"
+  },
+  "runs_giveBackTitle": {
+    "message": "Diesen Halt zurückgeben: Ein Agent darf wieder darauf handeln"
+  },
+  "runs_stoppedByAgent": {
+    "message": "Vom Agenten angehalten"
+  },
+  "runs_stoppedByAgentStep": {
+    "message": "Nach dem Schritt des Agenten angehalten"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "An der Zielzeile des Agenten angehalten"
+  },
+  "runs_announceDriveTaken": {
+    "message": "Sie steuern jetzt den Halt von $test$: Der Agent wartet, bis Sie ihn zurückgeben.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Code an dieser Stelle"
   },

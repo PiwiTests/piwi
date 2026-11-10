@@ -7943,6 +7943,106 @@
     "message": "Set by an agent",
     "description": "Runs window, beside Hold failures when an AI agent set it last."
   },
+  "runs_presenceOpen": {
+    "message": "Also open in $tools$",
+    "description": "Runs window, under a run’s name: the other tools that have the run open. $tools$ is a list of runs_presencePicker, runs_presenceDesktop or an editor’s name (Visual Studio Code), joined as the language joins a list.",
+    "placeholders": {
+      "tools": {
+        "content": "$1",
+        "example": "the desktop app and Piwi Picker"
+      }
+    }
+  },
+  "runs_presenceAgentFollows": {
+    "message": "An agent follows this run",
+    "description": "Runs window, under a run’s name: an AI agent follows the run through Piwi’s MCP tools."
+  },
+  "runs_presencePicker": {
+    "message": "Piwi Picker",
+    "description": "Runs window, in runs_presenceOpen, runs_watchedBy and runs_driverTool: a Runs window of Piwi Picker in another browser. The product name: keep it."
+  },
+  "runs_presenceDesktop": {
+    "message": "the desktop app",
+    "description": "Runs window, in runs_presenceOpen and runs_watchedBy: the Piwi desktop app’s window. Lower case, inside a sentence, after “in” and “by”."
+  },
+  "runs_presenceAgent": {
+    "message": "an agent",
+    "description": "Runs window, in runs_watchedBy: an AI agent watching a test’s page. Lower case, inside a sentence, after “by”."
+  },
+  "runs_watchedBy": {
+    "message": "Watched by $who$",
+    "description": "Runs window, under a test: who watches its page now. $who$ is a list of runs_watcherYou, runs_presencePicker, runs_presenceDesktop, runs_presenceAgent or an editor’s name, joined as the language joins a list.",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "you and the desktop app"
+      }
+    }
+  },
+  "runs_watcherYou": {
+    "message": "you",
+    "description": "Runs window, in runs_watchedBy: this Runs window. Lower case, after “by”."
+  },
+  "runs_driverYou": {
+    "message": "You drive this stop",
+    "description": "Runs window, under a stopped test: this window drives the stop, and an agent’s actions there wait until it gives it back."
+  },
+  "runs_driverAgent": {
+    "message": "An agent drives this stop",
+    "description": "Runs window, under a stopped test: an AI agent drives the stop, through Piwi’s MCP tools."
+  },
+  "runs_driverDesktop": {
+    "message": "The desktop app drives this stop",
+    "description": "Runs window, under a stopped test: a person in the Piwi desktop app’s window drives the stop."
+  },
+  "runs_driverTool": {
+    "message": "$tool$ drives this stop",
+    "description": "Runs window, under a stopped test: another tool drives the stop. $tool$ is runs_presencePicker or an editor’s name (Visual Studio Code).",
+    "placeholders": {
+      "tool": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_takeControl": {
+    "message": "Take control",
+    "description": "Runs window, the button that makes this window drive a stop: an agent’s actions there wait until it is given back. Short."
+  },
+  "runs_takeControlTitle": {
+    "message": "Drive this stop yourself: an agent’s actions here wait until you give it back",
+    "description": "Runs window, the tooltip of Take control."
+  },
+  "runs_giveBack": {
+    "message": "Give back",
+    "description": "Runs window, the button that gives a stop this window drives back: an agent may act on it again. Short."
+  },
+  "runs_giveBackTitle": {
+    "message": "Give this stop back: an agent may act on it again",
+    "description": "Runs window, the tooltip of Give back."
+  },
+  "runs_stoppedByAgent": {
+    "message": "Paused by the agent",
+    "description": "Runs window, the state of a test an AI agent stopped (its Pause, Step or Run to)."
+  },
+  "runs_stoppedByAgentStep": {
+    "message": "Stopped after the agent’s step",
+    "description": "Runs window, the state of a test stopped after a step an AI agent asked for."
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Stopped at the line the agent ran it to",
+    "description": "Runs window, the state of a test stopped at the line an AI agent ran it to."
+  },
+  "runs_announceDriveTaken": {
+    "message": "You drive the stop of $test$ now: the agent waits until you give it back.",
+    "description": "Runs window, read by a screen reader when this window takes a stop from the AI agent that drove it. $test$ is the test’s name.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › pays"
+      }
+    }
+  },
   "runs_codeActions": {
     "message": "Code from this stop",
     "description": "Runs window, the name screen readers give the row of Pick, Record, Assert and More (Assert a region and Mock a request)."

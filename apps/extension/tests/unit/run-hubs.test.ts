@@ -779,7 +779,7 @@ describe('connections that fail', () => {
     // Its runs stay as last heard while it does not answer.
     expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
     expect(hubs.state().hubs).toEqual([
-      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false, lanes: false },
+      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false, lanes: false, presence: false },
     ]);
     expect(fetches).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1000);

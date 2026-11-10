@@ -716,6 +716,23 @@ data class RunStop(
     val bar: Boolean = false,
     val since: String? = null,
     val by: String? = null,
+    /**
+     * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
+     * person last acted on it. A person's action takes it from the agent. Null while nobody drives.
+     */
+    val driver: RunPresence? = null,
+)
+
+/**
+ * A tool present on a run, a worker's page or a stop: a Runs window of Piwi Picker (`picker`), an editor (`editor`,
+ * this IDE among them, `self`), the desktop app's window (`desktop`) or an agent through the service's MCP server
+ * (`agent`), and its name as the service knows it (`Piwi Picker`, `an agent`).
+ */
+data class RunPresence(
+    val kind: String? = null,
+    val name: String = "",
+    /** It is this IDE. */
+    val self: Boolean = false,
 )
 
 /**
@@ -751,6 +768,8 @@ data class RunWorker(
     val watchable: Boolean = false,
     /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
     val waiting: RunWaiting? = null,
+    /** The tools that watch its page now, its slot's view or its stop's, each once; null while none does. */
+    val watchers: List<RunPresence>? = null,
 )
 
 /**
@@ -785,6 +804,11 @@ data class RunSession(
     val page: RunPage? = null,
     /** Hold failures: whether a failure no pause bar shows waits at its line; null for a run nobody attends. */
     val hold: RunHoldFailures? = null,
+    /**
+     * The tools that have the run open beyond this IDE: each Runs window that follows the runs, the desktop app's
+     * window, and an agent that follows this run. Null while none does.
+     */
+    val presence: List<RunPresence>? = null,
 )
 
 /**

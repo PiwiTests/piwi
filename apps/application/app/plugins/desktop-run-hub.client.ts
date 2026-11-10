@@ -62,6 +62,14 @@ export default defineNuxtPlugin(() => {
     { immediate: true },
   );
 
+  // The window is present on the runs while its tray shows them to a person.
+  const visibility = useDocumentVisibility();
+  watch(
+    () => trayShown.value && visibility.value === 'visible',
+    (on) => hub.present(on),
+    { immediate: true },
+  );
+
   const shownRefs = computed(() =>
     trayShown.value ? desktopShownRefs(store.runs.value, store.holds.value, sessions.value) : [],
   );

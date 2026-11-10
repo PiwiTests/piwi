@@ -95,6 +95,8 @@ import {
   pausedPageViewChange,
   pausedText,
   picksOnImage,
+  stopCaption,
+  stopPresence,
   remember,
   requestPicks,
   runStarted,
@@ -249,6 +251,8 @@ export function registerRunControl(
   /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
   let pageShows: ShownStop | null = null;
+  /** The paused page's caption of its stop as last drawn (`stopCaption`), which a note may follow. */
+  let pageCaption = '';
   /** The images the view showed that a click picks on, counted: a click names the one it was on. */
   let pickable = 0;
   let wantLive = false;
@@ -371,9 +375,11 @@ export function registerRunControl(
     ].map(link);
     const actions = stopActions(stop).map(link);
     const share = canShare(stop) ? [link({ title: 'Share with Playwright tools', command: RUN_COMMANDS.share })] : [];
+    const present = stopPresence(stop, sessions);
     const hover = new vscode.MarkdownString(
       [
         markdown(pausedText(stop.stop, stop.test, stop.terminal, stop.runner)),
+        ...(present ? [markdown(present)] : []),
         controls.join(' · '),
         ...(actions.length ? [actions.join(' · ')] : []),
         ...share,
@@ -559,8 +565,7 @@ export function registerRunControl(
     } else if (!panel.visible) {
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
-    const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
-    const caption = `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${file}:${stop.stop.line + 1}`;
+    pageCaption = stopCaption(stop, sessions);
     const shown = ++pickable;
     const live = stop.takes.includes('view')
       ? {
@@ -571,7 +576,7 @@ export function registerRunControl(
           clickCounts: stop.takes.includes('input-clicks'),
         }
       : undefined;
-    showPage({ image: null, caption: `${caption} · asking the test for its page…`, live });
+    showPage({ image: null, caption: `${pageCaption} · asking the test for its page…`, live });
     const answer = await lc
       .sendRequest<PausedPageResult>(PAUSED_PAGE_REQUEST, {
         ref: stop.ref,
@@ -581,7 +586,7 @@ export function registerRunControl(
       .catch(() => null);
     if (pageStop !== key) return;
     if (watchingPage && page?.live?.shown === shown) {
-      showPage({ ...page, caption });
+      showPage({ ...page, caption: pageCaption });
       return;
     }
     const currentLive = page?.live?.shown === shown ? page.live : live;
@@ -589,11 +594,11 @@ export function registerRunControl(
       answer?.image
         ? {
             image: answer.image,
-            caption,
+            caption: pageCaption,
             pick: picksOnImage(stop.takes, answer.image) ? { shown } : null,
             live: currentLive,
           }
-        : { image: null, caption: `${caption} · the test sent no image of its page`, live: currentLive },
+        : { image: null, caption: `${pageCaption} · the test sent no image of its page`, live: currentLive },
     );
     if (live && wantLive && !watchingPage) void watchPage(true);
   };
@@ -668,6 +673,14 @@ export function registerRunControl(
       pageStop = null;
       pageShows = null;
       showPage({ image: null, caption: 'The test went on.' });
+    } else if (panel && pageStop && page?.caption.startsWith(pageCaption)) {
+      // Who drives the stop and who watches its page, as they change.
+      const current = now.find((s) => stopKey(s) === pageStop);
+      const caption = current ? stopCaption(current, sessions) : pageCaption;
+      if (caption !== pageCaption) {
+        showPage({ ...page, caption: caption + page.caption.slice(pageCaption.length) });
+        pageCaption = caption;
+      }
     }
     if (panel && !pageStop && !sessions.size) showPage({ image: null, caption: 'The run ended.' });
   };

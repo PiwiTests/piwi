@@ -435,6 +435,13 @@ change, only when they differ): a run started in a terminal starts with them.
 **A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
 among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.
 
+**Who else is there.** The paused page's caption (`stopCaption`), the worker panel's (`laneShown`) and a stop's hover
+(`stopPresence`) add who drives the stop (`driverText`, from `RunStop.driver`: `You drive this stop`, `An agent drives
+this stop: Interact takes control` where the stop takes input) and who else watches its page (`watchersText`, from
+`RunWorker.watchers`, the editor itself named `you` and left out when alone); the paused page's caption follows them as
+they change. The progress item's tooltip names the other tools that have each run open (`presenceText`, from
+`RunSession.presence`). Interact's input or a pick takes a stop from the agent: no request of its own.
+
 **Share with Playwright tools.** At a stop whose worker takes `bind` (`canShare`, the `piwi.runCanShare` context key),
 the hover and the palette offer **Piwi: Share the stopped test's browser with Playwright tools**
 (`piwi.shareWithPlaywright`). It warns first, in a modal, that any process of the user can then drive the browser

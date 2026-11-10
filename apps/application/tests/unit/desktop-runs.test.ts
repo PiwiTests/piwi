@@ -384,7 +384,7 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers', 'lanes', 'hold'],
+        features: ['peers', 'lanes', 'hold', 'presence'],
       },
     ]);
   });
@@ -451,7 +451,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers', 'lanes', 'hold'],
+      features: ['peers', 'lanes', 'hold', 'presence'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));

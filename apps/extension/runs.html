@@ -251,6 +251,53 @@
       .run-progress .flaky {
         color: var(--warn);
       }
+      /* Who else has the run open, under its name, as its hub says. */
+      .run-presence {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .run-presence > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
+      /* Who watches a worker's page. */
+      .watchers {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin: 6px 0 0;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .watchers > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
+      /* Who drives a stop, with Take control or Give back. */
+      .run-driver {
+        align-items: center;
+        margin: 6px 0 0;
+        font-size: 12px;
+      }
+      .run-driver .driver {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .run-driver .driver > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+      }
       /* The run's number on the instance, with Open and Copy for its page. */
       .run-page {
         margin: 0;

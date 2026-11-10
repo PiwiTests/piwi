@@ -1782,6 +1782,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
+    presenceChanged: (session) => runHub?.push(session),
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
@@ -1810,11 +1811,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return disk && (started === null || disk.mtime <= started) ? disk.text : null;
     },
   });
-  clientPageView = new ClientPageView(runSessions, (frame) =>
-    connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  clientPageView = new ClientPageView(
+    runSessions,
+    (frame) => connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+    () => clientName,
   );
-  clientLaneView = new ClientLaneView(runSessions, (frame) =>
-    connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+  clientLaneView = new ClientLaneView(
+    runSessions,
+    (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+    () => clientName,
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
@@ -3762,7 +3767,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runSessions.pausedPage(params),
   );
 
-  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
+  // A pick on the image is the editor's person driving the stop.
+  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> =>
+    runSessions.pickAt(params, clientPageView?.viewer),
+  );
 
   connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
     answersStops
@@ -3785,9 +3793,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { url: runHub?.url ?? null, forwarded: hubForwarded };
   });
 
-  connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
-    stopActions.action(params),
-  );
+  connection.onRequest(STOP_ACTION_REQUEST, async (params: StopActionParams): Promise<StopActionResult> => {
+    const answer = await stopActions.action(params);
+    // An intent started from the editor is its person driving the stop, while the worker still stands at it.
+    const intent = params?.action === 'pick' || params?.action === 'record' || params?.action === 'assert';
+    if (answer.ok && (intent || params?.action === 'assert-region') && clientPageView && params.since) {
+      runSessions.driveStop(
+        { ref: params.ref, worker: params.worker, since: params.since },
+        clientPageView.viewer,
+        true,
+      );
+    }
+    return answer;
+  });
 
   /**
    * The MCP server for agents listens only once the client turns it on, and closes as it turns it off; `newToken`
