@@ -202,7 +202,7 @@ export type HubWindowAction = 'front';
 
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
- * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
+ * live view's actions, Show the browser (`front`) at a stop its pause bar shows, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
  * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
  * while it runs (`watch`, at a hub whose features list `lanes`); `give-up` too, while a Pause waits for the call its
  * test runs: End the test there (`runControl` `give-up`).

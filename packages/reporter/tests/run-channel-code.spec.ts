@@ -1068,7 +1068,7 @@ describe('code from a stop, the worker’s part', () => {
     // A headless browser has no window to bring forward.
     expect(shown).toEqual({
       ok: false,
-      message: "The test's browser is headless: it has no window to show. Run it headed.",
+      message: "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.",
     });
   });
 

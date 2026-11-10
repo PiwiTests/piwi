@@ -1153,8 +1153,8 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
   }
 }
 
-/** Why Show the browser is refused at a stop no pause bar shows. */
-const HEADLESS = "The test's browser is headless: it has no window to show. Run it headed.";
+/** Why Show the browser is refused at a stop no pause bar shows: a headless one, or one whose page is not known. */
+const HEADLESS = "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.";
 
 /**
  * Show the browser: the stopped page's window comes to the front, as far as the system lets a window take it, at a
