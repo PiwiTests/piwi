@@ -10,7 +10,7 @@ const UNATTENDED: &str = "-unattended";
 /// The name a run's workers give the bundled server on its run channel
 /// (`PIWI_RUN_REF`): the shell's id for the run, which the window knows the run
 /// by, ending in `-unattended` for a run nobody attends (a Flake Lab, a bisect,
-/// a lab job, a run that repeats its tests or runs in UI mode), whose failures
+/// a lab job, a run that runs in UI mode or repeats its tests past a failure), whose failures
 /// go on at once. `PIWI_ORIGIN_REF` keeps naming what the run was launched for.
 pub(crate) fn run_ref(id: u32, attended: bool) -> String {
     if attended {
@@ -23,7 +23,7 @@ pub(crate) fn run_ref(id: u32, attended: bool) -> String {
 /// Whether a person attends a `playwright test` run with these arguments: not
 /// one in UI mode (`--ui`), which runs the tests from its own window, nor one
 /// that repeats each test (`--repeat-each` above 1), which is left to run,
-/// unless it ends at its first failure (`--max-failures=1` or `-x`).
+/// unless it ends at its first failure (`--max-failures=1`).
 pub(crate) fn attended_args(args: &[String]) -> bool {
     let mut repeats = false;
     let mut stops_at_first_failure = false;
@@ -36,7 +36,7 @@ pub(crate) fn attended_args(args: &[String]) -> bool {
         {
             repeats = true;
         }
-        if arg == "-x" || option_value(args, index, "--max-failures") == Some("1") {
+        if option_value(args, index, "--max-failures") == Some("1") {
             stops_at_first_failure = true;
         }
     }
@@ -215,7 +215,6 @@ mod tests {
             args(&["--repeat-each", "1"]),
             args(&["--repeat-each=20", "--retries=0", "--max-failures=1"]),
             args(&["--max-failures", "1", "--repeat-each", "5"]),
-            args(&["-x", "--repeat-each=3"]),
         ] {
             assert!(attended_args(&attended), "{attended:?}");
         }
