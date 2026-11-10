@@ -28,7 +28,7 @@ const DEBOUNCE_MS = 200;
 type ViewState = FailuresViewState | 'unavailable';
 
 /** The states whose sentence, from the service, shows above the welcome's buttons. */
-const MESSAGE_STATES: ReadonlySet<ViewState> = new Set(['norun', 'unreachable', 'desktop-unproven']);
+const MESSAGE_STATES: ReadonlySet<ViewState> = new Set(['norun', 'unreachable', 'desktop-unproven', 'loading']);
 
 const ICON_COLORS: Record<string, string> = {
   error: 'problemsErrorIcon.foreground',
@@ -154,10 +154,10 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     // Without a run, the service's words name the instance or the branch above the welcome's buttons.
     const view = this.result?.view;
     this.view.message =
-      run && !this.result?.items.length
-        ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
-        : view && MESSAGE_STATES.has(view.state)
-          ? (view.message ?? undefined)
+      view && MESSAGE_STATES.has(view.state)
+        ? (view.message ?? undefined)
+        : run && !this.result?.items.length
+          ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
           : undefined;
     this.changed.fire(undefined);
   }

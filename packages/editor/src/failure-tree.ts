@@ -382,11 +382,17 @@ export function failuresAnswer(contexts: ContextFailures[], grouping: FailuresGr
 /** What `failuresView` reads of a context: whether it reads an instance, a run, and why not. */
 export interface ContextViewState {
   connected: boolean;
+  /** It names an instance and has neither read it nor failed to yet. */
+  loading: boolean;
   /** It read a run of its branch, or runs laid over none. */
   hasRun: boolean;
   problemKind: ProblemKind | null;
   problem: string | null;
+  /** The branch its run was read on. */
   branch: string | null;
+  projectName: string | null;
+  /** What a baseline chosen in place of the default found (`baselineLabel`); null for the default. */
+  baseline: string | null;
 }
 
 /** A sentence ending with one full stop. */
@@ -398,7 +404,8 @@ function sentence(text: string): string {
 /**
  * The state a failures view is in and its words, from the contexts: failures when any fails; else no failure when a
  * context read a run; else, in this order, the first instance that does not answer, the first desktop app that did not
- * prove it holds the token, no run of a connected context's branch yet, and no connection.
+ * prove it holds the token, an instance still being read, no run for a connected context (its baseline's, when one is
+ * chosen), and no connection.
  */
 export function failuresView(contexts: ContextViewState[], failing: boolean): FailuresView {
   if (failing) return { state: 'failures', message: null };
@@ -414,11 +421,14 @@ export function failuresView(contexts: ContextViewState[], failing: boolean): Fa
   const unproven = contexts.find((c) => c.problemKind === 'desktop-unproven');
   if (unproven)
     return { state: 'desktop-unproven', message: sentence(unproven.problem ?? 'Restart or update the desktop app') };
+  if (contexts.some((c) => c.loading)) return { state: 'loading', message: 'Piwi is reading the instance…' };
   const idle = contexts.find((c) => c.connected);
   if (idle) {
     return {
       state: 'norun',
-      message: `No run of ${idle.branch ?? 'this branch'} yet. Run the tests with the Piwi reporter, or compare with another run.`,
+      message: idle.baseline
+        ? `Baseline: ${idle.baseline}. Compare with another run.`
+        : `No run of ${idle.projectName ?? 'this project'} yet. Run the tests with the Piwi reporter.`,
     };
   }
   return { state: 'disconnected', message: 'Piwi is not connected to an instance, so it has no run to show.' };

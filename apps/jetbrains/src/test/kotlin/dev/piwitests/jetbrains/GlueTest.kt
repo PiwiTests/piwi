@@ -1821,6 +1821,11 @@ class GlueTest {
         assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
         assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
         assertEquals(Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT)), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
+        assertEquals(
+            Glue.EmptyText("Piwi is not connected to an instance, so it has no run to show.", listOf(Glue.EmptyLink.CONNECT)),
+            Glue.failuresEmpty(FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show."), null, null),
+        )
+        assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
         assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
     }

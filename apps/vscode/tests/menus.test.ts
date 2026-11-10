@@ -45,7 +45,6 @@ describe("the editor's context menu", () => {
 describe('the commands that read the instance', () => {
   const reading = [
     'piwi.refreshRun',
-    'piwi.rerunFailing',
     'piwi.openRun',
     'piwi.openInDashboard',
     'piwi.compareWith',
@@ -59,6 +58,15 @@ describe('the commands that read the instance', () => {
       const entries = menus['commandPalette']!.filter((e) => e.command === command);
       expect(entries, command).toEqual([{ command, when: 'piwi.active' }]);
     }
+  });
+
+  test('Re-run the failing tests is listed while the view lists failures, whatever the connection', () => {
+    expect(menus['commandPalette']!.filter((e) => e.command === 'piwi.rerunFailing')).toEqual([
+      { command: 'piwi.rerunFailing', when: 'piwi.failuresView == failures' },
+    ]);
+    expect(menus['view/title']!.find((e) => e.command === 'piwi.rerunFailing')?.when).toBe(
+      'view == piwi.failures && piwi.failuresView == failures',
+    );
   });
 
   test('show in the failures view’s title only while a context is connected', () => {

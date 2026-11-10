@@ -520,7 +520,7 @@
         },
         {
           "command": "piwi.rerunFailing",
-          "when": "piwi.active"
+          "when": "piwi.failuresView == failures"
         },
         {
           "command": "piwi.openRun",
@@ -726,7 +726,7 @@
         },
         {
           "command": "piwi.rerunFailing",
-          "when": "view == piwi.failures && piwi.active",
+          "when": "view == piwi.failures && piwi.failuresView == failures",
           "group": "navigation@2"
         },
         {

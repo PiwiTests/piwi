@@ -1194,10 +1194,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const answer = failuresAnswer(views, failuresGrouping);
     const states = contexts.map((c): ContextViewState => ({
       connected: !!c.index && !c.problem,
+      loading: !!c.client && !c.index && !c.problem,
       hasRun: !!c.failures?.run || !!c.failures?.overlays?.length,
       problemKind: c.problemKind,
       problem: c.problem,
-      branch: c.branch,
+      branch: c.failures?.run?.branch ?? c.runBranch,
+      projectName: c.project?.name ?? null,
+      baseline: c.baseline.kind === 'ladder' ? null : c.baselineLabel || null,
     }));
     return { ...answer, view: failuresView(states, answer.items.length > 0) };
   };

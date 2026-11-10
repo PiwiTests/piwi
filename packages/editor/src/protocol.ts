@@ -374,17 +374,18 @@ export interface RunCommandArgs {
 export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
 /**
- * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
- * (`no-project`), a key missing or refused (`refused`), a desktop app that answered without proving it holds its token,
- * which the service then does not send (`desktop-unproven`: an app older than the proof, or another program on its
- * port), or an instance that did not answer, or answered with an error (`unreachable`).
+ * What a failures view shows: failures, none in a run read (`clear`), an instance that does not answer (`unreachable`),
+ * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance still being read (`loading`), no
+ * run to read yet (`norun`), or no connection (`disconnected`).
  */
-/**
- * What a failures view shows: failures, none in a run read (`clear`), no run of the branch yet (`norun`), an instance
- * that does not answer (`unreachable`), a desktop app that did not prove it holds the token (`desktop-unproven`), or no
- * connection (`disconnected`).
- */
-export type FailuresViewState = 'failures' | 'clear' | 'norun' | 'unreachable' | 'desktop-unproven' | 'disconnected';
+export type FailuresViewState =
+  | 'failures'
+  | 'clear'
+  | 'norun'
+  | 'unreachable'
+  | 'desktop-unproven'
+  | 'loading'
+  | 'disconnected';
 
 /** A failures view's state and the sentence it shows for it; null beside failures. */
 export interface FailuresView {
@@ -392,6 +393,12 @@ export interface FailuresView {
   message: string | null;
 }
 
+/**
+ * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
+ * (`no-project`), a key missing or refused (`refused`), a desktop app that answered without proving it holds its token,
+ * which the service then does not send (`desktop-unproven`: an app older than the proof, or another program on its
+ * port), or an instance that did not answer, or answered with an error (`unreachable`).
+ */
 export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'desktop-unproven' | 'unreachable';
 
 /** `piwi/status`: what the service is connected to, per workspace context. */

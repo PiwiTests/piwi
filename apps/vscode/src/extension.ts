@@ -174,7 +174,7 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
-  NOT_CONNECTED,
+  notConnectedNotice,
   RESTART_SERVICE,
   SERVICE_NOT_ANSWERING,
 } from './glue';
@@ -419,8 +419,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }, PROXY_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => proxyTimer && clearTimeout(proxyTimer) });
+  // The extension's own log, kept when the client stops for a restart.
+  const outputChannel = vscode.window.createOutputChannel('Piwi', { log: true });
+  context.subscriptions.push(outputChannel);
   const clientOptions: LanguageClientOptions = {
-    // A failed request is logged, never a toast: the status item and the Failures view say when the service is down.
+    outputChannel,
+    // A failed request is logged, never a toast: the Failures view says when the service is down.
     revealOutputChannelOn: RevealOutputChannelOn.Never,
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included. The extension
@@ -654,10 +658,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let status: StatusResult | null = null;
   /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
   const connectedOrSay = (): boolean => {
-    if (status?.contexts.some((c) => c.connected)) return true;
-    void vscode.window
-      .showInformationMessage(NOT_CONNECTED, 'Connect')
-      .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
+    const notice = notConnectedNotice(status);
+    if (!notice) return true;
+    const button = notice.action === 'retry' ? 'Retry' : notice.action === 'connect' ? 'Connect' : null;
+    void (
+      button
+        ? vscode.window.showInformationMessage(notice.message, button)
+        : vscode.window.showInformationMessage(notice.message)
+    ).then(
+      (answer) => answer && vscode.commands.executeCommand(notice.action === 'retry' ? 'piwi.refresh' : 'piwi.connect'),
+    );
     return false;
   };
   let runs: RunStatusResult | null = null;
@@ -1136,7 +1146,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         .catch((e: unknown) => {
           lc.outputChannel.error(`The editor service did not start again: ${(e as Error).message}`);
           void vscode.window
-            .showErrorMessage('Piwi: the editor service did not start again. The log says why.', 'Open the log')
+            .showErrorMessage(
+              'Piwi: the editor service did not start again. The log says why; reloading the window starts it anew.',
+              'Open the log',
+            )
             .then((a) => a && lc.outputChannel.show());
         });
       await restarting;
@@ -1162,7 +1175,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // From a Playwright config's node of the failures view, that config's; from elsewhere, every config's.
     vscode.commands.registerCommand('piwi.rerunFailing', async (node?: FailureNode) => {
-      if (!connectedOrSay()) return;
       const runs = failingRuns(await failuresView.read(), node?.root);
       if (!runs.length) {
         void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
@@ -1448,6 +1460,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
       if (e.newState === State.Running) void agentsChanged();
+      // A service that stopped, the client given up restarting it: the Failures view says so, with Restart.
+      if (e.newState === State.Stopped) void failuresView.read();
       if (e.newState === State.Stopped && agents) {
         agents = null;
         runsMcpChanged.fire();

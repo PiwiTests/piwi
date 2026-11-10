@@ -437,6 +437,12 @@ data class FailureTreeNode(
 data class FailuresParams(val grouping: String? = null)
 
 /**
+ * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
+ * and the sentence it shows for it; null beside failures.
+ */
+data class FailuresView(val state: String = "failures", val message: String? = null)
+
+/**
  * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
  * (`run`, null when a developer's own runs are read alone), the runs laid over it, newest first, when they were read
  * (ISO 8601) and the baseline chosen; then the tree in `grouping`, the run as its root names it (`runLabel`, with or
@@ -444,12 +450,6 @@ data class FailuresParams(val grouping: String? = null)
  * per Playwright config). When several contexts have one, the tree holds a `context` node each, which carries its run,
  * and `run`, `overlays`, `baseline` and `runLabel` are null.
  */
-/**
- * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, disconnected) and the
- * sentence it shows for it; null beside failures.
- */
-data class FailuresView(val state: String = "failures", val message: String? = null)
-
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,
     val run: FailuresRun? = null,

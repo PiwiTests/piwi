@@ -102,13 +102,15 @@ Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) 
 line.
 
 The title bar, or the toolbar, holds Refresh, **Re-run the failing tests** (every config's), **Open the run in the
-dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run), **Compare with…** (for the active file's config) and the grouping. In VS
-Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge counts the
-failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a failure.
+dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run), **Compare
+with…** (for the active file's config) and the grouping. In VS Code, **Follow the active editor** selects the first
+failure of the file you switch to, and the badge counts the failing tests, as the tool window's title does. The tree is
+read again when a run ends or an edit moves a failure.
 
-With no failure to list, the view says why in the same words in both editors: no failure in the run read; no run of
-the branch yet, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
-again on its own too); a desktop app to restart or update; or no connection, with **Connect**.
+With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
+baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (Piwi tries
+again on its own too); a desktop app to restart or update; an instance still being read; or no connection, with
+**Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
 
 ## Compare with another run
 

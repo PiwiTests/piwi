@@ -447,10 +447,13 @@ describe('a run id typed for A run by id…', () => {
 describe('failuresView', () => {
   const ctx = (over: Partial<ContextViewState> = {}): ContextViewState => ({
     connected: true,
+    loading: false,
     hasRun: true,
     problemKind: null,
     problem: null,
     branch: 'main',
+    projectName: 'Acme Mugs',
+    baseline: null,
     ...over,
   });
 
@@ -480,10 +483,21 @@ describe('failuresView', () => {
     ).toEqual({ state: 'desktop-unproven', message: problem });
   });
 
-  test('tells a project with no run of its branch from one with no failure', () => {
-    expect(failuresView([ctx({ hasRun: false, branch: 'feature/x' })], false)).toEqual({
+  test('tells a project with no run from one with no failure, and names a baseline that found none', () => {
+    expect(failuresView([ctx({ hasRun: false })], false)).toEqual({
       state: 'norun',
-      message: 'No run of feature/x yet. Run the tests with the Piwi reporter, or compare with another run.',
+      message: 'No run of Acme Mugs yet. Run the tests with the Piwi reporter.',
+    });
+    expect(failuresView([ctx({ hasRun: false, baseline: 'release (no run)' })], false)).toEqual({
+      state: 'norun',
+      message: 'Baseline: release (no run). Compare with another run.',
+    });
+  });
+
+  test('says an instance is still being read rather than asking to connect', () => {
+    expect(failuresView([ctx({ connected: false, loading: true, hasRun: false })], false)).toEqual({
+      state: 'loading',
+      message: 'Piwi is reading the instance…',
     });
   });
 

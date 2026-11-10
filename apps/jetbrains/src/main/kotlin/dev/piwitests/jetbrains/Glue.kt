@@ -866,13 +866,14 @@ object Glue {
     data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
 
     /**
-     * The tool window's empty text, from the state the service says the view is in (`view`): an instance that does not
-     * answer, with Retry and Settings…; a desktop app that did not prove its token; no run of the branch yet, or none
-     * for the baseline chosen (`baselineNoRun`), with Compare With…; no connection, with Connect…; else no failure in
-     * the run read (`runId`).
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
+     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare With…; no connection,
+     * with Connect…; else no failure in the run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText("Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
         "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
         "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
         "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))

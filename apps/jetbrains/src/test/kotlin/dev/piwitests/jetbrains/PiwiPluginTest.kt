@@ -417,7 +417,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     /**
      * The actions that read the instance are enabled only while a context is connected; Open in Dashboard also on the
-     * page of what the tool window has selected.
+     * page of what the tool window has selected, and Re-run the Failing Tests while failures are listed.
      */
     fun testTheActionsThatReadTheInstanceWaitForAConnection() {
         val actions = ActionManager.getInstance()
@@ -432,10 +432,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
         val service = project.service<PiwiProjectService>()
         service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = false))))
+        service.failuresChanged(FailuresResult(items = emptyList()))
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertFalse(id, enabled(id))
         assertTrue("a selected failure's page", enabled("Piwi.OpenInDashboard", "https://piwi.example.com/test-run-cases/9"))
+        // Failures listed from a run read before the instance stopped answering re-run all the same.
+        service.failuresChanged(FailuresResult(items = listOf(WorkspaceFailure(uri = "file:///w/a.spec.ts", title = "pays", executionId = 9))))
+        assertTrue(enabled("Piwi.RerunFailing"))
         service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
-        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertTrue(id, enabled(id))
+        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
     }
 
     /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */
