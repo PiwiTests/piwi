@@ -63,7 +63,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     button("Reconnect") { service.sendCredentials() }
                         .comment("Hand the connection to the editor service again, which reads everything with it")
-                    nodeButton = button("Node.js Settings…") { service.openNodeSettings() }.component
+                    nodeButton = button("Node.js Settings…") { openNodeSettings(it.source as? java.awt.Component) }.component
                 }
             }
             group("Instance") {
@@ -201,8 +201,25 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             }
             onReset { show() }
         }
-        service.onChange(disposable!!) { show() }
+        service.onChangeInDialogs(disposable!!) { show() }
         return content
+    }
+
+    /** Whether **Node.js Settings…** went to the Node.js page of this dialog: the service starts again as it closes. */
+    private var nodeSettingsShown = false
+
+    /** The Node.js page in this Settings dialog, else in a dialog of its own. */
+    private fun openNodeSettings(source: java.awt.Component?) {
+        val dialog = source?.let { com.intellij.openapi.options.ex.Settings.KEY.getData(com.intellij.ide.DataManager.getInstance().getDataContext(it)) }
+        val node = dialog?.find(service.nodeSettingsId)
+        if (dialog == null || node == null) return service.openNodeSettings()
+        nodeSettingsShown = true
+        dialog.select(node)
+    }
+
+    override fun disposeUIResources() {
+        super.disposeUIResources()
+        if (nodeSettingsShown) ApplicationManager.getApplication().executeOnPooledThread { service.restartServer() }
     }
 
     override fun apply() {
@@ -238,11 +255,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val url = service.settings().serverUrl
         disconnectButton.isEnabled = Glue.disconnectQuestion(url, service.settings().project, service.local().desktop) != null
         if (url.isBlank()) key.text = "None: no instance saved"
-        inUse.text = Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted())
+        inUse.text = Glue.escapeHtml(Glue.connectionSummary(service.status, service.local().desktop, service.startProblem, service.trusted()))
         nodeButton.isVisible = service.startProblem != null
         // The instance the environment or a .env names comes first: the page shows it, its own fields left as saved.
-        val over = Glue.overriding(service.status)
-        overridden.text = over?.let(Glue::overriddenText) ?: ""
+        val over = Glue.overriding(service.status, url)
+        overridden.text = over?.let { Glue.escapeHtml(Glue.overriddenText(it)) } ?: ""
         overridden.isVisible = over != null
         urlField.emptyText.text = over?.serverUrl ?: ""
         projectField.emptyText.text = over?.project ?: ""

@@ -209,6 +209,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
+     * Call `listener` on the event thread as `onChange` does, also while a modal dialog shows, such as the settings page
+     * that registers it: it only reads what changed.
+     */
+    fun onChangeInDialogs(parent: Disposable, listener: () -> Unit) {
+        dialogListeners += listener
+        com.intellij.openapi.util.Disposer.register(parent) { dialogListeners -= listener }
+    }
+
+    private val dialogListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val dialogChangeQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
      * Whether the project is trusted. In a project opened in safe mode Piwi starts no editor service, runs no command
      * and reads no `.env`: each of them runs what the repository says.
      */
@@ -391,6 +403,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)
     }
+
+    /** The id of the Node.js settings page, which **Node.js Settings…** opens. */
+    val nodeSettingsId get() = NODE_SETTINGS_ID
 
     /** The Node.js settings, then the service started again with the interpreter chosen there. */
     fun openNodeSettings() {
@@ -807,6 +822,12 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     private fun changed() {
         pushed.incrementAndGet()
+        if (dialogListeners.isNotEmpty() && dialogChangeQueued.compareAndSet(false, true)) {
+            ApplicationManager.getApplication().invokeLater({
+                dialogChangeQueued.set(false)
+                dialogListeners.forEach { it() }
+            }, com.intellij.openapi.application.ModalityState.any(), gone)
+        }
         if (!changeQueued.compareAndSet(false, true)) return
         ApplicationManager.getApplication().invokeLater({
             changeQueued.set(false)

@@ -2240,26 +2240,47 @@ class GlueTest {
 
     @Test
     fun `the settings page names what overrides its instance, the environment or a dotenv`() {
-        val env = ContextStatus(connected = true, serverUrl = "https://ci.example.com", source = "environment", projectName = "Acme")
-        val overriding = Glue.overriding(StatusResult(contexts = listOf(env)))
+        val named = NamedInstance("https://ci.example.com", "environment")
+        val env = ContextStatus(
+            connected = true, serverUrl = "https://ci.example.com", source = "environment", projectName = "Acme", instance = named,
+        )
+        val overriding = Glue.overriding(StatusResult(contexts = listOf(env)), "https://piwi.example.com")
         assertEquals(Glue.Overriding("https://ci.example.com", "Acme", "the environment (PIWI_DASHBOARD_URL)"), overriding)
         assertEquals(
-            "Overridden by the environment (PIWI_DASHBOARD_URL): Piwi reads https://ci.example.com, project Acme. " +
-                "The fields below apply without it.",
+            "Overridden by the environment (PIWI_DASHBOARD_URL): Piwi reads https://ci.example.com, project Acme, not the " +
+                "server URL below.",
             Glue.overriddenText(overriding!!),
         )
-        // The desktop app in use: the .env's instance still comes before the page's, its project not read.
+        // The same address as the page's overrides nothing.
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(env)), "https://ci.example.com/"))
+        // The desktop app in use: the .env's instance comes before the page's only while the app is not.
         val desktop = ContextStatus(
             connected = true, serverUrl = "http://127.0.0.1:3000", source = "desktop", projectName = "Local",
             instance = NamedInstance("https://team.example.com", "dotenv"),
         )
+        val behind = Glue.overriding(StatusResult(contexts = listOf(desktop)), "")
+        assertEquals(Glue.Overriding("https://team.example.com", null, "the workspace .env", desktopFirst = true), behind)
         assertEquals(
-            Glue.Overriding("https://team.example.com", null, "the workspace .env"),
-            Glue.overriding(StatusResult(contexts = listOf(desktop))),
+            "The workspace .env names https://team.example.com, which Piwi reads before the server URL below while the " +
+                "desktop app is not in use.",
+            Glue.overriddenText(behind!!),
         )
-        val settings = ContextStatus(connected = true, serverUrl = "https://piwi.example.com", source = "editor")
-        assertNull(Glue.overriding(StatusResult(contexts = listOf(settings))))
-        assertNull(Glue.overriding(null))
+        // With several configs, the one whose environment names it.
+        val settings = ContextStatus(
+            connected = true, serverUrl = "https://piwi.example.com", source = "editor", label = "api",
+            instance = NamedInstance("https://piwi.example.com", "editor"),
+        )
+        val web = ContextStatus(
+            connected = false, serverUrl = "https://ci.example.com", source = "dotenv", label = "web",
+            instance = NamedInstance("https://ci.example.com", "dotenv"),
+        )
+        val several = Glue.overriding(StatusResult(contexts = listOf(settings, web)), "https://piwi.example.com")
+        assertEquals(
+            "Overridden by the workspace .env for web: Piwi reads https://ci.example.com, not the server URL below.",
+            Glue.overriddenText(several!!),
+        )
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(settings)), "https://piwi.example.com"))
+        assertNull(Glue.overriding(null, ""))
     }
 
     @Test

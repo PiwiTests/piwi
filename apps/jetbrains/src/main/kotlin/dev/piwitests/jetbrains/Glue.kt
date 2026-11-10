@@ -464,8 +464,7 @@ object Glue {
     /** The tool window's link, while the service cannot start, to the Node.js settings, as the settings page's button. */
     const val NODE_SETTINGS_LINK = "Node.js Settings…"
 
-    /** The tool window's link, while no service runs, that starts it again: VS Code's **Piwi: Restart the editor service**. */
-    const val RESTART_SERVICE_LINK = "Restart the Editor Service"
+
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
     const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
@@ -824,7 +823,7 @@ object Glue {
     }
 
     /** `text` as HTML text: the IDE renders a tooltip as HTML, and the instance's text is never markup. */
-    private fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    fun escapeHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
     fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
@@ -930,25 +929,50 @@ object Glue {
 
     /**
      * The instance the environment or a workspace `.env` names, which comes before the one the settings page saves: its
-     * address, its project once read, and where it comes from (`sourceLabel`).
+     * address, its project while it is the one read, where it comes from (`sourceLabel`), the config it is named for when
+     * the project has several (`label`), and whether the desktop app is read before it.
      */
-    data class Overriding(val serverUrl: String, val project: String?, val source: String)
+    data class Overriding(
+        val serverUrl: String,
+        val project: String?,
+        val source: String,
+        val label: String? = null,
+        val desktopFirst: Boolean = false,
+    )
 
-    /** What overrides the settings page's instance, from the status; null when nothing does, or before the service starts. */
-    fun overriding(status: StatusResult?): Overriding? {
-        for (c in status?.contexts.orEmpty()) {
+    /**
+     * What overrides the settings page's instance, `saved`, from the status: the first config whose environment or `.env`
+     * names another; null when none does, or before the service starts.
+     */
+    fun overriding(status: StatusResult?, saved: String): Overriding? {
+        val contexts = status?.contexts.orEmpty()
+        for (c in contexts) {
             val source = c.instance?.source ?: c.source
             if (source != "environment" && source != "dotenv") continue
             val url = c.instance?.serverUrl ?: c.serverUrl ?: continue
-            return Overriding(url, c.projectName.takeIf { c.source == source }, sourceLabel(source))
+            if (normalizeServerUrl(url) == normalizeServerUrl(saved)) continue
+            return Overriding(
+                url,
+                c.projectName.takeIf { c.source == source && c.connected },
+                sourceLabel(source),
+                c.label.takeIf { contexts.size > 1 },
+                c.source == "desktop",
+            )
         }
         return null
     }
 
     /** What the settings page says above its instance's fields while `overriding` names another one. */
-    fun overriddenText(overriding: Overriding): String =
-        "Overridden by ${overriding.source}: Piwi reads ${overriding.serverUrl}" +
-            (overriding.project?.let { ", project $it" } ?: "") + ". The fields below apply without it."
+    fun overriddenText(overriding: Overriding): String {
+        val of = overriding.label?.let { " for $it" } ?: ""
+        val project = overriding.project?.let { ", project $it" } ?: ""
+        return if (overriding.desktopFirst) {
+            "${overriding.source.replaceFirstChar { it.uppercase() }} names ${overriding.serverUrl}$of, which Piwi reads " +
+                "before the server URL below while the desktop app is not in use."
+        } else {
+            "Overridden by ${overriding.source}$of: Piwi reads ${overriding.serverUrl}$project, not the server URL below."
+        }
+    }
 
     /** One sentence on the connection, for the tool window and the settings page. */
     fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
