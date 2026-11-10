@@ -69,7 +69,9 @@ responsibilities.
      through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
      `ENDED_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
      as asked (`give-up`, in `features`: the call given up through its `signal` where it carries one, else the attempt
-     skipped at its next locator call, `tests/run-channel-give-up.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
+     skipped at its next locator call, `tests/run-channel-give-up.spec.ts`), brings a stop's window to the front at a
+     stop its pause bar shows as asked (`front`, in `features`: `page.bringToFront` through `internalCall`,
+     `tests/run-channel-code.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
      viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
