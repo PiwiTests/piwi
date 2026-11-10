@@ -271,7 +271,18 @@ export interface EditorBreakpoint {
 }
 
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
-export interface RunTestsArgs {
+/**
+ * How a run starts, as the person chose it for every run of the window (kept, so **Run again** starts the same way):
+ * headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
+ * decides: headed, with Hold failures on, for a run with a breakpoint it can stop at or a `page.pause()`; headless and
+ * off otherwise.
+ */
+export interface RunStartOptions {
+  headed?: boolean;
+  holdFailures?: boolean;
+}
+
+export interface RunTestsArgs extends RunStartOptions {
   /** Any file of the workspace the tests belong to, to pick the Playwright config when `root` does not name it. */
   uri: string;
   /** The folder of the Playwright config to run them with, as `WorkspaceFailure.root` names it. */
@@ -822,7 +833,7 @@ export interface SelectionsResult {
 export const SELECTIONS_REQUEST = 'piwi/selections';
 
 /** `piwi/runSelection`: the command line that runs a saved selection, as `piwi run <key>` resolves it. */
-export interface RunSelectionParams {
+export interface RunSelectionParams extends RunStartOptions {
   /** Any file of the workspace, to pick the Playwright config. */
   uri: string;
   key: string;

@@ -69,6 +69,7 @@ import {
   functionSnippet,
   functionSuggestions,
   headedCommand,
+  stopsInFile,
   locatorCompletionSite,
   locatorRange,
   locatorSuggestions,
@@ -312,6 +313,7 @@ import {
   type RunStatusResult,
   type SetBaselineParams,
   type RunSelectionParams,
+  type RunStartOptions,
   type ScreenshotParams,
   type ScreenshotResult,
   type SelectionsParams,
@@ -3238,11 +3240,24 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
-    if (command.ref) watchedRuns.add(command.ref);
+    // Only a breakpoint in code a test runs can stop the run: one in the application's code makes it neither headed nor
+    // watched.
+    const holdsSpec = (folder: string) => {
+      try {
+        return fs.readdirSync(path.join(context.root, folder)).some((name) => SPEC_FILE.test(name));
+      } catch {
+        return false;
+      }
+    };
+    const stops = files.some(({ file }) => {
+      const relative = relativeTo(context.root, file)?.replace(/\\/g, '/');
+      return !!relative && stopsInFile(relative, texts.get(file) ?? null, holdsSpec);
+    });
+    if (stops && command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
     return {
       ...command,
-      ...headedCommand(command.command, command.args),
+      ...(stops ? headedCommand(command.command, command.args) : {}),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };
@@ -3279,6 +3294,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (pauses) watchedRuns.add(run.ref);
       for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
       runLines.started(run.ref, unsavedFiles);
+    }
+    return run;
+  };
+
+  /**
+   * A test run's command as the person chose to start it (`RunStartOptions`): headed when asked, and with Hold failures
+   * on or off from its start when asked, over what its breakpoints and `page.pause()` decided.
+   */
+  const withStartOptions = (command: RunCommand, options: RunStartOptions | undefined): RunCommand => {
+    const run = options?.headed === true ? { ...command, ...headedCommand(command.command, command.args) } : command;
+    if (run.ref && typeof options?.holdFailures === 'boolean') {
+      if (options.holdFailures) watchedRuns.add(run.ref);
+      else watchedRuns.delete(run.ref);
     }
     return run;
   };
@@ -3381,14 +3409,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
+    if (repeat === null) {
+      return withStartOptions(
+        withRecording(context, withBreakpoints(context, run, params.breakpoints), params),
+        params,
+      );
+    }
     const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
     repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
     }
-    return run;
+    // A repeated run runs headless unless asked: it holds no failure, having no run channel.
+    return withStartOptions(run, { headed: params.headed });
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state
@@ -3449,7 +3483,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: editorRunEnv(ref),
       ref,
     };
-    return withRecording(context, withBreakpoints(context, run, params.breakpoints));
+    return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);
   });
 
   connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {
