@@ -1675,6 +1675,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (picked === VERDICT_ACTIONS.failures) await vscode.commands.executeCommand('piwi.failures.focus');
       else if (picked === VERDICT_ACTIONS.dashboard) await vscode.env.openExternal(vscode.Uri.parse(ended.url));
       else if (picked === VERDICT_ACTIONS.rerun) await vscode.commands.executeCommand('piwi.rerunFailing');
+      else if (picked === VERDICT_ACTIONS.onlyOnFailure) {
+        // Where the setting is set: the workspace's value when it has one, else the user's.
+        const config = vscode.workspace.getConfiguration('piwi');
+        const target =
+          config.inspect('runNotifications')?.workspaceValue === undefined
+            ? vscode.ConfigurationTarget.Global
+            : vscode.ConfigurationTarget.Workspace;
+        await config.update('runNotifications', 'failures' satisfies RunNotifications, target);
+        vscode.window.setStatusBarMessage("Piwi: a run's notice now comes only when a test fails", 5000);
+      }
     }),
     // A run started here: a worker started or ended a test, stopped or went on.
     lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),

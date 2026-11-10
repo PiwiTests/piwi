@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -22,9 +21,9 @@ object PiwiDebugLink {
         val specUri = uriOf(spec) ?: return
         val failingUri = uriOf(failing) ?: return
         // The notification's text is HTML: the title, plain text already, is escaped too.
-        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(
+        val notification = PiwiNotifier.create(
+            PiwiNotice.REQUEST,
             StringUtil.escapeXmlEntities(Glue.debugPrompt(debug.title, line, debug.project)),
-            NotificationType.INFORMATION,
         )
         notification.addAction(
             NotificationAction.createSimpleExpiring(Glue.DEBUG_ANSWER) {

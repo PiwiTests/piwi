@@ -2750,9 +2750,15 @@ class GlueTest {
     fun `a run that fails nothing is an information, and one that touched no failure gives its counts`() {
         val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
         assertEquals(
-            Glue.RunVerdict(false, "Run #124 · 1 of 1 CI failure fixed", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.RunVerdict(
+                false,
+                "Run #124 · 1 of 1 CI failure fixed",
+                listOf("Open the Failures", "Open in Dashboard", "Only on Failure"),
+            ),
             Glue.runVerdict(passing),
         )
+        // Only on Failure is offered while every run says what it changed, and on a run that fails nothing.
+        assertEquals(listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"), Glue.runVerdict(ended)?.actions)
         assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
         // Without the counts: the titles count.
         assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)

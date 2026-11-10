@@ -370,6 +370,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            // An offer: titled Piwi, with its icon, in the suggestions' group.
+            val offer = shown.single()
+            assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
+            assertNotNull(offer.icon)
+            assertTrue(offer.isSuggestionType)
             assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()

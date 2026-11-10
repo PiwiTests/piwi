@@ -2,7 +2,6 @@ package dev.piwitests.jetbrains
 
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -439,11 +438,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
             if (properties.getBoolean(OFFERED)) return
             properties.setValue(OFFERED, true)
-            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                .createNotification(
-                    "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
-                    NotificationType.INFORMATION,
-                )
+            PiwiNotifier.create(
+                PiwiNotice.OFFER,
+                "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
+            )
                 .addAction(NotificationAction.createSimpleExpiring("Copy the configuration") { copyMcpConfiguration(project) })
                 .notify(project)
         }

@@ -92,8 +92,9 @@ exit code from the process it started, in every shell, a rerun included.
 Once a run you started from the editor ends and the editor has read it, a notification (a balloon in a JetBrains IDE)
 says what it changed: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in,
 checkout.spec.ts › pays)`, then the tests it failed that were not failing before. It offers **Open the failures**,
-**Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
-Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
+**Open in dashboard**, and **Re-run failing** when something fails, else **Only on failure**. The
+`piwi.runNotifications` setting (**Settings → Tools → Piwi** in JetBrains) shows it always, on failures only, or
+never.
 
 A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
 setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.

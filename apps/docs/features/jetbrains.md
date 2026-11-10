@@ -93,6 +93,10 @@ caret (`Alt+Shift+9` in the Linux default keymaps) and `Shift+F8` finishes, and 
 keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap**
 changes them (search `Piwi`).
 
+Each Piwi balloon is titled Piwi and filed by kind in **Settings → Appearance & Behavior → Notifications**: Piwi
+(results), Piwi requests (Debug in my editor, a run shared live: they stay until answered), Piwi suggestions and Piwi
+problems, so muting one kind keeps the others. A confirmation, such as Copied., shows in the status bar.
+
 ## Related
 
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.

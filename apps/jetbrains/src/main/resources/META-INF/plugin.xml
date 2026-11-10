@@ -83,6 +83,9 @@
                              instance="dev.piwitests.jetbrains.PiwiConfigurable"/>
         <search.optionContributor implementation="dev.piwitests.jetbrains.PiwiSearchableOptions"/>
         <notificationGroup id="Piwi" displayType="BALLOON"/>
+        <notificationGroup id="Piwi requests" displayType="STICKY_BALLOON"/>
+        <notificationGroup id="Piwi suggestions" displayType="BALLOON"/>
+        <notificationGroup id="Piwi problems" displayType="BALLOON"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
         <!-- A run's controls go first among the actions their shortcut runs, while a run is live (below). -->

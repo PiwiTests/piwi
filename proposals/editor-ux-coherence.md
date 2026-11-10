@@ -49,12 +49,15 @@ with an unproven desktop app told apart from an unreachable one in both status i
 fixture answers each spec's own cases and the nightly suite holds the spec's count, [ST6](#st6); the JetBrains script
 writes no image whose status item lacks its failing icon and color, [HM20](#hm20); both sets of images and the recording
 video captured again, #1123; WebStorm 2026.3 drew the item with both, so why an earlier capture drew it gray stays
-unexplained), and every command, setting and action id of both editors registered in D25 and held to the manifests
-(#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
-#1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
-no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
-views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's
-four items are built. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+unexplained), [Q13](#q13) (every JetBrains balloon titled Piwi, with its icon, in a group of its kind, results, requests
+(sticky), suggestions and problems, and the confirmations in the status bar, [HM18](#hm18), [HM15](#hm15); Only on
+Failure on a passing run's notice in both editors; VS Code's other messages offer no Don't Show Again yet), and every
+command, setting and action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
+2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
+the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
+local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's four items are built. It cites
+and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
 [live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,
