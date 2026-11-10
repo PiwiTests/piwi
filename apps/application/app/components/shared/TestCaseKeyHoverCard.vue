@@ -3,7 +3,9 @@
  * Wraps a tag or an external ID that is a test case key of the project's test management project, and shows the case
  * behind it on hover: its name and status, how Piwi read the key, and when the catalog was read. It reads the stored
  * catalog, never the tool, and only once the card is opened. A key that is not one (tags are not a key source, the tag
- * does not match the pattern, the page shows no one project) leaves the wrapped chip exactly as it was.
+ * does not match the pattern, the page shows no one project) leaves the wrapped chip exactly as it was. A tag badge is
+ * not focusable by itself, so the card gives it a focusable wrapper and opens on focus; an external ID chip is a link
+ * or a button already. A touch opens the card too.
  */
 import { safeHttpUrl } from '#shared/utils/safe-url';
 
@@ -29,8 +31,16 @@ function onOpen(open: boolean): void {
 </script>
 
 <template>
-  <UPopover v-if="caseKey" mode="hover" :content="{ side: 'top' }" @update:open="onOpen">
-    <slot />
+  <UPopover v-if="caseKey" mode="hover" enable-touch :content="{ side: 'top' }" @update:open="onOpen">
+    <span
+      v-if="props.kind === 'tag'"
+      tabindex="0"
+      class="inline-flex shrink-0 rounded-sm focus-visible:outline-2 focus-visible:outline-primary"
+      data-testid="test-case-key-trigger"
+    >
+      <slot />
+    </span>
+    <slot v-else />
     <template #content>
       <div class="p-3 w-72 max-w-full space-y-1.5 text-sm" data-testid="test-case-key-card">
         <div class="flex items-center gap-1.5">

@@ -165,6 +165,28 @@ test.describe('Zephyr Scale — binding and catalog', () => {
     await expect(card.getByTestId('test-case-key-status')).toHaveText('Approved');
   });
 
+  test('a tag opens its case card from the keyboard', async ({ page, playwright }) => {
+    test.setTimeout(3 * 60_000);
+    const api = await playwright.request.newContext({ baseURL: server!.baseUrl });
+    const listed = (await (
+      await api.get(`/api/projects/${projectId}/test-cases?tags=SHOP-T1&maxAgeDays=0`)
+    ).json()) as {
+      items: Array<{ id: number }>;
+    };
+    await api.dispose();
+
+    await page.goto(`${server!.baseUrl}/test-cases/${listed.items[0]!.id}`);
+    await waitForHydration(page);
+    const trigger = page.getByTestId('test-case-key-trigger').filter({ hasText: '@SHOP-T1' }).first();
+    await trigger.focus();
+    const card = page.getByTestId('test-case-key-card');
+    await expect(card.getByTestId('test-case-key-name')).toHaveText('Checkout with a saved card', {
+      timeout: 30_000,
+    });
+    await page.keyboard.press('Escape');
+    await expect(card).toHaveCount(0);
+  });
+
   test('an external ID that is a case key keeps the chip spacing and shows its case on hover', async ({
     page,
     playwright,
