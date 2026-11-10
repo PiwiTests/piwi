@@ -124,6 +124,10 @@ When the desktop app answers but cannot prove it holds its token, which happens 
 editor or with another program on its port, the item reads **Piwi: restart the desktop app**: the editor does not
 send the app's token there. Restart or update the desktop app; the editor reads it again as soon as the app starts.
 
+The **Piwi** failures view says the same in both editors, naming the instance and why it does not answer, with
+**Retry**. When the editor service itself stops answering, VS Code's view offers **Piwi: Restart the editor service**,
+as does a **Piwi: Refresh** it did not answer.
+
 **Piwi: Open settings** in VS Code opens the extension's settings.
 
 ## Related

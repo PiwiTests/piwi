@@ -854,6 +854,38 @@ object Glue {
         else -> ""
     }
 
+    /** An action the Piwi tool window's empty text links, by its id. */
+    enum class EmptyLink(val label: String, val actionId: String) {
+        CONNECT("Connect…", "Piwi.Connect"),
+        RETRY("Retry", "Piwi.Refresh"),
+        SETTINGS("Settings…", "Piwi.OpenSettings"),
+        COMPARE("Compare With…", "Piwi.CompareWith"),
+    }
+
+    /** What the Piwi tool window says with no failure to list, and the actions it links. */
+    data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
+
+    /**
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
+     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
+     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare With…; no connection,
+     * with Connect…; else no failure in the run read (`runId`).
+     */
+    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
+        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT))
+        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
+        "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
+        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
+        "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
+        else -> EmptyText(
+            when {
+                baselineNoRun != null -> baselineNoRun
+                runId != null -> "No failure in run #$runId"
+                else -> "No failure in the latest run"
+            },
+        )
+    }
+
     /** What Disconnect says when nothing is saved to forget. */
     const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
 

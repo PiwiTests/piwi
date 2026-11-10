@@ -230,6 +230,8 @@ The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel
 service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the ones VS Code's view has: the run,
 **Your runs since**, then the failures grouped by file, cluster, owner or flat. How the service builds the tree:
 [The failures answer](../../packages/editor/ARCHITECTURE.md#the-failures-answer) in the editor service's reference.
+With no failure, the empty text is `Glue.failuresEmpty` of the state the service says (`FailuresResult.view`), with
+links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare With…).
 
 - **The grouping** is chosen with the toolbar's `ToggleAction`s and kept in `PiwiLocalSettings.failuresGrouping`. It is
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for
@@ -249,7 +251,10 @@ service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the 
 ### Navigation and actions
 
 The panel is an `OccurenceNavigator`: Next and Previous Occurrence, and the toolbar's arrows, go from failure to
-failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page.
+failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page. The panel
+gives the selected node's page as `DASHBOARD_URL`, which Open in Dashboard opens before the file's test or the latest
+run. Open in Dashboard and Run Selection… are enabled only while a context is connected (`piwiConnected`), Open in
+Dashboard also on a selected page, and Re-run the Failing Tests while failures are listed; `PiwiPluginTest` holds both.
 
 The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`:
 
@@ -496,7 +501,9 @@ worker whose reporter shows its running test (`Glue.watchableWorkers`). It watch
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
 other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
-The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off.
+The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off. Both tabs close
+(`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
+opens it again, and the Paused Page stops its view and the next stop opens it again.
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool

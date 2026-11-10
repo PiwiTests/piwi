@@ -723,7 +723,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val window = toolWindow() ?: return
         val content = livePage() ?: ContentFactory.getInstance()
             .createContent(PausedPagePanel(), PAUSED_PAGE, false)
-            .apply { isCloseable = true }
+            .apply {
+                isCloseable = true
+                // Closed, the tab stops watching its stop's page; the next stop opens it again.
+                setDisposer { if (page === this) stopPageView() }
+            }
             .also {
                 window.contentManager.addContent(it)
                 page = it
@@ -847,7 +851,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val window = toolWindow() ?: return
         val content = liveWorkerTab() ?: ContentFactory.getInstance()
             .createContent(PausedPagePanel(), Glue.workerName(lane), false)
-            .apply { isCloseable = true }
+            .apply {
+                isCloseable = true
+                // Closed, the tab stops watching its worker; Watch a Worker's Test opens it again.
+                setDisposer {
+                    if (workerTab === this) {
+                        stopLaneView()
+                        laneTarget = null
+                    }
+                }
+            }
             .also {
                 window.contentManager.addContent(it)
                 workerTab = it

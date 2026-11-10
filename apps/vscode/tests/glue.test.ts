@@ -16,6 +16,8 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  NOT_CONNECTED,
+  notConnectedNotice,
   DOCUMENT_PATTERN,
   baselinePicks,
   coalesced,
@@ -2008,5 +2010,39 @@ describe('the Testing view', () => {
     expect(
       ['/w/a.spec.ts', '/w/b.test.mjs', '/w/c.spec.tsx', '/w/d.ts', '/w/.spec.ts'].map((f) => SPEC_FILE.test(f)),
     ).toEqual([true, true, true, false, false]);
+  });
+});
+
+describe('notConnectedNotice', () => {
+  const ctx = (over: Partial<StatusResult['contexts'][number]>): StatusResult['contexts'][number] => ({
+    root: '/w',
+    connected: false,
+    serverUrl: null,
+    source: null,
+    projectId: null,
+    projectName: null,
+    branch: null,
+    locators: 0,
+    reachedFiles: 0,
+    problem: null,
+    ...over,
+  });
+
+  test('says nothing while a context is connected', () => {
+    expect(notConnectedNotice({ contexts: [ctx({ connected: true })] })).toBeNull();
+  });
+
+  test('tells an instance that does not answer, one still being read and no connection apart', () => {
+    expect(
+      notConnectedNotice({
+        contexts: [ctx({ serverUrl: 'https://piwi.corp', problem: 'Could not reach', problemKind: 'unreachable' })],
+      }),
+    ).toEqual({ message: 'Piwi: https://piwi.corp does not answer. Piwi tries again on its own.', action: 'retry' });
+    expect(notConnectedNotice({ contexts: [ctx({ serverUrl: 'https://piwi.corp' })] })).toEqual({
+      message: 'Piwi: still reading the instance.',
+      action: null,
+    });
+    expect(notConnectedNotice({ contexts: [ctx({})] })).toEqual({ message: NOT_CONNECTED, action: 'connect' });
+    expect(notConnectedNotice(null)).toEqual({ message: NOT_CONNECTED, action: 'connect' });
   });
 });

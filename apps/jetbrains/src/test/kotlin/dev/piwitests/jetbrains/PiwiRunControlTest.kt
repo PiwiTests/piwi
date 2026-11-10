@@ -746,6 +746,13 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("ed-2", ended = true))
             assertEquals("The run ended.", sessions.shown().pageCaption)
             assertNull(sessions.shown().pageImage)
+            // The tab closes, and the next stop opens it again.
+            val tab = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE)
+            assertTrue(tab.isCloseable)
+            window.contentManager.removeContent(tab, true)
+            assertNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
+            hear(RunSession("ed-3", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), unread.copy(since = "2026-10-25T10:00:02.000Z")))))
+            waitFor("the paused page again") { window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE) }
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

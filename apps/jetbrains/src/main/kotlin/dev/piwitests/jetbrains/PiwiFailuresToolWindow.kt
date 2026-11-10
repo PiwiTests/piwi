@@ -6,6 +6,7 @@ import com.intellij.ide.CommonActionsManager
 import com.intellij.ide.DefaultTreeExpander
 import com.intellij.ide.OccurenceNavigator
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -160,23 +161,21 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
-            val connected = service.status?.contexts.orEmpty().any { it.connected }
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
-            when {
-                service.status == null -> tree.emptyText.appendText(
-                    if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST,
-                )
-                !connected -> {
-                    tree.emptyText.appendText("Not connected to a Piwi instance")
-                    tree.emptyText.appendSecondaryText("Connect…", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
-                        PiwiConnectFlow.run(project)
+            if (service.status == null) {
+                tree.emptyText.appendText(if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST)
+            } else {
+                val empty = Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
+                tree.emptyText.appendText(empty.text)
+                for ((i, link) in empty.links.withIndex()) {
+                    if (i > 0) tree.emptyText.appendSecondaryText("   ", SimpleTextAttributes.REGULAR_ATTRIBUTES, null)
+                    tree.emptyText.appendSecondaryText(link.label, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                        val actions = ActionManager.getInstance()
+                        actions.getAction(link.actionId)?.let { actions.tryToExecute(it, null, tree, ActionPlaces.UNKNOWN, true) }
                     }
                 }
-                noRun != null -> tree.emptyText.appendText(noRun)
-                result?.run != null -> tree.emptyText.appendText("No failure in run #${result.run.id}")
-                else -> tree.emptyText.appendText("No failure in the latest run")
             }
         }
         val actions = ActionManager.getInstance()
@@ -214,7 +213,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 add(JBScrollPane(tree), BorderLayout.CENTER)
             },
         )
-        val content = ContentFactory.getInstance().createContent(panel, "Latest run", false)
+        val content = ContentFactory.getInstance().createContent(panel, "Latest run", false).apply { isCloseable = false }
         toolWindow.contentManager.addContent(content)
         service.onChange(content, render)
         render()
@@ -227,6 +226,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
      */
     private class FailuresPanel(private val project: Project, private val tree: JTree) :
         SimpleToolWindowPanel(true, true), OccurenceNavigator {
+        /** The selected node's dashboard page, for Open in Dashboard. */
+        override fun getData(dataId: String): Any? =
+            if (DASHBOARD_URL.`is`(dataId)) nodeOf(tree.lastSelectedPathComponent)?.url else super.getData(dataId)
+
         private fun failurePaths(): List<TreePath> {
             val paths = mutableListOf<TreePath>()
             fun walk(node: DefaultMutableTreeNode) {

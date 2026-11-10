@@ -127,7 +127,12 @@ The service's environment is the extension host's, with the editor's proxy setti
 
 A setting left empty keeps the environment's own variable. A change of one of these settings starts the service again,
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
-output channel, where `piwi.trace.server` writes the traffic with the service.
+output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
+(`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
+view's welcome offers it while the service does not answer, and so does a Refresh it did not answer. A failed request
+reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
+service is down. The client writes to the extension's own log channel (`outputChannel`), which a restart keeps; a
+service whose first start failed starts again only with the window.
 
 ## Settings and stored state
 
@@ -244,7 +249,16 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
   reveals the active file's first failure.
-- The welcome content follows the `piwi.failuresView` context key.
+- The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
+  Group by…, Run selection…, Run the tests that reach this file) show in the palette and the view's title only while a
+  context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance
+  that does not answer, with **Retry**, one still being read, or `NOT_CONNECTED` with **Connect**. Re-run the failing
+  tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
+  `tests/menus.test.ts` holds the gates.
+- The welcome content follows the `piwi.failuresView` context key, the service's `FailuresResult.view.state` (or
+  `unavailable` when the service does not answer, read again when the client stops); for `norun`, `unreachable`,
+  `desktop-unproven` and `loading` the view's message is the service's sentence, before any run's line, and the welcome
+  holds the state's buttons.
 - The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 
 ## Runs

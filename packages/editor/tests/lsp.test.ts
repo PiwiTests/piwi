@@ -1082,6 +1082,7 @@ describe('the Piwi language server', () => {
       runLabel: 'Run #41 · CI · main · 1 failing',
       failing: 1,
       rerun: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
+      view: { state: 'failures', message: null },
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],

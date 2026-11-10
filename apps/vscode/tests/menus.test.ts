@@ -41,3 +41,38 @@ describe("the editor's context menu", () => {
     expect(submenu).toContain('resourceScheme =~ /^(file|vscode-remote)$/');
   });
 });
+
+describe('the commands that read the instance', () => {
+  const reading = [
+    'piwi.refreshRun',
+    'piwi.openRun',
+    'piwi.openInDashboard',
+    'piwi.compareWith',
+    'piwi.groupFailuresBy',
+    'piwi.runSelection',
+    'piwi.runTestsForFile',
+  ];
+
+  test('are listed in the palette only while a context is connected', () => {
+    for (const command of reading) {
+      const entries = menus['commandPalette']!.filter((e) => e.command === command);
+      expect(entries, command).toEqual([{ command, when: 'piwi.active' }]);
+    }
+  });
+
+  test('Re-run the failing tests is listed while the view lists failures, whatever the connection', () => {
+    expect(menus['commandPalette']!.filter((e) => e.command === 'piwi.rerunFailing')).toEqual([
+      { command: 'piwi.rerunFailing', when: 'piwi.failuresView == failures' },
+    ]);
+    expect(menus['view/title']!.find((e) => e.command === 'piwi.rerunFailing')?.when).toBe(
+      'view == piwi.failures && piwi.failuresView == failures',
+    );
+  });
+
+  test('show in the failures view’s title only while a context is connected', () => {
+    const title = menus['view/title']!.filter((e) => e.when?.includes('view == piwi.failures'));
+    for (const entry of title.filter((e) => reading.includes(e.command!))) {
+      expect(entry.when, entry.command).toBe('view == piwi.failures && piwi.active');
+    }
+  });
+});

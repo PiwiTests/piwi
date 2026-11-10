@@ -41,6 +41,35 @@ import type {
 import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 
+/** What a Refresh the editor service did not answer says, with `RESTART_SERVICE`. */
+export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
+
+/** The button that runs `piwi.restartService`. */
+export const RESTART_SERVICE = 'Restart the editor service';
+
+/** What a command that reads the instance says while no context is connected, with Connect. */
+export const NOT_CONNECTED = 'Piwi: connect to an instance first.';
+
+/**
+ * What a command that reads the instance says while no context reads one: that an instance does not answer, with
+ * Retry; that one is still being read; else to connect, with Connect. Null while a context is connected.
+ */
+export function notConnectedNotice(
+  status: Pick<StatusResult, 'contexts'> | null,
+): { message: string; action: 'retry' | 'connect' | null } | null {
+  const contexts = status?.contexts ?? [];
+  if (contexts.some((c) => c.connected)) return null;
+  const down = contexts.find((c) => c.problemKind === 'unreachable');
+  if (down)
+    return {
+      message: `Piwi: ${down.serverUrl ?? 'the instance'} does not answer. Piwi tries again on its own.`,
+      action: 'retry',
+    };
+  if (contexts.some((c) => c.serverUrl && !c.problem))
+    return { message: 'Piwi: still reading the instance.', action: null };
+  return { message: NOT_CONNECTED, action: 'connect' };
+}
+
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 export const DOCUMENT_PATTERN =
   '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cs,cshtml,razor}';
