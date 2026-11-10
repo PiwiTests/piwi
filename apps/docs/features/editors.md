@@ -49,8 +49,8 @@ Lines above the code (CodeLens):
 
 | File | What it shows | Click |
 |---|---|---|
-| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover its pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
-| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
+| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover that result's run, the pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
+| A page object or spec | above each locator line, the tests using it, their actions, and how many fail or flake | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 

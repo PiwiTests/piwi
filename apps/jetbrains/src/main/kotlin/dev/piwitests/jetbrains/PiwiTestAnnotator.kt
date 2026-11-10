@@ -108,7 +108,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             else -> AllIcons.RunConfigurations.TestNotRan
         }
 
-        override fun getTooltipText(): String = Glue.testResultTooltip(line.status, line.title)
+        override fun getTooltipText(): String = Glue.testResultTooltip(line.title)
 
         override fun isNavigateAction(): Boolean = line.command != null
 

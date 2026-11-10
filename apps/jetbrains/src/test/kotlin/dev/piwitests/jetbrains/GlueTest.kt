@@ -2804,12 +2804,16 @@ class GlueTest {
 
     @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
-        assertEquals("<html>Piwi: running · passed 4 of 4 runs</html>", Glue.testResultTooltip("running", "passed 4 of 4 runs"))
+        assertEquals(
+            "<html>Piwi: running in your run #130 · passed 4 of 4 runs</html>",
+            Glue.testResultTooltip("running in your run #130 · passed 4 of 4 runs"),
+        )
         // The service's text is shown as text, never as markup.
         assertEquals(
-            "<html>Piwi: failing · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
-            Glue.testResultTooltip("failed", "<img src=x onerror=alert(1)> & more"),
+            "<html>Piwi: failing in run #124 · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
+            Glue.testResultTooltip("failing in run #124 · <img src=x onerror=alert(1)> & more"),
         )
+        assertEquals("<html>Piwi</html>", Glue.testResultTooltip(null))
         val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
         val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1))))
         val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))

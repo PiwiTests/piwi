@@ -138,9 +138,9 @@ tells the views, starts the service for the open files and offers the first-run 
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the details as its tooltip; its click runs what the line names (Open in Dashboard), and its
-  right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi** (`PiwiCommands.runTestAt`), at the line a range
-  marker follows through edits;
+- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); its click runs what
+  the line names (Open in Dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**
+  (`PiwiCommands.runTestAt`), at the line a range marker follows through edits;
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with the reason as the tooltip. The test's background goes around that
   line, since two backgrounds on one line have no set order.

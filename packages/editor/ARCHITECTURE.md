@@ -386,6 +386,11 @@ The failures are placed again on the timer that analyzes an edited document, and
 On a spec, `piwi/fileSummary` gives each test's line:
 
 - its latest result (`status`), which the clients draw in the gutter;
+- its summary (`title`), the mark's tooltip after `Piwi:` in both clients: the latest result and the run it is from,
+  named as the failure's other lines name it (`testVerdict`: `running in your run #130`, `failing in run #124 on main`),
+  or the catalog's result, which names no run (`didn't run in its latest run`, `flaky in recent runs`, `never run`), in
+  the dashboard's words (`statusWords`, held to `formatStatusLabel` by
+  `apps/application/tests/unit/status-words-drift.test.ts`), then the pass rate, quarantine, flaky score and selections;
 - the test's id (`testCaseId`), which VS Code's gutter hover runs;
 - the line its call ends on (`endLine`, found with `callEndLine`), for the background the clients draw over a failing
   test.
