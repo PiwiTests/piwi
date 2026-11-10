@@ -779,7 +779,15 @@ describe('connections that fail', () => {
     // Its runs stay as last heard while it does not answer.
     expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]) }]);
     expect(hubs.state().hubs).toEqual([
-      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false, lanes: false, presence: false },
+      {
+        id: HUB.url,
+        connected: false,
+        client: 'Visual Studio Code',
+        desktop: false,
+        lanes: false,
+        presence: false,
+        holds: false,
+      },
     ]);
     expect(fetches).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1000);
@@ -994,7 +1002,7 @@ describe('a hub whose connection was lost', () => {
     const pause = sockets[1]!.last('runControl')!;
     expect(pause).toMatchObject({ ref: 'r2', action: 'pause' });
     sockets[1]!.hear({ type: 'answer', id: pause.id, ok: true, message: 'Pausing.' });
-    expect(await sent).toEqual([{ ok: true, message: 'Pausing.' }]);
+    expect(await sent).toEqual({ action: 'pause', answers: [{ ok: true, message: 'Pausing.' }] });
     expect(hubs.answeringRuns().map((run) => run.session.ref)).toEqual(['r2']);
     // A hub whose service stopped starts again elsewhere: its runs go.
     sockets[1]!.hangUp(HUB_CLOSE.goingAway);
@@ -1040,10 +1048,13 @@ describe('the global shortcut', () => {
       const sent = socket.last('runControl');
       if (sent) socket.hear({ type: 'answer', id: sent.id, ok: true, message: 'Pausing.' });
     }
-    expect(await done).toEqual([
-      { ok: true, message: 'Pausing.' },
-      { ok: true, message: 'Pausing.' },
-    ]);
+    expect(await done).toEqual({
+      action: 'pause',
+      answers: [
+        { ok: true, message: 'Pausing.' },
+        { ok: true, message: 'Pausing.' },
+      ],
+    });
   });
 
   it('resumes every stopped test at the stop it stands at, and pauses nothing then', async () => {
@@ -1061,7 +1072,7 @@ describe('the global shortcut', () => {
     const { hubs, sockets } = setup();
     await hubs.find();
     await welcome(sockets[0]!, [session([], { ended: true })]);
-    expect(await hubs.shortcut()).toEqual([]);
+    expect(await hubs.shortcut()).toEqual({ action: null, answers: [] });
     expect(sockets[0]!.last('runControl')).toBeUndefined();
   });
 });

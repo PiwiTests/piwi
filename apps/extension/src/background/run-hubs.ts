@@ -263,6 +263,7 @@ export class RunHubs {
           desktop: this.desktopUrls.has(hub.url),
           lanes: !!this.features.get(hub.url)?.includes('lanes'),
           presence: !!this.features.get(hub.url)?.includes('presence'),
+          holds: !!this.features.get(hub.url)?.includes('hold'),
         };
       }),
       runs: [...live, ...ended],
@@ -589,14 +590,14 @@ export class RunHubs {
   }
 
   /**
-   * The global shortcut: resumes every stopped test, else pauses every run (`shortcutCommands`), of the hubs that
-   * answer now: a run kept as last heard takes no command.
+   * The global shortcut: resumes every stopped test, else pauses every run a person attends (`shortcutCommands`), of
+   * the hubs that answer now: a run kept as last heard takes no command. Answers what it did, for the sign it gives.
    */
-  async shortcut(): Promise<RunsAnswer[]> {
+  async shortcut(): Promise<{ action: 'pause' | 'resume' | null; answers: RunsAnswer[] }> {
     await this.ready();
-    return Promise.all(
-      shortcutCommands(this.answeringRuns()).map(({ action, ...run }) => this.command({ ...run, what: action })),
-    );
+    const commands = shortcutCommands(this.answeringRuns(), this.state().hubs);
+    const answers = await Promise.all(commands.map(({ action, ...run }) => this.command({ ...run, what: action })));
+    return { action: commands[0]?.action ?? null, answers };
   }
 
   /** The runs of the hubs whose connection answers now. */

@@ -231,6 +231,15 @@
   "badge_replay": {
     "message": "LECT"
   },
+  "badge_runsPaused": {
+    "message": "II"
+  },
+  "badge_runsResumed": {
+    "message": "▶"
+  },
+  "badge_runsNone": {
+    "message": "–"
+  },
   "popup_settings": {
     "message": "Réglages"
   },
@@ -6361,6 +6370,9 @@
   "runs_openSettings": {
     "message": "Ouvrir les réglages"
   },
+  "runs_looking": {
+    "message": "Recherche…"
+  },
   "runs_findAgain": {
     "message": "Chercher à nouveau"
   },
@@ -6632,6 +6644,37 @@
   },
   "runs_frontTitle": {
     "message": "Mettre au premier plan la fenêtre du navigateur du test"
+  },
+  "runs_runControls": {
+    "message": "Commandes de l’exécution"
+  },
+  "runs_pauseAll": {
+    "message": "Tout mettre en pause"
+  },
+  "runs_pauseAllTitle": {
+    "message": "Mettre en pause chaque worker de cette exécution avant son prochain appel"
+  },
+  "runs_resumeAll": {
+    "message": "Tout reprendre"
+  },
+  "runs_resumeAllTitle": {
+    "message": "Laisser reprendre chaque test arrêté de cette exécution"
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Plusieurs tests sont arrêtés : placez le focus sur celui à piloter avec une touche."
   },
   "runs_record": {
     "message": "Enregistrer"

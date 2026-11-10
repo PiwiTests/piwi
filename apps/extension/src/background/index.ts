@@ -160,12 +160,40 @@ async function showStateBadge(): Promise<void> {
  */
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === RUN_COMMAND) {
-    void runHubs.shortcut();
+    void runShortcut();
     return;
   }
   if (command !== 'pick-element') return;
   void runPickCommand(tab);
 });
+
+/** How long the toolbar badge says what the run shortcut did before it shows the state again. */
+const SHORTCUT_SIGN_MS = 2500;
+const SHORTCUT_BADGE_COLOR = '#475569';
+
+/**
+ * The run shortcut, then its sign on the toolbar badge for a moment: the runs paused, the stopped tests resumed, or
+ * nothing done (no run to steer, or none took it), whether a Runs window is open or not; a recording's or a replay's
+ * badge comes back after it.
+ */
+let shortcutSign: ReturnType<typeof setTimeout> | undefined;
+
+async function runShortcut(): Promise<Awaited<ReturnType<typeof runHubs.shortcut>>> {
+  const done = await runHubs.shortcut();
+  await i18nReady;
+  // A sign for what a run took: no run answered yes is nothing done.
+  const took = done.answers.some((answer) => answer.ok);
+  const sign = !took ? 'badge_runsNone' : done.action === 'pause' ? 'badge_runsPaused' : 'badge_runsResumed';
+  await chrome.action.setBadgeText({ text: t(sign) });
+  await chrome.action.setBadgeBackgroundColor({ color: SHORTCUT_BADGE_COLOR });
+  // A press while the sign shows starts its moment again.
+  clearTimeout(shortcutSign);
+  shortcutSign = setTimeout(() => void showStateBadge(), SHORTCUT_SIGN_MS);
+  return done;
+}
+
+// What the run shortcut does, sign included, for the e2e suite, which cannot press a shortcut the browser holds.
+(globalThis as { __piwiRunShortcut?: () => Promise<unknown> }).__piwiRunShortcut = () => runShortcut();
 
 async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
   // The event usually carries the tab, but not on every platform or path —

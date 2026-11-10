@@ -75,6 +75,8 @@ export interface RunsHub {
   lanes: boolean;
   /** It says who is present on each run, lane and stop, and takes `drive` (`presence` among its features). */
   presence: boolean;
+  /** It keeps a Hold failures for each run a person attends (`hold` among its features): a run without one is unattended. */
+  holds: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -256,7 +258,9 @@ export type RunsEvent =
   | ({ type: 'view-ended' } & RunsView)
   | ({ type: 'lane-frame' } & RunsLaneFrame)
   /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
-  | ({ type: 'lane-ended' } & RunsLane);
+  | ({ type: 'lane-ended' } & RunsLane)
+  /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
+  | { type: 'found' };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -494,10 +498,21 @@ export interface ShortcutCommand {
 }
 
 /**
- * What the global shortcut does: resume every stopped test, each at the stop it stands at; with none stopped, pause
- * every run with a worker, each worker before its next call. Nothing when no run is live.
+ * Whether a person attends a run: not one whose hub keeps a Hold failures for each run a person attends but gives it
+ * none (a Flake Lab run, a bisect, a lab job, a run that repeats its tests past a failure, UI mode). A hub that keeps
+ * none, of an older version, names no run unattended.
  */
-export function shortcutCommands(runs: readonly RunsRun[]): ShortcutCommand[] {
+export function attendedRun(run: RunsRun, hubs: readonly RunsHub[]): boolean {
+  const hub = hubs.find((h) => h.id === run.hub);
+  return !hub?.holds || !!run.session.hold;
+}
+
+/**
+ * What the global shortcut does: resume every stopped test, each at the stop it stands at, a run nobody attends
+ * included (a person paused it); with none stopped, pause every run a person attends (`attendedRun`) with a worker,
+ * each worker before its next call, the others left to run. Nothing when no run is live.
+ */
+export function shortcutCommands(runs: readonly RunsRun[], hubs: readonly RunsHub[] = []): ShortcutCommand[] {
   const live = runs.filter((run) => !run.session.ended);
   const stopped = live.flatMap(({ hub, session }) =>
     session.workers.flatMap((worker): ShortcutCommand[] =>
@@ -508,8 +523,100 @@ export function shortcutCommands(runs: readonly RunsRun[]): ShortcutCommand[] {
   );
   if (stopped.length > 0) return stopped;
   return live
-    .filter(({ session }) => session.workers.length > 0)
+    .filter((run) => run.session.workers.length > 0 && attendedRun(run, hubs))
     .map(({ hub, session }) => ({ hub, ref: session.ref, worker: null, action: 'pause', since: null }));
+}
+
+/**
+ * A run's own controls, for a run of several workers: Pause all while a worker runs a test it can stop in and no Pause
+ * reached it, and Resume all while a test is stopped, each stopped worker at its own stop.
+ */
+export function runLevelControls(run: RunsRun): { pauseAll: boolean; resumeAll: ShortcutCommand[] } {
+  const { hub, session } = run;
+  if (session.ended || session.workers.length < 2) return { pauseAll: false, resumeAll: [] };
+  const resumeAll = session.workers.flatMap((worker): ShortcutCommand[] =>
+    worker.state === 'stopped' && worker.stop
+      ? [{ hub, ref: session.ref, worker: worker.worker, action: 'resume', since: worker.stop.since }]
+      : [],
+  );
+  const pauseAll = session.workers.some(
+    (worker) => worker.state === 'running' && !worker.pausing && !worker.test?.cannotPause,
+  );
+  return { pauseAll, resumeAll: resumeAll.length > 1 ? resumeAll : [] };
+}
+
+/** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */
+export const RUNS_BOUNDS_KEY = 'runsWindowBounds';
+
+/** A window's place and size on screen, in CSS pixels. */
+export interface RunsBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** A kept place, checked: whole numbers, a size a window can have and a place on some screen; null otherwise. */
+export function readRunsBounds(value: unknown): RunsBounds | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { left, top, width, height } = value as Record<string, unknown>;
+  const whole = (n: unknown, min: number, max: number): n is number =>
+    typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
+  if (!whole(width, 240, 8000) || !whole(height, 200, 8000)) return null;
+  if (!whole(left, -20000, 20000) || !whole(top, -20000, 20000)) return null;
+  return { left, top, width, height };
+}
+
+/** The keys of the stop controls, as the debuggers have them: Resume, Step and Finish. */
+export type StopKey = 'resume' | 'step' | 'finish';
+
+/** Each control's keys, as `aria-keyshortcuts` names them: Resume on F8 (and F5), Step on F10, Finish on Shift+F11. */
+export const STOP_KEYS: Record<StopKey, string> = { resume: 'F8 F5', step: 'F10', finish: 'Shift+F11' };
+
+/** The control a key press asks for, of `STOP_KEYS`; null for any other key or one held with Ctrl, Alt or Meta. */
+export function stopKeyOf(event: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+}): StopKey | null {
+  if (event.ctrlKey || event.altKey || event.metaKey) return null;
+  if ((event.key === 'F8' || event.key === 'F5') && !event.shiftKey) return 'resume';
+  if (event.key === 'F10' && !event.shiftKey) return 'step';
+  if (event.key === 'F11' && event.shiftKey) return 'finish';
+  return null;
+}
+
+/** A stopped test a key steers: its run, its worker and its stop. */
+export interface KeyTarget {
+  run: RunsRun;
+  worker: number;
+  since: string;
+  failed: boolean;
+}
+
+/**
+ * The stopped test a key steers: the one whose row holds the focus (`focused`, its `workerKey`), else the only stopped
+ * test of the live runs whose hub answers (`answering`, by hub id); null when there is none, or several and the focus
+ * is in none of them.
+ */
+export function keyTargetOf(
+  runs: readonly RunsRun[],
+  focused: string | null,
+  answering: (hub: string) => boolean = () => true,
+): KeyTarget | null {
+  const stopped = runs.flatMap((run) =>
+    run.session.ended || !answering(run.hub)
+      ? []
+      : run.session.workers.flatMap((worker): KeyTarget[] =>
+          worker.state === 'stopped' && worker.stop
+            ? [{ run, worker: worker.worker, since: worker.stop.since, failed: worker.stop.reason === 'failure' }]
+            : [],
+        ),
+  );
+  const chosen = focused ? stopped.find((s) => workerKey(s.run.hub, s.run.session.ref, s) === focused) : undefined;
+  return chosen ?? (stopped.length === 1 ? stopped[0]! : null);
 }
 
 /** A `file:` URI as a path with `/` separators: `/home/me/shop/tests/cart.spec.ts`, `C:/shop/tests/cart.spec.ts`. */
