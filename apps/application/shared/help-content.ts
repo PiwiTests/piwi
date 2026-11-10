@@ -1304,8 +1304,8 @@ export const HELP_TOPICS = {
   },
   'settings.integrations.zephyr-connection': {
     title: 'Zephyr Scale Cloud',
-    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. The connection is what the results sync will use: that sync is not available yet, so Piwi sends nothing to Zephyr today.',
-    doc: 'operate/integrations#connecting-zephyr-scale-cloud',
+    text: 'Pick the region your Zephyr Scale Cloud runs in and paste an API access token (in Jira: your profile picture → Zephyr API keys), ideally one created by a dedicated account. Check signs in on the region’s host and lists the projects the token sees; nothing is saved until you connect. The token is encrypted at rest and never shown again, and changing the region asks for it again. Piwi sends nothing to Zephyr Scale yet: the connection can be created, checked and tested.',
+    doc: 'operate/zephyr-scale',
     envVars: ['PIWI_ZEPHYR_API_TOKEN', 'PIWI_ZEPHYR_REGION'],
   },
   'settings.integrations.connection': {

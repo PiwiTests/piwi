@@ -253,9 +253,7 @@ function errorMessage(err: unknown): string {
             connection.
           </template>
           <template v-else>
-            Holds the {{ provider.label }} connection that the results sync will use. The sync arrives in a later
-            release: until then the connection can be created, checked and tested, and Piwi sends nothing to
-            {{ provider.label }}.
+            Piwi sends nothing to {{ provider.label }} yet: the connection can be created, checked and tested.
           </template>
         </template>
         <template
