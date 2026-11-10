@@ -14,6 +14,7 @@ import {
   keyTargetOf,
   readRunsBounds,
   runLevelControls,
+  shownWorkerOf,
   stopKeyOf,
   workerKey,
   shortcutCommands,
@@ -214,6 +215,27 @@ describe('the keys of the stop controls', () => {
     expect(keyTargetOf([one, two], null, (hub) => hub !== two.hub || false)).toBeNull();
     const lost = { ...two, hub: 'ws://127.0.0.1:50999/piwi/hub' };
     expect(keyTargetOf([one, lost], null, (hub) => hub === one.hub)).toMatchObject({ worker: 1 });
+  });
+});
+
+describe('the worker a run’s tabs show', () => {
+  const stopped = (w: number, since: string) =>
+    worker({ worker: w, parallelIndex: w, state: 'stopped', stop: stop(since) });
+  const running = (w: number) => worker({ worker: w, parallelIndex: w });
+
+  it('shows the person’s choice while it is stopped or no other is, else the first stopped worker', () => {
+    expect(shownWorkerOf([running(0), running(1)], null, null)).toBe(0);
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], null, null)).toBe(1);
+    expect(shownWorkerOf([running(0), running(1)], 1, null)).toBe(1);
+    // A stop elsewhere takes the tab from a running worker, and gives it back once answered.
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], 0, 0)).toBe(1);
+    expect(shownWorkerOf([running(0), running(1)], 0, 1)).toBe(0);
+    // Never from a stop being answered, nor from a page being watched.
+    expect(shownWorkerOf([stopped(0, 's0'), stopped(1, 's1')], 0, 0)).toBe(0);
+    expect(shownWorkerOf([running(0), stopped(1, 's1')], 0, 0, (w) => w.worker === 0)).toBe(0);
+    // A choice of a worker gone from the run falls back to the first.
+    expect(shownWorkerOf([running(0), running(1)], 7, null)).toBe(0);
+    expect(shownWorkerOf([], null, null)).toBeNull();
   });
 });
 

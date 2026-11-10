@@ -6570,11 +6570,17 @@
   "runs_giveUpTitle": {
     "message": "Encerrar o teste agora: a chamada em que ele espera é abandonada quando possível, e o resto do teste é ignorado"
   },
+  "runs_stateFailed": {
+    "message": "Falhou, retido na sua linha"
+  },
   "runs_stateRunning": {
     "message": "Em execução"
   },
   "runs_stateBetween": {
     "message": "Entre dois testes"
+  },
+  "runs_workerTabs": {
+    "message": "Workers"
   },
   "runs_worker": {
     "message": "worker $number$",

@@ -545,6 +545,24 @@ export function runLevelControls(run: RunsRun): { pauseAll: boolean; resumeAll: 
   return { pauseAll, resumeAll: resumeAll.length > 1 ? resumeAll : [] };
 }
 
+/**
+ * The worker a live run of several shows behind its tabs, by its `worker`: the one the person chose (`chosen`), else the
+ * one shown before (`before`), while it stands at a stop, is watched (`watched`) or no other stands at one; else the
+ * first stopped worker, else the first. A stop elsewhere so never takes the tab from one that is answered or watched.
+ */
+export function shownWorkerOf(
+  workers: readonly HubWorker[],
+  chosen: number | null,
+  before: number | null,
+  watched: (worker: HubWorker) => boolean = () => false,
+): number | null {
+  if (workers.length === 0) return null;
+  const stopped = workers.filter((w) => w.state === 'stopped' && w.stop);
+  const current = workers.find((w) => w.worker === (chosen ?? before));
+  if (current && (stopped.includes(current) || watched(current) || stopped.length === 0)) return current.worker;
+  return (stopped[0] ?? workers[0]!).worker;
+}
+
 /** Where the person left the Runs window, in `chrome.storage.local`: the next one opens there. */
 export const RUNS_BOUNDS_KEY = 'runsWindowBounds';
 

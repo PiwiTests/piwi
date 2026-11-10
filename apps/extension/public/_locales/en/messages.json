@@ -7791,6 +7791,10 @@
     "message": "End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped",
     "description": "Runs window, the tooltip of End the test while a Pause waits for the call the test runs: the call is given up, or the test is skipped as it returns."
   },
+  "runs_stateFailed": {
+    "message": "Failed, held at its line",
+    "description": "Runs window, the tooltip of a worker’s tab while its failed test is held at its line."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."
@@ -7798,6 +7802,10 @@
   "runs_stateBetween": {
     "message": "Between tests",
     "description": "Runs window, the state of a worker between two tests."
+  },
+  "runs_workerTabs": {
+    "message": "Workers",
+    "description": "Runs window, the accessible name of the tabs of a run’s workers, one shown at a time."
   },
   "runs_worker": {
     "message": "worker $number$",

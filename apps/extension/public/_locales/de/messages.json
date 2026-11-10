@@ -6570,11 +6570,17 @@
   "runs_giveUpTitle": {
     "message": "Test jetzt beenden: Der Aufruf, in dem er wartet, wird wo möglich abgebrochen, der Rest des Tests übersprungen"
   },
+  "runs_stateFailed": {
+    "message": "Fehlgeschlagen, an seiner Zeile angehalten"
+  },
   "runs_stateRunning": {
     "message": "Läuft"
   },
   "runs_stateBetween": {
     "message": "Zwischen zwei Tests"
+  },
+  "runs_workerTabs": {
+    "message": "Worker"
   },
   "runs_worker": {
     "message": "Worker $number$",

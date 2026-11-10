@@ -1030,8 +1030,14 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 
 ### Run-level controls, keys and the window's place
 
-- A run of several workers has **Pause all** (the hub's `runControl` `pause` with no worker) and **Resume all** (a
-  `resume` for each stopped worker, at its stop) under its name, from `runLevelControls`.
+- A live run of several workers shows one at a time, behind a tab each (`role="tablist"`), marked with its state
+  (`tabState`, `data-state`). Which one is `shownWorkerOf`: the person's choice (`chosenTabs`) or the last shown
+  (`shownTabs`) while it stands at a stop, is watched or no other stops, else the first stopped worker. The arrow keys,
+  `Home` and `End` move between the tabs; a key for a stop control steers the one stopped worker shown.
+
+- One row under the run's name holds Hold failures and, for a run of several workers, **Pause all** (the hub's
+  `runControl` `pause` with no worker) and **Resume all** (a `resume` for each stopped worker, at its stop), from
+  `runLevelControls`.
 - Resume, Step and Finish take `F8` (and `F5`), `F10` and `Shift+F11` (`stopKeyOf`, `STOP_KEYS` on the buttons'
   `aria-keyshortcuts`), for the worker whose row holds the focus (`data-worker`), else the only stopped test
   of a hub that answers (`keyTargetOf`); never from a field, nor at a held failure, which only its Resume button ends.

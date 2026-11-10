@@ -27,6 +27,7 @@ import {
   shareRefusalOf,
   stopError,
   runLevelControls,
+  shownWorkerOf,
   readRunsBounds,
   RUNS_BOUNDS_KEY,
   keyTargetOf,
@@ -1172,10 +1173,12 @@ document.addEventListener('keydown', (event) => {
   if (anyStopped) event.preventDefault();
   const field = event.target instanceof HTMLElement ? event.target.closest('input, textarea, select') : null;
   if (field) return;
+  // The worker whose row holds the focus, else the only stopped worker shown, a run's tabs showing one at a time.
+  const shownStopped = [...document.querySelectorAll<HTMLElement>('.worker[data-state="stopped"][data-worker]')];
   const focused =
-    document.activeElement instanceof HTMLElement
-      ? (document.activeElement.closest<HTMLElement>('[data-worker]')?.dataset.worker ?? null)
-      : null;
+    (document.activeElement instanceof HTMLElement
+      ? document.activeElement.closest<HTMLElement>('[data-worker]')?.dataset.worker
+      : undefined) ?? (shownStopped.length === 1 ? (shownStopped[0]!.dataset.worker ?? null) : null);
   const target = keyTargetOf(state.runs, focused, hubAnswers);
   if (!target) {
     if (anyStopped) announce(t('runs_keyChoose'));
@@ -1687,19 +1690,28 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
     );
   }
-  // Hold failures, from a hub that keeps it for each run, while the run goes on and its hub is connected.
-  if (session.hold && !session.ended && !away) {
-    const { on, by } = session.hold;
-    const asking = holding.has(runKey);
-    const refusal = holdRefusals.get(runKey) ?? null;
-    children.push(part(`${runKey}|hold`, [on, by, asking, refusal], () => renderHold(run, on, by)));
-  }
-  // Pause all and Resume all, for a run of several workers, while its hub answers.
+  // One row under the name: Hold failures, from a hub that keeps it for each run, and Pause all or Resume all, for a
+  // run of several workers, while the run goes on and its hub is connected.
+  const holds = session.hold && !session.ended && !away ? session.hold : null;
   const level = away ? null : runLevelControls(run);
-  if (level && (level.pauseAll || level.resumeAll.length > 0)) {
-    const resumed = level.resumeAll.map((c) => c.since).join('|');
+  const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
+  if (holds || levelShown) {
+    const shown = [
+      holds?.on ?? null,
+      holds?.by ?? null,
+      holding.has(runKey),
+      holdRefusals.get(runKey) ?? null,
+      levelShown ? level!.pauseAll : null,
+      levelShown ? level!.resumeAll.map((c) => c.since).join('|') : null,
+      runBusy.has(runKey),
+    ];
     children.push(
-      part(`${runKey}|all`, [level.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level)),
+      part(`${runKey}|bar`, shown, () => {
+        const bar = element('div', 'run-bar');
+        if (holds) bar.append(renderHold(run, holds.on, holds.by));
+        if (levelShown) bar.append(renderRunControls(run, level!));
+        return bar;
+      }),
     );
   }
   // A run that cannot be shared says why under its workers, after what steers it.
@@ -1723,11 +1735,27 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     children.push(renderShare(run, session.live));
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
+  // A live run of several workers shows one at a time, behind a tab for each.
+  const tabbed = !session.ended && workers.length > 1;
+  const shownIndex = tabbed
+    ? shownWorkerOf(workers, chosenTabs.get(runKey) ?? null, shownTabs.get(runKey) ?? null, (w) =>
+        watchingWorker(run, w),
+      )
+    : null;
+  if (tabbed) {
+    shownTabs.set(runKey, shownIndex);
+    children.push(renderWorkerTabs(run, workers, shownIndex));
+  } else shownTabs.delete(runKey);
   if (workers.length > 0) {
     const list = part(`${runKey}|workers`, null, () => element('ul', 'workers'));
+    if (tabbed) {
+      list.id = `${tabPanelId(runKey)}`;
+      list.setAttribute('role', 'tabpanel');
+    }
+    const listed = tabbed ? workers.filter((w) => w.worker === shownIndex) : workers;
     place(
       list,
-      workers.map((worker) => renderWorker(run, hub, worker, workers.length, away)),
+      listed.map((worker) => renderWorker(run, hub, worker, tabbed ? 1 : workers.length, away)),
     );
     children.push(list);
   }
@@ -1791,6 +1819,90 @@ function renderHold(run: RunsRun, on: boolean, by: 'start' | 'person' | 'agent')
   const box = element('div', 'run-hold-box');
   box.append(row, iconText(element('p', 'note run-note hold-refused'), 'info', refusal));
   return box;
+}
+
+/** The worker the person chose on each run's tabs, by run (`runKeyOf`): kept while the run lasts. */
+const chosenTabs = new Map<string, number>();
+/** The worker each run's tabs showed last, by run. */
+const shownTabs = new Map<string, number | null>();
+
+/** The id of a run's tab panel, which its tabs control. */
+function tabPanelId(runKey: string): string {
+  let hash = 0;
+  for (const char of runKey) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return `workers-${(hash >>> 0).toString(36)}`;
+}
+
+/** Whether the window watches a worker's page now: its stop's live view, or its lane. */
+function watchingWorker(run: RunsRun, worker: HubWorker): boolean {
+  return (
+    isLive(views.get(workerKey(run.hub, run.session.ref, worker))) ||
+    isLive(lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)))
+  );
+}
+
+/** A worker's state on its tab, as an icon and the words its row says. */
+function tabState(worker: HubWorker): { icon: IconName; words: string } {
+  const stop = worker.state === 'stopped' ? worker.stop : null;
+  if (stop?.reason === 'failure') return { icon: 'x-circle', words: t('runs_stateFailed') };
+  if (stop) return { icon: 'pause', words: t(STOP_WORDS[stop.reason]) };
+  if (worker.pausing) return { icon: 'clock', words: t('runs_statePausing') };
+  if (worker.state === 'running' || worker.state === 'other') return { icon: 'play', words: t('runs_stateRunning') };
+  return { icon: 'dot', words: t('runs_stateBetween') };
+}
+
+/**
+ * A run's workers as tabs, one shown at a time (`shownWorkerOf`): each names its worker and marks its state, a stopped
+ * one in the stop's color. The arrow keys, Home and End move between them.
+ */
+function renderWorkerTabs(run: RunsRun, workers: readonly HubWorker[], shown: number | null): HTMLElement {
+  const runKey = runKeyOf(run);
+  const states = workers.map((w) => [w.worker, w.parallelIndex, tabState(w).words, w.stop?.since ?? null]);
+  return part(`${runKey}|tabs`, [states, shown], () => {
+    const list = element('div', 'worker-tabs');
+    list.setAttribute('role', 'tablist');
+    list.setAttribute('aria-label', t('runs_workerTabs'));
+    const tabs = workers.map((worker, index) => {
+      const state = tabState(worker);
+      const tab = makeButton(
+        t('runs_worker', { number: worker.parallelIndex + 1 }),
+        () => {
+          chosenTabs.set(runKey, worker.worker);
+          focusKey = `${runKey}|tab|${worker.worker}`;
+          render();
+        },
+        { icon: state.icon, small: true, tone: 'ghost', title: state.words },
+      );
+      const selected = worker.worker === shown;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(selected));
+      tab.setAttribute('aria-controls', tabPanelId(runKey));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.dataset.focus = `${runKey}|tab|${worker.worker}`;
+      tab.dataset.state = worker.state === 'stopped' && worker.stop ? worker.stop.reason : worker.state;
+      tab.addEventListener('keydown', (event) => {
+        const to =
+          event.key === 'ArrowRight'
+            ? (index + 1) % workers.length
+            : event.key === 'ArrowLeft'
+              ? (index - 1 + workers.length) % workers.length
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? workers.length - 1
+                  : null;
+        if (to === null) return;
+        event.preventDefault();
+        const next = workers[to]!;
+        chosenTabs.set(runKey, next.worker);
+        focusKey = `${runKey}|tab|${next.worker}`;
+        render();
+      });
+      return tab;
+    });
+    list.append(...tabs);
+    return list;
+  });
 }
 
 /** The runs whose Pause all or Resume all is on its way: their buttons wait for the answers. */

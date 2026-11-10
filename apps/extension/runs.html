@@ -310,6 +310,54 @@
         font-weight: 600;
         margin-right: 4px;
       }
+      /* Hold failures, and Pause all or Resume all, on one row under the run's name. */
+      .run-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .run-bar > .run-hold,
+      .run-bar > .run-hold-box,
+      .run-bar > .run-controls {
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      /* A live run's workers, one shown at a time: a tab each, marked with its state. */
+      .worker-tabs {
+        display: flex;
+        gap: 2px;
+        padding: 6px 12px 0;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--border);
+      }
+      .worker-tabs [role='tab'] {
+        flex-shrink: 0;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        margin-bottom: -1px;
+        border-bottom: 2px solid transparent;
+        color: var(--muted);
+      }
+      .worker-tabs [role='tab'][aria-selected='true'] {
+        color: inherit;
+        font-weight: 600;
+        border-bottom-color: var(--accent-fg);
+      }
+      .worker-tabs [role='tab'][data-state='breakpoint'],
+      .worker-tabs [role='tab'][data-state='step'],
+      .worker-tabs [role='tab'][data-state='pause'],
+      .worker-tabs [role='tab'][data-state='run-to'],
+      .worker-tabs [role='tab'][data-state='page-pause'],
+      .worker-tabs [role='tab'][data-state='other'] {
+        color: var(--stopped);
+      }
+      .worker-tabs [role='tab'][data-state='failure'] {
+        color: var(--error);
+      }
       .workers {
         list-style: none;
         margin: 0;

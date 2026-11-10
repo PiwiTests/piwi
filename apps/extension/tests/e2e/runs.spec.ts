@@ -1780,15 +1780,15 @@ test.describe('the live view', () => {
     const { context, extensionId } = await pairedExtension(older);
     try {
       const runs = await openRuns(context, extensionId);
+      // Two workers, one shown at a time behind their tabs: the first stopped one, then the other.
       const workers = runs.locator('.worker');
-      await expect(workers).toHaveCount(2);
-      await expect(workers.nth(0).locator('.controls button')).toHaveText([
-        'Resume',
-        'Step',
-        'Finish',
-        'Mock a request',
-      ]);
-      await expect(workers.nth(1).locator('.controls button')).toHaveText([
+      await expect(runs.getByRole('tab')).toHaveText(['worker 1', 'worker 2']);
+      await expect(workers).toHaveCount(1);
+      await expect(workers.locator('.controls button')).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+      await expect(workers.getByRole('img')).toHaveCount(1);
+      await runs.getByRole('tab', { name: 'worker 2' }).click();
+      await expect(runs.getByRole('tab', { name: 'worker 2' })).toHaveAttribute('aria-selected', 'true');
+      await expect(workers.locator('.controls button')).toHaveText([
         'Resume',
         'Step',
         'Finish',
@@ -1796,7 +1796,11 @@ test.describe('the live view', () => {
         'Record',
         'Mock a request',
       ]);
-      await expect(workers.getByRole('img')).toHaveCount(2);
+      await expect(workers.getByRole('img')).toHaveCount(1);
+      // The arrow keys move between the tabs, the focus with them.
+      await runs.keyboard.press('ArrowLeft');
+      await expect(runs.getByRole('tab', { name: 'worker 1' })).toHaveAttribute('aria-selected', 'true');
+      await expect(runs.getByRole('tab', { name: 'worker 1' })).toBeFocused();
       await expect(runs.getByRole('button', { name: 'Watch live' })).toHaveCount(0);
       await expect(runs.getByRole('button', { name: 'Pick on the image' })).toHaveCount(0);
       await expect(runs.locator('.page-tools')).toHaveCount(0);
