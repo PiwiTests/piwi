@@ -1163,6 +1163,20 @@
       "when": 1794162681902,
       "tag": "0165_amusing_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1794256870966,
+      "tag": "0166_amazing_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1794267445100,
+      "tag": "0167_common_silver_samurai",
+      "breakpoints": true
     }
   ]
 }

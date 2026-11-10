@@ -17,9 +17,11 @@ import {
   locatorUsages,
   probes,
   quarantinedTests,
+  reusedResults,
   scenarioGaps,
   testCases,
   testCoverage,
+  testRuns,
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
@@ -44,6 +46,12 @@ interface PerCaseTable {
 
 // The per-test data recorded by runs, each unique per test case and key.
 const KEYED_TABLES: PerCaseTable[] = [
+  {
+    table: reusedResults,
+    id: reusedResults.id,
+    testCaseId: reusedResults.testCaseId,
+    key: [reusedResults.runId],
+  },
   {
     table: codeReach,
     id: codeReach.id,
@@ -158,12 +166,26 @@ export async function mergeTestCases(db: DrizzleDB, targetId: number, sourceId: 
 
   const executionsMoved = await db.transaction(async (tx) => {
     const t = tx as unknown as DrizzleDB;
+    // The runs that reused both tests keep one row once merged: recount them after.
+    const reusedRuns = (
+      await t.select({ runId: reusedResults.runId }).from(reusedResults).where(eq(reusedResults.testCaseId, sourceId))
+    ).map((r) => r.runId);
     for (const spec of KEYED_TABLES) await dropKeyedDuplicates(t, spec, targetId, sourceId);
     for (const spec of KEYED_TABLES) {
       await t
         .update(spec.table)
         .set({ testCaseId: targetId } as never)
         .where(eq(spec.testCaseId, sourceId));
+    }
+    for (const runId of reusedRuns) {
+      const [counted] = await t
+        .select({ count: sql<number>`count(*)` })
+        .from(reusedResults)
+        .where(eq(reusedResults.runId, runId));
+      await t
+        .update(testRuns)
+        .set({ reusedCount: Number(counted?.count ?? 0) })
+        .where(eq(testRuns.id, runId));
     }
 
     // One active quarantine per test case: the target's wins.

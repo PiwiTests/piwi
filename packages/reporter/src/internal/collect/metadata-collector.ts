@@ -14,7 +14,8 @@ import {
 } from '@piwitests/core/wire';
 import { RUN_REF_ENV } from '@piwitests/core/run-channel';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
-import { configDirFromConfig } from '../support/test-paths.js';
+import { readPlanStamp } from '../support/selection-env.js';
+import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
 
 type Env = Record<string, string | undefined>;
@@ -208,7 +209,11 @@ export class MetadataCollector {
       if (ci) metadata.ci = ci;
     }
 
+    const plan = readPlanStamp();
+    if (plan) metadata.piwiPlan = plan;
+
     const htmlMeta = this.extractPlaywrightConfigMetadata(config);
+    if (suite) htmlMeta.serialFiles = this.serialFiles(suite, configDirFromConfig(config));
     if (htmlMeta && Object.keys(htmlMeta).length > 0) metadata.htmlReport = htmlMeta;
     if (config.metadata) metadata.playwrightConfig = config.metadata;
 
@@ -332,6 +337,13 @@ export class MetadataCollector {
       } catch {
         /* optional */
       }
+      try {
+        // Whether the checkout matches its commit: only a clean one can vouch for a commit's code (pass reuse).
+        scm.worktree =
+          execSync('git status --porcelain --untracked-files=normal', execOpts).trim() === '' ? 'clean' : 'dirty';
+      } catch {
+        /* optional */
+      }
     } catch (error) {
       this.logger.debug(`Git info not available: ${errorMessage(error)}`);
     }
@@ -417,8 +429,27 @@ export class MetadataCollector {
     return Object.keys(ci).length > 0 ? ci : undefined;
   }
 
+  /**
+   * The spec files, relative to `base`, holding a test in a serial group: a file or describe in serial mode, anonymous
+   * ones included, whose tests depend on the ones before them (pass reuse never skips one of them).
+   */
+  private serialFiles(suite: Suite, base: string): string[] {
+    const files = new Set<string>();
+    for (const test of suite.allTests()) {
+      for (let s: Suite | undefined = test.parent; s; s = s.parent) {
+        if ((s as any)._parallelMode === 'serial') {
+          files.add(relativeTestPath(test.location.file, base));
+          break;
+        }
+      }
+    }
+    return [...files].sort();
+  }
+
   private extractPlaywrightConfigMetadata(config: FullConfig): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
+    // Playwright's root, which test lists name files from, relative to the folder test paths are stored from.
+    if (config.rootDir) meta.rootDir = relativeTestPath(config.rootDir, configDirFromConfig(config));
     if (config.projects?.length > 0) {
       meta.projects = config.projects.map((p: any) => ({
         name: p.name,

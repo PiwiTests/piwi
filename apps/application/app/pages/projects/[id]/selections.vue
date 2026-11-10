@@ -452,6 +452,8 @@ function saveSmoke(testCaseIds: number[]) {
           </div>
         </SectionCard>
 
+        <ReuseForecastCard :project-id="projectId" />
+
         <SectionCard
           title="Suggestions"
           icon="i-lucide-sparkles"

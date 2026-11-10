@@ -204,7 +204,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
-      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test. `environments` says where the run executed: each shard’s `runner` (`timeZone`, `locale`, `os`, `nodeVersion`, `ciImage`), each project’s `browser` as its page reported itself, and each instrumented `server` under test with its `clockOffsetMs` from the runner and `restarted: true` when it restarted during the run. Shards that disagree on a field, or a field that changed since the last passing run, point at a failure that happens only in one place.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test. `environments` says where the run executed: each shard’s `runner` (`timeZone`, `locale`, `os`, `nodeVersion`, `ciImage`), each project’s `browser` as its page reported itself, and each instrumented `server` under test with its `clockOffsetMs` from the runner and `restarted: true` when it restarted during the run. Shards that disagree on a field, or a field that changed since the last passing run, point at a failure that happens only in one place. `reused` (`count`, `planId`) counts the tests the run skipped under a pass reuse plan because an earlier pass ran their unchanged code: they are not in its cases; `unrecorded: true` instead means the run claimed a plan whose reused tests could not be recorded.',
       EXECUTION_WORKER,
     ),
     inputSchema: {
@@ -1015,6 +1015,21 @@ export const MCP_TOOL_DEFS = [
       'Check the health and drift of a project’s selections, read-only.',
       'For each selection: what it resolves to now (count, quarantined members, duration, warnings) and whether that differs from what its last stamped run recorded, a drift a green build can hide. A `split-lock` warning means a lock is shared by more than one test, which Playwright’s own `--shard` could split across shards.',
       'It also counts the tests no stored selection matches (the unselected gap), with a sample.',
+    ),
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'number', description: 'Project ID' } },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_reuse_forecast',
+    module: 'workflow',
+    description: md(
+      'Get how much of a project’s recent test time ran code identical to an earlier pass, and the tests that failed anyway, read-only.',
+      'Over the 30 days before the project’s latest run, a result is reusable when an earlier first-attempt pass of the same test and Playwright project, at most 14 days older and in another run, recorded file versions (runtime, path, git blob) that are all among the versions the result’s own coverage recorded, or ran at the same commit with both runs on CI. It is what a run that skips unchanged tests could have saved.',
+      'Each of `total` and `scopes` (`default-branch`, `other-branches`) gives `results`, `comparable` (results whose coverage names file versions; a result without them can still be reusable by a same-commit match, so `reusable` may exceed it), `reusable`, `durationMs`, `reusableDurationMs`, and the reusable results that `failed` or were `flaky`. `tests` lists the tests with such identical-code failures, with the execution of the last one and of the pass it matched: their failure came from the test, its data or its environment, not the code.',
+      'An upper bound: test-side code and configuration are not seen. A project without coverage at `functions` or `lines` has no comparable result.',
     ),
     inputSchema: {
       type: 'object',

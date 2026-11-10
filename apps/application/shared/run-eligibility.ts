@@ -107,7 +107,8 @@ export type RunUse =
   | 'stuck-notifications'
   | 'tracker'
   | 'cluster-occurrences'
-  | 'run-health';
+  | 'run-health'
+  | 'pass-reuse';
 
 export interface RunUseRule {
   /** The origins whose runs this use never reads. */
@@ -264,6 +265,16 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
   'cluster-occurrences': {
     excludes: [...NO_TEAM_USE, 'editor'],
     excludesIncidents: false,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
+  /**
+   * The results pass reuse reads: the passes that may stand in for a later result, and the results its forecast
+   * counts. A `piwi bug` run replays a reported bug, not the suite.
+   */
+  'pass-reuse': {
+    excludes: [...NO_TEAM_USE, 'bug'],
+    excludesIncidents: true,
     completeOnly: false,
     excludesHistoricalImports: false,
   },

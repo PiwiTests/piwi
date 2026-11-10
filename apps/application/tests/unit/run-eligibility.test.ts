@@ -56,6 +56,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
   'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'request', 'editor'],
   'run-health': ['flake-lab', 'probe', 'request'],
+  'pass-reuse': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce', 'request'],
 };
 
 /** The uses that leave out an environment incident. */
@@ -72,6 +73,7 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'notifications',
   'stuck-notifications',
   'tracker',
+  'pass-reuse',
 ];
 
 /** The uses that read complete runs only. */

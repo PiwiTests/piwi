@@ -106,6 +106,8 @@ import { createTestFunctionSchema } from '#shared/test-function-schemas';
 import { listSelections, getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import { runPlanId } from '#shared/run-plan';
+import { getReuseForecast } from '#shared/handlers/reuse-forecast';
 import {
   validateSelectionDefinition,
   type ResolvedSelection,
@@ -714,6 +716,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         flakyTests: testRuns.flakyTests,
         skippedTests: testRuns.skippedTests,
         didNotRunTests: testRuns.didNotRunTests,
+        reusedCount: testRuns.reusedCount,
         environment: testRuns.environment,
         label: testRuns.label,
         metadata: testRuns.metadata,
@@ -796,6 +799,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       flaky: run.flakyTests || null,
       skipped: run.skippedTests || null,
       didNotRun: run.didNotRunTests || null,
+      reused:
+        run.reusedCount > 0
+          ? { count: run.reusedCount, planId: runPlanId(run.metadata) }
+          : run.reusedCount < 0
+            ? { unrecorded: true, planId: runPlanId(run.metadata) }
+            : null,
       env: run.environment || null,
       label: run.label || null,
       branch: meta?.scm?.branch || null,
@@ -2312,6 +2321,36 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           })
         : null,
     };
+  },
+
+  // ── get_reuse_forecast ──────────────────────────────────────────────────────
+  async get_reuse_forecast(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    const forecast = await getReuseForecast(db, projectId);
+    return dropNulls({
+      windowDays: forecast.windowDays,
+      maxSourceAgeDays: forecast.maxSourceAgeDays,
+      from: forecast.from,
+      to: forecast.to,
+      defaultBranch: forecast.defaultBranch,
+      total: forecast.total,
+      scopes: forecast.scopes,
+      tests: forecast.tests.map((t) =>
+        dropNulls({
+          testCaseId: t.testCaseId,
+          title: t.title,
+          filePath: t.filePath,
+          browserName: t.browserName,
+          failed: t.failed,
+          flaky: t.flaky,
+          lastExecutionId: t.lastExecutionId,
+          sourceExecutionId: t.sourceExecutionId,
+        }),
+      ),
+      moreTests: forecast.moreTests || null,
+      truncated: forecast.truncated || null,
+    });
   },
 
   // ── analyze_selections ──────────────────────────────────────────────────────

@@ -193,6 +193,13 @@ export function originEnv(kind: string, ref?: string | number): Record<string, s
 export const PIWI_SHARD_ENV = 'PIWI_SHARD';
 
 /**
+ * The pass reuse plan a run executes, set by `piwi run --plan` / `--reuse` on
+ * the Playwright process: the reporter records it as `metadata.piwiPlan`, and
+ * the dashboard records the tests the plan skipped as the run's reused results.
+ */
+export const PIWI_PLAN_ENV = 'PIWI_PLAN';
+
+/**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
  * capture fixtures run in probe mode. Not options — the probe CLI writes them and
  * the probe module reads them directly:

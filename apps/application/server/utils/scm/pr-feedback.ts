@@ -324,6 +324,7 @@ export async function buildRunPrSummary(
     passedTests: run.passedTests,
     failedTests: run.failedTests,
     flakyTests: run.flakyTests,
+    reusedTests: Math.max(0, run.reusedCount),
     durationMs: run.duration ?? null,
     newRegressions,
     preExisting,

@@ -1,3 +1,4 @@
+import { attachRunPlan } from './pass-reuse';
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
 import { runTrackerAutomation } from './integrations/automation';
@@ -27,8 +28,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
 }
 
 /**
- * The finalize side effects for a finished run: the environment-incident
- * check, the daily rollup of its cell, regression signals, the CI re-run
+ * The finalize side effects for a finished run: the reused results of its
+ * pass reuse plan, the environment-incident check, the daily rollup of its cell, regression signals, the CI re-run
  * dispatch it answers, auto markers, flaky root causes, the history of its
  * resource findings, its analysis (the scenario gaps, change coverage, fix
  * verification and the hand-back outcomes it shows) and its outbound effects
@@ -75,6 +76,8 @@ export async function runFinalizeSideEffects(
   await pinProjectRepository(db, run.projectId, run.metadata).catch((e) =>
     console.error('[scm] pinning the project repository failed', e),
   );
+  // The tests the run's pass reuse plan skipped, before any verdict reads the run.
+  await attachRunPlan(db, id, run).catch((e) => console.error('[pass-reuse] attachRunPlan failed', e));
   const health = await recordRunHealth(db, id).catch((e) => {
     console.error('[run-health] recordRunHealth failed', e);
     return null;

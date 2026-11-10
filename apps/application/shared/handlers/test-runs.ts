@@ -1,3 +1,4 @@
+import { runPlanId } from '../run-plan';
 import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
   testRuns,
@@ -365,6 +366,7 @@ export async function getTestRun(
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
+    planId: runPlanId(testRun.metadata),
     hasResources:
       (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
