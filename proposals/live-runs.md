@@ -138,8 +138,12 @@ button's menu, **Run with options…**, a project's defaults) and kept by **Run 
 the test page's **Run this test** stops at it (DK3 in part, DK4). Watch live still resets with each run. Then **Show
 the browser** at a stop of a headed run, on every surface: the worker brings the stopped page's window to the front
 (`front`, a feature of the run channel and an action of the hub, `piwi/stopAction` `front`, `RunWorker.showsWindow`),
-as far as the system lets a window come forward (E18). The rest of P6 is proposed: one input model, attention and the
-ambient state, the editors' unattended runs and the Runs window's run-level controls. The later phases are
+as far as the system lets a window come forward (E18). Then the Runs window's own controls: **Pause all** and **Resume
+all** for a run of several workers (RW8 in part), Resume, Step and Finish on `F8`, `F10` and `Shift+F11` for the test
+whose row holds the focus (RW17), the window opened where the person left it (RW16), and the run shortcut leaving a
+run nobody attends alone, with its sign on the toolbar badge, and **Look again** saying it looks (RW22). The rest of
+P6 is proposed: one input model, attention and the ambient state, the editors' unattended runs, and the Runs window's
+Stop for a whole run. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

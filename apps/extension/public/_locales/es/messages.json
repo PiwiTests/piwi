@@ -231,6 +231,15 @@
   "badge_replay": {
     "message": "REPR"
   },
+  "badge_runsPaused": {
+    "message": "II"
+  },
+  "badge_runsResumed": {
+    "message": "▶"
+  },
+  "badge_runsNone": {
+    "message": "–"
+  },
   "popup_settings": {
     "message": "Configuración"
   },
@@ -6361,6 +6370,9 @@
   "runs_openSettings": {
     "message": "Abrir la configuración"
   },
+  "runs_looking": {
+    "message": "Buscando…"
+  },
   "runs_findAgain": {
     "message": "Buscar de nuevo"
   },
@@ -6632,6 +6644,37 @@
   },
   "runs_frontTitle": {
     "message": "Traer al frente la ventana del navegador del test"
+  },
+  "runs_runControls": {
+    "message": "Controles de la ejecución"
+  },
+  "runs_pauseAll": {
+    "message": "Pausar todo"
+  },
+  "runs_pauseAllTitle": {
+    "message": "Pausar cada worker de esta ejecución antes de su siguiente llamada"
+  },
+  "runs_resumeAll": {
+    "message": "Reanudar todo"
+  },
+  "runs_resumeAllTitle": {
+    "message": "Dejar que cada test detenido de esta ejecución continúe"
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Hay varios tests detenidos: mueva el foco al que quiere dirigir con una tecla."
   },
   "runs_record": {
     "message": "Grabar"
