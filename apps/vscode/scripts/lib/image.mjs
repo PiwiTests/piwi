@@ -37,7 +37,8 @@ export async function hasSolidSquare(image, region, size, match) {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * channels;
       const hit = match(data[i], data[i + 1], data[i + 2]) ? 1 : 0;
-      sums[(y + 1) * (width + 1) + x + 1] = hit + sums[y * (width + 1) + x + 1] + sums[(y + 1) * (width + 1) + x] - sums[y * (width + 1) + x];
+      sums[(y + 1) * (width + 1) + x + 1] =
+        hit + sums[y * (width + 1) + x + 1] + sums[(y + 1) * (width + 1) + x] - sums[y * (width + 1) + x];
     }
   }
   const at = (x, y) => sums[y * (width + 1) + x];
