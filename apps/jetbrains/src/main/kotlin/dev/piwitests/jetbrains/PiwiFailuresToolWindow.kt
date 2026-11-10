@@ -1,6 +1,7 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.CommonActionsManager
 import com.intellij.ide.DefaultTreeExpander
@@ -185,6 +186,16 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             tree.emptyText.clear()
             if (service.status == null) {
                 tree.emptyText.appendText(if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST)
+                // A service that cannot start, or is not running: the fix one click away, in the words VS Code uses.
+                if (service.trusted() && service.startProblem != null) {
+                    tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                        service.openNodeSettings()
+                    }
+                } else if (service.trusted()) {
+                    tree.emptyText.appendSecondaryText(Glue.RESTART_SERVICE_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+                        ApplicationManager.getApplication().executeOnPooledThread { service.restartServer() }
+                    }
+                }
             } else {
                 val empty = Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
                 tree.emptyText.appendText(empty.text)

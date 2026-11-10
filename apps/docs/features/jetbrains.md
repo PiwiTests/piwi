@@ -30,6 +30,11 @@ with the browser: [Editor connection](./editor-connection).
 
 In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
 
+**Settings → Tools → Piwi** opens on the connection in use, with **Reconnect**, then the instance saved for the project,
+then the desktop app. When the environment or the workspace `.env` names the instance, the page says so above the
+fields, whose empty text shows its address. While the service cannot start, the page and the **Piwi** tool window offer
+**Node.js Settings…**; while none runs, the tool window offers **Restart the Editor Service**.
+
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 

@@ -842,7 +842,12 @@ An instance on this machine is tried on every loopback address (`Glue.loopbackAl
 one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and **Tools
 → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
 save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
-Apply or Cancel. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
+Apply or Cancel. The page opens on the connection in use (`Glue.connectionSummary`) with **Reconnect**
+(`sendCredentials`) and, while the service cannot start, **Node.js Settings…**; then the instance; then the desktop app,
+whose field reads **Desktop app project:**. When the environment or a `.env` names the instance (`Glue.overriding`), the
+page says so above the fields (`Glue.overriddenText`), whose empty text holds its address and project. The tool window's
+empty text links the Node.js settings while the service cannot start, and **Restart the Editor Service**
+(`Glue.RESTART_SERVICE_LINK`, VS Code's command's words) while none runs. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
 otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does not
 trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi instance.
 

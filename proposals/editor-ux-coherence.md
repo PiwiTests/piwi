@@ -19,13 +19,15 @@ JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet), [Q4](
 and actions: the release builds the searchable options index, and a contributor adds the words the labels lack, #1119),
 [Q6](#q6) (a project in safe mode says Piwi waits for its trust, and trusting it starts Piwi, #1119), [Q5](#q5) in part
 (Connect on the settings page applies nothing, Disconnect only when something is saved, worded certificate and 404
-errors and labels on top, #1119; the page opening on the connection in use, [ST9](#st9), and one word per refresh with
-Node.js Settings…, [ST18](#st18), remain), [Q7](#q7) (both failures views say the state the service reads, an
+errors and labels on top, #1119; the page opening on the connection in use with Reconnect, the instance before the desktop
+app, whose field reads Desktop app project:, and what overrides the instance said above its fields, [ST9](#st9);
+Reconnect for the In use group's refresh and Node.js Settings… on the page and in the tool window, [ST18](#st18);
+remaining: a Test Connection apart from Reconnect), [Q7](#q7) (both failures views say the state the service reads, an
 unreachable instance, no run, a desktop app to restart or no connection, and the commands that read the instance wait
 for a connection, #1120; and [HM7](#hm7)'s '…' menu, Follow worded by its state, as two commands rather than one
 toggled, beside Connect, Open settings and Open the log, #1120), [Q16](#q16) in part (Piwi: Restart the editor service,
 and no toast for a failed request, #1120; [HM19](#hm19)'s status item saying 'Piwi: not running', with Restart and the
-log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [Q8](#q8) in part (Open
+log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text, in VS Code's words), [Q8](#q8) in part (Open
 in Dashboard on the tool window's selection, [HM5](#hm5), #1120; the tool window's tab named Failures, its icon dotted
 red while tests fail, [HM13](#hm13); each node's hover the service's, [HM9](#hm9); one Group By drop-down and a gear
 menu holding Connect…, Pair, the MCP copies, Refresh and Settings…, [HM6](#hm6); a registered `Piwi.RefreshRun`, Refresh

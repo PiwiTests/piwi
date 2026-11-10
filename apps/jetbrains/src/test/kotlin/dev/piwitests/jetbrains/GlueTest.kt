@@ -2239,6 +2239,30 @@ class GlueTest {
     }
 
     @Test
+    fun `the settings page names what overrides its instance, the environment or a dotenv`() {
+        val env = ContextStatus(connected = true, serverUrl = "https://ci.example.com", source = "environment", projectName = "Acme")
+        val overriding = Glue.overriding(StatusResult(contexts = listOf(env)))
+        assertEquals(Glue.Overriding("https://ci.example.com", "Acme", "the environment (PIWI_DASHBOARD_URL)"), overriding)
+        assertEquals(
+            "Overridden by the environment (PIWI_DASHBOARD_URL): Piwi reads https://ci.example.com, project Acme. " +
+                "The fields below apply without it.",
+            Glue.overriddenText(overriding!!),
+        )
+        // The desktop app in use: the .env's instance still comes before the page's, its project not read.
+        val desktop = ContextStatus(
+            connected = true, serverUrl = "http://127.0.0.1:3000", source = "desktop", projectName = "Local",
+            instance = NamedInstance("https://team.example.com", "dotenv"),
+        )
+        assertEquals(
+            Glue.Overriding("https://team.example.com", null, "the workspace .env"),
+            Glue.overriding(StatusResult(contexts = listOf(desktop))),
+        )
+        val settings = ContextStatus(connected = true, serverUrl = "https://piwi.example.com", source = "editor")
+        assertNull(Glue.overriding(StatusResult(contexts = listOf(settings))))
+        assertNull(Glue.overriding(null))
+    }
+
+    @Test
     fun `finds a project referencing Playwright for dotnet where the configs are searched`() {
         val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.fsproj", "node_modules/x/Other.csproj")
         assertFalse(Glue.holdsDotnetPlaywright(listOf(dir)))
