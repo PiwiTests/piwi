@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
@@ -66,6 +66,7 @@ const getBinding = route(await import('../../server/api/projects/[id]/test-manag
 const putBinding = route(await import('../../server/api/projects/[id]/test-management/index.put'));
 const getOptions = route(await import('../../server/api/projects/[id]/test-management/options.get'));
 const getCases = route(await import('../../server/api/projects/[id]/test-management/cases.get'));
+const getSummary = route(await import('../../server/api/projects/[id]/test-management/summary.get'));
 const create = route(await import('../../server/api/integrations/connections/index.post'));
 const putTracker = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { boundConnectionId } = await import('../../server/utils/integrations/bound-connection');
@@ -359,5 +360,54 @@ describe('GET cases', () => {
     for (const keys of ['', 'no key', 'a-b,;drop', Array.from({ length: 101 }, (_, i) => `WEB_APP-T${i}`).join(',')]) {
       expect(await refusal(getCases(at(10, undefined, { keys })))).toMatchObject({ statusCode: 400 });
     }
+  });
+});
+
+describe('GET summary', () => {
+  const seedRun = async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 10, filePath: 'a.spec.ts', title: 'logs in' });
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({
+        projectId: 10,
+        status: 'passed',
+        branch: 'main',
+        environment: 'prod',
+        startTime: new Date(),
+        metadata: {},
+      })
+      .returning();
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', tags: ['WEB_APP-T1'] });
+    return run!.id;
+  };
+
+  afterEach(async () => {
+    await db.delete(schema.testRunsCases);
+    await db.delete(schema.testRuns);
+    await db.delete(schema.testCases);
+  });
+
+  test('a project with no binding is not bound', async () => {
+    expect(await getSummary(at(10))).toEqual({ bound: false });
+  });
+
+  test('maps the last complete run from the stored catalog without calling Zephyr', async () => {
+    await putBinding(at(10, valid()));
+    const runId = await seedRun();
+    const answer = await getSummary(at(10));
+    expect(answer).toMatchObject({
+      bound: true,
+      runId,
+      summary: { mappedTests: 1, keys: ['WEB_APP-T1'], catalogRead: false, unknownKeys: [] },
+    });
+    expect(sent).toEqual([]);
+  });
+
+  test('needs project:manage: a contributor is refused', async () => {
+    await putBinding(at(10, valid()));
+    state.caller = contributor;
+    expect(await refusal(getSummary(at(10)))).toMatchObject({ statusCode: 403 });
   });
 });
