@@ -1800,9 +1800,10 @@ export interface ScmChanges {
  * Supported AI provider identifiers.
  * - `anthropic` — the Anthropic API (needs an API key).
  * - `openai` — any OpenAI-compatible HTTP endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, …).
- * - `claude-cli` — the locally-installed `claude` CLI (Claude Code). Desktop app only: the
- *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
- *   own subscription/OAuth login and no API key is stored.
+ * - `claude-cli` — the locally-installed `claude` CLI (Claude Code), in the desktop app or on a
+ *   server with `PIWI_CLAUDE_CLI_PATH` set. The server shells out to `claude -p`, so authentication
+ *   is the CLI's own: a Claude subscription in the desktop app only, an API key or a cloud provider
+ *   anywhere.
  */
 export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli' | 'deepseek-cli';
 
@@ -1825,10 +1826,10 @@ export interface CodexCliStatus {
 
 /**
  * Health + authentication state of the local `claude` CLI, returned by
- * GET /api/ai/claude-cli/status. Only meaningful inside the desktop app.
+ * GET /api/ai/claude-cli/status.
  */
 export interface ClaudeCliStatus {
-  /** True when the desktop app is running and may shell out to the CLI at all. */
+  /** True inside the desktop app, the only place a Claude subscription sign-in may run. */
   desktop: boolean;
   /** True when the `claude` binary was found and is runnable. */
   available: boolean;
@@ -1838,11 +1839,13 @@ export interface ClaudeCliStatus {
   version: string | null;
   /** True when `claude auth status` reports a signed-in account. */
   loggedIn: boolean;
-  /** How the CLI is authenticated: "oauth_token", "api_key", … */
+  /** How the CLI is authenticated: "claude.ai" (a Claude subscription), "oauth_token" (a token), "api_key", "api_key_helper", "third_party" (a cloud provider). */
   authMethod: string | null;
-  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex". */
+  /** The API provider the CLI talks to: "firstParty", "bedrock", "vertex", "foundry". */
   apiProvider: string | null;
-  /** A human-readable problem when the CLI is missing or misconfigured. */
+  /** Signed in with an API key, a gateway token or a cloud provider, never a Claude subscription: what a server needs. */
+  apiCredentials: boolean;
+  /** A human-readable problem when the CLI is missing, not signed in, or signed in a way this server may not use. */
   error: string | null;
   /** Running usage totals since the server started (live, not persisted). */
   usage: ClaudeCliUsageTotals;

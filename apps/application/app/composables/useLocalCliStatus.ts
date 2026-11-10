@@ -6,8 +6,14 @@ export interface LocalCliView {
   /** False until the first check answers. */
   checked: boolean;
   installed: boolean;
-  /** Signed in, or for DeepSeek Harness credentials set (checked on first use). */
+  /** Ready to run here: signed in in a way this server may use (DeepSeek Harness: credentials set, checked on first use). */
   ready: boolean;
+  /** Signed in, whatever the method, even one this server refuses. */
+  signedIn: boolean;
+  /** Claude Code on a server: only an API key or a cloud provider can run, never a Claude subscription. */
+  serverSignIn: boolean;
+  /** Signed in with a subscription plan, which bills the plan rather than each call. */
+  subscription: boolean;
   version: string | null;
   path: string | null;
   /** How it is signed in. */
@@ -21,18 +27,25 @@ export interface LocalCliView {
 
 type OtherCli = Exclude<LocalCliProvider, 'claude-cli'>;
 
-const CLAUDE_AUTH: Record<string, string> = { oauth_token: 'Claude subscription', api_key: 'API key' };
+const CLAUDE_AUTH: Record<string, string> = {
+  'claude.ai': 'Claude subscription',
+  oauth_token: 'Token',
+  api_key: 'API key',
+  api_key_helper: 'API key (apiKeyHelper)',
+  third_party: 'Cloud provider',
+};
 const CLAUDE_API: Record<string, string> = {
   firstParty: 'Anthropic',
   bedrock: 'Amazon Bedrock',
   vertex: 'Google Vertex AI',
+  foundry: 'Microsoft Foundry',
 };
 const OTHER_ACCOUNT: Record<OtherCli, string> = { 'codex-cli': 'ChatGPT', 'deepseek-cli': 'DeepSeek credentials' };
 
 /**
  * Health, sign-in and usage of the local AI CLIs (Claude Code, Codex,
  * DeepSeek Harness), shared across the components of a page. Claude Code's
- * state and sign-in come from `useClaudeCli`.
+ * state comes from `useClaudeCli`.
  */
 export function useLocalCliStatus() {
   const claude = useClaudeCli();
@@ -67,7 +80,10 @@ export function useLocalCliStatus() {
       return {
         checked: Boolean(s),
         installed: Boolean(s?.available),
-        ready: Boolean(s?.loggedIn),
+        ready: Boolean(s?.loggedIn) && !s?.error,
+        signedIn: Boolean(s?.loggedIn),
+        serverSignIn: Boolean(s && !s.desktop),
+        subscription: Boolean(s?.loggedIn && !s.apiCredentials),
         version: s?.version ?? null,
         path: s?.binaryPath ?? null,
         account: s?.authMethod ? (CLAUDE_AUTH[s.authMethod] ?? s.authMethod) : null,
@@ -81,6 +97,9 @@ export function useLocalCliStatus() {
       checked: Boolean(s),
       installed: Boolean(s?.available),
       ready: Boolean(s?.loggedIn),
+      signedIn: Boolean(s?.loggedIn),
+      serverSignIn: false,
+      subscription: provider === 'codex-cli',
       version: s?.version ?? null,
       path: s?.binaryPath ?? null,
       account: s?.loggedIn ? OTHER_ACCOUNT[provider] : null,

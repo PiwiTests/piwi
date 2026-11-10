@@ -8098,11 +8098,11 @@ const SCENES = [
   })),
   {
     name: 'ai-claude-cli',
-    description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
+    description: 'Settings → AI: use the local Claude Code CLI as the provider, on its own sign-in (desktop shell)',
     tags: ['desktop'],
     mode: 'desktop',
     route: '/settings/ai',
-    viewport: { width: 1000, height: 1100 },
+    viewport: { width: 1000, height: 1400 },
     of: '[data-shot="ai-model-providers"]',
     pad: 12,
     outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
@@ -8115,7 +8115,7 @@ const SCENES = [
       await settle();
       await shoot();
 
-      // Pick the CLI as the provider to reveal its status, sign-in and usage.
+      // Pick the CLI as the provider to reveal its status, how it is signed in and its usage.
       await tile.click();
       await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
