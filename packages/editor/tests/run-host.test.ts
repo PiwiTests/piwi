@@ -154,7 +154,7 @@ describe('a host of its own', () => {
 
   test('names itself to the workers that hold a stop only for a host that shows it', async () => {
     const worker = new FakeWorker(channel.path, dir).attach(channel.token, 'host-3');
-    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: [], host: 'the desktop app' });
     worker.socket.destroy();
   });
 

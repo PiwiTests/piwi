@@ -88,9 +88,8 @@ describe('a run’s session, with a client that answers stops', () => {
         type: 'breakpoints',
         places: [{ file: 'tests/cart.spec.ts', line: 3 }],
       });
-      // A failure stops it, and goes on at once while its Hold failures is off. Its lines name the editor as it named
-      // itself.
-      expect(worker.heard[0]).toEqual({ type: 'attached', holds: ['failure'], host: 'Test Editor' });
+      // A failure does not stop it while its Hold failures is off. Its lines name the editor as it named itself.
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [], host: 'Test Editor' });
       expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, root: dir, terminal: true });
       worker.begin();
       worker.stopAt(1, 3);
@@ -822,10 +821,18 @@ describe('RunSessions', () => {
   test('tells a worker that holds a failure only for a service that shows it that this one does, and an older one nothing', async () => {
     const { sessions, attach } = harness();
     const heard = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
-    expect(heard(attach(0, { holds: ['failure'] }).socket)).toEqual([{ type: 'attached', holds: ['failure'] }]);
+    // A failure's only while the run's Hold failures is on, which the worker hears again each time it turns over.
+    const failing = attach(0, { holds: ['failure'] }).socket;
+    expect(heard(failing)).toEqual([{ type: 'attached', holds: [] }]);
     expect(heard(attach(1, { holds: [] }).socket)).toEqual([{ type: 'attached', holds: [] }]);
     // A reporter that predates the capability lists none, and hears no message it would not know.
-    expect(heard(attach(2).socket)).toEqual([]);
+    const older = attach(2).socket;
+    expect(heard(older)).toEqual([]);
+    expect(sessions.hold({ ref: 'ed-1', on: true }, 'person').ok).toBe(true);
+    expect(last(heard(failing))).toEqual({ type: 'attached', holds: ['failure'] });
+    sessions.hold({ ref: 'ed-1', on: false }, 'person');
+    expect(last(heard(failing))).toEqual({ type: 'attached', holds: [] });
+    expect(heard(older)).toEqual([]);
     sessions.dispose();
   });
 
@@ -919,6 +926,16 @@ describe('RunSessions', () => {
     expect(worker.controls()).toHaveLength(3);
     await waitFor(() => (last(sent)?.hold?.by === 'agent' ? true : undefined));
     expect(last(sent)!.hold).toEqual({ on: true, by: 'agent' });
+    // Past the bound of the runs kept, a live run's stays over those of runs that are not live: its start's is off.
+    watched = false;
+    for (let i = 0; i < 60; i++) sessions.hold({ ref: `ed-gone-${i}`, on: false }, 'person');
+    worker.fail(6);
+    expect(worker.controls()).toHaveLength(3);
+    // The run ends: a rerun under its ref starts from its own start's.
+    sessions.commandEnded('ed-1');
+    takingWorker(sessions);
+    await waitFor(() => (last(sent)?.ended === false && last(sent)?.hold?.by === 'start' ? true : undefined));
+    expect(last(sent)!.hold).toEqual({ on: false, by: 'start' });
     expect(notices).toEqual([]);
     sessions.dispose();
   });
@@ -1174,7 +1191,7 @@ describe('RunSessions', () => {
     });
     const first = attach(0, { ref: 'terminal-41-1', holds: ['failure'] });
     expect(lines(first.socket)).toEqual([
-      { type: 'attached', holds: ['failure'] },
+      { type: 'attached', holds: [] },
       { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
     ]);
     // Its Hold failures off until a person or an agent turns it on: nobody may be there to answer one.
@@ -1184,7 +1201,7 @@ describe('RunSessions', () => {
     sessions.setEditorBreakpoints({ places: [{ uri: pathToFileURL('/work/shop/tests/a.spec.ts').href, line: 9 }] });
     const second = attach(1, { ref: 'terminal-41-1', holds: ['failure'] });
     expect(lines(second.socket)).toEqual([
-      { type: 'attached', holds: ['failure'] },
+      { type: 'attached', holds: [] },
       { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
     ]);
     // A terminal's run is no test runner's.

@@ -701,8 +701,9 @@ run's **Hold failures** is on (`RunHoldFailures`, `RunSession.hold` and the hub'
 The hub's `follow` (a Runs window open) holds nothing. Otherwise a failure goes on at once, with no notice (no client
 hears of it); one held goes on when its run's Hold failures is turned off, and when no surface that answers stops is
 left (`RunSessions.surfacesChanged`). A worker holds a failure only for a service that says it shows one: its `run-attach`
-lists `holds`, answered with `attached` (`SHOWN_HOLDS`); a service that predates it says nothing, and the worker holds
-none.
+lists `holds`, answered with `attached` (`SHOWN_HOLDS`): a failure's only while its run's Hold failures is on, and
+again each time it turns over (`tellHolds`), so a worker whose run holds none does not stop at a failure. A service that
+predates it says nothing, and the worker holds none.
 
 A worker's `notice` (a control its reporter does not take) is a `piwi/notice` too.
 
@@ -942,7 +943,7 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 
 - **The command.** The fields are checked one by one (`checkedDebugRun`: a line, a title and a project of plain
   text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
-  the one of the spec as saved whose describe blocks' titles and its own, joined by ` › `, are the title, else the
+  the one of the spec as saved whose describe blocks' titles and its own, joined by `›`, are the title, else the
   only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
   `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
   be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.

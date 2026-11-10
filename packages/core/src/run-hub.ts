@@ -305,7 +305,8 @@ export interface HubSession {
   page?: RunPage;
   /**
    * Whether a failure no pause bar shows waits at its line in this run (**Hold failures**), and who said so: absent
-   * from a hub without the `hold` feature, whose failures wait while a Runs window follows the runs.
+   * for a run nobody attends, whose failures always go on at once, and from a hub without the `hold` feature, whose
+   * failures wait while a Runs window follows the runs.
    */
   hold?: HubHold;
 }
@@ -1033,7 +1034,6 @@ function readProgress(value: unknown): HubProgress | null {
   };
 }
 
-/** A run's live view on the team instance, field by field; null when it is not one. */
 /** A run's **Hold failures**, field by field; null when it is not one. */
 function readHold(value: unknown): HubHold | null {
   if (!isObject(value) || typeof value.on !== 'boolean') return null;
@@ -1041,6 +1041,7 @@ function readHold(value: unknown): HubHold | null {
   return by ? { on: value.on, by } : null;
 }
 
+/** A run's live view on the team instance, field by field; null when it is not one. */
 function readLive(value: unknown): HubLive | null {
   if (!isObject(value)) return null;
   const { shared, refused, stopped = null, page, viewers } = value;

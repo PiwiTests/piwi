@@ -13,18 +13,18 @@
  * picks the element under a point of an image of a stopped page (`pickAt`). A worker names places relative to the run's
  * working directory; the client, by their file's URI as the workspace names it: the session converts both ways. A stop
  * that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the runs) is
- * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only in a run
- * started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window of Piwi
- * Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at once and
- * no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the bar shows
+ * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only while its
+ * run's **Hold failures** is on (`hold`: from its start in a run started to be watched, `watched`, with the editor's
+ * breakpoints or a `page.pause()`; else as a person or an agent set it), and never in a run its host says holds none
+ * (`holdsFailures`); otherwise its worker does not stop at it, and no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the bar shows
  * waits there for its answer. An agent (the service's MCP server, `run-agent.ts`) hears what each worker says
  * (`heard`), has a run's workers tell what their tests do (`followRun`), and, at a stop, reads the page's ARIA snapshot
  * (`snapshot`), acts on an element of it by its ref (`act`), ranks an element's locators (`refLocator`) and shares the
  * browser with Playwright's own tools (`bind`); a stop it asked for (Pause, Step, Run to) is said to be the agent's
  * (`RunStop.by`). Every surface can end the test at a stop (`end`, for a worker that takes it). A run started in a
  * terminal attaches as the editor's own do, under a ref the host never built (`terminal`): it starts with the editor's
- * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only while a Runs
- * window follows the runs. A person shares a run live on the team instance its reporter reports to (`share`, **Share
+ * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only once its Hold
+ * failures is turned on. A person shares a run live on the team instance its reporter reports to (`share`, **Share
  * live**, never an agent): each worker that takes it opens its live view stream there, a worker that connects later
  * too, and says how it stands (`live`), which the session sums up (`RunSession.live`).
  */
@@ -375,6 +375,8 @@ interface Worker {
   requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
   askedBy: 'agent' | null;
+  /** The stops its attach listed as held only while the service shows them (`RunAttach.holds`); null for none listed. */
+  asksHolds: readonly RunHold[] | null;
   /** How its run stands on the team instance's live view, as it last said (`live`); null before it said. */
   live: RunLiveState | null;
   /**
@@ -680,6 +682,7 @@ export class RunSessions {
       requests: new Map(),
       view: null,
       askedBy: null,
+      asksHolds: attach.holds ?? null,
       live: null,
     };
     session.workers.set(worker.index, worker);
@@ -687,13 +690,7 @@ export class RunSessions {
     if (holder) this.closeWorker(holder);
     const own = session;
     socket.on('close', () => this.detach(own, worker));
-    if (attach.holds) {
-      // A failure stops a worker of a run that may hold one; it goes on at once while its Hold failures is off.
-      const failures = this.holds(attach.ref);
-      const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || failures));
-      const named = this.options.workerHost?.() ?? this.options.host;
-      this.send(worker, { type: 'attached', holds, ...(named ? { host: named } : {}) });
-    }
+    this.tellHolds(session, worker);
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, attach.ref, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
@@ -745,12 +742,18 @@ export class RunSessions {
     }
     this.holdsSet.delete(params.ref);
     this.holdsSet.set(params.ref, { on: params.on, by });
+    // Past the bound, the oldest set for a run that is not live goes first, then the oldest.
+    for (const ref of [...this.holdsSet.keys()].filter((r) => !this.sessions.has(r))) {
+      if (this.holdsSet.size <= MAX_KEPT_RUNS) break;
+      this.holdsSet.delete(ref);
+    }
     for (const oldest of this.holdsSet.keys()) {
       if (this.holdsSet.size <= MAX_KEPT_RUNS) break;
       this.holdsSet.delete(oldest);
     }
     const session = this.sessions.get(params.ref);
     if (session) {
+      for (const worker of session.workers.values()) this.tellHolds(session, worker);
       if (!params.on) {
         for (const worker of session.workers.values()) {
           if (worker.stop && !worker.stop.view.bar && worker.stop.view.reason === 'failure') {
@@ -768,8 +771,23 @@ export class RunSessions {
     };
   }
 
-  /** The run's **Hold failures** now: as a person or an agent set it, else on from its start when built to be watched. */
-  private holdOf(ref: string): RunHoldFailures {
+  /**
+   * Tell a worker that listed them which stops it holds (`attached`), with what the service is called when it is not the
+   * editor (`host`): a failure's only while its run's Hold failures is on.
+   */
+  private tellHolds(session: Session, worker: Worker): void {
+    if (!worker.asksHolds) return;
+    const failures = this.watches(session);
+    const holds = SHOWN_HOLDS.filter((h) => worker.asksHolds!.includes(h) && (h !== 'failure' || failures));
+    const named = this.options.workerHost?.() ?? this.options.host;
+    this.send(worker, { type: 'attached', holds, ...(named ? { host: named } : {}) });
+  }
+
+  /**
+   * The run's **Hold failures** now: as a person or an agent set it, else on from its start when built to be watched.
+   * The same object until it is set again, so a caller can tell whether anyone set it since.
+   */
+  holdOf(ref: string): RunHoldFailures {
     return this.holdsSet.get(ref) ?? { on: !!this.options.watched?.(ref), by: 'start' };
   }
 
@@ -1786,7 +1804,11 @@ export class RunSessions {
     // A run that ends before its process said how: its command ended, or nothing connected for a while.
     if (session.progress?.status === 'running') session.progress = { ...session.progress, status: 'interrupted' };
     for (const worker of workers) this.closeWorker(worker);
-    if (this.sessions.get(session.ref) === session) this.sessions.delete(session.ref);
+    if (this.sessions.get(session.ref) === session) {
+      this.sessions.delete(session.ref);
+      // A rerun under the ref starts from its own start's Hold failures.
+      this.holdsSet.delete(session.ref);
+    }
     this.flush(session);
     this.options.heard?.(session.ref, null, { type: 'ended' }, session.root);
   }
