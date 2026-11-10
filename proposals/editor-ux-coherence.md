@@ -6,9 +6,12 @@ uses it in Rider, and the VS Code extension (`apps/vscode/`), both thin clients 
 their seams to the dashboard, the desktop app and Piwi Picker, against one aim: a developer who moves between Piwi's
 tools meets one Piwi.
 
-**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Nothing is built, and nothing here is on
+**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built: [Q1](#q1) (each Code Vision entry of a
+line drawn by a provider of its own, in a group named Piwi, #1115; its `CodeVisionTestCase` on the editor fixture is not
+written yet) and [Q2](#q2) in VS Code (a flaky test said so while the Testing view owns the gutter, and a test with no
+recent result marked, #1116); Q2's JetBrains flaky icon waits for [M5](#m5)'s palette. Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
-2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding is fixed; the
+2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then; the
 live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
 local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four
 items still open. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
