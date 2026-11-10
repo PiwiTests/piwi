@@ -23,6 +23,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 | `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml`          | the multi-arch server image (see [The container image](#the-container-image))                                       |
 | `workflows/reusable-publish-nuget.yml`     | called by `release.yml`                      | the instrumentation NuGet packages                                                                                  |
 | `workflows/reusable-publish-desktop.yml`   | called by `release.yml`                      | the desktop installers, from the shared build, attached to the GitHub release, which then becomes the latest        |
+| `workflows/reusable-publish-runner.yml`    | called by `release.yml`                      | the Piwi Runner installers, built and kept as the run's artifacts; not released yet                                 |
 | `workflows/reusable-publish-vscode.yml`    | called by `release.yml`                      | the VS Code extension (Visual Studio Marketplace, Open VSX)                                                         |
 | `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`                      | the JetBrains plugin (JetBrains Marketplace)                                                                        |
 | `workflows/reusable-publish-extension.yml` | called by `release.yml`                      | the browser extension (Chrome, Edge, Firefox)                                                                       |

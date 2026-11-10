@@ -30,6 +30,11 @@ shared with the desktop app:
 - **The sidecar's script**: `resources/runner-host`, staged by `npm run runner:stage`.
 - **The keychain service**: `Piwi Runner run requests`, so an entry written by one app is never read by the other.
 
+The Release workflow builds it with the same steps: the host, the window and the staging, then tauri-action with
+`--features runner --config src-tauri/runner.conf.json`, which names the files from that merged config
+("Piwi Runner_<version>_<arch>"), so they never match the dashboard's. It keeps them as the run's artifacts and attaches
+nothing to the release.
+
 `runner_app` is compiled with and without the feature, so `cargo test` covers both.
 
 ## Quitting

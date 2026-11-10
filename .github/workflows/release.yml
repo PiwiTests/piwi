@@ -1,9 +1,10 @@
 name: Release
 
 # Publishes a release from its tag: the npm packages, the container image, the NuGet packages, the desktop
-# installers, and the VS Code, JetBrains and browser extensions. Each target is a reusable workflow, so one failing
-# holds back none of the others and "Re-run failed jobs" retries only the failed ones. The npm server package and the
-# desktop installers ship one node-server build.
+# installers, and the VS Code, JetBrains and browser extensions. It also builds the Piwi Runner installers, kept as the
+# run's artifacts and not released. Each target is a reusable workflow, so one failing holds back none of the others and
+# "Re-run failed jobs" retries only the failed ones. The npm server package and the desktop installers ship one
+# node-server build; Runner builds its own host and window.
 #
 # - Pushed tag: release-please creates it with RELEASE_PLEASE_TOKEN (see release-please.yml); a tag pushed with the
 #   default GITHUB_TOKEN would start no workflow.
@@ -35,6 +36,10 @@ on:
         default: true
       desktop:
         description: Desktop installers
+        type: boolean
+        default: true
+      runner:
+        description: Piwi Runner installers
         type: boolean
         default: true
       vscode:
@@ -135,6 +140,15 @@ jobs:
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+
+  # Builds the installers and keeps them as the run's artifacts, on a tag too: nothing goes to the release. Takes no
+  # secret, and nothing waits for it.
+  runner:
+    name: Piwi Runner installers
+    if: github.event_name != 'workflow_dispatch' || inputs.runner
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-publish-runner.yml
 
   vscode:
     name: VS Code extension

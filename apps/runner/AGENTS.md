@@ -45,4 +45,6 @@ npm run runner:stage         # copies dist/server.cjs and .output/public into th
 
 The app itself is built from the desktop crate: after `runner:build`, `runner:window` and `runner:stage`, run
 `npx tauri build --features runner --config src-tauri/runner.conf.json` from `apps/desktop`.
-Signing, installers and publishing are not wired yet.
+The Release workflow builds the installers for the same platforms as the desktop app (`reusable-publish-runner.yml`),
+unsigned, with no secret and no updater, and keeps them as the run's artifacts. Runner is not released: nothing is
+attached to the GitHub release, on a tag either. Publishing, signing and an updater are not wired.
