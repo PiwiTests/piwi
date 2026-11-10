@@ -370,6 +370,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals(listOf("Connect…", "Open the Failures", "Learn More"), shown.single().actions.map { it.templateText })
+            // Each kind has its group, the requests' sticky, a confirmation fading on its own.
+            val groups = com.intellij.notification.NotificationGroupManager.getInstance()
+            assertEquals(
+                PiwiNotice.entries.map { it.group to (if (it == PiwiNotice.REQUEST) "STICKY_BALLOON" else "BALLOON") },
+                PiwiNotice.entries.map { it.group to groups.getNotificationGroup(it.group)!!.displayType.name },
+            )
+            // A warning keeps the platform's icon.
+            assertNull(PiwiNotifier.create(PiwiNotice.PROBLEM, "x", com.intellij.notification.NotificationType.WARNING).icon)
+            // An offer: titled Piwi, with its icon, in the suggestions' group.
+            val offer = shown.single()
+            assertEquals(PiwiNotice.OFFER.group to "Piwi", offer.groupId to offer.title)
+            assertNotNull(offer.icon)
+            assertTrue(offer.isSuggestionType)
             assertTrue(properties.getBoolean(PiwiProjectService.FIRST_RUN_SHOWN))
             service.offerFirstRun(found, emptyList())
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -574,7 +587,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .map { if (it is com.intellij.openapi.actionSystem.Separator) "-" else manager.getId(it) ?: it.templateText }
             assertEquals(
                 listOf(
-                    "Read the Latest Run Again", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
+                    "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
                     "Piwi.RerunFailing", "Open the Failures", "Piwi.OpenLatestRun", "Piwi.OpenInDashboard", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
                     "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",

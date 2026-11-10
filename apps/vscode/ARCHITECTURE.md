@@ -273,7 +273,9 @@ When a run started from the editor ends, `piwi/runEnded` shows as a notification
 the `piwi.runNotifications` setting allows (`always`, `failures`, `never`):
 
 - a warning with **Re-run failing** when something fails, an information message otherwise;
-- both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**.
+- both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**;
+- the information, while the setting is `always`, with **Only on failure**, which sets it to `failures` where it is set
+  (the workspace's value when it has one, else the user's) and says so in the status bar.
 
 A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
 when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
@@ -823,7 +825,8 @@ the `ide` scope is what puts a line in it. The file is gitignored, and `.vscodei
 by the docs, the README and the Marketplace README. It:
 
 - opens the fixture project of `scripts/lib/editor-fixture.mjs` (a small shop's suite with one brittle locator, two CI
-  failures and a local run since) against the stub instance the same module serves;
+  failures and a local run since) against the stub instance the same module serves, which answers the cases of the
+  spec the service names (the nightly suite checks the spec's lens counts its own three tests);
 - runs the VS Code that `scripts/lib/vscode-window.mjs` downloads, at the release `VSCODE_VERSION` pins (moved on
   purpose, since the workbench's DOM changes between releases);
 - drives the window with Playwright's Electron support.

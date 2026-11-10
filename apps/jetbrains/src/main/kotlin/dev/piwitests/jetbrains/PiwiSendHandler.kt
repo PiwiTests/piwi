@@ -177,7 +177,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                 val file = try {
                     replaceOnLine(project, uri, edit, at)
                 } catch (e: IllegalStateException) {
-                    PiwiCommands.notify(project, "Piwi: ${e.message}", NotificationType.WARNING)
+                    PiwiCommands.notify(project, e.message.orEmpty(), NotificationType.WARNING)
                     throw e
                 }
                 // The line the locator landed on, which edits made since the run may have moved from the run's.

@@ -11,7 +11,6 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
@@ -1132,8 +1131,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             when {
                 answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
                 !answer.ok || !on || page == null -> PiwiCommands.notify(project, answer.message.orEmpty())
-                else -> NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                    .createNotification(answer.message.orEmpty(), NotificationType.INFORMATION)
+                else -> PiwiNotifier.create(PiwiNotice.REQUEST, answer.message.orEmpty())
                     .addAction(NotificationAction.createSimpleExpiring("Open the Run Page") { BrowserUtil.browse(page) })
                     .addAction(NotificationAction.createSimpleExpiring("Copy the Run Page's Link") {
                         CopyPasteManager.getInstance().setContents(StringSelection(page))
@@ -1293,8 +1291,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val command = shared?.command
             if (shared == null) return@executeOnPooledThread PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
             if (!shared.ok || command == null) return@executeOnPooledThread PiwiCommands.notify(project, shared.message.orEmpty())
-            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                .createNotification(Glue.sharedText(shared), NotificationType.WARNING)
+            PiwiNotifier.create(PiwiNotice.REQUEST, Glue.sharedText(shared), NotificationType.WARNING)
                 .addAction(NotificationAction.createSimpleExpiring("Copy the Command") {
                     CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
                 })
@@ -1413,7 +1410,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /** Why the code a stop made was not written, with the code to copy. */
     private fun notWritten(code: StopCode, why: String) {
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(why, NotificationType.WARNING)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, why, NotificationType.WARNING)
             .addAction(NotificationAction.createSimpleExpiring("Copy the Code") { CopyPasteManager.getInstance().setContents(StringSelection(code.code.orEmpty())) })
             .notify(project)
     }

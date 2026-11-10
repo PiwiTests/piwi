@@ -10,7 +10,6 @@ import com.intellij.ide.impl.isTrusted
 import com.intellij.ide.trustedProjects.TrustedProjectsListener
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -241,9 +240,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** Say once that the editor service starts once the project is trusted. */
     fun waitForTrust() {
         if (!trustAsked.compareAndSet(false, true)) return
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(Glue.UNTRUSTED, NotificationType.INFORMATION)
-            .notify(project)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.UNTRUSTED).notify(project)
     }
 
     /** Whether a Playwright config sits in the project; false until the search started with the project ends. */
@@ -304,8 +301,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
         if (!Glue.showsFirstRun(properties.getBoolean(FIRST_RUN_SHOWN), trusted(), found.configDirs, status, instances)) return
         properties.setValue(FIRST_RUN_SHOWN, true)
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(Glue.FIRST_RUN, NotificationType.INFORMATION)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.FIRST_RUN)
             .addAction(NotificationAction.createSimpleExpiring("Connect…") { PiwiConnectFlow.run(project) })
             .addAction(
                 NotificationAction.createSimple(Glue.OPEN_FAILURES) {
@@ -369,8 +365,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         if (problem == before) return
         changed()
         if (problem == null) return
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(problem, NotificationType.WARNING)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, problem, NotificationType.WARNING)
             .addAction(NotificationAction.createSimpleExpiring("Open the Node.js Settings") { openNodeSettings() })
             .notify(project)
     }
@@ -674,11 +669,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
-     * status, on a pooled thread: the status bar item's click. `refreshing` is set meanwhile.
+     * status, on a pooled thread: the status bar item's click and **Refresh the Latest Run**. `refreshing` is set
+     * meanwhile, and the listeners are told as it is.
      */
     fun refreshRun() {
         if (refreshing) return
         refreshing = true
+        changed()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 server()?.refreshRun()?.orNull()
@@ -870,12 +867,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val current = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull() ?: return
         if (current.source == "desktop" || current.serverUrl == null) return
         local.desktopOffered = true
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(
-                "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
-                    "Connect switches back.",
-                NotificationType.INFORMATION,
-            )
+        PiwiNotifier.create(
+            PiwiNotice.OFFER,
+            "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
+                "Connect switches back.",
+        )
             .addAction(NotificationAction.createSimpleExpiring("Use the Desktop App") { PiwiConnectFlow.useDesktop(project) })
             .notify(project)
     }

@@ -747,6 +747,7 @@ export const VERDICT_ACTIONS = {
   failures: 'Open the failures',
   dashboard: 'Open in dashboard',
   rerun: 'Re-run failing',
+  onlyOnFailure: 'Only on failure',
 } as const;
 
 /** Titles as a verdict lists them: the first ones, then how many more. */
@@ -758,8 +759,9 @@ function titleList(titles: string[], count: number): string {
 /**
  * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
  * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
- * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet. A run of each test
- * several times says how many of its runs passed, `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
+ * fails, with **Re-run failing**; an information otherwise, with **Only on failure** while `setting` is `always`.
+ * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
+ * `Piwi: run #124 · Failed 1 of 3`, whatever the setting.
  */
 export function runVerdict(
   ended: RunEnded,
@@ -792,7 +794,12 @@ export function runVerdict(
   return {
     severity: failing ? 'warning' : 'information',
     text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
-    actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard, ...(failing ? [VERDICT_ACTIONS.rerun] : [])],
+    actions: [
+      VERDICT_ACTIONS.failures,
+      VERDICT_ACTIONS.dashboard,
+      ...(failing ? [VERDICT_ACTIONS.rerun] : []),
+      ...(!failing && setting === 'always' ? [VERDICT_ACTIONS.onlyOnFailure] : []),
+    ],
   };
 }
 

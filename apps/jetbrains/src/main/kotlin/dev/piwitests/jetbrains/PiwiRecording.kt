@@ -3,7 +3,6 @@ package dev.piwitests.jetbrains
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
@@ -534,8 +533,11 @@ class RecordingSession internal constructor(
         val command = command
         val title = command?.title
         val show = { runs: Boolean ->
-            val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                .createNotification(text, if (failed) NotificationType.WARNING else NotificationType.INFORMATION)
+            val notification = if (failed) {
+                PiwiNotifier.create(PiwiNotice.PROBLEM, text, NotificationType.WARNING)
+            } else {
+                PiwiNotifier.create(PiwiNotice.RESULT, text)
+            }
             if (failed && title != null) {
                 notification.addAction(NotificationAction.createSimpleExpiring(title) { PiwiCommands.execute(project, command.command, command.arguments.orEmpty()) })
             }

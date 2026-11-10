@@ -2,8 +2,8 @@ package dev.piwitests.jetbrains
 
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -32,6 +32,11 @@ private fun fileUri(file: VirtualFile): String? =
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    /** In the status bar item's popup, only while a Playwright config is not connected; everywhere else, always. */
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.place != ActionPlaces.STATUS_BAR_PLACE || !piwiAllConnected(e.project)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -82,6 +87,22 @@ class RefreshAction : AnAction(), DumbAware {
         }
         // A Playwright config added since the project opened shows the tool window and starts the service.
         project.service<PiwiProjectService>().findPlaywright()
+    }
+}
+
+/**
+ * Piwi: Refresh the Latest Run — the latest run and its failures read again, not the indexes **Refresh** fetches
+ * (`PiwiProjectService.refreshRun`). Enabled while connected.
+ */
+class RefreshRunAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.refreshRun()
     }
 }
 
@@ -145,6 +166,12 @@ val DASHBOARD_URL: DataKey<String> = DataKey.create("piwi.dashboardUrl")
 /** Whether a context of the project reads an instance: the actions that read it are enabled only then. */
 fun piwiConnected(project: Project?): Boolean =
     project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().any { it.connected }
+
+/** Whether every Playwright config of the project is connected, and there is at least one. */
+fun piwiAllConnected(project: Project?): Boolean =
+    project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().let { contexts ->
+        contexts.isNotEmpty() && contexts.all { it.connected }
+    }
 
 /**
  * Piwi: Open in dashboard — the page of what the Piwi tool window has selected, else this file's test, else the latest
@@ -411,11 +438,10 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
             val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
             if (properties.getBoolean(OFFERED)) return
             properties.setValue(OFFERED, true)
-            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-                .createNotification(
-                    "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
-                    NotificationType.INFORMATION,
-                )
+            PiwiNotifier.create(
+                PiwiNotice.OFFER,
+                "Add Piwi's MCP server to your AI assistant? It can read your suite's failures, flaky tests and healings.",
+            )
                 .addAction(NotificationAction.createSimpleExpiring("Copy the configuration") { copyMcpConfiguration(project) })
                 .notify(project)
         }

@@ -220,7 +220,7 @@ The service pushes each of the three answers when it changes (`piwi/statusChange
 event thread, for all the pushes received meanwhile.
 
 It reads the three answers whole (`refreshStatus`) only when the plugin starts (the tool window and the status bar item
-are created), on **Refresh**, on the status bar's **Read the Latest Run Again**, and after new credentials. One read
+are created), on **Refresh**, on **Refresh the Latest Run** (`Piwi.RefreshRun`), and after new credentials. One read
 runs at a time, and a read asked for meanwhile follows it. A push that arrives during a read wins over the answer read.
 
 ## Tool window
@@ -234,7 +234,16 @@ service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the 
 With no failure, the empty text is `Glue.failuresEmpty` of the state the service says (`FailuresResult.view`), with
 links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, Compare With…).
 
-- **The grouping** is chosen with the toolbar's `ToggleAction`s and kept in `PiwiLocalSettings.failuresGrouping`. It is
+- **The toolbar** holds, in VS Code's order, **Refresh the Latest Run**, **Re-run the Failing Tests**, **Open in
+  Dashboard**, **Compare With…** and the **Group By** drop-down, then the navigation (previous and next failure, expand
+  and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
+  and the MCP configurations, Refresh and Settings….
+- **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
+  `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
+  are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
+- **Each node's tooltip** is the service's (`FailureTreeNode.tooltip`, kept in `Glue.FailureNode.tooltip`), one line
+  each through `Glue.htmlTooltip`: a failure's title, headline, run, cluster and owner, a run's counts.
+- **The grouping** is chosen in the **Group By** drop-down, of `ToggleAction`s, and kept in `PiwiLocalSettings.failuresGrouping`. It is
   sent with every `piwi/failures`, and read again at once by `PiwiProjectService.regroup`; the service keeps it for
   what it pushes.
 - **Several configs.** When several Playwright configs have something to show, each has a node (`AllIcons.Nodes.Module`)
@@ -307,8 +316,8 @@ folder holding it, else the first connected one; `PiwiStatusBarWidget.shownFile`
 **A click** opens `PiwiStatusBarWidget.actions()` (`createActionGroupPopup`, with the selected editor's data context;
 the disabled actions are left out). First comes what the state calls for (`Glue.StatusAction`):
 
-- connected: **Read the Latest Run Again** (`PiwiProjectService.refreshRun`: `piwi/refreshRun`, then `refreshStatus`,
-  on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
+- connected: **Refresh the Latest Run** (`Piwi.RefreshRun`, `PiwiProjectService.refreshRun`: `piwi/refreshRun`, then
+  `refreshStatus`, on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
 - the instance does not answer (`Piwi: unreachable`, `problemKind`): **Refresh**;
 - the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Refresh**; the
   service also reads it again as the restarted app rewrites its discovery file;
@@ -322,14 +331,14 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
   progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
-Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect and
-Settings.
+Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect (in
+this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
 run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project installs.
 
-**Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under **Tools → Piwi** and in the tool window's
-toolbar) opens the run the status bar shows.
+**Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under **Tools → Piwi** and in the status bar's popup)
+opens the run the status bar shows.
 
 ## Runs
 
@@ -366,10 +375,18 @@ other command, an IDE without the runner, or a run the runner does not take, run
   ends. A rerun keeps the ref, by which the service recognizes it as the editor's own run in the instance's event stream
   ([The editor's own run](../../packages/editor/ARCHITECTURE.md#the-editors-own-run) in the editor service's reference).
 
-**Notifications.** A `piwi/notice` is a balloon (`PiwiCommands.notify`). So is `piwi/runEnded` (`PiwiCommands.runEnded`,
-`Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing** when something fails. The
-run's balloon follows `PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, `never`;
-in `.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting,
+**Notifications.** Every balloon is made by `PiwiNotifier`: titled Piwi, with Piwi's icon, in the group of its kind
+(`PiwiNotice`), each its own row in **Settings → Appearance & Behavior → Notifications**: `Piwi` for results (a run's
+verdict, a job, a recording), `Piwi requests` for what waits for an answer (Debug in my editor, a run shared live, a
+shared browser), sticky, `Piwi suggestions` for an offer made once (the MCP server, the desktop app, the first run), as
+a suggestion, `Piwi problems` for what went wrong, and `Piwi confirmations` for what the person just did (Copied.,
+Connected to …, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an error as a problem, anything
+else, a refusal of the service included, as a result. An information carries Piwi's icon; a warning or an error keeps
+the platform's, which says how serious it is. D25 lists the five group ids, which users' notification settings name. A `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded`
+(`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing**
+when something fails, or **Only on Failure** when nothing does while the setting is `always`. The run's balloon follows
+`PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, `never`; in
+`.idea/workspace.xml`, on this machine only). A run with `repeat` (**Verify ×3**) is reported whatever the setting,
 as `Run #124 · Failed 1 of 3`, a warning when one of the runs failed.
 
 **Diagnostic severity.** The severity of a failure's diagnostic is `PiwiLocalSettings.failureSeverity`
@@ -801,7 +818,7 @@ breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools
+one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's gear menu and **Tools
 → Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
 save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
 Apply or Cancel. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
@@ -974,6 +991,10 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
+The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestFailed` icon and
+the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
+directory instead (`statusItemFailing`).
 
 **The license.** The IDE's config directory stays in `.ide/config` across runs, because the license lives there. On a
 machine without one, the IDE shows its license dialog:

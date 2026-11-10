@@ -60,7 +60,7 @@ what the editor reads from it: the instance answers each read once.
 ## Connect
 
 Run **Piwi: Connect** from the command palette, or click **Piwi: connect** in the status bar. In a JetBrains IDE it is
-the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's toolbar, and under
+the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** tool window's gear menu, and under
 **Tools → Piwi**.
 
 1. When the desktop app runs, Connect lists it first, with the instance the workspace already names: choose

@@ -12,7 +12,6 @@ import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -65,7 +64,7 @@ object PiwiCommands {
             "piwi.copyAgentContext" -> arg<TraceParams>(arguments.firstOrNull())?.let { copyAgentContext(project, it) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
-                notify(project, "Copied. Paste it to your agent.")
+                PiwiNotifier.confirm(project, "Copied. Paste it to your agent.")
             }
             "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
         }
@@ -90,8 +89,8 @@ object PiwiCommands {
     /** Show a job's update, with the button that shares its verdict on the instance when it has one. */
     fun desktopJobChanged(project: Project, update: DesktopJobUpdate) {
         val notice = Glue.desktopJobNotice(update)
-        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(notice.text, if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+        val type = if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION
+        val notification = PiwiNotifier.create(PiwiNotice.RESULT, notice.text, type)
         val jobId = update.jobId
         if (jobId != null) {
             for (label in notice.actions) {
@@ -105,9 +104,11 @@ object PiwiCommands {
         background(project, "Piwi: sharing the verdict") {
             val server = project.service<PiwiProjectService>().server()
             val result = server?.shareDesktopJob(ShareDesktopJobParams(jobId))?.orNull()
-            val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(
+            val type = if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING
+            val notification = PiwiNotifier.create(
+                PiwiNotifier.kindOf(type),
                 result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER,
-                if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING,
+                type,
             )
             result?.url?.let { url ->
                 notification.addAction(NotificationAction.createSimpleExpiring("Open in the dashboard") { BrowserUtil.browse(url) })
@@ -136,7 +137,7 @@ object PiwiCommands {
                 notify(project, "This failure is no longer in the latest run.", NotificationType.WARNING)
             } else {
                 CopyPasteManager.getInstance().setContents(StringSelection(text))
-                notify(project, "Copied. Paste it to your agent.")
+                PiwiNotifier.confirm(project, "Copied. Paste it to your agent.")
             }
         }
     }
@@ -148,8 +149,11 @@ object PiwiCommands {
     fun runEnded(project: Project, ended: RunEnded) {
         val setting = project.service<PiwiProjectService>().local().runNotifications
         val verdict = Glue.runVerdict(ended, setting) ?: return
-        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(verdict.text, if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+        val notification = PiwiNotifier.create(
+            PiwiNotice.RESULT,
+            verdict.text,
+            if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION,
+        )
         for (label in verdict.actions) {
             notification.addAction(
                 NotificationAction.createSimpleExpiring(label) {
@@ -158,6 +162,10 @@ object PiwiCommands {
                             .getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
                         Glue.OPEN_IN_DASHBOARD -> ended.url?.let { BrowserUtil.browse(it) }
                         Glue.RERUN_FAILING -> rerunFailing(project)
+                        Glue.ONLY_ON_FAILURE -> {
+                            project.service<PiwiProjectService>().local().runNotifications = "failures"
+                            PiwiNotifier.confirm(project, Glue.ONLY_ON_FAILURE_SET)
+                        }
                     }
                 },
             )
@@ -364,8 +372,7 @@ object PiwiCommands {
      * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone.
      */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
-            .createNotification(StringUtil.escapeXmlEntities(message), type).notify(project)
+        PiwiNotifier.create(PiwiNotifier.kindOf(type), StringUtil.escapeXmlEntities(message), type).notify(project)
     }
 
     private fun background(project: Project, title: String, body: () -> Unit) {

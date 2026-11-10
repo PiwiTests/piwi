@@ -274,7 +274,7 @@ object Glue {
         return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
-    /** The status bar text while the latest run is read again (**Read the Latest Run Again**, in its popup). */
+    /** The status bar text while the latest run is read again (**Refresh the Latest Run**, first in its popup). */
     const val REFRESHING = "Piwi: refreshing…"
 
     /**
@@ -484,6 +484,8 @@ object Glue {
         val note: String? = null,
         val root: String? = null,
         val children: List<FailureNode> = emptyList(),
+        /** The lines of its hover, as the service writes them (`FailureTreeNode.tooltip`). */
+        val tooltip: List<String> = emptyList(),
     )
 
     /**
@@ -515,6 +517,7 @@ object Glue {
             note = node.note,
             root = node.root,
             children = node.children.orEmpty().map { draw(it) },
+            tooltip = node.tooltip.orEmpty(),
         )
         return result?.tree.orEmpty().map { draw(it) }
     }
@@ -789,6 +792,13 @@ object Glue {
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"
     const val RERUN_FAILING = "Re-run Failing"
 
+    /** The action of a passing run's notice that keeps the next ones for runs that fail (`runNotifications`). */
+    const val ONLY_ON_FAILURE = "Only on Failure"
+
+    /** The confirmation once Only on Failure is chosen. */
+    const val ONLY_ON_FAILURE_SET =
+        "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
+
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
 
@@ -800,8 +810,9 @@ object Glue {
     /**
      * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
      * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
-     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet. A run of each test several times
-     * says how many of its runs passed, `Run #124 · Failed 1 of 3`, whatever the setting.
+     * **Re-run Failing** when something fails, and **Only on Failure** when nothing does while `setting` is `always`.
+     * Null when `setting` keeps it quiet. A run of each test several times says how many of its runs passed,
+     * `Run #124 · Failed 1 of 3`, whatever the setting.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
         val repeat = ended.repeat
@@ -832,7 +843,12 @@ object Glue {
         return RunVerdict(
             failing,
             "Run #${ended.runId} · ${parts.joinToString(" · ")}",
-            listOfNotNull(OPEN_FAILURES, OPEN_IN_DASHBOARD, if (failing) RERUN_FAILING else null),
+            listOfNotNull(
+                OPEN_FAILURES,
+                OPEN_IN_DASHBOARD,
+                if (failing) RERUN_FAILING else null,
+                if (!failing && setting == "always") ONLY_ON_FAILURE else null,
+            ),
         )
     }
 

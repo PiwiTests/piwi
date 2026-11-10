@@ -92,8 +92,9 @@ exit code from the process it started, in every shell, a rerun included.
 Once a run you started from the editor ends and the editor has read it, a notification (a balloon in a JetBrains IDE)
 says what it changed: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in,
 checkout.spec.ts › pays)`, then the tests it failed that were not failing before. It offers **Open the failures**,
-**Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
-Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
+**Open in dashboard**, and **Re-run failing** when something fails, else **Only on failure**. The
+`piwi.runNotifications` setting (**Settings → Tools → Piwi** in JetBrains) shows it always, on failures only, or
+never.
 
 A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
 setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
@@ -117,8 +118,8 @@ or retries an [unreachable instance](./editor-connection#an-unreachable-instance
 
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or
 of the connection, and the text takes the theme's error color while tests of that run fail, a run in progress
-included. A click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Read the
-Latest Run Again**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
+included. A click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Refresh the
+Latest Run**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
 connected, **Node.js Settings…** when Node.js is missing or too old, or **Go to the Recorded Lines** while a recording
 runs, with **Pause Recording**, **Resume Recording** and **Stop Recording**.
 
