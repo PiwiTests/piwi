@@ -1579,6 +1579,24 @@ class GlueTest {
     }
 
     @Test
+    fun `Hold failures turns the only live run's over, asks among several, and says who set it when an agent did`() {
+        fun held(ref: String, on: Boolean, ended: Boolean = false) =
+            RunSession(ref = ref, ended = ended, hold = RunHoldFailures(on = on, by = "start"))
+        assertEquals(Glue.HoldTarget.None("No run of this project can hold its failures now."), Glue.holdTarget(emptyMap()))
+        assertEquals(Glue.HoldTarget.One("ed-1", true), Glue.holdTarget(mapOf("ed-1" to held("ed-1", false))))
+        assertEquals(Glue.HoldTarget.One("ed-1", false), Glue.holdTarget(mapOf("ed-1" to held("ed-1", true))))
+        // A run nobody attends has none, and an ended run is not turned over.
+        val unattended = RunSession(ref = "lab-1")
+        assertEquals(
+            Glue.HoldTarget.Choose(listOf("ed-1", "ed-2")),
+            Glue.holdTarget(mapOf("ed-1" to held("ed-1", false), "ed-2" to held("ed-2", true), "lab-1" to unattended, "ed-3" to held("ed-3", true, ended = true))),
+        )
+        assertEquals("Hold failures on: a failed test waits at its line", Glue.holdText(RunHoldFailures(true, "start")))
+        assertEquals("Hold failures off", Glue.holdText(RunHoldFailures(false, "person")))
+        assertEquals("Hold failures on: a failed test waits at its line, as an agent set it", Glue.holdText(RunHoldFailures(true, "agent")))
+    }
+
+    @Test
     fun `a run in progress names its number, a CI run says so, and the editor's own stays in view from another config`() {
         val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 0, own = false, ci = true)
         fun live(vararg contexts: RunStatus) = RunStatusResult(contexts.toList())
