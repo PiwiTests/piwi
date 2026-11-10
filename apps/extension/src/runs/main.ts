@@ -9,6 +9,7 @@ import type {
   HubStop,
   HubWorker,
 } from '@piwitests/core/run-hub';
+import { canStopRun } from '@piwitests/core/run-hub';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
@@ -1700,12 +1701,13 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
     );
   }
-  // One row under the name: Hold failures, from a hub that keeps it for each run, and Pause all or Resume all, for a
-  // run of several workers, while the run goes on and its hub is connected.
+  // One row under the name: Hold failures, from a hub that keeps it for each run, Pause all or Resume all, for a run of
+  // several workers, and Stop the run, from a hub that stops it, while the run goes on and its hub is connected.
   const holds = session.hold && !session.ended && !away ? session.hold : null;
   const level = away ? null : runLevelControls(run);
   const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
-  if (holds || levelShown) {
+  const stoppable = !away && !!hub?.stops && canStopRun(session);
+  if (holds || levelShown || stoppable) {
     // Each drawn again only when what it shows changes, so the other's buttons stay the same elements.
     const bar = part(`${runKey}|bar`, null, () => element('div', 'run-bar'));
     const items: HTMLElement[] = [];
@@ -1721,6 +1723,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
         part(`${runKey}|all`, [level!.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level!)),
       );
     }
+    if (stoppable) items.push(part(`${runKey}|stop`, stopping.has(runKey), () => renderStopRun(run)));
     place(bar, items);
     children.push(bar);
   }
@@ -2026,6 +2029,34 @@ function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelContro
   return row;
 }
 
+/** The runs whose Stop is on its way: its button waits for the answer. */
+const stopping = new Set<string>();
+
+/**
+ * Stop the run, as its own Stop does where it was started, through its hub (`stop`): the button below the run's name,
+ * apart from its other controls. The hub's answer is read out; the run's end follows in its session.
+ */
+function renderStopRun(run: RunsRun): HTMLElement {
+  const key = runKeyOf(run);
+  const stop = makeButton(
+    t('runs_stopRun'),
+    async (event) => {
+      if (pressedHeld(event) || stopping.has(key) || !hubAnswers(run.hub)) return;
+      stopping.add(key);
+      render();
+      const answer = await command(run.hub, run.session.ref, null, 'stop', null);
+      stopping.delete(key);
+      announce(answer.ok ? answer.message : failureText(answer));
+      render();
+    },
+    { icon: 'stop', small: true, tone: 'remove', title: t('runs_stopRunTitle') },
+  );
+  stop.classList.add('run-stop');
+  stop.dataset.focus = `${key}|stop-run`;
+  if (stopping.has(key)) unavailable(stop);
+  return stop;
+}
+
 /**
  * Turn a run's Hold failures on or off, unless a turn of it is on its way: the hub's answer is read out, and a refusal
  * shown under the toggle.
@@ -2230,7 +2261,10 @@ const CONTROLS = {
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive'>,
+  Exclude<
+    RunsWhat,
+    'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'hold' | 'watch' | 'drive' | 'stop'
+  >,
   { label: string; title: string; icon: IconName; tone?: 'primary' | 'remove' | 'ghost' }
 >;
 

@@ -61,14 +61,23 @@ export const MAX_HUB_PRESENCE = 16;
  * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
  * other live hubs of the machine as they come and go (`peers`), shows a lane of a run while it runs (`lanes`: the
  * command `watch`, its frames `lane-frame`), keeps **Hold failures** for each run (`hold`: the command `hold`, the
- * session's `hold`), and says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
- * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`). A reader keeps those it knows;
- * a hub that predates the list does none of them.
+ * session's `hold`), says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
+ * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`), and stops a whole run the way the
+ * tool that started it does (`stop`: the command `stop`, for a run `canStopRun` names). A reader keeps those it knows; a
+ * hub that predates the list does none of them, and a hub whose host cannot stop its runs leaves `stop` out.
  */
-export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop';
 
-/** The features of a hub of this version. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence'];
+/** The features of a hub of this version whose host can stop its runs. */
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop'];
+
+/**
+ * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one started in a
+ * terminal (`terminal`, an editor's test runner's run included), whose Stop stays where it was started.
+ */
+export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal'>): boolean {
+  return !session.ended && !session.terminal;
+}
 
 /**
  * What a tool present on a run is: a Runs window of Piwi Picker (`picker`), an editor (`editor`), the desktop app's
@@ -412,6 +421,12 @@ export type HubCommand =
    * (it goes on at once, one held now included), as a person asks on a surface. Refused for a run nobody attends.
    */
   | { type: 'hold'; id: number; ref: string; on: boolean }
+  /**
+   * Stop the whole run, as the tool that started it stops it (an editor's task or process, the desktop app's run): its
+   * tests end now, and its last message follows. A hub with the `stop` feature; refused for a run `canStopRun` leaves
+   * out.
+   */
+  | { type: 'stop'; id: number; ref: string }
   /**
    * At the stop `since` names (of the one stopped worker, or `worker`), drive it (`on`: an agent's actions there are
    * refused until this connection gives it back), or give it back (an agent may act again). Driving takes it from an
@@ -782,6 +797,10 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     return typeof value.on === 'boolean'
       ? { type: 'hold', id, ref: value.ref, on: value.on }
       : invalid('hold needs on: true to hold the failures, false to let them go on.');
+  }
+  if (value.type === 'stop') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return { type: 'stop', id, ref: value.ref };
   }
   if (value.type === 'share') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');

@@ -10,6 +10,7 @@ import type {
   StopCode,
 } from '@piwitests/editor/protocol';
 import {
+  stopRunAnswer,
   CARET_REFUSAL_MS,
   CARET_WAIT_MS,
   CaretCounts,
@@ -1853,6 +1854,16 @@ describe('the code a stop makes', () => {
     expect(mock).toEqual({
       severity: 'warning',
       text: 'Piwi wrote the mock above checkout.spec.ts:5. 2 values named or shaped like credentials are written as <hidden>.',
+    });
+  });
+});
+
+describe('a run another tool asks the extension to stop', () => {
+  test('is stopped when its task is this window’s, else refused, saying where to stop it', () => {
+    expect(stopRunAnswer(true)).toEqual({ ok: true, message: 'VS Code stops the run.' });
+    expect(stopRunAnswer(false)).toEqual({
+      ok: false,
+      message: 'The run was not started in this VS Code window: stop it where it was started.',
     });
   });
 });

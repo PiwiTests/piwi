@@ -319,7 +319,7 @@ test('a run’s tabs keep the stop being answered, move on as it is resumed, and
   }
 });
 
-test('End the test ends a stopped test there, and a run started in a terminal or a test runner shows as one', async () => {
+test('End the test ends a stopped test there, Stop the run reaches the editor, and a terminal’s run has no Stop', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {
     const runs = await openRuns(context, extensionId);
@@ -338,6 +338,15 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
       run.worker.send({ type: 'running', stop: 1 });
       await expect(card.getByText('Running')).toBeVisible();
+      // Stop the run: the editor that started it ends it, as its own Stop does, and says so.
+      const stopRun = card.getByRole('button', { name: 'Stop the run' });
+      await expect(stopRun).toHaveAttribute(
+        'title',
+        'End the whole run now, as its own Stop does where it was started',
+      );
+      await stopRun.click();
+      await expect(runs.locator('#announce')).toHaveText('Test Editor stops the run.');
+      expect(editor.svc.stops).toContain(run.ref);
     } finally {
       await endRun(run);
     }
@@ -353,6 +362,8 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       stopAtCheckout(terminal, 1);
       await shown.getByRole('button', { name: 'End the test' }).click();
       expect(await terminal.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      // Its Stop stays the terminal's.
+      await expect(shown.getByRole('button', { name: 'Stop the run' })).toHaveCount(0);
     } finally {
       terminal.socket.destroy();
       // Its session ends a while after its last worker left, with no command to end.
@@ -373,6 +384,7 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       runner.begin('pays');
       const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Test runner' }) });
       await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTest runner`);
+      await expect(shown.getByRole('button', { name: 'Stop the run' })).toHaveCount(0);
     } finally {
       runner.socket.destroy();
       await waitFor(() => (editor.svc.latest(runnerRef)?.ended ? true : undefined), 10_000);

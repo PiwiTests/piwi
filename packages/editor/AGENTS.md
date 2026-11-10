@@ -245,8 +245,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
 - **A run started in a terminal never waits for nobody, and its Stop stays the terminal's.** Its session (a
   `terminal-` ref the service never built, `RunSession.terminal`, an editor's test runner's run too with
-  `RunSession.runner`) holds a failure only once a person or an agent turns its Hold failures on, and the clients offer
-  no Stop for it. Checked by `tests/run-sessions.test.ts` ("takes a run started in a terminal …").
+  `RunSession.runner`) holds a failure only once a person or an agent turns its Hold failures on, and neither the
+  clients nor the hub's `stop` (`canStopRun`) stop it. Checked by `tests/run-sessions.test.ts` ("takes a run started in
+  a terminal …") and `tests/run-hub.test.ts` ("stop a run the editor started …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
 - **Every way the service stops removes its discovery file**: `shutdown`, `exit` and the function `startServer`
   returns, and in `src/main.ts` the process's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`. Checked by

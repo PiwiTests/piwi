@@ -37,6 +37,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   HUB_CLOSE,
   HUB_FEATURES,
+  type HubFeature,
   HUB_HELLO_MS,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
@@ -89,6 +90,11 @@ export interface HubRunInfo {
   project: string | null;
 }
 
+/** The features a hub lists in `welcome`: `stop` only where its host can stop a run (`stopRun`). */
+export function hubFeatures(options: Pick<RunHubOptions, 'stopRun'>): HubFeature[] {
+  return HUB_FEATURES.filter((feature) => feature !== 'stop' || !!options.stopRun);
+}
+
 export interface RunHubOptions {
   sessions: RunSessions;
   /** The actions a stop takes: the intents, the responses the test kept and the one to mock. */
@@ -113,6 +119,11 @@ export interface RunHubOptions {
    * `peers` names, without their tokens. None when absent.
    */
   peers?(): readonly LiveHub[];
+  /**
+   * Stops the whole run `ref` as the tool that started it does (the `stop` command): the editor's client ends its task
+   * or process, the desktop app's window its run. Absent, the hub leaves the `stop` feature out and refuses the command.
+   */
+  stopRun?(ref: string): Promise<RunControlResult>;
   /** The token `hello` must carry: a new random one by default, the desktop app's own token in its server. */
   token?: string;
   /** Why the connections close as the hub does. */
@@ -519,7 +530,7 @@ export class RunHub {
           client: cut(client, MAX_HUB_CLIENT),
           roots: roots.slice(0, MAX_HUB_ROOTS),
           keepaliveMs: this.options.keepaliveMs ?? HUB_KEEPALIVE_MS,
-          features: [...HUB_FEATURES],
+          features: hubFeatures(this.options),
         });
         return;
       }
@@ -650,6 +661,12 @@ export class RunHub {
           return reply(sessions.share({ ref: command.ref, on: command.on }));
         case 'hold':
           return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
+        case 'stop':
+          return reply(
+            this.options.stopRun
+              ? await this.options.stopRun(command.ref)
+              : { ok: false, message: 'This hub cannot stop a run: stop it where it was started.' },
+          );
         case 'drive': {
           const { ref, worker, since, on } = command;
           return reply(sessions.driveStop({ ref, worker, since }, connection.viewer, on));

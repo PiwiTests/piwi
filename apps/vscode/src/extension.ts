@@ -110,6 +110,8 @@ import {
   type ScreenshotResult,
   type TraceParams,
   type TraceResult,
+  STOP_RUN_REQUEST,
+  type StopRunParams,
 } from '@piwitests/editor/protocol';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
@@ -194,6 +196,7 @@ import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
+import { stopRunAnswer } from './run-control';
 import { registerRunControl } from './run-view';
 import {
   liveHubsHere,
@@ -446,6 +449,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       credentials: handed ?? undefined,
       runControl: true,
       stopCode: true,
+      stopsRuns: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
       agents: {
         enabled: vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true,
@@ -1012,14 +1016,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
       : [];
 
+  /** Ends the task of the run `ref` started in this window: whether there was one. */
+  const terminateRun = (ref: string): boolean => {
+    const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
+    execution?.terminate();
+    return !!execution;
+  };
+
   /** Where the runs started here stop, and their controls. */
   const runControl = registerRunControl(context, lc, {
     breakpoints: breakpointsForRun,
-    terminate: (ref) => {
-      const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
-      execution?.terminate();
-      return !!execution;
-    },
+    terminate: terminateRun,
     // Once the status is read: before, the item shows the service starting.
     changed: () => {
       if (status || runs) render();
@@ -1650,6 +1657,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
 
   context.subscriptions.push(
+    // Another tool asks through the hub to stop a run started here: its task ends, as with Piwi: Stop.
+    lc.onRequest(STOP_RUN_REQUEST, (params: StopRunParams) =>
+      stopRunAnswer(typeof params?.ref === 'string' && terminateRun(params.ref)),
+    ),
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     // The Playwright configs the breakpoints are read under may change with the status.
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus().then(() => runControl.breakpointsChanged())),

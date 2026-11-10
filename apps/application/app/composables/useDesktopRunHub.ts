@@ -138,6 +138,8 @@ const heardAt = new Map<string, Map<number, string>>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 /** The window said what Share live sends since the app started: it asks no more. */
 let shareWarned = false;
+/** Who hears that another tool asked to stop a run (`stop-run`): the window's hub plugin. */
+const stopRunListeners = new Set<(ref: string) => void>();
 
 function heard(text: string): void {
   let value: Record<string, unknown>;
@@ -164,6 +166,9 @@ function heard(text: string): void {
       return;
     case 'stop-code':
       if (typeof value.code === 'object' && value.code) keep({ type: 'stop-code', code: value.code as StopCode });
+      return;
+    case 'stop-run':
+      if (typeof value.ref === 'string') for (const listener of stopRunListeners) listener(value.ref);
       return;
     case 'pick': {
       const pick = value.pick as DesktopRunPick | undefined;
@@ -430,6 +435,11 @@ export function useDesktopRunHub() {
       if (on === present) return;
       present = on;
       if (viewer) void command({ type: 'follow', on });
+    },
+    /** Hears each run another tool asks through the hub to stop (`stop-run`), until the returned function is called. */
+    onStopRun(listener: (ref: string) => void): () => void {
+      stopRunListeners.add(listener);
+      return () => stopRunListeners.delete(listener);
     },
     /** The runs the window shows live now: a failure no pause bar shows is held in them. */
     show(refs: Iterable<string>): void {

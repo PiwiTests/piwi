@@ -6660,6 +6660,12 @@
   "runs_pauseAllTitle": {
     "message": "Pausar cada worker de esta ejecución antes de su siguiente llamada"
   },
+  "runs_stopRun": {
+    "message": "Detener la ejecución"
+  },
+  "runs_stopRunTitle": {
+    "message": "Terminar ahora toda la ejecución, como su propio Detener donde se inició"
+  },
   "runs_resumeAll": {
     "message": "Reanudar todo"
   },

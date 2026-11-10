@@ -21,7 +21,7 @@
  * nothing.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { desktopRunOf, desktopShownRefs, desktopStopSaid } from '~/utils/desktop-run-view';
+import { desktopRunOf, desktopShellIdOf, desktopShownRefs, desktopStopSaid } from '~/utils/desktop-run-view';
 
 /** The channel on which the app's windows say which runs their trays own. */
 const OWNERS_CHANNEL = 'piwi-desktop-run-owners';
@@ -108,6 +108,19 @@ export default defineNuxtPlugin(() => {
     const now = Date.now();
     return main && ![...others.values()].some((claim) => now - claim.at < CLAIM_MS && claim.refs.has(run));
   }
+
+  // Another tool asked through the hub to stop a run: the window whose tray holds it stops it as its own Stop does; with
+  // none, the main window has the shell stop the process.
+  hub.onStopRun((ref) => {
+    if (!tellsSystem(ref)) return;
+    const run = store.runs.value.find((r) => r.hubRefs.includes(desktopRunOf(ref)));
+    if (run) return void store.stopRun(run);
+    const runId = desktopShellIdOf(ref);
+    if (runId !== null)
+      void tauriCore()
+        ?.invoke('desktop_stop_local_tests', { runId })
+        .catch(() => {});
+  });
 
   hub.onStop((session: HubSession, worker: HubWorker) => {
     const stop = worker.stop;

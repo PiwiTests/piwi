@@ -508,7 +508,8 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
 - They send `piwi/runControl` on a pooled thread, naming the stop they answer (`since`); an answer with `ok: false` is a
   balloon.
 - **Pause the Run** pauses every run of the project. **Stop the Run** ends the process of the ref (`track`, from
-  `PiwiCommands.run` and the IDE's Playwright runner). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun,
+  `PiwiCommands.run` and the IDE's Playwright runner), as another tool's Stop through the hub does (`piwi/stopRun`,
+  answered with `Glue.stopRunAnswer`). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun,
   Stop and Close) takes no other action.
 
 **Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause `Pause`'s

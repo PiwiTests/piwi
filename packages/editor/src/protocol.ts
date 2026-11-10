@@ -553,6 +553,11 @@ export interface InitializationOptions {
    */
   stopCode?: boolean;
   /**
+   * The client stops a run it started as another tool asks (`piwi/stopRun`). Without it, the hub offers no Stop for a
+   * whole run (its `stop` feature).
+   */
+  stopsRuns?: boolean;
+  /**
    * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
    * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256
    * characters of base64url), else a new random one. The client keeps the port and the token, so an agent's
@@ -1784,6 +1789,18 @@ export interface HoldRunParams {
 }
 
 export const HOLD_RUN_REQUEST = 'piwi/holdRun';
+
+/**
+ * `piwi/stopRun` (request, server to client): stop the run of `ref` the client started, as its own Stop does (VS Code
+ * ends the run's task, the JetBrains plugin its process), as another tool asks through the hub (`stop`). Sent only to a
+ * client whose `InitializationOptions.stopsRuns` is true, never for a run started in a terminal. Answered with
+ * `RunControlResult`: refused for a run the client did not start, its `message` saying where to stop it.
+ */
+export interface StopRunParams {
+  ref: string;
+}
+
+export const STOP_RUN_REQUEST = 'piwi/stopRun';
 
 /**
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of

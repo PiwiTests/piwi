@@ -39,6 +39,12 @@ export function desktopRunOf(ref: string): string {
   return isUnattendedDesktopRun(ref) ? ref.slice(0, -UNATTENDED_RUN_SUFFIX.length) : ref;
 }
 
+/** The shell's id of the run a hub's run names (`desktopRunRef`), null for a name the shell did not give. */
+export function desktopShellIdOf(ref: string): number | null {
+  const match = /^desktop-(\d+)$/.exec(desktopRunOf(ref));
+  return match ? Number(match[1]) : null;
+}
+
 /**
  * Whether a person attends a `playwright test` run with these arguments, as the shell reads them (`attended_args`,
  * `hub_env.rs`): not one in UI mode (`--ui`), nor one that repeats each test (`--repeat-each` above 1) unless it ends

@@ -2078,6 +2078,17 @@ object Glue {
         data class None(val why: String) : HoldTarget()
     }
 
+    /**
+     * What the plugin answers another tool that asks it to stop a run (`piwi/stopRun`, from Piwi Picker or the desktop
+     * app through the hub): whether it ended the run's process, a run this IDE did not start refused.
+     */
+    fun stopRunAnswer(stopped: Boolean): RunControlResult =
+        if (stopped) {
+            RunControlResult(ok = true, message = "The IDE stops the run.")
+        } else {
+            RunControlResult(ok = false, message = "The run was not started in this IDE: stop it where it was started.")
+        }
+
     /** The only live run that has a Hold failures, turned over; else the runs to choose among; else why none has. */
     fun holdTarget(sessions: Map<String, RunSession>): HoldTarget {
         val held = holdableRuns(sessions)

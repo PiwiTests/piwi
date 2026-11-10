@@ -888,6 +888,13 @@ data class ShareRunParams(val ref: String, val on: Boolean)
 data class HoldRunParams(val ref: String, val on: Boolean)
 
 /**
+ * `piwi/stopRun` (request, server to client): stop the run of `ref` this IDE started, as Stop the Run does, as another
+ * tool asks through the hub. Sent only to a client that said `stopsRuns`, never for a run started in a terminal.
+ * Answered with `RunControlResult`: refused for a run this IDE did not start, saying where to stop it.
+ */
+data class StopRunParams(val ref: String = "")
+
+/**
  * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
  * ends there, skipped, for a worker that takes it), or `run-to` with `place`, a line of the run's code (the stopped
  * worker, which `worker` names when several are). `since` names the stop it answers (`RunStop.since`): a worker past

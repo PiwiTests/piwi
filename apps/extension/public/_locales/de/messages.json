@@ -6660,6 +6660,12 @@
   "runs_pauseAllTitle": {
     "message": "Jeden Worker dieses Laufs vor seinem nächsten Aufruf pausieren"
   },
+  "runs_stopRun": {
+    "message": "Lauf stoppen"
+  },
+  "runs_stopRunTitle": {
+    "message": "Den ganzen Lauf jetzt beenden, wie sein eigenes Stoppen dort, wo er gestartet wurde"
+  },
   "runs_resumeAll": {
     "message": "Alle fortsetzen"
   },
