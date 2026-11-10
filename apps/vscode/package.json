@@ -486,6 +486,12 @@
         "icon": "$(code)"
       }
     ],
+    "submenus": [
+      {
+        "id": "piwi.editorContext",
+        "label": "Piwi"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -655,49 +661,9 @@
       ],
       "editor/context": [
         {
-          "command": "piwi.runTestAtCursor",
+          "submenu": "piwi.editorContext",
           "group": "piwi@1",
-          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
-        },
-        {
-          "command": "piwi.verifyTestAtCursor",
-          "group": "piwi@1",
-          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
-        },
-        {
-          "command": "piwi.runSpec",
-          "group": "piwi@1",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
-        },
-        {
-          "command": "piwi.runTestsForFile",
-          "group": "piwi@1",
-          "when": "piwi.active"
-        },
-        {
-          "command": "piwi.record",
-          "group": "piwi@2",
-          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
-        },
-        {
-          "command": "piwi.recordFile",
-          "group": "piwi@3",
-          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
-        },
-        {
-          "command": "piwi.stopRecording",
-          "group": "piwi@2",
-          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording"
-        },
-        {
-          "command": "piwi.pauseRecording",
-          "group": "piwi@3",
-          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording && !piwi.recordingPaused"
-        },
-        {
-          "command": "piwi.resumeRecording",
-          "group": "piwi@3",
-          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/ || editorLangId =~ /^(typescript|javascript)(react)?$/ || (piwi.active && resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /^\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|html|json|yaml|yml|properties|po|resx|cs|cshtml|razor)$/)"
         }
       ],
       "view/title": [
@@ -817,6 +783,53 @@
           "command": "piwi.bisectInDesktop",
           "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
           "group": "4_desktop@2"
+        }
+      ],
+      "piwi.editorContext": [
+        {
+          "command": "piwi.runTestAtCursor",
+          "group": "1_run@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "group": "1_run@2",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "group": "1_run@3",
+          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runTestsForFile",
+          "group": "1_run@4",
+          "when": "piwi.active && resourceScheme =~ /^(file|vscode-remote)$/ && resourceExtname =~ /^\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|html|json|yaml|yml|properties|po|resx|cs|cshtml|razor)$/"
+        },
+        {
+          "command": "piwi.record",
+          "group": "2_record@1",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.recordFile",
+          "group": "2_record@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.stopRecording",
+          "group": "3_recording@1",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "group": "3_recording@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "group": "3_recording@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
         }
       ]
     },

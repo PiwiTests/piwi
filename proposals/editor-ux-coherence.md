@@ -9,9 +9,10 @@ tools meets one Piwi.
 **Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built: [Q1](#q1) (each Code Vision entry of a
 line drawn by a provider of its own, in a group named Piwi, #1115; its `CodeVisionTestCase` on the editor fixture is not
 written yet), [Q2](#q2) in VS Code (a flaky test said so while the Testing view owns the gutter, and a test with no
-recent result marked, #1116; Q2's JetBrains flaky icon waits for [M5](#m5)'s palette) and [Q24](#q24) (one name per
-worker, #1213), with an unproven desktop app told apart from an unreachable one in both status items (#1213), and every
-command, setting and action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
+recent result marked, #1116; Q2's JetBrains flaky icon waits for [M5](#m5)'s palette), [Q3](#q3) (Tools → Piwi compact,
+and one Piwi submenu in both editors' context menus, in one order), and [Q24](#q24) (one name per worker, #1213), with
+an unproven desktop app told apart from an unreachable one in both status items (#1213), and every command, setting and
+action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
 the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and

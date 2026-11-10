@@ -458,3 +458,15 @@ private fun <T> textRenderer(label: (T) -> String): SimpleListCellRenderer<T> = 
         text = value?.let(label) ?: ""
     }
 }
+
+/**
+ * The editor's context menu's Piwi submenu (`Piwi.EditorPopup`): compact, so an entry that does not apply is left out
+ * rather than grayed, and gone when none applies, as on a file Piwi has nothing for.
+ */
+class PiwiEditorPopupGroup : com.intellij.openapi.actionSystem.DefaultCompactActionGroup(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isHideGroupIfEmpty = true
+    }
+}

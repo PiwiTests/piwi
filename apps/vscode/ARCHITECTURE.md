@@ -283,7 +283,9 @@ reused per folder and environment.
 
 ### Running the test at the cursor
 
-Three commands, in the palette and in the editor's context menu of a spec:
+Three commands, in the palette and in the **Piwi** submenu of the editor's context menu on a spec
+(`piwi.editorContext` in `contributes.submenus`, the same sections in the same order as the JetBrains plugin's
+`Piwi.EditorPopup`: run, record, a recording's controls; `tests/menus.test.ts`):
 
 - **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`);
 - **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);
