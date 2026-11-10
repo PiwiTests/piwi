@@ -251,7 +251,8 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
-  reveals the active file's first failure.
+  reveals the active file's first failure. It is in the title's `…` menu, worded by its state, with **Connect**,
+  **Open settings** and **Open the log**; the run's actions are the title's icons.
 - The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
   Group by…, Run selection…, Run the tests that reach this file) show in the palette and the view's title only while a
   context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance
@@ -523,6 +524,9 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Piwi: Connect**;
+- the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
+  (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
+  tooltip offering **Open the log**;
 - no Playwright config found: nothing.
 
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:

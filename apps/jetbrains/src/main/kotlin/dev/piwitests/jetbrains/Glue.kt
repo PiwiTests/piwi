@@ -894,6 +894,13 @@ object Glue {
     /** Whether every stop held is a failure: the status item shows the error's icon, not the pause's. */
     fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
 
+    /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
+    const val SERVICE_NOT_RUNNING =
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Refresh."
+
+    /** What an action says when the running service did not answer it: the request failed, or took too long. */
+    const val SERVICE_NO_ANSWER = "The Piwi editor service did not answer: idea.log says why."
+
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         CONNECT("Connect…", "Piwi.Connect"),
@@ -1380,7 +1387,7 @@ object Glue {
             PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
-            PickOutcome.NOT_RUNNING -> "$went: the Piwi editor service is not running in this project."
+            PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
             PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
         }
     }

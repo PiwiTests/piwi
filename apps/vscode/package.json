@@ -762,12 +762,27 @@
         {
           "command": "piwi.toggleFollowEditor",
           "when": "view == piwi.failures && !piwi.followEditor",
-          "group": "navigation@6"
+          "group": "1_follow@1"
         },
         {
           "command": "piwi.stopFollowingEditor",
           "when": "view == piwi.failures && piwi.followEditor",
-          "group": "navigation@6"
+          "group": "1_follow@1"
+        },
+        {
+          "command": "piwi.connect",
+          "when": "view == piwi.failures",
+          "group": "2_piwi@1"
+        },
+        {
+          "command": "piwi.openSettings",
+          "when": "view == piwi.failures",
+          "group": "2_piwi@2"
+        },
+        {
+          "command": "piwi.openLog",
+          "when": "view == piwi.failures",
+          "group": "2_piwi@3"
         }
       ],
       "view/item/context": [

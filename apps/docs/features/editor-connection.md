@@ -125,8 +125,8 @@ editor or with another program on its port, the item reads **Piwi: restart the d
 send the app's token there. Restart or update the desktop app; the editor reads it again as soon as the app starts.
 
 The **Piwi** failures view says the same in both editors, naming the instance and why it does not answer, with
-**Retry**. When the editor service itself stops answering, VS Code's view offers **Piwi: Restart the editor service**,
-as does a **Piwi: Refresh** it did not answer.
+**Retry**. When the editor service itself stops, VS Code's status bar reads **Piwi: not running** and its view offers
+**Piwi: Restart the editor service**, as does a **Piwi: Refresh** it did not answer.
 
 **Piwi: Open settings** in VS Code opens the extension's settings.
 

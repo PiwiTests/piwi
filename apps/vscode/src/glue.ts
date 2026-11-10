@@ -90,9 +90,9 @@ export interface StatusBarView {
   tooltip: string;
   /**
    * `refresh` reads the latest run again (`piwi.refreshRun`); `retry` reads the instance again (`piwi.refresh`);
-   * `connect` runs Piwi: Connect.
+   * `connect` runs Piwi: Connect; `restart` starts the editor service again (`piwi.restartService`).
    */
-  action: 'refresh' | 'retry' | 'connect' | 'none';
+  action: 'refresh' | 'retry' | 'connect' | 'restart' | 'none';
   /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
   /** The page of the run in progress the item counts, which `piwi.openLiveRun` opens; null while none runs. */
@@ -114,6 +114,8 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.connect',
   'piwi.refresh',
   'piwi.runOptions',
+  'piwi.restartService',
+  'piwi.openLog',
 ];
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -250,6 +252,24 @@ function configLine(
   return activeFile && isUnder(shown.root, activeFile)
     ? md(`The active file's Playwright config, in ${where} (one of ${contexts.length})`)
     : md(`The Playwright config in ${where} (one of ${contexts.length}): open a file of another one to see its run`);
+}
+
+/**
+ * The status bar item while the editor service is not running (its start failed, or the client gave up starting it
+ * again): it says so, a click starts it again, and the tooltip offers the log.
+ */
+export function serviceDownView(): StatusBarView {
+  return {
+    text: '$(warning) Piwi: not running',
+    tooltip: lines(
+      'The Piwi editor service is not running, so nothing of the instance is read. When it does not start again, the log says why, and reloading the window starts it anew.',
+      '[Restart the editor service](command:piwi.restartService) · [Open the log](command:piwi.openLog)',
+    ),
+    action: 'restart',
+    url: null,
+    liveUrl: null,
+    error: false,
+  };
 }
 
 /**
