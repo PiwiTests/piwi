@@ -228,7 +228,7 @@ async function picksRoute(): Promise<string> {
 
 /**
  * Runs Playwright on one spec of the project, in the environment the desktop shell gives a run. `stop` ends a run
- * still going, so a test that failed leaves no run under `REF` for the next one to read.
+ * still going, its workers included, so a test that failed leaves no run under `REF` for the next one to read.
  */
 function runPlaywright(
   spec: string,
@@ -252,7 +252,8 @@ function runPlaywright(
   const child = execFile(
     process.execPath,
     [requireHere.resolve('@playwright/test/cli'), 'test', spec],
-    { cwd: project, env, timeout: 90_000 },
+    // Its own process group, so `stop` ends its workers and browsers with it.
+    { cwd: project, env, timeout: 90_000, detached: process.platform !== 'win32' },
     () => {},
   );
   child.stdout?.on('data', (chunk) => (output += chunk));
@@ -265,7 +266,8 @@ function runPlaywright(
   );
   const stop = async () => {
     if (ended) return;
-    child.kill('SIGKILL');
+    if (process.platform === 'win32' || !child.pid) child.kill('SIGKILL');
+    else process.kill(-child.pid, 'SIGKILL');
     await exited;
   };
   return { exited, output: () => output, stop };
