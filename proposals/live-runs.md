@@ -102,8 +102,25 @@ stop's reason, call, place, start and the time stood stopped, whoever watches (t
 do not travel like live steps, D7); the instance keeps the stop on the running test for a page that opens later, rows
 word it by reason in one set of words (`stop-words.ts`) with how long it has stood, Stuck? leaves the stopped time out
 and never marks a test while it stands stopped (#1109), and the header names the origin and the steering tool. The
-demo plays it as **Stopped at a breakpoint**. The rest of P5 (`#N · Open`, the start and stop lines, the words, the
-Testing view and the smaller fixes) is not built yet. The later phases are proposed. The bugs the analysis
+demo plays it as **Stopped at a breakpoint**. Built from the rest of P5: the reporter's own process names the run's
+page to its hub once it knows it (`run-page`: from the global setup, else as its stream opens), which the hub keeps
+and passes on (`HubSession.page`); the Runs window shows **Run #78 · Open · Copy link** while the run goes and after
+it ended, VS Code's run-control item `#78 · 3 of 9` and **Piwi: Open the run page**, both status bars **Open run #78
+(running)** first while your run goes and your own run whichever config the file belongs to, JetBrains' item its
+progress beside a stop or a share, and the desktop app **Run #78 · Open** under each hub run (a team instance's run
+request's included) and **Open run #78** in the tray; **Debug in my editor** names the run (a `ref` the editor service
+checks) and follows it, "Following run #81 in VS Code · Open". A requested run is named by its request's id. The
+terminal's start line is the run's page, the plumbing lines at `PIWI_VERBOSE`, a piped run an editor would have
+followed says why it does not, and the stop line says why the test stopped and names the editor that steers it
+(`workerHost`). One set of stop words (D6) holds the dashboard, both editors, Piwi Picker and the terminal together
+(`stop-words-drift.test.ts`), and the docs gain a **Live runs** glossary and a **Watch a run** page. VS Code's Testing
+view and status bar name a CI run of the branch so (`LiveRun.ci`), its tests never shown running as yours. The hub
+names a stop's line where it stands after an edit (`lineNow`), the "did not reach the instance" notice tells a reporter
+that ran from a missing one (`heardFrom`), and a pick on an image says "sent" only when an editor took it, else offers
+**Copy**. Left of P5: Piwi Runner links no run page (it has no hub to hear `run-page`), the desktop app's run end still
+leads to the run rather than its failure and its runs reach Piwi Picker without their command, the Runs window still
+words the desktop app's failures as the editor's, **Watch** and **Watch live** still name one view twice, and Stop
+sharing is still one click. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
@@ -364,9 +381,9 @@ A person learns one model, and every surface renders it.
 | D4 | **The call is the unit, and pixels one layer of it.** Each layer is keyed by the call's id and produced only while subscribed, reusing what the trace already writes. | Revises live-view-next D1's first half; keeps its second. Generalizes "no image while nobody watches" to every layer. |
 | D5 | **The lane model lives in `@piwitests/core/live-lane` (MIT, written anew): ids, states, a reducer.** The hub and the instance reduce; surfaces receive ready lane state. | The Kotlin plugin cannot run a TypeScript reducer, and a window that reduces on its own can drift from its hub: one reducer per producer side keeps every surface in step. |
 | D6 | **Words stay in the FSL surfaces; core carries enums.** A drift test holds the dashboard's, the desktop's and the extension's words for each enum together. | The root guide forbids moving FSL code into MIT packages; enums are new code. |
-| D7 | **The team instance never steers** ([run-control D8](../adr/run-control.md) stands). It may carry a request (**Ask to watch**) that a local tool shows for the developer to accept, and it receives a local stop as text. It never learns a hub's address. | Consent stays local. A stop as text is the same class of data as a live step, but goes whoever watches: the stuck check reads it, and it is a few words per stop. |
+| D7 | **The team instance never steers** ([run-control D8](../adr/run-control.md) stands). It may carry a request (**Ask to watch**) that a local tool shows for the developer to accept, and it receives a local stop as text. It never learns a hub's address. | Consent stays local. A stop as text is the same class of data as a live step, but goes whoever watches: the stuck check reads it, and it is a few words per stop. Widened by [run-on-my-machine.md](run-on-my-machine.md) to starting and stopping a run a person asked for, which the local tool shows first. |
 | D8 | **Hubs accept a native client without an `Origin` that holds the discovery token**, so the desktop server can read an editor's sessions and `npx @piwitests/reporter mcp` can reach every hub. This widens run-control's D8 ("a WebSocket only from the extension's origin") and is recorded as superseding that point when it ships. | Web pages still always send an `Origin` and stay refused. The token is the user's own, in an owner-only folder; the Windows check of that folder needs the same review. |
-| D9 | **One owner per run, and no daemon.** The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended by default (open question 3). | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
+| D9 | **One owner per run, and no daemon** (amended by [run-on-my-machine.md](run-on-my-machine.md): Piwi Runner is one more program, a run target and never a hub). The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended by default (open question 3). | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
 | D10 | **Peers name hubs, never their tokens.** A hub tells its clients of the other hubs in `~/.piwi/editors`; the desktop hub is named without the desktop token, and Piwi Picker pairs with the desktop app through its own **Allow**. | The desktop token opens the app's whole API; handing it on would skip the user's consent. |
 | D11 | **Features, not versions.** `run-attach`, the hub's `welcome` and the desktop's live answer carry `features: string[]`; readers treat an unknown state as `other`. Lenient readers ship a release before any new state. | Six release trains (two marketplaces, a browser store, the desktop updater, npm, the instance) update independently, and `RUN_TAKES` is at its 16-entry cap (`packages/core/src/run-channel.ts:127-146`). |
 | D12 | **`follow` splits into `presence` and `hold`.** `presence` says a window shows the run and turns events on; `hold` is the run's policy with who set it. The desktop hub's `show`, which means Hold failures today, keeps that meaning. | A hidden Runs window holding every failure (RW19) comes from one word meaning two things. |
