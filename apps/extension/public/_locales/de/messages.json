@@ -6679,10 +6679,10 @@
     "message": "Mehr"
   },
   "runs_holdFailures": {
-    "message": "Fehler anhalten"
+    "message": "Fehlschläge anhalten"
   },
   "runs_holdFailuresOn": {
-    "message": "Ein fehlgeschlagener Test wartet an seiner Zeile auf eine Antwort. Klicken, damit Fehler sofort weiterlaufen."
+    "message": "Ein fehlgeschlagener Test wartet an seiner Zeile auf eine Antwort. Klicken, damit Fehlschläge sofort weiterlaufen."
   },
   "runs_holdFailuresOff": {
     "message": "Ein fehlgeschlagener Test läuft sofort weiter. Klicken, damit er an seiner Zeile auf eine Antwort wartet."

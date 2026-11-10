@@ -152,6 +152,8 @@ const sharing = new Set<string>();
 /** The runs whose Hold failures is being turned over: the toggle waits for the hub's answer. */
 const holding = new Set<string>();
 const shareRefusals = new Map<string, string>();
+/** Why the hub did not turn a run's Hold failures over, by run, until it is asked again. */
+const holdRefusals = new Map<string, string>();
 /** Each worker's state and stop as last shown, and the runs live then, for what the live region says. */
 let seen: Map<string, { state: HubWorker['state']; since: string | null }> | null = null;
 let liveSeen = new Set<string>();
@@ -1569,11 +1571,12 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     const { total, done, failed, flaky } = session.progress;
     children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
   }
-  // Hold failures, from a hub that keeps it for each run, while the run goes on.
-  if (session.hold && !session.ended) {
+  // Hold failures, from a hub that keeps it for each run, while the run goes on and its hub is connected.
+  if (session.hold && !session.ended && !away) {
     const { on, by } = session.hold;
     const asking = holding.has(runKey);
-    children.push(part(`${runKey}|hold`, [on, by, asking], () => renderHold(run, on, by)));
+    const refusal = holdRefusals.get(runKey) ?? null;
+    children.push(part(`${runKey}|hold`, [on, by, asking, refusal], () => renderHold(run, on, by)));
   }
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);
@@ -1659,18 +1662,27 @@ function renderHold(run: RunsRun, on: boolean, by: 'start' | 'person' | 'agent')
   if (holding.has(runKeyOf(run))) unavailable(toggle);
   row.append(toggle);
   if (by === 'agent') row.append(element('span', 'hold-by', t('runs_holdByAgent')));
-  return row;
+  const refusal = holdRefusals.get(runKeyOf(run));
+  if (!refusal) return row;
+  const box = element('div', 'run-hold-box');
+  box.append(row, iconText(element('p', 'note run-note hold-refused'), 'info', refusal));
+  return box;
 }
 
-/** Turn a run's Hold failures on or off, unless a turn of it is on its way: the hub's answer is read out. */
+/**
+ * Turn a run's Hold failures on or off, unless a turn of it is on its way: the hub's answer is read out, and a refusal
+ * shown under the toggle.
+ */
 async function hold(run: RunsRun, on: boolean): Promise<void> {
   const key = runKeyOf(run);
   if (holding.has(key)) return;
   holding.add(key);
+  holdRefusals.delete(key);
   render();
   const answer = await command(run.hub, run.session.ref, null, 'hold', null, { on });
   holding.delete(key);
   const text = answer.ok ? answer.message : failureText(answer);
+  if (!answer.ok && text) holdRefusals.set(key, text);
   if (text) announce(text);
   render();
 }
