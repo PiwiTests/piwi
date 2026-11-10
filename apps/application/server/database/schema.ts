@@ -36,6 +36,7 @@ export const {
   projectIntegrations,
   projectTestManagement,
   testManagementCases,
+  testManagementCatalogReads,
   integrationActions,
   users,
   apiKeys,

@@ -1170,6 +1170,13 @@
       "when": 1794304198479,
       "tag": "0166_foamy_trish_tilby",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "6",
+      "when": 1794345551062,
+      "tag": "0167_vengeful_the_order",
+      "breakpoints": true
     }
   ]
 }

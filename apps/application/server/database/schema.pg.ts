@@ -1566,6 +1566,23 @@ export const testManagementCases = pgTable(
   }),
 );
 
+// When a project's catalog was last read from the tool, kept apart from the case rows because a read that found no
+// cases leaves none to carry the time.
+export const testManagementCatalogReads = pgTable(
+  'test_management_catalog_reads',
+  {
+    id: serial('id').primaryKey(),
+    connectionId: integer('connection_id')
+      .notNull()
+      .references(() => integrationConnections.id, { onDelete: 'cascade' }),
+    projectKey: text('project_key').notNull(),
+    fetchedAt: timestamp('fetched_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('idx_test_management_catalog_reads_project').on(t.connectionId, t.projectKey),
+  }),
+);
+
 // Integration actions outbox — every outbound write to an external system is a
 // durable row, retried with backoff, deduped by a unique key, and listable. The
 // payload is snapshotted at enqueue so a retry is deterministic.
@@ -2607,6 +2624,7 @@ export type ProjectTestManagement = typeof projectTestManagement.$inferSelect;
 export type NewProjectTestManagement = typeof projectTestManagement.$inferInsert;
 export type TestManagementCase = typeof testManagementCases.$inferSelect;
 export type NewTestManagementCase = typeof testManagementCases.$inferInsert;
+export type TestManagementCatalogRead = typeof testManagementCatalogReads.$inferSelect;
 export type IntegrationAction = typeof integrationActions.$inferSelect;
 export type NewIntegrationAction = typeof integrationActions.$inferInsert;
 export type NetworkRequest = typeof networkRequests.$inferSelect;
