@@ -441,7 +441,7 @@ export class PiwiDashboardReporter {
     }
     // The hub its workers reach hears how far the run is, from its own process.
     this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
-    // The run the global setup registered names its page now; else the stream names it as it opens.
+    // The run the global setup registered names its page now; the stream names the run it opens, another on a refusal.
     const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
     if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
     if (!this.enabled) {

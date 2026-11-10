@@ -18,7 +18,7 @@ import { runChannelRef, startedByTestRunner } from '../config/editors.js';
  * `RunMainToHub` of `@piwitests/core/run-channel`), from `onBegin` to `onEnd`, so the hub knows how far the run is
  * before and between its workers: how many tests the run holds (`run-begin`), how many ended for good and how
  * (`run-progress`, four times a second at most, the latest counts alone), its page on the instance once it is known
- * (`run-page`, once), and how the run ended, with its first
+ * (`run-page`, again when the stream opens another run than the global setup's), and how the run ended, with its first
  * failure's title and error line through `hideSecretsInText` (`run-end`). Each test counts once, by the outcome of its
  * latest attempt: a serial group's retry counts its tests again in place of their earlier outcome. It reads nothing
  * the hub says and never waits on it but `CLOSE_MS` at the end, the connection held open meanwhile so the run's process
@@ -43,7 +43,9 @@ export class RunHubLink {
   >();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sentAt = -Infinity;
-  private pageSent = false;
+  /** The page the hub last heard, and whether it heard how the run ended: nothing is sent after `run-end`. */
+  private pageSent: string | null = null;
+  private ended = false;
 
   private constructor(private socket: net.Socket | null) {}
 
@@ -121,13 +123,15 @@ export class RunHubLink {
   }
 
   /**
-   * The run's page on the instance (`id`, `url`): the hub hears it once, the first time a page that reads is known.
+   * The run's page on the instance (`id`, `url`): the hub hears each page that reads and differs from the last it
+   * heard, until the run ended.
    */
   page(id: number | null | undefined, url: string | null | undefined): void {
-    if (this.pageSent) return;
     const page = readRunPage({ id, url });
-    if (!page) return;
-    this.pageSent = true;
+    if (!page || this.ended) return;
+    const key = `${page.id} ${page.url}`;
+    if (this.pageSent === key) return;
+    this.pageSent = key;
     this.send({ type: 'run-page', ...page });
   }
 
@@ -135,6 +139,7 @@ export class RunHubLink {
   async end(status: string): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.ended = true;
     const socket = this.socket;
     if (!socket) return;
     const known = ['passed', 'failed', 'timedout', 'interrupted'].includes(status);

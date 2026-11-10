@@ -1226,12 +1226,16 @@ export interface RunPage {
 
 export const MAX_RUN_PAGE_URL = 2048;
 
-/** A run's page, field by field: a positive number and an http(s) address with no space; null when it is not one. */
+/**
+ * A run's page, field by field: a positive number and an http(s) address with no space, quote or control character;
+ * null when it is not one.
+ */
 export function readRunPage(value: unknown): RunPage | null {
   if (!isObject(value)) return null;
   const { id, url } = value;
   if (!isInt(id, 1) || typeof url !== 'string' || url.length > MAX_RUN_PAGE_URL) return null;
-  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return null;
+  // eslint-disable-next-line no-control-regex -- matches the control characters an address must not hold
+  if (!/^https?:\/\/[^\s"'<>`\\\u0000-\u001f\u007f]+$/.test(url)) return null;
   return { id, url };
 }
 
@@ -1245,7 +1249,8 @@ export const MAX_RUN_FAILURE_TEXT = 500;
  * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
  * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
  * `run-attach` says it (absent otherwise). `run-page` names the run's page on the instance once the run's process
- * knows it (at its start from the global setup, else as its stream opens, else as its results are sent), once.
+ * knows it (at its start from the global setup, else as its stream opens), and again when the stream opens another
+ * run than the global setup's: the hub keeps the last.
  * `run-progress` follows each test that ended for good, at most four times a
  * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
  * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them

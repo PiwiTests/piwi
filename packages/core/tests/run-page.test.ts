@@ -28,6 +28,9 @@ describe('a run’s page', () => {
       { id: 78, url: 'javascript:alert(1)' },
       { id: 78, url: 'https://piwi/test runs/78' },
       { id: 78, url: 'https://piwi/"><img>' },
+      { id: 78, url: 'https://piwi/test-runs/78\u001b[2J' },
+      { id: 78, url: 'https://piwi/test-runs/78\u0000' },
+      { id: 78, url: 'https://piwi/test-runs/78\u007f' },
       { id: 78, url: `https://piwi/${'a'.repeat(2048)}` },
     ]) {
       expect(readRunPage(broken), JSON.stringify(broken)).toBeNull();
