@@ -434,10 +434,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
 
-  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails, stronger on
-  // the line it failed at (the service's hover there says why).
+  // Each test's latest result on the test: a gutter icon with a hover (a dashed ring for a test with no recent result),
+  // and a background while it fails, stronger on the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
-    (['failed', 'flaky', 'passed', 'skipped', 'running'] as const).map((status) => [
+    (['failed', 'flaky', 'passed', 'skipped', 'running', 'unknown'] as const).map((status) => [
       status,
       vscode.window.createTextEditorDecorationType({
         gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
@@ -451,15 +451,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone.
+  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone,
+  // and a flaky test, which the view shows as passed, says so after its line.
   const testHover = vscode.window.createTextEditorDecorationType({});
+  const flakyMark = vscode.window.createTextEditorDecorationType({
+    after: {
+      contentText: '  flaky',
+      color: new vscode.ThemeColor('editorWarning.foreground'),
+      fontStyle: 'italic',
+    },
+  });
   const failingLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, failingLine, testHover, ...gutterIcons.values());
+  context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
   let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
@@ -478,6 +486,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         editor.setDecorations(type, explorer ? [] : hovered(tests.filter((t) => t.status === status)));
       }
       editor.setDecorations(testHover, explorer ? hovered(tests) : []);
+      editor.setDecorations(
+        flakyMark,
+        explorer
+          ? tests
+              .filter((t) => t.status === 'flaky' && t.line < document.lineCount)
+              .map((t) => document.lineAt(t.line).range)
+          : [],
+      );
       editor.setDecorations(
         failingBackground,
         tests
