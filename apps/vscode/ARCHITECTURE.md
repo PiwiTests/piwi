@@ -303,9 +303,12 @@ reused per folder and environment.
 
 ### Running the test at the cursor
 
-Three commands, in the palette and in the **Piwi** submenu of the editor's context menu on a spec
+Three commands, in the palette, in the **Piwi** submenu of the editor's context menu on a spec
 (`piwi.editorContext` in `contributes.submenus`, the same sections in the same order as the JetBrains plugin's
-`Piwi.EditorPopup`: run, record, a recording's controls; `tests/menus.test.ts`):
+`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button
+(`editor/title/run`). The title also holds one Piwi button by state (`editor/title`): Stop recording while a recording
+runs, else Resume at a stop, else Record here on a spec, and the other controls of a recording or a stop in its `…`
+menu; every command shown there has an icon (`tests/menus.test.ts`, and the nightly suite on a spec):
 
 - **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`);
 - **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);

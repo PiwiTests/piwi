@@ -129,6 +129,19 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
+test('a spec’s editor title offers Record here, and its Run button the spec’s runs', async () => {
+  await openFile(page, SPEC_FILE);
+  const actions = page.locator('.editor-actions');
+  await expect(actions.getByRole('button', { name: 'Record here' })).toBeVisible();
+  await actions
+    .getByRole('button', { name: /More Actions|Run or Debug/ })
+    .first()
+    .click();
+  const menu = page.locator('.monaco-menu, .context-view');
+  await expect(menu.getByText('Run this spec').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+});
+
 test('the failures view holds the run, the local run since, and the failures', async () => {
   await clearNotifications(page);
   await command(page, 'Piwi: Focus on Failures View');

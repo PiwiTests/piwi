@@ -181,6 +181,7 @@
       {
         "command": "piwi.connect",
         "title": "Connect",
+        "icon": "$(plug)",
         "category": "Piwi"
       },
       {
@@ -191,6 +192,7 @@
       {
         "command": "piwi.openSettings",
         "title": "Open settings",
+        "icon": "$(gear)",
         "category": "Piwi"
       },
       {
@@ -227,16 +229,19 @@
       {
         "command": "piwi.runTestAtCursor",
         "title": "Run the test at the cursor",
+        "icon": "$(run)",
         "category": "Piwi"
       },
       {
         "command": "piwi.verifyTestAtCursor",
         "title": "Verify the test at the cursor ×3",
+        "icon": "$(sync)",
         "category": "Piwi"
       },
       {
         "command": "piwi.runSpec",
         "title": "Run this spec",
+        "icon": "$(run-all)",
         "category": "Piwi"
       },
       {
@@ -390,26 +395,31 @@
       {
         "command": "piwi.record",
         "title": "Record here",
+        "icon": "$(record)",
         "category": "Piwi"
       },
       {
         "command": "piwi.recordFile",
         "title": "Record a new test file",
+        "icon": "$(new-file)",
         "category": "Piwi"
       },
       {
         "command": "piwi.stopRecording",
         "title": "Stop recording",
+        "icon": "$(stop-circle)",
         "category": "Piwi"
       },
       {
         "command": "piwi.pauseRecording",
         "title": "Pause recording",
+        "icon": "$(debug-pause)",
         "category": "Piwi"
       },
       {
         "command": "piwi.resumeRecording",
         "title": "Resume recording",
+        "icon": "$(debug-continue)",
         "category": "Piwi"
       },
       {
@@ -733,6 +743,65 @@
         {
           "command": "piwi.codeAtStop",
           "when": "piwi.runCanPick || piwi.runCanRecord || piwi.runCanAssert || piwi.runCanAssertRegion || piwi.runCanMock"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "piwi.stopRecording",
+          "group": "navigation@1",
+          "when": "piwi.recording"
+        },
+        {
+          "command": "piwi.resumeRun",
+          "group": "navigation@1",
+          "when": "!piwi.recording && piwi.runStopped"
+        },
+        {
+          "command": "piwi.record",
+          "group": "navigation@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/ && !piwi.recording && !piwi.runStopped"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "group": "9_piwi@1",
+          "when": "piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "group": "9_piwi@2",
+          "when": "piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.stepRun",
+          "group": "9_piwi@3",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
+        },
+        {
+          "command": "piwi.finishRun",
+          "group": "9_piwi@4",
+          "when": "!piwi.recording && piwi.runStopped && !piwi.runFailed"
+        },
+        {
+          "command": "piwi.stopRun",
+          "group": "9_piwi@5",
+          "when": "piwi.runActive"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "piwi.runTestAtCursor",
+          "group": "navigation@1",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.verifyTestAtCursor",
+          "group": "navigation@2",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+        },
+        {
+          "command": "piwi.runSpec",
+          "group": "navigation@3",
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         }
       ],
       "editor/context": [

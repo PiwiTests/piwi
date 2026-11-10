@@ -42,6 +42,51 @@ describe("the editor's context menu", () => {
   });
 });
 
+describe("a spec's editor title", () => {
+  const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
+  const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
+
+  test('shows one Piwi button by state: Stop recording, else Resume at a stop, else Record on a spec', () => {
+    const buttons = menus['editor/title']!.filter((e) => e.group?.startsWith('navigation'));
+    expect(buttons.map((e) => [e.command, e.when])).toEqual([
+      ['piwi.stopRecording', 'piwi.recording'],
+      ['piwi.resumeRun', '!piwi.recording && piwi.runStopped'],
+      ['piwi.record', `${spec} && !piwi.recording && !piwi.runStopped`],
+    ]);
+  });
+
+  test("keeps the other controls of a recording or a stop in its '…' menu", () => {
+    const overflow = menus['editor/title']!.filter((e) => !e.group?.startsWith('navigation'));
+    expect(overflow.map((e) => e.command)).toEqual([
+      'piwi.pauseRecording',
+      'piwi.resumeRecording',
+      'piwi.stepRun',
+      'piwi.finishRun',
+      'piwi.stopRun',
+    ]);
+    // Each as the palette offers it.
+    const palette = menus['commandPalette']!;
+    for (const entry of overflow.filter((e) => e.command !== 'piwi.stepRun' && e.command !== 'piwi.finishRun')) {
+      expect(entry.when, entry.command).toContain(palette.find((p) => p.command === entry.command)!.when!);
+    }
+  });
+
+  test('runs the test at the cursor, verifies it ×3 or runs the spec from the Run button', () => {
+    expect(menus['editor/title/run']!.map((e) => [e.command, e.when])).toEqual([
+      ['piwi.runTestAtCursor', spec],
+      ['piwi.verifyTestAtCursor', spec],
+      ['piwi.runSpec', spec],
+    ]);
+  });
+
+  test('gives every command it shows an icon', () => {
+    const shown = [...menus['editor/title']!, ...menus['editor/title/run']!].map((e) => e.command!);
+    for (const command of shown) {
+      expect(commands.find((c) => c.command === command)?.icon, command).toMatch(/^\$\([a-z-]+\)$/);
+    }
+  });
+});
+
 describe('the commands that read the instance', () => {
   const reading = [
     'piwi.refreshRun',
