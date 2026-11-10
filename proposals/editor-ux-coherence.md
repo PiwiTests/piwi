@@ -30,7 +30,11 @@ closing ([LR8](#lr8), #1120), [Q11](#q11) in part (a test's result said once on 
 lens's tooltip saying what its click runs, and a local run's failure leading with 'Local failure:', #1121; the hover
 built by the service and naming the run, [TL10](#tl10), remains), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing
 test's lines to the editor's edge, #1121), [Q20](#q20) (Run This Spec and the spec's lens run every test of the file by
-its path, #1121) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an
+its path, #1121), [Q17](#q17) (VS Code's run items each named, read without their icon, naming no key, Resume alone at a
+held failure, which is marked in red, #1122), [LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step,
+Finish and Write code…, #1122; JetBrains' inlay and the nightly width check of [M14](#m14) remain), [LR2](#lr2)'s icons
+(no spinner at a held stop, the error's icon at a held failure, #1122; the line the service composes for both clients,
+[M13](#m13), remains) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an
 unreachable one in both status items (#1213), and every command, setting and action id of both editors registered in D25
 and held to the manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed
 are filed as #1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference
