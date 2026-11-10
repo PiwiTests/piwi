@@ -34,13 +34,14 @@ connection asks for the token again, because a token belongs to one region.
 
 ## Bind a project
 
-A project is bound in **Project → Settings → Test management** (Project admin on the project). The section appears
-once a Zephyr Scale connection exists. Pick the **Connection** and the **Project** key, then **Save**. The binding is
+A project is bound in **Project → Settings → Test management** (Project admin on the project). The section always shows;
+with no Zephyr Scale connection it says "No test management connection yet" and links to **Settings → Integrations**
+to add one. Pick the **Connection** and the **Project** key, then **Save**. The binding is
 kept apart from the issue tracker binding, so saving one never changes the other.
 
 - **Enabled** keeps the binding but pauses its use.
 - **Dry run** is on for a new binding. Piwi sends nothing to Zephyr Scale either way for now.
-- **Where a test's case key comes from** is its tags, its external ID, or both. A key is a tag or an ID that
+- **Where a test’s case key comes from** is its tags, its external ID, or both. A key is a tag or an ID that
   matches the project's test case key pattern, such as `SHOP-T123`, with no `@`.
 - **Runs in scope** picks the branches and environments the binding covers, as the issue tracker binding does.
 - **Result statuses** name the statuses Piwi would use for a pass, a fail, a flaky test and a test not executed, and

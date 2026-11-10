@@ -72,7 +72,7 @@ export const HELP_TOPICS = {
   },
   'integrations.test-management': {
     title: 'Test management binding',
-    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. Piwi sends nothing to Zephyr Scale Cloud yet: the binding, the catalog of test cases and the mapping summary work today.\n\n- **Dry run** — on for a new binding; nothing is sent either way for now\n- **Key sources** — where a test’s case key comes from: its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
+    text: 'Matches this project’s tests against the test cases of a project in Zephyr Scale Cloud. Piwi sends nothing to Zephyr Scale Cloud yet: the binding, the catalog of test cases and the mapping summary work today.\n\n- **Dry run** — on for a new binding; nothing is sent either way for now\n- **Where a test’s case key comes from** — its tags, its external ID, or both\n- **Catalog** — the keys, names and statuses of the project’s test cases, read daily and with Refresh catalog\n- **Mapping summary** — how the last complete run’s tests map onto that catalog',
     doc: 'operate/zephyr-scale#bind-a-project',
   },
   'integrations.test-management-run-name': {
