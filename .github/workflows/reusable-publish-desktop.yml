@@ -257,9 +257,9 @@ jobs:
               return;
             }
             const signature = fs.readFileSync(path.join(bundleDir, sig), 'utf8');
-            // Both apps attach a -setup.exe to this release (Piwi Runner's too), so the installer is the asset
-            // named as the one this leg built: tauri-action's name for an upload, with every character outside
-            // [a-zA-Z0-9_-] a dot (ghAssetName in its utils.ts), or its label, which keeps the file's own name.
+            // A release can carry another app's -setup.exe (Piwi Runner's, once it is published), so the installer
+            // is the asset named as the one this leg built: tauri-action's name for an upload, with every character
+            // outside [a-zA-Z0-9_-] a dot (ghAssetName in its utils.ts), or its label, which keeps the file's own name.
             function findSetup(assets, built) {
               const name = built.replace(/[^a-zA-Z0-9_-]/g, '.').replace(/\.\./g, '.');
               return assets.find((a) => a.label === built || a.name === name);
