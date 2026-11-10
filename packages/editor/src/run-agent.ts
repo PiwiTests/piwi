@@ -411,7 +411,7 @@ export function agentTools(words: AgentWords): ToolDefinition[] {
     },
     {
       name: 'run_follow',
-      description: `The events of a run since a cursor: each test's start and end, each call of the test as it ends (its title, its place in the code, whether it passed), the stops and the run's end, and the page's navigations, console errors and warnings, uncaught errors and failed requests. It waits for the next events up to \`wait\` seconds, and answers at once when the run is stopped or ended. Pass the answer's \`next\` as \`after\` to read on. The calls and the page's events are told while you call a tool on the run, and stop ${FOLLOW_IDLE_S} seconds after your last call, what the page said in them dropped (\`page: "dropped"\`). ${UNTRUSTED}`,
+      description: `The events of a run since a cursor: each test's start and end, each call of the test as it ends (its title, its place in the code, whether it passed), the stops, a person taking a stop you drove (\`taken\`, after which your actions there are refused until they give it back or answer it) and the run's end, and the page's navigations, console errors and warnings, uncaught errors and failed requests. It waits for the next events up to \`wait\` seconds, and answers at once when the run is stopped, a stop is taken from you or the run ended. Pass the answer's \`next\` as \`after\` to read on. The calls and the page's events are told while you call a tool on the run, and stop ${FOLLOW_IDLE_S} seconds after your last call, what the page said in them dropped (\`page: "dropped"\`). ${UNTRUSTED}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -746,6 +746,8 @@ export class RunAgent {
       case 'running':
         this.steps.delete(`${ref} ${worker} ${what.since}`);
         return add('went-on', { stop: what.since });
+      case 'taken':
+        return add('taken', { by: what.by });
       case 'event': {
         const event = runEventOf(what.event);
         return add(event.kind, event.fields, event.page);
@@ -1024,7 +1026,7 @@ export class RunAgent {
     const settled = () => {
       const fresh = since();
       if (fresh.length >= MAX_FOLLOW_EVENTS) return true;
-      if (fresh.some((e) => e.kind === 'stopped' || e.kind === 'run-ended')) return true;
+      if (fresh.some((e) => e.kind === 'stopped' || e.kind === 'taken' || e.kind === 'run-ended')) return true;
       return this.state(this.live(ref), log) !== 'running' && this.state(this.live(ref), log) !== 'between';
     };
     await this.waitFor(log, Math.min(wait, this.options.followMs ?? MAX_FOLLOW_WAIT_S * 1000), settled, signal);

@@ -23,6 +23,7 @@ import {
   liveUrlOf,
   parseHubCommand,
   parseHubHello,
+  MAX_HUB_PRESENCE,
   parseHubMessage,
   parseLiveAnswer,
   type HubMessage,
@@ -875,6 +876,45 @@ describe('Hold failures on the hub', () => {
     for (const broken of [{ on: 'yes', by: 'person' }, { on: true, by: 'robot' }, { on: true }, 'on']) {
       expect(read(broken), JSON.stringify(broken)).toBeUndefined();
     }
+  });
+});
+
+describe('who is present on a run, on the hub', () => {
+  test('reads drive, naming the stop and whether the connection drives it, and refuses one without either', () => {
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', worker: 0, since: 'x', on: true }))).toEqual({
+      type: 'drive',
+      id: 9,
+      ref: 'ed-1',
+      worker: 0,
+      since: 'x',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'drive', id: 9, ref: 'ed-1', since: 'x' }))).toEqual({
+      type: 'invalid',
+      id: 9,
+      message: 'drive needs on: true to drive the stop, false to give it back.',
+    });
+  });
+
+  test('has the extension read who has a run open, watches a worker and drives its stop, and leave out the rest', () => {
+    const picker = { kind: 'picker', name: 'Piwi Picker', self: true };
+    const agent = { kind: 'agent', name: 'an agent' };
+    const [worker] = session.workers;
+    const read = (over: object, at: object = {}) =>
+      (
+        parseHubMessage(
+          json({ type: 'session', session: { ...session, ...over, workers: [{ ...worker, ...at }] } }),
+        ) as { session: HubSession }
+      ).session;
+    expect(read({ presence: [picker, agent] }).presence).toEqual([picker, agent]);
+    expect(read({}, { watchers: [agent] }).workers[0]!.watchers).toEqual([agent]);
+    expect(read({}, { stop: { ...worker!.stop, driver: agent } }).workers[0]!.stop!.driver).toEqual(agent);
+    // A kind of a newer hub reads as other; a tool without a name, or a list too long, is left out.
+    expect(read({ presence: [{ kind: 'robot', name: 'R' }] }).presence).toEqual([{ kind: 'other', name: 'R' }]);
+    expect(read({ presence: [{ kind: 'agent' }] }).presence).toBeUndefined();
+    expect(read({ presence: Array.from({ length: MAX_HUB_PRESENCE + 1 }, () => agent) }).presence).toBeUndefined();
+    expect(read({}, { stop: { ...worker!.stop, driver: 'agent' } }).workers[0]!.stop!.driver).toBeUndefined();
   });
 });
 

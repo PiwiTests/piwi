@@ -228,6 +228,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   (`said`: Piwi's own sentence stands in its place); never in the JSON that names the runs. Checked by
   `tests/run-agent.test.ts` ("… the page’s text apart …", "says a worker’s own words …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **One driver at a stop, and a person's action takes it from the agent.** While a person drives a stop
+  (`RunSessions.drive`), the agent's `act` and its Resume, Step, Finish and End there are refused, and it hears `taken`;
+  a person's controls are never refused. Checked by `tests/run-view.test.ts` ("who is present …") and
+  `tests/run-agent.test.ts` ("drive a stop until a person takes it …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#presence-and-one-driver))
 - **What an agent does shows where a person watches.** A stop it asked for carries `RunStop.by: 'agent'`, its first
   action at a stop is a `piwi/notice`, and its code's sentences say the agent made it (`AGENT_WROTE` in
   `src/stop-actions.ts`), to the client and to Piwi Picker. Checked by `tests/run-agent.test.ts`.

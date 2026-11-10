@@ -54,17 +54,39 @@ export const MAX_HUB_MESSAGE = 1000;
 export const MAX_HUB_WARNINGS = 16;
 /** The most hubs a `peers` names: the hub names the first ones. */
 export const MAX_HUB_PEERS = 64;
+/** The most tools a run's or a worker's presence names: the hub names the first ones. */
+export const MAX_HUB_PRESENCE = 16;
 
 /**
  * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
  * other live hubs of the machine as they come and go (`peers`), shows a lane of a run while it runs (`lanes`: the
- * command `watch`, its frames `lane-frame`), and keeps **Hold failures** for each run (`hold`: the command `hold`, the
- * session's `hold`). A reader keeps those it knows; a hub that predates the list does none of them.
+ * command `watch`, its frames `lane-frame`), keeps **Hold failures** for each run (`hold`: the command `hold`, the
+ * session's `hold`), and says who is present on each run, lane and stop, one driving a stop at a time (`presence`: the
+ * command `drive`, the session's `presence`, a worker's `watchers`, a stop's `driver`). A reader keeps those it knows;
+ * a hub that predates the list does none of them.
  */
-export type HubFeature = 'peers' | 'lanes' | 'hold';
+export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence';
 
 /** The features of a hub of this version. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold'];
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence'];
+
+/**
+ * What a tool present on a run is: a Runs window of Piwi Picker (`picker`), an editor (`editor`), the desktop app's
+ * window (`desktop`), or an agent through a hub's MCP tools (`agent`); `other` for a kind of a newer hub.
+ */
+export type HubPresenceKind = 'picker' | 'editor' | 'desktop' | 'agent' | 'other';
+
+const PRESENCE_KINDS: readonly HubPresenceKind[] = ['picker', 'editor', 'desktop', 'agent'];
+
+/**
+ * A tool present on a run, a lane or a stop: its kind, its name as the hub knows it (`Visual Studio Code`, at most
+ * `MAX_HUB_CLIENT` characters), and `self` when it is the connection that hears it.
+ */
+export interface HubPresence {
+  kind: HubPresenceKind;
+  name: string;
+  self?: true;
+}
 
 /**
  * Who set a run's **Hold failures** last: the run's own start (`start`: a run built to be watched, a debug run, a
@@ -132,6 +154,12 @@ export interface HubStop {
   error?: string;
   /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
   by?: 'agent';
+  /**
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
+   * person last acted on it (its input, a pick, an intent, or `drive`). A person's action takes it from an agent, and
+   * an agent's is refused while a person drives. Absent while nobody drives, and from a hub without `presence`.
+   */
+  driver?: HubPresence;
 }
 
 /** A test a worker runs. */
@@ -230,6 +258,11 @@ export interface HubWorker {
    * from a stop: none for a reporter that predates them, whose stops every action is refused at.
    */
   intents: HubAction[];
+  /**
+   * The tools that watch its page now, its lane's view or its stop's, each connection once: absent while none does,
+   * and from a hub without `presence`.
+   */
+  watchers?: HubPresence[];
 }
 
 /**
@@ -309,6 +342,11 @@ export interface HubSession {
    * failures wait while a Runs window follows the runs.
    */
   hold?: HubHold;
+  /**
+   * The tools that have the run open, beyond the hub's own editor: each Runs window that follows the runs, the desktop
+   * app's window, and an agent that follows this run. Absent while none does, and from a hub without `presence`.
+   */
+  presence?: HubPresence[];
 }
 
 /**
@@ -351,8 +389,9 @@ export type HubCommand =
   /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
   | { type: 'subscribe'; id: number }
   /**
-   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. It holds no failure:
-   * a hub with the `hold` feature holds them by each run's **Hold failures** (`hold`), whoever watches.
+   * Whether a person watches the runs through this connection now (`on`): a Runs window is open, which each run names
+   * in its `presence` (a hub with the `presence` feature). It holds no failure: a hub with the `hold` feature holds
+   * them by each run's **Hold failures** (`hold`), whoever watches.
    */
   | { type: 'follow'; id: number; on: boolean }
   /**
@@ -360,6 +399,12 @@ export type HubCommand =
    * (it goes on at once, one held now included), as a person asks on a surface. Refused for a run nobody attends.
    */
   | { type: 'hold'; id: number; ref: string; on: boolean }
+  /**
+   * At the stop `since` names (of the one stopped worker, or `worker`), drive it (`on`: an agent's actions there are
+   * refused until this connection gives it back), or give it back (an agent may act again). Driving takes it from an
+   * agent, which hears so; the input, a pick and an intent this connection sends there drive it too.
+   */
+  | { type: 'drive'; id: number; ref: string; worker: number | null; since: string; on: boolean }
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`, `end`. `since` names the stop the
@@ -734,7 +779,9 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       : invalid('watch needs on: true to watch the lane, false to stop watching it.');
   }
   if (
-    !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
+    !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', 'drive', ...HUB_INTENTS].includes(
+      value.type,
+    )
   ) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
@@ -767,6 +814,11 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     }
     case 'requests':
       return since === null ? invalid(NEEDS_STOP) : { type: 'requests', id, ref, worker, since };
+    case 'drive':
+      if (since === null) return invalid(NEEDS_STOP);
+      return typeof value.on === 'boolean'
+        ? { type: 'drive', id, ref, worker, since, on: value.on }
+        : invalid('drive needs on: true to drive the stop, false to give it back.');
     case 'view':
       if (since === null) return invalid(NEEDS_STOP);
       return typeof value.on === 'boolean'
@@ -893,7 +945,22 @@ function readStop(value: unknown): HubStop | null | undefined {
     ...(error === undefined ? {} : { error: error as string }),
     ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
     ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
+    ...(value.driver === undefined || !readPresence(value.driver) ? {} : { driver: readPresence(value.driver)! }),
   };
+}
+
+/** A tool present on a run, field by field: a kind of a newer hub reads as `other`; null when it is not one. */
+function readPresence(value: unknown): HubPresence | null {
+  if (!isObject(value) || typeof value.kind !== 'string' || value.kind.length > 64) return null;
+  if (str(value.name, MAX_HUB_CLIENT) === null || !value.name) return null;
+  const kind = PRESENCE_KINDS.find((known) => known === value.kind) ?? 'other';
+  return { kind, name: value.name as string, ...(value.self === true ? { self: true as const } : {}) };
+}
+
+/** The tools of a presence list this version reads, at most `MAX_HUB_PRESENCE`; null when it is no list. */
+function readPresenceList(value: unknown): HubPresence[] | null {
+  if (!Array.isArray(value) || value.length > MAX_HUB_PRESENCE) return null;
+  return value.map(readPresence).filter((p): p is HubPresence => p !== null);
 }
 
 /** What an action that writes code came to, field by field; null when it is not one. */
@@ -955,6 +1022,9 @@ function readWorker(value: unknown): HubWorker | null {
     pausing,
     intents: readActions(value.intents),
     ...(waiting ? { waiting } : {}),
+    ...(value.watchers === undefined || !readPresenceList(value.watchers)?.length
+      ? {}
+      : { watchers: readPresenceList(value.watchers)! }),
   };
 }
 
@@ -999,6 +1069,8 @@ function readSession(value: unknown): HubSession | null {
   if (page) session.page = page;
   const hold = value.hold === undefined ? null : readHold(value.hold);
   if (hold) session.hold = hold;
+  const presence = value.presence === undefined ? null : readPresenceList(value.presence);
+  if (presence?.length) session.presence = presence;
   return session;
 }
 

@@ -157,6 +157,9 @@ const UNATTENDED_FOR_AGENTS =
   'agent steers only a run a person can watch.';
 
 /** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
+/** The app's window as presence names it to the hub's other tools. */
+const DESKTOP_WINDOW = { kind: 'desktop', name: 'the desktop app' } as const;
+
 const NO_WINDOW_FOR_AGENTS =
   "No window of the desktop app is open, and a headless run's stop goes on with none to show it: open the app's " +
   'window to pause, step, run to a line or hold a failure.';
@@ -456,15 +459,18 @@ export class DesktopRuns {
     const window: RunWindow = {
       sink,
       shows: new Map(),
-      peer: this.hub.join({
-        send: (message) => {
-          // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
-          if (sink.buffered() > MAX_HUB_BUFFERED) return close();
-          if (relayed(message)) sink.send(message);
+      peer: this.hub.join(
+        {
+          send: (message) => {
+            // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
+            if (sink.buffered() > MAX_HUB_BUFFERED) return close();
+            if (relayed(message)) sink.send(message);
+          },
+          buffered: () => sink.buffered(),
+          close,
         },
-        buffered: () => sink.buffered(),
-        close,
-      }),
+        DESKTOP_WINDOW,
+      ),
     };
     this.windows.set(viewer, window);
     sink.send({ type: 'hello', viewer });

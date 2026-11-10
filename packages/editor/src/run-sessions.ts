@@ -71,6 +71,7 @@ import type {
   RunHoldFailures,
   RunLive,
   RunPage,
+  RunPresence,
   RunProgress,
   RunSession,
   RunStop,
@@ -126,6 +127,8 @@ export type RunHeard =
   | { type: 'stopped'; stop: RunStop }
   | { type: 'running'; since: string }
   | { type: 'event'; event: RunEvent }
+  /** A person took the stop the agent drove (`by`: the tool, as presence names it). */
+  | { type: 'taken'; by: string }
   | { type: 'ended' };
 
 /**
@@ -159,6 +162,37 @@ export type LaneViewFrame = { ref: string; lane: number; worker: number; since: 
 export interface Viewer {
   frame(frame: ViewFrame): void;
   laneFrame?(frame: LaneViewFrame): void;
+  /** The tool it is, as presence names it; a viewer without one is in no presence list and drives no stop. */
+  who?: Omit<RunPresence, 'self'>;
+}
+
+/** The agent, as presence names it: on a run it follows, and as the driver of a stop it asked for or acted on. */
+export const AGENT_VIEWER: Viewer = { frame: () => undefined, who: { kind: 'agent', name: 'an agent' } };
+
+/** A worker's `watchers`, absent while none watches. */
+function watchersField(watchers: RunPresence[]): { watchers?: RunPresence[] } {
+  return watchers.length ? { watchers } : {};
+}
+
+/** The most tools a presence list names: the first ones. */
+const MAX_PRESENCE = 16;
+
+/** The viewers that are someone, as one viewer (`self`) hears them: else as the editor's client hears them. */
+function presenceList(viewers: Iterable<Viewer>, self: Viewer | null): RunPresence[] {
+  const list = new Map<string, RunPresence>();
+  for (const viewer of viewers) {
+    if (!viewer.who || list.size >= MAX_PRESENCE) continue;
+    const presence = presenceOf(viewer, self);
+    // A tool's panels are one tool: its page view and its lane view of a worker are named once.
+    list.set(`${presence.kind}\n${presence.name}\n${presence.self ?? ''}`, presence);
+  }
+  return [...list.values()];
+}
+
+/** A viewer as `self` hears it: marked `self` when it is that viewer, or, for the editor's client, when it is an editor. */
+function presenceOf(viewer: Viewer, self: Viewer | null): RunPresence {
+  const own = self ? viewer === self : viewer.who!.kind === 'editor';
+  return { kind: viewer.who!.kind, name: viewer.who!.name, ...(own ? { self: true as const } : {}) };
 }
 
 /** A lane as a viewer names it: the run, and Playwright's `parallelIndex`. */
@@ -375,6 +409,8 @@ interface Worker {
   requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
   askedBy: 'agent' | null;
+  /** Who drives its stop now (`AGENT_VIEWER` for the agent); null while nobody does, and between stops. */
+  driver: Viewer | null;
   /** The stops its attach listed as held only while the service shows them (`RunAttach.holds`); null for none listed. */
   asksHolds: readonly RunHold[] | null;
   /** How its run stands on the team instance's live view, as it last said (`live`); null before it said. */
@@ -524,6 +560,8 @@ export class RunSessions {
   private readonly endedCommands = new Set<string>();
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
   private readonly followedRuns = new Set<string>();
+  /** The surfaces that have the runs open (`presentOn`). */
+  private readonly present = new Set<Viewer>();
   /** Each run's **Hold failures** as a person or an agent set it, by ref, the latest `MAX_KEPT_RUNS`. */
   private readonly holdsSet = new Map<string, RunHoldFailures>();
   private lastRequest = 0;
@@ -682,6 +720,7 @@ export class RunSessions {
       requests: new Map(),
       view: null,
       askedBy: null,
+      driver: null,
       asksHolds: attach.holds ?? null,
       live: null,
     };
@@ -718,11 +757,120 @@ export class RunSessions {
       this.unfollowRun(oldest);
     }
     this.tellEvents(ref, true);
+    const session = this.sessions.get(ref);
+    if (session) this.changed(session);
   }
 
-  /** No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too. */
+  /**
+   * No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too, and the
+   * stops it drove are nobody's.
+   */
   unfollowRun(ref: string): void {
-    if (this.followedRuns.delete(ref)) this.tellEvents(ref, false);
+    if (!this.followedRuns.delete(ref)) return;
+    this.tellEvents(ref, false);
+    const session = this.sessions.get(ref);
+    if (!session) return;
+    for (const worker of session.workers.values()) if (worker.driver === AGENT_VIEWER) worker.driver = null;
+    this.changed(session);
+  }
+
+  /**
+   * A surface has the runs open (`on`: a Runs window that follows them, the desktop app's window), or not any more:
+   * each run names it in its `presence`.
+   */
+  presentOn(viewer: Viewer, on: boolean): void {
+    if (on === this.present.has(viewer)) return;
+    if (on) this.present.add(viewer);
+    else this.present.delete(viewer);
+    for (const session of this.sessions.values()) this.changed(session);
+  }
+
+  /**
+   * A run's presence as `viewer` hears it, each tool marked `self` when it is that viewer: who has the run open, who
+   * watches each worker's page, and who drives each worker's stop. Null for a run that is not live.
+   */
+  presenceFor(
+    ref: string,
+    viewer: Viewer,
+  ): { presence: RunPresence[]; workers: Map<number, { watchers: RunPresence[]; driver: RunPresence | null }> } | null {
+    const session = this.sessions.get(ref);
+    if (!session) return null;
+    const workers = new Map<number, { watchers: RunPresence[]; driver: RunPresence | null }>();
+    for (const worker of session.workers.values()) {
+      workers.set(worker.index, {
+        watchers: this.watchersOf(session, worker, viewer),
+        driver: worker.stop && worker.driver?.who ? presenceOf(worker.driver, viewer) : null,
+      });
+    }
+    return { presence: this.presenceIn(session, viewer), workers };
+  }
+
+  /** Who has the run open: the surfaces present, and the agent while it follows the run. */
+  private presenceIn(session: Session, self: Viewer | null): RunPresence[] {
+    const viewers = [...this.present];
+    if (this.followedRuns.has(session.ref)) viewers.push(AGENT_VIEWER);
+    return presenceList(viewers, self);
+  }
+
+  /** Who watches a worker's page: its lane's viewers and its stop's. */
+  private watchersOf(session: Session, worker: Worker, self: Viewer | null): RunPresence[] {
+    const lane = session.lanes.get(worker.parallelIndex) ?? [];
+    return presenceList([...lane, ...(worker.view?.viewers ?? [])], self);
+  }
+
+  /**
+   * `by` drives the worker's stop: a person takes it from the agent, which hears so; the agent is refused while a
+   * person drives it, with why. Null once `by` drives it.
+   */
+  private drive(session: Session, worker: Worker, by: Viewer): string | null {
+    const now = worker.driver;
+    if (now === by || !by.who) return null;
+    if (by === AGENT_VIEWER && now) {
+      return (
+        `${now.who?.name ?? 'A person'} drives this stop: a person took control there. ` +
+        'Wait for them to answer it or give it back.'
+      );
+    }
+    worker.driver = by;
+    if (now === AGENT_VIEWER) {
+      this.options.heard?.(session.ref, worker.index, { type: 'taken', by: by.who.name }, session.root);
+    }
+    this.changed(session);
+    return null;
+  }
+
+  /** A viewer that no longer watches a worker's page gives its stop back, when it drove it. */
+  private letGo(session: Session, worker: Worker, viewer: Viewer): void {
+    if (worker.driver !== viewer || this.watching(worker, viewer)) return;
+    worker.driver = null;
+    this.changed(session);
+  }
+
+  /**
+   * The hub's `drive`: at the stop `since` names, `viewer` drives it (`on`: an agent's actions there are refused until
+   * it gives it back), or gives it back. Refused without the stop.
+   */
+  driveStop(params: StopParams & { since: string }, viewer: Viewer, on: boolean): RunControlResult {
+    if (typeof params?.since !== 'string' || !params.since) {
+      return { ok: false, message: 'The command needs the stop it answers.' };
+    }
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    const { session, worker } = at;
+    if (on) {
+      const fromAgent = worker.driver === AGENT_VIEWER;
+      this.drive(session, worker, viewer);
+      return {
+        ok: true,
+        message: fromAgent
+          ? 'You drive this stop: the agent waits until you give it back.'
+          : 'You drive this stop: an agent waits until you give it back.',
+      };
+    }
+    if (worker.driver !== viewer) return { ok: true, message: 'You did not drive this stop.' };
+    worker.driver = null;
+    this.changed(session);
+    return { ok: true, message: 'You gave this stop back: an agent may act on it.' };
   }
 
   /**
@@ -927,6 +1075,9 @@ export class RunSessions {
       case 'end': {
         const worker = this.stoppedWorker(workers, named, params.since);
         if ('message' in worker) return worker;
+        if (by === 'agent' && worker.driver && worker.driver !== AGENT_VIEWER) {
+          return refuse(this.drive(session, worker, AGENT_VIEWER)!);
+        }
         const stop = worker.stop!.id;
         if (params.action === 'end') {
           if (!worker.takes.has('end')) {
@@ -1037,9 +1188,12 @@ export class RunSessions {
           ` cannot start ${name} from outside the test's window: update it.`,
       );
     }
-    return this.ask(worker, params.what, worker.stop!.id).then(
-      (answer) => (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' },
-    );
+    return this.ask(worker, params.what, worker.stop!.id).then((answer) => {
+      const said = (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' };
+      // An intent started from a surface is its person driving the stop.
+      if (said.ok && params.viewer) this.drive(at.session, worker, params.viewer);
+      return said;
+    });
   }
 
   /**
@@ -1147,8 +1301,16 @@ export class RunSessions {
   /** A viewer stops watching a lane: the last one to go has its worker stop the lane view. */
   private unwatchLane(session: Session, lane: number, viewer: Viewer): void {
     const viewers = session.lanes.get(lane);
-    if (!viewers?.delete(viewer) || viewers.size) return;
+    if (!viewers?.delete(viewer)) return;
+    for (const worker of session.workers.values()) {
+      if (worker.parallelIndex === lane) this.letGo(session, worker, viewer);
+    }
+    if (viewers.size) {
+      this.changed(session);
+      return;
+    }
     session.lanes.delete(lane);
+    this.changed(session);
     for (const worker of session.workers.values()) {
       if (worker.parallelIndex !== lane || !worker.lane) continue;
       worker.lane = null;
@@ -1183,7 +1345,7 @@ export class RunSessions {
     if ('message' in at) return params.on ? at : { ok: true, message: 'You no longer watch the page.' };
     const { worker } = at;
     if (!params.on) {
-      this.unwatch(worker, viewer);
+      this.unwatch(at.session, worker, viewer);
       return { ok: true, message: 'You no longer watch the page.' };
     }
     const refused = this.refusesQuery(worker, 'view');
@@ -1207,9 +1369,11 @@ export class RunSessions {
       void this.ask(worker, 'view', stop, { on: true });
     }
     view.viewers.add(viewer);
+    this.changed(at.session);
     const answer = await view.started;
     if (!answer.ok) {
       view.viewers.delete(viewer);
+      this.changed(at.session);
       return { ok: false, message: answer.message };
     }
     if (worker.view === view) return { ok: true, message: answer.message };
@@ -1217,19 +1381,31 @@ export class RunSessions {
     return { ok: false, message: worker.stop?.id === stop ? 'You no longer watch the page.' : 'The test went on.' };
   }
 
-  /** A viewer stops watching a worker's stop: the last one to go has the worker stop the view. */
-  private unwatch(worker: Worker, viewer: Viewer): void {
+  /**
+   * A viewer stops watching a worker's stop, giving it back when it drove it: the last one to go has the worker stop
+   * the view.
+   */
+  private unwatch(session: Session, worker: Worker, viewer: Viewer): void {
     const view = worker.view;
-    if (!view?.viewers.delete(viewer) || view.viewers.size) return;
+    if (!view?.viewers.delete(viewer)) return;
+    this.letGo(session, worker, viewer);
+    this.changed(session);
+    if (view.viewers.size) return;
     worker.view = null;
     void this.ask(worker, 'view', view.stop, { on: false });
   }
 
-  /** A viewer left (its connection closed): it watches nothing any more. */
+  /** A viewer left (its connection closed): it watches nothing any more, drives no stop, and has no run open. */
   unwatchAll(viewer: Viewer): void {
+    this.presentOn(viewer, false);
     for (const session of this.sessions.values()) {
-      for (const worker of session.workers.values()) this.unwatch(worker, viewer);
-      for (const lane of session.lanes.keys()) this.unwatchLane(session, lane, viewer);
+      for (const worker of session.workers.values()) this.unwatch(session, worker, viewer);
+      for (const lane of [...session.lanes.keys()]) this.unwatchLane(session, lane, viewer);
+      for (const worker of session.workers.values()) {
+        if (worker.driver !== viewer) continue;
+        worker.driver = null;
+        this.changed(session);
+      }
     }
   }
 
@@ -1243,6 +1419,8 @@ export class RunSessions {
     const refused = this.refusesQuery(at.worker, 'input');
     if (refused) return { ok: false, message: refused };
     if (!this.watching(at.worker, viewer)) return { ok: false, message: NEEDS_VIEW };
+    // A person's input drives the stop, taking it from the agent.
+    this.drive(at.session, at.worker, viewer);
     const answer = (await this.ask(at.worker, 'input', at.worker.stop!.id, { events })) as IntentAnswer | null;
     return answer ?? { ok: false, message: 'The test did not answer.' };
   }
@@ -1251,7 +1429,7 @@ export class RunSessions {
    * `piwi/pickAt`, and the hub's `pick-at`: the element under the point `x`, `y` (CSS pixels of the stopped page's
    * viewport) of the stop a client names, its locator sent where a pick goes; why there is none otherwise.
    */
-  async pickAt(params: PickAtParams): Promise<PickAtResult> {
+  async pickAt(params: PickAtParams, viewer?: Viewer): Promise<PickAtResult> {
     const refuse = (message: string): PickAtResult => ({ ok: false, message, locator: null });
     if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
     const { x, y } = params;
@@ -1260,6 +1438,7 @@ export class RunSessions {
     if ('message' in at) return refuse(at.message);
     const refused = this.refusesQuery(at.worker, 'pick-at');
     if (refused) return refuse(refused);
+    if (viewer) this.drive(at.session, at.worker, viewer);
     const answer = (await this.ask(at.worker, 'pick-at', at.worker.stop!.id, { x, y })) as PickAtAnswer | null;
     return answer ?? refuse('The test did not answer.');
   }
@@ -1298,6 +1477,12 @@ export class RunSessions {
   ): Promise<AgentAnswer<ActAnswer>> {
     if (typeof params?.since !== 'string' || !params.since) {
       return noElement('The command needs the stop it answers.');
+    }
+    const at = this.stopped(params);
+    if (!('message' in at)) {
+      // One driver at a time: the agent acts only while no person drives the stop, and drives it as it does.
+      const taken = this.drive(at.session, at.worker, AGENT_VIEWER);
+      if (taken) return noElement(taken);
     }
     const late = played
       ? (value: Answered) => (value as ActAnswer | null)?.ok && played(value as ActAnswer)
@@ -1637,6 +1822,8 @@ export class RunSessions {
             ...(worker.askedBy ? { by: worker.askedBy } : {}),
           },
         };
+        // The agent drives a stop it asked for; nobody drives any other until someone acts on it.
+        worker.driver = worker.askedBy === 'agent' ? AGENT_VIEWER : null;
         worker.pausing = false;
         worker.waiting = null;
         worker.askedBy = null;
@@ -1841,11 +2028,17 @@ export class RunSessions {
           parallelIndex: worker.parallelIndex,
           state: worker.stop ? 'stopped' : worker.test ? 'running' : 'between',
           test: worker.test,
-          stop: worker.stop?.view ?? null,
+          stop: worker.stop
+            ? {
+                ...worker.stop.view,
+                ...(worker.driver?.who ? { driver: presenceOf(worker.driver, null) } : {}),
+              }
+            : null,
           pausing: worker.pausing,
           waiting: worker.waiting,
           takes: [...worker.takes],
           watchable: worker.features.has('view-lane'),
+          ...watchersField(this.watchersOf(session, worker, null)),
         })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
@@ -1856,6 +2049,8 @@ export class RunSessions {
     if (session.progress) view.progress = { ...session.progress };
     if (session.page) view.page = { ...session.page };
     if (this.holds(session.ref)) view.hold = { ...this.holdOf(session.ref) };
+    const presence = this.presenceIn(session, null);
+    if (presence.length) view.presence = presence;
     return view;
   }
 

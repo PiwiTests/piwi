@@ -21,7 +21,14 @@ import {
 } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENT_RATE, MAX_VIEW_FRAME_BASE64 } from '@piwitests/core/run-view';
 import type { PickAtResult, RunSession } from '../src/protocol';
-import { RunSessions, type ViewFrame, type Viewer } from '../src/run-sessions';
+import {
+  AGENT_VIEWER,
+  RunSessions,
+  type RunHeard,
+  type RunSessionsOptions,
+  type ViewFrame,
+  type Viewer,
+} from '../src/run-sessions';
 import { ClientPageView } from '../src/client-page-view';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
@@ -47,7 +54,7 @@ function fakeSocket() {
 }
 
 /** A session of `ed-1` and its worker 0 on a fake socket: what the worker heard, and how it answers. */
-function harness(takes: RunTake[] = [...RUN_TAKES]) {
+function harness(takes: RunTake[] = [...RUN_TAKES], more: Partial<RunSessionsOptions> = {}) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
@@ -57,6 +64,7 @@ function harness(takes: RunTake[] = [...RUN_TAKES]) {
     paceMs: 5,
     burstMs: 0,
     requestMs: 2000,
+    ...more,
   });
   const socket = fakeSocket();
   const reader = sessions.attach(socket as unknown as net.Socket, {
@@ -105,12 +113,12 @@ function harness(takes: RunTake[] = [...RUN_TAKES]) {
     retry: 0,
     cannotPause: null,
   });
-  return { sessions, read, heard, requests, answer, stopAt, socket };
+  return { sessions, sent, read, heard, requests, answer, stopAt, socket };
 }
 
-function viewer(): Viewer & { frames: ViewFrame[] } {
+function viewer(who?: Viewer['who']): Viewer & { frames: ViewFrame[] } {
   const frames: ViewFrame[] = [];
-  return { frames, frame: (frame) => void frames.push(frame) };
+  return { frames, frame: (frame) => void frames.push(frame), ...(who ? { who } : {}) };
 }
 
 const frameOf = (stop: number, data = '/9j/AA=='): RunToHub => ({ type: 'frame', stop, width: 800, height: 600, data });
@@ -493,6 +501,106 @@ describe('a stopped page’s live view, in the run sessions', () => {
   });
 });
 
+describe('who is present on a run, and who drives its stop', () => {
+  test('names the tools that have the run open and watch its page, and lets one drive the stop at a time', async () => {
+    const told: Array<{ ref: string; what: RunHeard }> = [];
+    const h = harness([...RUN_TAKES], { heard: (ref, _worker, what) => void told.push({ ref, what }) });
+    const picker = viewer({ kind: 'picker', name: 'Piwi Picker' });
+    const desktop = viewer({ kind: 'desktop', name: 'the desktop app' });
+    const latest = () => last(h.sent)!;
+    // A Runs window open and an agent that follows the run have it open; a viewer that is nobody is not named.
+    h.sessions.presentOn(picker, true);
+    h.sessions.presentOn(viewer(), true);
+    h.sessions.followRun('ed-1');
+    await waitFor(() => (last(h.sent)?.presence?.length === 2 ? true : undefined));
+    expect(latest().presence).toEqual([
+      { kind: 'picker', name: 'Piwi Picker' },
+      { kind: 'agent', name: 'an agent' },
+    ]);
+
+    // Both watch the stop's page: each is named once, and marked as itself for the one that hears it.
+    const since = await h.stopAt(1);
+    const watching = Promise.all([
+      h.sessions.watch({ ref: 'ed-1', since, on: true }, picker),
+      h.sessions.watch({ ref: 'ed-1', since, on: true }, desktop),
+    ]);
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'The live view is on.' });
+    await watching;
+    await waitFor(() => (latest().workers[0]?.watchers?.length === 2 ? true : undefined));
+    expect(latest().workers[0]!.watchers).toEqual([
+      { kind: 'picker', name: 'Piwi Picker' },
+      { kind: 'desktop', name: 'the desktop app' },
+    ]);
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.watchers).toEqual([
+      { kind: 'picker', name: 'Piwi Picker' },
+      { kind: 'desktop', name: 'the desktop app', self: true },
+    ]);
+
+    // The agent acts on the page: it drives the stop.
+    const acted = h.sessions.act({ ref: 'ed-1', since }, { ref: 'e2', action: 'click', value: null });
+    await waitFor(() => h.requests('act')[0]);
+    h.answer(h.requests('act')[0]!.request, 'act', { ok: true, message: 'Clicked.' });
+    await acted;
+    await waitFor(() => (latest().workers[0]?.stop?.driver ? true : undefined));
+    expect(latest().workers[0]!.stop!.driver).toEqual({ kind: 'agent', name: 'an agent' });
+
+    // A person's input takes it back, and the agent hears so; its actions are refused while they drive it.
+    void h.sessions.input({ ref: 'ed-1', since }, picker, [{ type: 'click', x: 1, y: 1, button: 'left' }]);
+    expect(h.sessions.presenceFor('ed-1', picker)!.workers.get(0)!.driver).toEqual({
+      kind: 'picker',
+      name: 'Piwi Picker',
+      self: true,
+    });
+    expect(told.map((t) => t.what).filter((w) => w.type === 'taken')).toEqual([{ type: 'taken', by: 'Piwi Picker' }]);
+    const refused = await h.sessions.act({ ref: 'ed-1', since }, { ref: 'e2', action: 'click', value: null });
+    expect(refused).toMatchObject({
+      ok: false,
+      message: 'Piwi Picker drives this stop: a person took control there. Wait for them to answer it or give it back.',
+    });
+    expect(h.sessions.control({ ref: 'ed-1', action: 'resume', since }, 'agent')).toMatchObject({ ok: false });
+    // Another person's action is theirs to take, and a person's controls are never refused.
+    expect(h.sessions.driveStop({ ref: 'ed-1', since }, desktop, true)).toEqual({
+      ok: true,
+      message: 'You drive this stop: an agent waits until you give it back.',
+    });
+    expect(h.sessions.driveStop({ ref: 'ed-1', since }, picker, false)).toEqual({
+      ok: true,
+      message: 'You did not drive this stop.',
+    });
+
+    // Giving it back, or no longer watching it, lets the agent act again.
+    expect(h.sessions.driveStop({ ref: 'ed-1', since }, desktop, false)).toEqual({
+      ok: true,
+      message: 'You gave this stop back: an agent may act on it.',
+    });
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
+    expect(h.sessions.driveStop({ ref: 'ed-1', since }, picker, true)).toMatchObject({ ok: true });
+    await h.sessions.watch({ ref: 'ed-1', since, on: false }, picker);
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.watchers).toEqual([
+      { kind: 'desktop', name: 'the desktop app', self: true },
+    ]);
+
+    // A stop the agent asked for is its own from the start; it is nobody's once the agent stops following the run.
+    h.read({ type: 'running', stop: 1 });
+    h.sessions.control({ ref: 'ed-1', action: 'pause' }, 'agent');
+    const paused = await h.stopAt(2);
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toEqual({
+      kind: 'agent',
+      name: 'an agent',
+    });
+    h.sessions.unfollowRun('ed-1');
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
+    expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([{ kind: 'picker', name: 'Piwi Picker' }]);
+    expect(paused).not.toBe(since);
+    // The surface that leaves is no longer present.
+    h.sessions.unwatchAll(picker);
+    expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([]);
+    expect(AGENT_VIEWER.who).toEqual({ kind: 'agent', name: 'an agent' });
+    h.sessions.dispose();
+  });
+});
+
 describe('the live view on the hub', () => {
   let dir = '';
   let svc: Service;
@@ -611,6 +719,42 @@ describe('the live view on the hub', () => {
       await new Promise((r) => setTimeout(r, 250));
       expect(a.frames().map((f) => f.data)).not.toContain('/9j/31A==');
       expect(a.frames().map((f) => f.data)).not.toContain('/9j/30A==');
+    } finally {
+      worker.socket.destroy();
+      a.socket.close();
+      b.socket.close();
+    }
+  });
+
+  test('names each Runs window that follows the runs, watches a page and drives a stop, itself marked to itself', async () => {
+    const [a, b] = [await paired(), await paired()];
+    const { ref, worker, since } = await stopped(a);
+    try {
+      a.send({ type: 'follow', id: 2, on: true });
+      await a.answer(2);
+      const picker = { kind: 'picker', name: 'Piwi Picker' };
+      expect(await waitFor(() => b.session(ref)?.presence)).toEqual([picker]);
+      expect(await waitFor(() => a.session(ref)?.presence)).toEqual([{ ...picker, self: true }]);
+      a.send({ type: 'view', id: 3, ref, since, on: true });
+      await answerLatest(worker, 'view', { ok: true, message: 'The live view is on.' });
+      await a.answer(3);
+      expect(await waitFor(() => b.session(ref)?.workers[0]?.watchers)).toEqual([picker]);
+      // It drives the stop, which the other window hears, and gives it back.
+      a.send({ type: 'drive', id: 4, ref, since, on: true });
+      expect(await a.answer(4)).toMatchObject({ ok: true });
+      expect(await waitFor(() => b.session(ref)?.workers[0]?.stop?.driver)).toEqual(picker);
+      expect(await waitFor(() => a.session(ref)?.workers[0]?.stop?.driver)).toEqual({ ...picker, self: true });
+      a.send({ type: 'drive', id: 5, ref, since, on: false });
+      expect(await a.answer(5)).toMatchObject({
+        ok: true,
+        message: 'You gave this stop back: an agent may act on it.',
+      });
+      await waitFor(() =>
+        b.session(ref)?.workers[0]?.stop && !b.session(ref)?.workers[0]?.stop?.driver ? true : undefined,
+      );
+      // The window that closes is present no more.
+      a.socket.close();
+      await waitFor(() => (b.session(ref) && !b.session(ref)?.presence ? true : undefined));
     } finally {
       worker.socket.destroy();
       a.socket.close();

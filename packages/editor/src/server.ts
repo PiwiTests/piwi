@@ -1793,11 +1793,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return disk && (started === null || disk.mtime <= started) ? disk.text : null;
     },
   });
-  clientPageView = new ClientPageView(runSessions, (frame) =>
-    connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  clientPageView = new ClientPageView(
+    runSessions,
+    (frame) => connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+    () => clientName,
   );
-  clientLaneView = new ClientLaneView(runSessions, (frame) =>
-    connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+  clientLaneView = new ClientLaneView(
+    runSessions,
+    (frame) => connection.sendNotification(LANE_FRAME_NOTIFICATION, frame),
+    () => clientName,
   );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
