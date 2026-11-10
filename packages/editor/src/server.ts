@@ -143,6 +143,7 @@ import {
 import { requireDesktopProof } from './http.js';
 import {
   isTestLocation,
+  locationSpec,
   playwrightArgsOf,
   playwrightTestCommand,
   repeatArgs,
@@ -558,6 +559,15 @@ function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
 }
 
 /** Whether a failure is listed from a run that did not run in CI: a run laid over the baseline, or the baseline itself. */
+/**
+ * What a failure diagnostic's message starts with: `Local failure: ` for a developer's own run's, `Edited since run
+ * #120: ` for one whose line changed since `editedSince`, both as `Local failure, edited since your run #42: `.
+ */
+function failureLead(local: boolean, editedSince: string | null): string {
+  if (local) return editedSince ? `Local failure, edited since ${editedSince}: ` : 'Local failure: ';
+  return editedSince ? `Edited since ${editedSince}: ` : '';
+}
+
 function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
   return !isCiRun(context, f.runId ?? context.failures?.run?.id);
 }
@@ -1244,7 +1254,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
           // The code stays `ci-failure` for every failure (D25 freezes it); the message names a developer's own run's.
-          message: `${edited ? `Edited since ${run}: ` : ''}${isLocalFailure(context, f) ? 'Local failure: ' : ''}${headline} (${where})`,
+          message: `${failureLead(isLocalFailure(context, f), edited ? run : null)}${headline} (${where})`,
           data: {
             root: context.root,
             executionId: f.executionId,
@@ -2999,10 +3009,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            command: run(
-              cases.map((c) => c.id),
-              'of this spec',
-            ),
+            // Every test of the spec as saved, by its path, as Run This Spec runs it.
+            command: {
+              title: 'Run every test of this spec with Piwi',
+              command: 'piwi.runTests',
+              arguments: [{ uri: params.uri, testIds: [], locations: [relative!] } satisfies RunTestsArgs],
+            },
           }
         : null;
       return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
@@ -3136,10 +3148,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const call = testCallAt(lines, params.line);
     const cases = await context.casesOf(relative);
     const found = call ? caseOfCallOrTitle(cases, call) : undefined;
-    const locations = testCalls(lines).map((c) => `${relative}:${c.line + 1}`);
     return {
       test: found ? caseToEditorTest(context, found) : null,
-      spec: locations.length ? { uri: params.uri, testIds: cases.map((c) => c.id), locations } : null,
+      spec: { uri: params.uri, testIds: cases.map((c) => c.id), location: relative },
       location: call ? `${relative}:${call.line + 1}` : null,
     };
   });
@@ -3269,7 +3280,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const relative = file ? relativeTo(context.root, file) : null;
     if (file && relative && SPEC_FILE.test(relative)) specs.add(file);
     for (const location of params?.locations ?? []) {
-      if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
+      if (isTestLocation(location)) specs.add(path.join(context.root, locationSpec(location)));
     }
     const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
     const run: RunCommand = {
@@ -3294,7 +3305,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
     if (!isTestLocation(location)) return false;
-    const spec = location.slice(0, location.lastIndexOf(':'));
+    const spec = locationSpec(location);
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
@@ -3305,10 +3316,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
       if (!params.locations.every((l) => specLocation(context, l))) return null;
-      return params.locations.map((l) => {
-        const colon = l.lastIndexOf(':');
-        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
-      });
+      return params.locations.map((l) => `${specPattern(locationSpec(l))}${l.slice(locationSpec(l).length)}`);
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);

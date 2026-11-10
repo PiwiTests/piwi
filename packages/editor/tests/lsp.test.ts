@@ -1528,7 +1528,7 @@ describe('the Piwi language server', () => {
     const at = (file: string, line: number) =>
       client.sendRequest('piwi/testAt', { uri: file, line, character: 2 }) as Promise<TestAtResult>;
     const rows = uri('tests/rows.spec.ts');
-    const spec = { uri: rows, testIds: [3], locations: ['tests/rows.spec.ts:4'] };
+    const spec = { uri: rows, testIds: [3], location: 'tests/rows.spec.ts' };
     // Anywhere from its `test(` line to the line its call ends on.
     for (const line of [3, 6, 7]) {
       expect(await at(rows, line)).toEqual({
@@ -4570,8 +4570,8 @@ describe('a test the instance does not know yet', () => {
     await local.sendNotification('textDocument/didOpen', {
       textDocument: { uri: specUri(), languageId: 'typescript', version: 1, text: RECORDED },
     });
-    // A spec the instance does not know: Run This Spec runs every test of it by location.
-    const spec = { uri: specUri(), testIds: [], locations: ['tests/checkout.spec.ts:3', 'tests/checkout.spec.ts:5'] };
+    // A spec the instance does not know: Run This Spec runs every test of it by its path.
+    const spec = { uri: specUri(), testIds: [], location: 'tests/checkout.spec.ts' };
     expect(await at(2)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:3' });
     for (const line of [4, 6, 7]) {
       expect(await at(line)).toEqual({ test: null, spec, location: 'tests/checkout.spec.ts:5' });

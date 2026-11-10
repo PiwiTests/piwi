@@ -1054,18 +1054,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return !document?.isDirty || document.save();
   };
 
-  /** Run the tests Piwi knows of the spec (`target`, else the active one) as every test run does, saved first. */
+  /** Run every test of the spec (`target`, else the active one) by its path, as every test run does, saved first. */
   const runSpec = async (target?: vscode.Uri) => {
     const uri = target?.toString() ?? activeUri();
     if (!uri) return;
     const found = await lc.sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri, line: 0, character: 0 }).catch(() => null);
-    // Every test of the spec as it stands, by location, known to the instance or not.
-    const locations = found?.spec?.locations ?? [];
-    if (!locations.length) {
-      void vscode.window.showInformationMessage('Piwi: this spec holds no test.');
+    // Every test of the spec as saved, by its path, known to the instance or not.
+    const spec = found?.spec?.location;
+    if (!spec) {
+      void vscode.window.showInformationMessage('Piwi: no Playwright config holds this file.');
       return;
     }
-    if (await saveSpec(uri)) await runTests({ uri, testIds: [], locations });
+    if (await saveSpec(uri)) await runTests({ uri, testIds: [], locations: [spec] });
   };
 
   /**

@@ -54,9 +54,10 @@ the gutter and the lines above the tests still show the failures.
 ## Your local runs
 
 A later finished run on the branch, from the editor, `piwi run`, `npx playwright test` or the desktop app, overlays the
-latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed
-locally in run #124*; a test failing in it is an error labeled *local run #124*, or *your run #124* when this editor
-started it. The editor reads a run within a second of its end: [After a run](./editor-runs#after-a-run).
+latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed locally
+in run #124*; a test failing in it is an error that starts *Local failure:* and names *local run #124*, or *your run
+#124* when this editor started it. The editor reads a run within a second of its end: [After a
+run](./editor-runs#after-a-run).
 
 ## Failures follow your edits
 

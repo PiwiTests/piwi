@@ -58,14 +58,14 @@ data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? 
 data class TestAtParams(val uri: String, val line: Int, val character: Int)
 
 /**
- * The tests of a spec: those Piwi knows, by id, and where every `test(…)` call of the file starts as it stands
- * (`locations`), which Run This Spec runs.
+ * The tests of a spec: those Piwi knows, by id, and the spec as a location without a line (`location`), which runs every
+ * test of the file as saved: Run This Spec runs it.
  */
-data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, val locations: List<String>? = null)
+data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, val location: String? = null)
 
 /**
  * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
- * null for a file that is not a spec or holds none of them; and where that `test(…)` call starts, as Playwright's
+ * null for a file that is not a spec under a Playwright config's folder; and where that `test(…)` call starts, as Playwright's
  * location filter takes it (`tests/checkout.spec.ts:42`, relative to the Playwright config's folder), whether Piwi
  * knows the test or not, null outside every `test(…)` call.
  */

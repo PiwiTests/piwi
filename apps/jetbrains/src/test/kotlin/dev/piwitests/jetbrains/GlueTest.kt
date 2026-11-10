@@ -135,7 +135,7 @@ class GlueTest {
                 entry(9, "Run this test"),
                 entry(9, "Screenshot"),
                 entry(9, "Trace"),
-                entry(4, "passed 44/48", status = "failing"),
+                entry(4, "passed 44 of 48 runs", status = "failing"),
                 entry(4, "Flaky · Flake Lab"),
                 entry(12, ""),
             ),
@@ -2708,7 +2708,7 @@ class GlueTest {
 
     @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
-        assertEquals("<html>Piwi: running · passed 4/4</html>", Glue.testResultTooltip("running", "passed 4/4"))
+        assertEquals("<html>Piwi: running · passed 4 of 4 runs</html>", Glue.testResultTooltip("running", "passed 4 of 4 runs"))
         // The service's text is shown as text, never as markup.
         assertEquals(
             "<html>Piwi: failing · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",

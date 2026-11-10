@@ -29,14 +29,14 @@ unavailable state of the status item, Restart in the unreachable tooltip and Jet
 closing ([LR8](#lr8), #1120), [Q11](#q11) in part (a test's result said once on its line, its pass rate in words, every
 lens's tooltip saying what its click runs, and a local run's failure leading with 'Local failure:', #1121; the hover
 built by the service and naming the run, [TL10](#tl10), remains), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing
-test's lines to the editor's edge, #1121), [Q20](#q20) (Run This Spec runs every test of the file by location, #1121)
-and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an unreachable one in both
-status items (#1213), and every command, setting and action id of both editors registered in D25 and held to the
-manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as
-#1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that
-commit: no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's
-worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8;
-#1122 is closed with three of its four items still open. It cites and does not restate
+test's lines to the editor's edge, #1121), [Q20](#q20) (Run This Spec and the spec's lens run every test of the file by
+its path, #1121) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an
+unreachable one in both status items (#1213), and every command, setting and action id of both editors registered in D25
+and held to the manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed
+are filed as #1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference
+moved to that commit: no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17;
+v0.68.0's worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14
+and HM8; #1122 is closed with three of its four items still open. It cites and does not restate
 [editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
 (P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
 [real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and

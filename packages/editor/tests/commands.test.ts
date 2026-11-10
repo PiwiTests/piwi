@@ -3,6 +3,7 @@ import {
   commandWords,
   flakeCommand,
   isTestLocation,
+  locationSpec,
   playwrightArgsOf,
   playwrightTestCommand,
   repeatArgs,
@@ -64,12 +65,15 @@ describe('a test by its location', () => {
   test('is a spec relative to the config folder and the line of its test call', () => {
     expect(isTestLocation('tests/checkout.spec.ts:42')).toBe(true);
     expect(isTestLocation('checkout.spec.ts:1')).toBe(true);
+    // Without a line, every test of the spec.
+    expect(isTestLocation('tests/checkout.spec.ts')).toBe(true);
+    expect(locationSpec('tests/checkout.spec.ts:42')).toBe('tests/checkout.spec.ts');
+    expect(locationSpec('tests/checkout.spec.ts')).toBe('tests/checkout.spec.ts');
     expect(playwrightTestCommand(['tests/my cart.spec.ts:7'])).toBe('npx playwright test "tests/my cart.spec.ts:7"');
   });
 
-  test('is refused without a line, outside the folder, absolute, or read as an option', () => {
+  test('is refused outside the folder, absolute, or read as an option', () => {
     for (const location of [
-      'tests/checkout.spec.ts',
       'tests/checkout.spec.ts:0',
       'tests/checkout.spec.ts:4:2',
       '../shop/checkout.spec.ts:3',
