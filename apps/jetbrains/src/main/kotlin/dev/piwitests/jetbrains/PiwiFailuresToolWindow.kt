@@ -157,7 +157,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
             val failing = result?.failing ?: 0
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
-            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem)
+            val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
             val connected = service.status?.contexts.orEmpty().any { it.connected }
@@ -165,7 +165,9 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
             when {
-                service.status == null -> tree.emptyText.appendText(service.startProblem ?: Glue.NOT_STARTED)
+                service.status == null -> tree.emptyText.appendText(
+                    if (service.trusted()) service.startProblem ?: Glue.NOT_STARTED else Glue.WAITING_FOR_TRUST,
+                )
                 !connected -> {
                     tree.emptyText.appendText("Not connected to a Piwi instance")
                     tree.emptyText.appendSecondaryText("Connect…", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {

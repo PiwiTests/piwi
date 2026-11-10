@@ -415,6 +415,24 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */
+    fun testTrustingTheProjectTellsTheViews() {
+        val service = project.getService(PiwiProjectService::class.java)
+        service.watchTrust()
+        var told = 0
+        val parent = com.intellij.openapi.util.Disposer.newDisposable()
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, parent)
+        service.onChange(parent) { told++ }
+        val trust = com.intellij.openapi.application.ApplicationManager.getApplication().messageBus
+            .syncPublisher(com.intellij.ide.trustedProjects.TrustedProjectsListener.TOPIC)
+        trust.onProjectTrusted(com.intellij.openapi.project.ProjectManager.getInstance().defaultProject)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(0, told)
+        trust.onProjectTrusted(project)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(1, told)
+    }
+
     /** The answers the service pushes are kept as they come, and the listeners hear once of the changes made meanwhile. */
     fun testThePushedAnswersAreKeptAndToldOnce() {
         val service = project.getService(PiwiProjectService::class.java)

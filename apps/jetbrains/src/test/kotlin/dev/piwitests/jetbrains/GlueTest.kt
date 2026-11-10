@@ -36,6 +36,17 @@ class GlueTest {
     }
 
     @Test
+    fun `a project in safe mode says Piwi waits for its trust, wherever the connection shows`() {
+        val view = Glue.statusView(null, null, startProblem = "Node.js 18 is too old", trusted = false)
+        assertEquals("Piwi: waiting for trust", view.text)
+        assertEquals(Glue.WAITING_FOR_TRUST, view.tooltip)
+        assertEquals(Glue.StatusIcon.WARNING, view.icon)
+        assertEquals(Glue.StatusAction.NONE, view.action)
+        assertEquals(Glue.WAITING_FOR_TRUST, Glue.connectionSummary(null, trusted = false))
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null, trusted = true))
+    }
+
+    @Test
     fun `without a Playwright config, says so`() {
         assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null).text)
     }

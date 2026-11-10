@@ -289,7 +289,11 @@ object Glue {
         now: Long = System.currentTimeMillis(),
         startProblem: String? = null,
         file: String? = null,
+        trusted: Boolean = true,
     ): StatusView {
+        if (status == null && !trusted) {
+            return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
+        }
         if (status == null && startProblem != null) {
             return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
         }
@@ -368,7 +372,11 @@ object Glue {
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
+    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+
+    /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
+    const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
+        ".env. Trusting it starts Piwi."
 
     /** What the first-run notification says Piwi does. */
     const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
@@ -815,7 +823,8 @@ object Glue {
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null): String {
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
+        if (status == null && !trusted) return WAITING_FOR_TRUST
         if (status == null) return startProblem ?: NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."

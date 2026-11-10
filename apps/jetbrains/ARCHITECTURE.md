@@ -108,8 +108,11 @@ or when Node.js is the problem.
 
 In a project opened in safe mode (`PiwiProjectService.trusted`, the platform's `isTrusted`), the plugin starts no
 editor service, runs no command (`PiwiCommands.run`, `startRun`) and reads no `.env` for Open in IDE: each of them would
-run or believe what the repository holds. A supported file opened meanwhile says once that Piwi waits for the trust
-(`Glue.UNTRUSTED`); the next file opened once the project is trusted starts the service.
+run or believe what the repository holds. The status bar item, the Piwi tool window and the settings page say
+`Piwi: waiting for trust` with its reason (`Glue.WAITING_FOR_TRUST`, a warning icon in the status bar), and a supported
+file opened meanwhile says it once in a balloon (`Glue.UNTRUSTED`). Trusting the project starts Piwi:
+`PiwiProjectService.watchTrust` hears it on `TrustedProjectsListener.TOPIC` (experimental, not internal, in 2024.1),
+tells the views and starts the service for the open files.
 
 ## LSP integration
 

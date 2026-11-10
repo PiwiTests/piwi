@@ -100,7 +100,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private fun service() = project.service<PiwiProjectService>()
 
     private fun view() = service().let {
-        Glue.statusView(it.status, it.runs, it.local().desktop, startProblem = it.startProblem, file = shownFile(project))
+        Glue.statusView(it.status, it.runs, it.local().desktop, startProblem = it.startProblem, file = shownFile(project), trusted = it.trusted())
     }
 
     private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
