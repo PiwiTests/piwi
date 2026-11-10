@@ -372,6 +372,7 @@ test.describe('the Runs window in another language', () => {
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
         stopAtCheckout(run.worker, 1);
+        await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
         await runs.getByRole('button', { name: mock }).click();
         await answerNext(run.worker, 'requests', { ok: true, message: '', requests: KEPT });
         await expect(runs.locator('.request')).toHaveCount(KEPT.length);
@@ -391,7 +392,8 @@ test.describe('the Runs window in another language', () => {
         sendFrame(run.worker, 3, frame);
         await expect(runs.locator('img.live')).toBeVisible();
         await expect(runs.locator('.hint')).toBeVisible();
-        await expect(runs.locator('.controls button')).toHaveCount(9);
+        await runs.getByRole('button', { name: readCatalog(language).runs_more!.message }).click();
+        await expect(runs.locator('.controls button')).toHaveCount(10);
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
         expect(await runs.locator('img.live').getAttribute('alt')).toBe(
