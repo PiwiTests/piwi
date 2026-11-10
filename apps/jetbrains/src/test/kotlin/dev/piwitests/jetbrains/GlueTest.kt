@@ -1903,6 +1903,16 @@ class GlueTest {
     }
 
     @Test
+    fun `the status item shows the error's icon while every stop held is a failure`() {
+        val stop = RunStop("pause", "Click", "file:///w/a.spec.ts", 3, 2, null, true, "2026-10-25T10:00:00.000Z")
+        val paused = Glue.ShownStop("ed-1", 0, stop, null)
+        val failed = Glue.ShownStop("ed-1", 1, stop.copy(reason = "failure"), null)
+        assertFalse(Glue.heldFailuresOnly(emptyList()))
+        assertTrue(Glue.heldFailuresOnly(listOf(failed)))
+        assertFalse(Glue.heldFailuresOnly(listOf(failed, paused)))
+    }
+
+    @Test
     fun `a failing test's tint takes its lines' breaks, so it runs to the editor's edge`() {
         // "a\nbc\n" (6 characters): the first line ends at 1, the second at 4, the empty last line at 6.
         assertEquals(2, Glue.lineEndWithBreak(1, 6))

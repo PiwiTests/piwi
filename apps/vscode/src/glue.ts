@@ -30,6 +30,7 @@ import type {
   RunStatusResult,
   RunTestsArgs,
   SpecTest,
+  RunSession,
   StatusResult,
   SummaryLine,
   TestAtResult,
@@ -182,6 +183,24 @@ function updatedLine(run: RunStatus | undefined, now: number): string | null {
 /** The baseline a context compares with, as the tooltip and the failures view name it: `Baseline: CI run #120 on main`. */
 export function baselineLine(label: string | undefined): string | null {
   return label ? `Baseline: ${label}` : null;
+}
+
+/**
+ * The item's text while a run started here holds a stop: no spinner, as no test runs there, but the pause's icon, or
+ * the error's while every stop held is a failure. Any other text is left as it is.
+ */
+export function heldText(text: string, held: 'stop' | 'failure' | null): string {
+  if (!held) return text;
+  return text.replace(/^\$\(sync~spin\)/, held === 'failure' ? '$(error)' : '$(debug-pause)');
+}
+
+/** What the runs started here hold: a stop, only failures, or nothing. */
+export function heldStops(sessions: readonly RunSession[]): 'stop' | 'failure' | null {
+  const stops = sessions
+    .flatMap((s) => s.workers ?? [])
+    .flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop] : []));
+  if (!stops.length) return null;
+  return stops.every((s) => s.reason === 'failure') ? 'failure' : 'stop';
 }
 
 /** The item's text while the latest run is read again: its icon spins. */

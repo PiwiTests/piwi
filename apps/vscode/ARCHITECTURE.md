@@ -503,7 +503,9 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 
 **A click** depends on the state:
 
-- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`);
+- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
+  a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
+  spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;

@@ -142,6 +142,8 @@ export interface RunControlOptions {
   breakpoints(): RunBreakpoint[];
   /** Ends the process of the run of `ref`; false when no task of this window runs it. */
   terminate(ref: string): boolean;
+  /** The sessions changed, once their controls are drawn: the status item says what they hold. */
+  changed?(): void;
 }
 
 /** How long a run started here is waited for, its edits kept, before its first worker connects. */
@@ -372,6 +374,7 @@ export function registerRunControl(
       i.show();
     }
     for (const [key, i] of items) if (!shown.has(key)) i.hide();
+    options.changed?.();
   };
 
   /** What a stop's lens and hover name: its run, its worker and the stop itself. */
