@@ -28,11 +28,14 @@ import {
   desktopSteering,
   desktopWaitedFor,
   desktopStopLink,
+  desktopRunPresence,
+  desktopStopDriver,
   desktopStopPlace,
   desktopStopSaid,
   desktopWatchesLane,
   desktopWorkerMeta,
   desktopWorkerState,
+  desktopWorkerWatchers,
   isDesktopRunImage,
 } from '../../app/utils/desktop-run-view';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
@@ -255,6 +258,52 @@ describe('a worker of a desktop run', () => {
     expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
     const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
     expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+  });
+});
+
+describe('who else is on a run, its workers and its stops', () => {
+  const PICKER = { kind: 'picker', name: 'Piwi Picker' } as const;
+  const AGENT = { kind: 'agent', name: 'an agent' } as const;
+  const SELF = { kind: 'desktop', name: 'the desktop app', self: true } as const;
+  const CODE = { kind: 'editor', name: 'Visual Studio Code' } as const;
+
+  test('names who else has the run open, this window left out', () => {
+    expect(desktopRunPresence({ presence: [SELF, PICKER, AGENT] })).toBe(
+      'Also open in Piwi Picker · An agent follows this run',
+    );
+    expect(desktopRunPresence({ presence: [PICKER, CODE, { kind: 'desktop', name: 'the desktop app' }] })).toBe(
+      'Also open in Piwi Picker, Visual Studio Code and another window of the app',
+    );
+    expect(desktopRunPresence({ presence: [AGENT] })).toBe('An agent follows this run');
+    // This window alone, nobody, or a hub without presence.
+    expect(desktopRunPresence({ presence: [SELF] })).toBeNull();
+    expect(desktopRunPresence({ presence: [] })).toBeNull();
+    expect(desktopRunPresence({})).toBeNull();
+  });
+
+  test('names who watches a worker’s page, this window last and only beside another', () => {
+    expect(desktopWorkerWatchers({ watchers: [SELF, PICKER] })).toBe('Watched by Piwi Picker and you');
+    expect(desktopWorkerWatchers({ watchers: [CODE] })).toBe('Watched by Visual Studio Code');
+    expect(desktopWorkerWatchers({ watchers: [PICKER, CODE, SELF] })).toBe(
+      'Watched by Piwi Picker, Visual Studio Code and you',
+    );
+    expect(desktopWorkerWatchers({ watchers: [SELF] })).toBeNull();
+    expect(desktopWorkerWatchers({})).toBeNull();
+  });
+
+  test('names who drives a stop, and offers to take it from an agent or give it back', () => {
+    expect(desktopStopDriver({ driver: AGENT })).toEqual({ text: 'An agent drives this stop', offer: 'take' });
+    expect(desktopStopDriver({ driver: SELF })).toEqual({ text: 'You drive this stop', offer: 'give' });
+    expect(desktopStopDriver({ driver: PICKER })).toEqual({ text: 'Piwi Picker drives this stop', offer: null });
+    expect(desktopStopDriver({ driver: { kind: 'editor', name: 'the editor' } })).toEqual({
+      text: 'The editor drives this stop',
+      offer: null,
+    });
+    expect(desktopStopDriver({ driver: { kind: 'desktop', name: 'the desktop app' } })).toEqual({
+      text: 'Another window of the app drives this stop',
+      offer: null,
+    });
+    expect(desktopStopDriver({})).toBeNull();
   });
 });
 

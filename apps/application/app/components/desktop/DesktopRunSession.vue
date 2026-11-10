@@ -4,20 +4,22 @@
  * with its test and where it stands (`DesktopRunWorker`), its number and page once its reporter names them
  * (`DesktopRunPageLink`), and **Share live** for a run whose reporter shares it
  * (`DesktopRunShare`). `named` puts the run's name above them, for a run the Local runs tray does not list itself (one
- * another window of the app started).
+ * another window of the app started). While it runs, who else has it open: Piwi Picker, an editor, an agent.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import { desktopRunName } from '~/utils/desktop-run-view';
+import { desktopRunName, desktopRunPresence } from '~/utils/desktop-run-view';
 
 const props = defineProps<{ session: HubSession; named?: boolean }>();
 const emit = defineEmits<{ announce: [text: string] }>();
 
+const presence = computed(() => (props.session.ended ? null : desktopRunPresence(props.session)));
 const workers = computed(() => [...props.session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex));
 </script>
 
 <template>
   <div class="space-y-1.5" data-shot="desktop-run-session">
     <p v-if="named" class="text-sm font-semibold text-highlighted">{{ desktopRunName(session) }}</p>
+    <p v-if="presence" class="text-xs text-muted" data-testid="desktop-run-presence">{{ presence }}</p>
     <DesktopRunPageLink v-if="session.page" :page="session.page" />
     <DesktopRunShare :session="session" @announce="emit('announce', $event)" />
     <p v-if="workers.length === 0" class="text-xs text-muted">Starting a worker…</p>

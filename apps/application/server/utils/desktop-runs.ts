@@ -156,10 +156,10 @@ const UNATTENDED_FOR_AGENTS =
   'nobody attends it (a Flake Lab run, a bisect, a lab job, a run that repeats its tests or runs in UI mode), and an ' +
   'agent steers only a run a person can watch.';
 
-/** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
 /** The app's window as presence names it to the hub's other tools. */
 const DESKTOP_WINDOW = { kind: 'desktop', name: 'the desktop app' } as const;
 
+/** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
 const NO_WINDOW_FOR_AGENTS =
   "No window of the desktop app is open, and a headless run's stop goes on with none to show it: open the app's " +
   'window to pause, step, run to a line or hold a failure.';

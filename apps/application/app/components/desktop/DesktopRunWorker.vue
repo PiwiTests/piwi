@@ -14,7 +14,8 @@
  * buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the keyboard to Pause
  * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a command
  * answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands there.
- * Everything the hub sends is shown as text.
+ * Who else watches its page shows under its test, and at a stop who drives it: **Take control** from an agent, which
+ * waits until **Give back**. Everything the hub sends is shown as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
@@ -24,6 +25,7 @@ import {
   desktopLaneKey,
   desktopRunStop,
   desktopSteering,
+  desktopStopDriver,
   desktopStopError,
   desktopStopPlace,
   desktopStopTakes,
@@ -33,6 +35,7 @@ import {
   desktopWorkerMeta,
   desktopWorkerState,
   desktopWorkerTest,
+  desktopWorkerWatchers,
   type DesktopSteer,
 } from '~/utils/desktop-run-view';
 
@@ -62,6 +65,9 @@ const waitingCall = computed(() =>
 const testText = computed(() => desktopWorkerTest(props.worker));
 const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
+const watchedText = computed(() => desktopWorkerWatchers(props.worker));
+/** Who drives the stop, and whether the window takes it from an agent or gives it back. */
+const driver = computed(() => (stop.value ? desktopStopDriver(stop.value) : null));
 /** Its reporter shows its lane while a test runs: Watch shows the page then, and at each stop. */
 const watchable = computed(() => desktopWatchesLane(props.worker));
 /**
@@ -161,6 +167,16 @@ async function steer(what: DesktopSteer): Promise<void> {
   if (result && !result.ok) say(result, at);
 }
 
+/** Drives the stop (`on`: an agent waits until it is given back), or gives it back. */
+async function drive(on: boolean): Promise<void> {
+  const at = since.value;
+  if (at === null) return;
+  const result = await send({ type: 'drive', since: at, on }, at);
+  if (!result) return;
+  if (result.ok) emit('announce', result.message);
+  else say(result, at);
+}
+
 async function codeAction(what: 'assert-region' | 'mock'): Promise<void> {
   const at = since.value;
   if (at === null) return;
@@ -251,7 +267,7 @@ function restoreFocus(): void {
   lending = false;
 }
 
-watch([steering, codeActions, laneShown], restoreFocus, { flush: 'post' });
+watch([steering, codeActions, laneShown, () => driver.value?.offer], restoreFocus, { flush: 'post' });
 onMounted(() => {
   document.addEventListener('focusin', heardFocus);
   document.addEventListener('pointerdown', heardPress, true);
@@ -304,6 +320,8 @@ onBeforeUnmount(() => {
       </p>
     </div>
 
+    <p v-if="watchedText" class="text-xs text-muted" data-testid="desktop-worker-watchers">{{ watchedText }}</p>
+
     <dl v-if="stop" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
       <template v-if="failed">
         <dt class="text-muted">Error</dt>
@@ -340,6 +358,35 @@ onBeforeUnmount(() => {
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}
     </p>
 
+    <div v-if="driver" class="flex flex-wrap items-center gap-1.5" data-testid="desktop-stop-driver">
+      <span class="text-xs text-muted">{{ driver.text }}</span>
+      <UButton
+        v-if="driver.offer === 'take'"
+        data-focus="drive"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-hand"
+        title="Drive this stop yourself: the agent's actions here wait until you give it back"
+        :aria-disabled="busy || undefined"
+        @click="!busy && drive(true)"
+      >
+        Take control
+      </UButton>
+      <UButton
+        v-else-if="driver.offer === 'give'"
+        data-focus="drive"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-undo-2"
+        title="Let an agent act on this stop again"
+        :aria-disabled="busy || undefined"
+        @click="!busy && drive(false)"
+      >
+        Give back
+      </UButton>
+    </div>
     <div v-if="steering.length" class="flex flex-wrap items-center gap-1.5">
       <!-- Resume, Step and Finish, one group; End the test and Pause apart. -->
       <UFieldGroup v-if="moving.length" size="xs">
