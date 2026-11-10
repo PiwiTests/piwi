@@ -26,6 +26,10 @@ export interface LocalRunOptions {
   trace?: boolean;
   /** Run every matched test N times — flake reproduction. Clamped to 1–1000. */
   repeatEach?: number;
+  /** A repeated run ends at its first failing repetition (`--max-failures=1`), so a person can attend it. */
+  stopAtFirstFailure?: boolean;
+  /** The run holds each failing test at its line from its start (**Hold failures**), when a person can attend it. */
+  holdFailures?: boolean;
 }
 
 export interface LocalRunStep {
@@ -110,7 +114,13 @@ export function localRunCopyOptions(options: LocalRunOptions): RetryRunOptions {
     runMode: options.runMode ?? 'normal',
     trace: options.trace ? 'on' : null,
     repeatEach: Math.min(1000, Math.max(1, Math.floor(options.repeatEach ?? 1))),
+    maxFailures: stopsAtFirstFailure(options) ? 1 : null,
   };
+}
+
+/** Whether a run with these options repeats its tests and ends at the first failing repetition. */
+export function stopsAtFirstFailure(options: LocalRunOptions): boolean {
+  return !!options.stopAtFirstFailure && Math.floor(options.repeatEach ?? 1) > 1;
 }
 
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
@@ -127,6 +137,7 @@ export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions =
     if (options.trace) args.push('--trace=on');
     // Each repetition reports its own result, as the editors' repeat does.
     if (repeatEach > 1) args.push(`--repeat-each=${repeatEach}`, '--retries=0');
+    if (stopsAtFirstFailure(options)) args.push('--max-failures=1');
     steps.push({ args, display: ['playwright', 'test', ...args.map(displayArg)].join(' ') });
   }
   return steps;

@@ -74,6 +74,22 @@ describe('buildLocalRunPlan', () => {
     ]);
   });
 
+  test('a repeated run that stops at its first failing repetition ends at one failure', () => {
+    expect(buildLocalRunPlan([CASE], { repeatEach: 20, stopAtFirstFailure: true })[0]!.args.slice(-3)).toEqual([
+      '--repeat-each=20',
+      '--retries=0',
+      '--max-failures=1',
+    ]);
+    // A run that does not repeat runs every test, as it would without the option.
+    expect(buildLocalRunPlan([CASE], { repeatEach: 1, stopAtFirstFailure: true })[0]!.args).not.toContain(
+      '--max-failures=1',
+    );
+  });
+
+  test('Hold failures adds no flag: the run channel carries it', () => {
+    expect(buildLocalRunPlan([CASE], { holdFailures: true })[0]!.args).toEqual(buildLocalRunPlan([CASE])[0]!.args);
+  });
+
   test('debug and ui run modes map to their flags', () => {
     expect(buildLocalRunPlan([CASE], { runMode: 'debug' })[0]!.args).toContain('--debug');
     expect(buildLocalRunPlan([CASE], { runMode: 'ui' })[0]!.args).toContain('--ui');
@@ -160,6 +176,17 @@ describe('Copy as command', () => {
     const copied = buildRetryCommand([CASE], { options: localRunCopyOptions(options) });
     const plan = buildLocalRunPlan([CASE], options);
     expect(splitRerunArgs(copied)).toEqual(['npx', 'playwright', 'test', ...plan[0]!.args]);
+  });
+
+  test('a run that stops at its first failing repetition copies its limit', () => {
+    const options = { mode: 'grep' as const, repeatEach: 20, stopAtFirstFailure: true, trace: true };
+    const copied = buildRetryCommand([CASE], { mode: 'grep', options: localRunCopyOptions(options) });
+    expect(splitRerunArgs(copied)).toEqual([
+      'npx',
+      'playwright',
+      'test',
+      ...buildLocalRunPlan([CASE], options)[0]!.args,
+    ]);
   });
 
   test('a debug run copies its flag, a plain one copies none', () => {

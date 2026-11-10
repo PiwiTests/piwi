@@ -704,6 +704,34 @@ test.describe('Desktop run live view', () => {
     await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
   });
 
+  test('a run started with Hold failures on holds from its start, and Run again keeps the switch as left', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Hold failures' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: /^Re-run \d+ failed tests? · hold failures$/ }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+
+    // Turned off in the tray, the run ends; Run again starts it as it was left, with Hold failures off.
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
+    await page.evaluate(() => window.__endRun());
+    await expect(holdSwitch(page)).toHaveCount(0);
+    const shows = commands.filter((c) => c.type === 'show').length;
+    await tray(page).getByRole('button', { name: 'Run again' }).first().click();
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
+    expect(commands.filter((c) => c.type === 'show' && c.on).length).toBe(1);
+    expect(commands.filter((c) => c.type === 'show').length).toBeGreaterThanOrEqual(shows);
+  });
+
   test('offers no Hold failures for a run nobody attends, and says why', async ({ page }) => {
     await installBridge(page);
     const commands = await playHub(page);

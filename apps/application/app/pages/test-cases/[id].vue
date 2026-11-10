@@ -48,8 +48,8 @@ useHead(
 
 const passRate = computed<number | null>(() => testCase.value?.passRate ?? null);
 
-/** The desktop app's run of this test: by its title, 20 times with a trace, to catch a failure that comes and goes. */
-const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, trace: true } as const;
+/** The desktop app's run of this test: by its title, up to 20 times with a trace, until the failure that comes and goes. */
+const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, stopAtFirstFailure: true, trace: true } as const;
 const reproduceCases = computed(() =>
   testCase.value?.filePath ? [{ filePath: testCase.value.filePath, title: testCase.value.title, line: null }] : [],
 );

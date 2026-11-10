@@ -262,6 +262,16 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         },
       },
       {
+        label: 'Hold failures',
+        icon: 'i-lucide-hand',
+        type: 'checkbox',
+        checked: options.value.holdFailures,
+        onSelect: (e: Event) => {
+          e.preventDefault();
+          setOption({ holdFailures: !options.value.holdFailures });
+        },
+      },
+      {
         label: `Repeat each (× ${options.value.repeatEach})`,
         icon: 'i-lucide-repeat',
         children: REPEAT_CHOICES.map((n) => ({
@@ -274,6 +284,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           },
         })),
       },
+      ...(options.value.repeatEach > 1
+        ? [
+            {
+              label: 'Stop at the first failing repetition',
+              icon: 'i-lucide-octagon-x',
+              type: 'checkbox' as const,
+              checked: options.value.stopAtFirstFailure,
+              onSelect: (e: Event) => {
+                e.preventDefault();
+                setOption({ stopAtFirstFailure: !options.value.stopAtFirstFailure });
+              },
+            },
+          ]
+        : []),
       {
         label: 'Select tests by',
         icon: 'i-lucide-list-filter',

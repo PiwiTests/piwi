@@ -25,6 +25,7 @@ import {
   type LocalRunMode,
   type LocalRunOptions,
   type LocalRunStep,
+  stopsAtFirstFailure,
 } from '~/utils/local-run-args';
 import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
@@ -332,7 +333,7 @@ function localRunCasesKey(cases: readonly RetryCase[]): string {
 }
 
 /**
- * The options that are not the defaults, in words (`by title · headed · ×20 · trace`), or an empty string: a run button
+ * The options that are not the defaults, in words (`by title · headed · ×20 · trace · hold failures`), or an empty string: a run button
  * appends them to its face, so what one click runs is never hidden in a menu.
  */
 export function localRunOptionsSummary(options: LocalRunOptions): string {
@@ -342,8 +343,11 @@ export function localRunOptionsSummary(options: LocalRunOptions): string {
   if (options.runMode === 'headed') parts.push('headed');
   else if (options.runMode === 'debug') parts.push('inspector');
   else if (options.runMode === 'ui') parts.push('UI mode');
-  if ((options.repeatEach ?? 1) > 1) parts.push(`×${options.repeatEach}`);
+  if ((options.repeatEach ?? 1) > 1) {
+    parts.push(stopsAtFirstFailure(options) ? `×${options.repeatEach} until a failure` : `×${options.repeatEach}`);
+  }
   if (options.trace) parts.push('trace');
+  if (options.holdFailures) parts.push('hold failures');
   return parts.join(' · ');
 }
 
@@ -352,6 +356,8 @@ export const DEFAULT_LOCAL_RUN_OPTIONS: SavedLocalRunOptions = {
   runMode: 'normal',
   trace: false,
   repeatEach: 1,
+  stopAtFirstFailure: false,
+  holdFailures: false,
 };
 
 export const LOCAL_RUN_MODE_ITEMS: { label: string; value: LocalRunMode; icon: string }[] = [
@@ -434,7 +440,7 @@ export function useDesktopLocalRuns() {
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
-  /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  /** Each run's Hold failures choice, by its key; unset falls back to how it started (`desktopHoldsByDefault`). */
   const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
   /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
   const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
@@ -1302,7 +1308,15 @@ export function useDesktopLocalRuns() {
       : startReproduce({ ...common, commit: job.commit });
   }
 
+  /** Run a run again as it ran: what it runs, its options, and the person's Hold failures choice on it. */
   function rerun(run: LocalRun): LocalRun | null {
+    const next = startAgain(run);
+    const chosen = holds.value[run.key];
+    if (next && chosen !== undefined) holds.value = { ...holds.value, [next.key]: chosen };
+    return next;
+  }
+
+  function startAgain(run: LocalRun): LocalRun | null {
     if (run.kind === 'repro' && run.repro) {
       const { requestId, steps, args, bugReportId } = run.repro;
       void startRepro({
