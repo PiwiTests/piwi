@@ -231,6 +231,15 @@
   "badge_replay": {
     "message": "PLAY"
   },
+  "badge_runsPaused": {
+    "message": "II"
+  },
+  "badge_runsResumed": {
+    "message": "▶"
+  },
+  "badge_runsNone": {
+    "message": "–"
+  },
   "popup_settings": {
     "message": "Configurações"
   },
@@ -6361,6 +6370,9 @@
   "runs_openSettings": {
     "message": "Abrir as configurações"
   },
+  "runs_looking": {
+    "message": "Procurando…"
+  },
   "runs_findAgain": {
     "message": "Procurar de novo"
   },
@@ -6626,6 +6638,37 @@
   },
   "runs_pickTitle": {
     "message": "Escolher um locator na janela do teste: ele substitui o desta linha"
+  },
+  "runs_runControls": {
+    "message": "Controles da execução"
+  },
+  "runs_pauseAll": {
+    "message": "Pausar tudo"
+  },
+  "runs_pauseAllTitle": {
+    "message": "Pausar cada worker desta execução antes da próxima chamada"
+  },
+  "runs_resumeAll": {
+    "message": "Retomar tudo"
+  },
+  "runs_resumeAllTitle": {
+    "message": "Deixar cada teste parado desta execução continuar"
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Vários testes estão parados: mova o foco para o que deseja controlar com uma tecla."
   },
   "runs_record": {
     "message": "Gravar"

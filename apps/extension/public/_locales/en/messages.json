@@ -277,6 +277,18 @@
     "message": "PLAY",
     "description": "Toolbar badge while a bug report is replayed. At most 4 characters."
   },
+  "badge_runsPaused": {
+    "message": "II",
+    "description": "Toolbar badge for a moment after the run shortcut paused the runs. A symbol, at most 4 characters."
+  },
+  "badge_runsResumed": {
+    "message": "▶",
+    "description": "Toolbar badge for a moment after the run shortcut resumed the stopped tests. A symbol, at most 4 characters."
+  },
+  "badge_runsNone": {
+    "message": "–",
+    "description": "Toolbar badge for a moment after the run shortcut found no run to pause or resume. A symbol, at most 4 characters."
+  },
   "popup_settings": {
     "message": "Settings",
     "description": "Popup: tooltip and accessible name of the gear button that opens the settings page."
@@ -7533,6 +7545,10 @@
     "message": "Open the settings",
     "description": "Runs window, a button that opens Piwi Picker’s settings, where the editor is paired."
   },
+  "runs_looking": {
+    "message": "Looking…",
+    "description": "Runs window, the Look again button while it asks the editor and the desktop app for their runs again, and read out as it starts."
+  },
   "runs_findAgain": {
     "message": "Look again",
     "description": "Runs window, a button that asks the editor for its runs again."
@@ -7860,6 +7876,44 @@
   "runs_pickTitle": {
     "message": "Pick a locator in the test’s window: it replaces the one on this line",
     "description": "Runs window, the Pick button’s tooltip."
+  },
+  "runs_runControls": {
+    "message": "Run controls",
+    "description": "Runs window, the accessible name of the row of a run’s own controls (Pause all, Resume all)."
+  },
+  "runs_pauseAll": {
+    "message": "Pause all",
+    "description": "Runs window, button on a run of several workers: pauses every worker before its next call."
+  },
+  "runs_pauseAllTitle": {
+    "message": "Pause every worker of this run before its next call",
+    "description": "Runs window, the Pause all button’s tooltip."
+  },
+  "runs_resumeAll": {
+    "message": "Resume all",
+    "description": "Runs window, button on a run of several stopped workers: resumes each stopped test."
+  },
+  "runs_resumeAllTitle": {
+    "message": "Let every stopped test of this run go on",
+    "description": "Runs window, the Resume all button’s tooltip."
+  },
+  "runs_withKey": {
+    "message": "$title$ ($key$)",
+    "description": "Runs window, a control’s tooltip with its key: $title$ is the tooltip, $key$ the key (F8, Shift+F11).",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "F8"
+      },
+      "title": {
+        "content": "$2",
+        "example": "Resume the test"
+      }
+    }
+  },
+  "runs_keyChoose": {
+    "message": "Several tests are stopped: move the focus to the one to steer with a key.",
+    "description": "Runs window, read out when Resume, Step or Finish was pressed as a key while several tests are stopped and the focus is in none of them."
   },
   "runs_record": {
     "message": "Record",

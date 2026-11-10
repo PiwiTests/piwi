@@ -160,12 +160,29 @@ async function showStateBadge(): Promise<void> {
  */
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === RUN_COMMAND) {
-    void runHubs.shortcut();
+    void runShortcut();
     return;
   }
   if (command !== 'pick-element') return;
   void runPickCommand(tab);
 });
+
+/** How long the toolbar badge says what the run shortcut did before it shows the state again. */
+const SHORTCUT_SIGN_MS = 2500;
+const SHORTCUT_BADGE_COLOR = '#475569';
+
+/**
+ * The run shortcut, then its sign on the toolbar badge for a moment: the runs paused, the stopped tests resumed, or
+ * nothing to do (no run a person attends answers), whether a Runs window is open or not.
+ */
+async function runShortcut(): Promise<void> {
+  const { action } = await runHubs.shortcut();
+  await i18nReady;
+  const sign = action === 'pause' ? 'badge_runsPaused' : action === 'resume' ? 'badge_runsResumed' : 'badge_runsNone';
+  await chrome.action.setBadgeText({ text: t(sign) });
+  await chrome.action.setBadgeBackgroundColor({ color: SHORTCUT_BADGE_COLOR });
+  setTimeout(() => void showStateBadge(), SHORTCUT_SIGN_MS);
+}
 
 async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
   // The event usually carries the tab, but not on every platform or path —

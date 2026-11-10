@@ -11,6 +11,11 @@ import {
   parseRunsRequest,
   runFile,
   shareRefusalOf,
+  keyTargetOf,
+  readRunsBounds,
+  runLevelControls,
+  stopKeyOf,
+  workerKey,
   shortcutCommands,
   stateForViewer,
   stopError,
@@ -146,6 +151,107 @@ describe('the global shortcut’s rule', () => {
 
   it('leaves ended runs alone, stopped workers included', () => {
     expect(shortcutCommands([run('a', [worker({ state: 'stopped', stop: stop('s1') })], true)])).toEqual([]);
+  });
+
+  it('leaves a run nobody attends alone, where its hub keeps a Hold failures for each run a person attends', () => {
+    const plain = run('a', [worker({})]);
+    const attended = { ...plain, session: { ...plain.session, hold: { on: false, by: 'start' as const } } };
+    const unattended = run('b', [worker({ state: 'stopped', stop: stop('s1') })]);
+    const hub = (holds: boolean) => ({
+      id: attended.hub,
+      connected: true,
+      client: null,
+      desktop: true,
+      lanes: true,
+      presence: true,
+      holds,
+    });
+    // The unattended run's stopped test is no reason to resume: the shortcut pauses the run a person attends.
+    expect(shortcutCommands([attended, unattended], [hub(true)]).map((c) => [c.ref, c.action])).toEqual([
+      ['a', 'pause'],
+    ]);
+    // A hub that keeps no Hold failures names no run unattended.
+    expect(shortcutCommands([attended, unattended], [hub(false)]).map((c) => [c.ref, c.action])).toEqual([
+      ['b', 'resume'],
+    ]);
+  });
+});
+
+describe('where the Runs window was left', () => {
+  it('keeps a place and size a window can have, and nothing else', () => {
+    expect(readRunsBounds({ left: 1200, top: -40, width: 440, height: 720 })).toEqual({
+      left: 1200,
+      top: -40,
+      width: 440,
+      height: 720,
+    });
+    for (const bad of [
+      null,
+      'here',
+      { left: 0, top: 0, width: 100, height: 720 },
+      { left: 0, top: 0, width: 440, height: 720.5 },
+      { left: 1e9, top: 0, width: 440, height: 720 },
+      { left: 0, width: 440, height: 720 },
+    ]) {
+      expect(readRunsBounds(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('the keys of the stop controls', () => {
+  const press = (
+    key: string,
+    more: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {},
+  ) => stopKeyOf({ key, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...more });
+
+  it('reads Resume on F8 or F5, Step on F10 and Finish on Shift+F11, and nothing held with Ctrl, Alt or Meta', () => {
+    expect([press('F8'), press('F5'), press('F10'), press('F11', { shiftKey: true })]).toEqual([
+      'resume',
+      'resume',
+      'step',
+      'finish',
+    ]);
+    for (const other of [press('F11'), press('F10', { shiftKey: true }), press('F8', { ctrlKey: true }), press('a')]) {
+      expect(other).toBeNull();
+    }
+  });
+
+  it('steers the test whose row holds the focus, else the only stopped one', () => {
+    const one = run('a', [worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
+    expect(keyTargetOf([one], null)).toMatchObject({ worker: 1, since: 's1', failed: false });
+    const two = run('b', [worker({ worker: 2, state: 'stopped', stop: { ...stop('s2'), reason: 'failure' } })]);
+    // Two stopped tests: a key needs the focus in one of them.
+    expect(keyTargetOf([one, two], null)).toBeNull();
+    expect(keyTargetOf([one, two], workerKey(two.hub, 'b', { worker: 2 }))).toMatchObject({ worker: 2, failed: true });
+    expect(keyTargetOf([run('c', [worker({ state: 'stopped', stop: stop('s3') })], true)], null)).toBeNull();
+  });
+});
+
+describe('a run’s own controls', () => {
+  it('pauses all while a worker runs, and resumes all while tests are stopped, for a run of several workers', () => {
+    const two = run('a', [worker({}), worker({ worker: 1, state: 'stopped', stop: stop('s1') })]);
+    expect(runLevelControls(two)).toEqual({ pauseAll: true, resumeAll: [] });
+    const both = run('a', [
+      worker({ state: 'stopped', stop: stop('s1') }),
+      worker({ worker: 1, state: 'stopped', stop: stop('s2') }),
+    ]);
+    expect(runLevelControls(both)).toEqual({
+      pauseAll: false,
+      resumeAll: [
+        { hub: both.hub, ref: 'a', worker: 0, action: 'resume', since: 's1' },
+        { hub: both.hub, ref: 'a', worker: 1, action: 'resume', since: 's2' },
+      ],
+    });
+    // One worker has its own Pause and Resume; an ended run, none; a Pause on its way, no second.
+    expect(runLevelControls(run('a', [worker({})]))).toEqual({ pauseAll: false, resumeAll: [] });
+    expect(runLevelControls(run('a', [worker({}), worker({ worker: 1 })], true))).toEqual({
+      pauseAll: false,
+      resumeAll: [],
+    });
+    expect(runLevelControls(run('a', [worker({ pausing: true }), worker({ worker: 1, pausing: true })]))).toEqual({
+      pauseAll: false,
+      resumeAll: [],
+    });
   });
 });
 
@@ -378,7 +484,7 @@ describe('what a stop takes from the window', () => {
     const state: RunsState = {
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false, presence: false }],
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false, presence: false, holds: false }],
       runs: [
         {
           hub,
@@ -520,7 +626,7 @@ describe('a lane watched while it runs', () => {
     const state = (workers: HubWorker[]): RunsState => ({
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true, presence: false }],
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true, presence: false, holds: false }],
       runs: [{ hub, session: { ...run('r1', []).session, workers } }],
     });
     const lanes: Array<number | null> = [];

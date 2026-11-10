@@ -26,6 +26,12 @@ import {
   pagePoint,
   shareRefusalOf,
   stopError,
+  runLevelControls,
+  readRunsBounds,
+  RUNS_BOUNDS_KEY,
+  keyTargetOf,
+  stopKeyOf,
+  STOP_KEYS,
   stopIntents,
   stopPlace,
   testName,
@@ -1133,6 +1139,51 @@ async function pickOnImage(
   render();
 }
 
+// Where the person leaves the window, kept as it closes, is resized or loses the focus: the next one opens there.
+function keepBounds(): void {
+  const bounds = readRunsBounds({
+    left: window.screenX,
+    top: window.screenY,
+    width: window.outerWidth,
+    height: window.outerHeight,
+  });
+  if (bounds) void chrome.storage.local.set({ [RUNS_BOUNDS_KEY]: bounds }).catch(() => undefined);
+}
+let resized: ReturnType<typeof setTimeout> | undefined;
+window.addEventListener('resize', () => {
+  clearTimeout(resized);
+  resized = setTimeout(keepBounds, 500);
+});
+window.addEventListener('blur', keepBounds);
+window.addEventListener('pagehide', keepBounds);
+
+// Resume, Step and Finish on the debuggers' keys (`stopKeyOf`), for the test whose row holds the focus, else the only
+// stopped test; never while a field takes the keys. Step and Finish wait for a stop that is no failure.
+document.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented || !state) return;
+  const what = stopKeyOf(event);
+  if (!what) return;
+  const field = event.target instanceof HTMLElement ? event.target.closest('input, textarea, select') : null;
+  if (field) return;
+  const focused =
+    document.activeElement instanceof HTMLElement
+      ? (document.activeElement.closest<HTMLElement>('[data-worker]')?.dataset.worker ?? null)
+      : null;
+  const target = keyTargetOf(state.runs, focused);
+  const anyStopped = state.runs.some((run) => !run.session.ended && run.session.workers.some((w) => w.stop));
+  // F5 reloads the window only while no test is stopped.
+  if (!target) {
+    if (anyStopped) {
+      event.preventDefault();
+      announce(t('runs_keyChoose'));
+    }
+    return;
+  }
+  event.preventDefault();
+  if (what !== 'resume' && target.failed) return;
+  void control(target.run, target.worker, what, target.since);
+});
+
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape' || event.defaultPrevented || picking.size === 0) return;
   picking.clear();
@@ -1397,7 +1448,7 @@ function renderHubs(current: RunsState): void {
     if (!(boxSays === 'desktop' && line.boxed)) lines.push(line);
   }
   hubsLine.hidden = lines.length === 0;
-  const shown = JSON.stringify(lines);
+  const shown = JSON.stringify([lines, looking]);
   if (shown === hubsShown) return;
   hubsShown = shown;
   hubsLine.replaceChildren(
@@ -1516,11 +1567,28 @@ function renderEmpty(current: RunsState): void {
   empty.hidden = current.runs.length > 0;
   if (empty.hidden) return;
   const [icon, text, actions] = emptyOf(current);
-  const shown = JSON.stringify([icon, text, actions]);
+  const shown = JSON.stringify([icon, text, actions, looking]);
   if (shown === emptyShown) return;
   emptyShown = shown;
   iconText(emptyText, icon, text);
   emptyActions.replaceChildren(...actions.map((action) => emptyActionButton(action, `empty|${action}`)));
+}
+
+/** Look again is asking the editor and the desktop app for their hubs: its buttons say so, for `LOOKING_MS`. */
+let looking = false;
+const LOOKING_MS = 1500;
+
+/** Look again: the worker asks for the hubs again, and the buttons say it looks, then show what it found. */
+function lookAgain(): void {
+  if (looking) return;
+  looking = true;
+  post({ type: 'find' });
+  announce(t('runs_looking'));
+  render();
+  setTimeout(() => {
+    looking = false;
+    render();
+  }, LOOKING_MS);
 }
 
 /** Open the settings, or Look again: a button the empty box or a status line shows, named for the focus by `focus`. */
@@ -1528,7 +1596,14 @@ function emptyActionButton(action: EmptyAction, focus: string): HTMLButtonElemen
   const button =
     action === 'settings'
       ? makeButton(t('runs_openSettings'), () => void chrome.runtime.openOptionsPage(), { icon: 'settings' })
-      : makeButton(t('runs_findAgain'), () => post({ type: 'find' }), { icon: 'refresh' });
+      : makeButton(
+          t(looking ? 'runs_looking' : 'runs_findAgain'),
+          (event) => {
+            if (!pressedHeld(event)) lookAgain();
+          },
+          { icon: 'refresh' },
+        );
+  if (action !== 'settings' && looking) unavailable(button);
   button.dataset.focus = focus;
   return button;
 }
@@ -1599,6 +1674,14 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     const asking = holding.has(runKey);
     const refusal = holdRefusals.get(runKey) ?? null;
     children.push(part(`${runKey}|hold`, [on, by, asking, refusal], () => renderHold(run, on, by)));
+  }
+  // Pause all and Resume all, for a run of several workers, while its hub answers.
+  const level = away ? null : runLevelControls(run);
+  if (level && (level.pauseAll || level.resumeAll.length > 0)) {
+    const resumed = level.resumeAll.map((c) => c.since).join('|');
+    children.push(
+      part(`${runKey}|all`, [level.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level)),
+    );
   }
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);
@@ -1689,6 +1772,59 @@ function renderHold(run: RunsRun, on: boolean, by: 'start' | 'person' | 'agent')
   const box = element('div', 'run-hold-box');
   box.append(row, iconText(element('p', 'note run-note hold-refused'), 'info', refusal));
   return box;
+}
+
+/** The runs whose Pause all or Resume all is on its way: their buttons wait for the answers. */
+const runBusy = new Set<string>();
+
+/**
+ * A run's own controls (`runLevelControls`): Resume all, each stopped test at the stop it stands at, and Pause all,
+ * each worker before its next call. A refusal is read out.
+ */
+function renderRunControls(run: RunsRun, level: ReturnType<typeof runLevelControls>): HTMLElement {
+  const key = runKeyOf(run);
+  const row = element('div', 'run-controls piwi-actions');
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', t('runs_runControls'));
+  const act = async (
+    commands: ReadonlyArray<{ worker: number | null; what: 'pause' | 'resume'; since: string | null }>,
+  ) => {
+    if (runBusy.has(key) || !hubAnswers(run.hub)) return;
+    runBusy.add(key);
+    render();
+    const said = await Promise.all(commands.map((c) => command(run.hub, run.session.ref, c.worker, c.what, c.since)));
+    runBusy.delete(key);
+    const refused = said.find((answer) => !answer.ok && answer.message);
+    if (refused) announce(refused.message);
+    render();
+  };
+  const buttons: HTMLButtonElement[] = [];
+  if (level.resumeAll.length > 0) {
+    const resume = makeButton(
+      t('runs_resumeAll'),
+      (event) => {
+        if (!pressedHeld(event))
+          void act(level.resumeAll.map((c) => ({ worker: c.worker, what: 'resume', since: c.since })));
+      },
+      { icon: 'play', small: true, title: t('runs_resumeAllTitle') },
+    );
+    resume.dataset.focus = `${key}|resume-all`;
+    buttons.push(resume);
+  }
+  if (level.pauseAll) {
+    const pause = makeButton(
+      t('runs_pauseAll'),
+      (event) => {
+        if (!pressedHeld(event)) void act([{ worker: null, what: 'pause', since: null }]);
+      },
+      { icon: 'pause', small: true, title: t('runs_pauseAllTitle') },
+    );
+    pause.dataset.focus = `${key}|pause-all`;
+    buttons.push(pause);
+  }
+  if (runBusy.has(key)) for (const button of buttons) unavailable(button);
+  row.append(...buttons);
+  return row;
 }
 
 /**
@@ -1987,15 +2123,14 @@ function renderActions(
       if (what !== 'mock') void control(run, worker.worker, what, since);
       else if (since !== null) void toggleRequests(run, worker.worker, since);
     };
+    const title = what === 'resume' && stop?.reason === 'failure' ? t('runs_resumeFailureTitle') : t(look.title);
+    const keys = what === 'resume' || what === 'step' || what === 'finish' ? STOP_KEYS[what] : null;
     const made = makeButton(t(look.label), onClick, {
       icon: look.icon,
       tone: 'tone' in look ? look.tone : undefined,
-      title: waits
-        ? t('runs_watchToUse')
-        : what === 'resume' && stop?.reason === 'failure'
-          ? t('runs_resumeFailureTitle')
-          : t(look.title),
+      title: waits ? t('runs_watchToUse') : keys ? t('runs_withKey', { title, key: keys.split(' ')[0]! }) : title,
     });
+    if (keys) made.setAttribute('aria-keyshortcuts', keys);
     made.dataset.focus = `${key}|${what}`;
     if (waits) unavailable(made);
     return made;
@@ -2237,6 +2372,8 @@ function renderWorker(
   const { ended } = run.session;
   const item = part(`${key}|item`, null, () => element('li', 'worker'));
   item.dataset.state = ended ? 'ended' : worker.state;
+  // The worker a key steers when the focus is in its row (`keyTargetOf`).
+  item.dataset.worker = key;
   const parts: HTMLElement[] = [];
   const stop = !ended && worker.state === 'stopped' ? worker.stop : null;
   const where = stop ? stopPlace(stop, run.session.root) : null;
