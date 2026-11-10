@@ -44,6 +44,11 @@ describe('who drives a stop', () => {
     expect(driverOf({ driver: self })).toEqual({ who: 'self', words: 'You drive this stop' });
     expect(driverOf({ driver: agent })).toEqual({ who: 'agent', words: 'An agent drives this stop' });
     expect(driverOf({ driver: desktop })).toEqual({ who: 'other', words: 'The desktop app drives this stop' });
+    // A name the hub gives in lower case starts the sentence capitalized.
+    expect(driverOf({ driver: { kind: 'editor', name: 'the editor' } })).toEqual({
+      who: 'other',
+      words: 'The editor drives this stop',
+    });
     expect(driverOf({ driver: code })).toEqual({ who: 'other', words: 'Visual Studio Code drives this stop' });
     expect(driverOf({ driver: picker })).toEqual({ who: 'other', words: 'Piwi Picker drives this stop' });
   });

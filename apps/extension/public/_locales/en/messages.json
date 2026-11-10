@@ -8025,6 +8025,14 @@
     "message": "Paused by the agent",
     "description": "Runs window, the state of a test an AI agent stopped (its Pause, Step or Run to)."
   },
+  "runs_stoppedByAgentStep": {
+    "message": "Stopped after the agent’s step",
+    "description": "Runs window, the state of a test stopped after a step an AI agent asked for."
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Stopped at the line the agent ran it to",
+    "description": "Runs window, the state of a test stopped at the line an AI agent ran it to."
+  },
   "runs_announceDriveTaken": {
     "message": "You drive the stop of $test$ now: the agent waits until you give it back.",
     "description": "Runs window, read by a screen reader when this window takes a stop from the AI agent that drove it. $test$ is the test’s name.",

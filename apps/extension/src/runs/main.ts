@@ -13,7 +13,7 @@ import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/cor
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
-import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
+import { formatUnit, initI18n, localizeDocument, t, tn, tNodes, type MessageKey } from '../shared/i18n.js';
 import {
   IN_WINDOW,
   RUNS_PING_MS,
@@ -1835,11 +1835,19 @@ const STOP_WORDS = {
   other: 'runs_stoppedOther',
 } as const satisfies Record<Exclude<HubStop['reason'], 'failure'>, string>;
 
+/** The words of a stop an agent asked for, by its reason: its Pause, its Step, its Run to; another reads as any stop. */
+const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], MessageKey>> = {
+  pause: 'runs_stoppedByAgent',
+  step: 'runs_stoppedByAgentStep',
+  'run-to': 'runs_stoppedByAgentRunTo',
+};
+
 function stateLine(worker: HubWorker, count: number, place: string | null): HTMLElement {
   const line = element('p', 'state');
   const stop = worker.state === 'stopped' ? worker.stop : null;
   if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
-  else if (stop) iconText(line, 'pause', t(stop.by === 'agent' ? 'runs_stoppedByAgent' : STOP_WORDS[stop.reason]));
+  else if (stop)
+    iconText(line, 'pause', t((stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : null) ?? STOP_WORDS[stop.reason]));
   else if (worker.pausing && worker.waiting) {
     // How long it has waited, kept up to date each second (`tickWaits`).
     const waited = element('span', 'waited');

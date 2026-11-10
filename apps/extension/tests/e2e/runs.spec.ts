@@ -1499,7 +1499,7 @@ test.describe('the live view', () => {
         await card.getByRole('button', { name: 'Take control' }).click();
         await expect(card.locator('.run-driver .driver')).toHaveText('You drive this stop');
         await expect(runs.locator('#announce')).toHaveText(
-          'You drive this stop: an agent waits until you give it back.',
+          'You drive this stop: an agent would wait until you give it back.',
         );
         await expect(other.locator('.run-driver .driver')).toHaveText('Piwi Picker drives this stop');
         const giveBack = card.getByRole('button', { name: 'Give back' });

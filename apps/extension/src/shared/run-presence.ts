@@ -60,5 +60,7 @@ export function driverOf(stop: Pick<HubStop, 'driver'>): { who: 'self' | 'agent'
   if (driver.self) return { who: 'self', words: t('runs_driverYou') };
   if (driver.kind === 'agent') return { who: 'agent', words: t('runs_driverAgent') };
   if (driver.kind === 'desktop') return { who: 'other', words: t('runs_driverDesktop') };
-  return { who: 'other', words: t('runs_driverTool', { tool: toolName(driver) }) };
+  const tool = toolName(driver);
+  // The tool's name starts the sentence.
+  return { who: 'other', words: t('runs_driverTool', { tool: tool.charAt(0).toUpperCase() + tool.slice(1) }) };
 }

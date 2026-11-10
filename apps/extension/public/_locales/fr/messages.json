@@ -6756,6 +6756,12 @@
   "runs_stoppedByAgent": {
     "message": "Mis en pause par l’agent"
   },
+  "runs_stoppedByAgentStep": {
+    "message": "Arrêté après le pas de l’agent"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Arrêté à la ligne demandée par l’agent"
+  },
   "runs_announceDriveTaken": {
     "message": "Vous pilotez maintenant l’arrêt de $test$ : l’agent attend que vous le rendiez.",
     "placeholders": {

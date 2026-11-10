@@ -294,16 +294,18 @@ describe('who else is on a run, its workers and its stops', () => {
   test('names who drives a stop, and offers to take it from an agent or give it back', () => {
     expect(desktopStopDriver({ driver: AGENT })).toEqual({ text: 'An agent drives this stop', offer: 'take' });
     expect(desktopStopDriver({ driver: SELF })).toEqual({ text: 'You drive this stop', offer: 'give' });
-    expect(desktopStopDriver({ driver: PICKER })).toEqual({ text: 'Piwi Picker drives this stop', offer: null });
+    expect(desktopStopDriver({ driver: PICKER })).toEqual({ text: 'Piwi Picker drives this stop', offer: 'take' });
     expect(desktopStopDriver({ driver: { kind: 'editor', name: 'the editor' } })).toEqual({
       text: 'The editor drives this stop',
-      offer: null,
+      offer: 'take',
     });
     expect(desktopStopDriver({ driver: { kind: 'desktop', name: 'the desktop app' } })).toEqual({
       text: 'Another window of the app drives this stop',
-      offer: null,
+      offer: 'take',
     });
     expect(desktopStopDriver({})).toBeNull();
+    // Nobody drives it while an agent follows the run: the window may take it before the agent acts.
+    expect(desktopStopDriver({}, true)).toEqual({ text: 'An agent may act on this stop', offer: 'take' });
   });
 });
 

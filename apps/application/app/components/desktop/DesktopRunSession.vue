@@ -12,7 +12,11 @@ import { desktopRunName, desktopRunPresence } from '~/utils/desktop-run-view';
 const props = defineProps<{ session: HubSession; named?: boolean }>();
 const emit = defineEmits<{ announce: [text: string] }>();
 
-const presence = computed(() => (props.session.ended ? null : desktopRunPresence(props.session)));
+const hub = useDesktopRunHub();
+/** Who else has the run open while it runs, said only while the window hears the hub. */
+const presence = computed(() =>
+  props.session.ended || !hub.state.connected ? null : desktopRunPresence(props.session),
+);
 const workers = computed(() => [...props.session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex));
 </script>
 

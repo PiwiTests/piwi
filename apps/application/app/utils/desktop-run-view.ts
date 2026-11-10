@@ -299,17 +299,19 @@ export function desktopWorkerWatchers(worker: Pick<HubWorker, 'watchers'>): stri
 }
 
 /**
- * Who drives a worker's stop, and what the window offers there: **Take control** from an agent (`drive` on), **Give
- * back** what this window drives (`drive` off), nothing for another tool's person. Null while nobody drives.
+ * Who drives a worker's stop, and what the window offers there: **Take control** (`drive` on) from another tool, or
+ * while nobody drives it and an agent follows the run (`agentFollows`), and **Give back** what this window drives
+ * (`drive` off). Null while nobody drives and no agent follows.
  */
 export function desktopStopDriver(
   stop: Pick<HubStop, 'driver'>,
+  agentFollows = false,
 ): { text: string; offer: 'take' | 'give' | null } | null {
   const driver = stop.driver;
-  if (!driver) return null;
+  if (!driver) return agentFollows ? { text: 'An agent may act on this stop', offer: 'take' } : null;
   if (driver.self) return { text: 'You drive this stop', offer: 'give' };
   if (driver.kind === 'agent') return { text: 'An agent drives this stop', offer: 'take' };
-  return { text: `${capitalized(presenceName(driver))} drives this stop`, offer: null };
+  return { text: `${capitalized(presenceName(driver))} drives this stop`, offer: 'take' };
 }
 
 /**

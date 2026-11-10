@@ -65,9 +65,14 @@ const waitingCall = computed(() =>
 const testText = computed(() => desktopWorkerTest(props.worker));
 const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
-const watchedText = computed(() => desktopWorkerWatchers(props.worker));
-/** Who drives the stop, and whether the window takes it from an agent or gives it back. */
-const driver = computed(() => (stop.value ? desktopStopDriver(stop.value) : null));
+/** Who watches the worker's page, said only while the window hears the hub. */
+const watchedText = computed(() => (hub.state.connected ? desktopWorkerWatchers(props.worker) : null));
+/** Who drives the stop, and whether the window takes it or gives it back. */
+const driver = computed(() =>
+  stop.value && hub.state.connected
+    ? desktopStopDriver(stop.value, !!props.session.presence?.some((tool) => tool.kind === 'agent'))
+    : null,
+);
 /** Its reporter shows its lane while a test runs: Watch shows the page then, and at each stop. */
 const watchable = computed(() => desktopWatchesLane(props.worker));
 /**

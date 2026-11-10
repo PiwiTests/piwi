@@ -6756,6 +6756,12 @@
   "runs_stoppedByAgent": {
     "message": "Pausado por el agente"
   },
+  "runs_stoppedByAgentStep": {
+    "message": "Detenido tras el paso del agente"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "Detenido en la línea pedida por el agente"
+  },
   "runs_announceDriveTaken": {
     "message": "Ahora controlas la parada de $test$: el agente espera hasta que la devuelvas.",
     "placeholders": {

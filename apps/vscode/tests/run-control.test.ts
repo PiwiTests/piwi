@@ -670,6 +670,22 @@ describe('who else is there', () => {
   const agent: RunPresence = { kind: 'agent', name: 'an agent' };
   const me: RunPresence = { kind: 'editor', name: 'Visual Studio Code', self: true };
 
+  test('shows a run’s folder and the tools’ names as text in the progress tooltip, never as a link', () => {
+    const named = (ref: string, root: string): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      root,
+      hold: { on: false, by: 'start' },
+      presence: [{ kind: 'picker', name: 'Piwi Picker' }],
+      progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+    });
+    const tooltip = progressItem(
+      sessionsOf(named('ed-1', '/w/[x](command:piwi.holdFailures)'), named('ed-2', '/w/my_shop_app')),
+    )!.tooltip;
+    expect(tooltip).not.toContain('[x](command:');
+    expect(tooltip).toContain('Run in \\[x\\](command:piwi.holdFailures) (ed-1): Also open in Piwi Picker');
+    expect(tooltip).toContain('Run in my\\_shop\\_app (ed-2): Hold failures off');
+  });
+
   test('names the tools that have a run open, leaving this editor out', () => {
     const run = session('ed-1', [worker(0, 'running')]);
     expect(presenceText(run)).toBeNull();

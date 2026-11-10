@@ -6756,6 +6756,12 @@
   "runs_stoppedByAgent": {
     "message": "Vom Agenten angehalten"
   },
+  "runs_stoppedByAgentStep": {
+    "message": "Nach dem Schritt des Agenten angehalten"
+  },
+  "runs_stoppedByAgentRunTo": {
+    "message": "An der Zielzeile des Agenten angehalten"
+  },
   "runs_announceDriveTaken": {
     "message": "Sie steuern jetzt den Halt von $test$: Der Agent wartet, bis Sie ihn zurückgeben.",
     "placeholders": {

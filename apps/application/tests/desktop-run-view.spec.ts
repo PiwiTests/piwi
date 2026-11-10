@@ -600,10 +600,10 @@ test.describe('Desktop run live view', () => {
       .poll(() => commands.filter((c) => c.type === 'drive').at(-1))
       .toMatchObject({ ref: REF, worker: 0, since: 's1', on: false });
 
-    // Another tool's person drives it: said, with nothing to take.
+    // Another tool's person drives it: said, and the window may take it.
     await page.evaluate((event) => window.__hub.send(event), present(stopped('s1', { driver: PICKER })));
-    await expect(driver).toHaveText('Piwi Picker drives this stop');
-    await expect(driver.getByRole('button')).toHaveCount(0);
+    await expect(driver).toContainText('Piwi Picker drives this stop');
+    await expect(driver.getByRole('button', { name: 'Take control' })).toBeVisible();
 
     // Nobody else on the run: no line.
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));

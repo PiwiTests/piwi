@@ -612,6 +612,11 @@ export function holdText(hold: NonNullable<RunSession['hold']>): string {
   return hold.on ? `Hold failures on: a failed test waits at its line${by}` : `Hold failures off${by}`;
 }
 
+/** Text shown as itself in a Markdown tooltip: a folder's or a tool's name is never a link nor emphasis. */
+function escapedMarkdown(text: string): string {
+  return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
+}
+
 /** Names in a sentence: `A`, `A and B`, `A, B and C`. */
 function listed(names: readonly string[]): string {
   return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -898,7 +903,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const holds = held.flatMap((s) => {
     if (!s.hold) return [];
     const arg = encodeURIComponent(JSON.stringify([{ ref: s.ref, on: !s.hold.on }]));
-    const name = held.length > 1 ? `${runLabel(s)}: ` : '';
+    const name = held.length > 1 ? `${escapedMarkdown(runLabel(s))}: ` : '';
     return [
       `${name}${holdText(s.hold)} · [Turn ${s.hold.on ? 'off' : 'on'}](command:${RUN_COMMANDS.holdFailures}?${arg})`,
     ];
@@ -907,7 +912,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   const kept = [...sessions.values()];
   const present = kept.flatMap((s) => {
     const text = presenceText(s);
-    return text ? [`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text.replace(/[\\`*_[\]<>|]/g, '\\$&')}`] : [];
+    return text ? [escapedMarkdown(`${kept.length > 1 ? `${runLabel(s)}: ` : ''}${text}`)] : [];
   });
   return {
     text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
