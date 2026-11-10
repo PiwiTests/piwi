@@ -126,7 +126,6 @@ function debugFields(debug: DebugTarget): Array<[string, string]> {
     ['test', debug.title],
     ...(debug.project ? [['playwrightProject', debug.project] as [string, string]] : []),
     ...(debug.execution != null ? [['execution', String(debug.execution)] as [string, string]] : []),
-    ...(debug.ref ? [['ref', debug.ref] as [string, string]] : []),
   ];
 }
 
@@ -137,7 +136,7 @@ function debugFields(debug: DebugTarget): Array<[string, string]> {
  * needed. `root`, when known, is the folder the path is relative to. Line and
  * column are 1-based. Each value is percent-encoded whole, a space as `%20`.
  * With `debug` (a line is then required), the link is Debug in my editor's:
- * `&debug=1&spec=&test=&playwrightProject=&execution=&ref=`.
+ * `ref=` first, where an extension that reads no `ref` skips it, then `&debug=1&spec=&test=&playwrightProject=&execution=`.
  */
 export function buildVscodeExtensionUrl(o: {
   scheme: VscodeScheme;
@@ -147,13 +146,15 @@ export function buildVscodeExtensionUrl(o: {
   root?: string | null;
   debug?: DebugTarget | null;
 }): string {
-  const query = [`file=${encodeURIComponent(toPosixPath(o.path))}`];
+  const debug = o.debug && o.line != null ? o.debug : null;
+  const query = [
+    ...(debug?.ref ? [`ref=${encodeURIComponent(debug.ref)}`] : []),
+    `file=${encodeURIComponent(toPosixPath(o.path))}`,
+  ];
   if (o.line != null) query.push(`line=${o.line}`);
   if (o.line != null && o.column != null) query.push(`column=${o.column}`);
   if (o.root) query.push(`root=${encodeURIComponent(toPosixPath(o.root))}`);
-  if (o.debug && o.line != null) {
-    for (const [name, value] of debugFields(o.debug)) query.push(`${name}=${encodeURIComponent(value)}`);
-  }
+  if (debug) for (const [name, value] of debugFields(debug)) query.push(`${name}=${encodeURIComponent(value)}`);
   return `${o.scheme}://${VSCODE_EXTENSION_ID}/open?${query.join('&')}`;
 }
 
@@ -215,7 +216,10 @@ export function buildPiwiPluginOpenUrl(o: {
   if (o.line != null && o.column != null) query.set('column', String(o.column));
   if (o.project) query.set('project', o.project);
   if (o.check) query.set('check', '1');
-  else if (o.debug && o.line != null) for (const [name, value] of debugFields(o.debug)) query.set(name, value);
+  else if (o.debug && o.line != null) {
+    for (const [name, value] of debugFields(o.debug)) query.set(name, value);
+    if (o.debug.ref) query.set('ref', o.debug.ref);
+  }
   return `http://127.0.0.1:${o.port}/api/piwi/open?${query}`;
 }
 

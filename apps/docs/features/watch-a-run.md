@@ -1,6 +1,6 @@
 ---
 title: Watch a Playwright run
-description: "Follow a Playwright run while it goes from every Piwi tool in the same words: its number and page on the instance, how far it is, and where a test stopped and why, on the run page, in both editors, the Runs window, the desktop app and the terminal."
+description: "Follow a Playwright run while it goes, in the same words in every Piwi tool: its number and page on the instance, where a test stopped and why, and how far it is in the editors and the Runs window."
 lang: en-US
 ---
 
@@ -23,7 +23,7 @@ reporter reached it at.
 |---|---|
 | The terminal | `[Piwi Dashboard] View live progress: https://piwi.example.com/test-runs/78`, once, as the run starts |
 | VS Code | The run-control item: `#78 · 3 of 9`, its tooltip **Open run #78**; the status bar item, while your run goes: **Open run #78 (running)** first in its tooltip; **Piwi: Open the run page** and **Piwi: Open the run in progress** in the Command Palette |
-| JetBrains IDEs | The status bar item: `Piwi: run #78 · 3 of 9`, kept beside a stop or a share; **Open Run #78** in its menu; **Open Run #78 (Running)** in place of **Open the Latest Run** while it goes |
+| JetBrains IDEs | The status bar item: `Piwi: run #78 · 3 of 9`, kept beside a stop or a share; **Open Run #78** in its menu; **Open Run #78 (Running)** in place of **Open the Latest Run in the Dashboard** while it goes |
 | Piwi Picker's [Runs window](./runs-window) | **Run #78**, **Open** and **Copy link** on the run's card, while it runs and after it ended, with its progress and how it ended |
 | The desktop app's [Local runs tray](./desktop-runs) | **Run #78 · Open** under each run of its hub, a run a team instance asked for included, whose page opens in the browser; **Open run #78** on a run the app's own server holds |
 | **Debug in my editor** | Once the editor runs the test: "Following run #81 in VS Code · Open" beside the button |
@@ -34,12 +34,12 @@ results are sent, and the tools show it without one.
 ## How far it is
 
 The reporter's own process tells the editor or the desktop app how many tests the run holds, how many ended and how,
-and how the run ended with its first failure. The editors' status bars, the Runs window and the desktop tray count it
-the same way: each test once, by its last attempt.
+and how the run ended with its first failure. The editors' status bars and the Runs window count it the same way: each
+test once, by its last attempt. The desktop tray counts the lines of the run's output instead, a retry again.
 
-In VS Code, a run in progress that is not yours, a CI run of your branch or a teammate's, names itself so: the status
-bar says `CI run #125` or `run #126`, and the Testing view shows it as `Piwi: CI run #125 on this branch`, its tests'
-results as they end, never as your tests running. Your own run stays in the status bar whichever Playwright config the
+In VS Code, a run in progress that is not yours, a CI run or a teammate's on your branch or on the branch your results
+are compared with, names itself so: the status bar says `CI run #125` or `run #126`, and the Testing view shows it as
+`Piwi: CI run #125 on main`, its tests' results as they end, never as your tests running. Your own run stays in the status bar whichever Playwright config the
 active file belongs to.
 
 ## Where a test stopped

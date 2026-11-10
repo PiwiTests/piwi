@@ -1039,7 +1039,7 @@ async function shopPageJpeg(context) {
 /**
  * A desktop scene's local run, live on the run page: the run page's Re-run starts it, the played hub names its one
  * worker running `intents` (`playDesktopRunHub` first), the run reports to the app with the reference the app gave it,
- * its test begun on that worker, and **Live in Piwi** opens its page. Answers the tray, the spec's URI, the running
+ * its test begun on that worker, and **Open run #N** opens its page. Answers the tray, the spec's URI, the running
  * worker, a session message of a worker, and `finish`, which ends the live run.
  */
 async function openDesktopLiveRun({ page, base, goto, intents }) {
@@ -1112,7 +1112,7 @@ async function openDesktopLiveRun({ page, base, goto, intents }) {
       browser: { projectName: 'chromium' },
     };
     await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
-    await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
+    await tray.getByRole('link', { name: `Open run #${started.runId}` }).click({ timeout: 60_000 });
   } catch (error) {
     await finish();
     throw error;

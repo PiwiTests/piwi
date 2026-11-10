@@ -80,12 +80,12 @@ test.describe('Debug in my editor', () => {
     await button.click();
     // The link is launched in a hidden frame, removed a second later.
     const launched = await page.locator('iframe[src^="vscode://"]').getAttribute('src');
-    const ref = /&ref=(ed-[0-9a-f]{16})$/.exec(launched ?? '')?.[1];
+    const ref = /\?ref=(ed-[0-9a-f]{16})&/.exec(launched ?? '')?.[1];
     expect(launched).toBe(
-      'vscode://piwitests.piwi/open?file=tests%2Fhelpers%2Fpayment.ts&line=16&debug=1' +
+      `vscode://piwitests.piwi/open?ref=${ref}&file=tests%2Fhelpers%2Fpayment.ts&line=16&debug=1` +
         '&spec=tests%2Fcheckout%2Fcheckout.spec.ts' +
         '&test=Checkout%20%E2%80%BA%20should%20complete%20checkout%20with%20credit%20card' +
-        `&playwrightProject=Chromium&execution=${SEEDED}&ref=${ref}`,
+        `&playwrightProject=Chromium&execution=${SEEDED}`,
     );
     await expect(
       page.getByText('Asked the Piwi extension in VS Code to debug the test', { exact: true }),
@@ -96,6 +96,20 @@ test.describe('Debug in my editor', () => {
     await expect(following).toHaveText('Following run #81 in VS Code · Open', { timeout: 10_000 });
     await expect(following.getByRole('link', { name: 'Open run #81' })).toHaveAttribute('href', /\/test-runs\/81$/);
     expect(new Set(looked)).toEqual(new Set([ref]));
+  });
+
+  test('says no run reached the instance once it looked for ten minutes', async ({ page }) => {
+    await page.clock.install();
+    await openTheSource(page, { method: 'vscode', vscodeExtension: true });
+    await page.route(
+      (url) => url.pathname.endsWith('/latest-run') && url.searchParams.get('origin') === 'editor',
+      (route) => route.fulfill({ json: null }),
+    );
+    await (await debugButton(page)).click();
+    const following = page.getByTestId('debug-following');
+    await expect(following).toHaveText('Waiting for VS Code to run the test…');
+    await page.clock.runFor('10:03');
+    await expect(following).toHaveText('No run from VS Code reached Piwi');
   });
 
   test('asks the JetBrains plugin with debug=1 on the open alone, and says the IDE took it', async ({ page }) => {

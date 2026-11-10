@@ -119,8 +119,8 @@ names a stop's line where it stands after an edit (`lineNow`), the "did not reac
 that ran from a missing one (`heardFrom`), and a pick on an image says "sent" only when an editor took it, else offers
 **Copy**. Left of P5: Piwi Runner links no run page (it has no hub to hear `run-page`), the desktop app's run end still
 leads to the run rather than its failure and its runs reach Piwi Picker without their command, the Runs window still
-words the desktop app's failures as the editor's, **Watch** and **Watch live** still name one view twice, and Stop
-sharing is still one click. The later phases are proposed. The bugs the analysis
+words the desktop app's failures as the editor's, the desktop tray counts a run's output lines rather than the run's
+own progress, **Watch** and **Watch live** still name one view twice, and Stop sharing is still one click. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

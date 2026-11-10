@@ -152,7 +152,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Watch a run',
         summary:
-          'Follow a run while it goes from every tool in the same words: its number and page (#78 · Open), how far it is, and where a test stopped and why, on the run page, in both editors, the Runs window, the desktop app and the terminal.',
+          'Follow a run while it goes, in the same words everywhere: its number and page (#78 · Open) and where a test stopped and why on the run page, in both editors, the Runs window, the desktop app and the terminal, and how far it is in the editors and the Runs window.',
         needs: [],
         where: 'Test run page, editor status bars, Runs window, desktop app, terminal',
         doc: 'features/watch-a-run',
