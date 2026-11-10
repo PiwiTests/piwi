@@ -107,6 +107,7 @@ export type RunsWhat =
   | 'input'
   | 'pick-at'
   | 'share'
+  | 'hold'
   | 'watch';
 
 const WHATS: readonly string[] = [
@@ -126,6 +127,7 @@ const WHATS: readonly string[] = [
   'input',
   'pick-at',
   'share',
+  'hold',
   'watch',
   'give-up',
 ];
@@ -273,12 +275,12 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
       if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
-      // Share live names the run alone, and Watch the run and its lane.
-      if ((what === 'share' || what === 'watch') && (worker !== null || since !== null)) return null;
+      // Share live and Hold failures name the run alone, and Watch the run and its lane.
+      if ((what === 'share' || what === 'hold' || what === 'watch') && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one; End the
       // test while a Pause waits for a call names none, and its worker.
       if (what === 'give-up' && (since !== null || worker === null)) return null;
-      if (!['pause', 'image', 'share', 'watch', 'give-up'].includes(what) && since === null) return null;
+      if (!['pause', 'image', 'share', 'hold', 'watch', 'give-up'].includes(what) && since === null) return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
       // its events, a pick on the image its point, Watch the lane and whether it is on.
@@ -286,6 +288,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         mock: ['request'],
         view: ['on'],
         share: ['on'],
+        hold: ['on'],
         watch: ['lane', 'on'],
         input: ['events'],
         'pick-at': ['x', 'y'],
@@ -299,6 +302,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
         case 'view':
         case 'share':
+        case 'hold':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
         case 'watch':
           return typeof value.on === 'boolean' && isIndex(value.lane)

@@ -936,33 +936,43 @@ test.describe('code from a stop', () => {
     }
   });
 
-  test('a plain run’s headless failure waits for an answer only while a Runs window is open', async () => {
+  test('a plain run’s headless failure waits for an answer only while its Hold failures is on, turned on here', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {
-      // Paired, its Runs window never opened: the popup's tile shows once the worker hears the hub's runs.
-      const popup = await context.newPage();
-      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
-      await popup.close();
       const run = await startRun(editor, 'pays', [...RUN_TAKES]);
       const shown = () => editor.svc.sessions.some((s) => s.ref === run.ref && s.workers.some((w) => w.stop));
+      const controls = () => run.worker.heard.filter((m) => m.type === 'control');
       try {
         // A plain run, neither with breakpoints nor for a page.pause(): its failure goes on at once, shown to nobody.
         stopAtCheckout(run.worker, 1, { reason: 'failure', bar: false });
         expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
         expect(shown()).toBe(false);
 
-        // A Runs window opens: the next failure waits there for an answer.
+        // A Runs window open holds nothing by itself: the run's Hold failures, off, says so, and the failure goes on.
         const runs = await openRuns(context, extensionId);
         const card = liveRun(runs);
         await expect(card.getByText('cart › pays')).toBeVisible();
-        await runs.waitForTimeout(300);
+        const hold = card.getByRole('button', { name: 'Hold failures' });
+        await expect(hold).toHaveAttribute('aria-pressed', 'false');
+        await expect(hold).toHaveAttribute('title', /^A failed test goes on at once\./);
         stopAtCheckout(run.worker, 2, { reason: 'failure', bar: false });
-        await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
-        expect(run.worker.heard.filter((m) => m.type === 'control')).toHaveLength(1);
-        // The window closes: the failure goes on.
-        await runs.close();
         expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
+
+        // Turned on here: the run keeps it, and the next failure waits in the window for an answer.
+        await hold.click();
+        await expect(hold).toHaveAttribute('aria-pressed', 'true');
+        await expect(runs.locator('#announce')).toHaveText(
+          'A failure no pause bar shows waits at its line in this run until someone answers it.',
+        );
+        expect(editor.svc.latest(run.ref)?.hold).toEqual({ on: true, by: 'person' });
+        stopAtCheckout(run.worker, 3, { reason: 'failure', bar: false });
+        await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
+        await runs.waitForTimeout(200);
+        expect(controls()).toHaveLength(2);
+        // Turned off: the failure held now goes on.
+        await hold.click();
+        expect(await run.worker.next('control', 2)).toEqual({ type: 'control', action: 'resume', stop: 3 });
+        await expect(hold).toHaveAttribute('aria-pressed', 'false');
       } finally {
         await endRun(run);
       }
