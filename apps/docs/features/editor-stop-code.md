@@ -109,7 +109,8 @@ counted, and a line without a locator says nothing.
 In a run Piwi started, a failing test holds its page once the test function, its hooks and its fixtures are done,
 instead of closing it, when someone can see it: in a headed browser, where the pause bar shows the failure (a run
 started with breakpoints, or for a spec with `page.pause()`, is headed, and its
-[**Hold failures**](/guide/concepts#hold-failures) is on from its start), or while you turn the run's Hold failures on,
+[**Hold failures**](/guide/concepts#hold-failures) is on from its start, unless
+[your run options](./editor-runs#how-a-run-starts) choose otherwise), or while you turn the run's Hold failures on,
 from the editor (**Piwi: Hold failures: turn on or off for the run**, **Tools → Piwi → Turn Hold Failures On or Off**)
 or Piwi Picker's [Runs window](./runs-window). The editor shows it as a stop of its own, at the
 line where the error entered the test's code, or at the call a test timeout cut short:

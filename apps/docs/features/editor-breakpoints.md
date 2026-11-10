@@ -16,9 +16,11 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 
 ## Pause a run
 
-1. Set a line breakpoint on a line with a Playwright call, in a spec or a page object:
+1. Set a line breakpoint on a line with a Playwright call, in a spec, a page object or a fixture:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
-   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
+   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do. A
+   breakpoint in the application's own code stops no run, since that code runs in a process of its own: it neither
+   makes the run headed nor holds its failures.
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
@@ -39,12 +41,8 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 </figure>
 
 The page under the bar stays live: scroll it, open the browser's developer tools, or click through it before you
-resume. The test timeout stops while the test is paused, and so does the paused call's own budget (`actionTimeout`, or
-`expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its own deadline:
-`expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused call can run out
-while you look and fail the test: the bar then goes away, before Playwright's failure screenshot and the `afterEach`
-hooks. The test's duration leaves the time paused out, and every step keeps its clock time: the dashboard's timelines
-draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it out.
+resume. The test timeout stops while the test is paused; [a stop](/guide/concepts#stop) says which waits keep their
+deadline, and how the dashboard counts the time paused.
 
 ## Where the pick lands
 
@@ -99,8 +97,8 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
   stops, and the run's output names it once.
 - **A run started from Piwi**, or [started outside Piwi](./terminal-runs). The editor passes the breakpoints under the
   Playwright config's folder to the run as `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
-  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it
-  already has `--headed`, `--ui` or `--debug`. Set `PIWI_PAUSE_AT` yourself to
+  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and, when one of them can stop the run, adds
+  `--headed` to the command unless it already has `--headed`, `--ui` or `--debug`. Set `PIWI_PAUSE_AT` yourself to
   [pause a run you start](/features/locator-healing#pause-at-a-breakpoint-local-runs).
 
 ## Limits

@@ -233,14 +233,23 @@ counted from 1 in each shard; a worker Playwright starts again after a failure t
 to, at `page.pause()`, or at a failure held for a look. Each tool names it by why it stopped, in the same words
 (**Stopped at a breakpoint**, **Paused**, …).
 
+The test timeout stops while a test is paused at a breakpoint, and so does the paused call's own budget
+(`actionTimeout`, or `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its
+own deadline: `expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused call
+can run out while you look and fail the test: the pause bar then goes away, before Playwright's failure screenshot and
+the `afterEach` hooks. The test's duration leaves the time paused out, and every step keeps its clock time: the
+dashboard's timelines draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it
+out.
+
 ### Hold failures
 
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
-started with breakpoints, a debug run or a reproduction, off otherwise, and any tool that follows the run turns it on
-or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a failure goes on at
-once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure. Each tool shows it as the last one set it: the desktop
-app's switch turns it off as the app's last window closes only when no other tool set it since.
+started with breakpoints it can stop at, a debug run or a reproduction, off otherwise, unless an editor window chose
+it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)); and any tool that follows the
+run turns it on or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a
+failure goes on at once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job,
+a run with `--repeat-each` above 1 and UI mode go on past each failure. Each tool shows it as the last one set it: the
+desktop app's switch turns it off as the app's last window closes only when no other tool set it since.
 
 ### Presence, driving a stop
 
@@ -258,6 +267,15 @@ tools that watch that page (an editor's view, the desktop app's window, Piwi Pic
 instance while the run is shared live; nothing on your machine keeps them. **Share live** lets a teammate watch a run on
 your machine from its page on the team instance ([Share a run live](/features/share-live)); a CI run is watched without
 being shared ([Live view of a run](/features/live-view)).
+
+### Verification
+
+**A test run several times without retries and without the breakpoints, to see how often it passes** (**Verify ×3**
+in the editors, `--repeat-each=3 --retries=0`). It says how many of its runs passed (`Passed 3 of 3`, `Failed 1 of 3`).
+Each run is a result of its own on the instance, and the editor counts them from the results the run streams as it
+executes; when it missed some, a failing verification says `Failed at least 1 of 3`. When its run never reached an
+instance, the exit code says it, which cannot tell a pass from a skip: `None of 3 runs failed: tests/checkout.spec.ts:42`,
+or `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`. It never holds a failure.
 
 ## Failures
 

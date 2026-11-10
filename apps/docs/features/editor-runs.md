@@ -22,9 +22,8 @@ second of its end.
   not know yet, such as one you just [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of
   its `test(…)` call (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance. Both save the spec
   first.
-- **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times, without
-  retries and without the breakpoints (`--repeat-each=3 --retries=0`), and says how many of the runs passed:
-  [When your run ends](#when-your-run-ends).
+- **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times as a
+  [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
   [code reach](/features/code-reach); also in the editor's **Piwi** submenu.
 - **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
@@ -37,6 +36,15 @@ Rerun and Debug too. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it in the
 browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints); the editor pauses,
 steps and resumes it too: [Pause and step from the editor](./editor-run-control).
+
+## How a run starts
+
+Two choices apply to every run started from the window: **Run headed** (`--headed`, a verification included) and
+[**Hold failures**](/guide/concepts#hold-failures) **Auto**, **On** or **Off** from the run's start. Auto lets Piwi
+decide: on, and headed, with a breakpoint in a spec, a page object or a fixture, or a `page.pause()`. In VS Code,
+**Piwi: Run options…** sets them (`piwi.runHeaded`, `piwi.runHoldFailures`), shown in the status bar's tooltip;
+in a JetBrains IDE, **Tools → Piwi → Run Headed** and **Hold Failures from Each Run's Start…**. A
+[debug run](./debug-in-editor) leaves them out.
 
 ## The Testing view (VS Code)
 
@@ -87,12 +95,8 @@ checkout.spec.ts › pays)`, then the tests it failed that were not failing befo
 **Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
 Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
 
-A verification (**Verify ×3**) says how many of its runs passed instead, whatever the setting: `Piwi: run #124 ·
-Passed 3 of 3`, or `Failed 1 of 3`. Each run is a result of its own on the instance, and the editor counts them from
-the results the run streams as it executes; when it missed some, a failing verification says `Failed at least 1 of 3`.
-When its run never reached an instance, the exit code says it, which cannot tell a pass from a skip:
-`None of 3 runs failed: tests/checkout.spec.ts:42`, or
-`Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`.
+A [verification](/guide/concepts#verification) (**Verify ×3**) says how many of its runs passed instead, whatever the
+setting: `Piwi: run #124 · Passed 3 of 3`, or `Failed 1 of 3`.
 
 ## The status bar
 
