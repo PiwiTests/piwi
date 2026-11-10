@@ -76,7 +76,8 @@
         <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/PiwiDarcula.xml"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
-        <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg"
+        <!-- The Paused Page and Worker tabs close; the failures tab does not (isCloseable = false). -->
+        <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg" canCloseContents="true"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
         <projectConfigurable parentId="tools" id="dev.piwitests.piwi" displayName="Piwi"
                              instance="dev.piwitests.jetbrains.PiwiConfigurable"/>

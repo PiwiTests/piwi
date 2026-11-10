@@ -501,7 +501,9 @@ worker whose reporter shows its running test (`Glue.watchableWorkers`). It watch
 (`Glue.laneShown`). It only watches: a headless stop of its lane is the Paused Page's, which takes the input, as any
 other worker's is, and while the Worker tab is in sight (the tool window shows, with it selected:
 `Glue.selectsPausedPage`), the Paused Page shows a new page without being selected, so the Worker tab stays in sight.
-The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off.
+The watch ends while the tab is hidden and starts again as it shows; the run's end turns Watch off. Both tabs close
+(`canCloseContents`, the failures tab alone kept): closed, the Worker tab stops its watch and Watch a Worker's Test
+opens it again, and the Paused Page stops its view and the next stop opens it again.
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool

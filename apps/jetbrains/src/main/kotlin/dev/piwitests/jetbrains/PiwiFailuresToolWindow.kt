@@ -213,7 +213,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 add(JBScrollPane(tree), BorderLayout.CENTER)
             },
         )
-        val content = ContentFactory.getInstance().createContent(panel, "Latest run", false)
+        val content = ContentFactory.getInstance().createContent(panel, "Latest run", false).apply { isCloseable = false }
         toolWindow.contentManager.addContent(content)
         service.onChange(content, render)
         render()
