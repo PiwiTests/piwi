@@ -536,7 +536,13 @@ those in files under the context's folder:
 - they go in the command's environment as `PIWI_PAUSE_AT`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
   relative to that folder, 1-based, separated by semicolons (`pauseAtValue` in `src/analysis.ts`);
 - `--headed` is appended to the arguments and to the command, unless it carries `--headed`, `--ui` or `--debug`
-  (`headedCommand`).
+  (`headedCommand`), and the run is started to be watched, only when one of them can stop it (`stopsInFile`): in a
+  spec, a file that imports Playwright's test runner or Piwi's reporter, or a folder below the context's that holds a
+  spec. One in the application's own code goes in `PIWI_PAUSE_AT` alone.
+
+The person's start options (`RunStartOptions`, the clients' settings, kept for every run of the window) go over that:
+`headed` appends `--headed` (a repeated run takes it too), and `holdFailures` turns the run's Hold failures on or off
+from its start (`withStartOptions`).
 
 The client adds its Send to editor address as `PIWI_EDITOR_SEND` to a command that carries `PIWI_PAUSE_AT` or
 `PIWI_RUN_CHANNEL`, or whose `RunCommand.pauses` is set. The reporter's capture fixtures pause the run, with Piwi's
@@ -700,8 +706,9 @@ hub's `session`), which a reporter that predates it leaves out. Every run the se
 clients answer stops, so a plain Run would hold every failure. One no pause bar shows therefore waits only while its
 run's **Hold failures** is on (`RunHoldFailures`, `RunSession.hold` and the hub's `HubSession.hold`, with who set it):
 
-- on from its start in a run started to be watched (`watched`: the service built it with the editor's breakpoints or
-  for a `page.pause()`, both headed), `by: 'start'`, off from its start otherwise;
+- on from its start in a run started to be watched (`watched`: the service built it with a breakpoint it can stop at or
+  for a `page.pause()`, both headed, or the person's start options ask it), `by: 'start'`, off from its start
+  otherwise;
 - as a person turns it on or off (`piwi/holdRun`, the hub's `hold`: an editor, Piwi Picker, the desktop app's window),
   `by: 'person'`, or an agent does (`run_follow`'s `hold`), `by: 'agent'`, kept by ref (`RunSessions.hold`, the latest
   `MAX_KEPT_RUNS`), a run whose first worker has not connected yet included.
