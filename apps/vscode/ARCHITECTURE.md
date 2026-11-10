@@ -750,8 +750,9 @@ The default keybindings (`contributes.keybindings`) are the JetBrains plugin's c
 So the Piwi chords are free in VS Code and in the platform's own `$default` keymap, but meet the bindings above in
 IntelliJ IDEA with Kotlin, on macOS and in those keymaps. Check a new chord against these lists.
 
-**A run's controls** ([Run control](#run-control)) take the debugger's keys instead, only while they apply and no debug
-session runs (`!inDebugMode`):
+**A run's controls** ([Run control](#run-control)) take the debugger's keys instead, only while they apply and the
+debugger does not take the key: Stop while no debug session runs (`!inDebugMode`), the others while none is paused
+(`debugState != 'stopped'`), the only state in which the debugger's continue and step keys act:
 
 | Key                             | Command                                                                                                                    |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |

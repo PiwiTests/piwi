@@ -74,12 +74,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
         // A run's controls use the debugger's shortcuts, in this keymap as in every other.
         for ((control, debugger) in listOf(
-            "Piwi.PauseRun" to "Resume", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
+            "Piwi.PauseRun" to "Pause", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
             "Piwi.RunToCaret" to "RunToCursor", "Piwi.FinishRun" to "StepOut",
         )) {
             assertEquals(control, strokes(debugger), strokes(control))
         }
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F9")), strokes("Piwi.ResumeRun"))
+        assertEquals("Pause has no key here, as the debugger's", emptyList<javax.swing.KeyStroke>(), strokes("Piwi.PauseRun"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F8")), strokes("Piwi.StepRun"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))

@@ -469,13 +469,16 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
   `PiwiCommands.run` and the IDE's Playwright runner). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun,
   Stop and Close) takes no other action.
 
-**Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause and Resume
-`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s; End the
-Test has none, the debugger having no action it stands for. They are enabled only while they apply, and from the
-keyboard only while no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`, `XDebuggerManager.debugSessions`), so the
-debugger keeps its keys. While a run is live, `PiwiRunActionPromoter` (an `ActionPromoter`) puts them first among the
-actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
-`F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
+**Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause `Pause`'s
+(none in the default keymap), Resume `Resume`'s (`F9`), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish
+`StepOut`'s; End the Test has none, the debugger having no action it stands for. They are enabled only while they apply,
+and from the keyboard (`ActionPlaces.KEYBOARD_SHORTCUT`) only while the debugger does not take the key (`givesWayTo`,
+over `XDebuggerManager.debugSessions`): Resume, Step, Run to Caret and Finish give way to a suspended session, the only
+one the debugger's resume and step act on, Pause and Stop to any. Resume's key stays Piwi's for `Glue.RESUMED_MILLIS`
+after an answer, doing nothing without a stop, so a second press starts no debug session. While a run is live,
+`PiwiRunActionPromoter` (an `ActionPromoter`) puts them first among the actions a key runs: a keymap that gives the key
+to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while it applies,
+the other once it does not.
 
 **The Worker tab.** **Tools → Piwi → Watch a Worker's Test** (`WatchWorkerAction`) and **Pause and Watch a Worker's
 Test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a

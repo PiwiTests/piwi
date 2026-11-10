@@ -114,9 +114,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   recording, `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret.
   `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
   plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
-- **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to a debug session.** From
-  the keyboard they are enabled only while no debug session runs, and `PiwiRunActionPromoter` puts them first only
-  while a run is live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
+- **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
+  takes the key.** From the keyboard, Resume, Step, Run to Caret and Finish give way to a suspended debug session
+  (`StopControlAction.givesWayTo`), Pause and Stop to any; `PiwiRunActionPromoter` puts them first only while a run is
+  live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control at a
   stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.

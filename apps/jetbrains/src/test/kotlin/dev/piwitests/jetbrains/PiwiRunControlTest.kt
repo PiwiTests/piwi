@@ -7,6 +7,7 @@ import com.intellij.execution.process.NopProcessHandler
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -23,6 +24,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
@@ -32,6 +34,7 @@ import com.intellij.openapi.ui.TestDialog
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XBreakpointProperties
 import com.intellij.xdebugger.breakpoints.XBreakpointType
@@ -39,6 +42,7 @@ import com.intellij.xdebugger.breakpoints.XLineBreakpointType
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.lang.reflect.Proxy
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.ImageIO
@@ -621,6 +625,62 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(listOf(resume), promoter.promote(listOf(other, resume), context))
         assertEquals(emptyList<AnAction>(), promoter.promote(listOf(other, resume), com.intellij.openapi.actionSystem.DataContext.EMPTY_CONTEXT))
     }
+
+    /**
+     * From the keyboard, the controls answering a stop give way only to a suspended debug session, the only kind the
+     * debugger's resume and step keys act on, so they still answer a Piwi stop while the backend runs under the
+     * debugger; Pause and Stop give way to any session. Pause is on the debugger's Pause key, and Resume's key stays
+     * Piwi's for a moment after an answer, doing nothing without a stop.
+     */
+    fun testTheRunKeysGiveWayOnlyWhereTheDebuggerTakesThem() {
+        val actions = ActionManager.getInstance()
+        val running = debugSession(suspended = false)
+        val paused = debugSession(suspended = true)
+        for (id in listOf("Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun")) {
+            val control = actions.getAction(id) as RunControlAction
+            assertFalse(id, control.givesWayTo(emptyList()))
+            assertFalse(id, control.givesWayTo(listOf(running)))
+            assertTrue(id, control.givesWayTo(listOf(running, paused)))
+        }
+        for (id in listOf("Piwi.PauseRun", "Piwi.StopRun")) {
+            val control = actions.getAction(id) as RunControlAction
+            assertFalse(id, control.givesWayTo(emptyList()))
+            assertTrue(id, control.givesWayTo(listOf(running)))
+        }
+        assertEquals("Pause", ActionManagerEx.getInstanceEx().getActionBinding("Piwi.PauseRun"))
+        assertEquals("Resume", ActionManagerEx.getInstanceEx().getActionBinding("Piwi.ResumeRun"))
+
+        val file = file("tests/pages/checkout.page.ts", page)
+        hear(stopped("ed-1", file, 3, bar = true, since = "2026-10-25T10:00:00.000Z"))
+        val resume = actions.getAction("Piwi.ResumeRun")
+        fun fromKey(): Boolean {
+            val event = AnActionEvent.createFromDataContext(ActionPlaces.KEYBOARD_SHORTCUT, null, SimpleDataContext.getProjectContext(project))
+            resume.update(event)
+            return event.presentation.isEnabled
+        }
+        assertTrue(fromKey())
+        sessions.answer(sessions.stops().single(), "resume")
+        assertEquals("resume", waitFor("Resume") { controls.firstOrNull() }.action)
+        hear(running("ed-1"))
+        assertTrue(sessions.answeredLately())
+        assertTrue(fromKey())
+        assertFalse(sessions.answeredLately(System.currentTimeMillis() + Glue.RESUMED_MILLIS))
+        val sent = controls.size
+        resume.actionPerformed(AnActionEvent.createFromDataContext(ActionPlaces.KEYBOARD_SHORTCUT, null, SimpleDataContext.getProjectContext(project)))
+        Thread.sleep(200)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(sent, controls.size)
+    }
+
+    /** A debug session, suspended or running, standing for the debugger's of another process. */
+    private fun debugSession(suspended: Boolean): XDebugSession =
+        Proxy.newProxyInstance(XDebugSession::class.java.classLoader, arrayOf(XDebugSession::class.java)) { _, method, _ ->
+            when (method.name) {
+                "isSuspended" -> suspended
+                "toString" -> "debug session"
+                else -> null
+            }
+        } as XDebugSession
 
     /**
      * A run in the IDE's Playwright runner is followed by its configuration: its first run, a Rerun and a Rerun Failed

@@ -19,7 +19,7 @@ code from the page: [Code from a pause](./editor-stop-code).
 
 | Control | What it does | VS Code | JetBrains IDEs |
 |---|---|---|---|
-| **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Resume Program's, `F9` |
+| **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Pause Program's |
 | **Resume** | Runs the stopped test on to the next breakpoint | `F5` | Resume Program's, `F9` |
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
 | **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
@@ -28,9 +28,9 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **Stop** | Ends the run's process | `Shift+F5` | **Stop the Run**, or the Run tool window's Stop |
 
 The keys are the IDE's debugger keys (in a JetBrains IDE, [your keymap's](./jetbrains)), Piwi's only while their
-control applies and no debug session runs. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** and **End the
-test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Within two seconds
-of an answer, until that worker stops, a key answers no other worker and starts no debug session.
+control applies and no paused debug session takes them. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause**
+and **End the test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`).
+Within two seconds of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
   paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**).

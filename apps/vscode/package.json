@@ -865,23 +865,23 @@
       {
         "command": "piwi.resumeRun",
         "key": "f5",
-        "when": "(piwi.runStopped || piwi.runResumed) && !inDebugMode"
+        "when": "(piwi.runStopped || piwi.runResumed) && debugState != 'stopped'"
       },
       {
         "command": "piwi.stepRun",
         "key": "f10",
-        "when": "piwi.runStopped && !inDebugMode"
+        "when": "piwi.runStopped && debugState != 'stopped'"
       },
       {
         "command": "piwi.runToCursor",
         "key": "ctrl+f10",
         "mac": "cmd+f10",
-        "when": "editorTextFocus && piwi.runStopped && !inDebugMode"
+        "when": "editorTextFocus && piwi.runStopped && debugState != 'stopped'"
       },
       {
         "command": "piwi.finishRun",
         "key": "shift+f11",
-        "when": "piwi.runStopped && !inDebugMode"
+        "when": "piwi.runStopped && debugState != 'stopped'"
       }
     ],
     "configuration": {

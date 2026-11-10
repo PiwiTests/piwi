@@ -11,22 +11,25 @@ line drawn by a provider of its own, in a group named Piwi, #1115; its `CodeVisi
 written yet), [Q2](#q2) in VS Code (a flaky test said so while the Testing view owns the gutter, and a test with no
 recent result marked, #1116; Q2's JetBrains flaky icon waits for [M5](#m5)'s palette), [Q3](#q3) (Tools → Piwi compact,
 and one Piwi submenu in both editors' context menus, in one order), [Q19](#q19) (a spec beside a Rider solution opened
-and debugged from one list of the project's folders, #1118) and [Q24](#q24) (one name per worker, #1213), with an
-unproven desktop app told apart from an unreachable one in both status items (#1213), and every command, setting and
-action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
-2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
-the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
-local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four
-items still open. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
-[developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
-[record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
-[live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,
-[live-runs.md](live-runs.md), is proposed alongside this one: this document owns where each editor hosts a run (the
-status item, the menus, the Run tab, the Runs view and tab, the stop line, the gutter marks, the keys, the paused page)
-and the debug-session question ([LI10](#li10)); the study owns the live model, the words of watching and its phases P0
-to P11, and builds in those phases what the two documents share. A pull request that builds part of §12 updates this
-paragraph; the one that ships its last step moves the document to `adr/`.
+and debugged from one list of the project's folders, #1118), [Q18](#q18) (the run keys give way only to a paused
+debugger, Pause and Stop to any session, superseding run-control.md's rule; Pause on the debugger's Pause key, and
+Resume's key held two seconds after an answer in the JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not
+moved yet) and [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart from an unreachable one
+in both status items (#1213), and every command, setting and action id of both editors registered in D25 and held to the
+manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as
+#1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that
+commit: no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's
+worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8;
+#1122 is closed with three of its four items still open. It cites and does not restate
+[editor-extensions-audit.md](../adr/editor-extensions-audit.md), [developer-loop-audit.md](developer-loop-audit.md) §8
+(P1 to P15) and §9 (the vocabulary), [record-from-the-ide.md](record-from-the-ide.md),
+[real-editor-checks.md](real-editor-checks.md), [live-view-next.md](live-view-next.md) Part 6 and
+[extension-ux-audit.md](extension-ux-audit.md). The live-run study, [live-runs.md](live-runs.md), is proposed alongside
+this one: this document owns where each editor hosts a run (the status item, the menus, the Run tab, the Runs view and
+tab, the stop line, the gutter marks, the keys, the paused page) and the debug-session question ([LI10](#li10)); the
+study owns the live model, the words of watching and its phases P0 to P11, and builds in those phases what the two
+documents share. A pull request that builds part of §12 updates this paragraph; the one that ships its last step moves
+the document to `adr/`.
 
 **Summary.**
 

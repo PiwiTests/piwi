@@ -85,6 +85,7 @@ import com.intellij.util.Alarm
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XBreakpoint
 import com.intellij.xdebugger.breakpoints.XBreakpointListener
@@ -186,6 +187,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var page: Content? = null
     private var pageStop: String? = null
     @Volatile private var watchingPage: PageViewParams? = null
+
+    /** When a control from the IDE last answered a stop: Resume's key stays Piwi's `Glue.RESUMED_MILLIS` after. */
+    @Volatile private var answeredAt = 0L
+
+    /** A control answered a stop less than `Glue.RESUMED_MILLIS` ago, while a run is live. */
+    fun answeredLately(now: Long = System.currentTimeMillis()): Boolean =
+        sessions.isNotEmpty() && now - answeredAt < Glue.RESUMED_MILLIS
     /** The watch the service accepted: Interact is offered only then. On the event thread. */
     private var acceptedPage: PageViewParams? = null
     private var viewCalls = CompletableFuture.completedFuture(Unit)
@@ -1022,6 +1030,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
         val token = shownStops.answered(stop, action)
+        answeredAt = System.currentTimeMillis()
         wakeWhenWaited()
         control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { result ->
             // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
@@ -1995,19 +2004,22 @@ private class StopInlayMouse(private val project: Project) : EditorMouseListener
 }
 
 /**
- * A run control: enabled only while it applies, and, from a key the debugger binds too, only while no debug session
- * runs, so the debugger keeps its keys.
+ * A run control: enabled only while it applies, and, from a key the debugger binds too, only while the debugger does
+ * not take that key (`givesWayTo`), so the debugger keeps its keys.
  */
 abstract class RunControlAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     abstract fun applies(controls: Glue.RunControls, e: AnActionEvent): Boolean
 
+    /** From the keyboard, the control gives way to these debug sessions: by default to any. */
+    open fun givesWayTo(debugSessions: List<XDebugSession>): Boolean = debugSessions.isNotEmpty()
+
     override fun update(e: AnActionEvent) {
         val project = e.project
         val controls = project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
         val debugging = e.place == ActionPlaces.KEYBOARD_SHORTCUT && project != null &&
-            XDebuggerManager.getInstance(project).debugSessions.isNotEmpty()
+            givesWayTo(XDebuggerManager.getInstance(project).debugSessions.toList())
         e.presentation.isEnabled = controls != null && !debugging && applies(controls, e)
     }
 
@@ -2027,10 +2039,9 @@ class PiwiRunActionPromoter : ActionPromoter {
     }
 }
 
-/** **Pause the Run**: every worker of the runs started here stops before its next call. F9 resumes while one is stopped. */
+/** **Pause the Run**: every worker of the runs started here stops before its next call; on the debugger's Pause key. */
 class PauseRunAction : RunControlAction() {
-    override fun applies(controls: Glue.RunControls, e: AnActionEvent) =
-        controls.pausable && !(e.place == ActionPlaces.KEYBOARD_SHORTCUT && controls.stopped)
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.pausable
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.pause()
@@ -2069,10 +2080,15 @@ class StopRunAction : RunControlAction() {
     }
 }
 
-/** A control answering a stop: the one at the caret's line, else the only one, else the one chosen. */
+/**
+ * A control answering a stop: the one at the caret's line, else the only one, else the one chosen. From the keyboard
+ * it gives way only to a suspended debug session, the only kind the debugger's step and resume keys act on.
+ */
 abstract class StopControlAction(private val control: Glue.StopControl) : RunControlAction() {
     override fun applies(controls: Glue.RunControls, e: AnActionEvent) =
         controls.stopped && (control != Glue.StopControl.RUN_TO_CARET || e.getData(CommonDataKeys.EDITOR) != null)
+
+    override fun givesWayTo(debugSessions: List<XDebugSession>) = debugSessions.any { it.isSuspended }
 
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
@@ -2081,8 +2097,20 @@ abstract class StopControlAction(private val control: Glue.StopControl) : RunCon
     }
 }
 
-/** **Resume**: the stopped test runs on to the next breakpoint. */
-class ResumeRunAction : StopControlAction(Glue.StopControl.RESUME)
+/**
+ * **Resume**: the stopped test runs on to the next breakpoint. Its key stays Piwi's `Glue.RESUMED_MILLIS` after an
+ * answer, so a second press acts on no other stop and starts no debug session.
+ */
+class ResumeRunAction : StopControlAction(Glue.StopControl.RESUME) {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) =
+        super.applies(controls, e) ||
+            (e.place == ActionPlaces.KEYBOARD_SHORTCUT && sessions(e)?.answeredLately() == true)
+
+    /** Held after an answer with no stop to act on, the key does nothing. */
+    override fun actionPerformed(e: AnActionEvent) {
+        if (sessions(e)?.controls()?.stopped == true) super.actionPerformed(e)
+    }
+}
 
 /** **Step**: the stopped test stops again before its next call. */
 class StepRunAction : StopControlAction(Glue.StopControl.STEP)
