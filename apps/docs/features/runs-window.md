@@ -42,9 +42,10 @@ its place: [Share a run live](./share-live).
 
 ## Code from a stop
 
-The other actions send code to the editor, which writes it at the stopped line, when its Piwi extension and your
-reporter take them. **Pick** and **Record** start the pause bar's **Pick a locator** and **Record here**, **Assert**
-the recorder's **Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes `toMatchAriaSnapshot`.
+The actions under **Code** (the last two in **More** once five show) send code to the editor, which writes it at the
+stopped line, when its Piwi extension and your reporter take them. **Pick** and **Record** start the pause bar's **Pick
+a locator** and **Record here**, **Assert** the recorder's **Check an element**, and **Assert a region** a pick whose
+ARIA snapshot becomes `toMatchAriaSnapshot`.
 They run in the test's page: where the pause bar shows, or, at a headless stop, once you [watch it](#watch-live),
 driven through the view; until then they show held, saying **Watch to use**. **Mock a request** lists the page's fetch
 and XHR requests, credentials hidden: the one you choose becomes a `page.route`. Under the test, the window says the
@@ -74,7 +75,7 @@ At a headless stop, nobody sees the test's page. Watched, the picker, the record
 in the view, and you answer them there as in a headed browser; their code reaches the editor the same way.
 
 <figure>
-  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live pressed, the Live badge on the view, the picker over the page, and Pick, Record, Assert and Assert a region among the controls">
+  <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live pressed, the Live badge on the view, the picker over the page, with Resume, Step and Finish in one group, End the test apart, and Pick, Record, Assert and More under Code">
   <figcaption>A headless test's page watched live, with Pick started in it.</figcaption>
 </figure>
 

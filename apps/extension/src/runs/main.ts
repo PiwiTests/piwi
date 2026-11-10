@@ -1804,23 +1804,44 @@ const CONTROLS = {
   resume: { label: 'runs_resume', title: 'runs_resumeTitle', icon: 'play', tone: 'primary' },
   step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
-  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop' },
-  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop' },
-  pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick' },
-  record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record' },
-  assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle' },
-  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'layers' },
-  mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network' },
+  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop', tone: 'remove' },
+  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop', tone: 'remove' },
+  pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick', tone: 'ghost' },
+  record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record', tone: 'ghost' },
+  assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle', tone: 'ghost' },
+  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'layers', tone: 'ghost' },
+  mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network', tone: 'ghost' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
   Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share' | 'watch'>,
-  { label: string; title: string; icon: IconName; tone?: 'primary' }
+  { label: string; title: string; icon: IconName; tone?: 'primary' | 'remove' | 'ghost' }
 >;
 
 type Control = keyof typeof CONTROLS;
 
 /** The controls that steer the test, on a row of their own above the code a stop can write. */
 const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'give-up', 'pause']);
+
+/** The controls that move a stopped test on, joined in one group at the start of the steering row. */
+const JOINED: ReadonlySet<Control> = new Set(['resume', 'step', 'finish']);
+
+/**
+ * The code a stop can write that folds under More, where the row holds all five actions, shown while More is open or
+ * its list of requests is.
+ */
+const FOLDED: ReadonlySet<Control> = new Set(['assert-region', 'mock']);
+
+/** How many of the code a stop can write show before More folds some: fewer stay on the row. */
+const FOLD_FROM = 5;
+
+/** The stops whose More is open, by worker and stop (`since`), the latest `MORE_KEPT`: a new stop folds them again. */
+const moreOpen = new Set<string>();
+const MORE_KEPT = 50;
+
+/** Whether a worker's More shows what it folds at the stop `since`. */
+function moreShown(key: string, since: string | null): boolean {
+  return moreOpen.has(`${key}|${since}`);
+}
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
@@ -1852,8 +1873,10 @@ interface RunningLane {
 }
 
 /**
- * A worker's buttons: those that steer the test, then the code a stop can write. `held` are shown, held, saying to
- * watch first; `lane` adds Pause and watch and Watch after Pause while the worker runs.
+ * A worker's buttons: those that steer the test, Resume, Step and Finish joined in one group and End the test apart at
+ * the row's end; then the code a stop can write, under its label, Assert a region and Mock a request folded under More
+ * where the row holds all five.
+ * `held` are shown, held, saying to watch first; `lane` adds Pause and watch and Watch after Pause while the worker runs.
  */
 function renderActions(
   run: RunsRun,
@@ -1865,11 +1888,15 @@ function renderActions(
 ): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
   const since = stop?.since ?? null;
-  const steering = element('div', 'piwi-actions');
-  const code = element('div', 'piwi-actions');
+  const steering = element('div', 'piwi-actions steer');
+  const joined = element('div', 'joined');
+  const code = element('div', 'piwi-actions code');
   code.setAttribute('role', 'group');
   code.setAttribute('aria-label', t('runs_codeActions'));
-  for (const what of controls) {
+  const label = element('span', 'row-label', t('runs_codeLabel'));
+  label.setAttribute('aria-hidden', 'true');
+  const folded: HTMLButtonElement[] = [];
+  const button = (what: Control): HTMLButtonElement => {
     const look = CONTROLS[what];
     const waits = held.includes(what);
     // Mock a request opens the list of the stop's requests; the other controls send themselves.
@@ -1889,8 +1916,43 @@ function renderActions(
     });
     made.dataset.focus = `${key}|${what}`;
     if (waits) unavailable(made);
-    (STEERING.has(what) ? steering : code).append(made);
+    return made;
+  };
+  const folds = controls.filter((what) => !STEERING.has(what)).length >= FOLD_FROM;
+  for (const what of controls) {
+    const made = button(what);
+    if (JOINED.has(what)) joined.append(made);
+    else if (STEERING.has(what)) steering.append(made);
+    else if (folds && FOLDED.has(what)) folded.push(made);
+    else code.append(made);
   }
+  if (joined.childElementCount > 0) {
+    steering.prepend(joined);
+    // End the test, apart from the controls that move the test on.
+    for (const end of steering.querySelectorAll<HTMLElement>(':scope > [data-tone="remove"]')) end.dataset.apart = '';
+  }
+  if (folded.length > 0) {
+    const fold = `${key}|${since}`;
+    const open = moreShown(key, since);
+    const more = makeButton(
+      t('runs_more'),
+      (event) => {
+        if (pressedHeld(event)) return;
+        // Folded, Mock a request takes its list of requests with it.
+        if (moreOpen.delete(fold)) {
+          if (requestLists.get(key)?.since === since) closeRequests(key);
+        } else moreOpen.add(fold);
+        if (moreOpen.size > MORE_KEPT) moreOpen.delete(moreOpen.values().next().value!);
+        focusKey = `${key}|more`;
+        render();
+      },
+      { icon: 'chevron-down', tone: 'ghost', title: folded.map((made) => made.textContent ?? '').join(', ') },
+    );
+    more.dataset.focus = `${key}|more`;
+    more.setAttribute('aria-expanded', String(open));
+    code.append(more, ...(open ? folded : []));
+  }
+  if (code.childElementCount > 0) code.prepend(label);
   if (lane?.pauseWatch) {
     const pauseWatch = makeButton(
       t('runs_pauseWatch'),
@@ -2150,7 +2212,8 @@ function renderWorker(
     if (controls.length > 0 || running) {
       // Drawn again for another stop, so each control answers the stop shown; a command on its way leaves them be.
       const failure = stop?.reason === 'failure';
-      const actions = part(`${key}|actions`, { controls, since, failure, untilWatched, running }, () =>
+      const more = moreShown(key, since);
+      const actions = part(`${key}|actions`, { controls, since, failure, untilWatched, running, more }, () =>
         renderActions(run, worker, controls, stop, untilWatched, running),
       );
       markBusy(actions.querySelectorAll('button'), held);
@@ -2516,10 +2579,16 @@ function restoreFocus(): void {
     return;
   }
   const owner = focusKey.slice(0, focusKey.lastIndexOf('|') + 1);
-  // Never End the test, which a key pressed again would answer.
-  const near = owner
-    ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+  // An action More folds again at the next stop leaves the focus on More; never End the test, which a key pressed
+  // again would answer.
+  const folded = FOLDED.has(focusKey.slice(owner.length) as Control)
+    ? document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${owner}more`)}"]`)
     : null;
+  const near =
+    folded ??
+    (owner
+      ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+      : null);
   if (!near) return;
   lending = true;
   near.focus();

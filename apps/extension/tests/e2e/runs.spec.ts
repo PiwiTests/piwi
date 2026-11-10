@@ -309,6 +309,8 @@ test('a Pause that waits for a call says which and for how long, and End the tes
       const end = card.getByRole('button', { name: 'End the test' });
       await expect(end).toHaveAttribute('title', /the call it waits in is given up/);
       await expect(end).not.toBeFocused();
+      // With no Resume, Step and Finish beside it, End the test stays at the row's start.
+      expect(await end.getAttribute('data-apart')).toBeNull();
       await end.click();
       expect(await run.worker.next('control', 1)).toEqual({
         type: 'control',
@@ -567,7 +569,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('cart › pays')).toBeVisible();
         stopAtCheckout(run.worker, 1);
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
-        // The test's controls, then the code this stop can write, in a group of their own.
+        // The test's controls, then the code this stop can write, in a group of their own, Assert a region and Mock a
+        // request folded under More.
         await expect(card.locator('.controls button')).toHaveText([
           'Resume',
           'Step',
@@ -576,13 +579,19 @@ test.describe('code from a stop', () => {
           'Pick',
           'Record',
           'Assert',
-          'Assert a region',
-          'Mock a request',
+          'More',
         ]);
-        await expect(card.getByRole('group', { name: 'Code from this stop' }).getByRole('button')).toHaveText([
+        const code = card.getByRole('group', { name: 'Code from this stop' });
+        const more = code.getByRole('button', { name: 'More' });
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toHaveAttribute('title', 'Assert a region, Mock a request');
+        await more.click();
+        await expect(more).toHaveAttribute('aria-expanded', 'true');
+        await expect(code.getByRole('button')).toHaveText([
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -673,6 +682,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await expect(mock).toHaveAttribute('aria-expanded', 'false');
         await mock.focus();
@@ -686,10 +696,12 @@ test.describe('code from a stop', () => {
         const list = card.getByRole('group', { name: 'Choose the request to mock' });
         await expect(list.getByRole('listitem')).toHaveCount(KEPT.length);
         await expect(runs.locator('#announce')).toHaveText(`${KEPT.length} requests: choose the one to mock.`);
-        // The list opens under the button, which keeps the focus and says it is open.
+        // The list opens under the button, which keeps the focus and says it is open, pressed whatever its tone.
         await expect(mock).toBeFocused();
         await expect(mock).toHaveAttribute('aria-expanded', 'true');
         await expect(mock).toHaveAttribute('aria-controls', (await list.getAttribute('id'))!);
+        const pressed = (button: Locator) => button.evaluate((el) => getComputedStyle(el).backgroundColor);
+        expect(await pressed(mock)).not.toBe('rgba(0, 0, 0, 0)');
 
         // Each row: the method and the address, then the status, the type, the size and when it ended.
         const cart = list.getByRole('button', { name: /^GET http:\/\/127\.0\.0\.1:3000\/api\/cart/ });
@@ -773,6 +785,23 @@ test.describe('code from a stop', () => {
         await expect(list).toHaveCount(0);
         await expect(mock).toBeFocused();
 
+        // More folds Mock a request and its open list together, and keeps the focus; it shows it is open, pressed.
+        const more = card.getByRole('button', { name: 'More' });
+        expect(await pressed(more)).not.toBe('rgba(0, 0, 0, 0)');
+        await runs.keyboard.press('Enter');
+        await answerNext(run.worker, 'requests', {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: [KEPT[0]],
+        });
+        await expect(list.getByRole('listitem')).toHaveCount(1);
+        await more.click();
+        await expect(list).toHaveCount(0);
+        await expect(mock).toHaveCount(0);
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toBeFocused();
+        await more.click();
+
         // A mock the editor asks for itself shows here too, at the stop it was made at.
         const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
         const fromEditor = editor.svc.client.sendRequest('piwi/stopAction', {
@@ -805,6 +834,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await mock.click();
         // No response kept yet: the list says so.
@@ -846,7 +876,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
         await expect(list).toHaveCount(0);
 
-        // An answer that comes once the test went on from its stop shows nothing.
+        // An answer that comes once the test went on from its stop shows nothing. The new stop folds More again.
+        await card.getByRole('button', { name: 'More' }).click();
         await mock.click();
         const late = await waitFor(() =>
           run.worker.heard.find((m) => m.type === 'request' && m.what === 'requests' && m.stop === 2),
@@ -886,14 +917,7 @@ test.describe('code from a stop', () => {
         expect(await card.locator('.stop .error').innerText()).toBe(FAILURE_ERROR);
         await expect(runs.locator('#announce')).toHaveText('cart › pays failed at tests/checkout.spec.ts:5.');
         // No Step nor Finish: whatever answers it, the test ends as it failed.
-        await expect(card.locator('.controls button')).toHaveText([
-          'Resume',
-          'Pick',
-          'Record',
-          'Assert',
-          'Assert a region',
-          'Mock a request',
-        ]);
+        await expect(card.locator('.controls button')).toHaveText(['Resume', 'Pick', 'Record', 'Assert', 'More']);
         const resume = card.getByRole('button', { name: 'Resume' });
         await expect(resume).toHaveAttribute('title', 'Let the test end as it failed');
         await resume.click();
@@ -980,8 +1004,10 @@ test.describe('code from a stop', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
       } finally {
@@ -996,8 +1022,13 @@ test.describe('code from a stop', () => {
 /** The actions in the test's window a headless stop takes once watched. */
 const WATCH_TO_USE = ['Pick', 'Record', 'Assert', 'Assert a region'];
 
-/** Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first. */
+/**
+ * Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first, Assert a
+ * region under More.
+ */
 async function expectWatchToUse(card: Locator): Promise<void> {
+  const more = card.getByRole('button', { name: 'More' });
+  if ((await more.getAttribute('aria-expanded')) === 'false') await more.click();
   for (const name of WATCH_TO_USE) {
     const button = card.getByRole('button', { name, exact: true });
     await expect(button).toHaveAttribute('aria-disabled', 'true');
@@ -1065,8 +1096,10 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
         await card.getByRole('button', { name: 'Pick', exact: true }).click({ force: true });
@@ -1092,7 +1125,7 @@ test.describe('the live view', () => {
         await expect(
           card.getByText('Your clicks, the wheel and your keys on the view go to the test’s page.', { exact: false }),
         ).toBeVisible();
-        // Watched, the headless stop takes the actions in its page, driven through the view.
+        // Watched, the headless stop takes the actions in its page, driven through the view; More stays open.
         await expect(buttons).toHaveText([
           'Resume',
           'Step',
@@ -1101,6 +1134,7 @@ test.describe('the live view', () => {
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -1136,7 +1170,11 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
+          'Assert a region',
           'Mock a request',
         ]);
         await expectWatchToUse(card);
@@ -1733,9 +1771,13 @@ test.describe('watching a running test', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
+        await card.getByRole('button', { name: 'More' }).click();
+        await expect(card.getByRole('button', { name: 'Assert a region' })).toBeVisible();
         await expect(card.locator('.controls [aria-disabled]')).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', 1, after);
         const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });

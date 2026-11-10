@@ -6672,6 +6672,12 @@
   "runs_mockTitle": {
     "message": "Eine Anfrage der Seite wählen: Ein page.route(), das sie wie der Server beantwortet, geht an den Editor, der es über dieser Zeile einfügt"
   },
+  "runs_codeLabel": {
+    "message": "Code"
+  },
+  "runs_more": {
+    "message": "Mehr"
+  },
   "runs_codeActions": {
     "message": "Code an dieser Stelle"
   },

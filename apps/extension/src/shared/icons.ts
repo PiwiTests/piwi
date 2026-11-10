@@ -22,6 +22,7 @@ export const ICONS = {
   check: ['M5 12.25l4.5 4.5L19 7.25'],
   close: ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11'],
   plus: ['M12 5v14', 'M5 12h14'],
+  'chevron-down': ['M6 9l6 6 6-6'],
   trash: [
     'M4 7h16',
     'M10 11v6',

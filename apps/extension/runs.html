@@ -427,6 +427,33 @@
         gap: 6px;
         margin-top: 8px;
       }
+      /* Resume, Step and Finish, one group: their borders meet. */
+      .controls .joined {
+        display: inline-flex;
+      }
+      .controls .joined > .piwi-btn:not(:first-child) {
+        margin-left: -1px;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+      }
+      .controls .joined > .piwi-btn:not(:last-child) {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .controls .joined > .piwi-btn:focus-visible {
+        position: relative;
+        z-index: 1;
+      }
+      /* End the test, apart from the controls that move the test on. */
+      .controls [data-apart] {
+        margin-left: auto;
+      }
+      /* The code row's label, before its quiet buttons. */
+      .controls .row-label {
+        color: var(--muted);
+        font-size: 12px;
+        margin-right: 2px;
+      }
       /* A test held where it failed: a stop, not a breakpoint. */
       .worker[data-failed] .state {
         color: var(--error);
@@ -441,14 +468,22 @@
         opacity: 0.5;
         cursor: default;
       }
-      /* Mock a request while its list of requests is open under it. */
-      .piwi-btn[aria-expanded='true'] {
+      /*
+       * Mock a request while its list of requests is open under it, and More while it shows what it folds: pressed,
+       * whatever their tone (the buttons' own styles come after this sheet).
+       */
+      .piwi-btn.piwi-btn[aria-expanded='true'] {
         background: var(--piwi-btn-pressed-bg);
         border-color: var(--piwi-btn-pressed-border);
       }
-      .piwi-btn[aria-disabled='true']:hover {
+      /* A held button keeps its look under the pointer, whatever its tone. */
+      .piwi-btn.piwi-btn[aria-disabled='true']:hover {
         background: var(--piwi-btn-bg);
         border-color: var(--piwi-btn-border);
+      }
+      .piwi-btn.piwi-btn[data-tone='ghost'][aria-disabled='true']:hover {
+        background: none;
+        border-color: transparent;
       }
       /* What a command answered when it was not done. */
       .answer {
