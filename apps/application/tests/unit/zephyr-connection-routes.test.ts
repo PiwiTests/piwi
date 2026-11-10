@@ -71,7 +71,8 @@ const assignable = route(await import('../../server/api/integrations/connections
 const issuePicker = route(await import('../../server/api/integrations/connections/[id]/issue-picker.get'));
 const bind = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { getSetupStatus } = await import('../../shared/handlers/setup-status');
-const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
+const { limiterForConnection, resetLimitersForTests } =
+  await import('../../server/utils/integrations/test-management/limiter');
 const { connectionPausedUntil, pauseConnectionById } = await import('../../server/utils/integrations/actions');
 
 const as = (
@@ -254,6 +255,27 @@ describe('testing a Zephyr connection', () => {
       expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('waiting') });
       expect(sent).toEqual([]);
       expect((await list(event())).connections[0]).toMatchObject({ status: 'ok' });
+    } finally {
+      delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
+      resetLimitersForTests();
+    }
+  });
+
+  test('answers ok false at once when the queue outlasts the ten seconds the check has, and takes no turn', async () => {
+    const connection = await createZephyr();
+    // 12 s apart: one request ahead leaves the check 12 s away, inside the 15 s a queue may be but past its 10 s.
+    process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '5';
+    resetLimitersForTests();
+    try {
+      const limiter = limiterForConnection(connection.id);
+      void limiter.wait();
+      const started = Date.now();
+      expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('waiting') });
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(sent).toEqual([]);
+      expect((await list(event())).connections[0]).toMatchObject({ status: 'unverified' });
+      const probe = await limiter.wait({ maxWaitMs: 0 }).catch((err: { retryAfterMs: number }) => err);
+      expect((probe as { retryAfterMs: number }).retryAfterMs).toBeLessThan(13_000);
     } finally {
       delete process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE;
       resetLimitersForTests();

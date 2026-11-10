@@ -356,8 +356,28 @@ describe('the Check and Test budget', () => {
     const { result, ms } = await elapsed(() => testConnection(db as never, created.id));
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('within 10 seconds') });
     expect((await getConnectionRow(db as never, created.id))!.status).toBe('failed');
-    expect(budgets).toEqual([10_000]);
+    // The request's own budget and the whole check's, both the short one.
+    expect(budgets).toEqual([10_000, 10_000]);
     expect(ms).toBeLessThan(600);
+  });
+
+  test('a request whose wait used up the budget is not sent, and says it timed out', async () => {
+    const calls = sent.length;
+    const budget = new AbortController();
+    const client = ZephyrScaleClient.forRegion(
+      'us',
+      { apiToken: TOKEN },
+      {
+        timeoutMs: 1000,
+        signal: budget.signal,
+        beforeRequest: async () => budget.abort(new DOMException('', 'TimeoutError')),
+      },
+    );
+    await expect(client.whoAmI()).rejects.toMatchObject({
+      status: 504,
+      message: expect.stringContaining('did not answer within 1 seconds'),
+    });
+    expect(sent).toHaveLength(calls);
   });
 
   test('a client built for later work keeps the long budget', async () => {

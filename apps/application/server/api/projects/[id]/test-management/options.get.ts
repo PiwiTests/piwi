@@ -15,7 +15,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'List what the test management binding form offers',
     description:
-      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project, and a failed read for thirty seconds; the whole read, every request of it, ends within ten seconds with 502; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. A connection with more requests queued than can start within fifteen seconds answers 429 with `Retry-After` too. Never returns the token. Requires `project:manage` (Project admin on the project).",
+      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project, and a failed read for thirty seconds; the whole read, every request of it, ends within ten seconds with 502; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. A connection with more requests queued than can start within that time answers 429 with `Retry-After` too. Never returns the token. Requires `project:manage` (Project admin on the project).",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'connectionId', in: 'query', required: true, schema: { type: 'integer' } },
@@ -44,6 +44,7 @@ export default eventHandler(async (event) => {
     timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
     signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
     maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+    deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
   });
   const cacheKey = `${connectionId}:${projectKey ?? ''}`;
   const cached = testManagementOptionsCache.get(cacheKey);

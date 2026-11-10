@@ -98,7 +98,8 @@ const { boundConnectionId } = await import('../../server/utils/integrations/boun
 const { testManagementOptionsCache, testManagementOptionsFailureCache } =
   await import('../../server/utils/integrations/picker-cache');
 const { connectionPausedUntil } = await import('../../server/utils/integrations/actions');
-const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
+const { limiterForConnection, resetLimitersForTests } =
+  await import('../../server/utils/integrations/test-management/limiter');
 
 const as = (
   id: number,
@@ -400,6 +401,32 @@ describe('GET options', () => {
       expect(sent).toHaveLength(calls);
       expect(connectionPausedUntil(zephyrId, new Date())).toBeNull();
       expect(testManagementOptionsFailureCache.size).toBe(0);
+    } finally {
+      process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
+      resetLimitersForTests();
+    }
+  });
+
+  test('a queue that outlasts the form’s budget answers 429 at once, without a call or a place in the queue', async () => {
+    // 200 ms apart: four requests ahead leave the next one 800 ms away, past the 400 ms the form has.
+    process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '300';
+    resetLimitersForTests();
+    try {
+      const limiter = limiterForConnection(zephyrId);
+      for (let ahead = 0; ahead < 4; ahead++) void limiter.wait();
+      const started = Date.now();
+      const refused = await refusal(
+        getOptions(at(10, undefined, { connectionId: String(zephyrId), projectKey: 'WEB_APP' })),
+      );
+      expect(Date.now() - started).toBeLessThan(200);
+      expect(refused).toMatchObject({ statusCode: 429 });
+      expect(Number(headers['Retry-After'])).toBeGreaterThan(0);
+      expect(sent).toEqual([]);
+      expect(connectionPausedUntil(zephyrId, new Date())).toBeNull();
+      expect(testManagementOptionsFailureCache.size).toBe(0);
+      // The refused read took no turn: the queue is still the four requests ahead of it.
+      const probe = await limiter.wait({ maxWaitMs: 0 }).catch((err: { retryAfterMs: number }) => err);
+      expect((probe as { retryAfterMs: number }).retryAfterMs).toBeLessThan(900);
     } finally {
       process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
       resetLimitersForTests();

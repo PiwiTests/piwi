@@ -224,6 +224,8 @@ export class ZephyrScaleClient implements TestManagementProvider {
         `Zephyr Scale did not answer within ${this.timeoutMs / 1000} seconds`,
       );
     await this.beforeRequest?.();
+    // A wait that used up the budget leaves nothing to send a request with.
+    if (this.signal?.aborted) throw timedOut();
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}?${query}`, {
