@@ -50,8 +50,9 @@ whose runs would connect through a folder another user can open.
   any, it runs as it would, and **Pause** stops it.
 - **The controls**: Pause, Resume, Step, Run to cursor, Finish and [End the test](./end-the-test), and the code a stop
   makes, Assert a region and Mock a request, written in the editor ([Code from a pause](./editor-stop-code)).
-- **Failures.** A failure is held only while the Runs window follows the editor's runs as the worker starts: nobody
-  may be there to answer it otherwise, and it goes on, as without Piwi.
+- **Failures.** A failure goes on, as without Piwi, until you turn the run's
+  [**Hold failures**](/guide/concepts#hold-failures) on, in the editor or the Runs window: nobody may be there to answer
+  it otherwise.
 
 When the editor closes, or its service stops, the connection closes, and a stop with no pause bar goes on. The token
 of the editor's connection reaches the run's workers alone, out of the tests' environment while they run, as for a run

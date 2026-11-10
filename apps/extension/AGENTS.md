@@ -136,9 +136,10 @@ each rule below ends with the section to read there.
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
   command is `aria-disabled`, never `disabled`,** so a control keeps the focus, restored across redraws by
   `data-focus` (`runs.spec.ts`). (see "The Runs window")
-- **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
-  `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
-  meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
+- **A Runs window open holds no failure: a run's Hold failures does, which the window turns on or off (`hold`).**
+  `RunHubs.listen` sends `follow` with `on: true` on each hub connection while a window is open, and `on: false`
+  as the last leaves; the toggle shows only for a run whose hub sends its `hold` (`runs.spec.ts`).
+  (see "A connection per hub")
 - **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
   the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
   input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,

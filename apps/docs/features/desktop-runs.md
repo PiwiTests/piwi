@@ -25,8 +25,8 @@ end without stopping again, and [**End the test**](./end-the-test) skips the res
 
 **Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
 it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
-which runs to show you the failure; while [Piwi Picker's Runs window](./runs-window) is open, failures are held too. A
-run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
+which runs to show you the failure. It is [the run's own](/guide/concepts#hold-failures), off again as the app's last
+window closes. A run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
 `--repeat-each` above 1 and UI mode go on past each failure.
 
 <figure>
