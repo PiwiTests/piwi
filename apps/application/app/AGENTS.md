@@ -272,7 +272,7 @@ views are exempt only where a rule says so.
   has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
   window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
   **Hold failures** switch is on (off by default, on for a reproduction and a run started with it on,
-  `desktopHoldsByDefault`, and **Run again** keeps the switch; never for a run nobody attends, `desktopHoldRefusal`),
+  `desktopHoldsByDefault`, and **Run again** keeps this window's choice; never for a run nobody attends, `desktopHoldRefusal`),
   each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`,
   `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the

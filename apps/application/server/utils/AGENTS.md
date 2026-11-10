@@ -247,7 +247,7 @@ runs (`@piwitests/editor/run-host`), plus these:
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
   **Hold failures** switch is on) or whose Hold failures Piwi Picker or an agent turned on, and never in a run nobody
   attends: its ref ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a
-  bisect, a lab job, and a run with `--repeat-each` above 1 or `--ui`.
+  bisect, a lab job, a run with `--ui`, and one with `--repeat-each` above 1 unless it stops at its first failure.
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to

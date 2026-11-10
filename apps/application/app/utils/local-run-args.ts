@@ -118,6 +118,23 @@ export function localRunCopyOptions(options: LocalRunOptions): RetryRunOptions {
   };
 }
 
+/**
+ * Why a run with these options holds no failure whatever **Hold failures** says, as the shell names it one nobody
+ * attends (UI mode, or a repeat that does not stop at its first failure); null for one that can.
+ */
+export function localRunHoldRefusal(options: LocalRunOptions): string | null {
+  if (options.runMode === 'ui') return 'UI mode goes on past each failure.';
+  if (Math.floor(options.repeatEach ?? 1) > 1 && !stopsAtFirstFailure(options)) {
+    return 'A repeated run goes on past each failure, unless it stops at the first one.';
+  }
+  return null;
+}
+
+/** Whether a run with these options holds its failures from its start: Hold failures on, for a run that can. */
+export function localRunHoldsFailures(options: LocalRunOptions): boolean {
+  return !!options.holdFailures && !localRunHoldRefusal(options);
+}
+
 /** Whether a run with these options repeats its tests and ends at the first failing repetition. */
 export function stopsAtFirstFailure(options: LocalRunOptions): boolean {
   return !!options.stopAtFirstFailure && Math.floor(options.repeatEach ?? 1) > 1;

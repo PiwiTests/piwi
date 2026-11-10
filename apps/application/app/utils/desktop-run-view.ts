@@ -42,7 +42,7 @@ export function desktopRunOf(ref: string): string {
 /**
  * Whether a person attends a `playwright test` run with these arguments, as the shell reads them (`attended_args`,
  * `hub_env.rs`): not one in UI mode (`--ui`), nor one that repeats each test (`--repeat-each` above 1) unless it ends
- * at its first failure (`--max-failures=1` or `-x`).
+ * at its first failure (`--max-failures=1`).
  */
 export function desktopArgsAttended(args: readonly string[]): boolean {
   let repeats = false;
@@ -51,7 +51,7 @@ export function desktopArgsAttended(args: readonly string[]): boolean {
     if (arg === '--ui' || arg.startsWith('--ui=')) return false;
     const repeat = optionValue(args, index, '--repeat-each');
     if (repeat !== undefined && !(/^\d+$/.test(repeat) && Number(repeat) <= 1)) repeats = true;
-    if (arg === '-x' || optionValue(args, index, '--max-failures') === '1') stopsAtFirstFailure = true;
+    if (optionValue(args, index, '--max-failures') === '1') stopsAtFirstFailure = true;
   }
   return !repeats || stopsAtFirstFailure;
 }

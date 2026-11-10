@@ -130,7 +130,6 @@ describe('a worker of a desktop run', () => {
     for (const args of [
       ['--repeat-each=20', '--retries=0', '--max-failures=1'],
       ['--max-failures', '1', '--repeat-each', '5'],
-      ['-x', '--repeat-each=3'],
     ]) {
       expect(desktopArgsAttended(args), args.join(' ')).toBe(true);
     }

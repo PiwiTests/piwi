@@ -4,7 +4,10 @@ import {
   buildLocalRunPlan,
   buildReproduceArgs,
   localRunCopyOptions,
+  localRunHoldRefusal,
+  localRunHoldsFailures,
 } from '../../app/utils/local-run-args';
+import { desktopArgsAttended } from '../../app/utils/desktop-run-view';
 import { buildRetryCommand } from '#shared/retry-command';
 import { splitRerunArgs } from '@piwitests/core/rerun-args';
 
@@ -84,6 +87,28 @@ describe('buildLocalRunPlan', () => {
     expect(buildLocalRunPlan([CASE], { repeatEach: 1, stopAtFirstFailure: true })[0]!.args).not.toContain(
       '--max-failures=1',
     );
+  });
+
+  test('Hold failures holds only in a run a person attends, as the shell names it', () => {
+    expect(localRunHoldsFailures({ holdFailures: true })).toBe(true);
+    expect(localRunHoldsFailures({ holdFailures: true, repeatEach: 20, stopAtFirstFailure: true })).toBe(true);
+    expect(localRunHoldRefusal({ holdFailures: true, repeatEach: 20 })).toBe(
+      'A repeated run goes on past each failure, unless it stops at the first one.',
+    );
+    expect(localRunHoldsFailures({ holdFailures: true, repeatEach: 20 })).toBe(false);
+    expect(localRunHoldRefusal({ runMode: 'ui', repeatEach: 20, stopAtFirstFailure: true })).toBe(
+      'UI mode goes on past each failure.',
+    );
+    // The rule is the shell's own, read from the arguments the run starts with.
+    for (const options of [
+      { repeatEach: 20 },
+      { repeatEach: 20, stopAtFirstFailure: true },
+      { runMode: 'ui' as const },
+      { repeatEach: 1, stopAtFirstFailure: true },
+    ]) {
+      const attended = desktopArgsAttended(buildLocalRunPlan([CASE], options)[0]!.args);
+      expect(localRunHoldRefusal(options) === null, JSON.stringify(options)).toBe(attended);
+    }
   });
 
   test('Hold failures adds no flag: the run channel carries it', () => {

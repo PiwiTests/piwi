@@ -25,6 +25,7 @@ import {
   type LocalRunMode,
   type LocalRunOptions,
   type LocalRunStep,
+  localRunHoldsFailures,
   stopsAtFirstFailure,
 } from '~/utils/local-run-args';
 import type { RetryCase, RetryMode } from '~/utils/retry-command';
@@ -347,7 +348,7 @@ export function localRunOptionsSummary(options: LocalRunOptions): string {
     parts.push(stopsAtFirstFailure(options) ? `×${options.repeatEach} until a failure` : `×${options.repeatEach}`);
   }
   if (options.trace) parts.push('trace');
-  if (options.holdFailures) parts.push('hold failures');
+  if (localRunHoldsFailures(options)) parts.push('hold failures');
   return parts.join(' · ');
 }
 
@@ -1308,15 +1309,13 @@ export function useDesktopLocalRuns() {
       : startReproduce({ ...common, commit: job.commit });
   }
 
-  /** Run a run again as it ran: what it runs, its options, and the person's Hold failures choice on it. */
+  /** Run a run again as it ran: what it runs, its options, and this window's Hold failures choice on it. */
   function rerun(run: LocalRun): LocalRun | null {
-    const next = startAgain(run);
-    const chosen = holds.value[run.key];
-    if (next && chosen !== undefined) holds.value = { ...holds.value, [next.key]: chosen };
-    return next;
-  }
-
-  function startAgain(run: LocalRun): LocalRun | null {
+    const keepHold = (next: LocalRun | null) => {
+      const chosen = holds.value[run.key];
+      if (next && chosen !== undefined) holds.value = { ...holds.value, [next.key]: chosen };
+      return next;
+    };
     if (run.kind === 'repro' && run.repro) {
       const { requestId, steps, args, bugReportId } = run.repro;
       void startRepro({
@@ -1326,11 +1325,17 @@ export function useDesktopLocalRuns() {
         steps,
         args,
         bugReportId,
-      }).catch((error) =>
-        toastApi?.add({ title: 'Could not run again', description: errorMessage(error), color: 'error' }),
-      );
+      })
+        .then(keepHold)
+        .catch((error) =>
+          toastApi?.add({ title: 'Could not run again', description: errorMessage(error), color: 'error' }),
+        );
       return null;
     }
+    return keepHold(startAgain(run));
+  }
+
+  function startAgain(run: LocalRun): LocalRun | null {
     // Re-running repeats the run exactly.
     if (run.kind === 'reproduce' && run.commit) {
       return startReproduce({

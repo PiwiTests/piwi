@@ -15,7 +15,13 @@
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan, localRunCopyOptions, type LocalRunOptions } from '~/utils/local-run-args';
+import {
+  buildLocalRunPlan,
+  localRunCopyOptions,
+  localRunHoldRefusal,
+  localRunHoldsFailures,
+  type LocalRunOptions,
+} from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
@@ -265,7 +271,9 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         label: 'Hold failures',
         icon: 'i-lucide-hand',
         type: 'checkbox',
-        checked: options.value.holdFailures,
+        checked: localRunHoldsFailures(options.value),
+        disabled: !!localRunHoldRefusal(options.value),
+        description: localRunHoldRefusal(options.value) ?? undefined,
         onSelect: (e: Event) => {
           e.preventDefault();
           setOption({ holdFailures: !options.value.holdFailures });

@@ -725,11 +725,14 @@ test.describe('Desktop run live view', () => {
     await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
     await page.evaluate(() => window.__endRun());
     await expect(holdSwitch(page)).toHaveCount(0);
-    const shows = commands.filter((c) => c.type === 'show').length;
     await tray(page).getByRole('button', { name: 'Run again' }).first().click();
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
-    expect(commands.filter((c) => c.type === 'show' && c.on).length).toBe(1);
-    expect(commands.filter((c) => c.type === 'show').length).toBeGreaterThanOrEqual(shows);
+    expect(commands.filter((c) => c.type === 'show' && c.on)).toHaveLength(1);
+    // The new run was off: turning it on shows it again, once the hub's stream is open for it.
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.filter((c) => c.type === 'show' && c.on)).toHaveLength(2);
   });
 
   test('offers no Hold failures for a run nobody attends, and says why', async ({ page }) => {

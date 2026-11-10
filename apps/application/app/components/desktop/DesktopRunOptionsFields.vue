@@ -6,6 +6,7 @@
  * Local folder section the project's defaults.
  */
 import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
+import { localRunHoldRefusal } from '~/utils/local-run-args';
 
 const options = defineModel<SavedLocalRunOptions>({ required: true });
 
@@ -25,13 +26,12 @@ const holdFailures = field('holdFailures');
 
 const repeats = computed(() => Math.floor(repeatEach.value ?? 1) > 1);
 /** Why Hold failures does nothing with these options: a run nobody attends goes on past each failure. */
-const holdRefused = computed(() =>
-  runMode.value === 'ui'
-    ? 'UI mode goes on past each failure.'
-    : repeats.value && !stopAtFirstFailure.value
-      ? 'A repeated run goes on past each failure, unless it stops at the first one.'
-      : null,
-);
+const holdRefused = computed(() => localRunHoldRefusal(options.value));
+/** The switch as the run would start: off whatever is kept while the options refuse it. */
+const holdShown = computed({
+  get: () => !holdRefused.value && holdFailures.value,
+  set: (on: boolean) => (holdFailures.value = on),
+});
 </script>
 
 <template>
@@ -48,7 +48,7 @@ const holdRefused = computed(() =>
     <UFormField
       label="Stop at the first failing repetition"
       name="stopAtFirstFailure"
-      description="End a repeated run at its first failure (--max-failures=1), so you can look at it."
+      description="Start no repetition after the first failure (--max-failures=1), so you can look at it."
     >
       <USwitch v-model="stopAtFirstFailure" :disabled="!repeats" />
     </UFormField>
@@ -60,7 +60,7 @@ const holdRefused = computed(() =>
       name="holdFailures"
       :description="holdRefused ?? 'Hold each failing test at its line from the run\'s start, until you answer it.'"
     >
-      <USwitch v-model="holdFailures" :disabled="!!holdRefused" />
+      <USwitch v-model="holdShown" :disabled="!!holdRefused" />
     </UFormField>
   </div>
 </template>
