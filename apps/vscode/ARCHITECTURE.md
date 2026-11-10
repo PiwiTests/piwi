@@ -127,7 +127,11 @@ The service's environment is the extension host's, with the editor's proxy setti
 
 A setting left empty keeps the environment's own variable. A change of one of these settings starts the service again,
 250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
-output channel, where `piwi.trace.server` writes the traffic with the service.
+output channel, where `piwi.trace.server` writes the traffic with the service. **Piwi: Restart the editor service**
+(`piwi.restartService`) stops the client and starts it again, after `restarting` as a proxy change does: the Failures
+view's welcome offers it while the service does not answer, and so does a Refresh it did not answer. A failed request
+reveals no output channel (`RevealOutputChannelOn.Never`): it is in the log, and the status item and the view say the
+service is down.
 
 ## Settings and stored state
 

@@ -78,7 +78,7 @@
       },
       {
         "view": "piwi.failures",
-        "contents": "The Piwi editor service is not answering. It starts with the extension, on a workspace that holds a Playwright config; Refresh asks it again, and the log says what it did.\n[Refresh](command:piwi.refresh)\n[Open the log](command:piwi.openLog)",
+        "contents": "The Piwi editor service is not answering. It starts with the extension, on a workspace that holds a Playwright config; the log says what it did.\n[Restart the editor service](command:piwi.restartService)\n[Open the log](command:piwi.openLog)",
         "when": "piwi.failuresView == unavailable"
       },
       {
@@ -206,6 +206,11 @@
       {
         "command": "piwi.refresh",
         "title": "Refresh",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.restartService",
+        "title": "Restart the editor service",
         "category": "Piwi"
       },
       {

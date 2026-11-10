@@ -17,6 +17,7 @@ import {
   type LanguageClientOptions,
   type NodeModule,
   type ServerOptions,
+  RevealOutputChannelOn,
 } from 'vscode-languageclient/node';
 import {
   AGENT_CONTEXT_REQUEST,
@@ -174,6 +175,8 @@ import {
   type FailureNode,
   type ProxySettings,
   NOT_CONNECTED,
+  RESTART_SERVICE,
+  SERVICE_NOT_ANSWERING,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -417,6 +420,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
   context.subscriptions.push({ dispose: () => proxyTimer && clearTimeout(proxyTimer) });
   const clientOptions: LanguageClientOptions = {
+    // A failed request is logged, never a toast: the status item and the Failures view say when the service is down.
+    revealOutputChannelOn: RevealOutputChannelOn.Never,
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included. The extension
     // shows where the runs it started stop, answers those stops, and writes the code made there.
@@ -1110,8 +1115,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
     ),
     vscode.commands.registerCommand('piwi.refresh', async () => {
-      await lc.sendRequest(REFRESH_REQUEST);
+      try {
+        await lc.sendRequest(REFRESH_REQUEST);
+      } catch {
+        const answer = await vscode.window.showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE);
+        if (answer) await vscode.commands.executeCommand('piwi.restartService');
+        return;
+      }
       await updateStatus();
+    }),
+    // A service the client gave up restarting, or one that does not answer, is stopped and started again.
+    vscode.commands.registerCommand('piwi.restartService', async () => {
+      restarting = restarting
+        .then(async () => {
+          lc.outputChannel.info('Starting the editor service again.');
+          await lc.stop().catch(() => undefined);
+          await lc.start();
+          await updateStatus();
+        })
+        .catch((e: unknown) => {
+          lc.outputChannel.error(`The editor service did not start again: ${(e as Error).message}`);
+          void vscode.window
+            .showErrorMessage('Piwi: the editor service did not start again. The log says why.', 'Open the log')
+            .then((a) => a && lc.outputChannel.show());
+        });
+      await restarting;
     }),
     // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {

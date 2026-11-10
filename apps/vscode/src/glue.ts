@@ -43,6 +43,12 @@ import { isUnder } from './breakpoints';
 
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
 
+/** What a Refresh the editor service did not answer says, with `RESTART_SERVICE`. */
+export const SERVICE_NOT_ANSWERING = 'Piwi: the editor service is not answering.';
+
+/** The button that runs `piwi.restartService`. */
+export const RESTART_SERVICE = 'Restart the editor service';
+
 /** What a command that reads the instance says while no context is connected, with Connect. */
 export const NOT_CONNECTED = 'Piwi: connect to an instance first.';
 export const DOCUMENT_PATTERN =
