@@ -20,6 +20,8 @@ const {
   toggleEnabled: toggleNotifEnabled,
 } = useDiagnosisNotification();
 
+/** A Claude subscription runs Claude Code in the desktop app only, never on a server. */
+const isDesktop = useIsDesktop();
 /** The local CLI the assistant answers through, if any: it then runs inside it, with Piwi's tools only. */
 const assistantCli = computed(() => {
   const provider = form.resolvedProvider(roles.assistant.enabled ? 'assistant' : 'diagnosis');
@@ -181,7 +183,7 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
         <AiSecondaryModel v-if="roles.assistant.enabled && configured" role="assistant" />
         <p v-if="assistantCli" class="text-xs text-muted">
           The assistant runs inside {{ assistantCliLabel }}, with Piwi's tools only, none of its own.
-          <template v-if="assistantCli === 'claude-cli'">
+          <template v-if="assistantCli === 'claude-cli' && isDesktop">
             The usage limit of your Claude subscription shows in the assistant panel.
           </template>
         </p>

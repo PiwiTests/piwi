@@ -21,6 +21,7 @@ const blocker = computed(() => {
   if (!isLocalCliProvider(provider) || form.envManaged.value) return null;
   const v = cli.view(provider);
   if (v.checked && !v.installed) return 'Install it on this machine first.';
+  if (v.checked && !v.ready && v.serverSignIn) return 'Sign it in with an API key or a cloud provider first.';
   if (v.checked && !v.ready) return provider === 'deepseek-cli' ? 'Add its credentials first.' : 'Sign in first.';
   return null;
 });

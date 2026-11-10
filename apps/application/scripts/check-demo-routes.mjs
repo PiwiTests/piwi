@@ -104,8 +104,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',
-  // Local Claude CLI session: desktop-app only, drives a `claude` binary on the
-  // host. 404 everywhere else, including the demo, with nothing to script.
+  // Local Claude CLI status: the desktop app, or a server with PIWI_CLAUDE_CLI_PATH
+  // set, drives a `claude` binary on the host. The demo has no host to probe.
   'GET /api/ai/claude-cli/status',
   // Connecting Piwi Picker: a device authorization that ends in an API key for
   // an account. The demo has no server for an extension to reach and no keys.

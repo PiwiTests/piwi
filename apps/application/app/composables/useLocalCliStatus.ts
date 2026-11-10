@@ -6,8 +6,14 @@ export interface LocalCliView {
   /** False until the first check answers. */
   checked: boolean;
   installed: boolean;
-  /** Signed in, or for DeepSeek Harness credentials set (checked on first use). */
+  /** Ready to run here: signed in in a way this server may use (DeepSeek Harness: credentials set, checked on first use). */
   ready: boolean;
+  /** Signed in, whatever the method, even one this server refuses. */
+  signedIn: boolean;
+  /** Claude Code on a server: only an API key or a cloud provider can run, never a Claude subscription. */
+  serverSignIn: boolean;
+  /** Signed in with a subscription plan, which bills the plan rather than each call. */
+  subscription: boolean;
   version: string | null;
   path: string | null;
   /** How it is signed in. */
@@ -74,6 +80,9 @@ export function useLocalCliStatus() {
         checked: Boolean(s),
         installed: Boolean(s?.available),
         ready: Boolean(s?.loggedIn) && !s?.error,
+        signedIn: Boolean(s?.loggedIn),
+        serverSignIn: Boolean(s && !s.desktop),
+        subscription: s?.authMethod === 'oauth_token',
         version: s?.version ?? null,
         path: s?.binaryPath ?? null,
         account: s?.authMethod ? (CLAUDE_AUTH[s.authMethod] ?? s.authMethod) : null,
@@ -87,6 +96,9 @@ export function useLocalCliStatus() {
       checked: Boolean(s),
       installed: Boolean(s?.available),
       ready: Boolean(s?.loggedIn),
+      signedIn: Boolean(s?.loggedIn),
+      serverSignIn: false,
+      subscription: provider === 'codex-cli',
       version: s?.version ?? null,
       path: s?.binaryPath ?? null,
       account: s?.loggedIn ? OTHER_ACCOUNT[provider] : null,

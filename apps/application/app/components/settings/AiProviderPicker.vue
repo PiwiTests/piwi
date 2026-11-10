@@ -60,9 +60,9 @@ function trait(tile: ProviderTile): Trait {
     if (!v.checked) return { text: 'Checking…' };
     if (!v.installed) return { text: 'Not installed', dot: 'neutral' };
     const deepseek = tile.provider === 'deepseek-cli';
-    return v.ready
-      ? { text: deepseek ? 'Credentials set' : 'Signed in', dot: 'success' }
-      : { text: deepseek ? 'No credentials' : 'Not signed in', dot: 'warning' };
+    if (v.ready) return { text: deepseek ? 'Credentials set' : 'Signed in', dot: 'success' };
+    if (v.serverSignIn) return { text: 'Needs an API key', dot: 'warning' };
+    return { text: deepseek ? 'No credentials' : 'Not signed in', dot: 'warning' };
   }
   if (tile.key === 'required') {
     return form.canStoreSecrets.value ? { text: 'API key' } : { text: 'Needs PIWI_SECRET_KEY', warning: true };

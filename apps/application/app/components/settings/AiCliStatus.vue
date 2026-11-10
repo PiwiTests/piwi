@@ -42,8 +42,6 @@ const META: Record<
 const meta = computed(() => META[props.provider]);
 const allowed = computed(() => form.cliAllowed(props.provider));
 const v = computed(() => cli.view(props.provider));
-/** Claude Code is signed in, but in a way this server may not use (a subscription outside the desktop app). */
-const refused = computed(
   () => props.provider === 'claude-cli' && Boolean(cli.claude.status.value?.loggedIn) && !v.value.ready,
 );
 
@@ -55,7 +53,7 @@ const state = computed<{ text: string; dot: string }>(() => {
       ? { text: 'Credentials set, checked on first use', dot: 'bg-success' }
       : { text: 'No credentials', dot: 'bg-warning' };
   }
-  if (refused.value) return { text: 'Sign-in not usable here', dot: 'bg-warning' };
+  if (!v.value.ready && v.value.serverSignIn) return { text: 'Needs an API key', dot: 'bg-warning' };
   return v.value.ready ? { text: 'Signed in', dot: 'bg-success' } : { text: 'Not signed in', dot: 'bg-warning' };
 });
 
@@ -128,11 +126,11 @@ watch(() => props.provider, check);
       <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1">
         <dt class="text-xs text-muted">Version</dt>
         <dd class="font-mono text-xs text-highlighted">{{ v.version || 'unknown' }}</dd>
-        <template v-if="v.ready && v.account">
+        <template v-if="v.signedIn && v.account">
           <dt class="text-xs text-muted">Signed in with</dt>
           <dd class="text-sm text-highlighted">{{ v.account }}</dd>
         </template>
-        <template v-if="v.ready && v.modelApi">
+        <template v-if="v.signedIn && v.modelApi">
           <dt class="text-xs text-muted">Model API</dt>
           <dd class="text-sm text-highlighted">{{ v.modelApi }}</dd>
         </template>
@@ -143,11 +141,11 @@ watch(() => props.provider, check);
       </dl>
 
       <UAlert
-        v-if="refused"
+        v-if="!v.ready && v.serverSignIn"
         color="warning"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="This server cannot use a Claude subscription"
+        title="On a server, Claude Code needs an API key or a cloud provider"
         :description="v.error || undefined"
       />
       <div v-else-if="provider === 'claude-cli' && !v.ready" class="space-y-2">
@@ -175,8 +173,8 @@ watch(() => props.provider, check);
           />
         </StatTileGrid>
         <p class="text-xs text-muted">
-          Since Piwi started. Input tokens count the tool's cached context, large but cheap. A subscription bills the
-          cost to your plan, not per call.
+          Since Piwi started. Input tokens count the tool's cached context, large but cheap.
+          <template v-if="v.subscription">A subscription bills the cost to your plan, not per call.</template>
         </p>
       </div>
     </template>
