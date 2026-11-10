@@ -32,7 +32,8 @@ shared with the desktop app:
 
 The Release workflow builds it with the same steps: the host, the window and the staging, then tauri-action with
 `--features runner --config src-tauri/runner.conf.json`, which names the files from that merged config
-("Piwi Runner_<version>_<arch>"), so they never match the dashboard's.
+("Piwi Runner_<version>_<arch>"), so they never match the dashboard's. It keeps them as the run's artifacts and attaches
+nothing to the release.
 
 `runner_app` is compiled with and without the feature, so `cargo test` covers both.
 
