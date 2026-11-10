@@ -226,6 +226,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
      */
     private class FailuresPanel(private val project: Project, private val tree: JTree) :
         SimpleToolWindowPanel(true, true), OccurenceNavigator {
+        /** The selected node's dashboard page, for Open in Dashboard. */
+        override fun getData(dataId: String): Any? =
+            if (DASHBOARD_URL.`is`(dataId)) nodeOf(tree.lastSelectedPathComponent)?.url else super.getData(dataId)
+
         private fun failurePaths(): List<TreePath> {
             val paths = mutableListOf<TreePath>()
             fun walk(node: DefaultMutableTreeNode) {

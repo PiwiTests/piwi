@@ -173,6 +173,7 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
+  NOT_CONNECTED,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -646,6 +647,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
+  /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
+  const connectedOrSay = (): boolean => {
+    if (status?.contexts.some((c) => c.connected)) return true;
+    void vscode.window
+      .showInformationMessage(NOT_CONNECTED, 'Connect')
+      .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
+    return false;
+  };
   let runs: RunStatusResult | null = null;
   /** The runs the CodeLens and the gutter were last drawn with, and when the run in progress's tests were. */
   let runsShown: RunStatusResult | null = null;
@@ -1106,7 +1115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
     vscode.commands.registerCommand('piwi.refreshRun', async () => {
-      if (refreshing) return;
+      if (refreshing || !connectedOrSay()) return;
       refreshing = true;
       render();
       const answer = await lc.sendRequest<RunStatusResult>(REFRESH_RUN_REQUEST).catch(() => null);
@@ -1125,6 +1134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // From a Playwright config's node of the failures view, that config's; from elsewhere, every config's.
     vscode.commands.registerCommand('piwi.rerunFailing', async (node?: FailureNode) => {
+      if (!connectedOrSay()) return;
       const runs = failingRuns(await failuresView.read(), node?.root);
       if (!runs.length) {
         void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
@@ -1135,6 +1145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
     // From a Playwright config's node or a run's node of the failures view, that config's baseline.
     vscode.commands.registerCommand('piwi.compareWith', async (node?: FailureNode) => {
+      if (!connectedOrSay()) return;
       const contexts = runs?.contexts ?? [];
       const file = vscode.window.activeTextEditor?.document.uri.fsPath;
       // The context of the active file: the deepest config folder holding it.
@@ -1213,7 +1224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
     vscode.commands.registerCommand('piwi.runTestsForFile', async (target?: vscode.Uri) => {
       const uri = target?.toString() ?? activeUri();
-      if (!uri) return;
+      if (!uri || !connectedOrSay()) return;
       const found = await lc.sendRequest<TestsForFile>(TESTS_FOR_FILE_REQUEST, { uri });
       if (!found.tests.length) {
         void vscode.window.showInformationMessage('Piwi: no test reaches this file yet.');
@@ -1230,6 +1241,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         await vscode.env.openExternal(vscode.Uri.parse(url));
         return;
       }
+      if (!connectedOrSay()) return;
       const uri = activeUri();
       const found = uri ? await lc.sendRequest<TestsForFile>(TESTS_FOR_FILE_REQUEST, { uri }) : null;
       if (!found?.tests.length) {
@@ -1255,6 +1267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
     }),
     vscode.commands.registerCommand('piwi.runSelection', async () => {
+      if (!connectedOrSay()) return;
       const uri = activeUri() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? '';
       const { items } = await lc.sendRequest<SelectionsResult>(SELECTIONS_REQUEST, { uri });
       if (!items.length) {
@@ -1283,6 +1296,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (liveUrl) await vscode.env.openExternal(vscode.Uri.parse(liveUrl));
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
+      if (!connectedOrSay()) return;
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
     }),
     vscode.commands.registerCommand('piwi.openTrace', async (target: TraceParams | FailureNode) => {

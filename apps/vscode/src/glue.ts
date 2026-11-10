@@ -42,6 +42,9 @@ import * as path from 'node:path';
 import { isUnder } from './breakpoints';
 
 /** The files the editor service reads: test and application code (C# and Razor views too), and translations. */
+
+/** What a command that reads the instance says while no context is connected, with Connect. */
+export const NOT_CONNECTED = 'Piwi: connect to an instance first.';
 export const DOCUMENT_PATTERN =
   '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte,astro,html,json,yaml,yml,properties,po,resx,cs,cshtml,razor}';
 

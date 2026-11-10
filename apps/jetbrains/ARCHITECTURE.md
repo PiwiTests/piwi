@@ -251,7 +251,10 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
 ### Navigation and actions
 
 The panel is an `OccurenceNavigator`: Next and Previous Occurrence, and the toolbar's arrows, go from failure to
-failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page.
+failure, beside Expand All and Collapse All. Double-click or Enter opens a failure's line, or a run's page. The panel
+gives the selected node's page as `DASHBOARD_URL`, which Open in Dashboard opens before the file's test or the latest
+run. Open in Dashboard, Re-run the Failing Tests and Run Selection… are enabled only while a context is connected
+(`piwiConnected`), Open in Dashboard also on a selected page; `PiwiPluginTest` holds both.
 
 The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommands`:
 

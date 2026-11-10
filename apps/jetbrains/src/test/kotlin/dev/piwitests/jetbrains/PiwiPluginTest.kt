@@ -415,6 +415,29 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * The actions that read the instance are enabled only while a context is connected; Open in Dashboard also on the
+     * page of what the tool window has selected.
+     */
+    fun testTheActionsThatReadTheInstanceWaitForAConnection() {
+        val actions = ActionManager.getInstance()
+        fun enabled(id: String, url: String? = null): Boolean {
+            val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+                .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+                .apply { if (url != null) add(DASHBOARD_URL, url) }
+                .build()
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+            actions.getAction(id).update(event)
+            return event.presentation.isEnabled
+        }
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = false))))
+        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertFalse(id, enabled(id))
+        assertTrue("a selected failure's page", enabled("Piwi.OpenInDashboard", "https://piwi.example.com/test-run-cases/9"))
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
+        for (id in listOf("Piwi.OpenInDashboard", "Piwi.RerunFailing", "Piwi.RunSelection")) assertTrue(id, enabled(id))
+    }
+
     /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */
     fun testTrustingTheProjectTellsTheViews() {
         val service = project.getService(PiwiProjectService::class.java)

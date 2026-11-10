@@ -510,6 +510,38 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "piwi.refreshRun",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.rerunFailing",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.openRun",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.compareWith",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.groupFailuresBy",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.runSelection",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.runTestsForFile",
+          "when": "piwi.active"
+        },
+        {
           "command": "piwi.runTests",
           "when": "false"
         },
@@ -684,27 +716,27 @@
       "view/title": [
         {
           "command": "piwi.refreshRun",
-          "when": "view == piwi.failures",
+          "when": "view == piwi.failures && piwi.active",
           "group": "navigation@1"
         },
         {
           "command": "piwi.rerunFailing",
-          "when": "view == piwi.failures",
+          "when": "view == piwi.failures && piwi.active",
           "group": "navigation@2"
         },
         {
           "command": "piwi.openRun",
-          "when": "view == piwi.failures",
+          "when": "view == piwi.failures && piwi.active",
           "group": "navigation@3"
         },
         {
           "command": "piwi.compareWith",
-          "when": "view == piwi.failures",
+          "when": "view == piwi.failures && piwi.active",
           "group": "navigation@4"
         },
         {
           "command": "piwi.groupFailuresBy",
-          "when": "view == piwi.failures",
+          "when": "view == piwi.failures && piwi.active",
           "group": "navigation@5"
         },
         {

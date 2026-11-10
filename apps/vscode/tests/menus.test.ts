@@ -41,3 +41,30 @@ describe("the editor's context menu", () => {
     expect(submenu).toContain('resourceScheme =~ /^(file|vscode-remote)$/');
   });
 });
+
+describe('the commands that read the instance', () => {
+  const reading = [
+    'piwi.refreshRun',
+    'piwi.rerunFailing',
+    'piwi.openRun',
+    'piwi.openInDashboard',
+    'piwi.compareWith',
+    'piwi.groupFailuresBy',
+    'piwi.runSelection',
+    'piwi.runTestsForFile',
+  ];
+
+  test('are listed in the palette only while a context is connected', () => {
+    for (const command of reading) {
+      const entries = menus['commandPalette']!.filter((e) => e.command === command);
+      expect(entries, command).toEqual([{ command, when: 'piwi.active' }]);
+    }
+  });
+
+  test('show in the failures view’s title only while a context is connected', () => {
+    const title = menus['view/title']!.filter((e) => e.when?.includes('view == piwi.failures'));
+    for (const entry of title.filter((e) => reading.includes(e.command!))) {
+      expect(entry.when, entry.command).toBe('view == piwi.failures && piwi.active');
+    }
+  });
+});

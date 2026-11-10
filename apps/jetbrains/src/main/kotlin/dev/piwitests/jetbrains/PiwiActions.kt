@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
@@ -137,12 +138,27 @@ class VerifyTestAtCursorAction : RunInSpecAction(wholeSpec = false, repeat = Glu
 
 class RunSpecAction : RunInSpecAction(wholeSpec = true)
 
-/** Piwi: Open in dashboard — this file's test, or the latest run. */
+/** The dashboard page of what the Piwi tool window has selected: a failure's test, or a run. */
+val DASHBOARD_URL: DataKey<String> = DataKey.create("piwi.dashboardUrl")
+
+/** Whether a context of the project reads an instance: the actions that read it are enabled only then. */
+fun piwiConnected(project: Project?): Boolean =
+    project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().any { it.connected }
+
+/**
+ * Piwi: Open in dashboard — the page of what the Piwi tool window has selected, else this file's test, else the latest
+ * run.
+ */
 class OpenInDashboardAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.getData(DASHBOARD_URL) != null || piwiConnected(e.project)
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
+        e.getData(DASHBOARD_URL)?.let { return BrowserUtil.browse(it) }
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
@@ -265,6 +281,10 @@ class CompareWithAction : AnAction(), DumbAware {
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         PiwiCommands.rerunFailing(e.project ?: return)
     }
@@ -273,6 +293,10 @@ class RerunFailingAction : AnAction(), DumbAware {
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

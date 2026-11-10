@@ -102,7 +102,7 @@ Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) 
 line.
 
 The title bar, or the toolbar, holds Refresh, **Re-run the failing tests** (every config's), **Open the run in the
-dashboard** (the run the status bar shows), **Compare with…** (for the active file's config) and the grouping. In VS
+dashboard** (the run the status bar shows; in a JetBrains IDE, the page of the selected failure or run), **Compare with…** (for the active file's config) and the grouping. In VS
 Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge counts the
 failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a failure.
 

@@ -244,6 +244,10 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
   reveals the active file's first failure.
+- The commands that read the instance (Refresh the latest run, Re-run the failing tests, Open the latest run, Open in
+  dashboard, Compare with…, Group by…, Run selection…, Run the tests that reach this file) show in the palette and the
+  view's title only while a context is connected (`piwi.active`, held by `tests/menus.test.ts`); reached otherwise,
+  from a key, each says `NOT_CONNECTED` with **Connect**.
 - The welcome content follows the `piwi.failuresView` context key, the service's `FailuresResult.view.state` (or
   `unavailable` when the service does not answer); for `norun`, `unreachable` and `desktop-unproven` the view's message
   is the service's sentence, and the welcome holds the state's buttons.
