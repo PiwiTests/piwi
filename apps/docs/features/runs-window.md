@@ -30,8 +30,9 @@ or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **
 **Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
 locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
-stays in the editor. A run of several workers has **Pause all** and **Resume all** under its name. Resume, Step and
-Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
+stays in the editor. A run of several workers shows one at a time, behind a tab each marked with its state, and has
+**Pause all** and **Resume all** under its name; a stop takes the tab only from a worker that is neither stopped nor
+watched. Resume, Step and Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's
 [**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it
@@ -129,8 +130,6 @@ runs](./desktop-runs).
 - **The top frame.** Pick on the image refuses an element inside an iframe.
 - **What a view shows.** A test's own screencast, a heavy page, a popup, a download and a dialog: [Watch a running
   test](./watch-running-test#limits).
-- **No input method.** Characters an input method composes (Chinese, Japanese, Korean) do not reach the page; paste
-  them instead.
 - **The middle button stays the window's.** It would open a link in a tab the view does not show; `Shift`+click picks
   instead of clicking.
 
