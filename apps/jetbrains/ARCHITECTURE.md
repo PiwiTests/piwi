@@ -783,8 +783,12 @@ breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and
-**Tools → Piwi**.
+one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools
+→ Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
+save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
+Apply or Cancel. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
+otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does not
+trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi instance.
 
 `PiwiProjectService.desktop()` asks the service (`piwi/desktop`). While the service has not started, it reads the app's
 discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`), so Connect finds the app before any

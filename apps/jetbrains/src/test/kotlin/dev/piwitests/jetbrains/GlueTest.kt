@@ -1813,6 +1813,27 @@ class GlueTest {
     }
 
     @Test
+    fun `connect says why it failed in words, a certificate naming its host and where to trust it`() {
+        val pkix = javax.net.ssl.SSLHandshakeException("PKIX path building failed: unable to find valid certification path")
+        val certificate = Glue.connectFailure(java.io.IOException("handshake", pkix), null, "https://piwi.corp:8443")
+        assertTrue(certificate, certificate.startsWith("the IDE does not trust the certificate of piwi.corp."))
+        assertTrue(certificate, certificate.endsWith("Settings → Tools → Server Certificates"))
+        assertFalse(certificate, certificate.contains("PKIX"))
+        assertEquals(
+            "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+            Glue.connectFailure(Exception("the instance answered 404"), 404, "https://example.com"),
+        )
+        assertEquals("the instance refused the key (401)", Glue.connectFailure(Exception(), 401, null))
+        assertEquals("the instance answered 502", Glue.connectFailure(Exception(), 502, null))
+        assertEquals(
+            "nothing answers there. Is the instance running, on that port?",
+            Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
+        )
+        assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
+        assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
+    }
+
+    @Test
     fun `an instance on this machine is tried on every loopback address`() {
         assertEquals(
             listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),

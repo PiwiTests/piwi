@@ -854,6 +854,31 @@ object Glue {
         else -> ""
     }
 
+    /** What Disconnect says when nothing is saved to forget. */
+    const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
+
+    /**
+     * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
+     * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it.
+     */
+    fun connectFailure(e: Throwable, status: Int?, url: String?): String {
+        val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() } ?: "the instance"
+        val chain = generateSequence(e) { it.cause }.take(10).toList()
+        return when {
+            status == 401 || status == 403 -> "the instance refused the key ($status)"
+            status == 404 -> "not a Piwi instance: nothing answers Piwi's requests at this address (404)"
+            status != null -> "the instance answered $status"
+            chain.any { it is javax.net.ssl.SSLHandshakeException || it is java.security.cert.CertificateException ||
+                it.message.orEmpty().contains("PKIX path") } ->
+                "the IDE does not trust the certificate of $host. Add it, or your company's root certificate, in " +
+                    "Settings → Tools → Server Certificates"
+            chain.any { it is java.net.ConnectException } -> "nothing answers there. Is the instance running, on that port?"
+            chain.any { it is java.net.http.HttpConnectTimeoutException } -> "no answer within 10 seconds"
+            chain.any { it is java.net.UnknownHostException } -> "unknown host ${chain.first { it is java.net.UnknownHostException }.message ?: host}"
+            else -> e.message ?: e.javaClass.simpleName
+        }
+    }
+
     /** What Disconnect asks before forgetting the saved connection; null when nothing is saved. */
     fun disconnectQuestion(serverUrl: String, project: String, desktop: Boolean = false): String? {
         val parts = buildList {
