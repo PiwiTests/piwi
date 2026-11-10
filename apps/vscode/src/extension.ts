@@ -1397,10 +1397,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           // A test's line is drawn in the gutter and its hover, not as a lens above it.
           return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
+            // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
               title: line.title,
               command: line.command?.command ?? '',
               arguments: line.command?.arguments ?? [],
+              ...(line.command?.title ? { tooltip: line.command.title } : {}),
             });
           });
         },

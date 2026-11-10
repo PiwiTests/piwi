@@ -2880,8 +2880,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const lines = text.split(/\r?\n/);
     const pass = placer({ file, text });
-    const run = (testIds: number[], coverage?: RunTestsArgs['coverage']) => ({
-      title: 'Run them',
+    /** A click that runs `testIds`, its title saying which: `Run the 7 tests of this spec with Piwi`. */
+    const run = (testIds: number[], which: string, coverage?: RunTestsArgs['coverage']) => ({
+      title: `Run ${testIds.length === 1 ? 'the test' : `the ${testIds.length} tests`} ${which} with Piwi${coverage ? ', recording its coverage' : ''}`,
       command: 'piwi.runTests' as const,
       arguments: [{ uri: params.uri, testIds, ...(coverage ? { coverage } : {}) } satisfies RunTestsArgs],
     });
@@ -2893,7 +2894,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push({
           line: l.line - 1,
           title: [plural(l.tests.length, 'test'), l.actions.slice(0, 2).join(', '), counts].filter(Boolean).join(' · '),
-          command: run(l.tests.map((t) => t.id)),
+          command: run(
+            l.tests.map((t) => t.id),
+            l.tests.length === 1 ? 'that uses this locator' : 'that use this locator',
+          ),
         });
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
@@ -2997,7 +3001,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ]
               .filter(Boolean)
               .join(' · '),
-            command: run(cases.map((c) => c.id)),
+            command: run(
+              cases.map((c) => c.id),
+              'of this spec',
+            ),
           }
         : null;
       return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
@@ -3033,6 +3040,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             .join(' · '),
           command: run(
             tests.map((t) => t.id),
+            tests.length === 1 ? 'that reaches this file' : 'that reach this file',
             recordCoverage,
           ),
         }
@@ -3047,6 +3055,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           title: [`Reached by ${plural(ran.length, 'test')}`, testCounts(ran)].filter(Boolean).join(' · '),
           command: run(
             ran.map((t) => t.id),
+            ran.length === 1 ? 'that reaches this function' : 'that reach this function',
             recordCoverage,
           ),
         },
@@ -3084,7 +3093,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ]
         .filter(Boolean)
         .join(' · '),
-      command: run(page.tests.map((t) => t.id)),
+      command: run(
+        page.tests.map((t) => t.id),
+        page.tests.length === 1 ? 'that acts on this page' : 'that act on this page',
+      ),
     };
     return { file: pageLine, lines: [...(reachLine ? [reachLine] : []), ...functionLines] };
   });
