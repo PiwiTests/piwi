@@ -35,7 +35,7 @@ docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field yo
 ## Piwi Picker's Runs window
 
 In [Piwi Picker's Runs window](/features/runs-window), for the stopped test whose row holds the focus, else the only
-stopped test. Step and Finish wait for a stop that is no failure.
+stopped test shown: a run's worker tabs show one worker at a time. Step and Finish wait for a stop that is no failure.
 
 | Keys | Action |
 |---|---|
@@ -46,7 +46,9 @@ stopped test. Step and Finish wait for a stop that is no failure.
 While you [watch a stop](/features/runs-window#click-and-type-on-the-view), the view takes your keys, but the
 browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` gives the keys back to the window and moves
 the focus to **Watch** or **Watch live**. `Tab` moves the focus on past the view, unless you clicked into it: then
-`Tab` and `Shift+Tab` go to the page too, until `Esc`.
+`Tab` and `Shift+Tab` go to the page too, until `Esc`. Characters an input method composes (Chinese, Japanese,
+Korean) do not reach the page; paste them instead. On a run's worker tabs, the arrow keys, `Home` and `End` move
+between the workers.
 
 ## Assistant panel
 
