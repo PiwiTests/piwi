@@ -14,6 +14,16 @@ export const MAX_LISTED_UNKNOWN_KEYS = 20;
 /** The most example test titles an unknown key lists. */
 export const MAX_UNKNOWN_KEY_EXAMPLES = 3;
 
+/** The most keys one catalog lookup names: a page of tags, not a whole suite. */
+export const MAX_CATALOG_LOOKUP_KEYS = 100;
+
+const LOOKUP_KEY = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9_-]{1,40}$/;
+
+/** Whether a catalog lookup accepts `key`: a project key, a dash and a number or name, as Zephyr Scale writes them. */
+export function isCatalogLookupKey(key: string): boolean {
+  return LOOKUP_KEY.test(key);
+}
+
 /** A test as the mapping reads it. */
 export interface MappingTest {
   title: string;

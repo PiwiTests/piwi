@@ -19,6 +19,7 @@ const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/hist
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });
 provideExternalIdUrl(() => testCase.value?.project?.externalIdUrl);
+provideTestManagementKeys(() => testCase.value?.project?.id);
 
 // Project timeline markers, overlaid on the history chart for context.
 const historyMarkers = ref<MarkerInfo[]>([]);

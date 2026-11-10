@@ -66,6 +66,7 @@ const getBinding = route(await import('../../server/api/projects/[id]/test-manag
 const putBinding = route(await import('../../server/api/projects/[id]/test-management/index.put'));
 const getOptions = route(await import('../../server/api/projects/[id]/test-management/options.get'));
 const getCases = route(await import('../../server/api/projects/[id]/test-management/cases.get'));
+const getKeyConfig = route(await import('../../server/api/projects/[id]/test-management/key-config.get'));
 const getSummary = route(await import('../../server/api/projects/[id]/test-management/summary.get'));
 const create = route(await import('../../server/api/integrations/connections/index.post'));
 const putTracker = route(await import('../../server/api/projects/[id]/integrations.put'));
@@ -409,5 +410,40 @@ describe('GET summary', () => {
     await putBinding(at(10, valid()));
     state.caller = contributor;
     expect(await refusal(getSummary(at(10)))).toMatchObject({ statusCode: 403 });
+  });
+});
+
+describe('GET key-config', () => {
+  test('a project with no binding is not bound', async () => {
+    expect(await getKeyConfig(at(10))).toEqual({ bound: false });
+  });
+
+  test('reads the default pattern and the key sources, and nothing about the connection', async () => {
+    await putBinding(at(10, { ...valid(), keySources: { tags: true, externalId: false } }));
+    const answer = await getKeyConfig(at(10));
+    expect(answer).toEqual({
+      bound: true,
+      projectKey: 'WEB_APP',
+      pattern: '^WEB\\_APP-T[0-9]+$',
+      keySources: { tags: true, externalId: false },
+    });
+    expect(JSON.stringify(answer)).not.toContain(TOKEN);
+    expect(sent).toEqual([]);
+  });
+
+  test("uses the project's own test case pattern when it has one", async () => {
+    await putBinding(at(10, valid()));
+    await db
+      .update(schema.projects)
+      .set({ tagKeys: { issue: null, testCase: '^TC-[0-9]+$' } })
+      .where(eq(schema.projects.id, 10));
+    expect(await getKeyConfig(at(10))).toMatchObject({ pattern: '^TC-[0-9]+$' });
+    await db.update(schema.projects).set({ tagKeys: null }).where(eq(schema.projects.id, 10));
+  });
+
+  test('is readable by a contributor', async () => {
+    await putBinding(at(10, valid()));
+    state.caller = contributor;
+    expect(await getKeyConfig(at(10))).toMatchObject({ bound: true });
   });
 });

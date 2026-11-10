@@ -58,9 +58,9 @@ const hasAnything = computed(
       {{ meta.priority }}
     </UBadge>
 
-    <UBadge v-for="tag in shownTags" :key="tag" color="primary" variant="soft" size="xs" class="shrink-0 font-mono">
-      @{{ tag }}
-    </UBadge>
+    <TestCaseKeyHoverCard v-for="tag in shownTags" :key="tag" kind="tag" :value="tag">
+      <UBadge color="primary" variant="soft" size="xs" class="shrink-0 font-mono">@{{ tag }}</UBadge>
+    </TestCaseKeyHoverCard>
 
     <UBadge v-if="hiddenCount > 0" color="neutral" variant="soft" size="xs" class="shrink-0" :title="hiddenTitle">
       +{{ hiddenCount }}

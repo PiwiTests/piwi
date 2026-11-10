@@ -29,6 +29,17 @@ export type TestManagementSummaryReport =
       tagsTruncated: TagsTruncated | null;
     };
 
+/** The test case key pattern a project reads keys with: its own, or the default for the bound test management project. */
+export async function testCaseKeyPattern(
+  db: DrizzleDB,
+  projectId: number,
+  providerProjectKey: string,
+): Promise<{ pattern: string; patternIsDefault: boolean }> {
+  const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, projectId));
+  const own = resolveTagKeyPatterns(project?.tagKeys).testCase;
+  return { pattern: own ?? defaultTestCaseKeyPattern(providerProjectKey), patternIsDefault: own === null };
+}
+
 /** The tests of a run, once each: a test's tags are those of all its results, so a retry does not hide one. */
 async function runTests(db: DrizzleDB, runId: number): Promise<MappingTest[]> {
   const rows: Array<{ caseId: number; title: string; file: string; externalId: string | null; tags: unknown }> =
@@ -67,9 +78,7 @@ export async function testManagementMappingSummary(
   const binding = await readTestManagementBinding(db as never, projectId);
   if (binding.connectionId === null || binding.providerProjectKey === null) return { bound: false };
 
-  const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, projectId));
-  const own = resolveTagKeyPatterns(project?.tagKeys).testCase;
-  const pattern = own ?? defaultTestCaseKeyPattern(binding.providerProjectKey);
+  const { pattern, patternIsDefault } = await testCaseKeyPattern(db, projectId, binding.providerProjectKey);
 
   const run = await lastCompleteRun(db, projectId);
   const tests = run ? await runTests(db, run.id) : [];
@@ -81,7 +90,7 @@ export async function testManagementMappingSummary(
     bound: true,
     runId: run?.id ?? null,
     pattern,
-    patternIsDefault: own === null,
+    patternIsDefault,
     keySources: binding.keySources,
     summary: summarizeTestCaseMapping({
       tests,
@@ -91,4 +100,17 @@ export async function testManagementMappingSummary(
     }),
     tagsTruncated: readTagsTruncated((run?.metadata as Record<string, unknown> | null)?.tagsTruncated),
   };
+}
+
+/** What a page needs to know before it can show a hover card on a key: whether keys are read, and how. */
+export type TestManagementKeyConfig =
+  | { bound: false }
+  | { bound: true; projectKey: string; pattern: string; keySources: TestManagementKeySources };
+
+/** The project's binding, reduced to how a test case key is read. Reads the database only. */
+export async function testManagementKeyConfig(db: DrizzleDB, projectId: number): Promise<TestManagementKeyConfig> {
+  const binding = await readTestManagementBinding(db as never, projectId);
+  if (binding.connectionId === null || binding.providerProjectKey === null) return { bound: false };
+  const { pattern } = await testCaseKeyPattern(db, projectId, binding.providerProjectKey);
+  return { bound: true, projectKey: binding.providerProjectKey, pattern, keySources: binding.keySources };
 }

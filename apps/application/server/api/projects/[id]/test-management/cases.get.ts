@@ -4,11 +4,8 @@ import { integrationConnections } from '../../../../database/schema';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { readTestManagementBinding } from '../../../../utils/integrations/test-management/binding';
 import { readCatalogCases, readCatalogInfo } from '../../../../utils/integrations/test-management/catalog';
+import { isCatalogLookupKey, MAX_CATALOG_LOOKUP_KEYS } from '#shared/integrations/test-management-mapping';
 import { zephyrCaseUrl } from '../../../../utils/integrations/test-management/zephyr-scale';
-
-/** The most keys one request names: a page of tags, not a whole suite. */
-const MAX_KEYS = 100;
-const KEY = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9_-]{1,40}$/;
 
 defineRouteMeta({
   openAPI: {
@@ -31,8 +28,11 @@ export default eventHandler(async (event) => {
 
   const raw = getQuery(event).keys;
   const keys = [...new Set((typeof raw === 'string' ? raw : '').split(',').map((key) => key.trim()))].filter(Boolean);
-  if (keys.length === 0 || keys.length > MAX_KEYS || keys.some((key) => !KEY.test(key))) {
-    throw apiError({ statusCode: 400, message: `Name 1 to ${MAX_KEYS} test case keys, separated by commas` });
+  if (keys.length === 0 || keys.length > MAX_CATALOG_LOOKUP_KEYS || keys.some((key) => !isCatalogLookupKey(key))) {
+    throw apiError({
+      statusCode: 400,
+      message: `Name 1 to ${MAX_CATALOG_LOOKUP_KEYS} test case keys, separated by commas`,
+    });
   }
 
   const binding = await readTestManagementBinding(db, id);
