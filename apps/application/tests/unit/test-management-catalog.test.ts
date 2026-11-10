@@ -148,6 +148,7 @@ beforeEach(async () => {
   for (const id of [zephyrId, secondId]) connectionPausedUntil(id, new Date(Date.now() + 1e10));
   await db.delete(schema.projectTestManagement);
   await db.delete(schema.testManagementCases);
+  await db.delete(schema.testManagementCatalogReads);
   await db.update(schema.integrationConnections).set({ status: 'unverified', lastError: null });
 });
 afterEach(() => vi.restoreAllMocks());
@@ -182,6 +183,49 @@ describe('refreshTestManagementCatalog', () => {
     ]);
     expect(stored.every((row) => row.fetchedAt.getTime() === now.getTime())).toBe(true);
     expect(await readCatalogInfo(db, zephyrId, 'SHOP')).toEqual({ size: 3, fetchedAt: now });
+  });
+
+  test('a read that finds no cases counts as read, and empties the catalog it replaces', async () => {
+    const before = new Date('2026-11-09T09:00:00Z');
+    await db.insert(schema.testManagementCases).values(old('SHOP-T99', 'Deleted in the tool', before));
+    zephyr.pages.set('0', () => json({ ...fixture('testcases-page-2'), values: [], total: 0, startAt: 0 }));
+    const now = new Date('2026-11-10T09:00:00Z');
+    expect(await refresh({ now: () => now })).toEqual({ ok: true, size: 0, fetchedAt: now });
+    expect(await rows()).toEqual([]);
+    expect(await readCatalogInfo(db, zephyrId, 'SHOP')).toEqual({ size: 0, fetchedAt: now });
+  });
+
+  test('a project that was never read has no read time, and a read renews the one it had', async () => {
+    expect(await readCatalogInfo(db, zephyrId, 'SHOP')).toEqual({ size: 0, fetchedAt: null });
+    const first = new Date('2026-11-09T09:00:00Z');
+    const second = new Date('2026-11-10T09:00:00Z');
+    await refresh({ now: () => first });
+    await refresh({ now: () => second });
+    expect((await readCatalogInfo(db, zephyrId, 'SHOP')).fetchedAt).toEqual(second);
+    expect(await db.select().from(schema.testManagementCatalogReads)).toHaveLength(1);
+  });
+
+  test('a catalog stored before reads were recorded is read at the time of its newest case', async () => {
+    await db
+      .insert(schema.testManagementCases)
+      .values([
+        old('SHOP-T1', 'a', new Date('2026-11-08T09:00:00Z')),
+        old('SHOP-T2', 'b', new Date('2026-11-09T09:00:00Z')),
+      ]);
+    expect(await readCatalogInfo(db, zephyrId, 'SHOP')).toEqual({
+      size: 2,
+      fetchedAt: new Date('2026-11-09T09:00:00Z'),
+    });
+  });
+
+  test('a failed read leaves the recorded read time as it was', async () => {
+    const before = new Date('2026-11-09T09:00:00Z');
+    await db
+      .insert(schema.testManagementCatalogReads)
+      .values({ connectionId: zephyrId, projectKey: 'SHOP', fetchedAt: before });
+    zephyr.pages.set('0', () => json(fixture('error-server'), 500));
+    expect(await refresh()).toMatchObject({ ok: false, status: 502 });
+    expect((await readCatalogInfo(db, zephyrId, 'SHOP')).fetchedAt).toEqual(before);
   });
 
   test('asks for the status names once for the whole read, not once per page', async () => {
@@ -340,6 +384,18 @@ describe('dueCatalogs and refreshDueCatalogs', () => {
     await db.insert(schema.testManagementCases).values(old('SHOP-T1', 'x', new Date(now.getTime() - 3_600_000)));
     expect(await dueCatalogs(db, now)).toEqual([]);
     await db.update(schema.testManagementCases).set({ fetchedAt: new Date(now.getTime() - CATALOG_MAX_AGE_MS - 1) });
+    expect(await dueCatalogs(db, now)).toHaveLength(1);
+  });
+
+  test('a catalog that was read and found no cases is not due again for a day', async () => {
+    await bind(zephyrId);
+    await db
+      .insert(schema.testManagementCatalogReads)
+      .values({ connectionId: zephyrId, projectKey: 'SHOP', fetchedAt: new Date(now.getTime() - 3_600_000) });
+    expect(await dueCatalogs(db, now)).toEqual([]);
+    await db
+      .update(schema.testManagementCatalogReads)
+      .set({ fetchedAt: new Date(now.getTime() - CATALOG_MAX_AGE_MS - 1) });
     expect(await dueCatalogs(db, now)).toHaveLength(1);
   });
 

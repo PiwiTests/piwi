@@ -265,6 +265,21 @@ describe('testManagementMappingSummary', () => {
     });
   });
 
+  test('flags every key as unknown after a read that found no cases', async () => {
+    await db.delete(schema.testManagementCases);
+    await db
+      .insert(schema.testManagementCatalogReads)
+      .values({ connectionId, projectKey: 'SHOP', fetchedAt: new Date('2026-11-09T08:00:00Z') });
+    const report = await testManagementMappingSummary(db as never, 1);
+    expect(report).toMatchObject({
+      summary: { catalogRead: true, catalogSize: 0 },
+    });
+    expect(
+      (report as { summary: { unknownKeys: Array<{ key: string }> } }).summary.unknownKeys.map((u) => u.key),
+    ).toEqual(['SHOP-T1', 'SHOP-T999']);
+    await db.delete(schema.testManagementCatalogReads);
+  });
+
   test('uses the default key pattern of the provider project when the project names none, and the external ID source', async () => {
     const report = await testManagementMappingSummary(db as never, 2);
     expect(report).toMatchObject({

@@ -4,7 +4,7 @@
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../database';
-import { projectTestManagement, testManagementCases } from '../../../database/schema';
+import { projectTestManagement, testManagementCases, testManagementCatalogReads } from '../../../database/schema';
 import { isProviderOfKind } from '#shared/integrations/registry';
 import { IntegrationHttpError } from '../http-error';
 import { connectionPausedUntil, pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
@@ -89,8 +89,9 @@ async function readAllCases(
 }
 
 /**
- * Replace the stored catalog of one project with `cases`, read at `fetchedAt`: every case is upserted and the rows the
- * read did not see are deleted, in one transaction, so a reader sees the old catalog or the new one and never half.
+ * Replace the stored catalog of one project with `cases`, read at `fetchedAt`: every case is upserted, the rows the
+ * read did not see are deleted and the time of the read is recorded, in one transaction, so a reader sees the old
+ * catalog or the new one and never half. A project with no cases keeps the record of the read.
  */
 async function storeCatalog(
   db: DbClient,
@@ -136,6 +137,13 @@ async function storeCatalog(
           ne(testManagementCases.fetchedAt, fetchedAt),
         ),
       );
+    await tx
+      .insert(testManagementCatalogReads)
+      .values({ connectionId, projectKey, fetchedAt })
+      .onConflictDoUpdate({
+        target: [testManagementCatalogReads.connectionId, testManagementCatalogReads.projectKey],
+        set: { fetchedAt },
+      });
   });
 }
 

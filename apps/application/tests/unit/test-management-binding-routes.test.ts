@@ -145,6 +145,7 @@ beforeEach(async () => {
   await db.delete(schema.projectTestManagement);
   await db.delete(schema.projectIntegrations);
   await db.delete(schema.testManagementCases);
+  await db.delete(schema.testManagementCatalogReads);
   await db.update(schema.integrationConnections).set({ status: 'unverified', lastError: null });
 });
 
@@ -349,6 +350,17 @@ describe('GET cases', () => {
   test('a catalog never read has no fetchedAt', async () => {
     await putBinding(at(10, valid()));
     expect((await getCases(at(10, undefined, { keys: 'WEB_APP-T1' }))).fetchedAt).toBeNull();
+  });
+
+  test('a catalog read that found no cases has a fetchedAt, and every key is unknown', async () => {
+    await putBinding(at(10, valid()));
+    await db
+      .insert(schema.testManagementCatalogReads)
+      .values({ connectionId: zephyrId, projectKey: 'WEB_APP', fetchedAt: new Date('2026-11-09T10:00:00Z') });
+    expect(await getCases(at(10, undefined, { keys: 'WEB_APP-T1' }))).toMatchObject({
+      fetchedAt: '2026-11-09T10:00:00.000Z',
+      cases: { 'WEB_APP-T1': null },
+    });
   });
 
   test('a project with no binding is not bound', async () => {

@@ -5585,6 +5585,7 @@ const REBASE_SQL = [
   `UPDATE integration_connections SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE project_test_management SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE test_management_cases SET fetched_at = fetched_at + ${D_MS};`,
+  `UPDATE test_management_catalog_reads SET fetched_at = fetched_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
@@ -6887,6 +6888,7 @@ const PROJECT_TEST_MANAGEMENT = [
     updated_at: TEST_MANAGEMENT_BOUND_AT_MS,
   },
 ];
+const TEST_MANAGEMENT_READ_AT_MS = ANCHOR_SEC * 1000 - 3 * 60 * 60 * 1000; // read by the daily task, three hours before the newest run
 const TEST_MANAGEMENT_CASES = DEMO_TEST_MANAGEMENT_CASES.map((c) => ({
   connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
@@ -6895,8 +6897,15 @@ const TEST_MANAGEMENT_CASES = DEMO_TEST_MANAGEMENT_CASES.map((c) => ({
   name: c.name,
   status_name: c.status,
   folder: c.folder,
-  fetched_at: ANCHOR_SEC * 1000 - 3 * 60 * 60 * 1000, // read by the daily task, three hours before the newest run
+  fetched_at: TEST_MANAGEMENT_READ_AT_MS,
 }));
+const TEST_MANAGEMENT_CATALOG_READS = [
+  {
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    fetched_at: TEST_MANAGEMENT_READ_AT_MS,
+  },
+];
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
@@ -6941,6 +6950,7 @@ const lines = [
   insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
   insert('project_test_management', PROJECT_TEST_MANAGEMENT),
   insert('test_management_cases', TEST_MANAGEMENT_CASES),
+  insert('test_management_catalog_reads', TEST_MANAGEMENT_CATALOG_READS),
   '',
   '-- Project URL patterns (browser extension)',
   insert('project_url_patterns', PROJECT_URL_PATTERNS),

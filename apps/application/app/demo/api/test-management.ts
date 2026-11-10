@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { testManagementCases } from '~~/server/database/schema';
+import { testManagementCases, testManagementCatalogReads } from '~~/server/database/schema';
 import {
   readTestManagementBinding,
   writeTestManagementBinding,
@@ -71,7 +71,7 @@ export function demoTestManagementOptions(
 
 /**
  * Reads the canned tool's catalog into the stored one: the cases of `SHOP`, and nothing for any other project, which the
- * canned tool has no cases for. Replaces the stored rows, as the server does.
+ * canned tool has no cases for. Replaces the stored rows and records the read, as the server does.
  */
 export async function refreshDemoTestManagementCatalog(db: DrizzleDB, projectId: number) {
   const binding = await readTestManagementBinding(db as never, projectId);
@@ -87,19 +87,27 @@ export async function refreshDemoTestManagementCatalog(db: DrizzleDB, projectId:
       .where(
         and(eq(testManagementCases.connectionId, connectionId), eq(testManagementCases.projectKey, providerProjectKey)),
       );
-    if (cases.length === 0) return;
-    await tx.insert(testManagementCases).values(
-      cases.map((c) => ({
-        connectionId,
-        projectKey: providerProjectKey,
-        key: c.key,
-        providerId: c.providerId,
-        name: c.name,
-        statusName: c.status,
-        folder: c.folder,
-        fetchedAt,
-      })),
-    );
+    if (cases.length > 0) {
+      await tx.insert(testManagementCases).values(
+        cases.map((c) => ({
+          connectionId,
+          projectKey: providerProjectKey,
+          key: c.key,
+          providerId: c.providerId,
+          name: c.name,
+          statusName: c.status,
+          folder: c.folder,
+          fetchedAt,
+        })),
+      );
+    }
+    await tx
+      .insert(testManagementCatalogReads)
+      .values({ connectionId, projectKey: providerProjectKey, fetchedAt })
+      .onConflictDoUpdate({
+        target: [testManagementCatalogReads.connectionId, testManagementCatalogReads.projectKey],
+        set: { fetchedAt },
+      });
   });
   return { size: cases.length, fetchedAt: fetchedAt.toISOString() };
 }

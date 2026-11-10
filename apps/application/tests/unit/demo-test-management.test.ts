@@ -123,7 +123,11 @@ describe('demo test management catalog', () => {
 
   test('Refresh of a project the canned tool has no cases for leaves an empty catalog', async () => {
     await saveDemoTestManagement(db, 1, { connectionId: ID, providerProjectKey: 'WEB_APP' });
-    expect((await refreshDemoTestManagementCatalog(db, 1)).size).toBe(0);
+    const answer = await refreshDemoTestManagementCatalog(db, 1);
+    expect(answer.size).toBe(0);
+    const [read] = await db.select().from(schema.testManagementCatalogReads);
+    expect(read).toMatchObject({ projectKey: 'WEB_APP', fetchedAt: new Date(answer.fetchedAt) });
+    expect((await demoTestManagementCases(db, 1, 'WEB_APP-T1')).fetchedAt).toBe(answer.fetchedAt);
   });
 
   test('a lookup finds a stored case, reports an absent key as null, and has no address for the case', async () => {

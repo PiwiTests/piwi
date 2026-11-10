@@ -5,7 +5,7 @@
  */
 import { and, count, eq, inArray, max } from 'drizzle-orm';
 import type { DbClient } from '../../../database';
-import { testManagementCases } from '../../../database/schema';
+import { testManagementCases, testManagementCatalogReads } from '../../../database/schema';
 
 export interface CatalogInfo {
   /** How many cases the catalog holds. */
@@ -21,14 +21,27 @@ export interface CatalogCase {
   folder: string | null;
 }
 
-/** The size of a project's catalog and when it was last read; `{ size: 0, fetchedAt: null }` while it never was. */
+/**
+ * The size of a project's catalog and when it was last read; `{ size: 0, fetchedAt: null }` while it never was. The time
+ * is the one a read recorded, so a project with no cases at all still counts as read. A catalog stored before reads were
+ * recorded has none, and the newest of its case rows stands in.
+ */
 export async function readCatalogInfo(db: DbClient, connectionId: number, projectKey: string): Promise<CatalogInfo> {
-  const [row] = await db
-    .select({ size: count(), fetchedAt: max(testManagementCases.fetchedAt) })
+  const [cases] = await db
+    .select({ size: count(), newest: max(testManagementCases.fetchedAt) })
     .from(testManagementCases)
     .where(and(eq(testManagementCases.connectionId, connectionId), eq(testManagementCases.projectKey, projectKey)));
-  const fetchedAt = row?.fetchedAt ? new Date(row.fetchedAt) : null;
-  return { size: Number(row?.size ?? 0), fetchedAt };
+  const [read] = await db
+    .select({ fetchedAt: testManagementCatalogReads.fetchedAt })
+    .from(testManagementCatalogReads)
+    .where(
+      and(
+        eq(testManagementCatalogReads.connectionId, connectionId),
+        eq(testManagementCatalogReads.projectKey, projectKey),
+      ),
+    );
+  const stamp = read?.fetchedAt ?? cases?.newest ?? null;
+  return { size: Number(cases?.size ?? 0), fetchedAt: stamp ? new Date(stamp) : null };
 }
 
 /** The catalog's cases among `keys`. Keys the catalog does not hold are left out. */

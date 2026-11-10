@@ -1566,6 +1566,8 @@ describe('the test management binding of the checkout project', () => {
 
   test('the catalog was read hours ago, inside the day after which the hourly task would read it again', () => {
     const [info] = q('select min(fetched_at) as at, max(fetched_at) as latest from test_management_cases');
+    const [read] = q('select fetched_at as at from test_management_catalog_reads');
+    expect(Number(read!.at)).toBe(Number(info!.latest));
     const ageMs = Date.now() - Number(info!.latest);
     expect(ageMs).toBeGreaterThan(0);
     expect(ageMs).toBeLessThan(24 * 60 * 60 * 1000);
