@@ -27,6 +27,7 @@ import {
   shareRefusalOf,
   stopError,
   runLevelControls,
+  shownLaneOf,
   readRunsBounds,
   RUNS_BOUNDS_KEY,
   keyTargetOf,
@@ -380,6 +381,7 @@ function answerShare(run: RunsRun, yes: boolean): void {
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
 async function control(run: RunsRun, worker: number, what: Control, since: string | null): Promise<void> {
   const asked = what === 'pause' || what === 'give-up' ? null : since;
+  if (what === 'resume' || what === 'end') advanceTab(run, worker, asked);
   const answer = await send(run, worker, what, asked);
   if (!answer) return;
   // The intents say what to do in the test's window; the other controls show in the state that follows.
@@ -1172,13 +1174,22 @@ document.addEventListener('keydown', (event) => {
   if (anyStopped) event.preventDefault();
   const field = event.target instanceof HTMLElement ? event.target.closest('input, textarea, select') : null;
   if (field) return;
+  // The worker whose row holds the focus, else the only stopped worker shown: a run's tabs show one at a time.
+  const shown = state.runs.map((run) => {
+    const tab = tabs.get(runKeyOf(run));
+    if (!tab) return run;
+    const workers = run.session.workers.filter((w) => w.parallelIndex === tab.shown).slice(0, 1);
+    return { ...run, session: { ...run.session, workers } };
+  });
   const focused =
     document.activeElement instanceof HTMLElement
       ? (document.activeElement.closest<HTMLElement>('[data-worker]')?.dataset.worker ?? null)
       : null;
-  const target = keyTargetOf(state.runs, focused, hubAnswers);
+  const target = keyTargetOf(shown, focused, hubAnswers);
   if (!target) {
-    if (anyStopped) announce(t('runs_keyChoose'));
+    // Several stopped tests shown, or only tests behind tabs not shown.
+    const shownStopped = shown.some((run) => !run.session.ended && run.session.workers.some((w) => w.stop));
+    if (anyStopped) announce(t(shownStopped ? 'runs_keyChoose' : 'runs_keyOtherTab'));
     return;
   }
   // A held failure ends as it failed with Resume: its button alone takes that, never a key pressed out of habit.
@@ -1420,6 +1431,8 @@ function forgetGone(current: RunsState): void {
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
   }
+  // A run's tabs last while it does.
+  for (const key of tabs.keys()) if (!liveRuns.has(key)) tabs.delete(key);
   // A lane lasts while its run does, and while its hub is named: until the hubs are first found, none is.
   for (const [slot, lane] of lanes) {
     const gone = !named(lane.hub) && current.discovery !== 'searching';
@@ -1687,20 +1700,29 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|presence`, present, () => iconText(element('p', 'run-presence'), 'monitor', present)),
     );
   }
-  // Hold failures, from a hub that keeps it for each run, while the run goes on and its hub is connected.
-  if (session.hold && !session.ended && !away) {
-    const { on, by } = session.hold;
-    const asking = holding.has(runKey);
-    const refusal = holdRefusals.get(runKey) ?? null;
-    children.push(part(`${runKey}|hold`, [on, by, asking, refusal], () => renderHold(run, on, by)));
-  }
-  // Pause all and Resume all, for a run of several workers, while its hub answers.
+  // One row under the name: Hold failures, from a hub that keeps it for each run, and Pause all or Resume all, for a
+  // run of several workers, while the run goes on and its hub is connected.
+  const holds = session.hold && !session.ended && !away ? session.hold : null;
   const level = away ? null : runLevelControls(run);
-  if (level && (level.pauseAll || level.resumeAll.length > 0)) {
-    const resumed = level.resumeAll.map((c) => c.since).join('|');
-    children.push(
-      part(`${runKey}|all`, [level.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level)),
-    );
+  const levelShown = !!level && (level.pauseAll || level.resumeAll.length > 0);
+  if (holds || levelShown) {
+    // Each drawn again only when what it shows changes, so the other's buttons stay the same elements.
+    const bar = part(`${runKey}|bar`, null, () => element('div', 'run-bar'));
+    const items: HTMLElement[] = [];
+    if (holds) {
+      const { on, by } = holds;
+      const asking = holding.has(runKey);
+      const refusal = holdRefusals.get(runKey) ?? null;
+      items.push(part(`${runKey}|hold`, [on, by, asking, refusal], () => renderHold(run, on, by)));
+    }
+    if (levelShown) {
+      const resumed = level!.resumeAll.map((c) => c.since).join('|');
+      items.push(
+        part(`${runKey}|all`, [level!.pauseAll, resumed, runBusy.has(runKey)], () => renderRunControls(run, level!)),
+      );
+    }
+    place(bar, items);
+    children.push(bar);
   }
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);
@@ -1723,13 +1745,42 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     children.push(renderShare(run, session.live));
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
+  // A live run of several workers shows one at a time, behind a tab for each.
+  const tab = !session.ended && workers.length > 1 ? tabOf(runKey) : null;
+  if (tab) {
+    const before = workers.find((w) => w.parallelIndex === tab.shown);
+    // The test shown was resumed or ended here, and has left the stop: the next stopped test takes the tab.
+    const advance = tab.advance !== null && (before?.state !== 'stopped' || before.stop?.since !== tab.advance);
+    tab.shown = shownLaneOf(workers, {
+      before: tab.shown,
+      watched: (w) => watchingWorker(run, w),
+      known: tab.known,
+      advance,
+    });
+    if (advance) tab.advance = null;
+    tab.known = new Set(workers.flatMap((w) => (w.state === 'stopped' && w.stop ? [w.stop.since] : [])));
+    children.push(renderWorkerTabs(run, workers, tab.shown));
+  } else tabs.delete(runKey);
   if (workers.length > 0) {
     const list = part(`${runKey}|workers`, null, () => element('ul', 'workers'));
+    const listed = tab ? workers.filter((w) => w.parallelIndex === tab.shown).slice(0, 1) : workers;
     place(
       list,
-      workers.map((worker) => renderWorker(run, hub, worker, workers.length, away)),
+      listed.map((worker) => renderWorker(run, hub, worker, away)),
     );
-    children.push(list);
+    if (tab) {
+      // The tab panel holds the list of the one worker shown, named by its tab.
+      const id = domId('workers', runKey);
+      const panel = part(`${runKey}|panel`, id, () => {
+        const made = element('div', 'worker-panel');
+        made.id = id;
+        made.setAttribute('role', 'tabpanel');
+        return made;
+      });
+      panel.setAttribute('aria-labelledby', `${id}-tab-${tab.shown}`);
+      place(panel, [list]);
+      children.push(panel);
+    } else children.push(list);
   }
   const hint = pageHintOf(run, hub);
   if (hint) {
@@ -1791,6 +1842,128 @@ function renderHold(run: RunsRun, on: boolean, by: 'start' | 'person' | 'agent')
   const box = element('div', 'run-hold-box');
   box.append(row, iconText(element('p', 'note run-note hold-refused'), 'info', refusal));
   return box;
+}
+
+/**
+ * A live run's tabs, by run (`runKeyOf`), while it has several workers (`shownLaneOf`): the lane shown, the stops that
+ * stood when they were last drawn (`known`), and the stop the person resumed or ended there (`advance`).
+ */
+interface RunTabs {
+  shown: number | null;
+  known: ReadonlySet<string>;
+  advance: string | null;
+}
+const tabs = new Map<string, RunTabs>();
+
+/** A run's tabs, made the first time they show. */
+function tabOf(runKey: string): RunTabs {
+  let tab = tabs.get(runKey);
+  if (!tab) tabs.set(runKey, (tab = { shown: null, known: new Set(), advance: null }));
+  return tab;
+}
+
+/** The person chooses a worker's tab, by its lane. */
+function chooseTab(runKey: string, lane: number): void {
+  const tab = tabOf(runKey);
+  tab.shown = lane;
+  tab.advance = null;
+  focusKey = `${runKey}|tab|${lane}`;
+  render();
+}
+
+/** Resume or End the test at the stop `since` of the worker a run's tabs show: the next stopped test takes the tab. */
+function advanceTab(run: RunsRun, worker: number, since: string | null): void {
+  const tab = tabs.get(runKeyOf(run));
+  const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex;
+  if (tab && since !== null && lane === tab.shown) tab.advance = since;
+}
+
+/** An element id of the window's own, for `prefix` and a key: the same for the same key. */
+function domId(prefix: string, key: string): string {
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return `${prefix}-${(hash >>> 0).toString(36)}`;
+}
+
+/** Whether the window watches a worker's page now: its stop's live view, or its lane. */
+function watchingWorker(run: RunsRun, worker: HubWorker): boolean {
+  return (
+    isLive(views.get(workerKey(run.hub, run.session.ref, worker))) ||
+    isLive(lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)))
+  );
+}
+
+/** A worker's state on its tab, as an icon and the words of its state. */
+function tabState(worker: HubWorker): { icon: IconName; words: string } {
+  const stop = worker.state === 'stopped' ? worker.stop : null;
+  if (stop?.reason === 'failure') return { icon: 'x-circle', words: t('runs_stateFailed') };
+  if (stop) {
+    return {
+      icon: 'pause',
+      words: t((stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : null) ?? STOP_WORDS[stop.reason]),
+    };
+  }
+  if (worker.pausing) return { icon: 'clock', words: t('runs_statePausing') };
+  if (worker.state === 'running' || worker.state === 'other') return { icon: 'play', words: t('runs_stateRunning') };
+  return { icon: 'dot', words: t('runs_stateBetween') };
+}
+
+/**
+ * A run's workers as tabs, by lane, one shown at a time (`shownLaneOf`): each names its worker and marks its state in
+ * its tone (`statusTone`, `data-status`). The arrow keys, Home and End move between them. Each tab is drawn again only when its own
+ * state changes.
+ */
+function renderWorkerTabs(run: RunsRun, workers: readonly HubWorker[], shown: number | null): HTMLElement {
+  const runKey = runKeyOf(run);
+  const panel = domId('workers', runKey);
+  const list = part(`${runKey}|tabs`, null, () => {
+    const made = element('div', 'worker-tabs');
+    made.setAttribute('role', 'tablist');
+    made.setAttribute('aria-label', t('runs_workerTabs'));
+    return made;
+  });
+  const items = workers.map((worker) => {
+    const lane = worker.parallelIndex;
+    const state = tabState(worker);
+    const tone = statusTone(worker, worker.state === 'stopped' ? worker.stop : null);
+    const selected = lane === shown;
+    return part(`${runKey}|tab|${lane}`, [state, tone, selected], () => {
+      const tab = makeButton(t('runs_worker', { number: lane + 1 }), () => chooseTab(runKey, lane), {
+        icon: state.icon,
+        small: true,
+        tone: 'ghost',
+        title: state.words,
+      });
+      tab.id = `${panel}-tab-${lane}`;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(selected));
+      tab.setAttribute('aria-controls', panel);
+      tab.tabIndex = selected ? 0 : -1;
+      tab.dataset.focus = `${runKey}|tab|${lane}`;
+      tab.dataset.lane = String(lane);
+      tab.dataset.status = tone;
+      tab.addEventListener('keydown', (event) => {
+        const all = [...(tab.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+        const index = all.indexOf(tab);
+        const to =
+          event.key === 'ArrowRight'
+            ? (index + 1) % all.length
+            : event.key === 'ArrowLeft'
+              ? (index - 1 + all.length) % all.length
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? all.length - 1
+                  : null;
+        if (to === null || index < 0) return;
+        event.preventDefault();
+        chooseTab(runKey, Number(all[to]!.dataset.lane));
+      });
+      return tab;
+    });
+  });
+  place(list, items);
+  return list;
 }
 
 /** The runs whose Pause all or Resume all is on its way: their buttons wait for the answers. */
@@ -2004,7 +2177,7 @@ const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], MessageKey>> = {
   'run-to': 'runs_stoppedByAgentRunTo',
 };
 
-function stateLine(worker: HubWorker, count: number, place: string | null): HTMLElement {
+function stateLine(worker: HubWorker, place: string | null): HTMLElement {
   const line = element('p', 'state');
   const stop = worker.state === 'stopped' ? worker.stop : null;
   if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
@@ -2023,7 +2196,6 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   } else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
   else if (worker.state === 'running' || worker.state === 'other') iconText(line, 'play', t('runs_stateRunning'));
   else iconText(line, 'dot', t('runs_stateBetween'));
-  if (count > 1) line.append(element('span', 'worker-number', t('runs_worker', { number: worker.parallelIndex + 1 })));
   return line;
 }
 
@@ -2387,15 +2559,9 @@ function renderRequests(run: RunsRun, worker: HubWorker, list: RequestList): HTM
 
 /**
  * A worker of a run, of the hub `hub`; `away` while its hub's connection is lost, its controls held until it answers
- * again. Its controls come above its page: the stop's, or its watched lane's.
+ * again: its test, then a card of where it stands, its controls, and its page, the stop's or its watched lane's.
  */
-function renderWorker(
-  run: RunsRun,
-  hub: RunsHub | undefined,
-  worker: HubWorker,
-  count: number,
-  away: boolean,
-): HTMLElement {
+function renderWorker(run: RunsRun, hub: RunsHub | undefined, worker: HubWorker, away: boolean): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
   const held = away || busy.has(key);
   const { ended } = run.session;
@@ -2407,7 +2573,26 @@ function renderWorker(
   const stop = !ended && worker.state === 'stopped' ? worker.stop : null;
   const where = stop ? stopPlace(stop, run.session.root) : null;
   item.toggleAttribute('data-failed', stop?.reason === 'failure');
-  // An ended run names the tests it ran last; the hub says nothing of how they ended.
+  // The test first: its name, then its project and attempt, on one line where they fit.
+  const test = worker.test;
+  if (test) {
+    const name = testName(test);
+    const meta = [test.project, t('runs_attempt', { attempt: test.retry + 1 })].filter(Boolean).join(' · ');
+    parts.push(
+      part(`${key}|test`, [name, meta], () =>
+        element('div', 'test-head', element('p', 'test', name), element('p', 'meta', meta)),
+      ),
+    );
+    const reason = test.cannotPause;
+    if (reason && !ended) {
+      parts.push(
+        part(`${key}|cannot`, reason, () => iconText(element('p', 'note'), 'info', t('runs_cannotPause', { reason }))),
+      );
+    }
+  }
+  // Then where it stands, in a card of its tone: how it runs, or why it stopped with the call about to run and its
+  // place, or the error it failed with. An ended run names the tests it ran last; the hub says nothing of how they
+  // ended.
   if (!ended) {
     const shown = {
       state: worker.state,
@@ -2416,22 +2601,16 @@ function renderWorker(
       place: stop?.reason === 'failure' ? where : null,
       pausing: worker.pausing,
       waiting: worker.pausing ? (worker.waiting ?? null) : null,
-      number: count > 1 ? worker.parallelIndex : null,
+      stop: stop && where ? { title: stop.title, where, error: stop.error ?? null } : null,
     };
-    parts.push(part(`${key}|state`, shown, () => stateLine(worker, count, where)));
-  }
-  const test = worker.test;
-  if (test) {
-    const name = testName(test);
-    parts.push(part(`${key}|test`, name, () => element('p', 'test', name)));
-    const meta = [test.project, t('runs_attempt', { attempt: test.retry + 1 })].filter(Boolean).join(' · ');
-    parts.push(part(`${key}|meta`, meta, () => element('p', 'meta', meta)));
-    const reason = test.cannotPause;
-    if (reason && !ended) {
-      parts.push(
-        part(`${key}|cannot`, reason, () => iconText(element('p', 'note'), 'info', t('runs_cannotPause', { reason }))),
-      );
-    }
+    parts.push(
+      part(`${key}|status`, shown, () => {
+        const card = element('div', 'status', stateLine(worker, where));
+        card.dataset.tone = statusTone(worker, stop);
+        if (stop && where) card.append(stopView(stop, where));
+        return card;
+      }),
+    );
   }
   if (!ended) {
     // A worker whose lane can be watched shows it, and the stops of its tests, through Watch; another one, and a stop
@@ -2439,14 +2618,25 @@ function renderWorker(
     const can = laneWatchOf(hub, worker);
     const lane = can === 'watch' ? lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)) : undefined;
     const byLane = can === 'watch' && (!stop || !!worker.test);
+    // Who watches its page, as a hub with `presence` says, while it answers: in the page's head, else on a line.
+    const watchers = away ? null : watchersLine(worker.watchers);
+    // Who drives its stop, under its page, where it comes and goes without moving the page: while another tool or an
+    // agent drives it, an agent follows the run, or this window drives it while another tool has the run open.
+    const driver = stop && hub?.presence && !away ? driverOf(stop) : null;
+    const agentFollows = !!run.session.presence?.some((tool) => tool.kind === 'agent');
+    const othersOpen = !!run.session.presence?.some((tool) => !tool.self);
+    let drive: HTMLElement | null = null;
+    if (stop && hub?.presence && !away && ((driver && (driver.who !== 'self' || othersOpen)) || agentFollows)) {
+      drive = part(`${key}|drive`, { since: stop.since, driver }, () => renderDriver(run, worker, stop, driver));
+      markBusy(drive.querySelectorAll('button'), held);
+    }
+    const head = { watchers, drive };
     let page: HTMLElement | null = null;
     if (stop && where) {
-      const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
-      parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
       if (!away) wantImage(run, worker, stop);
-      page = byLane ? renderLanePage(run, worker, stop, away) : renderPage(run, worker, stop, away);
+      page = byLane ? renderLanePage(run, worker, stop, away, head) : renderPage(run, worker, stop, away, head);
     } else if (byLane) {
-      page = renderLanePage(run, worker, null, away);
+      page = renderLanePage(run, worker, null, away, head);
     }
     const since = stop?.since ?? null;
     const list = stop ? requestLists.get(key) : undefined;
@@ -2458,18 +2648,6 @@ function renderWorker(
       !stop && can
         ? { can, watched: isWatched(lane), pauseWatch: can === 'watch' && !isWatched(lane) && !worker.pausing }
         : null;
-    // Who watches its page, and who drives its stop, as a hub with `presence` says, while it answers.
-    const watchers = away ? null : watchersLine(worker.watchers);
-    if (watchers) {
-      parts.push(part(`${key}|watchers`, watchers, () => iconText(element('p', 'watchers'), 'eye', watchers)));
-    }
-    const driver = stop && hub?.presence && !away ? driverOf(stop) : null;
-    const agentFollows = !!run.session.presence?.some((tool) => tool.kind === 'agent');
-    if (stop && hub?.presence && !away && (driver || agentFollows)) {
-      const drive = part(`${key}|drive`, { since: stop.since, driver }, () => renderDriver(run, worker, stop, driver));
-      markBusy(drive.querySelectorAll('button'), held);
-      parts.push(drive);
-    }
     if (controls.length > 0 || running) {
       // Drawn again for another stop, so each control answers the stop shown; a command on its way leaves them be.
       const failure = stop?.reason === 'failure';
@@ -2516,9 +2694,19 @@ function renderWorker(
       parts.push(requests);
     }
     if (page) parts.push(page);
+    else if (watchers) {
+      parts.push(part(`${key}|watchers`, watchers, () => iconText(element('p', 'watchers'), 'eye', watchers)));
+    }
   }
   place(item, parts);
   return item;
+}
+
+/** The tone of a worker's status card: its color and its edge. */
+function statusTone(worker: HubWorker, stop: HubStop | null): 'failed' | 'stopped' | 'pausing' | 'between' | 'running' {
+  if (stop) return stop.reason === 'failure' ? 'failed' : 'stopped';
+  if (worker.pausing) return 'pausing';
+  return worker.state === 'between' ? 'between' : 'running';
 }
 
 /** What to check in the code sent to the editor, as the hub said it: a line each. */
@@ -2532,16 +2720,12 @@ function warningList(answer: { warnings: readonly string[] }): HTMLElement {
   return list;
 }
 
-/** Where the test stands: the call about to run and its place; where it failed, the error alone, its place above. */
+/**
+ * Where the test stands, under its state in its status card: the call about to run and its place; where it failed,
+ * the error alone, its place in the state above.
+ */
 function stopView(stop: HubStop, where: string): HTMLElement {
-  if (stop.reason === 'failure') {
-    return element(
-      'dl',
-      'stop',
-      element('dt', undefined, t('runs_errorLabel')),
-      element('dd', 'error', ...richText(stopError(stop))),
-    );
-  }
+  if (stop.reason === 'failure') return element('div', 'stop', element('p', 'error', ...richText(stopError(stop))));
   return element(
     'dl',
     'stop',
@@ -2597,11 +2781,12 @@ async function drive(
 }
 
 /**
- * The stopped page: Watch live and Pick on the image where the stop takes them, then its live view once a frame came
- * (the Live badge on it), else its image; under it, why there is none, or why the view ended, and the first time the
- * view takes input, how. The image's box stays the same element for the stop, so the live view keeps the focus.
+ * The stopped page, in a card: its head with who watches it, and Watch live and Pick on the image where the stop takes
+ * them; then its live view once a frame came (the Live badge on it), else its image, else why there is none in its
+ * place; under it, why the view ended, the first time the view takes input how, and who drives the stop. The image's
+ * box stays the same element for the stop, so the live view keeps the focus.
  */
-function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolean): HTMLElement {
+function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolean, around: PageAround): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
   const intents: HubAction[] = stopIntents(worker, stop);
   const kept = images.get(key);
@@ -2629,14 +2814,17 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
 
   const figure = part(`${key}|page`, stop.since, () => element('figure', 'page'));
   figure.toggleAttribute('data-picking', picking.has(key));
-  const children: HTMLElement[] = [];
-  if (canView || pickable) {
-    // While its hub is away, Watch live shows as the person left it, for when the hub answers.
-    const tools = { canView, live: live || (away && watched), pickable, picking: picking.has(key) };
-    const row = part(`${key}|page-tools`, tools, () => pageTools(run, worker.worker, stop, tools));
-    markTools(row, key, away);
-    children.push(row);
-  }
+  // While its hub is away, Watch live shows as the person left it, for when the hub answers.
+  const tools = {
+    since: stop.since,
+    watchers: around.watchers,
+    live: canView ? live || (away && watched) : null,
+    watch: null,
+    pickable,
+    picking: picking.has(key),
+  };
+  const head = pageHead(run, worker, stop, figure, tools, away);
+  const children: HTMLElement[] = [head];
   const shown = framed ? view.img : (still?.img ?? null);
   if (shown) {
     const box = part(`${key}|frame`, stop.since, () => element('div', 'page-frame'));
@@ -2649,18 +2837,13 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
     children.push(box);
   }
   const note = pageNote(view, live, framed, shown, still);
-  if (note) {
-    children.push(
-      part(`${key}|page-note`, note, () =>
-        note.icon ? iconText(element('p', 'view-note'), note.icon, note.text) : element('p', undefined, note.text),
-      ),
-    );
-  }
+  if (note) children.push(pageNotePart(key, note, !shown));
   if (view?.inputOn && hintFor === `${key}|${view.since}`) {
     children.push(
       part(`${key}|hint`, null, () => iconText(element('p', 'view-note hint'), 'info', t('runs_liveHint'))),
     );
   }
+  if (around.drive) children.push(around.drive);
   place(figure, children);
   return figure;
 }
@@ -2684,27 +2867,81 @@ function pageNote(
   return { text: t('runs_imageLoading') };
 }
 
-/** Watch live and Pick on the image, each a toggle saying whether it is on. */
-function pageTools(
+/** Around a worker's page: who watches it, in its head, and who drives its stop, under it. */
+interface PageAround {
+  watchers: string | null;
+  drive: HTMLElement | null;
+}
+
+/**
+ * The page card's head, which names the card (`figure`): its caption, who watches the page under it, then the tools
+ * the stop takes on its page, each a toggle saying whether it is on: Watch live (`live`, null where the stop takes no
+ * view of its own), Watch for a watched lane's stop (`watch`), and Pick on the image. Who watches and the tools are
+ * each drawn again only when they change, so a tool stays the same element as others come to watch.
+ */
+function pageHead(
   run: RunsRun,
-  worker: number,
-  stop: HubStop,
-  shown: { canView: boolean; live: boolean; pickable: boolean; picking: boolean },
+  worker: HubWorker,
+  stop: HubStop | null,
+  figure: HTMLElement,
+  shown: {
+    since: string | null;
+    watchers: string | null;
+    live: boolean | null;
+    watch: boolean | null;
+    pickable: boolean;
+    picking: boolean;
+  },
+  away: boolean,
 ): HTMLElement {
-  const key = workerKey(run.hub, run.session.ref, { worker });
-  const row = element('div', 'piwi-actions page-tools');
-  if (shown.canView) {
-    const live = makeButton(t('runs_live'), () => toggleLive(run, worker, stop), {
-      icon: 'eye',
-      small: true,
-      title: t('runs_liveTitle'),
+  const key = workerKey(run.hub, run.session.ref, worker);
+  const captionId = domId('page', key);
+  figure.setAttribute('aria-labelledby', captionId);
+  const head = part(`${key}|page-head`, null, () => element('div', 'page-head'));
+  const { watchers, ...tools } = shown;
+  const title = part(`${key}|page-title`, [captionId, watchers], () => {
+    const caption = element('span', 'page-caption', t('runs_pageCaption'));
+    caption.id = captionId;
+    const made = element('div', 'page-title', caption);
+    if (watchers) made.append(iconText(element('span', 'watchers'), 'eye', watchers));
+    return made;
+  });
+  const items = [title];
+  if (tools.live !== null || tools.watch !== null || tools.pickable) {
+    const row = part(`${key}|page-tools`, tools, () => {
+      const made = element('div', 'piwi-actions page-tools');
+      if (tools.live !== null && stop) {
+        const live = makeButton(t('runs_live'), () => toggleLive(run, worker.worker, stop), {
+          icon: 'eye',
+          small: true,
+          title: t('runs_liveTitle'),
+        });
+        live.setAttribute('aria-pressed', String(tools.live));
+        live.dataset.focus = `${key}|live`;
+        made.append(live);
+      }
+      if (tools.watch !== null) made.append(watchButton(run, worker, 'watch', tools.watch, true));
+      if (tools.pickable) made.append(pickAtButton(key, tools.picking));
+      return made;
     });
-    live.setAttribute('aria-pressed', String(shown.live));
-    live.dataset.focus = `${key}|live`;
-    row.append(live);
+    markTools(row, key, away);
+    items.push(row);
   }
-  if (shown.pickable) row.append(pickAtButton(key, shown.picking));
-  return row;
+  place(head, items);
+  return head;
+}
+
+/**
+ * What the page card says: under its image, or, with no image to show, in the image's place, where the image will
+ * come.
+ */
+function pageNotePart(key: string, note: { icon?: IconName; text: string }, empty: boolean): HTMLElement {
+  return part(`${key}|page-note`, { ...note, empty }, () => {
+    const text = note.icon
+      ? iconText(element('p', 'view-note'), note.icon, note.text)
+      : element('p', undefined, note.text);
+    return empty ? element('div', 'page-frame page-empty', text) : text;
+  });
 }
 
 /** Pick on the image, a toggle saying whether it waits for a click. */
@@ -2731,14 +2968,21 @@ function markTools(row: HTMLElement, key: string, away: boolean): void {
 }
 
 /**
- * The page of a worker whose lane can be watched: at a stop, Watch and Pick on the image above it; then the lane's
+ * The page of a worker whose lane can be watched, in a card: its head with who watches it, and at a stop Watch and
+ * Pick on the image; then the lane's
  * frame of where the worker stands, with the Live badge (at a stop, the stop's live view, which takes input as Watch
  * live's does), else the stop's image, else the lane's last frame, dimmed and, while the test runs, marked as running.
  * Why the lane sends no frame shows in place of its image; under it, why the lane ended or was refused, that it starts,
- * or why the stop has no image, and the first time the view takes input, how. Null for a worker that runs, its lane
- * neither watched nor refused.
+ * or why the stop has no image, the first time the view takes input how, and who drives the stop. Null for a worker
+ * that runs, its lane neither watched nor refused.
  */
-function renderLanePage(run: RunsRun, worker: HubWorker, stop: HubStop | null, away: boolean): HTMLElement | null {
+function renderLanePage(
+  run: RunsRun,
+  worker: HubWorker,
+  stop: HubStop | null,
+  away: boolean,
+  around: PageAround,
+): HTMLElement | null {
   const key = workerKey(run.hub, run.session.ref, worker);
   const slot = slotKey(run.hub, run.session.ref, worker.parallelIndex);
   const lane = lanes.get(slot);
@@ -2773,17 +3017,17 @@ function renderLanePage(run: RunsRun, worker: HubWorker, stop: HubStop | null, a
 
   const figure = part(`${key}|page`, null, () => element('figure', 'page'));
   figure.toggleAttribute('data-picking', picking.has(key));
-  const children: HTMLElement[] = [];
-  if (stop) {
-    const tools = { watched: isWatched(lane), pickable, picking: picking.has(key) };
-    const row = part(`${key}|page-tools`, tools, () => {
-      const made = element('div', 'piwi-actions page-tools', watchButton(run, worker, 'watch', tools.watched, true));
-      if (tools.pickable) made.append(pickAtButton(key, tools.picking));
-      return made;
-    });
-    markTools(row, key, away);
-    children.push(row);
-  }
+  // At a stop, Watch and Pick on the image in its head; while the test runs, Watch stays with the controls.
+  const tools = {
+    since: stop?.since ?? null,
+    watchers: around.watchers,
+    live: null,
+    watch: stop ? isWatched(lane) : null,
+    pickable,
+    picking: picking.has(key),
+  };
+  const head = pageHead(run, worker, stop, figure, tools, away);
+  const children: HTMLElement[] = [head];
   const lastFrame = !!lane?.viewport && !(live && lane.refused);
   const shown = viewing !== null ? lane!.img : (still?.img ?? (lastFrame ? lane!.img : null));
   if (shown) {
@@ -2801,18 +3045,13 @@ function renderLanePage(run: RunsRun, worker: HubWorker, stop: HubStop | null, a
     children.push(box);
   }
   const note = laneNote(lane, stop !== null, shown, still);
-  if (note) {
-    children.push(
-      part(`${key}|page-note`, note, () =>
-        note.icon ? iconText(element('p', 'view-note'), note.icon, note.text) : element('p', undefined, note.text),
-      ),
-    );
-  }
+  if (note) children.push(pageNotePart(key, note, !shown));
   if (lane?.inputOn && hintFor === `${key}|${lane.inputSince}`) {
     children.push(
       part(`${key}|hint`, null, () => iconText(element('p', 'view-note hint'), 'info', t('runs_liveHint'))),
     );
   }
+  if (around.drive) children.push(around.drive);
   place(figure, children);
   return figure;
 }
