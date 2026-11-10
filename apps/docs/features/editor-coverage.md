@@ -46,8 +46,8 @@ the marks mean.
 
 In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`,
 `piwi.coverageChangedBorder` and `piwi.uncoveredChangeBorder`, which a theme or `workbench.colorCustomizations` can
-restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter and in the
-scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
+restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter
+and, all but the lines run, in the scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
 Editor → Color Scheme → Piwi → Coverage**, where the error stripe color is the mark's, and a background, none by
 default, tints the lines too.
 

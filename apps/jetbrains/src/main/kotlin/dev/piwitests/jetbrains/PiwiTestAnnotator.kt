@@ -80,11 +80,10 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 }
             }
             if (failure != null && failedAt != null && !failedAt.isEmpty) {
-                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
-                    .range(failedAt)
-                    .textAttributes(FAILING_LINE)
-                    .tooltip(Glue.failureTooltip(failure.headline, failure.message, failure.state == "edited"))
-                    .create()
+                // The failure's diagnostic, where it is on this line, says why it failed.
+                val line = holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(failedAt).textAttributes(FAILING_LINE)
+                if (!failure.diagnosed) line.tooltip(Glue.failureTooltip(failure.headline, failure.message, failure.state == "edited"))
+                line.create()
             }
         }
     }

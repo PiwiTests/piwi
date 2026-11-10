@@ -185,11 +185,14 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         if (current.isNotEmpty()) drawn[uri] = current
     }
 
-    /** A mark's highlighter, with its bar in the gutter and its tooltip. */
+    /**
+     * A mark's highlighter, with its bar in the gutter and its tooltip; in the scroll bar too, but for the lines the
+     * tests ran, which would color most of a covered file's scroll bar.
+     */
     private fun highlight(model: MarkupModel, document: Document, mark: Glue.CoverageMark): RangeHighlighter {
         val key = keyOf(mark.kind)
         return model.addRangeHighlighter(
-            key,
+            key.takeIf { mark.kind != Glue.CoverageKind.RUN },
             document.getLineStartOffset(mark.start),
             document.getLineEndOffset(mark.end),
             HighlighterLayer.SELECTION - 1,
@@ -212,7 +215,10 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
     }
 
     companion object {
-        /** The lines tests ran: **Settings → Editor → Color Scheme → Piwi**, its error stripe color the mark's. */
+        /**
+         * The lines tests ran: **Settings → Editor → Color Scheme → Piwi**, its error stripe color the gutter mark's
+         * alone, the scroll bar showing none of these lines.
+         */
         val RUN: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_COVERAGE_RUN")
 
         /** The executable lines no test runs. */
@@ -238,8 +244,8 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
  * scheme restyles it; dashed for the lines changed since the coverage run. Hovered, it shows its tooltip: what it says
  * of its lines and what the marks mean; clicked, the same as a hint.
  */
-private class CoverageGutterMark(
-    private val key: TextAttributesKey,
+internal class CoverageGutterMark(
+    val key: TextAttributesKey,
     private val dashed: Boolean,
     private val tooltip: String,
 ) : LineMarkerRendererEx, ActiveGutterRenderer {

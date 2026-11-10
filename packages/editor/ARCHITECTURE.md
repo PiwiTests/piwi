@@ -373,7 +373,12 @@ A failure whose line changed since its run:
 - is an information, `Edited since run #120: …`, with `data.edited`;
 - has **Run this test** (`piwi.runTests`) first among its quick fixes (every failure has it);
 - has `state: 'edited'` in `TestFailure` and in `piwi/failures`;
-- shows `✎ edited since run #120 · …` above the line.
+- shows `✎ edited since run #120` above the line.
+
+The line above a failing line says `✗ Failed here`, and the headline after it only where no diagnostic on that line
+gives it (`TestFailure.diagnosed`: the failure's diagnostic is on that line, and `failureSeverity` is not `off`); the
+clients say it nowhere else on that line, and the hover gives the error's message without the headline unless
+`failureSeverity` is `off`.
 
 A failure whose test left its spec publishes nothing: its `test(…)` call was in the spec the run saw, and is not in the
 spec as it stands.
