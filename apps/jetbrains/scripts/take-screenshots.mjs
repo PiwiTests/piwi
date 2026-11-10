@@ -178,11 +178,11 @@ function writeIdeDirs(root, ide) {
   for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { recursive: true });
   if (configFrom) fs.cpSync(configFrom, dirs.config, { recursive: true, force: true });
   unpackPlugin(dirs.plugins);
-  // No AI Assistant promotion in the frame, and no JetBrains OS Integration: its daemon fails to start on a bare
-  // display and reports an IDE error in the status bar.
+  // No AI Assistant or agent session buttons in the frame, and no JetBrains OS Integration: its daemon fails to start
+  // on a bare display and reports an IDE error in the status bar.
   fs.writeFileSync(
     path.join(dirs.config, 'disabled_plugins.txt'),
-    ['com.intellij.ml.llm', 'com.intellij.platform.daemon', ''].join('\n'),
+    ['com.intellij.ml.llm', 'com.intellij.air', 'com.intellij.platform.daemon', ''].join('\n'),
   );
   const options = path.join(dirs.config, 'options');
   fs.mkdirSync(options, { recursive: true });
@@ -227,7 +227,6 @@ function writeIdeDirs(root, ide) {
     <option name="disabledCodeVisionProviderIds">
       <set>
         <option value="vcs.code.vision" />
-        <option value="js.references" />
         <option value="references" />
       </set>
     </option>
@@ -330,13 +329,15 @@ async function statusItemFailing(window) {
   const { width, height } = await imageSize(window);
   const bar = {
     left: Math.round(width * 0.4),
-    top: height - 40 * SCALE,
+    top: height - 30 * SCALE,
     width: Math.round(width * 0.6),
-    height: 40 * SCALE,
+    height: 30 * SCALE,
   };
   const red = await countPixels(window, bar, (r, g, b) => r > 170 && g < 120 && b < 120);
-  const amber = await countPixels(window, bar, (r, g, b) => r > 200 && g > 130 && g < 200 && b < 90);
-  return { red, amber, failing: red >= 200 && amber >= 16 };
+  // The dark theme's `TestFailed` fill, #F2C55C.
+  const near = (value, target, within) => Math.abs(value - target) <= within;
+  const amber = await countPixels(window, bar, (r, g, b) => near(r, 242, 20) && near(g, 197, 20) && near(b, 92, 25));
+  return { red, amber, failing: red >= 400 && amber >= 80 };
 }
 
 /**
@@ -351,9 +352,11 @@ async function shoot(name, { dir = outDir, failing = false } = {}) {
   if (failing) {
     const status = await statusItemFailing(window);
     if (!status.failing) {
+      const rejected = path.join(os.tmpdir(), `jetbrains-${name}-rejected.png`);
+      await writeAtWidth(window, WINDOW.width, rejected);
       throw new Error(
         `The status bar draws Piwi's item without its failing icon and color (${status.red} red and ${status.amber} ` +
-          `amber pixels): ${name} is not written. Run with --probe to see the window.`,
+          `amber pixels): ${name} is not written; the capture is ${rejected}.`,
       );
     }
   }
@@ -500,8 +503,9 @@ const SCENES = {
     async run() {
       xinput('key', KEYS.hideToolWindows.xinput);
       await sleep(1500);
-      // The spec's own line sits above its first line, which opening the file at line 1 scrolls out of sight.
-      xinput('move', 1400, 600, 'sleep', 0.3, 'click', 4, 'click', 4, 'click', 4);
+      // The spec's own line sits above its first line, which opening the file at line 1 scrolls out of sight; the
+      // pointer then rests on the title bar's empty middle, where it opens no hover.
+      xinput('move', 1400, 600, 'sleep', 0.3, 'click', 4, 'click', 4, 'click', 4, 'sleep', 0.3, 'move', 1400, 20);
       await sleep(1000);
       xinput('key', KEYS.piwiToolWindow.xinput);
       await sleep(4000);

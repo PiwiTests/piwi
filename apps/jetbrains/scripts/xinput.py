@@ -5,7 +5,7 @@ Usage (DISPLAY set):
   xinput.py key alt+Return          # a chord: ctrl, alt, shift, super and X keysym names (Return, Escape, F1, a, …)
   xinput.py type "some text"        # ASCII text, one key at a time
   xinput.py move 640 400            # the pointer, in screen pixels
-  xinput.py click [1|2|3]           # a button at the pointer's position
+  xinput.py click [1|2|3|4|5]       # a button at the pointer's position: 4 and 5 turn the wheel up and down
   xinput.py sleep 0.5
 
 Several commands chain on one line: xinput.py move 640 400 sleep 0.3 click 1 sleep 1 key alt+Return

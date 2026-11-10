@@ -126,7 +126,7 @@ test('CodeLens above the locators names the tests behind them', async () => {
 test('the spec’s lens counts the spec’s own tests', async () => {
   await openFile(page, SPEC_FILE);
   const lens = page.locator('.monaco-editor .codelens-decoration', { hasText: /tests? in Piwi/ }).first();
-  await expect(lens).toContainText('3 tests in Piwi');
+  await expect(lens).toHaveText(/^3 tests in Piwi\b/);
 });
 
 test('the failures view holds the run, the local run since, and the failures', async () => {
