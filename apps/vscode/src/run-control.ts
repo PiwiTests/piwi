@@ -1040,6 +1040,8 @@ export interface StopAction extends StopControl {
   key: string;
   /** The words of the choice among the actions. */
   detail: string;
+  /** Its glyph, the one its command has in the manifest, before its title in the choice. */
+  icon: string;
 }
 
 /**
@@ -1050,6 +1052,7 @@ export interface StopAction extends StopControl {
 export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'pick',
+    icon: '$(target)',
     title: 'Pick a locator',
     command: RUN_COMMANDS.pick,
     key: 'piwi.runCanPick',
@@ -1057,6 +1060,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'record',
+    icon: '$(record)',
     title: 'Record here',
     command: RUN_COMMANDS.record,
     key: 'piwi.runCanRecord',
@@ -1064,6 +1068,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert',
+    icon: '$(pass)',
     title: 'Assert',
     command: RUN_COMMANDS.assert,
     key: 'piwi.runCanAssert',
@@ -1071,6 +1076,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert-region',
+    icon: '$(screen-full)',
     title: 'Assert a region',
     command: RUN_COMMANDS.assertRegion,
     key: 'piwi.runCanAssertRegion',
@@ -1078,6 +1084,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'mock',
+    icon: '$(arrow-swap)',
     title: 'Mock a request',
     command: RUN_COMMANDS.mock,
     key: 'piwi.runCanMock',

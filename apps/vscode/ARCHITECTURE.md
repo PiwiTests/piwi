@@ -57,6 +57,13 @@ beside it:
 [Build output](../../packages/editor/ARCHITECTURE.md#build-output) in the editor service's reference. The requests and
 notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#protocol), in the same reference.
 
+**Glyphs.** Every command in `package.json` has a codicon from the concept table of
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), checked
+against the codicons of VS Code 1.91, but four that wait for a glyph Piwi draws (Refresh, Run to the cursor, Pause and
+watch, Stop sharing). VS Code draws them in title bars, a view's inline row and a quick pick, not in the palette or a
+context menu. The stop's code actions show their command's glyph in the choice among them (`STOP_ACTIONS.icon`).
+`tests/menus.test.ts` holds both.
+
 ## Service, lenses and credentials
 
 `src/extension.ts` starts the service with `vscode-languageclient` and draws its answers.

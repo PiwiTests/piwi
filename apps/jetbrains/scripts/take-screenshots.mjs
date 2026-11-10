@@ -322,8 +322,8 @@ function xinput(...commands) {
 
 /**
  * Whether the status bar draws Piwi's item as failing, as `PiwiStatusBar` does for the fixture's failures: the
- * `TestFailed` icon's amber and the error color of its label, counted in the right part of the status bar of a window
- * captured at `SCALE`.
+ * `TestError` icon's red (`PiwiIcons.FAILED`) and the error color of its label, counted in the right part of the status
+ * bar of a window captured at `SCALE`.
  */
 async function statusItemFailing(window) {
   const { width, height } = await imageSize(window);
@@ -334,10 +334,10 @@ async function statusItemFailing(window) {
     height: 30 * SCALE,
   };
   const red = await countPixels(window, bar, (r, g, b) => r > 170 && g < 120 && b < 120);
-  // The dark theme's `TestFailed` fill, #F2C55C.
+  // The dark theme's `TestError` fill, #DB5C5C.
   const near = (value, target, within) => Math.abs(value - target) <= within;
-  const amber = await countPixels(window, bar, (r, g, b) => near(r, 242, 20) && near(g, 197, 20) && near(b, 92, 25));
-  return { red, amber, failing: red >= 400 && amber >= 80 };
+  const icon = await countPixels(window, bar, (r, g, b) => near(r, 219, 20) && near(g, 92, 20) && near(b, 92, 20));
+  return { red, icon, failing: red >= 400 && icon >= 80 };
 }
 
 /**
@@ -355,8 +355,8 @@ async function shoot(name, { dir = outDir, failing = false } = {}) {
       const rejected = path.join(os.tmpdir(), `jetbrains-${name}-rejected.png`);
       await writeAtWidth(window, WINDOW.width, rejected);
       throw new Error(
-        `The status bar draws Piwi's item without its failing icon and color (${status.red} red and ${status.amber} ` +
-          `amber pixels): ${name} is not written; the capture is ${rejected}.`,
+        `The status bar draws Piwi's item without its failing icon and color (${status.red} red pixels, ${status.icon} ` +
+          `of the icon's red): ${name} is not written; the capture is ${rejected}.`,
       );
     }
   }

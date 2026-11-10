@@ -114,7 +114,7 @@
                     icon="AllIcons.Actions.Refresh"
                     description="Read the latest run and its failures again, not the indexes Refresh fetches"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
-                    text="Run the Tests That Reach This File" description="Run them in the Run tool window">
+                    text="Run the Tests That Reach This File" icon="AllIcons.Nodes.Test" description="Run them in the Run tool window">
             </action>
             <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
                     text="Run the Test at the Caret" icon="AllIcons.Actions.Execute"
@@ -123,17 +123,21 @@
             </action>
             <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                     text="Verify the Test at the Caret ×3"
+                    icon="AllIcons.Actions.Rerun"
                     description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless Run Headed is on, and say how many runs passed">
             </action>
             <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
+                    icon="AllIcons.Actions.RunAll"
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
             </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
+                    icon="AllIcons.Actions.Selectall"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run Headed"
                     description="Run every test Piwi starts in this project headed, with its browser window shown"/>
             <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
                     text="Hold Failures from Each Run's Start…"
+                    icon="AllIcons.Debugger.Db_exception_breakpoint"
                     description="Auto, On or Off: whether a failed test of each run Piwi starts waits at its line for an answer"/>
             <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
                     text="Re-run the Failing Tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
@@ -147,7 +151,7 @@
                     text="Show Coverage Marks"
                     description="Mark the lines the tests ran, the executable lines none runs and the lines changed since the coverage run"/>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
-                    icon="AllIcons.General.Web"
+                    icon="AllIcons.Ide.External_link_arrow"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>
             <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
                     icon="AllIcons.General.Web"
@@ -156,15 +160,19 @@
                     description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                     text="Copy the MCP Server Configuration"
+                    icon="AllIcons.Actions.Copy"
                     description="An mcpServers entry for the AI Assistant's MCP settings"/>
             <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
                     text="Copy the Runs' MCP Server Configuration for Agents"
+                    icon="AllIcons.Actions.Copy"
                     description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
             <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
                     text="Copy the Runs' MCP Server Configuration for Claude Code or Cursor"
+                    icon="AllIcons.Actions.Copy"
                     description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
             <action id="Piwi.ResetRunsMcpToken" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
                     text="Reset the Runs' MCP Server Token"
+                    icon="AllIcons.Nodes.Padlock"
                     description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
@@ -230,10 +238,13 @@
                     description="Stop a worker before its next call, and watch its page in the Piwi tool window"/>
             <!-- The code actions at a stop: enabled while a stop offers them, with no shortcut. -->
             <action id="Piwi.PickAtStop" class="dev.piwitests.jetbrains.PickAtStopAction" text="Pick a Locator at the Stop"
+                    icon="AllIcons.General.Locate"
                     description="Pick an element in the stopped test's window: its locator replaces the one on the stopped line"/>
             <action id="Piwi.RecordAtStop" class="dev.piwitests.jetbrains.RecordAtStopAction" text="Record Here at the Stop"
+                    icon="AllIcons.Ide.Macro.Recording_1"
                     description="Record what you do in the stopped test's window above the stopped line"/>
             <action id="Piwi.AssertAtStop" class="dev.piwitests.jetbrains.AssertAtStopAction" text="Assert at the Stop"
+                    icon="AllIcons.General.InspectionsOK"
                     description="Check an element in the stopped test's window: the expect() goes above the stopped line"/>
             <action id="Piwi.AssertRegionAtStop" class="dev.piwitests.jetbrains.AssertRegionAtStopAction"
                     text="Assert a Region at the Stop"
@@ -242,10 +253,12 @@
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
             <action id="Piwi.ShowBrowser" class="dev.piwitests.jetbrains.ShowBrowserAction"
                     text="Show the Stopped Test's Browser"
+                    icon="AllIcons.Nodes.PpWeb"
                     description="Bring the stopped test's window to the front, at a stop of a headed run"/>
             <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
             <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
                     text="Share the Stopped Browser with Playwright Tools"
+                    icon="AllIcons.General.ExternalTools"
                     description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
             <!-- Asked with a warning the first time in the IDE's session: the run's pages go to the team instance. -->
             <action id="Piwi.ShareRunLive" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the Run Live"
@@ -254,6 +267,7 @@
                     text="Stop Sharing the Run Live"
                     description="End the views of the run on the team instance: nothing more goes there"/>
             <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn Hold Failures On or Off"
+                    icon="AllIcons.Debugger.Db_exception_breakpoint"
                     description="Whether a failed test no pause bar shows waits at its line for an answer in the run, whichever surface set it"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
                     icon="AllIcons.Actions.Suspend"

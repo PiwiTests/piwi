@@ -157,6 +157,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **One undo step per recording.** A `StartMarkAction` in a command of its own just before the first write, and a
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
+- **Every action draws its concept's platform icon, present on 2024.1, or is listed as waiting for Piwi's glyph.** The
+  concepts are Appendix A of `proposals/editor-ux-coherence.md`; an icon drawn in code comes from `PiwiIcons`. Checked
+  by `PiwiPluginTest` (`testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph`).
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
 
 ## Workflow

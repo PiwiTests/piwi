@@ -276,6 +276,14 @@ The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommand
   `Glue.FailureNode.root`);
 - on a run's node: choose its baseline and open its run.
 
+**Icons.** Every action of `plugin.xml` draws a platform icon from the concept table of
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), present on
+2024.1 and 2026.3. The exceptions are the two toggles, whose menu rows show a check mark, and seven that wait for a glyph
+Piwi draws (Disconnect, Pair, Pause and Watch, Assert a Region, Mock a Request, Share the Run Live, Stop Sharing). The
+icons drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree
+and a held failure, Open in Dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a
+branch) and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
+
 **Re-run the Failing Tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
 (`Glue.failingRuns`). **Run This Test** runs `Glue.failureRunArgs`. Both name the failure's config
@@ -994,7 +1002,7 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
 The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
-code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestFailed` icon and
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestError` icon and
 the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
 directory instead (`statusItemFailing`).
 

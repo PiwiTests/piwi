@@ -380,17 +380,17 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 PiwiCommands.rerunFailing(project, it.root)
             },
             ConfigAction("Compare With…", AllIcons.Actions.Diff, selected, { it.root != null }) { CompareWithAction.choose(project, it.root) },
-            ConfigAction("Open in Dashboard", AllIcons.General.Web, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
+            ConfigAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { n -> n.url?.let { BrowserUtil.browse(it) } },
             Separator.getInstance(),
             FailureAction("Run This Test", AllIcons.Actions.Execute, selected, { Glue.failureRunArgs(it) != null }) {
                 Glue.failureRunArgs(it)?.let { args -> PiwiCommands.runTests(project, args) }
             },
             Separator.getInstance(),
-            FailureAction("Open the Trace", null, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
-            FailureAction("Open the Screenshot", null, selected, { it.hasScreenshot == true }) {
+            FailureAction("Open the Trace", PiwiIcons.TRACE, selected, { it.hasTrace }) { PiwiCommands.openTrace(project, evidence(it)) },
+            FailureAction("Open the Screenshot", PiwiIcons.SCREENSHOT, selected, { it.hasScreenshot == true }) {
                 PiwiCommands.openScreenshot(project, evidence(it))
             },
-            FailureAction("Open in Dashboard", AllIcons.General.Web, selected, { it.url != null }) { f ->
+            FailureAction("Open in Dashboard", PiwiIcons.OPEN_IN_DASHBOARD, selected, { it.url != null }) { f ->
                 f.url?.let { BrowserUtil.browse(it) }
             },
             Separator.getInstance(),
@@ -398,8 +398,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 PiwiCommands.copyAgentContext(project, evidence(it))
             },
             Separator.getInstance(),
-            FailureAction("Reproduce in the Desktop App", null, selected, desktop) { job(it, "reproduce") },
-            FailureAction("Find the Breaking Commit in the Desktop App", null, selected, desktop) { job(it, "bisect") },
+            FailureAction("Reproduce in the Desktop App", PiwiIcons.REPRODUCE, selected, desktop) { job(it, "reproduce") },
+            FailureAction("Find the Breaking Commit in the Desktop App", PiwiIcons.BISECT, selected, desktop) { job(it, "bisect") },
         )
     }
 
@@ -433,7 +433,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 "context" -> AllIcons.Nodes.Module
                 "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
                 "edited" -> AllIcons.General.Information
-                "failing", "failed" -> AllIcons.General.Error
+                "failing", "failed" -> PiwiIcons.FAILED
                 "file", "cluster", "owner" -> AllIcons.Nodes.Folder
                 "history" -> AllIcons.Vcs.History
                 else -> AllIcons.RunConfigurations.TestState.Run

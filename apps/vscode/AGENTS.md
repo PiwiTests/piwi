@@ -81,6 +81,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
   closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
   `tests/run-control.test.ts`.
+- **Every command has its concept's codicon, present in VS Code 1.91, or is listed as waiting for Piwi's glyph.** The
+  concepts are Appendix A of `proposals/editor-ux-coherence.md`. Checked by `tests/menus.test.ts` ("the commands'
+  glyphs").
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { DOCUMENT_PATTERN } from '../src/glue';
+import { STOP_ACTIONS } from '../src/run-control';
 
 const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
 const menus = manifest.contributes.menus as Record<
@@ -83,7 +84,7 @@ describe("a spec's editor title", () => {
     ]);
   });
 
-  test('draws each button with a glyph of its own: no other command has it, but Record and Resume recording', () => {
+  test('draws each button with a glyph of its own: no other command has it, but Record’s', () => {
     const shown = [
       ...menus['editor/title']!.filter((e) => e.group?.startsWith('navigation')),
       ...menus['editor/title/run']!,
@@ -93,8 +94,38 @@ describe("a spec's editor title", () => {
       const icon = iconOf(command);
       expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
       const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
-      expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording'] : []);
+      // Record, Resume recording and Record here at a stop are one concept, with one glyph.
+      expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording', 'piwi.recordAtStop'] : []);
     }
+  });
+});
+
+describe("the commands' glyphs", () => {
+  const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
+  /** The commands that wait for a glyph Piwi draws: no codicon says what they do. */
+  const awaiting: Record<string, string> = {
+    'piwi.refresh': 'Reload Piwi, a glyph of its own beside Refresh the latest run',
+    'piwi.runToCursor': 'Run to the cursor: VS Code has no codicon for it',
+    'piwi.pauseAndWatch': 'Pause and watch',
+    'piwi.stopSharingRun': 'Share live, crossed out',
+  };
+
+  test('gives every command a codicon, but those that wait for a glyph Piwi draws', () => {
+    const bare = commands.filter((c) => !c.icon).map((c) => c.command);
+    expect(bare.sort()).toEqual(Object.keys(awaiting).sort());
+    for (const c of commands.filter((c) => c.icon)) expect(c.icon, c.command).toMatch(/^\$\([a-z-]+\)$/);
+  });
+
+  test('draws Open in dashboard as leaving the editor, apart from the run pages’ globe', () => {
+    const iconOf = (command: string) => commands.find((c) => c.command === command)?.icon;
+    expect(iconOf('piwi.openInDashboard')).toBe('$(link-external)');
+    expect(commands.filter((c) => c.icon === '$(link-external)').map((c) => c.command)).toEqual([
+      'piwi.openInDashboard',
+    ]);
+  });
+
+  test('draws each code action at a stop with its command’s glyph, in the palette and in the choice', () => {
+    for (const a of STOP_ACTIONS) expect(commands.find((c) => c.command === a.command)?.icon, a.command).toBe(a.icon);
   });
 });
 
