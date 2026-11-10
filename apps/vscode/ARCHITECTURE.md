@@ -18,6 +18,7 @@ extension does with it. It is reference material: open the section for the area 
   - [Run notifications and tests in progress](#run-notifications-and-tests-in-progress)
   - [Test runs as tasks](#test-runs-as-tasks)
   - [Running the test at the cursor](#running-the-test-at-the-cursor)
+  - [How a run starts](#how-a-run-starts)
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
   - [Code from a stop](#code-from-a-stop)
@@ -143,6 +144,8 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
 | `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
 | `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
+| `piwi.runHeaded`         | `false`, `true`                          | Every test run starts headed ([How a run starts](#how-a-run-starts)). Window scope.             |
+| `piwi.runHoldFailures`   | `auto`, `on`, `off`                      | Hold failures from each run's start ([How a run starts](#how-a-run-starts)). Window scope.      |
 | `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
 | `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
@@ -312,6 +315,15 @@ verify, by its location, three times (`VERIFY_REPEAT`); the spec, every test of 
 (`TestAtResult.spec.location`). When there is no test, a message says so. The first two commands take a `{ uri, line }`
 argument (`testLineArg`) for the test at another line: the notification after a recording names the line its block ends
 on.
+
+### How a run starts
+
+Every test run takes the person's start options (`withRunStart` in `src/glue.ts`, `RunStartOptions`), read from
+`piwi.runHeaded` and `piwi.runHoldFailures` at each run: `headed: true` when Run headed is on, `holdFailures` when Hold
+failures is On or Off (Auto sends nothing, so the service decides). That covers every run through `runTests`, the
+Testing view's and Verify ×3 included, and **Run selection…**; a debug run (`RunTestsArgs.debug`) is sent as built.
+**Piwi: Run options…** (`piwi.runOptions`) changes them in a QuickPick, writing the workspace's settings when they hold a
+value (`runOptionTarget`), else the user's, and the status bar item's tooltip ends with them (`runStartLine`).
 
 ### Breakpoints
 

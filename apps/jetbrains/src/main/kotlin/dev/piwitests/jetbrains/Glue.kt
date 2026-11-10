@@ -57,6 +57,37 @@ object Glue {
         return RunTestsArgs(uri, emptyList(), locations = listOf(location), repeat = repeat)
     }
 
+    /**
+     * **Hold failures** from each run's start (`PiwiLocalSettings.runHoldFailures`): `auto` leaves it to the service, on
+     * for a run with a breakpoint it can stop at or a `page.pause()` and off otherwise; `on` and `off` set it.
+     */
+    val HOLD_FAILURES_CHOICES = listOf("auto", "on", "off")
+
+    /** A choice of [HOLD_FAILURES_CHOICES] in words, for a menu or a setting. */
+    fun holdFailuresLabel(choice: String): String = when (choice) {
+        "on" -> "On from each run's start"
+        "off" -> "Off from each run's start"
+        else -> "Auto: on with a breakpoint or a page.pause()"
+    }
+
+    /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
+    fun holdFailuresOption(choice: String): Boolean? = when (choice) {
+        "on" -> true
+        "off" -> false
+        else -> null
+    }
+
+    /**
+     * A run's arguments started as the person chose for every run of the project: headed when `headed`, and Hold
+     * failures as `holdFailures` says ([holdFailuresOption]). A debug run (`debug`) starts as the service builds it.
+     */
+    fun withRunStart(args: RunTestsArgs, headed: Boolean, holdFailures: String): RunTestsArgs =
+        if (args.debug != null) args else args.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
+    /** A saved selection's run, started as [withRunStart] starts a run of tests. */
+    fun withRunStart(params: RunSelectionParams, headed: Boolean, holdFailures: String): RunSelectionParams =
+        params.copy(headed = headed.takeIf { it }, holdFailures = holdFailuresOption(holdFailures))
+
     /** Whether a path, with either separator, names a Playwright config. */
     fun isPlaywrightConfig(path: String?): Boolean =
         path != null && path.substringAfterLast('/').substringAfterLast('\\') in PLAYWRIGHT_CONFIGS

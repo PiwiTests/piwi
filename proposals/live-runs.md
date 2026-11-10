@@ -128,9 +128,13 @@ failure (RW19). Then presence and one driver: the hub's feature `presence` names
 that follow the runs, the desktop app's window, an agent following the run), who watches each worker's page and who
 drives each stop (`presence`, `watchers`, `driver`, each connection's own marked `self`); the agent drives a stop it
 asked for or acted on, a person's input, pick, intent or `drive` takes it, the agent hears `taken` and is refused
-while a person drives; every surface shows it, and the Runs window labels the agent's stops (IO7, RW24). The rest of
-P6 is proposed: the start options, one input model, attention and the ambient state, the editors' unattended runs and
-the Runs window's run-level controls. The later phases are
+while a person drives; every surface shows it, and the Runs window labels the agent's stops (IO7, RW24). Then the
+editors' start options: **Run headed** and **Hold failures** chosen for every run of an editor window (`RunStartOptions`,
+VS Code's and the JetBrains plugin's settings and toggles), so a rerun starts the same way (E11); whether a breakpoint
+the run cannot reach (application code) should leave it headless stays open (E10), since no file rule tells it apart
+from a page object reliably. The rest of P6 is proposed: the desktop app's start
+options and a repeated run that stops at its first failing repetition, **Show the browser** at a headed stop, one input
+model, attention and the ambient state, the editors' unattended runs and the Runs window's run-level controls. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

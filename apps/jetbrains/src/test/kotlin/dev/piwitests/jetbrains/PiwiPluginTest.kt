@@ -63,7 +63,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
         assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
-        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing")) {
+        for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing", "Piwi.RunHeaded", "Piwi.RunHoldFailures")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
         // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
@@ -440,6 +440,22 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(enabled("Piwi.RerunFailing"))
         service.statusChanged(StatusResult(listOf(ContextStatus(root = "/w", connected = true))))
         for (id in listOf("Piwi.OpenInDashboard", "Piwi.RunSelection")) assertTrue(id, enabled(id))
+    }
+
+    /** Run Headed is kept for every run Piwi starts in the project, on this machine, until it is turned off. */
+    fun testRunHeadedIsKeptForEveryRunOfTheProject() {
+        val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+            .build()
+        fun event() = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("test", null, context)
+        val action = ActionManager.getInstance().getAction("Piwi.RunHeaded") as com.intellij.openapi.actionSystem.ToggleAction
+        val local = project.service<PiwiProjectService>().local()
+        assertFalse(action.isSelected(event()))
+        action.setSelected(event(), true)
+        assertTrue(local.runHeaded)
+        assertTrue(action.isSelected(event()))
+        action.setSelected(event(), false)
+        assertFalse(local.runHeaded)
     }
 
     /** Trusting this project tells the views, which stop waiting for its trust; another project's trust tells none. */

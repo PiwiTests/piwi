@@ -275,8 +275,19 @@ export interface EditorBreakpoint {
   line: number;
 }
 
+/**
+ * How a run starts, as the person chose it for every test run the editor starts (kept, so a rerun starts the same
+ * way): headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
+ * decides: headed, with Hold failures on, for a run with the editor's breakpoints or a `page.pause()`; headless and off
+ * otherwise.
+ */
+export interface RunStartOptions {
+  headed?: boolean;
+  holdFailures?: boolean;
+}
+
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
-export interface RunTestsArgs {
+export interface RunTestsArgs extends RunStartOptions {
   /** Any file of the workspace the tests belong to, to pick the Playwright config when `root` does not name it. */
   uri: string;
   /** The folder of the Playwright config to run them with, as `WorkspaceFailure.root` names it. */
@@ -303,8 +314,8 @@ export interface RunTestsArgs {
    */
   locations?: string[];
   /**
-   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless: the
-   * breakpoints are not passed. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
+   * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless unless
+   * `headed`: the breakpoints are not passed, and it holds no failure. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
    * did not reach an instance, a `piwi/notice` from its exit code.
    */
   repeat?: number;
@@ -828,7 +839,7 @@ export interface SelectionsResult {
 export const SELECTIONS_REQUEST = 'piwi/selections';
 
 /** `piwi/runSelection`: the command line that runs a saved selection, as `piwi run <key>` resolves it. */
-export interface RunSelectionParams {
+export interface RunSelectionParams extends RunStartOptions {
   /** Any file of the workspace, to pick the Playwright config. */
   uri: string;
   key: string;

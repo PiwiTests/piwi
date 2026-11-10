@@ -88,6 +88,12 @@ import {
   type TextChange,
   type TextSpan,
   type TreeTest,
+  runOptionPicks,
+  runOptionTarget,
+  runStartChoices,
+  runStartLine,
+  runStartOptions,
+  withRunStart,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -2049,6 +2055,71 @@ describe('notConnectedNotice', () => {
     });
     expect(notConnectedNotice({ contexts: [ctx({})] })).toEqual({ message: NOT_CONNECTED, action: 'connect' });
     expect(notConnectedNotice(null)).toEqual({ message: NOT_CONNECTED, action: 'connect' });
+  });
+});
+
+describe('how every run of the window starts', () => {
+  test('reads the settings, a value of another type or outside the choices as its default', () => {
+    expect(runStartChoices(undefined, undefined)).toEqual({ headed: false, holdFailures: 'auto' });
+    expect(runStartChoices(true, 'on')).toEqual({ headed: true, holdFailures: 'on' });
+    expect(runStartChoices('true', 'always')).toEqual({ headed: false, holdFailures: 'auto' });
+  });
+
+  test('sends headed when on, and Hold failures when on or off: Auto leaves both to the service', () => {
+    expect(runStartOptions({ headed: false, holdFailures: 'auto' })).toEqual({});
+    expect(runStartOptions({ headed: true, holdFailures: 'auto' })).toEqual({ headed: true });
+    expect(runStartOptions({ headed: false, holdFailures: 'on' })).toEqual({ holdFailures: true });
+    expect(runStartOptions({ headed: true, holdFailures: 'off' })).toEqual({ headed: true, holdFailures: false });
+  });
+
+  test('goes with every run’s arguments, a selection’s and a verification’s, but a debug run’s', () => {
+    const choices = { headed: true, holdFailures: 'off' } as const;
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', testIds: [1] }, choices)).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      testIds: [1],
+      headed: true,
+      holdFailures: false,
+    });
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', testIds: [], repeat: 3 }, choices)).toMatchObject({
+      repeat: 3,
+      headed: true,
+    });
+    expect(withRunStart({ uri: 'file:///w/a.spec.ts', key: 'smoke' }, choices)).toEqual({
+      uri: 'file:///w/a.spec.ts',
+      key: 'smoke',
+      headed: true,
+      holdFailures: false,
+    });
+    const debug = {
+      uri: 'file:///w/a.spec.ts',
+      testIds: [],
+      debug: { stop: { uri: 'file:///w/a.spec.ts', line: 4 }, title: 'pays' },
+    };
+    expect(withRunStart(debug, choices)).toBe(debug);
+  });
+
+  test('are named in the status bar item’s tooltip, with the link that changes them', () => {
+    expect(runStartLine({ headed: true, holdFailures: 'auto' })).toBe(
+      'Run headed: on · Hold failures: Auto · [Run options…](command:piwi.runOptions)',
+    );
+    expect(runStartLine({ headed: false, holdFailures: 'off' })).toBe(
+      'Run headed: off · Hold failures: Off · [Run options…](command:piwi.runOptions)',
+    );
+  });
+
+  test('Run options… offers both, with the current choice', () => {
+    const picks = runOptionPicks({ headed: false, holdFailures: 'on' });
+    expect(picks.map((p) => [p.option, p.label, p.description])).toEqual([
+      ['headed', 'Run headed', 'Off'],
+      ['holdFailures', 'Hold failures', 'On'],
+    ]);
+  });
+
+  test('Run options… writes to the workspace’s settings only when they hold a value', () => {
+    expect(runOptionTarget(undefined)).toBe('global');
+    expect(runOptionTarget({})).toBe('global');
+    expect(runOptionTarget({ workspaceValue: 'off' })).toBe('workspace');
+    expect(runOptionTarget({ workspaceValue: false })).toBe('workspace');
   });
 });
 

@@ -5,8 +5,9 @@
  * and the Playwright configs it opens in, the MCP
  * configuration editors without the MCP provider API are given to paste, the
  * file a dashboard's open link names, and the recorded block a recording
- * writes and follows through the edits around it, and the Testing view's tree
- * of Piwi's tests with the results it publishes.
+ * writes and follows through the edits around it, the Testing view's tree
+ * of Piwi's tests with the results it publishes, and how every run of the
+ * window starts.
  */
 import type {
   BaselineChoice,
@@ -27,6 +28,8 @@ import type {
   RecordingUpdate,
   RunStatus,
   RunEnded,
+  RunSelectionParams,
+  RunStartOptions,
   RunStatusResult,
   RunTestsArgs,
   SpecTest,
@@ -110,6 +113,7 @@ export const STATUS_TOOLTIP_COMMANDS = [
   'piwi.compareWith',
   'piwi.connect',
   'piwi.refresh',
+  'piwi.runOptions',
   'piwi.restartService',
   'piwi.openLog',
 ];
@@ -1726,4 +1730,82 @@ export function unfollowedOutcome(
 export function liveRunName(live: LiveRun): string {
   if (live.own) return `Piwi: your run #${live.runId}`;
   return `Piwi: ${live.ci ? 'CI run' : 'run'} #${live.runId}${live.branch ? ` on ${live.branch}` : ''}`;
+}
+
+/** **Hold failures** from each run's start, as `piwi.runHoldFailures` holds it: `auto` leaves it to the service. */
+export type HoldFailuresChoice = 'auto' | 'on' | 'off';
+
+/** How every run of the window starts, as the person chose it (`piwi.runHeaded`, `piwi.runHoldFailures`). */
+export interface RunStartChoices {
+  headed: boolean;
+  holdFailures: HoldFailuresChoice;
+}
+
+/** The choices of `piwi.runHoldFailures`, as **Piwi: Run options…** offers them. */
+export const HOLD_FAILURES_CHOICES: Array<{ choice: HoldFailuresChoice; label: string; detail: string }> = [
+  { choice: 'auto', label: 'Auto', detail: 'On for a run with a breakpoint or a page.pause(), off otherwise' },
+  { choice: 'on', label: 'On', detail: 'From each run’s start: a failed test waits at its line for an answer' },
+  { choice: 'off', label: 'Off', detail: 'From each run’s start: a failed test fails as it would without Piwi' },
+];
+
+/** The settings' values as choices: a value of another type or outside the enum reads as its default. */
+export function runStartChoices(headed: unknown, holdFailures: unknown): RunStartChoices {
+  return {
+    headed: headed === true,
+    holdFailures: holdFailures === 'on' || holdFailures === 'off' ? holdFailures : 'auto',
+  };
+}
+
+/**
+ * What a run sends the service of the choices (`RunStartOptions`): `headed` when on, `holdFailures` when on or off.
+ * Left out, the service decides.
+ */
+export function runStartOptions(choices: RunStartChoices): RunStartOptions {
+  return {
+    ...(choices.headed ? { headed: true } : {}),
+    ...(choices.holdFailures === 'auto' ? {} : { holdFailures: choices.holdFailures === 'on' }),
+  };
+}
+
+/** A run's arguments with the choices; a debug run (`debug`) starts as the service builds it, headed. */
+export function withRunStart<T extends RunTestsArgs | RunSelectionParams>(args: T, choices: RunStartChoices): T {
+  if ('debug' in args && args.debug) return args;
+  return { ...args, ...runStartOptions(choices) };
+}
+
+/** The choices in words, as **Piwi: Run options…** names them: `Run headed: on · Hold failures: Auto`. */
+export function runStartText(choices: RunStartChoices): string {
+  const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!.label;
+  return `Run headed: ${choices.headed ? 'on' : 'off'} · Hold failures: ${hold}`;
+}
+
+/** The status bar item tooltip's line on the choices, with the link that changes them. */
+export function runStartLine(choices: RunStartChoices): string {
+  return `${runStartText(choices)} · [Run options…](command:piwi.runOptions)`;
+}
+
+/** The items of **Piwi: Run options…**: Run headed, on or off, then Hold failures, with the current choice. */
+export function runOptionPicks(
+  choices: RunStartChoices,
+): Array<{ label: string; description: string; detail: string; option: 'headed' | 'holdFailures' }> {
+  const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!;
+  return [
+    {
+      label: 'Run headed',
+      description: choices.headed ? 'On' : 'Off',
+      detail: choices.headed
+        ? 'Every test runs with its browser window shown. Pick to turn it off.'
+        : 'Runs are headed only with a breakpoint or a page.pause(). Pick to run every test headed.',
+      option: 'headed',
+    },
+    { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
+  ];
+}
+
+/**
+ * Where **Piwi: Run options…** writes a setting: the workspace's settings when they hold a value for it, which would
+ * win over the user's, else the user's.
+ */
+export function runOptionTarget(inspected: { workspaceValue?: unknown } | undefined): 'workspace' | 'global' {
+  return inspected?.workspaceValue === undefined ? 'global' : 'workspace';
 }

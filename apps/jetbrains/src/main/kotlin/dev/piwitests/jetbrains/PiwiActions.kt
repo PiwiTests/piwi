@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataKey
+import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
@@ -323,9 +324,16 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setTitle("Run which selection?")
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val breakpoints = project.service<PiwiProjectService>().breakpoints()
+                            val service = project.service<PiwiProjectService>()
+                            val breakpoints = service.breakpoints()
                             val places = breakpoints.map { it.place }.ifEmpty { null }
-                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, places))?.orNull()
+                            val local = service.local()
+                            val params = Glue.withRunStart(
+                                RunSelectionParams(uri, picked.key, places),
+                                local.runHeaded,
+                                local.runHoldFailures,
+                            )
+                            val command = server?.runSelection(params)?.orNull()
                             if (command != null) PiwiCommands.startRun(project, command, breakpoints)
                         }
                     }
@@ -333,6 +341,42 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .showCenteredInCurrentWindow(project)
             }
         }
+    }
+}
+
+/**
+ * Piwi: Run Headed — every run Piwi starts in this project runs headed (`RunTestsArgs.headed`), a verification's too;
+ * kept on this machine, as **Settings → Tools → Piwi** shows it.
+ */
+class RunHeadedAction : ToggleAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun isSelected(e: AnActionEvent): Boolean = e.project?.service<PiwiProjectService>()?.local()?.runHeaded ?: false
+
+    override fun setSelected(e: AnActionEvent, state: Boolean) {
+        e.project?.service<PiwiProjectService>()?.local()?.runHeaded = state
+    }
+}
+
+/**
+ * Piwi: Hold Failures from Each Run's Start… — Auto, On or Off for every run Piwi starts in this project
+ * (`Glue.HOLD_FAILURES_CHOICES`), kept on this machine, as **Settings → Tools → Piwi** shows it.
+ */
+class RunHoldFailuresAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val local = project.service<PiwiProjectService>().local()
+        val current = local.runHoldFailures
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
+            .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
+            .setSelectedValue(current, true)
+            .setTitle("Hold Failures from Each Run's Start")
+            .setItemChosenCallback { local.runHoldFailures = it }
+            .createPopup()
+            .showCenteredInCurrentWindow(project)
     }
 }
 
