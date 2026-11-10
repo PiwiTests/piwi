@@ -347,6 +347,17 @@ test('End the test ends a stopped test there, Stop the run reaches the editor, a
       await stopRun.click();
       await expect(runs.locator('#announce')).toHaveText('Test Editor stops the run.');
       expect(editor.svc.stops).toContain(run.ref);
+      // A Stop the editor refuses says why under the row, until the next Stop.
+      const refusal = 'The run was not started in this VS Code window: stop it where it was started.';
+      editor.svc.stopAnswer = { ok: false, message: refusal };
+      try {
+        await stopRun.click();
+        await expect(card.locator('.stop-refused')).toHaveText(refusal);
+      } finally {
+        editor.svc.stopAnswer = { ok: true, message: 'Test Editor stops the run.' };
+      }
+      await stopRun.click();
+      await expect(card.locator('.stop-refused')).toHaveCount(0);
     } finally {
       await endRun(run);
     }

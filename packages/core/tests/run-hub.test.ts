@@ -865,6 +865,10 @@ describe('Stop for a whole run on the hub', () => {
     expect(canStopRun({ ended: false })).toBe(true);
     expect(canStopRun({ ended: true })).toBe(false);
     expect(canStopRun({ ended: false, terminal: true })).toBe(false);
+    // A run whose own process said it ended, its session left a moment longer.
+    const progress = { done: 3, total: 3, failed: 0, flaky: 0, skipped: 0, status: 'passed' as const };
+    expect(canStopRun({ ended: false, progress })).toBe(false);
+    expect(canStopRun({ ended: false, progress: { ...progress, status: 'running' } })).toBe(true);
     expect(parseHubMessage(json({ ...welcome, features: ['stop'] }))).toEqual({ ...welcome, features: ['stop'] });
   });
 });

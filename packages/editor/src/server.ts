@@ -47,7 +47,7 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
-import { forwardedPorts } from '@piwitests/core/run-hub';
+import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
@@ -793,7 +793,6 @@ export function hasUntestedSuspect(entry: FlakeLabEntry | undefined): boolean {
   return !!entry && ((entry.untestedSuspects ?? 0) > 0 || entry.suspect?.standing === 'untested');
 }
 
-/** Start serving on a connection. Returns a function that stops the refresh timer. */
 /** Whether a client's answer reads as a `RunControlResult`. */
 function isRunControlResult(value: unknown): value is RunControlResult {
   if (typeof value !== 'object' || value === null) return false;
@@ -801,6 +800,7 @@ function isRunControlResult(value: unknown): value is RunControlResult {
   return typeof ok === 'boolean' && typeof message === 'string' && message.length > 0;
 }
 
+/** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
   /** What `asked` settles with, or `fallback` once a quick fix or a hover has waited long enough. */
@@ -2341,8 +2341,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    */
   const stopRunAsked = async (ref: string): Promise<RunControlResult> => {
     const session = runSessions.current().find((s) => s.ref === ref);
-    if (!session || session.ended) return { ok: false, message: 'The run has ended.' };
-    if (session.terminal) return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    if (session?.terminal) return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
     try {
       const answer: unknown = await connection.sendRequest(STOP_RUN_REQUEST, { ref } satisfies StopRunParams);
       if (isRunControlResult(answer)) return { ok: answer.ok, message: answer.message.slice(0, 500) };

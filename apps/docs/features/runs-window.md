@@ -33,7 +33,7 @@ locator call, for how long), with [**End the test**](./end-the-test#while-a-paus
 stays in the editor. A live run of several workers shows one at a time, behind tabs marked with their state, with
 **Pause all** and **Resume all** under its name. A new stop takes the tab from a worker neither stopped nor watched,
 and **Resume** or **End the test** moves it to the next stopped test. **Stop the run** ends a run an editor or the
-desktop app started; a terminal's run stops there. Resume, Step and Finish have
+desktop app started, not a terminal's or test runner's. Resume, Step and Finish have
 [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's

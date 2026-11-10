@@ -72,11 +72,12 @@ export type HubFeature = 'peers' | 'lanes' | 'hold' | 'presence' | 'stop';
 export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold', 'presence', 'stop'];
 
 /**
- * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one started in a
- * terminal (`terminal`, an editor's test runner's run included), whose Stop stays where it was started.
+ * Whether a hub with the `stop` feature can stop a run: one still live that its host started, never one whose own
+ * process said it ended (`progress.status`), nor one started in a terminal (`terminal`, an editor's test runner's run
+ * included), whose Stop stays where it was started.
  */
-export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal'>): boolean {
-  return !session.ended && !session.terminal;
+export function canStopRun(session: Pick<HubSession, 'ended' | 'terminal' | 'progress'>): boolean {
+  return !session.ended && !session.terminal && (session.progress?.status ?? 'running') === 'running';
 }
 
 /**

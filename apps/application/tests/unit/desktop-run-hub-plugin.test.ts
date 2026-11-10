@@ -46,6 +46,8 @@ interface TrayRun {
   status: string;
   steps: Array<{ args: string[] }>;
   hubRefs: string[];
+  shellId: number;
+  stopRequested: boolean;
 }
 
 async function plugin(label: string | null = 'main', trays = 1) {
@@ -84,7 +86,10 @@ async function plugin(label: string | null = 'main', trays = 1) {
     trayOpen,
     trayMounts,
     activeCount: computed(() => runs.value.filter((run) => run.status === 'running').length),
-    stopRun: async (run: TrayRun) => void stoppedRuns.push(run),
+    stopRun: async (run: TrayRun) => {
+      run.stopRequested = true;
+      stoppedRuns.push(run);
+    },
   }));
   const hub = {
     state,
@@ -182,7 +187,8 @@ afterEach(() => {
 });
 
 function running(key: number, kind: TrayRun['kind'], hubRef: string): TrayRun {
-  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef] };
+  const shellId = Number(/^desktop-(\d+)/.exec(hubRef)?.[1]);
+  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef], shellId, stopRequested: false };
 }
 
 describe('the window’s hold on its runs’ hub', () => {
@@ -330,6 +336,22 @@ describe('the window’s hold on its runs’ hub', () => {
     expect(main.stoppedRuns.map((run) => run.key)).toEqual([2]);
     expect(aux.invoked).toEqual([]);
     expect(main.invoked).toEqual([['desktop_stop_local_tests', { runId: 3 }]]);
+    // Asked again while they stop: neither is stopped twice, which the shell would take as a force stop.
+    for (const ref of ['desktop-4', 'desktop-3']) main.stopRun(ref);
+    expect(main.stoppedRuns).toHaveLength(1);
+    expect(main.invoked).toHaveLength(1);
+  });
+
+  test('stops a run of several steps only through the step it runs now, never an earlier one that ended', async () => {
+    const main = await plugin('main');
+    // Its first step, `desktop-5`, ended; its second, `desktop-6`, runs now.
+    main.runs.value = [{ ...running(1, 'tests', 'desktop-6'), hubRefs: ['desktop-5', 'desktop-6'] }];
+    await settle();
+    main.stopRun('desktop-5');
+    expect(main.stoppedRuns).toEqual([]);
+    expect(main.invoked).toEqual([]);
+    main.stopRun('desktop-6');
+    expect(main.stoppedRuns.map((run) => run.key)).toEqual([1]);
   });
 
   test('lets a window’s claim on its runs lapse once it stops saying it, as a window that closed unheard', async () => {

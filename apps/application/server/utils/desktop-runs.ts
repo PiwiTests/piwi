@@ -36,7 +36,14 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
+import {
+  HUB_FEATURES,
+  canStopRun,
+  parseHubCommand,
+  type HubAnswer,
+  type HubMessage,
+  type LiveHub,
+} from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import { runTargetConnection } from '@piwitests/editor/run-target';
 import type { RunIntent } from '@piwitests/core/run-channel';
@@ -456,7 +463,7 @@ export class DesktopRuns {
    */
   stopRun(ref: string): RunControlResult {
     const session = this.sessions.current().find((s) => s.ref === ref);
-    if (!session || session.ended) return { ok: false, message: 'The run has ended.' };
+    if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
     if (this.windows.size === 0) {
       return { ok: false, message: "No window of the desktop app is open: open the app's window to stop the run." };
     }

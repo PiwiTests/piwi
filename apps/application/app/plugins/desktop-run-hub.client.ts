@@ -21,7 +21,13 @@
  * nothing.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { desktopRunOf, desktopShellIdOf, desktopShownRefs, desktopStopSaid } from '~/utils/desktop-run-view';
+import {
+  desktopRunOf,
+  desktopRunRef,
+  desktopShellIdOf,
+  desktopShownRefs,
+  desktopStopSaid,
+} from '~/utils/desktop-run-view';
 
 /** The channel on which the app's windows say which runs their trays own. */
 const OWNERS_CHANNEL = 'piwi-desktop-run-owners';
@@ -110,16 +116,24 @@ export default defineNuxtPlugin(() => {
   }
 
   // Another tool asked through the hub to stop a run: the window whose tray holds it stops it as its own Stop does; with
-  // none, the main window has the shell stop the process.
+  // none, the main window has the shell stop the process. Once a run, whoever asks again: a second stop of the shell's
+  // is the tray's Force stop, which only the tray offers.
+  const stopsAsked = new Set<number>();
   hub.onStopRun((ref) => {
     if (!tellsSystem(ref)) return;
     const run = store.runs.value.find((r) => r.hubRefs.includes(desktopRunOf(ref)));
-    if (run) return void store.stopRun(run);
+    if (run) {
+      // A step of the run that ended, its session left a moment longer, stops nothing: the step running now is another.
+      const current = run.shellId != null && desktopRunRef(run.shellId) === desktopRunOf(ref);
+      if (current && !run.stopRequested) void store.stopRun(run);
+      return;
+    }
     const runId = desktopShellIdOf(ref);
-    if (runId !== null)
-      void tauriCore()
-        ?.invoke('desktop_stop_local_tests', { runId })
-        .catch(() => {});
+    if (runId === null || stopsAsked.has(runId)) return;
+    stopsAsked.add(runId);
+    void tauriCore()
+      ?.invoke('desktop_stop_local_tests', { runId })
+      .catch(() => {});
   });
 
   hub.onStop((session: HubSession, worker: HubWorker) => {

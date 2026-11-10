@@ -266,8 +266,10 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
      * as with Stop the Run; a run this IDE did not start is refused, saying where to stop it.
      */
     @JsonRequest("piwi/stopRun")
-    fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> =
-        CompletableFuture.completedFuture(Glue.stopRunAnswer(project.service<PiwiRunSessions>().stopRun(params.ref)))
+    fun stopRun(params: StopRunParams): CompletableFuture<RunControlResult> {
+        val stopped = project.getServiceIfCreated(PiwiRunSessions::class.java)?.stopRun(params.ref) ?: false
+        return CompletableFuture.completedFuture(Glue.stopRunAnswer(stopped))
+    }
 
     /**
      * The address or the token of the runs' MCP server changed without the plugin asking (it listened as the service
