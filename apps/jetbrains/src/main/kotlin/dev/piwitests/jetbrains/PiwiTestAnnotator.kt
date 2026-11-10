@@ -65,10 +65,10 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 .gutterIconRenderer(TestResultGutter(file.project, line, uri, document.createRangeMarker(first, end)))
                 .create()
             val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
-            val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), document.getLineEndOffset(it.line)) }
+            val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), Glue.lineEndWithBreak(document.getLineEndOffset(it.line), document.textLength)) }
             if (line.status == "failed") {
                 val last = (line.endLine ?: line.line).coerceIn(line.line, document.lineCount - 1)
-                val test = TextRange(start, document.getLineEndOffset(last))
+                val test = TextRange(start, Glue.lineEndWithBreak(document.getLineEndOffset(last), document.textLength))
                 // Two backgrounds on one line have no set order: the test's goes around the failing line.
                 val parts = if (failedAt != null && test.contains(failedAt)) {
                     listOf(TextRange(test.startOffset, failedAt.startOffset), TextRange(failedAt.endOffset, test.endOffset))

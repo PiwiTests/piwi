@@ -1842,6 +1842,14 @@ class GlueTest {
     }
 
     @Test
+    fun `a failing test's tint takes its lines' breaks, so it runs to the editor's edge`() {
+        // "a\nbc\n" (6 characters): the first line ends at 1, the second at 4, the empty last line at 6.
+        assertEquals(2, Glue.lineEndWithBreak(1, 6))
+        assertEquals(5, Glue.lineEndWithBreak(4, 6))
+        assertEquals(6, Glue.lineEndWithBreak(6, 6))
+    }
+
+    @Test
     fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
         val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
         assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
