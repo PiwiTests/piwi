@@ -199,36 +199,6 @@ const baseConfig = defineConfig({
               },
             ]
           : []),
-        // Auth+email server used by email-notifications.spec.ts.
-        // Requires a Mailpit instance (docker run -p 1025:1025 -p 8025:8025 axllent/mailpit).
-        // Set PIWI_MAILPIT_URL=http://localhost:8025 to opt in; tests are skipped otherwise.
-        ...(process.env.PIWI_MAILPIT_URL
-          ? [
-              {
-                command: serverCommand,
-                url: 'http://localhost:3098/api/auth/me',
-                env: {
-                  ...authServerEnv('test-email-secret-key-for-mailpit-tests'),
-                  PIWI_DATABASE_PATH: join(process.cwd(), '.test-temp', 'email-test.db'),
-                  PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'email-test-storage'),
-                  NITRO_PORT: '3098',
-                  PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-email'),
-                  PIWI_SMTP_HOST: 'localhost',
-                  PIWI_SMTP_PORT: process.env.PIWI_MAILPIT_SMTP_PORT ?? '1025',
-                  PIWI_SMTP_USER: 'test',
-                  PIWI_SMTP_PASS: 'test',
-                  PIWI_SMTP_FROM: 'noreply@piwi.test',
-                  PIWI_SMTP_FROM_NAME: 'Piwi Test',
-                  // Pin to isolated SQLite + local storage so the CI storage/db matrix
-                  // (inherited via process.env) can't repoint this server's backend.
-                  PIWI_DATABASE_URL: '',
-                  PIWI_STORAGE_TYPE: 'local',
-                },
-                reuseExistingServer: !process.env.CI,
-                timeout: 90 * 1000,
-              },
-            ]
-          : []),
         // PostgreSQL-backed server used by postgresql.spec.ts.
         // Only started when PIWI_POSTGRES_TEST_URL is set; the corresponding tests are skipped otherwise.
         ...(process.env.PIWI_POSTGRES_TEST_URL
