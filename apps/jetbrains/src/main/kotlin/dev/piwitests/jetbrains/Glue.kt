@@ -180,12 +180,12 @@ object Glue {
     /**
      * The context the status bar item speaks for: the one whose Playwright config folder holds `file` (a path, with
      * either separator), the deepest when several do, else the first connected, else the first the instance did not
-     * answer, else the first. Null without a context.
+     * answer or the desktop app did not prove itself to, else the first. Null without a context.
      */
     fun statusContext(contexts: List<ContextStatus>, file: String?): ContextStatus? =
         contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
             ?: contexts.firstOrNull { it.connected }
-            ?: contexts.firstOrNull { it.problemKind == "unreachable" }
+            ?: contexts.firstOrNull { it.problemKind == "unreachable" || it.problemKind == "desktop-unproven" }
             ?: contexts.firstOrNull()
 
     /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
@@ -299,6 +299,10 @@ object Glue {
             ?: return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
         val config = configLine(contexts, shown, file)
+        if (!shown.connected && shown.problemKind == "desktop-unproven") {
+            val problem = shown.problem ?: "The desktop app did not prove it holds its token"
+            return StatusView("Piwi: restart the desktop app", "$problem$config$hint", null, StatusAction.RETRY, StatusIcon.WARNING)
+        }
         if (!shown.connected && shown.problemKind == "unreachable") {
             val problem = shown.problem ?: "The instance did not answer"
             val tooltip = "$problem$config\nPiwi reads it again on its own; Refresh reads it now.$hint"
@@ -817,9 +821,12 @@ object Glue {
         if (contexts.isEmpty()) return "No Playwright config found in this project."
         val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
         val unreachable = contexts.firstOrNull { it.problemKind == "unreachable" }
+        val unproven = contexts.firstOrNull { it.problemKind == "desktop-unproven" }
         val c = contexts.firstOrNull { it.connected }
             ?: return if (unreachable != null) {
                 "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+            } else if (unproven != null) {
+                "Not connected. " + (unproven.problem ?: "") + hint
             } else {
                 "Not connected. " + (contexts.first().problem ?: "") + hint
             }
@@ -1886,7 +1893,7 @@ object Glue {
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · ${workerName(stop.slot)}"
     }
 
     /**
@@ -1933,12 +1940,12 @@ object Glue {
     }
 
     /** A pausing worker whose test waits in a call: its run, its worker, and the call. */
-    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting)
+    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting, val slot: Int = worker)
 
     /** The pausing workers whose test waits in a call, in their order. */
     fun waitingWorkers(sessions: Map<String, RunSession>): List<WaitingWorker> = sessions.values.flatMap { session ->
         session.workers.orEmpty().mapNotNull { w ->
-            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it) }
+            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it, w.parallelIndex) }
         }
     }
 

@@ -375,10 +375,11 @@ export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
 /**
  * What keeps a context from the instance's data: no instance named (`not-configured`), no project chosen or found
- * (`no-project`), a key missing or refused (`refused`), or an instance that did not answer, or answered with an error
- * (`unreachable`).
+ * (`no-project`), a key missing or refused (`refused`), a desktop app that answered without proving it holds its token,
+ * which the service then does not send (`desktop-unproven`: an app older than the proof, or another program on its
+ * port), or an instance that did not answer, or answered with an error (`unreachable`).
  */
-export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'unreachable';
+export type ProblemKind = 'not-configured' | 'no-project' | 'refused' | 'desktop-unproven' | 'unreachable';
 
 /** `piwi/status`: what the service is connected to, per workspace context. */
 export interface StatusResult {

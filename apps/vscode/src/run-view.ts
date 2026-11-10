@@ -112,6 +112,7 @@ import {
   endChoice,
   watchTargetsFor,
   watchableWorkers,
+  workerName,
   writtenLines,
   type CaretShown,
   type PausedPageView,
@@ -751,7 +752,7 @@ export function registerRunControl(
         ? waiting[0]
         : await vscode.window
             .showQuickPick(
-              waiting.map((w) => ({ label: w.waiting.title, description: `worker ${w.worker}`, w })),
+              waiting.map((w) => ({ label: w.waiting.title, description: workerName(w.slot), w })),
               { placeHolder: 'End which waiting test?' },
             )
             .then((picked) => picked?.w);
