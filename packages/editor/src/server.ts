@@ -2915,12 +2915,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
-        const status = fixed
-          ? ` · ${fixedLabel(context, fixed)}`
-          : found.status && found.status !== 'passed'
-            ? ` · ${found.status}`
-            : '';
+        // The client says the latest result in words (failing, flaky, no recent result) before this title.
+        const passRate =
+          runs > 0 ? `passed ${passed} of ${plural(runs, 'run')}` : 'no pass rate (no passed or failed run)';
+        const status = fixed ? ` · ${fixedLabel(context, fixed)}` : '';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${

@@ -1281,7 +1281,7 @@ describe('the Piwi language server', () => {
     await open('tests/skipped.spec.ts', skipped);
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/skipped.spec.ts') })) as FileSummary;
     expect(spec.lines.map((l) => [l.line, l.title])).toEqual([
-      [1, 'no pass rate (no passed or failed run) · skipped'],
+      [1, 'no pass rate (no passed or failed run)'],
       [2, 'no pass rate (no passed or failed run)'],
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
@@ -1379,7 +1379,7 @@ describe('the Piwi language server', () => {
       {
         line: 2,
         title:
-          'passed 48/50 · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
+          'passed 48 of 50 runs · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
         command: { title: 'Open in dashboard', command: 'piwi.openInDashboard', arguments: [`${url}/test-cases/1`] },
         // The document as the earlier tests left it: the test's body spans two more lines.
         status: 'passed',
@@ -2044,7 +2044,7 @@ describe('local runs over the latest CI run', () => {
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
       expect(fixed).toMatchObject({ line: 3, status: 'passed' });
-      expect(fixed.title).toMatch(/^passed 6\/9 · fixed locally in run #42 \(failing in run #41\)/);
+      expect(fixed.title).toMatch(/^passed 6 of 9 runs · fixed locally in run #42 \(failing in run #41\)/);
       expect(fixed.failure).toBeUndefined();
       expect(rows.lines.filter((l) => l.title.startsWith('✗'))).toEqual([]);
 
@@ -2157,7 +2157,7 @@ describe('failures follow the edits', () => {
     await open(rows, `// Rows.\n\n${FAILING_SPEC}`);
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
-      [5, 'passed 6/9'],
+      [5, 'passed 6 of 9 runs'],
       [8, "✗ locator('.cart-row').nth(2) was not found"],
       [8, 'Run this test'],
       [8, 'Screenshot'],
