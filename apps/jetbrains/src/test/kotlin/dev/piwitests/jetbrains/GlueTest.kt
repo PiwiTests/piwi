@@ -1708,6 +1708,36 @@ class GlueTest {
     }
 
     @Test
+    fun `a spec beside a Rider solution is found and debugged from one list of the project's folders`() {
+        // Rider's project folder is under the solution's .idea; the Playwright config is in a sibling folder, found
+        // through Git (the search roots), and the content roots name the backend alone.
+        val roots = Glue.openRoots(
+            contextRoots = listOf("/home/me/shop/e2e"),
+            configDirs = listOf("/home/me/shop/e2e"),
+            searchRoots = listOf("/home/me/shop"),
+            basePath = "/home/me/shop/backend/.idea/.idea.Shop",
+            contentRoots = listOf("/home/me/shop/backend"),
+        )
+        assertEquals(
+            listOf("/home/me/shop/e2e", "/home/me/shop", "/home/me/shop/backend", "/home/me/shop/backend/.idea/.idea.Shop"),
+            roots,
+        )
+        val spec = "/home/me/shop/e2e/tests/checkout.spec.ts"
+        assertEquals(null, Glue.debugFileRefusal("checkout.spec.ts", spec, roots, listOf("/home/me/shop/e2e"), true))
+        // The folders the check read before: the project's base path and content roots alone.
+        val narrow = listOf("/home/me/shop/backend/.idea/.idea.Shop", "/home/me/shop/backend")
+        assertEquals(
+            "checkout.spec.ts is outside the project's folders",
+            Glue.debugFileRefusal("checkout.spec.ts", spec, narrow, listOf("/home/me/shop/e2e"), true),
+        )
+        // Still nothing outside them.
+        assertEquals(
+            "evil.spec.ts is outside the project's folders",
+            Glue.debugFileRefusal("evil.spec.ts", "/home/me/elsewhere/evil.spec.ts", roots, listOf("/home/me/shop/e2e"), true),
+        )
+    }
+
+    @Test
     fun `a debug request asks before it runs, and its yes runs the test to stop once at the failing line`() {
         assertEquals(
             "Debug this test here? Piwi runs “checkout › pays” headed, one worker, and stops at line 5.",

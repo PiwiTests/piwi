@@ -741,15 +741,18 @@ unsigned requests** trust. The first page refused in a session is named in a not
 pooled thread once the configs are found, with each status, and when the connection is saved. So the I/O thread reads
 no `.env` file.
 
-**Finding the file.** The handler looks the run's path up under `root`, the Playwright config folders, the project
-folder and the content roots (`Glue.candidatePaths`), ranking first the projects connected to the `project` named.
+**Finding the file.** The handler looks the run's path up under `root` and the project's folders (`Glue.openRoots`:
+the service's config folders, the Playwright config folders, the folders searched for them, the project folder above
+Rider's `.idea` and the content roots; `Glue.candidatePaths`), ranking first the projects connected to the `project`
+named.
 It opens only a file inside an open project, and answers JSON with CORS, so the dashboard knows the file opened.
 
 **Debug in my editor.** With `debug=1`, the request also names the test's spec (`spec`), its title after its describe
 blocks' (`test`), its Playwright project (`playwrightProject`) and the failed execution (`execution`), each checked by
 `Glue.parseOpenRequest` (a positive whole line and execution, a title and a project of plain text, a project no shell
 expands, a path without `..`, no field twice). Both files are found as an open's file is, then checked by their
-canonical paths, every symbolic link followed (`Glue.debugFileRefusal`): in the project, under a Playwright config's
+canonical paths, every symbolic link followed (`Glue.debugFileRefusal`): in the same folders `Glue.openRoots` gives,
+so a spec Open in IDE opens beside a Rider solution may be debugged too, under a Playwright config's
 folder, a script file and a spec. A refusal answers 400 with the reason and says it in a notification; otherwise the
 failing line opens and `PiwiDebugLink` asks in a notification, the answer saying `debug: "asked"`. Only **Debug**
 runs the test, through `PiwiCommands.runTests` (the IDE's breakpoints, the Playwright runner when it is on) with
