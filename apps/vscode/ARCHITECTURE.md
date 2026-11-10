@@ -248,7 +248,8 @@ config's alone from its node (`failingRuns`). **Run this test** runs `failureRun
 
 - The badge counts the failing tests (`FailuresResult.failing`).
 - **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
-  reveals the active file's first failure.
+  reveals the active file's first failure. It is in the title's `…` menu, worded by its state, with **Connect**,
+  **Open settings** and **Open the log**; the run's actions are the title's icons.
 - The commands that read the instance (Refresh the latest run, Open the latest run, Open in dashboard, Compare with…,
   Group by…, Run selection…, Run the tests that reach this file) show in the palette and the view's title only while a
   context is connected (`piwi.active`); reached otherwise, from a key, each says why (`notConnectedNotice`): an instance

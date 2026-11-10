@@ -85,3 +85,23 @@ describe('a held failure’s mark', () => {
     expect(arrow).toContain('fill="#f85149"');
   });
 });
+
+describe('the failures view’s title', () => {
+  test('keeps the run’s actions as icons, and Follow, Connect, Settings and the log in its … menu', () => {
+    const title = menus['view/title']!.filter((e) => e.when?.startsWith('view == piwi.failures'));
+    expect(title.filter((e) => e.group?.startsWith('navigation')).map((e) => e.command)).toEqual([
+      'piwi.refreshRun',
+      'piwi.rerunFailing',
+      'piwi.openRun',
+      'piwi.compareWith',
+      'piwi.groupFailuresBy',
+    ]);
+    expect(title.filter((e) => !e.group?.startsWith('navigation')).map((e) => e.command)).toEqual([
+      'piwi.toggleFollowEditor',
+      'piwi.stopFollowingEditor',
+      'piwi.connect',
+      'piwi.openSettings',
+      'piwi.openLog',
+    ]);
+  });
+});
