@@ -504,7 +504,11 @@ describe('a stopped page’s live view, in the run sessions', () => {
 describe('who is present on a run, and who drives its stop', () => {
   test('names the tools that have the run open and watch its page, and lets one drive the stop at a time', async () => {
     const told: Array<{ ref: string; what: RunHeard }> = [];
-    const h = harness([...RUN_TAKES], { heard: (ref, _worker, what) => void told.push({ ref, what }) });
+    const moved: RunSession[] = [];
+    const h = harness([...RUN_TAKES], {
+      heard: (ref, _worker, what) => void told.push({ ref, what }),
+      presenceChanged: (session) => void moved.push(session),
+    });
     const picker = viewer({ kind: 'picker', name: 'Piwi Picker' });
     const desktop = viewer({ kind: 'desktop', name: 'the desktop app' });
     const latest = () => last(h.sent)!;
@@ -593,6 +597,19 @@ describe('who is present on a run, and who drives its stop', () => {
     expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([{ kind: 'picker', name: 'Piwi Picker' }]);
     expect(paused).not.toBe(since);
+    // A second Runs window, of the same name as one present, changes no view of the editor's, and is told all the same;
+    // closing it gives back the stop it took.
+    const second = viewer({ kind: 'picker', name: 'Piwi Picker' });
+    const told2 = told.length;
+    await new Promise((r) => setTimeout(r, 30));
+    const sentBefore = h.sent.length;
+    h.sessions.presentOn(second, true);
+    await waitFor(() => (moved.length ? true : undefined));
+    expect(h.sent.length).toBe(sentBefore);
+    expect(h.sessions.driveStop({ ref: 'ed-1', since: paused }, second, true)).toMatchObject({ ok: true });
+    h.sessions.presentOn(second, false);
+    expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
+    expect(told.length).toBe(told2);
     // The surface that leaves is no longer present.
     h.sessions.unwatchAll(picker);
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([]);

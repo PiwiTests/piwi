@@ -307,6 +307,11 @@ export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
   /**
+   * Who is present on the run changed though its view did not (a second tool of a kind and name already named, or a
+   * stop driven by another of them): the hub, whose connections each hear their own entries, tells them again.
+   */
+  presenceChanged?(session: RunSession): void;
+  /**
    * The addresses of the instances this host connects to: a run's page (`run-page`) is kept only on this machine or
    * under one of them (`isPageOfInstance`). None by default.
    */
@@ -426,6 +431,8 @@ interface Session {
   ref: string;
   root: string | null;
   workers: Map<number, Worker>;
+  /** Who was present on the run when it was last told (`presentKey`). */
+  present: string;
   ended: boolean;
   /** Started in a terminal (`RunSessionsOptions.terminal`). */
   terminal: boolean;
@@ -562,6 +569,9 @@ export class RunSessions {
   private readonly followedRuns = new Set<string>();
   /** The surfaces that have the runs open (`presentOn`). */
   private readonly present = new Set<Viewer>();
+  /** A number for each viewer, for what is present on a run (`presentKey`). */
+  private readonly viewerIds = new WeakMap<Viewer, number>();
+  private viewersNamed = 0;
   /** Each run's **Hold failures** as a person or an agent set it, by ref, the latest `MAX_KEPT_RUNS`. */
   private readonly holdsSet = new Map<string, RunHoldFailures>();
   private lastRequest = 0;
@@ -602,6 +612,7 @@ export class RunSessions {
       workersSeen: false,
       heard: null,
       sent: '',
+      present: '',
       sentAt: 0,
       paced: null,
       pacedAt: 0,
@@ -782,7 +793,13 @@ export class RunSessions {
     if (on === this.present.has(viewer)) return;
     if (on) this.present.add(viewer);
     else this.present.delete(viewer);
-    for (const session of this.sessions.values()) this.changed(session);
+    for (const session of this.sessions.values()) {
+      // A surface that closes gives back the stops it drove.
+      if (!on) {
+        for (const worker of session.workers.values()) if (worker.driver === viewer) worker.driver = null;
+      }
+      this.changed(session);
+    }
   }
 
   /**
@@ -803,6 +820,22 @@ export class RunSessions {
       });
     }
     return { presence: this.presenceIn(session, viewer), workers };
+  }
+
+  /** Who is present on the run, viewer by viewer: what changes when any of them comes, goes or drives. */
+  private presentKey(session: Session): string {
+    const id = (viewer: Viewer) => {
+      let known = this.viewerIds.get(viewer);
+      if (known === undefined) this.viewerIds.set(viewer, (known = ++this.viewersNamed));
+      return known;
+    };
+    const ids = (viewers: Iterable<Viewer>) => [...viewers].map(id).join(',');
+    const workers = [...session.workers.values()].map(
+      (w) =>
+        `${w.index}:${ids(session.lanes.get(w.parallelIndex) ?? [])}/${ids(w.view?.viewers ?? [])}/` +
+        `${w.driver ? id(w.driver) : ''}`,
+    );
+    return `${ids(this.present)}|${this.followedRuns.has(session.ref)}|${workers.join(';')}`;
   }
 
   /** Who has the run open: the surfaces present, and the agent while it follows the run. */
@@ -2059,7 +2092,13 @@ export class RunSessions {
     session.paced = null;
     const view = this.view(session);
     const text = JSON.stringify(view);
-    if (text === session.sent) return;
+    const present = this.presentKey(session);
+    const moved = present !== session.present;
+    session.present = present;
+    if (text === session.sent) {
+      if (moved) this.options.presenceChanged?.(view);
+      return;
+    }
     session.heard = view;
     session.sent = text;
     session.sentAt = Date.now();

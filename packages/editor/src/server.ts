@@ -1765,6 +1765,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
+    presenceChanged: (session) => runHub?.push(session),
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),

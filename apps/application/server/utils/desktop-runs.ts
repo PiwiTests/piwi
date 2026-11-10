@@ -286,6 +286,7 @@ export class DesktopRuns {
         this.hub?.push(session);
         this.liveCountChanged();
       },
+      presenceChanged: (session) => this.hub?.push(session),
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
