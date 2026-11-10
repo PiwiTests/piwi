@@ -6672,6 +6672,12 @@
   "runs_mockTitle": {
     "message": "Escolher uma requisição da página: um page.route() que a responde como o servidor vai para o editor, que o escreve acima desta linha"
   },
+  "runs_codeLabel": {
+    "message": "Código"
+  },
+  "runs_more": {
+    "message": "Mais"
+  },
   "runs_codeActions": {
     "message": "Código a partir desta parada"
   },

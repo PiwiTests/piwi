@@ -7919,6 +7919,14 @@
     "message": "Choose a request the page made: a page.route() answering it as the server did goes to the editor, which writes it above this line",
     "description": "Runs window, the Mock a request button’s tooltip. page.route() is code: keep it."
   },
+  "runs_codeLabel": {
+    "message": "Code",
+    "description": "Runs window, the label before Pick, Record, Assert and More at a stop: the code this stop can write. Short."
+  },
+  "runs_more": {
+    "message": "More",
+    "description": "Runs window, the button that shows or hides Assert a region and Mock a request at a stop."
+  },
   "runs_codeActions": {
     "message": "Code from this stop",
     "description": "Runs window, the name screen readers give the row of Pick, Record, Assert, Assert a region and Mock a request."

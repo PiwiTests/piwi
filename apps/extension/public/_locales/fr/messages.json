@@ -6672,6 +6672,12 @@
   "runs_mockTitle": {
     "message": "Choisir une requête de la page : un page.route() qui y répond comme le serveur va à l’éditeur, qui l’écrit au-dessus de cette ligne"
   },
+  "runs_codeLabel": {
+    "message": "Code"
+  },
+  "runs_more": {
+    "message": "Plus"
+  },
   "runs_codeActions": {
     "message": "Du code depuis cet arrêt"
   },

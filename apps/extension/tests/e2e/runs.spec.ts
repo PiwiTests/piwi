@@ -556,7 +556,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('cart › pays')).toBeVisible();
         stopAtCheckout(run.worker, 1);
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
-        // The test's controls, then the code this stop can write, in a group of their own.
+        // The test's controls, then the code this stop can write, in a group of their own, Assert a region and Mock a
+        // request folded under More.
         await expect(card.locator('.controls button')).toHaveText([
           'Resume',
           'Step',
@@ -565,13 +566,19 @@ test.describe('code from a stop', () => {
           'Pick',
           'Record',
           'Assert',
-          'Assert a region',
-          'Mock a request',
+          'More',
         ]);
-        await expect(card.getByRole('group', { name: 'Code from this stop' }).getByRole('button')).toHaveText([
+        const code = card.getByRole('group', { name: 'Code from this stop' });
+        const more = code.getByRole('button', { name: 'More' });
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toHaveAttribute('title', 'Assert a region, Mock a request');
+        await more.click();
+        await expect(more).toHaveAttribute('aria-expanded', 'true');
+        await expect(code.getByRole('button')).toHaveText([
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -662,6 +669,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await expect(mock).toHaveAttribute('aria-expanded', 'false');
         await mock.focus();
@@ -794,6 +802,7 @@ test.describe('code from a stop', () => {
       try {
         const card = liveRun(runs);
         stopAtCheckout(run.worker, 1);
+        await card.getByRole('button', { name: 'More' }).click();
         const mock = card.getByRole('button', { name: 'Mock a request' });
         await mock.click();
         // No response kept yet: the list says so.
@@ -835,7 +844,8 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
         await expect(list).toHaveCount(0);
 
-        // An answer that comes once the test went on from its stop shows nothing.
+        // An answer that comes once the test went on from its stop shows nothing. The new stop folds More again.
+        await card.getByRole('button', { name: 'More' }).click();
         await mock.click();
         const late = await waitFor(() =>
           run.worker.heard.find((m) => m.type === 'request' && m.what === 'requests' && m.stop === 2),
@@ -875,14 +885,7 @@ test.describe('code from a stop', () => {
         expect(await card.locator('.stop .error').innerText()).toBe(FAILURE_ERROR);
         await expect(runs.locator('#announce')).toHaveText('cart › pays failed at tests/checkout.spec.ts:5.');
         // No Step nor Finish: whatever answers it, the test ends as it failed.
-        await expect(card.locator('.controls button')).toHaveText([
-          'Resume',
-          'Pick',
-          'Record',
-          'Assert',
-          'Assert a region',
-          'Mock a request',
-        ]);
+        await expect(card.locator('.controls button')).toHaveText(['Resume', 'Pick', 'Record', 'Assert', 'More']);
         const resume = card.getByRole('button', { name: 'Resume' });
         await expect(resume).toHaveAttribute('title', 'Let the test end as it failed');
         await resume.click();
@@ -969,8 +972,10 @@ test.describe('code from a stop', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
       } finally {
@@ -985,8 +990,13 @@ test.describe('code from a stop', () => {
 /** The actions in the test's window a headless stop takes once watched. */
 const WATCH_TO_USE = ['Pick', 'Record', 'Assert', 'Assert a region'];
 
-/** Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first. */
+/**
+ * Pick, Record and the checks at a headless stop the window does not watch: held, each saying to watch first, Assert a
+ * region under More.
+ */
 async function expectWatchToUse(card: Locator): Promise<void> {
+  const more = card.getByRole('button', { name: 'More' });
+  if ((await more.getAttribute('aria-expanded')) === 'false') await more.click();
   for (const name of WATCH_TO_USE) {
     const button = card.getByRole('button', { name, exact: true });
     await expect(button).toHaveAttribute('aria-disabled', 'true');
@@ -1054,8 +1064,10 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expectWatchToUse(card);
         await card.getByRole('button', { name: 'Pick', exact: true }).click({ force: true });
@@ -1081,7 +1093,7 @@ test.describe('the live view', () => {
         await expect(
           card.getByText('Your clicks, the wheel and your keys on the view go to the test’s page.', { exact: false }),
         ).toBeVisible();
-        // Watched, the headless stop takes the actions in its page, driven through the view.
+        // Watched, the headless stop takes the actions in its page, driven through the view; More stays open.
         await expect(buttons).toHaveText([
           'Resume',
           'Step',
@@ -1090,6 +1102,7 @@ test.describe('the live view', () => {
           'Pick',
           'Record',
           'Assert',
+          'More',
           'Assert a region',
           'Mock a request',
         ]);
@@ -1125,7 +1138,11 @@ test.describe('the live view', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
+          'Assert a region',
           'Mock a request',
         ]);
         await expectWatchToUse(card);
@@ -1715,8 +1732,10 @@ test.describe('watching a running test', () => {
           'Step',
           'Finish',
           'End the test',
-          ...WATCH_TO_USE,
-          'Mock a request',
+          'Pick',
+          'Record',
+          'Assert',
+          'More',
         ]);
         await expect(card.locator('.controls [aria-disabled]')).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', 1, after);
