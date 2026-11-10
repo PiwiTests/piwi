@@ -18,7 +18,7 @@ picks a locator on its image. The editor shows the same stops: [Pause and step f
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), or with the
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), the popup shows a **Runs** tile under
 **More tools**, muted with **Not connected** while none of them answers. It opens the Runs window, to keep beside the
-test's browser. For each run the editor [started](./editor-runs), it shows the folder and the command, how many of
+test's browser, where you left it last. For each run the editor [started](./editor-runs), it shows the folder and the command, how many of
 its tests ended (`3 of 9 tests · 1 failed`), then each worker's test and whether it runs or where it stopped: the file
 and line, the call about to run, and an image of the page. A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. While none
@@ -30,7 +30,8 @@ or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **
 **Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
 locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
-stays in the editor.
+stays in the editor. A run of several workers has **Pause all** and **Resume all** under its name. Resume, Step and
+Finish have [keys](/reference/keyboard-shortcuts#piwi-picker-s-runs-window).
 
 A failing test is held at its line, a headless one while its run's
 [**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it
@@ -93,9 +94,8 @@ While you watch, your input on the view goes to the page as a person's would, th
 - **The keys**, while the view has the focus (a focus ring around it): characters are typed, named keys (Enter, the
   arrows, Backspace, Delete, Home, End) pressed, with Shift, and `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the
   editing keys. A paste types the clipboard's text.
-- **What stays the window's**: the browser's other shortcuts, the function keys, and `Esc`, which gives the keys
-  back to the window and moves the focus to **Watch** or **Watch live**. `Tab` moves the focus on past the view, unless you
-  clicked into it: then `Tab` and `Shift+Tab` go to the page too, until `Esc`.
+- **What stays the window's**: the browser's other shortcuts, the function keys, `Esc` and `Tab`, as the
+  [keyboard shortcuts](/reference/keyboard-shortcuts#piwi-picker-s-runs-window) say.
 
 A hint under the view says so the first time. What you hold down is let go before the test goes on.
 
@@ -109,7 +109,9 @@ turns it off. It needs Playwright 1.60 or later, and says so on an older one.
 
 ## The run shortcut
 
-The run shortcut resumes the stopped tests, else pauses every run. It has no key until you set one: **Set a
+The run shortcut resumes the stopped tests, else pauses every run, but a run
+[nobody attends](/guide/concepts#hold-failures); Piwi Picker's toolbar icon shows what it did for a moment. It has no
+key until you set one: **Set a
 shortcut** opens the browser's shortcuts page, where you give it a key and, in Chrome and Edge, the **Global** scope.
 In Firefox, it works while Firefox has the focus.
 

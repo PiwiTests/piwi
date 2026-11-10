@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: "Every keyboard shortcut the dashboard registers: the command palette, the assistant, the go-to chords, failure inbox triage, the test lists' search, and the keys of the image and element viewers."
+description: "Every keyboard shortcut the dashboard registers: the command palette, the assistant, the go-to chords, failure inbox triage, the test lists' search, the keys of the image and element viewers, and Piwi Picker's Runs window."
 lang: en-US
 ---
 
@@ -31,6 +31,22 @@ docs, and zoom takes `⌘` too; Windows and Linux use `Ctrl`, outside a field yo
 | `Ctrl` + `[` | Go back |
 | `Ctrl` + `]` | Go forward |
 | `Ctrl` + `+` / `-` / `0` | Zoom in, out, back to 100% |
+
+## Piwi Picker's Runs window
+
+In [Piwi Picker's Runs window](/features/runs-window), for the stopped test whose row holds the focus, else the only
+stopped test. Step and Finish wait for a stop that is no failure.
+
+| Keys | Action |
+|---|---|
+| `F8` or `F5` | Resume |
+| `F10` | Step |
+| `Shift` + `F11` | Finish |
+
+While you [watch a stop](/features/runs-window#click-and-type-on-the-view), the view takes your keys, but the
+browser's shortcuts, the function keys and `Esc` stay the window's: `Esc` gives the keys back to the window and moves
+the focus to **Watch** or **Watch live**. `Tab` moves the focus on past the view, unless you clicked into it: then
+`Tab` and `Shift+Tab` go to the page too, until `Esc`.
 
 ## Assistant panel
 
