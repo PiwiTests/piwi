@@ -1793,9 +1793,9 @@ const FOLD_FROM = 5;
 const moreOpen = new Set<string>();
 const MORE_KEPT = 50;
 
-/** Whether a worker's More shows what it folds at the stop `since`: opened, or its list of requests open. */
+/** Whether a worker's More shows what it folds at the stop `since`. */
 function moreShown(key: string, since: string | null): boolean {
-  return moreOpen.has(`${key}|${since}`) || (since !== null && requestLists.get(key)?.since === since);
+  return moreOpen.has(`${key}|${since}`);
 }
 
 /**
@@ -1881,18 +1881,24 @@ function renderActions(
     else if (folds && FOLDED.has(what)) folded.push(made);
     else code.append(made);
   }
-  if (joined.childElementCount > 0) steering.prepend(joined);
-  // End the test, apart from the controls that move the test on.
-  for (const end of steering.querySelectorAll<HTMLElement>(':scope > [data-tone="remove"]')) end.dataset.apart = '';
+  if (joined.childElementCount > 0) {
+    steering.prepend(joined);
+    // End the test, apart from the controls that move the test on.
+    for (const end of steering.querySelectorAll<HTMLElement>(':scope > [data-tone="remove"]')) end.dataset.apart = '';
+  }
   if (folded.length > 0) {
     const fold = `${key}|${since}`;
     const open = moreShown(key, since);
     const more = makeButton(
       t('runs_more'),
-      () => {
-        if (moreOpen.has(fold)) moreOpen.delete(fold);
-        else moreOpen.add(fold);
+      (event) => {
+        if (pressedHeld(event)) return;
+        // Folded, Mock a request takes its list of requests with it.
+        if (moreOpen.delete(fold)) {
+          if (requestLists.get(key)?.since === since) closeRequests(key);
+        } else moreOpen.add(fold);
         if (moreOpen.size > MORE_KEPT) moreOpen.delete(moreOpen.values().next().value!);
+        focusKey = `${key}|more`;
         render();
       },
       { icon: 'chevron-down', tone: 'ghost', title: folded.map((made) => made.textContent ?? '').join(', ') },
@@ -2515,10 +2521,16 @@ function restoreFocus(): void {
     return;
   }
   const owner = focusKey.slice(0, focusKey.lastIndexOf('|') + 1);
-  // Never End the test, which a key pressed again would answer.
-  const near = owner
-    ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+  // An action More folds again at the next stop leaves the focus on More; never End the test, which a key pressed
+  // again would answer.
+  const folded = FOLDED.has(focusKey.slice(owner.length) as Control)
+    ? document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${owner}more`)}"]`)
     : null;
+  const near =
+    folded ??
+    (owner
+      ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+      : null);
   if (!near) return;
   lending = true;
   near.focus();

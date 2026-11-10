@@ -309,6 +309,8 @@ test('a Pause that waits for a call says which and for how long, and End the tes
       const end = card.getByRole('button', { name: 'End the test' });
       await expect(end).toHaveAttribute('title', /the call it waits in is given up/);
       await expect(end).not.toBeFocused();
+      // With no Resume, Step and Finish beside it, End the test stays at the row's start.
+      expect(await end.getAttribute('data-apart')).toBeNull();
       await end.click();
       expect(await run.worker.next('control', 1)).toEqual({
         type: 'control',
@@ -683,10 +685,12 @@ test.describe('code from a stop', () => {
         const list = card.getByRole('group', { name: 'Choose the request to mock' });
         await expect(list.getByRole('listitem')).toHaveCount(KEPT.length);
         await expect(runs.locator('#announce')).toHaveText(`${KEPT.length} requests: choose the one to mock.`);
-        // The list opens under the button, which keeps the focus and says it is open.
+        // The list opens under the button, which keeps the focus and says it is open, pressed whatever its tone.
         await expect(mock).toBeFocused();
         await expect(mock).toHaveAttribute('aria-expanded', 'true');
         await expect(mock).toHaveAttribute('aria-controls', (await list.getAttribute('id'))!);
+        const pressed = (button: Locator) => button.evaluate((el) => getComputedStyle(el).backgroundColor);
+        expect(await pressed(mock)).not.toBe('rgba(0, 0, 0, 0)');
 
         // Each row: the method and the address, then the status, the type, the size and when it ended.
         const cart = list.getByRole('button', { name: /^GET http:\/\/127\.0\.0\.1:3000\/api\/cart/ });
@@ -769,6 +773,23 @@ test.describe('code from a stop', () => {
         await runs.keyboard.press('Escape');
         await expect(list).toHaveCount(0);
         await expect(mock).toBeFocused();
+
+        // More folds Mock a request and its open list together, and keeps the focus; it shows it is open, pressed.
+        const more = card.getByRole('button', { name: 'More' });
+        expect(await pressed(more)).not.toBe('rgba(0, 0, 0, 0)');
+        await runs.keyboard.press('Enter');
+        await answerNext(run.worker, 'requests', {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: [KEPT[0]],
+        });
+        await expect(list.getByRole('listitem')).toHaveCount(1);
+        await more.click();
+        await expect(list).toHaveCount(0);
+        await expect(mock).toHaveCount(0);
+        await expect(more).toHaveAttribute('aria-expanded', 'false');
+        await expect(more).toBeFocused();
+        await more.click();
 
         // A mock the editor asks for itself shows here too, at the stop it was made at.
         const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
@@ -1737,6 +1758,8 @@ test.describe('watching a running test', () => {
           'Assert',
           'More',
         ]);
+        await card.getByRole('button', { name: 'More' }).click();
+        await expect(card.getByRole('button', { name: 'Assert a region' })).toBeVisible();
         await expect(card.locator('.controls [aria-disabled]')).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', 1, after);
         const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });

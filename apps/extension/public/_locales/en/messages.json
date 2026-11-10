@@ -7929,7 +7929,7 @@
   },
   "runs_codeActions": {
     "message": "Code from this stop",
-    "description": "Runs window, the name screen readers give the row of Pick, Record, Assert, Assert a region and Mock a request."
+    "description": "Runs window, the name screen readers give the row of Pick, Record, Assert and More (Assert a region and Mock a request)."
   },
   "runs_codeWarnings": {
     "message": "What to review in this code",
