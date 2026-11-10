@@ -1476,26 +1476,11 @@ export const PIWI_ENV_VARS = {
     category: 'test',
     runtimeOnly: true,
   },
-  PIWI_MAILPIT_URL: {
-    description: 'Mailpit base URL; when set, the email/notification E2E tests run against it.',
-    category: 'test',
-    runtimeOnly: true,
-  },
   PIWI_LIVE_JIRA_PROJECT_KEY: {
     description: 'Jira project key the live Jira E2E files into (with PIWI_JIRA_* credentials).',
     category: 'test',
     runtimeOnly: true,
     since: '0.29.0',
-  },
-  PIWI_MAILPIT_SMTP_PORT: {
-    description: 'SMTP port the email E2E tests send to (Mailpit).',
-    category: 'test',
-    runtimeOnly: true,
-  },
-  PIWI_EMAIL_SERVER_URL: {
-    description: 'Base URL the email test spec targets.',
-    category: 'test',
-    runtimeOnly: true,
   },
   PIWI_TEST_CLEANUP_ENABLED: {
     description:

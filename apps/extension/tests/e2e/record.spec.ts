@@ -6,7 +6,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChromeStorage } from './recording-stub.js';
+import {
+  dispatchRuntimeMessage,
+  readStoredEvents,
+  setRecordingActive,
+  storedText,
+  stubChromeStorage,
+} from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { playwrightLocator } from './playwright-locator.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
@@ -678,7 +684,7 @@ test.describe('record-panel.js', () => {
       .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.value === 'alice'))
       .toBe(true);
     const events = await readStoredEvents(page);
-    for (const secret of ['s3c', 'et!', '4321', '4111', '9876']) expect(JSON.stringify(events)).not.toContain(secret);
+    for (const secret of ['s3c', 'et!', '4321', '4111', '9876']) expect(storedText(events)).not.toContain(secret);
     expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual([]);
     const fills = normalizeSteps(events).filter((s) => s.action === 'fill');
     expect(fills.map((s) => [s.target?.accessibleName, s.value, s.redacted])).toEqual([

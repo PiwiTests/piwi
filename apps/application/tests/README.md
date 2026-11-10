@@ -65,7 +65,8 @@ Tests are configured in `playwright.config.ts` at the project root. Key settings
 - **baseURL**: `http://localhost:7494` (`shared/dev-server-port.mjs`; the running desktop app's loopback URL in `PIWI_DESKTOP_E2E` mode)
 - **webServer**: starts the dev server locally (or reuses one already on port 7494), the production build (`.output`)
   in CI, and the servers some specs need: authentication on and notifications in CI only, PostgreSQL when
-  `PIWI_POSTGRES_TEST_URL` is set, email when `PIWI_MAILPIT_URL` is set. A spec whose server is not started skips.
+  `PIWI_POSTGRES_TEST_URL` is set. A spec whose server is not started skips. The email specs start their own server
+  and an in-process SMTP sink (`tests/utils/smtp-sink.ts`), so they need no mail server.
   No server starts in desktop mode: the app is already running.
 - **retries**: 2 retries on CI, 0 locally
 - **workers**: `fullyParallel`, 2 workers on CI and 3 locally; CI also shards the suite (5 shards per storage and

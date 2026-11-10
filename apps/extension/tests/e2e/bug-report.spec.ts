@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
-import { dispatchRuntimeMessage, readStoredEvents, stubChromeStorage } from './recording-stub.js';
+import { dispatchRuntimeMessage, readStoredEvents, storedText, stubChromeStorage } from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 import { readStoredZip } from '../zip-reader.js';
@@ -701,7 +701,7 @@ test.describe('Report a bug', () => {
     expect(outline).toContain('- textbox "Card number"');
     for (const secret of ['s3cr', 'et!', '4111']) {
       expect(outline).not.toContain(secret);
-      expect(JSON.stringify(events)).not.toContain(secret);
+      expect(storedText(events)).not.toContain(secret);
     }
   });
 

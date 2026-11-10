@@ -1,38 +1,42 @@
 /**
- * Email & Notification integration tests.
- *
- * Prerequisites (set env vars to opt in):
- *   PIWI_MAILPIT_URL   - Mailpit base URL, e.g. http://localhost:8025
- *                        SMTP must be on port PIWI_MAILPIT_SMTP_PORT (default 1025)
- *   PIWI_EMAIL_SERVER_URL - URL of an auth-enabled Piwi server already configured
- *                           to send email via Mailpit. Defaults to http://localhost:3098.
- *
- * The playwright.config.ts webServer section starts a dedicated auth+email server
- * on port 3098 when PIWI_MAILPIT_URL is set.
- *
- * Run a quick local check:
- *   docker run --rm -p 1025:1025 -p 8025:8025 axllent/mailpit
- *   PIWI_MAILPIT_URL=http://localhost:8025 npx playwright test email-notifications
+ * Email and notification integration tests. The spec starts an auth-enabled
+ * server of its own (port 3098, its own database and storage) that sends its
+ * email to an in-process SMTP sink: the SMTP test send, forgot and reset
+ * password, change password, the invite, notification dispatch and the
+ * scheduled quality report.
  */
 
+import { resolve } from 'node:path';
 import { test, expect } from './fixtures';
 import { ProjectRole } from '#shared/permissions';
-import { MailpitClient } from './utils/mailpit';
 import { createMember } from './utils/access';
 import { PROJECT } from '#shared/test-project-names';
+import { startSpawnedServer, type SpawnedServer } from './utils/spawned-server';
+import { readMail, sentTo, startSmtpSink, type Mail, type SmtpSink } from './utils/smtp-sink';
 
-// All tests in this file share one Mailpit inbox — must run serially.
+// Every test reads the one sink, so the file runs serially.
 test.describe.configure({ mode: 'serial' });
 
-const MAILPIT_URL = process.env.PIWI_MAILPIT_URL ?? '';
-const EMAIL_SERVER = process.env.PIWI_EMAIL_SERVER_URL ?? 'http://localhost:3098';
+const PORT = 3098;
+const EMAIL_SERVER = `http://127.0.0.1:${PORT}`;
+const AUTH_SECRET = 'test-email-secret-key-for-email-tests';
 const ADMIN_CREDS = { username: 'admin', password: 'adminpassword123' };
+const RESET_LINK = /http[^\s"<>]+reset-password[^\s"<>]+/;
 
-function skip() {
-  test.skip(!MAILPIT_URL, 'Set PIWI_MAILPIT_URL to run email tests (needs mailpit + dedicated auth server)');
-}
+let server: SpawnedServer | null = null;
+let smtp: SmtpSink;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** The first email sent to `address`, read, waiting up to `timeoutMs` for it. */
+async function mailTo(address: string, timeoutMs?: number): Promise<Mail> {
+  return readMail(await smtp.waitFor(sentTo(address), timeoutMs));
+}
+
+/** The emails received so far that were sent to `address`. */
+function mailsTo(address: string): Mail[] {
+  return smtp.messages.filter(sentTo(address)).map(readMail);
+}
 
 async function apiPost(path: string, body: unknown, cookie?: string) {
   return fetch(`${EMAIL_SERVER}${path}`, {
@@ -47,10 +51,9 @@ async function apiPost(path: string, body: unknown, cookie?: string) {
 
 /**
  * Create an email channel through a pre-save test, so it is saved verified and
- * receives notifications. The test message is deleted from the inbox.
+ * receives notifications. The test message is cleared from the sink.
  */
 async function createVerifiedEmailChannel(
-  mailpit: MailpitClient,
   channel: { name: string; config: { address: string }; global?: boolean },
   cookie: string,
 ): Promise<number> {
@@ -60,7 +63,7 @@ async function createVerifiedEmailChannel(
   expect(created.ok).toBe(true);
   const { channel: saved } = (await created.json()) as { channel: { id: number; verified: boolean } };
   expect(saved.verified).toBe(true);
-  await mailpit.deleteAll();
+  smtp.clear();
   return saved.id;
 }
 
@@ -70,37 +73,43 @@ async function adminLogin(): Promise<string> {
   return header.split(';')[0] ?? '';
 }
 
-/** One-time admin bootstrap: call setup if no users exist yet. */
-async function ensureAdmin(): Promise<void> {
-  const me = await fetch(`${EMAIL_SERVER}/api/auth/me`);
-  const meData = (await me.json()) as { authenticated: boolean };
-  if (!meData.authenticated) {
-    // Try to create admin (no-op if users already exist)
-    await apiPost('/api/auth/setup', {
-      username: ADMIN_CREDS.username,
-      password: ADMIN_CREDS.password,
-      name: 'Administrator',
-    });
-  }
-}
-
-// Ensure admin exists for all test suites
 test.beforeAll(async () => {
-  if (!MAILPIT_URL) return;
-  await ensureAdmin();
+  test.setTimeout(6 * 60_000);
+  smtp = await startSmtpSink();
+  server = startSpawnedServer({
+    port: PORT,
+    tempDir: resolve('.test-temp', 'email-notifications'),
+    env: {
+      PIWI_AUTH_ENABLED: 'true',
+      PIWI_AUTH_SECRET: AUTH_SECRET,
+      NUXT_AUTH_ENABLED: 'true',
+      NUXT_AUTH_SECRET: AUTH_SECRET,
+      NUXT_PUBLIC_AUTH_ENABLED: 'true',
+      PIWI_SETUP_TOKEN: '',
+      PIWI_SITE_URL: EMAIL_SERVER,
+      PIWI_SMTP_HOST: '127.0.0.1',
+      PIWI_SMTP_PORT: String(smtp.port),
+      PIWI_SMTP_SECURE: 'false',
+      PIWI_SMTP_USER: '',
+      PIWI_SMTP_PASS: '',
+      PIWI_SMTP_FROM: 'noreply@piwi.test',
+      PIWI_SMTP_FROM_NAME: 'Piwi Test',
+    },
+  });
+  await server.ready(5 * 60_000);
+  const setup = await apiPost('/api/auth/setup', { ...ADMIN_CREDS, name: 'Administrator' });
+  expect(setup.ok, await setup.text()).toBe(true);
+});
+
+test.afterAll(async () => {
+  await server?.stop();
+  await smtp?.close();
 });
 
 // ── SMTP test endpoint ───────────────────────────────────────────────────────
 
 test.describe.serial('SMTP test send', () => {
-  skip();
-
-  let mailpit: MailpitClient;
-
-  test.beforeEach(async () => {
-    mailpit = new MailpitClient(MAILPIT_URL);
-    await mailpit.deleteAll();
-  });
+  test.beforeEach(() => smtp.clear());
 
   test('admin can send a test email', async () => {
     const cookie = await adminLogin();
@@ -109,9 +118,9 @@ test.describe.serial('SMTP test send', () => {
     const json = (await res.json()) as { success: boolean };
     expect(json.success).toBe(true);
 
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === 'testrecipient@example.com'));
-    expect(msg.Subject).toContain('Test');
-    expect(msg.From.Address).toBeTruthy();
+    const mail = await mailTo('testrecipient@example.com');
+    expect(mail.subject).toContain('Test');
+    expect(mail.from).toContain('noreply@piwi.test');
   });
 
   test('non-admin cannot access smtp test endpoint', async () => {
@@ -123,14 +132,10 @@ test.describe.serial('SMTP test send', () => {
 // ── Forgot / reset password ──────────────────────────────────────────────────
 
 test.describe.serial('Forgot & reset password', () => {
-  skip();
-
-  let mailpit: MailpitClient;
   const RESET_EMAIL = 'resetuser@example.com';
   let userId: number;
 
   test.beforeAll(async () => {
-    mailpit = new MailpitClient(MAILPIT_URL);
     const cookie = await adminLogin();
 
     // Create a user with email via admin
@@ -149,9 +154,7 @@ test.describe.serial('Forgot & reset password', () => {
     });
   });
 
-  test.beforeEach(async () => {
-    await mailpit.deleteAll();
-  });
+  test.beforeEach(() => smtp.clear());
 
   test('forgot-password does not reveal whether account exists', async () => {
     const [r1, r2] = await Promise.all([
@@ -164,16 +167,17 @@ test.describe.serial('Forgot & reset password', () => {
     const [d1, d2] = (await Promise.all([r1.json(), r2.json()])) as [{ success: boolean }, { success: boolean }];
     expect(d1.success).toBe(true);
     expect(d2.success).toBe(true);
+    // The account's reset email is taken here, so it cannot reach the next test, whose newer request replaces its token.
+    await mailTo(RESET_EMAIL);
   });
 
   test('reset token is delivered by email and can be used once', async () => {
     await apiPost('/api/auth/forgot-password', { email: RESET_EMAIL });
 
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === RESET_EMAIL));
-    const detail = await mailpit.getMessage(msg.ID);
+    const mail = await mailTo(RESET_EMAIL);
 
     // Extract reset link from email
-    const linkMatch = (detail.HTML || detail.Text).match(/http[^\s"<>]+reset-password[^\s"<>]+/);
+    const linkMatch = (mail.html || mail.text).match(RESET_LINK);
     expect(linkMatch).not.toBeNull();
     const url = new URL(linkMatch![0]!);
     const token = url.searchParams.get('token');
@@ -197,9 +201,8 @@ test.describe.serial('Forgot & reset password', () => {
 
   test('can log in with new password after reset', async () => {
     await apiPost('/api/auth/forgot-password', { email: RESET_EMAIL });
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === RESET_EMAIL));
-    const detail = await mailpit.getMessage(msg.ID);
-    const linkMatch = (detail.HTML || detail.Text).match(/http[^\s"<>]+reset-password[^\s"<>]+/);
+    const mail = await mailTo(RESET_EMAIL);
+    const linkMatch = (mail.html || mail.text).match(RESET_LINK);
     const url = new URL(linkMatch![0]!);
     const token = url.searchParams.get('token')!;
 
@@ -216,8 +219,6 @@ test.describe.serial('Forgot & reset password', () => {
 // ── Change password ──────────────────────────────────────────────────────────
 
 test.describe.serial('Change password', () => {
-  skip();
-
   const USERNAME = 'changepwtest';
   const INITIAL_PW = 'InitialPw1!';
   let userId: number;
@@ -279,14 +280,10 @@ test.describe.serial('Change password', () => {
 // ── Invite flow ──────────────────────────────────────────────────────────────
 
 test.describe.serial('User invite email', () => {
-  skip();
-
-  let mailpit: MailpitClient;
   const INVITE_EMAIL = 'invitee@example.com';
   let userId: number;
 
   test.beforeAll(async () => {
-    mailpit = new MailpitClient(MAILPIT_URL);
     const cookie = await adminLogin();
     ({ id: userId } = await createMember(
       { baseUrl: EMAIL_SERVER, cookie },
@@ -303,18 +300,15 @@ test.describe.serial('User invite email', () => {
     });
   });
 
-  test.beforeEach(async () => {
-    await mailpit.deleteAll();
-  });
+  test.beforeEach(() => smtp.clear());
 
   test('admin can send invite and invite link sets password', async () => {
     const cookie = await adminLogin();
     const inviteRes = await apiPost(`/api/users/${userId}/invite`, {}, cookie);
     expect(inviteRes.ok).toBe(true);
 
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === INVITE_EMAIL));
-    const detail = await mailpit.getMessage(msg.ID);
-    const linkMatch = (detail.HTML || detail.Text).match(/http[^\s"<>]+reset-password[^\s"<>]+/);
+    const mail = await mailTo(INVITE_EMAIL);
+    const linkMatch = (mail.html || mail.text).match(RESET_LINK);
     expect(linkMatch).not.toBeNull();
 
     const url = new URL(linkMatch![0]!);
@@ -333,18 +327,56 @@ test.describe.serial('User invite email', () => {
 // ── Notification dispatch ────────────────────────────────────────────────────
 
 test.describe.serial('Notification dispatch', () => {
-  skip();
-
-  let mailpit: MailpitClient;
   const NOTIFY_EMAIL = 'notifyuser@example.com';
+  /** A second channel on the project, whose email shows a run's deliveries were sent. */
+  const SWEEP_EMAIL = 'sweep-witness@example.com';
   let cookie: string;
   let userId: number;
   let channelId: number;
   let subscriptionId: number;
+  let sweepChannelId: number;
+  let sweepSubscriptionId: number;
   let projectId: number;
 
+  async function subscribe(channel: number): Promise<number> {
+    const res = await apiPost(
+      '/api/subscriptions',
+      { channelId: channel, projectId, events: ['run.finished'], mode: 'realtime' },
+      cookie,
+    );
+    expect(res.ok, await res.clone().text()).toBe(true);
+    return ((await res.json()) as { subscription: { id: number } }).subscription.id;
+  }
+
+  async function mute(subscription: number, muted: boolean): Promise<void> {
+    const res = await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscription}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ mutedUntil: muted ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null }),
+    });
+    expect(res.ok).toBe(true);
+  }
+
+  async function submitPassedRun(title: string) {
+    const res = await apiPost(
+      '/api/test-runs/submit',
+      {
+        projectName: PROJECT.NOTIFY_EMAIL,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [{ title, status: 'passed', duration: 500, suiteName: 'Suite' }],
+      },
+      cookie,
+    );
+    expect(res.ok).toBe(true);
+  }
+
   test.beforeAll(async () => {
-    mailpit = new MailpitClient(MAILPIT_URL);
     cookie = await adminLogin();
 
     // Create a user with email
@@ -373,41 +405,26 @@ test.describe.serial('Notification dispatch', () => {
     projectId = runData.projectId ?? 0;
 
     // Create an email channel, verified by a pre-save test
-    channelId = await createVerifiedEmailChannel(
-      mailpit,
-      { name: 'Test Email', config: { address: NOTIFY_EMAIL } },
-      cookie,
-    );
+    channelId = await createVerifiedEmailChannel({ name: 'Test Email', config: { address: NOTIFY_EMAIL } }, cookie);
 
-    // Subscribe to run.finished for that project
-    const subRes = await apiPost(
-      '/api/subscriptions',
-      {
-        channelId,
-        projectId,
-        events: ['run.finished'],
-        mode: 'realtime',
-      },
+    subscriptionId = await subscribe(channelId);
+    sweepChannelId = await createVerifiedEmailChannel(
+      { name: 'Sweep witness', config: { address: SWEEP_EMAIL } },
       cookie,
     );
-    const subData = (await subRes.json()) as { subscription?: { id: number } };
-    subscriptionId = subData.subscription?.id ?? 0;
+    sweepSubscriptionId = await subscribe(sweepChannelId);
   });
 
   test.afterAll(async () => {
-    if (subscriptionId)
-      await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-        method: 'DELETE',
-        headers: { Cookie: cookie },
-      });
-    if (channelId)
-      await fetch(`${EMAIL_SERVER}/api/channels/${channelId}`, { method: 'DELETE', headers: { Cookie: cookie } });
-    if (userId) await fetch(`${EMAIL_SERVER}/api/users/${userId}`, { method: 'DELETE', headers: { Cookie: cookie } });
+    const del = (path: string) => fetch(`${EMAIL_SERVER}${path}`, { method: 'DELETE', headers: { Cookie: cookie } });
+    if (sweepSubscriptionId) await del(`/api/subscriptions/${sweepSubscriptionId}`);
+    if (sweepChannelId) await del(`/api/channels/${sweepChannelId}`);
+    if (subscriptionId) await del(`/api/subscriptions/${subscriptionId}`);
+    if (channelId) await del(`/api/channels/${channelId}`);
+    if (userId) await del(`/api/users/${userId}`);
   });
 
-  test.beforeEach(async () => {
-    await mailpit.deleteAll();
-  });
+  test.beforeEach(() => smtp.clear());
 
   test('run.finished event delivers email to subscriber', async () => {
     // Submit a failing run to trigger run.finished + run.failed
@@ -432,97 +449,42 @@ test.describe.serial('Notification dispatch', () => {
     );
     expect(runRes.ok).toBe(true);
 
-    // Wait for email to arrive (dispatcher sweeps every minute but test server has 1-minute cron;
-    // the outbox is also kicked synchronously after run finalization)
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === NOTIFY_EMAIL), {
-      timeoutMs: 15_000,
-    });
-    expect(msg.Subject.toLowerCase()).toMatch(/run|test|notify/i);
+    // The outbox is kicked right after the run is finalized; the sweep runs every minute besides.
+    const mail = await mailTo(NOTIFY_EMAIL, 15_000);
+    expect(mail.subject.toLowerCase()).toMatch(/run|test|notify/i);
   });
 
-  test('deduplication: same run does not produce duplicate deliveries', async () => {
-    const runPayload = {
-      projectName: PROJECT.NOTIFY_EMAIL,
-      status: 'passed',
-      startTime: new Date().toISOString(),
-      duration: 1000,
-      totalTests: 1,
-      passedTests: 1,
-      failedTests: 0,
-      skippedTests: 0,
-      testCases: [{ title: 'Dedup Test', status: 'passed', duration: 500, suiteName: 'Suite' }],
-    };
-    await apiPost('/api/test-runs/submit', runPayload, cookie);
-
-    // Wait briefly for first delivery
-    await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === NOTIFY_EMAIL), { timeoutMs: 15_000 });
-
-    // Trigger the outbox sweeper again by calling the task endpoint
-    await fetch(`${EMAIL_SERVER}/api/_nitro/tasks/notifications:sweep`, {
-      method: 'POST',
-      headers: { Cookie: cookie },
-    });
-
-    // Allow a moment for a potential second delivery
-    await new Promise((r) => setTimeout(r, 2000));
-    const msgs = await mailpit.listMessages();
-    const deliveries = msgs.filter((m) => m.To.some((t) => t.Address === NOTIFY_EMAIL));
-    expect(deliveries.length).toBe(1);
+  test('deduplication: a later sweep does not send a delivered email again', async () => {
+    // Each run sends one email, and its sweep passes over every due row, the ones already sent included. Sweeps run
+    // one at a time, so the third email means the second run's sweep has finished: a delivery sent again by it is in.
+    for (const [index, title] of ['Dedup 1', 'Dedup 2', 'Dedup 3'].entries()) {
+      await submitPassedRun(title);
+      await expect.poll(() => mailsTo(NOTIFY_EMAIL).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(index + 1);
+    }
+    expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(3);
   });
 
   test('muted subscription does not deliver', async () => {
-    // Mute the subscription
-    await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ mutedUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
-    });
-
-    const runRes = await apiPost(
-      '/api/test-runs/submit',
-      {
-        projectName: PROJECT.NOTIFY_EMAIL,
-        status: 'passed',
-        startTime: new Date().toISOString(),
-        duration: 1000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        testCases: [],
-      },
-      cookie,
-    );
-    expect(runRes.ok).toBe(true);
-
-    // Give dispatcher time to run
-    await new Promise((r) => setTimeout(r, 3000));
-    const msgs = await mailpit.listMessages();
-    expect(msgs.filter((m) => m.To.some((t) => t.Address === NOTIFY_EMAIL)).length).toBe(0);
-
-    // Unmute for subsequent tests
-    await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ mutedUntil: null }),
-    });
+    await mute(subscriptionId, true);
+    try {
+      await submitPassedRun('Muted Test');
+      // The witness channel's email shows the run's deliveries were sent.
+      await expect.poll(() => mailsTo(SWEEP_EMAIL).length, { timeout: 15_000 }).toBe(1);
+      expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(0);
+    } finally {
+      await mute(subscriptionId, false);
+    }
   });
 });
 
 // ── Scheduled quality report ─────────────────────────────────────────────────
 
 test.describe.serial('Scheduled quality report email', () => {
-  skip();
-
-  let mailpit: MailpitClient;
   const REPORT_EMAIL = 'quality-reports@example.com';
   let channelId = 0;
   let scheduleId = 0;
 
-  test.beforeAll(async () => {
-    mailpit = new MailpitClient(MAILPIT_URL);
-    await mailpit.deleteAll();
-  });
+  test.beforeAll(() => smtp.clear());
 
   test.afterAll(async () => {
     const cookie = await adminLogin();
@@ -534,7 +496,6 @@ test.describe.serial('Scheduled quality report email', () => {
   test('Run now sends the quality report by email, with the trend as an inline image', async () => {
     const cookie = await adminLogin();
     channelId = await createVerifiedEmailChannel(
-      mailpit,
       { name: 'Quality report mail', config: { address: REPORT_EMAIL }, global: true },
       cookie,
     );
@@ -559,14 +520,14 @@ test.describe.serial('Scheduled quality report email', () => {
     expect(run.ok).toBe(true);
     const { snapshotId } = (await run.json()) as { snapshotId: number };
 
-    const msg = await mailpit.waitForMessage((m) => m.To.some((t) => t.Address === REPORT_EMAIL), {
-      timeoutMs: 30_000,
-    });
-    expect(msg.Subject).toMatch(/^Quality report: Weekly quality report: /);
-    const detail = await mailpit.getMessage(msg.ID);
-    expect(detail.HTML).toContain('src="cid:trend"');
-    expect(detail.HTML).toContain(`/reports/${snapshotId}`);
-    expect(detail.Inline?.map((i) => [i.FileName, i.ContentType])).toContainEqual(['trend.png', 'image/png']);
+    const mail = await mailTo(REPORT_EMAIL, 30_000);
+    expect(mail.subject).toMatch(/^Quality report: Weekly quality report: /);
+    expect(mail.html).toContain('src="cid:trend"');
+    expect(mail.html).toContain(`/reports/${snapshotId}`);
+    expect(mail.parts.filter((p) => p.inline).map((p) => [p.filename, p.contentType])).toContainEqual([
+      'trend.png',
+      'image/png',
+    ]);
 
     // The delivery is recorded on the snapshot as sent.
     await expect
