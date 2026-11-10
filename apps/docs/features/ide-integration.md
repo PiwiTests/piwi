@@ -69,8 +69,8 @@ workspace folders. It opens the file at its line and column, and never a file ou
 | Method | How it opens | Needs |
 |--------|--------------|-------|
 | **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme with a workspace root; without one, the Piwi extension's `vscode://piwitests.piwi/open` link | A workspace root (for the absolute path), or the [Piwi extension](./editors#install-and-connect) in the editor. Flavors: VS Code, Insiders, VSCodium, Cursor. |
-| **JetBrains: Piwi plugin, else URL** | The Piwi plugin, then `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
-| **JetBrains: Piwi plugin, else local server** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. |
+| **JetBrains: Piwi plugin, else URL** | `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
+| **JetBrains: Piwi plugin, else local server** | `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. |
 | **Auto** | The Piwi plugin, then the other methods in turn (see below) | Whatever the method that answers needs. |
 
 ### Desktop app: direct launch
