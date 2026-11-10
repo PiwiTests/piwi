@@ -2112,7 +2112,7 @@ class EndTestAction : StopControlAction(Glue.StopControl.END) {
             .setRenderer(object : ColoredListCellRenderer<Glue.WaitingWorker>() {
                 override fun customizeCellRenderer(list: JList<out Glue.WaitingWorker>, value: Glue.WaitingWorker?, index: Int, selected: Boolean, hasFocus: Boolean) {
                     append(value?.waiting?.title.orEmpty())
-                    append("   worker ${value?.worker ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    append("   ${value?.let { Glue.workerName(it.slot) }.orEmpty()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
             })
             .setItemChosenCallback { sessions.giveUp(it) }
@@ -2140,7 +2140,7 @@ class WatchWorkerAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        chooseWorker(e, Glue.watchableWorkers(sessions.sessions)) { sessions.showWorker(it.ref, it.lane) }
+        chooseWorker(e, "Watch Which Worker?", Glue.watchableWorkers(sessions.sessions)) { sessions.showWorker(it.ref, it.lane) }
     }
 }
 
@@ -2155,16 +2155,16 @@ class PauseAndWatchAction : RunControlAction() {
             e.project?.let { PiwiCommands.notify(it, "No running test can be paused and watched.") }
             return
         }
-        chooseWorker(e, targets) { sessions.pauseAndWatch(it) }
+        chooseWorker(e, "Pause and Watch Which Worker?", targets) { sessions.pauseAndWatch(it) }
     }
 }
 
-/** The only worker of `targets`, or the one chosen in a popup; nothing for none. */
-private fun chooseWorker(e: AnActionEvent, targets: List<Glue.WatchTarget>, then: (Glue.WatchTarget) -> Unit) {
+/** The only worker of `targets`, or the one chosen in a popup titled `title`; nothing for none. */
+private fun chooseWorker(e: AnActionEvent, title: String, targets: List<Glue.WatchTarget>, then: (Glue.WatchTarget) -> Unit) {
     if (targets.size < 2) return targets.firstOrNull()?.let(then) ?: Unit
     JBPopupFactory.getInstance()
         .createPopupChooserBuilder(targets)
-        .setTitle("Watch Which Worker?")
+        .setTitle(title)
         .setRenderer(object : ColoredListCellRenderer<Glue.WatchTarget>() {
             override fun customizeCellRenderer(list: JList<out Glue.WatchTarget>, value: Glue.WatchTarget?, index: Int, selected: Boolean, hasFocus: Boolean) {
                 append(value?.label.orEmpty())

@@ -213,7 +213,10 @@ data class ContextStatus(
     val locators: Int = 0,
     val reachedFiles: Int = 0,
     val problem: String? = null,
-    /** What `problem` is about: `not-configured`, `no-project`, `refused` or `unreachable`; null with no problem. */
+    /**
+     * What `problem` is about: `not-configured`, `no-project`, `refused`, `desktop-unproven` or `unreachable`; null with
+     * no problem.
+     */
     val problemKind: String? = null,
     /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
     val instance: NamedInstance? = null,

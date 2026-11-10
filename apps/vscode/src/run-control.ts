@@ -959,10 +959,14 @@ export interface ControlState {
   waiting: WaitingWorker | null;
 }
 
-/** A pausing worker whose test waits in a call: its run, its worker, and the call (`RunWorker.waiting`). */
+/**
+ * A pausing worker whose test waits in a call: its run, its worker, its slot (`RunWorker.parallelIndex`, which names
+ * it to the person) and the call (`RunWorker.waiting`).
+ */
 export interface WaitingWorker {
   ref: string;
   worker: number;
+  slot: number;
   waiting: RunWaiting;
 }
 
@@ -973,7 +977,7 @@ export function waitingWorkers(sessions: Sessions, target: RunTarget | null = nu
       w.pausing &&
       w.waiting &&
       (!target || (target.ref === s.ref && (target.worker === undefined || target.worker === w.worker)))
-        ? [{ ref: s.ref, worker: w.worker, waiting: w.waiting }]
+        ? [{ ref: s.ref, worker: w.worker, slot: w.parallelIndex, waiting: w.waiting }]
         : [],
     ),
   );
@@ -1151,7 +1155,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
     label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}`,
-    description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
+    description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · ${workerName(stop.slot)}`,
   };
 }
 

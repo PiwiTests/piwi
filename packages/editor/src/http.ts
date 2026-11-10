@@ -61,13 +61,17 @@ export function forgetDesktopTokens(): void {
 
 /** The error of a request that would carry the desktop token to a server that did not prove it holds the token. */
 export class DesktopNotProvenError extends Error {
-  constructor(serverUrl: string, proof: DesktopProof) {
+  /** What the proof came to: the server did not answer (`unreachable`), or answered without the proof (`unproven`). */
+  readonly proof: Exclude<DesktopProof, 'proven'>;
+
+  constructor(serverUrl: string, proof: Exclude<DesktopProof, 'proven'>) {
     super(
       proof === 'unreachable'
         ? `The desktop app at ${serverUrl} did not answer, so its token is not sent.`
         : `The desktop app's token is not sent to ${serverUrl}: the server there did not prove it holds the token. Restart or update the desktop app.`,
     );
     this.name = 'DesktopNotProvenError';
+    this.proof = proof;
   }
 }
 
