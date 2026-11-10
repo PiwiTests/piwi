@@ -56,6 +56,14 @@
         <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot2"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot3"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot4"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot5"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot6"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot7"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSlot8"/>
+        <config.codeVisionGroupSettingProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionSettings"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiRecordingAnnotator"/>
         <intentionAction>
