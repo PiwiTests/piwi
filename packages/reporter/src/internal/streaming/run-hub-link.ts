@@ -7,6 +7,7 @@ import {
   MAX_RUN_FAILURE_TEXT,
   RUN_CHANNEL_ENV,
   TERMINAL_REF_PREFIX,
+  readRunPage,
   type RunCounts,
   type RunMainToHub,
 } from '@piwitests/core/run-channel';
@@ -16,7 +17,8 @@ import { runChannelRef, startedByTestRunner } from '../config/editors.js';
  * The run's own connection to the hub its workers reach (`PIWI_RUN_CHANNEL`, the editor's or the desktop app's;
  * `RunMainToHub` of `@piwitests/core/run-channel`), from `onBegin` to `onEnd`, so the hub knows how far the run is
  * before and between its workers: how many tests the run holds (`run-begin`), how many ended for good and how
- * (`run-progress`, four times a second at most, the latest counts alone), and how the run ended, with its first
+ * (`run-progress`, four times a second at most, the latest counts alone), its page on the instance once it is known
+ * (`run-page`, once), and how the run ended, with its first
  * failure's title and error line through `hideSecretsInText` (`run-end`). Each test counts once, by the outcome of its
  * latest attempt: a serial group's retry counts its tests again in place of their earlier outcome. It reads nothing
  * the hub says and never waits on it but `CLOSE_MS` at the end, the connection held open meanwhile so the run's process
@@ -41,6 +43,7 @@ export class RunHubLink {
   >();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sentAt = -Infinity;
+  private pageSent = false;
 
   private constructor(private socket: net.Socket | null) {}
 
@@ -115,6 +118,17 @@ export class RunHubLink {
           : null,
     });
     this.progress();
+  }
+
+  /**
+   * The run's page on the instance (`id`, `url`): the hub hears it once, the first time a page that reads is known.
+   */
+  page(id: number | null | undefined, url: string | null | undefined): void {
+    if (this.pageSent) return;
+    const page = readRunPage({ id, url });
+    if (!page) return;
+    this.pageSent = true;
+    this.send({ type: 'run-page', ...page });
   }
 
   /** The run ended (`status`, Playwright's): the hub hears how, and the connection closes, `CLOSE_MS` at most. */

@@ -239,6 +239,8 @@ export interface LocatorAnswer extends IntentAnswer {
  */
 export interface PickAtAnswer extends IntentAnswer {
   locator: string | null;
+  /** Whether an editor took the locator; absent from a reporter that predates it, which says so in its message. */
+  taken?: boolean;
 }
 
 /** The longest ARIA snapshot a `snapshot` answer carries, in characters: a longer one is cut, and says so (`cut`). */
@@ -990,7 +992,8 @@ export function parseRunToHub(line: string): RunToHub | null {
         const said = readAnswer(answered);
         const locator = isObject(answered) ? answered.locator : undefined;
         if (!said || (locator !== null && !isLocatorText(locator))) return null;
-        return { type: 'answer', request, what, value: { ...said, locator: locator as string | null } };
+        const taken = isObject(answered) && typeof answered.taken === 'boolean' ? { taken: answered.taken } : {};
+        return { type: 'answer', request, what, value: { ...said, locator: locator as string | null, ...taken } };
       }
       if (what === 'snapshot') {
         const read = readSnapshotAnswer(answered);
@@ -1212,6 +1215,26 @@ export interface RunCounts {
   skipped: number;
 }
 
+/**
+ * A run's page on the instance it reports to: its number there (`id`, as `#78`) and its address (`url`), under the
+ * instance's public address when the instance names one. The longest address kept is `MAX_RUN_PAGE_URL` characters.
+ */
+export interface RunPage {
+  id: number;
+  url: string;
+}
+
+export const MAX_RUN_PAGE_URL = 2048;
+
+/** A run's page, field by field: a positive number and an http(s) address with no space; null when it is not one. */
+export function readRunPage(value: unknown): RunPage | null {
+  if (!isObject(value)) return null;
+  const { id, url } = value;
+  if (!isInt(id, 1) || typeof url !== 'string' || url.length > MAX_RUN_PAGE_URL) return null;
+  if (!/^https?:\/\/[^\s"'<>`\\]+$/.test(url)) return null;
+  return { id, url };
+}
+
 /** The longest title and error a `run-end`'s first failure carries, in characters: a longer one is cut. */
 export const MAX_RUN_FAILURE_TEXT = 500;
 
@@ -1221,7 +1244,9 @@ export const MAX_RUN_FAILURE_TEXT = 500;
  * channel's token, the run's ref and working directory, the process and the versions as a worker's `run-attach` names
  * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
  * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
- * `run-attach` says it (absent otherwise). `run-progress` follows each test that ended for good, at most four times a
+ * `run-attach` says it (absent otherwise). `run-page` names the run's page on the instance once the run's process
+ * knows it (at its start from the global setup, else as its stream opens, else as its results are sent), once.
+ * `run-progress` follows each test that ended for good, at most four times a
  * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
  * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them
  * closes the connection at its first line, and the run goes on as without it.
@@ -1240,6 +1265,7 @@ export type RunMainToHub =
       shard: { current: number; total: number } | null;
       runner?: true;
     }
+  | ({ type: 'run-page' } & RunPage)
   | ({ type: 'run-progress' } & RunCounts)
   | ({
       type: 'run-end';
@@ -1281,6 +1307,10 @@ export function parseRunMainToHub(line: string): RunMainToHub | null {
         shard: shardOf,
         ...(value.runner === true ? { runner: true as const } : {}),
       };
+    }
+    case 'run-page': {
+      const page = readRunPage(value);
+      return page ? { type: 'run-page', ...page } : null;
     }
     case 'run-progress': {
       const counts = readCounts(value);

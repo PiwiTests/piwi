@@ -26,7 +26,7 @@ import {
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
 import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
-import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
+import { PIWI_EDITOR_ENV, editorNotFollowed, followEditor, runInteractive } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -420,20 +420,30 @@ export class PiwiDashboardReporter {
     if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
-    const followed = followEditor([configDirFromConfig(config), process.cwd()], {
-      env: process.env,
-      argv: process.argv,
-      terminal: !!process.stdout.isTTY || !!process.stderr.isTTY,
-    });
+    const dirs = [configDirFromConfig(config), process.cwd()];
+    const gate = { env: process.env, argv: process.argv, terminal: !!process.stdout.isTTY || !!process.stderr.isTTY };
+    const followed = followEditor(dirs, gate);
     if (followed) {
       const { editor } = followed;
       this.logger.info(
         `Following this run in ${editor.client ?? 'the editor'} (pid ${editor.pid}), whose breakpoints stop it: ` +
           `${PIWI_EDITOR_ENV}=off runs it alone.`,
       );
+    } else {
+      // A run piped to a file or another program does not follow the editor whose workspace holds it: it says why.
+      const missed = editorNotFollowed(dirs, gate);
+      if (missed) {
+        this.logger.info(
+          `Not following this run in ${missed.editor.client ?? 'the editor'} (pid ${missed.editor.pid}): ` +
+            `${missed.why}. ${PIWI_EDITOR_ENV}=on follows it.`,
+        );
+      }
     }
     // The hub its workers reach hears how far the run is, from its own process.
     this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
+    // The run the global setup registered names its page now; else the stream names it as it opens.
+    const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
+    if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
     if (!this.enabled) {
       if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
       else if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
@@ -478,7 +488,8 @@ export class PiwiDashboardReporter {
         this.logger.debug(`Run sampler not started: ${errorMessage(error)}`);
       }
     }
-    this.logger.info(
+    // Plumbing: the run's own line is its page's (`View live progress`).
+    this.logger.debug(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
 
@@ -560,7 +571,7 @@ export class PiwiDashboardReporter {
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
     if (this.shardInfo) {
-      this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
+      this.logger.debug(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
     this.instanceId = computeInstanceId(
       this.options.projectName!,
@@ -623,6 +634,7 @@ export class PiwiDashboardReporter {
       this.environments?.atBegin(),
     );
     if (this.streamManager) {
+      this.streamManager.onOpened = (runId, runUrl) => this.hubLink?.page(runId, runUrl);
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();

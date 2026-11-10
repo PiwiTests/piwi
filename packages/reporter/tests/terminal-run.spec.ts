@@ -257,6 +257,10 @@ describe('a run started in a terminal', () => {
       const { output, opened } = await run(env);
       expect(opened, JSON.stringify(env)).toEqual([]);
       expect(output, JSON.stringify(env)).not.toContain('Following this run');
+      // A run piped to another program says why it runs alone; one that runs alone on purpose says nothing.
+      const piped = `Not following this run in Test Editor (pid ${process.pid}): its output goes to no terminal. PIWI_EDITOR=on follows it.`;
+      if (Object.keys(env).length === 0) expect(output).toContain(piped);
+      else expect(output, JSON.stringify(env)).not.toContain('Not following this run');
     }
   }, 120_000);
 

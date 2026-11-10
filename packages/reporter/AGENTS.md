@@ -62,8 +62,8 @@ responsibilities.
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
      intents and queries (`takes` in its `run-attach`), with the run's own connection from `onBegin` to `onEnd`
-     (`internal/streaming/run-hub-link.ts`: how many tests, each that ended for good, how the run ended and its first
-     failure through `hideSecretsInText`, `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
+     (`internal/streaming/run-hub-link.ts`: how many tests, each that ended for good, the run's page on the instance once
+     known, how the run ended and its first failure through `hideSecretsInText`, `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
      through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
      `ENDED_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
      as asked (`give-up`, in `features`: the call given up through its `signal` where it carries one, else the attempt
