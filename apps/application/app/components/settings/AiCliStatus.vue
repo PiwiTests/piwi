@@ -143,7 +143,7 @@ watch(() => props.provider, check);
         color="warning"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="On a server, Claude Code needs an API key or a cloud provider"
+        :title="v.signedIn ? 'This server cannot use this sign-in' : 'Claude Code is not signed in'"
         :description="v.error || undefined"
       />
       <div v-else-if="provider === 'claude-cli' && !v.ready" class="space-y-2">

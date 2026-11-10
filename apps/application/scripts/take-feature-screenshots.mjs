@@ -8100,7 +8100,7 @@ const SCENES = [
     tags: ['desktop'],
     mode: 'desktop',
     route: '/settings/ai',
-    viewport: { width: 1000, height: 1300 },
+    viewport: { width: 1000, height: 1400 },
     of: '[data-shot="ai-model-providers"]',
     pad: 12,
     outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
