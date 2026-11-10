@@ -274,7 +274,7 @@ object Glue {
         return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
-    /** The status bar text while the latest run is read again (**Read the Latest Run Again**, in its popup). */
+    /** The status bar text while the latest run is read again (**Refresh the Latest Run**, first in its popup). */
     const val REFRESHING = "Piwi: refreshing…"
 
     /**
@@ -484,6 +484,8 @@ object Glue {
         val note: String? = null,
         val root: String? = null,
         val children: List<FailureNode> = emptyList(),
+        /** The lines of its hover, as the service writes them (`FailureTreeNode.tooltip`). */
+        val tooltip: List<String> = emptyList(),
     )
 
     /**
@@ -515,6 +517,7 @@ object Glue {
             note = node.note,
             root = node.root,
             children = node.children.orEmpty().map { draw(it) },
+            tooltip = node.tooltip.orEmpty(),
         )
         return result?.tree.orEmpty().map { draw(it) }
     }

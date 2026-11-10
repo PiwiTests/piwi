@@ -674,11 +674,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
-     * status, on a pooled thread: the status bar item's click. `refreshing` is set meanwhile.
+     * status, on a pooled thread: the status bar item's click and **Refresh the Latest Run**. `refreshing` is set
+     * meanwhile, and the listeners are told as it is.
      */
     fun refreshRun() {
         if (refreshing) return
         refreshing = true
+        changed()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 server()?.refreshRun()?.orNull()

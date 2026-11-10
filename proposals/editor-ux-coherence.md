@@ -25,13 +25,19 @@ unreachable instance, no run, a desktop app to restart or no connection, and the
 for a connection, #1120; and [HM7](#hm7)'s '…' menu, Follow worded by its state, as two commands rather than one
 toggled, beside Connect, Open settings and Open the log, #1120), [Q16](#q16) in part (Piwi: Restart the editor service,
 and no toast for a failed request, #1120; [HM19](#hm19)'s status item saying 'Piwi: not running', with Restart and the
-log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [HM5](#hm5) of [Q8](#q8)
-(Open in Dashboard on the tool window's selection, #1120), the Paused Page and Worker tabs closing ([LR8](#lr8), #1120),
-[Q11](#q11) (a test's result said once on its line, its pass rate in words, every lens's tooltip saying what its click
-runs, and a local run's failure leading with 'Local failure:', #1121; the gutter mark's tooltip written by the service
-in the dashboard's words, under a drift test, naming the run its result is from when the latest run or the run in
-progress gives it, [TL10](#tl10); JetBrains shows it on the result icon alone, and the pass rate reads 'passed 44 of 48
-runs'), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing test's lines to the editor's edge, #1121), [Q20](#q20)
+log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [Q8](#q8) in part (Open
+in Dashboard on the tool window's selection, [HM5](#hm5), #1120; the tool window's tab named Failures, its icon dotted
+red while tests fail, [HM13](#hm13); each node's hover the service's, [HM9](#hm9); one Group By drop-down and a gear
+menu holding Connect…, Pair, the MCP copies, Refresh and Settings…, [HM6](#hm6); a registered `Piwi.RefreshRun`, Refresh
+the Latest Run, first in the toolbar and the titled status popup, which offers Connect… only while a config is not
+connected, [HM3](#hm3), [AC10](#ac10); remaining: the one-line header of [HM12](#hm12), the headline in one place of
+HM9, Documentation and the log in the gear, one Open in Dashboard in the popup, Reload Piwi and a glyph of its own for
+each refresh, and the popup's run section waiting for [M2](#m2)), the Paused Page and Worker tabs closing ([LR8](#lr8),
+#1120), [Q11](#q11) (a test's result said once on its line, its pass rate in words, every lens's tooltip saying what its
+click runs, and a local run's failure leading with 'Local failure:', #1121; the gutter mark's tooltip written by the
+service in the dashboard's words, under a drift test, naming the run its result is from when the latest run or the run
+in progress gives it, [TL10](#tl10); JetBrains shows it on the result icon alone, and the pass rate reads 'passed 44 of
+48 runs'), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing test's lines to the editor's edge, #1121), [Q20](#q20)
 (Run This Spec and the spec's lens run every test of the file by its path, #1121), [Q17](#q17) (VS Code's run items each
 named, read without their icon, naming no key, Resume alone at a held failure, which is marked in red, #1122),
 [LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step, Finish and Write code…, #1122; the line's own lens

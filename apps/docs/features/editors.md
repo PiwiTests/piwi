@@ -104,8 +104,7 @@ your API keys. The desktop app keeps its own token. For the runs the editor star
 
 ## Commands
 
-VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Open the log**, **Get started** or
-**Refresh the latest run**.
+VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **Open the log** or **Get started**.
 
 | Command | What it does |
 |---|---|
