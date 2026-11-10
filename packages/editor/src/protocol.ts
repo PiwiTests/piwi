@@ -328,7 +328,7 @@ export interface DebugRun {
    */
   execution?: number | null;
   /**
-   * The name the dashboard gave the run (`ed-` then 8 to 32 hexadecimal digits), which its page follows the run by on
+   * The name the dashboard gave the run (`ed-` then 16 to 32 hexadecimal digits), which its page follows the run by on
    * the instance: the run takes it unless a run of this window holds it; absent or null, the service names it.
    */
   ref?: string | null;
@@ -672,6 +672,8 @@ export interface LiveRun {
   url?: string;
   /** A CI run's (its origin, else the CI it names): the clients say so, never as the person's own tests running. */
   ci?: boolean;
+  /** The branch it runs on, as it reported it; absent for a run that names none. */
+  branch?: string;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */

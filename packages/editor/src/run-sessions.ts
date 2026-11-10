@@ -537,16 +537,13 @@ export class RunSessions {
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
-  /** A new session of the run `ref`, whose working directory is `cwd`. */
-  /** Whether a run of `ref` connected: its reporter ran, a worker or its own process reaching the service. */
+  /** Whether the reporter of a run of `ref` ran: the run's own process reached the service (`run-begin`). */
   heardFrom(ref: string): boolean {
     return this.heard.has(ref);
   }
 
+  /** A new session of the run `ref`, whose working directory is `cwd`. */
   private open(ref: string, cwd: string, runner: boolean): Session {
-    this.heard.delete(ref);
-    this.heard.add(ref);
-    if (this.heard.size > HEARD_REFS) this.heard.delete(this.heard.values().next().value!);
     const terminal = !!this.options.terminal?.(ref);
     const session: Session = {
       ref,
@@ -585,6 +582,9 @@ export class RunSessions {
    * goes on while it is connected, between workers too. A second connection of a run while one is open is closed.
    */
   attachMain(socket: net.Socket, begin: RunBegin): (line: string) => void {
+    this.heard.delete(begin.ref);
+    this.heard.add(begin.ref);
+    if (this.heard.size > HEARD_REFS) this.heard.delete(this.heard.values().next().value!);
     const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, begin.runner === true);
     if (session.main && !session.main.destroyed) {
       socket.destroy();

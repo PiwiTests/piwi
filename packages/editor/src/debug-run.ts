@@ -38,8 +38,8 @@ const MAX_DEBUG_RUNS = 50;
  */
 const PLAIN_TEXT = /^[^\p{Cc}[\]<>`\\]+$/u;
 
-/** The name a dashboard may give a debug run, as the service names its own (`newRunRef`), longer. */
-export const DEBUG_RUN_REF = /^ed-[0-9a-f]{8,32}$/;
+/** The name a dashboard may give a debug run: 16 hex digits or more, longer than the service's own (`newRunRef`). */
+export const DEBUG_RUN_REF = /^ed-[0-9a-f]{16,32}$/;
 
 /** A debug run's fields as a client sent them, checked one by one; why not otherwise. */
 export function checkedDebugRun(value: unknown): DebugRun | string {

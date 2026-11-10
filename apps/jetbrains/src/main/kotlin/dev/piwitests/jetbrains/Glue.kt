@@ -220,13 +220,16 @@ object Glue {
     }
 
     /**
-     * The run in progress the status bar counts for the context of `file`: that context's, else the editor's own run of
-     * another context, which stays in view whichever config the file belongs to; null while none runs.
+     * The run in progress the status bar counts for the context of `file`, as `statusView` picks it: that context's
+     * (the only one's, with one), else the editor's own run of another context, which stays in view whichever config
+     * the file belongs to; null while none runs, or while that context is not connected.
      */
     fun liveRun(status: StatusResult?, runs: RunStatusResult?, file: String?): LiveRun? {
-        val shown = statusContext(status?.contexts.orEmpty(), file)
-        val own = runs?.contexts?.firstOrNull { it.root == shown?.root }?.live
-        return own ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
+        val contexts = status?.contexts.orEmpty()
+        val shown = statusContext(contexts, file)?.takeIf { it.connected } ?: return null
+        val run = runs?.contexts?.firstOrNull { it.root == shown.root }
+            ?: if (contexts.size == 1) runs?.contexts?.firstOrNull() else null
+        return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
     /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
@@ -2338,7 +2341,7 @@ object Glue {
     private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution", "ref")
 
     /** The name a dashboard gives a debug run, which the editor service checks again (`DEBUG_RUN_REF`). */
-    private val RUN_REF = Regex("^ed-[0-9a-f]{8,32}$")
+    private val RUN_REF = Regex("^ed-[0-9a-f]{16,32}$")
 
     const val MAX_DEBUG_TITLE = 1000
     const val MAX_DEBUG_PROJECT = 200

@@ -493,6 +493,14 @@
           "when": "false"
         },
         {
+          "command": "piwi.openLiveRun",
+          "when": "piwi.liveRun"
+        },
+        {
+          "command": "piwi.openRunPage",
+          "when": "piwi.runPage"
+        },
+        {
           "command": "piwi.openTrace",
           "when": "false"
         },

@@ -76,6 +76,7 @@ function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveR
     own,
     ...(ref ? { ref } : {}),
     ...(!own && isCiRun(run) ? { ci: true } : {}),
+    ...(run.branch ? { branch: run.branch } : {}),
   };
 }
 
@@ -282,6 +283,19 @@ interface RefWatch {
    * (`commandStarted`): its runs carry `ref`, and are that command's.
    */
   commandRef: string | null;
+  /**
+   * For a ref the service did not make (a debug link's), when the command was built: a run that started a minute or
+   * more before it carries the ref but is not the command's.
+   */
+  builtAt: number | null;
+}
+
+/** How long before its command was built a run with a ref the service did not make may have started. */
+const BORROWED_REF_SLACK_MS = 60_000;
+
+/** Whether `run` started well before the command of a borrowed ref was built: it is not that command's. */
+function startedBefore(w: RefWatch, run: RunDetails): boolean {
+  return w.builtAt !== null && Date.parse(run.startTime) < w.builtAt - BORROWED_REF_SLACK_MS;
 }
 
 /** The results of a repeated run that its stream brought, counted once each. */
@@ -370,9 +384,10 @@ export class RunWatch {
    * Look for the run of a command built for `context` with `ref`: on the instance for two minutes, every `ownRunPollMs`
    * while the instance's stream is down and `STREAM_POLL_FACTOR` times less often while it is connected, and in the
    * runs the stream announces for as long as the service keeps the command, one of the latest `MAX_WATCHES`. A command
-   * that runs each test `repeat` times has its runs' results counted.
+   * that runs each test `repeat` times has its runs' results counted. A `borrowed` ref, which a debug link named, finds
+   * no run that started well before the command (`builtAt`).
    */
-  watch(context: PiwiContext, ref: string, repeat: number | null = null): void {
+  watch(context: PiwiContext, ref: string, repeat: number | null = null, borrowed = false): void {
     if (this.disposed || !context.client || !context.project) return;
     const w: RefWatch = {
       context,
@@ -386,6 +401,7 @@ export class RunWatch {
       timer: null,
       repeat,
       commandRef: null,
+      builtAt: borrowed ? Date.now() : null,
     };
     this.watches.set(ref, w);
     for (const [oldest, dropped] of this.watches) {
@@ -805,7 +821,7 @@ export class RunWatch {
     const run = await client.runDetails(latest.id).catch(() => null);
     if (!run) return null;
     // An instance that does not read the parameters answers its latest run, whatever launched it.
-    if (editorRef(run) !== w.ref) {
+    if (editorRef(run) !== w.ref || startedBefore(w, run)) {
       w.known.add(run.id);
       return null;
     }
@@ -818,6 +834,10 @@ export class RunWatch {
    */
   private found(w: RefWatch, run: RunDetails): void {
     if (w.found === run.id || w.known.has(run.id)) return;
+    if (startedBefore(w, run)) {
+      w.known.add(run.id);
+      return;
+    }
     if (w.found !== null) w.known.add(w.found);
     w.found = run.id;
     w.carried.add(run.id);

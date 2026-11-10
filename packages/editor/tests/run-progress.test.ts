@@ -118,7 +118,10 @@ describe('a run’s own connection, in the run sessions', () => {
   });
 
   test('remembers that a run’s reporter connected, for a command that ends to say so', async () => {
-    const { sessions, main } = harness();
+    const { sessions, main, worker } = harness();
+    expect(sessions.heardFrom('ed-1')).toBe(false);
+    // A worker alone is the capture fixtures', which run without the reporter.
+    worker(0);
     expect(sessions.heardFrom('ed-1')).toBe(false);
     const run = main();
     expect(sessions.heardFrom('ed-1')).toBe(true);
@@ -223,10 +226,13 @@ describe('a run’s own connection, through the record channel', () => {
       run.write(`${JSON.stringify({ type: 'run-progress', done: 4, failed: 0, flaky: 0, skipped: 1 })}\n`);
       await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.progress?.done === 4));
       // Its page reaches the client too, an address that is not one left out.
-      run.write(`${JSON.stringify({ type: 'run-page', id: 5, url: 'javascript:alert(1)' })}\n`);
       run.write(`${JSON.stringify({ type: 'run-page', id: 6, url: 'http://127.0.0.1:7494/test-runs/6' })}\n`);
       const named = await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.page));
       expect(named.page).toEqual({ id: 6, url: 'http://127.0.0.1:7494/test-runs/6' });
+      run.write(`${JSON.stringify({ type: 'run-page', id: 5, url: 'javascript:alert(1)' })}\n`);
+      run.write(`${JSON.stringify({ type: 'run-progress', done: 5, failed: 0, flaky: 0, skipped: 1 })}\n`);
+      const after = await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.progress?.done === 5));
+      expect(after.page).toEqual({ id: 6, url: 'http://127.0.0.1:7494/test-runs/6' });
     } finally {
       run.destroy();
     }

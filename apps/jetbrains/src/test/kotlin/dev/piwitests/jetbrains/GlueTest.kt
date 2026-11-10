@@ -1572,7 +1572,7 @@ class GlueTest {
         val named = Glue.parseOpenRequest(debugQuery("ref" to "ed-0123456789abcdef")) as Glue.OpenRequest.File
         assertEquals("ed-0123456789abcdef", named.debug?.ref)
         assertEquals("ed-0123456789abcdef", Glue.debugRunArgs("file:///s", "file:///f", 5, named.debug!!).debug?.ref)
-        for (ref in listOf("ed-1", "terminal-1-2", "ed-0123456789ABCDEF")) {
+        for (ref in listOf("ed-1", "ed-01234567", "terminal-1-2", "ed-0123456789ABCDEF")) {
             val refused = Glue.parseOpenRequest(debugQuery("ref" to ref)) as Glue.OpenRequest.Refused
             assertEquals(ref, "ref must be a run name the dashboard gives", refused.error)
         }
@@ -1593,6 +1593,11 @@ class GlueTest {
         assertEquals(own, Glue.liveRun(two, runs, "/w/admin/tests/a.spec.ts"))
         val notOwn = live(RunStatus(root = "/w", live = own.copy(own = false)), RunStatus(root = "/w/admin"))
         assertEquals(null, Glue.liveRun(two, notOwn, "/w/admin/tests/a.spec.ts"))
+        // A config that is not connected counts none, as its status bar asks to connect.
+        val unconnected = StatusResult(listOf(connected.contexts!!.single().copy(connected = false)))
+        assertEquals(null, Glue.liveRun(unconnected, live(RunStatus(root = "/w", live = own)), "/w/tests/a.spec.ts"))
+        // With one config, its run counts whatever the root it reports.
+        assertEquals(own, Glue.liveRun(connected, live(RunStatus(root = "/elsewhere", live = own)), "/w/tests/a.spec.ts"))
     }
 
     @Test

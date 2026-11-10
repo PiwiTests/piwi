@@ -3324,8 +3324,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       );
     }
     // The dashboard follows the run by the name it gave it, unless a run of this window holds that name.
-    const ref = debug.ref && !runCommands.has(debug.ref) ? debug.ref : newRunRef();
-    runWatch.watch(context, ref);
+    const borrowed = !!debug.ref && !runCommands.has(debug.ref);
+    const ref = borrowed ? debug.ref! : newRunRef();
+    runWatch.watch(context, ref, null, borrowed);
     const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
     const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
@@ -3938,8 +3939,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             const before = documents.get(params.textDocument.uri)?.getText() ?? null;
             if (file) runLines.changed(lineKey(file), before, params.contentChanges);
             // A run stopped in this file is told again with the stop's line where it stands now.
+            const key = file ? lineKey(file) : null;
+            const stoppedHere = (uri: string | undefined) => {
+              const stopped = uri ? uriToPath(uri) : null;
+              return key !== null && stopped !== null && lineKey(stopped) === key;
+            };
             for (const session of runSessions.current()) {
-              if (session.workers.some((w) => w.stop?.uri === params.textDocument.uri)) runHub?.push(session);
+              if (session.workers.some((w) => stoppedHere(w.stop?.uri))) runHub?.push(session);
             }
             return handler(params);
           });

@@ -172,7 +172,7 @@ class OpenLatestRunAction : AnAction(), DumbAware {
     override fun update(e: AnActionEvent) {
         val live = e.project?.let { liveRun(it) }
         e.presentation.isEnabled = e.project?.let { url(it) } != null
-        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the Latest Run"
+        e.presentation.text = live?.let { "Open Run #${it.runId} (Running)" } ?: "Open the Latest Run in the Dashboard"
     }
 
     override fun actionPerformed(e: AnActionEvent) {

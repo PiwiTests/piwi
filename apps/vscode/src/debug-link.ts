@@ -33,7 +33,7 @@ export interface DebugLink {
 const FIELDS = ['file', 'line', 'column', 'root', 'debug', 'spec', 'test', 'playwrightProject', 'execution', 'ref'];
 
 /** The name a dashboard gives a debug run, which the editor service checks again (`DEBUG_RUN_REF`). */
-const RUN_REF = /^ed-[0-9a-f]{8,32}$/;
+const RUN_REF = /^ed-[0-9a-f]{16,32}$/;
 
 /** The longest path, title and project name a link may name. */
 const MAX_PATH = 4096;

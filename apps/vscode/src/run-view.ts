@@ -319,6 +319,7 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
     void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
+    void vscode.commands.executeCommand('setContext', 'piwi.runPage', runPagesOf(sessions).length > 0);
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }

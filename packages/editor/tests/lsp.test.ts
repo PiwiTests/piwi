@@ -2489,6 +2489,7 @@ describe('runs as they happen', () => {
       own: true,
       ref: command.ref,
       url: expect.stringMatching(/\/test-runs\/42$/),
+      branch: 'feature/other',
     });
 
     // A test's end, then the counts of its batch.
@@ -2508,6 +2509,32 @@ describe('runs as they happen', () => {
     const listed = (await runsClient.sendRequest('piwi/failures')) as FailuresResult;
     expect(listed.items.find((i) => i.runId === 42)).toMatchObject({ source: 'own', state: 'failing' });
   });
+
+  test('a debug link’s name for the run takes no run of that name that started before it', async () => {
+    const ref = 'ed-00112233445566778899';
+    // A run on the instance already carries the name the link gives.
+    runDetails.set(91, editorRun(91, ref, 'passed', '2026-01-01T00:00:00.000Z'));
+    refRuns.set(ref, { id: 91, status: 'passed' });
+    const seen = statuses.length;
+    const command = (await runsClient.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      debug: { stop: { uri: uri('tests/checkout.spec.ts'), line: 2 }, title: 'pays', ref },
+    })) as RunCommand;
+    expect(command.ref).toBe(ref);
+    // Looked for twice at least, every 500 ms while the instance's stream is connected.
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    // The run the debug run starts.
+    const startTime = new Date().toISOString();
+    runDetails.set(92, editorRun(92, ref, 'running', startTime));
+    refRuns.set(ref, { id: 92, status: 'running' });
+    const live = await waitFor(
+      () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 92)?.contexts[0]?.live ?? undefined,
+    );
+    expect(live).toMatchObject({ runId: 92, own: true });
+    expect(statuses.slice(seen).some((s) => s.contexts[0]?.live?.runId === 91)).toBe(false);
+    await endRun(92, startTime);
+  }, 15_000);
 
   test('a rerun of a command started here, with the same ref, is its own once the stream announces it', async () => {
     const command = await runTests();
