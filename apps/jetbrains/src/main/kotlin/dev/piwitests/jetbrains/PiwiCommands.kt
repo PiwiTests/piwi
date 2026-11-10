@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap
 object PiwiCommands {
     private val gson = Gson()
 
-    private const val NOT_RUNNING = "The editor service is not running."
+    private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
 
     /** How long a failure's trace or screenshot may take to download: a trace can weigh tens of megabytes. */
     private const val DOWNLOAD_TIMEOUT_MILLIS = 5 * 60_000L
@@ -77,10 +77,11 @@ object PiwiCommands {
      */
     fun desktopJob(project: Project, params: DesktopJobParams) {
         background(project, "Piwi: passing the job to the desktop app") {
-            val result = project.service<PiwiProjectService>().server()?.desktopJob(params)?.orNull()
+            val server = project.service<PiwiProjectService>().server()
+            val result = server?.desktopJob(params)?.orNull()
             notify(
                 project,
-                result?.message ?: "The editor service is not running.",
+                result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER,
                 if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING,
             )
         }
@@ -102,9 +103,10 @@ object PiwiCommands {
 
     private fun shareDesktopJob(project: Project, jobId: String) {
         background(project, "Piwi: sharing the verdict") {
-            val result = project.service<PiwiProjectService>().server()?.shareDesktopJob(ShareDesktopJobParams(jobId))?.orNull()
+            val server = project.service<PiwiProjectService>().server()
+            val result = server?.shareDesktopJob(ShareDesktopJobParams(jobId))?.orNull()
             val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(
-                result?.message ?: "The editor service is not running.",
+                result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER,
                 if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING,
             )
             result?.url?.let { url ->
@@ -172,12 +174,16 @@ object PiwiCommands {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
             val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints.map { it.place })
-            val command = service.server()?.runArgs(withBreakpoints)?.orNull()
-            if (command?.command.isNullOrBlank() || command?.cwd == null) {
-                if (!quiet) notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
-            } else {
-                startRun(project, command, breakpoints)
+            val server = service.server()
+            val command = server?.runArgs(withBreakpoints)?.orNull()
+            val refusal = when {
+                server == null -> NOT_RUNNING
+                command == null -> Glue.SERVICE_NO_ANSWER
+                command.command.isNullOrBlank() || command.cwd == null ->
+                    "Piwi has no command for these tests: the instance knows none of them, or no instance is connected."
+                else -> null
             }
+            if (refusal == null) startRun(project, command!!, breakpoints) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
         }
     }
 

@@ -152,6 +152,7 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  serviceDownView,
   heldStops,
   heldText,
   failingRuns,
@@ -209,6 +210,9 @@ const LIVE_TESTS_DRAW_MS = 1_000;
 const GUTTER_EDIT_MS = 300;
 /** Pause after a change of the connection's settings or key before it is handed to the service. */
 const CREDENTIALS_WAIT_MS = 250;
+
+/** How long the client stays stopped before the status item says the editor service is not running. */
+const SERVICE_DOWN_MS = 3_000;
 /** Pause after a change of the editor's proxy settings before the service is started again with them. */
 const PROXY_WAIT_MS = 250;
 /** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
@@ -706,11 +710,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /**
+   * The editor service is down: its start failed, or it stayed stopped `SERVICE_DOWN_MS` (the client gave up starting
+   * it again). The status item says so.
+   */
+  let serviceDown = false;
+  let downTimer: ReturnType<typeof setTimeout> | null = null;
+  context.subscriptions.push({ dispose: () => downTimer && clearTimeout(downTimer) });
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
+    const view = serviceDown ? serviceDownView() : statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
     statusItem.text = refreshing
       ? refreshingText(view.text)
       : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
@@ -724,6 +735,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       refresh: 'piwi.refreshRun',
       retry: 'piwi.refresh',
       connect: 'piwi.connect',
+      restart: 'piwi.restartService',
       none: undefined,
     }[view.action];
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
@@ -1474,8 +1486,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
       if (e.newState === State.Running) void agentsChanged();
-      // A service that stopped, the client given up restarting it: the Failures view says so, with Restart.
-      if (e.newState === State.Stopped) void failuresView.read();
+      // A start that failed is down at once; a stop, once the client is still stopped: a restart, or the client's own
+      // after a crash, starts it again within that time.
+      if (downTimer) clearTimeout(downTimer);
+      downTimer = null;
+      const down = () => {
+        serviceDown = true;
+        render();
+        void failuresView.read();
+      };
+      if (e.newState === State.StartFailed) down();
+      else if (e.newState === State.Stopped) {
+        downTimer = setTimeout(() => {
+          downTimer = null;
+          if (lc.state === State.Stopped) down();
+        }, SERVICE_DOWN_MS);
+      } else if (serviceDown) {
+        serviceDown = false;
+        render();
+      }
       if (e.newState === State.Stopped && agents) {
         agents = null;
         runsMcpChanged.fire();

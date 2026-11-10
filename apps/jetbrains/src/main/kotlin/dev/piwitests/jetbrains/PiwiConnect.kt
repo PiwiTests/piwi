@@ -347,6 +347,7 @@ object PiwiConnectFlow {
 
     private fun <T> failed(project: Project, url: String?, e: Exception): T? {
         val reason = Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)
+        com.intellij.openapi.diagnostic.Logger.getInstance(PiwiConnectFlow::class.java).info("Piwi: Connect failed: $reason", e)
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)
         return null
     }

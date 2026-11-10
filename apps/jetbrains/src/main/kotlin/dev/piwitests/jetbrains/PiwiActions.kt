@@ -412,7 +412,7 @@ class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
                 if (url == null || token == null) {
                     return@executeOnPooledThread PiwiCommands.notify(
                         project,
-                        served?.message ?: "The Piwi editor service is not running: open a test file first.",
+                        served?.message ?: Glue.SERVICE_NOT_RUNNING,
                         NotificationType.WARNING,
                     )
                 }

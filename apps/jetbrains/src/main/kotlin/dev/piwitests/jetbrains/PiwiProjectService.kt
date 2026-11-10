@@ -932,6 +932,12 @@ class PiwiStartupActivity : ProjectActivity {
     }
 }
 
+/** The log of the plugin's requests to the editor service, in idea.log under `#dev.piwitests.jetbrains`. */
+private val REQUESTS_LOG = com.intellij.openapi.diagnostic.Logger.getInstance("#dev.piwitests.jetbrains")
+
+/** When a failed request was last logged as a warning: the failures that follow within a minute are logged at debug. */
+@Volatile private var lastRequestWarning = 0L
+
 /**
  * The answer of a service request, or null when it failed or took too long. A task with progress stops waiting at its
  * Cancel button.
@@ -950,8 +956,25 @@ fun <T> CompletableFuture<T>.awaitCancellably(timeoutMillis: Long): T? {
         try {
             return get(10, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            if (System.nanoTime() >= deadline) return null
-        } catch (_: Exception) {
+            if (System.nanoTime() >= deadline) {
+                REQUESTS_LOG.debug("A request to the Piwi editor service took longer than $timeoutMillis ms")
+                return null
+            }
+        } catch (_: java.util.concurrent.CancellationException) {
+            return null
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        } catch (e: Exception) {
+            // In idea.log with its cause, a warning at most once a minute: the daemon asks on every pass.
+            val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
+            val now = System.currentTimeMillis()
+            if (now - lastRequestWarning >= 60_000) {
+                lastRequestWarning = now
+                REQUESTS_LOG.warn("A request to the Piwi editor service failed: ${cause.javaClass.simpleName}: ${cause.message}", cause)
+            } else {
+                REQUESTS_LOG.debug("A request to the Piwi editor service failed", cause)
+            }
             return null
         }
     }

@@ -17,6 +17,8 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  STATUS_TOOLTIP_COMMANDS,
+  serviceDownView,
   heldStops,
   heldText,
   NOT_CONNECTED,
@@ -2089,5 +2091,16 @@ describe('the status item while a run holds a stop', () => {
     expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4/9 · 1 failing · yours');
     expect(heldText(live, null)).toBe(live);
     expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
+  });
+});
+
+describe('the status item while the editor service is not running', () => {
+  test('says so, starts it again on a click, and offers the log from its tooltip', () => {
+    const view = serviceDownView();
+    expect(view.text).toBe('$(warning) Piwi: not running');
+    expect(view.action).toBe('restart');
+    expect(view.tooltip).toContain('[Restart the editor service](command:piwi.restartService)');
+    expect(view.tooltip).toContain('[Open the log](command:piwi.openLog)');
+    for (const command of ['piwi.restartService', 'piwi.openLog']) expect(STATUS_TOOLTIP_COMMANDS).toContain(command);
   });
 });
