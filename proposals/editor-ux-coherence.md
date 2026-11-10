@@ -15,7 +15,7 @@ and debugged from one list of the project's folders, #1118; Rider's highlighting
 balloon of [RD3](#rd3) are unchecked, and the case is a `GlueTest`, a light fixture having no Rider base path),
 [Q18](#q18) (the run keys give way only to a paused debugger, Pause to a running one and Stop to any, superseding
 run-control.md's rule; Pause on the debugger's Pause key, and Resume's key held two seconds after an answer in the
-JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet) [Q4](#q4) (Settings search finds Piwi's page
+JetBrains IDEs too, #1117; the chords of [AC12](#ac12) are not moved yet), [Q4](#q4) (Settings search finds Piwi's page
 and actions: the release builds the searchable options index, and a contributor adds the words the labels lack, #1119),
 [Q6](#q6) (a project in safe mode says Piwi waits for its trust, and trusting it starts Piwi, #1119), [Q5](#q5) in part
 (Connect on the settings page applies nothing, Disconnect only when something is saved, worded certificate and 404

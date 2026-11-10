@@ -1829,6 +1829,15 @@ class GlueTest {
             "nothing answers there. Is the instance running, on that port?",
             Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
         )
+        // The JDK's connect timeout carries a ConnectException as its cause.
+        val timeout = java.net.http.HttpConnectTimeoutException("HTTP connect timed out")
+        timeout.initCause(java.net.ConnectException("HTTP connect timed out"))
+        assertEquals("no answer within 10 seconds", Glue.connectFailure(timeout, null, "https://piwi.corp"))
+        // A handshake that fails for another reason than the certificate gives its own message.
+        assertEquals(
+            "Remote host terminated the handshake",
+            Glue.connectFailure(javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake"), null, "https://piwi.corp"),
+        )
         assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
         assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
     }

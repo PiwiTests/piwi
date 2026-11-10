@@ -214,7 +214,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * Once the project is trusted, tell the listeners, so the status bar item, the tool window and the settings page
-     * stop waiting, and start the editor service for the open files.
+     * stop waiting, start the editor service for the open files, and offer the first-run notification.
      */
     fun watchTrust() {
         ApplicationManager.getApplication().messageBus.connect(this).subscribe(
@@ -223,7 +223,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 override fun onProjectTrusted(project: Project) {
                     if (project != this@PiwiProjectService.project) return
                     changed()
-                    ApplicationManager.getApplication().executeOnPooledThread { if (!gone.value(null)) restartServer() }
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        if (gone.value(null)) return@executeOnPooledThread
+                        restartServer()
+                        val found = playwright ?: return@executeOnPooledThread
+                        val addresses = readKnownAddresses()
+                        offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+                    }
                 }
             },
         )
