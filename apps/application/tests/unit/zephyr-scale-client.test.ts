@@ -293,6 +293,20 @@ describe('failures', () => {
     expect(err.message).toBe('Zephyr Scale did not answer within 120 seconds');
   });
 
+  test('a client given a shorter budget names that budget', async () => {
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error('aborted'), { name: 'TimeoutError' }));
+    const err = await ZephyrScaleClient.forRegion('us', { apiToken: TOKEN }, { timeoutMs: 10_000 })!
+      .whoAmI()
+      .then(
+        () => null,
+        (e: unknown) => e as ZephyrScaleError,
+      );
+    expect(err).toMatchObject({
+      status: ZEPHYR_TIMEOUT_STATUS,
+      message: 'Zephyr Scale did not answer within 10 seconds',
+    });
+  });
+
   test('a timeout while the body is read is the same 504, not a body that is not JSON', async () => {
     for (const name of ['TimeoutError', 'AbortError']) {
       const response = reply({ values: [] });

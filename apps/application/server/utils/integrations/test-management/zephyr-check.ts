@@ -5,7 +5,12 @@
 import { INTEGRATION_PROVIDERS } from '#shared/integrations/registry';
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { IntegrationHttpError } from '../http-error';
-import { ZEPHYR_TIMEOUT_STATUS, ZEPHYR_TOKEN_UNUSABLE, ZephyrScaleClient } from './zephyr-scale';
+import {
+  ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+  ZEPHYR_TIMEOUT_STATUS,
+  ZEPHYR_TOKEN_UNUSABLE,
+  ZephyrScaleClient,
+} from './zephyr-scale';
 import type { TestManagementCredentials } from './types';
 
 /** How many project keys the check reports back. */
@@ -48,7 +53,10 @@ function reached(err: unknown): boolean {
   return err instanceof IntegrationHttpError && err.status !== ZEPHYR_TIMEOUT_STATUS;
 }
 
-/** The check of one region with a token: sign in, then list the projects the token sees. */
+/**
+ * The check of one region with a token: sign in, then list the projects the token sees. The whole check, every page
+ * included, ends within {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}.
+ */
 export async function checkZephyrCredentials(
   regionId: string,
   credentials: TestManagementCredentials | null,
@@ -62,7 +70,12 @@ export async function checkZephyrCredentials(
     reportedUrl: null,
     cloudId: null,
   };
-  const client = credentials ? ZephyrScaleClient.forRegion(regionId, credentials) : null;
+  const client = credentials
+    ? ZephyrScaleClient.forRegion(regionId, credentials, {
+        timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+        signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
+      })
+    : null;
   if (!client) {
     // A token was given but cannot be sent: say so, or the form shows no sign-in line and lets the save through.
     return credentials?.apiToken ? { site, auth: { ok: false, error: ZEPHYR_TOKEN_UNUSABLE } } : { site };

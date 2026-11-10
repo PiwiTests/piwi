@@ -294,6 +294,81 @@ describe('regionCredentialsForCheck', () => {
   });
 });
 
+describe('the Check and Test budget', () => {
+  /** Every budget a signal was made with; each runs at a hundredth of its length, so 10 s takes 100 ms. */
+  const budgets: number[] = [];
+  const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+  beforeEach(() => {
+    budgets.length = 0;
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      budgets.push(ms);
+      return realTimeout(ms / 100);
+    });
+  });
+
+  /** A call that answers after `ms`, or fails with the signal's reason when it aborts first. */
+  const answerAfter = (ms: number, body: () => Response) => (_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((resolve, reject) => {
+      const signal = init!.signal!;
+      const timer = setTimeout(() => resolve(body()), ms);
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      });
+    });
+  const elapsed = async <T>(run: () => Promise<T>) => {
+    const started = performance.now();
+    const result = await run();
+    return { result, ms: performance.now() - started };
+  };
+
+  test('the check gives up on a host that never answers within the short budget', async () => {
+    fetchMock.mockImplementation(answerAfter(60_000, () => json({})));
+    const { result, ms } = await elapsed(() =>
+      CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken: TOKEN } }),
+    );
+    expect(result.site).toMatchObject({ ok: false, reachable: false, hint: expect.stringContaining('proxy') });
+    expect(result.site.error).toContain('within 10 seconds');
+    expect(budgets).not.toContain(120_000);
+    expect(ms).toBeLessThan(600);
+  });
+
+  test('the check’s budget covers every page of projects after the sign-in, not each page', async () => {
+    const page = () => json({ ...fixture('projects-page-1'), isLast: false, next: 'more', total: undefined });
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      sent.push({ url, token: null });
+      if (url.searchParams.get('maxResults') === '1') return Promise.resolve(json(fixture('projects-first')));
+      return answerAfter(30, page)(input, init);
+    });
+    const { result, ms } = await elapsed(() =>
+      CONNECTION_CHECKS['zephyr-scale'](db as never, { region: 'us', credentials: { apiToken: TOKEN } }),
+    );
+    expect(result.auth).toMatchObject({ ok: true });
+    expect(result.projects).toMatchObject({ ok: false, hint: expect.stringContaining('proxy') });
+    expect(sent.length).toBeLessThan(10);
+    expect(ms).toBeLessThan(600);
+  });
+
+  test('Test gives up within the short budget and records the failure', async () => {
+    const created = await zephyr();
+    fetchMock.mockImplementation(answerAfter(60_000, () => json({})));
+    const { result, ms } = await elapsed(() => testConnection(db as never, created.id));
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('within 10 seconds') });
+    expect((await getConnectionRow(db as never, created.id))!.status).toBe('failed');
+    expect(budgets).toEqual([10_000]);
+    expect(ms).toBeLessThan(600);
+  });
+
+  test('a client built for later work keeps the long budget', async () => {
+    const created = await zephyr();
+    const row = await getConnectionRow(db as never, created.id);
+    fetchMock.mockImplementation(async () => json(fixture('projects-first')));
+    await testManagementForRow(row!)!.whoAmI();
+    expect(budgets).toEqual([120_000]);
+  });
+});
+
 describe('testConnection', () => {
   test('a Zephyr connection signs in on its own host and records the success', async () => {
     const created = await zephyr();

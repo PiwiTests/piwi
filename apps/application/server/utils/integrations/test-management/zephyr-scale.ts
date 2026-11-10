@@ -18,6 +18,17 @@ import type {
 /** The budget of one request: well under the outbox's lease, so a stuck call ends before the lease does. */
 export const ZEPHYR_REQUEST_TIMEOUT_MS = 2 * 60_000;
 
+/** The budget of what an administrator waits on (the Check and Test buttons), the same as Jira's. */
+export const ZEPHYR_INTERACTIVE_TIMEOUT_MS = 10_000;
+
+/** How a client spends its time. */
+export interface ZephyrClientOptions {
+  /** The budget of each request; {@link ZEPHYR_REQUEST_TIMEOUT_MS} when left out. */
+  timeoutMs?: number;
+  /** Ends every request still running when it aborts: the budget of a whole check, across its pages. */
+  signal?: AbortSignal;
+}
+
 /** The most results Zephyr returns in one call. */
 const PAGE_SIZE = 1000;
 
@@ -148,17 +159,36 @@ export class ZephyrScaleClient implements TestManagementProvider {
     private readonly regionId: string,
     private readonly regionLabel: string,
     private readonly apiToken: string,
+    private readonly timeoutMs: number,
+    private readonly signal: AbortSignal | undefined,
   ) {}
 
   /**
    * A client on a region's host, or null for a region the registry does not list or a token that cannot be sent as
    * a header value.
    */
-  static forRegion(regionId: string, credentials: TestManagementCredentials): ZephyrScaleClient | null {
+  static forRegion(
+    regionId: string,
+    credentials: TestManagementCredentials,
+    options: ZephyrClientOptions = {},
+  ): ZephyrScaleClient | null {
     const region = REGIONS.find((r) => r.id === regionId);
     const token = credentials.apiToken.trim();
     if (!region || !TOKEN_CHARACTERS.test(token)) return null;
-    return new ZephyrScaleClient(region.baseUrl, region.id, region.label, token);
+    return new ZephyrScaleClient(
+      region.baseUrl,
+      region.id,
+      region.label,
+      token,
+      options.timeoutMs ?? ZEPHYR_REQUEST_TIMEOUT_MS,
+      options.signal,
+    );
+  }
+
+  /** The signal of one request: its own budget, and the caller's signal when there is one. */
+  private requestSignal(): AbortSignal {
+    const own = AbortSignal.timeout(this.timeoutMs);
+    return this.signal ? AbortSignal.any([own, this.signal]) : own;
   }
 
   private async get<T>(path: string, params: Record<string, string | number>): Promise<T> {
@@ -166,13 +196,13 @@ export class ZephyrScaleClient implements TestManagementProvider {
     const timedOut = () =>
       new ZephyrScaleError(
         ZEPHYR_TIMEOUT_STATUS,
-        `Zephyr Scale did not answer within ${ZEPHYR_REQUEST_TIMEOUT_MS / 1000} seconds`,
+        `Zephyr Scale did not answer within ${this.timeoutMs / 1000} seconds`,
       );
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}?${query}`, {
         headers: { Authorization: `Bearer ${this.apiToken}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(ZEPHYR_REQUEST_TIMEOUT_MS),
+        signal: this.requestSignal(),
       });
     } catch (err) {
       if (isTimeout(err)) throw timedOut();

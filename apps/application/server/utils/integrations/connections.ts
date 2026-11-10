@@ -29,7 +29,12 @@ import { JiraClient } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
 import type { IssueTracker, TrackerCredentials } from './types';
-import { ZEPHYR_TOKEN_UNUSABLE, ZephyrScaleClient } from './test-management/zephyr-scale';
+import {
+  ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+  ZEPHYR_TOKEN_UNUSABLE,
+  ZephyrScaleClient,
+  type ZephyrClientOptions,
+} from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
@@ -381,12 +386,15 @@ export async function createTestManagement(db: DbClient, connectionId: number): 
  * Build a test management client from an already-loaded connection row. It calls the host of the row's region from the
  * registry; the row's stored address is never used.
  */
-export function testManagementForRow(row: IntegrationConnection): TestManagementProvider | null {
+export function testManagementForRow(
+  row: IntegrationConnection,
+  options: ZephyrClientOptions = {},
+): TestManagementProvider | null {
   if (!isProviderOfKind(row.provider, 'test-management')) return null;
   const credentials = resolveTestManagementCredentials(row);
   if (!credentials) return null;
   const region = (row.config as Record<string, unknown> | null)?.region;
-  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials) : null;
+  return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, options) : null;
 }
 
 /** Every tracker connection with usable credentials — what drives the UI entry points. */
@@ -531,9 +539,12 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
   }
 }
 
-/** {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host. */
+/**
+ * {@link testConnection} for a test management connection: its client's `whoAmI` on the region's host, within
+ * {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}.
+ */
 async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
-  const client = testManagementForRow(row);
+  const client = testManagementForRow(row, { timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS });
   if (!client) {
     // A token the row holds but the client refuses to send is not the same as no token at all.
     return {
