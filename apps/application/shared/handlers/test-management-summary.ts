@@ -2,11 +2,12 @@ import { eq } from 'drizzle-orm';
 import { readTagsTruncated, type TagsTruncated } from '@piwitests/core/test-meta';
 import { projects, testCases, testRunsCases } from '../../server/database/schema';
 import { readTestManagementBinding } from '../../server/utils/integrations/test-management/binding';
-import { readCatalogInfo, readCatalogKeys } from '../../server/utils/integrations/test-management/catalog';
+import { readCatalogInfo, readCatalogKeysAmong } from '../../server/utils/integrations/test-management/catalog';
 import { resolveTagKeyPatterns } from '../integrations/tag-keys';
 import {
   defaultTestCaseKeyPattern,
   summarizeTestCaseMapping,
+  testCaseKeys,
   type MappingTest,
   type TestCaseMappingSummary,
 } from '../integrations/test-management-mapping';
@@ -82,8 +83,9 @@ export async function testManagementMappingSummary(
 
   const run = await lastCompleteRun(db, projectId);
   const tests = run ? await runTests(db, run.id) : [];
+  const carried = new Set(tests.flatMap((test) => testCaseKeys(test, pattern, binding.keySources)));
   const [keys, info] = await Promise.all([
-    readCatalogKeys(db as never, binding.connectionId, binding.providerProjectKey),
+    readCatalogKeysAmong(db as never, binding.connectionId, binding.providerProjectKey, [...carried]),
     readCatalogInfo(db as never, binding.connectionId, binding.providerProjectKey),
   ]);
   return {
@@ -96,7 +98,7 @@ export async function testManagementMappingSummary(
       tests,
       pattern,
       keySources: binding.keySources,
-      catalog: { keys, fetchedAt: info.fetchedAt },
+      catalog: { keys, fetchedAt: info.fetchedAt, size: info.size },
     }),
     tagsTruncated: readTagsTruncated((run?.metadata as Record<string, unknown> | null)?.tagsTruncated),
   };

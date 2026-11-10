@@ -70,11 +70,29 @@ export async function readCatalogCases(
   return rows;
 }
 
-/** Every key of a project's catalog, for the mapping summary. */
-export async function readCatalogKeys(db: DbClient, connectionId: number, projectKey: string): Promise<string[]> {
-  const rows = await db
-    .select({ key: testManagementCases.key })
-    .from(testManagementCases)
-    .where(and(eq(testManagementCases.connectionId, connectionId), eq(testManagementCases.projectKey, projectKey)));
-  return rows.map((row) => row.key);
+/** How many keys one statement looks up, well under both databases' parameter limits. */
+const KEY_LOOKUP_CHUNK = 500;
+
+/** Which of `keys` the project's catalog holds, for the mapping summary: it asks for these keys only, never every case. */
+export async function readCatalogKeysAmong(
+  db: DbClient,
+  connectionId: number,
+  projectKey: string,
+  keys: readonly string[],
+): Promise<string[]> {
+  const found: string[] = [];
+  for (let start = 0; start < keys.length; start += KEY_LOOKUP_CHUNK) {
+    const rows = await db
+      .select({ key: testManagementCases.key })
+      .from(testManagementCases)
+      .where(
+        and(
+          eq(testManagementCases.connectionId, connectionId),
+          eq(testManagementCases.projectKey, projectKey),
+          inArray(testManagementCases.key, keys.slice(start, start + KEY_LOOKUP_CHUNK)),
+        ),
+      );
+    for (const row of rows) found.push(row.key);
+  }
+  return found;
 }

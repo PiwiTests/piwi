@@ -45,8 +45,11 @@ export interface MappingTest {
 
 /** What the stored catalog holds: its keys, and when it was read (null while it never was). */
 export interface MappingCatalog {
+  /** The catalog's keys, or just those the tests carry when the catalog is too large to list. */
   keys: readonly string[];
   fetchedAt: Date | null;
+  /** How many cases the catalog holds, when `keys` lists only some of them; the length of `keys` when left out. */
+  size?: number;
 }
 
 export interface UnknownKey {
@@ -137,7 +140,7 @@ export function summarizeTestCaseMapping(input: {
     unknownKeys: unknown.slice(0, MAX_LISTED_UNKNOWN_KEYS),
     unknownKeyCount: unknown.length,
     catalogRead,
-    catalogSize: catalog.keys.length,
+    catalogSize: catalog.size ?? catalog.keys.length,
     catalogFetchedAt: catalog.fetchedAt,
   };
 }

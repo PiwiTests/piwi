@@ -306,4 +306,38 @@ describe('testManagementMappingSummary', () => {
     });
     expect((await readTestManagementBinding(db, 1)).providerProjectKey).toBe('SHOP');
   });
+
+  test('looks up the keys the run carries, in chunks, and reports the size of the whole catalog', async () => {
+    const carried = Array.from({ length: 1100 }, (_, i) => i + 1);
+    await db.delete(schema.testRunsCases);
+    await db.delete(schema.testCases);
+    await db.delete(schema.testManagementCases);
+    await db
+      .insert(schema.testCases)
+      .values(carried.map((n) => ({ id: n, projectId: 1, filePath: 'many.spec.ts', title: `test ${n}` })));
+    await db.insert(schema.testRuns).values({
+      id: 5,
+      projectId: 1,
+      status: 'passed',
+      branch: 'main',
+      environment: 'prod',
+      startTime: new Date(start + 5 * 60_000),
+      metadata: {},
+    });
+    await db
+      .insert(schema.testRunsCases)
+      .values(carried.map((n) => ({ testRunId: 5, testCaseId: n, status: 'passed', tags: [`SHOP-T${n}`] })));
+    // The tool knows every even key the run carries and 400 cases the run does not.
+    const known = [...carried.filter((n) => n % 2 === 0), ...Array.from({ length: 400 }, (_, i) => 2000 + i)];
+    for (let at = 0; at < known.length; at += 200) {
+      await db
+        .insert(schema.testManagementCases)
+        .values(known.slice(at, at + 200).map((n) => catalogRow(`SHOP-T${n}`)));
+    }
+    const report = await testManagementMappingSummary(db as never, 1);
+    expect(report).toMatchObject({ runId: 5, summary: { mappedTests: 1100, catalogRead: true, catalogSize: 950 } });
+    if (!report.bound) throw new Error('expected a binding');
+    expect(report.summary.unknownKeyCount).toBe(550);
+    expect(report.summary.unknownKeys.every((entry) => Number(entry.key.slice('SHOP-T'.length)) % 2 === 1)).toBe(true);
+  });
 });
