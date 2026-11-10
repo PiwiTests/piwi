@@ -22,23 +22,35 @@ pub(crate) fn run_ref(id: u32, attended: bool) -> String {
 
 /// Whether a person attends a `playwright test` run with these arguments: not
 /// one in UI mode (`--ui`), which runs the tests from its own window, nor one
-/// that repeats each test (`--repeat-each` above 1), which is left to run.
+/// that repeats each test (`--repeat-each` above 1), which is left to run,
+/// unless it ends at its first failure (`--max-failures=1` or `-x`).
 pub(crate) fn attended_args(args: &[String]) -> bool {
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
+    let mut repeats = false;
+    let mut stops_at_first_failure = false;
+    for (index, arg) in args.iter().enumerate() {
         if arg == "--ui" || arg.starts_with("--ui=") {
             return false;
         }
-        let repeat = if arg == "--repeat-each" {
-            args.next().map(String::as_str)
-        } else {
-            arg.strip_prefix("--repeat-each=")
-        };
-        if repeat.is_some_and(|n| n.parse::<u32>().map_or(true, |n| n > 1)) {
-            return false;
+        if option_value(args, index, "--repeat-each")
+            .is_some_and(|n| n.parse::<u32>().map_or(true, |n| n > 1))
+        {
+            repeats = true;
+        }
+        if arg == "-x" || option_value(args, index, "--max-failures") == Some("1") {
+            stops_at_first_failure = true;
         }
     }
-    true
+    !repeats || stops_at_first_failure
+}
+
+/// The value of `name` at `args[index]`, given as `name=value` or as
+/// `name value`; `None` for another argument.
+fn option_value<'a>(args: &'a [String], index: usize, name: &str) -> Option<&'a str> {
+    let arg = &args[index];
+    if arg == name {
+        return Some(args.get(index + 1).map_or("", String::as_str));
+    }
+    arg.strip_prefix(name)?.strip_prefix('=')
 }
 
 /// Whether `value` reads as a run channel's address as the bundled server
@@ -201,6 +213,9 @@ mod tests {
             args(&["tests/a.spec.ts:3", "--project=chromium", "--headed"]),
             args(&["--repeat-each=1", "--trace=on"]),
             args(&["--repeat-each", "1"]),
+            args(&["--repeat-each=20", "--retries=0", "--max-failures=1"]),
+            args(&["--max-failures", "1", "--repeat-each", "5"]),
+            args(&["-x", "--repeat-each=3"]),
         ] {
             assert!(attended_args(&attended), "{attended:?}");
         }
@@ -210,6 +225,9 @@ mod tests {
             args(&["--repeat-each=20", "--trace=on"]),
             args(&["--repeat-each", "3"]),
             args(&["--repeat-each=many"]),
+            args(&["--repeat-each=20", "--max-failures=2"]),
+            args(&["--repeat-each=20", "--max-failures"]),
+            args(&["--ui", "--repeat-each=20", "--max-failures=1"]),
         ] {
             assert!(!attended_args(&unattended), "{unattended:?}");
         }
