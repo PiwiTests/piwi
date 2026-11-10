@@ -152,6 +152,7 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  serviceDownView,
   heldStops,
   heldText,
   failingRuns,
@@ -706,11 +707,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /** The editor service stopped, the client given up starting it again: the status item says so. */
+  let serviceDown = false;
   /** The run sessions the run control keeps, once it exists. */
   let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
-    const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
+    const view = serviceDown ? serviceDownView() : statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
     statusItem.text = refreshing
       ? refreshingText(view.text)
       : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
@@ -724,6 +727,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       refresh: 'piwi.refreshRun',
       retry: 'piwi.refresh',
       connect: 'piwi.connect',
+      restart: 'piwi.restartService',
       none: undefined,
     }[view.action];
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
@@ -1474,6 +1478,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
       if (e.newState === State.Running) void agentsChanged();
+      serviceDown = e.newState === State.Stopped;
+      render();
       // A service that stopped, the client given up restarting it: the Failures view says so, with Restart.
       if (e.newState === State.Stopped) void failuresView.read();
       if (e.newState === State.Stopped && agents) {
