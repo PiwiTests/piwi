@@ -475,12 +475,14 @@ service's reference.
 
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
 `stopActions`): **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a stop the pause bar shows,
-**Mock a request** at any. The lens names them shorter (`lens`), since its row is shared with the line's own lenses.
-Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them (`piwi.pickAtStop`,
-`piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the `piwi.runCan…` context
-keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…** (`piwi.codeAtStop`); none has a key.
-Mock a request lists `piwi/stopRequests` in a quick pick, the latest first (`requestPicks`: the method and URL, which it
-filters on, then the status, type, size or `no size`, and when it finished).
+**Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
+Finish (`stopLensControls`): Run to cursor, End test and each action are in its hover, so the row fits beside the line's
+own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
+(`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
+`piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
+(`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests` in a quick pick, the latest first
+(`requestPicks`: the method and URL, which it filters on, then the status, type, size or `no size`, and when it
+finished).
 
 **The code a stop makes**, from here or Piwi Picker (`piwi/stopCode`, which the initialization options ask for:
 `stopCode: true`), is one workspace edit in its document, opened when it is not. It is made only in the version the

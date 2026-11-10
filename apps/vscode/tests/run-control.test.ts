@@ -71,6 +71,7 @@ import {
   stopActions,
   stopCodeNotice,
   stopControls,
+  stopLensControls,
   stopIcon,
   stopKey,
   stopPick,
@@ -1568,6 +1569,21 @@ describe('a failure held for the editor', () => {
       'Finish',
     ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
+  });
+
+  test('keeps the lens row above a stop to five entries: Run to cursor, End test and each action stay in its hover', () => {
+    expect(stopLensControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+      'Write code…',
+    ]);
+    expect(stopLensControls(shown(failed)).map((c) => c.title)).toEqual(['Resume', 'Write code…']);
+    expect(stopLensControls(shown(stopAt(spec, 5), ['view'])).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+    ]);
   });
 
   test('offers the code actions as any stop does', () => {

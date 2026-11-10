@@ -111,6 +111,7 @@ import {
   stopActions,
   stopCodeNotice,
   stopControls,
+  stopLensControls,
   stopIcon,
   stopKey,
   stopPick,
@@ -1160,7 +1161,7 @@ export function registerRunControl(
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),
-                ...[...stopControls(s), ...stopActions(s).map((a) => ({ ...a, title: a.lens }))].map(
+                ...stopLensControls(s).map(
                   (c) => new vscode.CodeLens(range, { title: c.title, command: c.command, arguments: target }),
                 ),
               ];
