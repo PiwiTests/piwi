@@ -229,6 +229,11 @@ describe('GET and PUT the binding', () => {
       '{nope} is not a variable',
     ],
     [
+      'a project key that is too long',
+      { connectionId: 1, providerProjectKey: `A${'B'.repeat(100)}` },
+      '100 characters',
+    ],
+    [
       'a status name that is too long',
       { connectionId: 1, providerProjectKey: 'WEB_APP', statuses: { pass: 'x'.repeat(256) } },
       '255 characters',

@@ -4,6 +4,7 @@
  * normalizes and clamps the payload again.
  */
 import {
+  MAX_PROJECT_KEY_LENGTH,
   MAX_STATUS_NAME_LENGTH,
   TEST_MANAGEMENT_PROJECT_KEY,
   validateRunNameTemplate,
@@ -96,7 +97,7 @@ export type StatusField = keyof TestManagementForm['statuses'];
 /** A project key typed into the picker as the tool and the server read it: trimmed and upper-cased. Null for anything else. */
 export function typedProjectKey(raw: string): string | null {
   const key = raw.trim().toUpperCase();
-  return TEST_MANAGEMENT_PROJECT_KEY.test(key) ? key : null;
+  return key.length <= MAX_PROJECT_KEY_LENGTH && TEST_MANAGEMENT_PROJECT_KEY.test(key) ? key : null;
 }
 
 /** A status name typed into a picker, as typed and trimmed. Null for an empty name or one the tool would not accept. */

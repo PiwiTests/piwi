@@ -19,6 +19,9 @@ export const MAX_RUN_NAME_TEMPLATE_LENGTH = 200;
 /** The longest provider project key, folder ID and version a binding stores. */
 const MAX_FIELD_LENGTH = 100;
 
+/** The longest project key a binding stores; a longer one is refused, not cut. */
+export const MAX_PROJECT_KEY_LENGTH = MAX_FIELD_LENGTH;
+
 /** A project key as the tool shows it (`SHOP`): the shape Jira gives a project key. */
 export const TEST_MANAGEMENT_PROJECT_KEY = /^[A-Z][A-Z0-9_]+$/;
 
@@ -234,6 +237,9 @@ export function testManagementBindingProblem(body: Record<string, unknown>): str
   const key = body.providerProjectKey;
   if (typeof key !== 'string' || !TEST_MANAGEMENT_PROJECT_KEY.test(key.trim())) {
     return 'Choose a project of the test management tool';
+  }
+  if (key.trim().length > MAX_PROJECT_KEY_LENGTH) {
+    return `A project key holds ${MAX_PROJECT_KEY_LENGTH} characters at most`;
   }
 
   const policy = record(body.runPolicy);

@@ -108,10 +108,16 @@ describe('a project key or status typed into a picker', () => {
 
   test('a text that is not a project key leaves the form as it was', () => {
     const form = bound();
-    for (const raw of ['', '  ', '1SHOP', 'SH OP', 'S', 'SHOP-1', 'SH/OP']) {
+    for (const raw of ['', '  ', '1SHOP', 'SH OP', 'S', 'SHOP-1', 'SH/OP', `S${'H'.repeat(100)}`]) {
       expect(setTypedProject(form, raw)).toBe(false);
       expect(form.providerProjectKey).toBe('SHOP');
     }
+  });
+
+  test('a project key of 100 characters is taken, one of 101 is not', () => {
+    const form = bound();
+    expect(setTypedProject(form, `S${'H'.repeat(99)}`)).toBe(true);
+    expect(setTypedProject(form, `S${'H'.repeat(100)}`)).toBe(false);
   });
 
   test('a status is kept as typed, trimmed, in the field it was typed into', () => {
