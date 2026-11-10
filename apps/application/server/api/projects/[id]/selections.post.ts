@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Selections'],
     summary: 'Create a test selection',
     description:
-      'Saves a named selection. The `definition` is declarative JSON (include/exclude predicate groups, pins, budget, limit); it is validated on write, and an unknown predicate is rejected rather than silently ignored. The key must be a lowercase slug and may not shadow a built-in.',
+      'Saves a named selection. The `definition` is declarative JSON (include/exclude predicate groups, pins, budget, limit); it is validated on write, and an unknown predicate is rejected rather than silently ignored. The key must be a lowercase slug, may not shadow a built-in, and may not be the name of a selections route (`overview`, `suggestions`, `analytics`, `preview`, `impact`, `reuse-forecast`).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'test-assets:write',
     requestBody: {
