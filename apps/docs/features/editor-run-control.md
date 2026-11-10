@@ -56,13 +56,13 @@ controls:
 
 `Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish  End test
 
-It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. In VS Code the line is a CodeLens, the marked line's hover holding the controls;
+It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. VS Code's CodeLens holds Resume, Step, Finish and **Write code…**, its hover all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, the same controls above the line and in the status bar">
+  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, and Resume, Step and Finish above the line and in the status bar">
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 

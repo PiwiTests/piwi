@@ -9,6 +9,7 @@ import type {
   FileEdit,
   LiveRun,
   RunEnded,
+  RunSession,
   RunStatusResult,
   SpecTest,
   StatusResult,
@@ -16,6 +17,8 @@ import type {
   TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
+  heldStops,
+  heldText,
   NOT_CONNECTED,
   notConnectedNotice,
   DOCUMENT_PATTERN,
@@ -2044,5 +2047,47 @@ describe('notConnectedNotice', () => {
     });
     expect(notConnectedNotice({ contexts: [ctx({})] })).toEqual({ message: NOT_CONNECTED, action: 'connect' });
     expect(notConnectedNotice(null)).toEqual({ message: NOT_CONNECTED, action: 'connect' });
+  });
+});
+
+describe('the status item while a run holds a stop', () => {
+  const stopped = (reason: 'breakpoint' | 'failure'): RunSession => ({
+    ref: 'ed-1',
+    root: '/w',
+    ended: false,
+    workers: [
+      {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        test: null,
+        takes: [],
+        watchable: false,
+        pausing: false,
+        waiting: null,
+        stop: {
+          reason,
+          title: 'Click',
+          uri: 'file:///w/a.spec.ts',
+          line: 3,
+          character: 2,
+          locator: null,
+          bar: true,
+          since: '2026-10-25T10:00:00.000Z',
+        },
+      },
+    ],
+  });
+
+  test('stops spinning: the pause icon at a stop, the error icon while every stop held is a failure', () => {
+    const live = '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours';
+    expect(heldStops([])).toBeNull();
+    expect(heldStops([stopped('breakpoint')])).toBe('stop');
+    expect(heldStops([stopped('failure')])).toBe('failure');
+    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
+    expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4/9 · 1 failing · yours');
+    expect(heldText(live, null)).toBe(live);
+    expect(heldText('$(error) Piwi: 2 failing', 'stop')).toBe('$(error) Piwi: 2 failing');
   });
 });

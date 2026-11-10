@@ -81,6 +81,7 @@ import {
   breakpointUpdates,
   canEnd,
   canShare,
+  accessibleLabel,
   controlItems,
   controlState,
   heardSession,
@@ -110,6 +111,7 @@ import {
   stopActions,
   stopCodeNotice,
   stopControls,
+  stopLensControls,
   stopIcon,
   stopKey,
   stopPick,
@@ -140,6 +142,8 @@ export interface RunControlOptions {
   breakpoints(): RunBreakpoint[];
   /** Ends the process of the run of `ref`; false when no task of this window runs it. */
   terminate(ref: string): boolean;
+  /** The sessions changed, once their controls are drawn: the status item says what they hold. */
+  changed?(): void;
 }
 
 /** How long a run started here is waited for, its edits kept, before its first worker connects. */
@@ -238,6 +242,15 @@ export function registerRunControl(
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'execution-point.svg'),
     gutterIconSize: 'contain',
   });
+  /** A held failure's line: the execution point in the dashboard's failure red. */
+  const failurePoint = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failurePointBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failurePointBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Full,
+    gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'failure-point.svg'),
+    gutterIconSize: 'contain',
+  });
   let panel: vscode.WebviewPanel | null = null;
   /**
    * The person acted on a stop: a code action, or a press, a key, text, the wheel or a pick on its page
@@ -308,7 +321,6 @@ export function registerRunControl(
         vscode.StatusBarAlignment.Left,
         49.99 - ITEM_ORDER.indexOf(key) * 0.001,
       );
-      found.name = 'Piwi run control';
       items.set(key, found);
     }
     return found;
@@ -328,6 +340,7 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runActive', state.active);
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
+    void vscode.commands.executeCommand('setContext', 'piwi.runFailed', state.failed);
     void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
     void vscode.commands.executeCommand('setContext', 'piwi.runPage', runPagesOf(sessions).length > 0);
     for (const a of STOP_ACTIONS) {
@@ -348,6 +361,8 @@ export function registerRunControl(
       const key = control.key ?? control.command ?? 'pausing';
       shown.add(key);
       const i = item(key);
+      i.name = control.name;
+      i.accessibilityInformation = { label: accessibleLabel(control) };
       i.text = control.text;
       if (control.markdown) {
         const tooltip = new vscode.MarkdownString(control.tooltip);
@@ -360,6 +375,7 @@ export function registerRunControl(
       i.show();
     }
     for (const [key, i] of items) if (!shown.has(key)) i.hide();
+    options.changed?.();
   };
 
   /** What a stop's lens and hover name: its run, its worker and the stop itself. */
@@ -396,10 +412,12 @@ export function registerRunControl(
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
       const here = all.filter((s) => s.stop.uri === uri && s.stop.line < editor.document.lineCount);
-      editor.setDecorations(
-        executionPoint,
-        here.map((s) => ({ range: editor.document.lineAt(s.stop.line).range, hoverMessage: hoverOf(s) })),
-      );
+      const marked = (failure: boolean) =>
+        here
+          .filter((s) => (s.stop.reason === 'failure') === failure)
+          .map((s) => ({ range: editor.document.lineAt(s.stop.line).range, hoverMessage: hoverOf(s) }));
+      editor.setDecorations(executionPoint, marked(false));
+      editor.setDecorations(failurePoint, marked(true));
       if (here.length)
         drawn.set(
           uri,
@@ -1115,6 +1133,7 @@ export function registerRunControl(
       });
     }),
     executionPoint,
+    failurePoint,
     lensesChanged,
     caretDecoration,
     { dispose: () => counts.dispose() },
@@ -1146,7 +1165,7 @@ export function registerRunControl(
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),
-                ...[...stopControls(s), ...stopActions(s).map((a) => ({ ...a, title: a.lens }))].map(
+                ...stopLensControls(s).map(
                   (c) => new vscode.CodeLens(range, { title: c.title, command: c.command, arguments: target }),
                 ),
               ];

@@ -351,8 +351,10 @@ terminal` (`pausedText`), and it has no Stop, its process being the terminal's (
   worker `endChoice` gives, naming no stop); the `piwi.runCanEnd` context key holds in both cases; with no key. The
   status bar shows the call a Pause waits in beside Pause and Stop, with how long it has run, and End the test there.
 
-All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
-as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
+All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows as
+an information message. The commands show in the status bar beside the run's progress (`controlItems`), each item with
+its own name (`Piwi: Resume`) and a screen reader's label from its tooltip without the icon (`accessibleLabel`), no
+tooltip naming a key, and a held failure offering Resume without Step or Finish (`ControlState.failed`); and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
@@ -373,15 +375,16 @@ as a debugger's does, where the file shows already, else in the active group. Wi
 alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and another opens
 with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the right
 (`asideColumn`). It is drawn as the execution point: `media/execution-point.svg` in the gutter, and the line's
-background in `piwi.executionPointBackground` (the debugger's stack frame color by default), with a hover that holds the
-controls. A CodeLens above it reads `pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after
-`$(debug-pause)`, then Resume, Step, Run to cursor, Finish and, where `canEnd`, End test, each naming its worker and its
-stop; one whose stop went on says `the test went on.` (`targetStop`). The choice among several stops shows the same text
-after `$(debug-pause)`; the hover and the paused page's caption show it as plain text. A key or a palette command, for a
-control within `RESUMED_KEY_MS` of an answer and until another stop of that slot opens, acts on a stop of the answered
-slot or on none, whatever the caret or another worker's new stop say, so a key pressed again answers no other worker;
-else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks
-(`stopsFor`, `StopsShown.choose`).
+background in `piwi.executionPointBackground` (the debugger's stack frame color by default), a held failure's in red
+(`media/failure-point.svg`, `piwi.failurePointBackground`), with a hover that holds every control. A CodeLens above it
+reads `pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume,
+Step, Finish and **Write code…** (`stopLensControls`; Resume and Write code… at a failure), each naming its worker and
+its stop; one whose stop went on says `the test went on.` (`targetStop`). The choice among several stops shows the same
+text after `$(debug-pause)`; the hover and the paused page's caption show it as plain text. A key or a palette command,
+for a control within `RESUMED_KEY_MS` of an answer and until another stop of that slot opens, acts on a stop of the
+answered slot or on none, whatever the caret or another worker's new stop say, so a key pressed again answers no other
+worker; else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it
+asks (`stopsFor`, `StopsShown.choose`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -473,12 +476,14 @@ service's reference.
 
 **The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
 `stopActions`): **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a stop the pause bar shows,
-**Mock a request** at any. The lens names them shorter (`lens`), since its row is shared with the line's own lenses.
-Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them (`piwi.pickAtStop`,
-`piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the `piwi.runCan…` context
-keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…** (`piwi.codeAtStop`); none has a key.
-Mock a request lists `piwi/stopRequests` in a quick pick, the latest first (`requestPicks`: the method and URL, which it
-filters on, then the status, type, size or `no size`, and when it finished).
+**Mock a request** at any. The lens row above the stop offers them together as **Write code…**, after Resume, Step and
+Finish (`stopLensControls`): Run to cursor, End test and each action are in its hover, so the row fits beside the line's
+own lenses. Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them
+(`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the
+`piwi.runCan…` context keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…**
+(`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests` in a quick pick, the latest first
+(`requestPicks`: the method and URL, which it filters on, then the status, type, size or `no size`, and when it
+finished).
 
 **The code a stop makes**, from here or Piwi Picker (`piwi/stopCode`, which the initialization options ask for:
 `stopCode: true`), is one workspace edit in its document, opened when it is not. It is made only in the version the
@@ -499,7 +504,9 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 
 **A click** depends on the state:
 
-- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`);
+- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`); while
+  a run started here holds a stop, a run in progress shows the pause's icon, or the error's at a held failure, not the
+  spinner (`heldText`, the run control's `changed`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**;
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;

@@ -152,6 +152,8 @@ import {
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
+  heldStops,
+  heldText,
   failingRuns,
   failureRunArgs,
   runVerdict,
@@ -704,10 +706,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const uri = vscode.window.activeTextEditor?.document.uri;
     return uri?.scheme === 'file' ? uri.fsPath : null;
   };
+  /** The run sessions the run control keeps, once it exists. */
+  let runSessions: () => RunSession[] = () => [];
   const render = () => {
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
-    statusItem.text = refreshing ? refreshingText(view.text) : view.text;
+    statusItem.text = refreshing
+      ? refreshingText(view.text)
+      : heldText(view.text, view.ownLive ? heldStops(runSessions()) : null);
     const tooltip = new vscode.MarkdownString(view.tooltip);
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
@@ -986,8 +992,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       execution?.terminate();
       return !!execution;
     },
+    // Once the status is read: before, the item shows the service starting.
+    changed: () => {
+      if (status || runs) render();
+    },
   });
   context.subscriptions.push(runControl);
+  runSessions = () => runControl.sessions();
 
   /** The notices of `RunCommand.notice` already shown: each is shown once. */
   const noticesShown = new Set<string>();

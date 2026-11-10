@@ -24,6 +24,7 @@ import {
   canEnd,
   canShare,
   caretText,
+  accessibleLabel,
   controlItems,
   controlState,
   heardSession,
@@ -70,6 +71,7 @@ import {
   stopActions,
   stopCodeNotice,
   stopControls,
+  stopLensControls,
   stopIcon,
   stopKey,
   stopPick,
@@ -195,6 +197,7 @@ describe('what the controls offer', () => {
       holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
@@ -235,6 +238,7 @@ describe('what the controls offer', () => {
         holdable: false,
         watchable: false,
         waiting: null,
+        failed: false,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -255,6 +259,7 @@ describe('what the controls offer', () => {
       holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
@@ -272,6 +277,7 @@ describe('what the controls offer', () => {
     expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, slot: 0, waiting });
     expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
       {
+        name: 'Piwi: Pausing',
         text: '$(loading~spin) Pausing… 1 min 5 s',
         tooltip:
           "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
@@ -279,12 +285,13 @@ describe('what the controls offer', () => {
       },
       {
         key: 'give-up',
+        name: 'Piwi: End the test',
         text: '$(circle-slash)',
         tooltip:
           "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
         command: 'piwi.endTest',
       },
-      { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: 'piwi.stopRun' },
+      { name: 'Piwi: Stop', text: '$(debug-stop)', tooltip: 'Piwi: Stop the run', command: 'piwi.stopRun' },
     ]);
     const unknown = controlState(
       sessionsOf(
@@ -296,7 +303,7 @@ describe('what the controls offer', () => {
     expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
       "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
       "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
-      'Piwi: Stop the run (Shift+F5)',
+      'Piwi: Stop the run',
     ]);
     // Beside Pause for another worker, and in place of End at a stop that cannot end.
     const keys = (sessions: ReturnType<typeof sessionsOf>) =>
@@ -348,13 +355,50 @@ describe('what the controls offer', () => {
       holdable: false,
       watchable: false,
       waiting: null,
+      failed: false,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
-      ['piwi.resumeRun', 'Piwi: Resume (F5)'],
-      ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
-      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)'],
-      ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
+      ['piwi.resumeRun', 'Piwi: Resume'],
+      ['piwi.stepRun', 'Piwi: Step to the next call'],
+      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again'],
+      ['piwi.stopRun', 'Piwi: Stop the run'],
     ]);
+  });
+
+  test('names each item for a screen reader, without its icon, and a held failure goes on with Resume alone', () => {
+    const failure = { ...stopAt(spec, 5), reason: 'failure' as const, title: 'Failed: Timed out 5000ms' };
+    const held = controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: failure })])));
+    expect(held.failed).toBe(true);
+    expect(controlItems(held).map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Stop']);
+    const items = controlItems(
+      controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]))),
+    );
+    expect(items.map((i) => i.name)).toEqual(['Piwi: Resume', 'Piwi: Step', 'Piwi: Finish', 'Piwi: Stop']);
+    expect(items.map(accessibleLabel)).toEqual([
+      'Piwi: Resume',
+      'Piwi: Step to the next call',
+      'Piwi: Finish the test without stopping at a breakpoint again',
+      'Piwi: Stop the run',
+    ]);
+    expect(
+      accessibleLabel({
+        name: 'Piwi: Run progress',
+        text: '$(beaker) 3 of 9',
+        tooltip:
+          "Piwi: [run #78](command:piwi.openRunPage) ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+        markdown: true,
+        command: null,
+      }),
+    ).toBe('Piwi: run #78 ran 3 of 9 tests.');
+    // A plain tooltip holds the test's own words, read as they are.
+    expect(
+      accessibleLabel({
+        name: 'Piwi: Pausing',
+        text: '$(loading~spin) Pausing…',
+        tooltip: "Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns",
+        command: null,
+      }),
+    ).toBe("Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns");
   });
 
   test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {
@@ -485,12 +529,14 @@ describe('Share live', () => {
       progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
       tooltip: 'Piwi: the run ran 3 of 9 tests.',
       markdown: true,
       command: null,
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 4 of 10 · $(error) 1',
       tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
       markdown: true,
@@ -499,6 +545,7 @@ describe('Share live', () => {
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) 3 of 9',
       tooltip: "Piwi: the run ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
       markdown: true,
@@ -508,6 +555,7 @@ describe('Share live', () => {
     const named = { ...counted('ed-1', 3, 9), page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } };
     const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
     expect(progressItem(sessionsOf(named))).toEqual({
+      name: 'Piwi: Run progress',
       text: '$(beaker) #78 · 3 of 9',
       tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\n${link}`,
       markdown: true,
@@ -580,6 +628,7 @@ describe('Share live', () => {
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
     expect(liveItem(sessionsOf(live('ed-1')))).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast)',
       tooltip: 'Piwi: Share the run live on piwi.example.com, for a teammate to watch from its page',
       command: 'piwi.shareRunLive',
@@ -593,6 +642,7 @@ describe('Share live', () => {
     // A run whose sharing stopped though nobody asked is offered again, saying why it stopped.
     const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
     expect(liveItem(sessionsOf(live('ed-1', { stopped: lost })))).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast)',
       tooltip: `Piwi: ${lost} Share the run live on piwi.example.com, for a teammate to watch from its page.`,
       command: 'piwi.shareRunLive',
@@ -603,6 +653,7 @@ describe('Share live', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
     expect(liveItem(shared)).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast) Live · 2 views',
       tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
       command: 'piwi.stopSharingRun',
@@ -611,6 +662,7 @@ describe('Share live', () => {
     expect(
       liveItem(sessionsOf(live('ed-1', { shared: true, viewers: 2 }), live('ed-2', { shared: true, viewers: 1 }))),
     ).toEqual({
+      name: 'Piwi: Share live',
       text: '$(broadcast) Live · 3 views',
       tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
       command: 'piwi.stopSharingRun',
@@ -1528,6 +1580,21 @@ describe('a failure held for the editor', () => {
       'Finish',
     ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
+  });
+
+  test('keeps the lens row above a stop to five entries: Run to cursor, End test and each action stay in its hover', () => {
+    expect(stopLensControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+      'Write code…',
+    ]);
+    expect(stopLensControls(shown(failed)).map((c) => c.title)).toEqual(['Resume', 'Write code…']);
+    expect(stopLensControls(shown(stopAt(spec, 5), ['view'])).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Finish',
+    ]);
   });
 
   test('offers the code actions as any stop does', () => {
