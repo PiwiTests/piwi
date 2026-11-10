@@ -21,6 +21,11 @@ process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
 
 const state = vi.hoisted(() => ({ db: null, caller: null, routePermission: [] }) as RouteAccessState);
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
+// The form's whole budget, scaled down so a test can run it out in real time.
+vi.mock('../../server/utils/integrations/test-management/zephyr-scale', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ZEPHYR_INTERACTIVE_TIMEOUT_MS: 400,
+}));
 vi.mock('../../server/utils/auth', async () => (await import('./route-access')).authMock(state));
 vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
@@ -54,11 +59,20 @@ const sent: string[] = [];
 let unauthorized = false;
 /** The `Retry-After` of a 429 the stubbed Zephyr answers with, or null for no 429. */
 let rateLimited: string | null = null;
+/** Milliseconds each answer takes, and whether a request to `/folders` never answers until it is aborted. */
+let answerAfterMs = 0;
+let foldersHang = false;
 vi.stubGlobal(
   'fetch',
-  vi.fn(async (input: RequestInfo | URL) => {
+  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     sent.push(url.pathname + url.search);
+    if (answerAfterMs) await new Promise((resolve) => setTimeout(resolve, answerAfterMs));
+    if (foldersHang && url.pathname.endsWith('/folders')) {
+      const signal = init!.signal!;
+      if (signal.aborted) throw signal.reason;
+      await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+    }
     if (unauthorized) return json(fixture('error-unauthorized'), 401);
     if (rateLimited !== null) {
       return new Response('', { status: 429, headers: rateLimited ? { 'Retry-After': rateLimited } : {} });
@@ -155,6 +169,8 @@ beforeEach(async () => {
   sent.length = 0;
   unauthorized = false;
   rateLimited = null;
+  answerAfterMs = 0;
+  foldersHang = false;
   for (const name of Object.keys(headers)) delete headers[name];
   for (const id of [zephyrId, jiraId]) connectionPausedUntil(id, new Date(Date.now() + 1e10));
   testManagementOptionsCache.deleteWhere(() => true);
@@ -383,6 +399,18 @@ describe('GET options', () => {
       process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
       resetLimitersForTests();
     }
+  });
+
+  test('the whole read ends within the budget, not one budget per request, with a 502 that names it', async () => {
+    answerAfterMs = 150;
+    foldersHang = true;
+    const started = Date.now();
+    const refused = await refusal(
+      getOptions(at(10, undefined, { connectionId: String(zephyrId), projectKey: 'WEB_APP' })),
+    );
+    expect(Date.now() - started).toBeLessThan(600);
+    expect(refused).toMatchObject({ statusCode: 502, message: expect.stringContaining('did not answer within') });
+    expect(sent.map((path) => path.split('?')[0]!.split('/').pop())).toEqual(['projects', 'statuses', 'folders']);
   });
 
   test('refuses a bad connection, a Jira connection and a bad key, before any call', async () => {

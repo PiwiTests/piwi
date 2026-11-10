@@ -6,6 +6,7 @@ import {
   testManagementOptionsFailureCache,
 } from '../../../../utils/integrations/picker-cache';
 import { INTERACTIVE_MAX_WAIT_MS } from '../../../../utils/integrations/test-management/limiter';
+import { ZEPHYR_INTERACTIVE_TIMEOUT_MS } from '../../../../utils/integrations/test-management/zephyr-scale';
 import { folderOptions, type TestManagementPickerOptions } from '#shared/integrations/test-management-picker';
 import { TEST_MANAGEMENT_PROJECT_KEY } from '#shared/integrations/test-management-binding';
 
@@ -14,7 +15,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'List what the test management binding form offers',
     description:
-      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project, and a failed read for thirty seconds; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. A connection with more requests queued than can start within fifteen seconds answers 429 with `Retry-After` too. Never returns the token. Requires `project:manage` (Project admin on the project).",
+      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project, and a failed read for thirty seconds; the whole read, every request of it, ends within ten seconds with 502; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. A connection with more requests queued than can start within fifteen seconds answers 429 with `Retry-After` too. Never returns the token. Requires `project:manage` (Project admin on the project).",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'connectionId', in: 'query', required: true, schema: { type: 'integer' } },
@@ -40,6 +41,8 @@ export default eventHandler(async (event) => {
   }
 
   const { client } = await requireTestManagementClient(event, db, connectionId, {
+    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
     maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
   });
   const cacheKey = `${connectionId}:${projectKey ?? ''}`;
