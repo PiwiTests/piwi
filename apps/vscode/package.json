@@ -1118,6 +1118,16 @@
           "highContrast": "editor.stackFrameHighlightBackground",
           "highContrastLight": "editor.stackFrameHighlightBackground"
         }
+      },
+      {
+        "id": "piwi.failurePointBackground",
+        "description": "The background of the line a test Piwi started holds a failure at, in the dashboard's failure red.",
+        "defaults": {
+          "dark": "#f8514940",
+          "light": "#f8514933",
+          "highContrast": "#f8514966",
+          "highContrastLight": "#f8514940"
+        }
       }
     ],
     "mcpServerDefinitionProviders": [

@@ -239,6 +239,15 @@ export function registerRunControl(
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'execution-point.svg'),
     gutterIconSize: 'contain',
   });
+  /** A held failure's line: the execution point in the dashboard's failure red. */
+  const failurePoint = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failurePointBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failurePointBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Full,
+    gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'failure-point.svg'),
+    gutterIconSize: 'contain',
+  });
   let panel: vscode.WebviewPanel | null = null;
   /**
    * The person acted on a stop: a code action, or a press, a key, text, the wheel or a pick on its page
@@ -398,10 +407,12 @@ export function registerRunControl(
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
       const here = all.filter((s) => s.stop.uri === uri && s.stop.line < editor.document.lineCount);
-      editor.setDecorations(
-        executionPoint,
-        here.map((s) => ({ range: editor.document.lineAt(s.stop.line).range, hoverMessage: hoverOf(s) })),
-      );
+      const marked = (failure: boolean) =>
+        here
+          .filter((s) => (s.stop.reason === 'failure') === failure)
+          .map((s) => ({ range: editor.document.lineAt(s.stop.line).range, hoverMessage: hoverOf(s) }));
+      editor.setDecorations(executionPoint, marked(false));
+      editor.setDecorations(failurePoint, marked(true));
       if (here.length)
         drawn.set(
           uri,
@@ -1117,6 +1128,7 @@ export function registerRunControl(
       });
     }),
     executionPoint,
+    failurePoint,
     lensesChanged,
     caretDecoration,
     { dispose: () => counts.dispose() },
