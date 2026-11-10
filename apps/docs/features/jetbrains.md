@@ -51,8 +51,9 @@ The rest is native, and every action is under **Tools → Piwi**:
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
   icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
   item calls for: [the status bar](./editor-runs#the-status-bar).
-- **The editor's context menu** of a spec holds **Run the Test at the Caret**, **Verify the Test at the Caret ×3** and
-  **Run This Spec**.
+- **The editor's context menu** has one **Piwi** submenu, in the VS Code extension's order: on a spec, **Run the Test at
+  the Caret**, **Verify the Test at the Caret ×3** and **Run This Spec**, then **Run the Tests That Reach This File**,
+  **Record Here** and a recording's controls. There and in **Tools → Piwi**, an entry that does not apply is left out.
 - **[Recording](./editor-recording)** starts from **Record Here**, Alt+Enter or Alt+Insert, and **File → New → Record
   a New Test File…**; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**

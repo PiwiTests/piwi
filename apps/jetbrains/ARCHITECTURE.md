@@ -359,8 +359,10 @@ information as a weak warning.
 
 ### Running the test at the caret
 
-Three actions, under **Tools → Piwi** and in the editor's menu of a spec (`Glue.isSpecFile`) in a project with a
-Playwright config (`RunInSpecAction`):
+Three actions, under **Tools → Piwi** and in the **Piwi** submenu of the editor's menu on a spec (`Glue.isSpecFile`)
+in a project with a Playwright config (`RunInSpecAction`). The submenu, `Piwi.EditorPopup` (`PiwiEditorPopupGroup`),
+holds the VS Code extension's sections in its order (run, record, a recording's controls), and it and **Tools → Piwi**
+(`Piwi.Actions`, `compact`) leave out what does not apply; `PiwiPluginTest` holds both:
 
 - **Run the Test at the Caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
 - **Verify the Test at the Caret ×3** (`Piwi.VerifyTestAtCursor`);

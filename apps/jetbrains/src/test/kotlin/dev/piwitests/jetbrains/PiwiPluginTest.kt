@@ -42,6 +42,22 @@ class PiwiPluginTest : BasePlatformTestCase() {
         for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker", "Piwi.ToggleCoverageMarks", "Piwi.RerunFailing")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
+        // Tools → Piwi leaves out what does not apply, and the editor's context menu has one Piwi submenu, in the VS Code
+        // extension's order: run, record, a recording's controls.
+        val actions = ActionManager.getInstance()
+        assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
+        val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
+        assertEquals(
+            listOf(
+                "Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
+                "Piwi.RecordHere", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
+            ),
+            popup.childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) },
+        )
+        val editorMenu = actions.getAction("EditorPopupMenu") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        val piwiInEditorMenu = editorMenu.childActionsOrStubs.map { actions.getId(it) }.filter { it?.startsWith("Piwi.") == true }
+        assertEquals(listOf("Piwi.EditorPopup"), piwiInEditorMenu)
         // The default keymap, which every bundled keymap descends from, binds the actions used while typing.
         val keymap = com.intellij.openapi.keymap.KeymapManager.getInstance().getKeymap(com.intellij.openapi.keymap.KeymapManager.DEFAULT_IDEA_KEYMAP)!!
         fun strokes(id: String) = keymap.getShortcuts(id).filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>().map { it.firstKeyStroke }
@@ -64,6 +80,26 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
+    fun testTheEditorsPiwiSubmenuShowsNothingAtRestOnAFileOfNoTests() {
+        myFixture.configureByText("notes.md", "# Notes")
+        val actions = ActionManager.getInstance()
+        val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.ActionGroup
+        val context = com.intellij.openapi.actionSystem.impl.SimpleDataContext.builder()
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT, project)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.EDITOR, myFixture.editor)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.VIRTUAL_FILE, myFixture.file.virtualFile)
+            .add(com.intellij.openapi.actionSystem.CommonDataKeys.PSI_FILE, myFixture.file)
+            .build()
+        // Each entry as the editor's context menu updates it, no run, no recording and no instance: none shows, so the
+        // compact submenu, which hides when empty, is not drawn.
+        val shown = popup.getChildren(null).filter { it !is com.intellij.openapi.actionSystem.Separator }.filter { action ->
+            val event = com.intellij.openapi.actionSystem.AnActionEvent.createFromDataContext("EditorPopup", null, context)
+            action.update(event)
+            event.presentation.isEnabledAndVisible
+        }
+        assertEquals(emptyList<String>(), shown.map { actions.getId(it) })
+    }
+
     fun testTheServiceGetsTheIdesProxy() {
         val selector = object : java.net.ProxySelector() {
             override fun select(uri: java.net.URI): List<java.net.Proxy> =

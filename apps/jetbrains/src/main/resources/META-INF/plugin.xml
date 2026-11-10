@@ -86,7 +86,7 @@
       while they apply (below).
     -->
     <actions>
-        <group id="Piwi.Actions" text="Piwi" popup="true">
+        <group id="Piwi.Actions" text="Piwi" popup="true" compact="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
                     icon="AllIcons.General.User"
@@ -98,25 +98,18 @@
                     description="Fetch the indexes and the latest run again"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             </action>
             <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
                     text="Run the Test at the Caret" icon="AllIcons.Actions.Execute"
                     description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Run the Test at the Caret"/>
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
             </action>
             <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                     text="Verify the Test at the Caret ×3"
                     description="Run the test whose test(…) call holds the caret 3 times without retries, headless, and say how many runs passed">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Verify the Test at the Caret ×3"/>
             </action>
             <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Run This Spec"/>
             </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
@@ -155,8 +148,6 @@
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
                     icon="AllIcons.Ide.Macro.Recording_1"
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Record Here"/>
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
@@ -167,22 +158,16 @@
             <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop Recording"
                     icon="AllIcons.Actions.Suspend"
                     description="Close the recording's browser; the recorded lines stay, one undo away">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Stop Recording"/>
                 <!-- Record Here's chord: the two never apply to the same file at once. -->
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
             </action>
             <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause Recording"
                     icon="AllIcons.Actions.Pause"
                     description="Stop writing what is done in the browser until Resume">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Pause Recording"/>
             </action>
             <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume Recording"
                     icon="AllIcons.Actions.Resume"
                     description="Write what is done in the browser again, over the recorded lines">
-                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-                <override-text place="EditorPopup" text="Piwi: Resume Recording"/>
             </action>
             <separator/>
             <!--
@@ -250,6 +235,23 @@
             <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
                     icon="AllIcons.General.Settings"
                     description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
+        </group>
+        <!--
+          Piwi's entries in the editor's context menu: one Piwi submenu, the same sections in the same order as the VS
+          Code extension's (run, record, a recording's controls), each entry shown only where it applies.
+        -->
+        <group id="Piwi.EditorPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <reference ref="Piwi.RunTestAtCursor"/>
+            <reference ref="Piwi.VerifyTestAtCursor"/>
+            <reference ref="Piwi.RunSpec"/>
+            <reference ref="Piwi.RunTestsForFile"/>
+            <separator/>
+            <reference ref="Piwi.RecordHere"/>
+            <separator/>
+            <reference ref="Piwi.StopRecording"/>
+            <reference ref="Piwi.PauseRecording"/>
+            <reference ref="Piwi.ResumeRecording"/>
         </group>
         <action id="Piwi.RecordHereGenerate" class="dev.piwitests.jetbrains.RecordHereGenerateAction" text="Piwi: Record Here…"
                 icon="AllIcons.Ide.Macro.Recording_1"

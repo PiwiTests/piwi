@@ -15,17 +15,18 @@ second of its end.
 - The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
   IDE) run the tests they name when clicked; those of a server file record its
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
-- **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose
-  `test(…)` call holds the cursor, and **Piwi: Run this spec** the spec's tests Piwi knows; both in the editor's
-  context menu of a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code, **Run**
-  in the hover of a test's line runs that test, and so does [the Testing view](#the-testing-view-vs-code). A test the instance does not know yet, such as one you just
+- **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
+  call holds the cursor, and **Piwi: Run this spec** the spec's tests Piwi knows; both in the **Piwi** submenu of the
+  editor's context menu on a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code,
+  **Run** in the hover of a test's line runs that test, and so does [the Testing view](#the-testing-view-vs-code). A
+  test the instance does not know yet, such as one you just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
   (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance. Both save the spec first.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times, without
   retries and without the breakpoints (`--repeat-each=3 --retries=0`), and says how many of the runs passed:
   [When your run ends](#when-your-run-ends).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
-  [code reach](/features/code-reach); also in the editor's context menu.
+  [code reach](/features/code-reach); also in the **Piwi** submenu of the editor's context menu, on the files Piwi reads.
 - **Piwi: Run selection…** runs a saved [selection](/features/test-selection).
 
 The command, `npx playwright test` with the arguments `piwi run` would pass, runs from the Playwright config's
