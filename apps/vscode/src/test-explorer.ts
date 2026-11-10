@@ -23,6 +23,7 @@ import {
   liveRunName,
   resultsKey,
   resultsRunName,
+  testItemExtras,
   testOutcome,
   testRunsOf,
   testTree,
@@ -319,6 +320,9 @@ export class TestExplorer implements vscode.Disposable {
       }
       item.label = node.label;
       item.sortText = node.sortText;
+      const extras = testItemExtras(node.test);
+      item.description = extras.description;
+      item.tags = extras.tags.map((tag) => new vscode.TestTag(tag));
       // To the end of the call's last line, so the cursor anywhere in the test is in it.
       item.range = node.range ? new vscode.Range(node.range.start, 0, node.range.end, 10_000) : undefined;
       if (node.test) {

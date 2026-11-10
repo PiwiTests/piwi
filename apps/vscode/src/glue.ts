@@ -1539,6 +1539,20 @@ export type TestOutcome =
   | { state: 'failed'; message: string; line: number | null };
 
 /**
+ * The Testing view's tag of a flaky test, by which the view's filter finds it: `@piwi:flaky`, the test controller's id
+ * (`piwi`) before the tag's.
+ */
+export const FLAKY_TAG = 'flaky';
+
+/**
+ * What the Testing view adds to a test's item, which its gutter and its results do not say: `flaky` beside the title
+ * and the flaky tag, for a test the view shows as passed (`testOutcome`).
+ */
+export function testItemExtras(test: TreeTest | null): { description: string | undefined; tags: string[] } {
+  return test?.status === 'flaky' ? { description: 'flaky', tags: [FLAKY_TAG] } : { description: undefined, tags: [] };
+}
+
+/**
  * A test's latest result as the Testing view shows it: a pass for a flaky test too, a failure with why and where it
  * failed; null for a test with no result Piwi knows.
  */

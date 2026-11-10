@@ -683,8 +683,11 @@ a test no run gave a result for passes when every command exited with 0, and is 
 for are skipped.
 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
-tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The API
-`activate` returns gives what the view shows (`testExplorer`).
+tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
+has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and
+carries the `flaky` tag (`testItemExtras`, `@piwi:flaky` in the view's filter), and its line ends with *flaky*
+(`flakyMark`). With the view off, a test with no recent result (`unknown`) has its own gutter icon, a dashed ring. The
+API `activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect
 

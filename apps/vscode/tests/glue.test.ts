@@ -70,6 +70,7 @@ import {
   liveRunName,
   resultsKey,
   resultsRunName,
+  testItemExtras,
   testOutcome,
   testRunsOf,
   testTree,
@@ -79,6 +80,7 @@ import {
   type RecordedBlock,
   type TextChange,
   type TextSpan,
+  type TreeTest,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -1862,6 +1864,27 @@ describe('the Testing view', () => {
       ['config', 'shop', 'config\x1f/w'],
       ['config', 'e2e', 'config\x1f/w/e2e'],
     ]);
+  });
+
+  test('says flaky beside a flaky test, which the view shows as passed, and tags it so its filter finds it', () => {
+    const test = (status: TreeTest['status']): TreeTest => ({
+      title: 'pays',
+      suite: [],
+      line: 4,
+      endLine: 9,
+      location: 'checkout.spec.ts:5',
+      testCaseId: 7,
+      status,
+      failure: null,
+      url: null,
+      root: '/w',
+      uri: 'file:///w/checkout.spec.ts',
+    });
+    expect(testItemExtras(test('flaky'))).toEqual({ description: 'flaky', tags: ['flaky'] });
+    for (const status of ['passed', 'failed', 'skipped', 'running', 'unknown', null] as const) {
+      expect(testItemExtras(test(status)), String(status)).toEqual({ description: undefined, tags: [] });
+    }
+    expect(testItemExtras(null)).toEqual({ description: undefined, tags: [] });
   });
 
   test('shows a flaky test as passed, a failure with why and where, and nothing without a result', () => {

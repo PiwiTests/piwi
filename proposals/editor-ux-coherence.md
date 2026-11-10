@@ -6,15 +6,18 @@ uses it in Rider, and the VS Code extension (`apps/vscode/`), both thin clients 
 their seams to the dashboard, the desktop app and Piwi Picker, against one aim: a developer who moves between Piwi's
 tools meets one Piwi.
 
-**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built: [Q3](#q3) (Tools → Piwi compact, and one
-Piwi submenu in both editors' context menus, in one order), [Q24](#q24) (one name per worker, #1213), with an unproven
-desktop app told apart from an unreachable one in both status items (#1213), and every command, setting and action id of
-both editors registered in D25 and held to the manifests (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
-The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0
-(`0e27d76f`), every line reference moved to that commit: no finding was fixed then; the live-run study's work built part
-of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and local progress add [LR18](#lr18) and
-new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four items still open. It cites and does not
-restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built: [Q1](#q1) (each Code Vision entry of a
+line drawn by a provider of its own, in a group named Piwi, #1115; its `CodeVisionTestCase` on the editor fixture is not
+written yet), [Q2](#q2) in VS Code (a flaky test said so while the Testing view owns the gutter, and a test with no
+recent result marked, #1116; Q2's JetBrains flaky icon waits for [M5](#m5)'s palette), [Q3](#q3) (Tools → Piwi compact,
+and one Piwi submenu in both editors' context menus, in one order), and [Q24](#q24) (one name per worker, #1213), with
+an unproven desktop app told apart from an unreachable one in both status items (#1213), and every command, setting and
+action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
+2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
+the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
+local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122 is closed with three of its four
+items still open. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
 [live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,

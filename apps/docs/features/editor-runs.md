@@ -44,7 +44,10 @@ VS Code's Testing view lists Piwi's tests: the specs your instance knows, as the
 folders and `test.describe` blocks, each test with its latest result, and for a failure why and where it failed
 (**Peek Error**). The results are published as a test run (`Piwi: run #120 on main`) when the latest run, its baseline
 or the runs laid over it change, and a run in progress is a test run of its own, each test shown as it begins and
-ends. The view's gutter shows each test's result in place of Piwi's icon; the line keeps Piwi's hover.
+ends. The view's gutter shows each test's result in place of Piwi's icon; the line keeps Piwi's hover. The view has no
+flaky result, so a flaky test shows as passed there: its item says **flaky** beside its title, the `flaky` tag
+(`@piwi:flaky` in the view's filter) lists them, and its line in the editor ends with *flaky*. With the view off, Piwi's
+gutter marks a test with no recent result with a dashed ring.
 
 <figure>
   <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">

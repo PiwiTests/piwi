@@ -138,7 +138,11 @@ latest result from `piwi/fileSummary`:
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
 then that run's result. Code Vision (`PiwiCodeVisionProvider.kt`) draws the summary's other lines and skips the test
-lines.
+lines. The platform keeps one entry per provider and line (`EditorCodeVisionContext`), so each entry of a line has its
+provider: `PiwiCodeVisionProvider` the first, `PiwiCodeVisionSlot2` to `PiwiCodeVisionSlot8` the next ones, each after
+the one before (`Glue.codeVisionSlot`, `Glue.CODE_VISION_SLOTS`). They share the group `piwi.summary`, which
+`PiwiCodeVisionSettings` names Piwi in the Code Vision settings. The IDE shows as many entries per line as those
+settings say (five by default, `visibleMetricsAboveDeclarationCount`); a line's entries past the eighth are not drawn.
 
 **One summary per file and text.** The annotator and Code Vision share one `piwi/fileSummary` per file and state of its
 text (`PiwiProjectService.fileSummary`, `Glue.SummaryCache`). It is asked again after a push from the service, or after
