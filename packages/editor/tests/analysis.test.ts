@@ -9,7 +9,6 @@ import {
   withoutComments,
   flakeLabLens,
   headedCommand,
-  stopsInFile,
   locatorChainOnLine,
   locatorCompletionSite,
   pauseAtValue,
@@ -545,26 +544,5 @@ describe('withoutComments', () => {
       ' '.repeat('/* await page.pause();'.length),
       '                      await page.pause();',
     ]);
-  });
-});
-
-describe('a breakpoint that can stop a run', () => {
-  test('is in a spec, a file that imports Playwright or Piwi, or one beside the specs; never in the application', () => {
-    const specsIn = new Set(['tests', 'e2e/checkout']);
-    const holdsSpec = (folder: string) => specsIn.has(folder);
-    expect(stopsInFile('tests/cart.spec.ts', null, holdsSpec)).toBe(true);
-    expect(stopsInFile('tests/pages/cart.page.ts', 'export class CartPage {}', holdsSpec)).toBe(true);
-    expect(stopsInFile('e2e/checkout/steps/pay.ts', '', holdsSpec)).toBe(true);
-    expect(stopsInFile('support/fixtures.ts', "import { test as base } from '@playwright/test';", holdsSpec)).toBe(
-      true,
-    );
-    expect(stopsInFile('support/pages.ts', "import type { Page } from '@playwright/test';", holdsSpec)).toBe(true);
-    expect(stopsInFile('support/piwi.ts', "export { test } from '@piwitests/reporter/fixtures';", holdsSpec)).toBe(
-      true,
-    );
-    expect(stopsInFile('support/piwi.ts', "export { test } from '@piwitests/reporter';", holdsSpec)).toBe(true);
-    // The application's own code, which runs in its own process.
-    expect(stopsInFile('src/server/cart.ts', "import express from 'express';", holdsSpec)).toBe(false);
-    expect(stopsInFile('app.ts', null, holdsSpec)).toBe(false);
   });
 });

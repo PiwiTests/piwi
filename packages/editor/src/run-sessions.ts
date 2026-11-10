@@ -332,9 +332,9 @@ export interface RunSessionsOptions {
    */
   onRegion?(stop: StopRef, region: { locator: string; snapshot: string } | { refused: string }): void;
   /**
-   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
-   * or for a spec that calls `page.pause()` (both headed). Its **Hold failures** is on from its start, until a person
-   * or an agent turns it off (`hold`).
+   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints or
+   * for a spec that calls `page.pause()` (both headed), or the person's start options hold its failures. Its **Hold
+   * failures** is on from its start, until a person or an agent turns it off (`hold`).
    */
   watched?(ref: string): boolean;
   /**

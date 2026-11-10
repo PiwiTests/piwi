@@ -139,7 +139,10 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                 row {
                     comboBox(Glue.HOLD_FAILURES_CHOICES, HoldFailuresRenderer())
                         .label("Hold failures, from each run's start:", LabelPosition.TOP)
-                        .bindItem({ local.runHoldFailures }, { local.runHoldFailures = it ?: "auto" })
+                        .bindItem(
+                            { local.runHoldFailures.takeIf { it in Glue.HOLD_FAILURES_CHOICES } ?: "auto" },
+                            { local.runHoldFailures = it ?: "auto" },
+                        )
                         .comment(
                             "Whether a failed test waits at its line for an answer in the run; the run's own Hold Failures " +
                                 "still turns it on or off while it runs. Kept for you only, in .idea/workspace.xml",
@@ -322,7 +325,7 @@ class PiwiSearchableOptions : SearchableOptionContributor() {
 
         val KEYWORDS = listOf(
             "Playwright", "dashboard", "test results", "flaky", "failures", "coverage", "reporter", "breakpoints",
-            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js",
+            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js", "headed", "hold failures",
         )
     }
 }

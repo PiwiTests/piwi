@@ -278,24 +278,6 @@ export function headedCommand(command: string, args: string[]): { command: strin
   return { command: `${command} --headed`, args: [...args, '--headed'] };
 }
 
-/** A file that imports Playwright's test runner, or Piwi's reporter (its fixtures): code a test runs. */
-const RUNS_PLAYWRIGHT =
-  /(?:from\s*|require\(\s*|import\(\s*)['"](?:@playwright\/test|@piwitests\/reporter)(?:\/[^'"]*)?['"]/;
-
-/**
- * Whether a breakpoint in the file at `relative` (to the Playwright config's folder) can stop a run: a spec, a file that
- * imports Playwright's test runner or Piwi's reporter (a fixture, a page object), or one in a folder below the config's
- * that holds a spec (`holdsSpec`, for each folder above the file, nearest first: a page object beside the specs). A
- * file of the application under test runs in its own process, where no breakpoint of the run stops.
- */
-export function stopsInFile(relative: string, text: string | null, holdsSpec: (folder: string) => boolean): boolean {
-  if (/(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/.test(relative)) return true;
-  if (text && RUNS_PLAYWRIGHT.test(text)) return true;
-  const parts = relative.split('/').slice(0, -1);
-  for (let depth = parts.length; depth > 0; depth--) if (holdsSpec(parts.slice(0, depth).join('/'))) return true;
-  return false;
-}
-
 /** The first `@piwitests/reporter` that pauses at the editor's breakpoints. */
 export const PAUSE_REPORTER_VERSION = '0.48.0';
 

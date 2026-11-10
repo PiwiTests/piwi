@@ -244,7 +244,7 @@ out.
 ### Hold failures
 
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
-started with breakpoints it can stop at, a debug run or a reproduction, off otherwise, unless an editor window chose
+started with breakpoints, a debug run or a reproduction, off otherwise, unless an editor window chose
 it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)); and any tool that follows the
 run turns it on or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a
 failure goes on at once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job,

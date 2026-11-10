@@ -69,7 +69,6 @@ import {
   functionSnippet,
   functionSuggestions,
   headedCommand,
-  stopsInFile,
   locatorCompletionSite,
   locatorRange,
   locatorSuggestions,
@@ -1744,7 +1743,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let agentPrefs: InitializationOptions['agents'] = undefined;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
-  /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
+  /**
+   * The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`) or whose start options
+   * hold their failures, by ref.
+   */
   const watchedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
   const runLines = new RunLines();
@@ -3240,24 +3242,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
-    // Only a breakpoint in code a test runs can stop the run: one in the application's code makes it neither headed nor
-    // watched.
-    const holdsSpec = (folder: string) => {
-      try {
-        return fs.readdirSync(path.join(context.root, folder)).some((name) => SPEC_FILE.test(name));
-      } catch {
-        return false;
-      }
-    };
-    const stops = files.some(({ file }) => {
-      const relative = relativeTo(context.root, file)?.replace(/\\/g, '/');
-      return !!relative && stopsInFile(relative, texts.get(file) ?? null, holdsSpec);
-    });
-    if (stops && command.ref) watchedRuns.add(command.ref);
+    if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
     return {
       ...command,
-      ...(stops ? headedCommand(command.command, command.args) : {}),
+      ...headedCommand(command.command, command.args),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
     };
@@ -3304,7 +3293,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    */
   const withStartOptions = (command: RunCommand, options: RunStartOptions | undefined): RunCommand => {
     const run = options?.headed === true ? { ...command, ...headedCommand(command.command, command.args) } : command;
-    if (run.ref && typeof options?.holdFailures === 'boolean') {
+    // Only a run with a run channel holds a failure.
+    if (run.ref && run.env?.[RUN_CHANNEL_ENV] && typeof options?.holdFailures === 'boolean') {
       if (options.holdFailures) watchedRuns.add(run.ref);
       else watchedRuns.delete(run.ref);
     }

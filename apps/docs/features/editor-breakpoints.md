@@ -18,9 +18,7 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 
 1. Set a line breakpoint on a line with a Playwright call, in a spec, a page object or a fixture:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
-   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do. A
-   breakpoint in the application's own code stops no run, since that code runs in a process of its own: it neither
-   makes the run headed nor holds its failures.
+   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
@@ -97,8 +95,8 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
   stops, and the run's output names it once.
 - **A run started from Piwi**, or [started outside Piwi](./terminal-runs). The editor passes the breakpoints under the
   Playwright config's folder to the run as `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
-  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and, when one of them can stop the run, adds
-  `--headed` to the command unless it already has `--headed`, `--ui` or `--debug`. Set `PIWI_PAUSE_AT` yourself to
+  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it
+  already has `--headed`, `--ui` or `--debug`. Set `PIWI_PAUSE_AT` yourself to
   [pause a run you start](/features/locator-healing#pause-at-a-breakpoint-local-runs).
 
 ## Limits

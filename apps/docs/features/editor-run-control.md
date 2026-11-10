@@ -78,7 +78,7 @@ has none.
 
 ## A headless run
 
-A run with a breakpoint in test code is headed, with a pause bar. Otherwise it follows your config, headless
+A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
 Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to cursor** from the editor
 waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**)

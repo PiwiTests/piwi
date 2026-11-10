@@ -1,7 +1,6 @@
 /**
  * How a run the editor starts begins, as the person chose for every run of the window (`RunStartOptions`): headed, and
- * with Hold failures on or off from its start, over what its breakpoints decided; and a breakpoint only in the
- * application's code, which no run stops at, making it neither headed nor held.
+ * with Hold failures on or off from its start, over what its breakpoints and a `page.pause()` decided.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,8 +18,10 @@ const uri = (file: string) => pathToFileURL(path.join(dir, file)).href;
 beforeAll(async () => {
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-start-options-')));
   writeRunWorkspace(dir);
-  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'src/cart.ts'), 'export function total() {\n  return 0;\n}\n');
+  fs.writeFileSync(
+    path.join(dir, 'tests/pause.spec.ts'),
+    "import { test } from '@playwright/test';\n\ntest('pauses', async ({ page }) => {\n  await page.pause();\n});\n",
+  );
   svc = await service(dir, true);
 });
 
@@ -73,13 +74,22 @@ describe('a run started as the person chose', () => {
     expect(await holdOf(letGo)).toEqual({ on: false, by: 'start' });
   });
 
-  test('takes a breakpoint in the application’s code as one no run stops at: neither headed nor held', async () => {
-    const run = await runOf({ breakpoints: [{ uri: uri('src/cart.ts'), line: 1 }] });
-    expect(run.env?.PIWI_PAUSE_AT).toBe('src/cart.ts:2');
-    expect(run.args).not.toContain('--headed');
-    expect(await holdOf(run)).toEqual({ on: false, by: 'start' });
-    // Beside the specs, a page object's breakpoint stops the run.
-    const page = await runOf({ breakpoints: [{ uri: uri('tests/pages/cart.page.ts'), line: 0 }] });
-    expect(page.args).toContain('--headed');
+  test('runs a repeated run headed when asked, holding no failure as it has no run channel', async () => {
+    const repeated = (await svc.client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/cart.spec.ts'),
+      testIds: [],
+      locations: ['tests/cart.spec.ts:3'],
+      repeat: 3,
+      headed: true,
+      holdFailures: true,
+    })) as RunCommand;
+    expect(repeated.args).toEqual(['tests/cart.spec.ts:3', '--repeat-each=3', '--retries=0', '--headed']);
+    expect(repeated.env?.PIWI_RUN_CHANNEL).toBeUndefined();
+  });
+
+  test('lets the failures of a spec that pauses go on when asked, headed still', async () => {
+    const pausing = await runOf({ locations: ['tests/pause.spec.ts:3'], holdFailures: false });
+    expect(pausing.args).toContain('--headed');
+    expect(await holdOf(pausing)).toEqual({ on: false, by: 'start' });
   });
 });
