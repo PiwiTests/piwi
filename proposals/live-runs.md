@@ -120,7 +120,13 @@ that ran from a missing one (`heardFrom`), and a pick on an image says "sent" on
 **Copy**. Left of P5: Piwi Runner links no run page (it has no hub to hear `run-page`), the desktop app's run end still
 leads to the run rather than its failure and its runs reach Piwi Picker without their command, the Runs window still
 words the desktop app's failures as the editor's, the desktop tray counts a run's output lines rather than the run's
-own progress, **Watch** and **Watch live** still name one view twice, and Stop sharing is still one click. The later phases are proposed. The bugs the analysis
+own progress, **Watch** and **Watch live** still name one view twice, and Stop sharing is still one click. From P6,
+D12's split: **Hold failures** is each run's own (`hold {on, by}` on the hub's session, `piwi/holdRun`, the hub's
+command `hold`, `run_follow`'s `hold`), on from the start of a run built to be watched, set from the editors, the Runs
+window, the desktop tray and by agents; the hub's `follow` holds nothing, so an open Runs window no longer holds every
+failure (RW19). The rest of P6 is proposed: presence and one driver, the start options, one input model, attention and
+the ambient state, the editors' unattended runs and the Runs window's run-level controls. The later phases are
+proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

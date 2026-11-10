@@ -6678,6 +6678,18 @@
   "runs_more": {
     "message": "Plus"
   },
+  "runs_holdFailures": {
+    "message": "Retenir les échecs"
+  },
+  "runs_holdFailuresOn": {
+    "message": "Un test en échec attend une réponse à sa ligne. Cliquez pour laisser les échecs continuer aussitôt."
+  },
+  "runs_holdFailuresOff": {
+    "message": "Un test en échec continue aussitôt. Cliquez pour qu’il attende une réponse à sa ligne."
+  },
+  "runs_holdByAgent": {
+    "message": "Réglé par un agent"
+  },
   "runs_codeActions": {
     "message": "Du code depuis cet arrêt"
   },

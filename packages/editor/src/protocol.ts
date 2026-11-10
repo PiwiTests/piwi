@@ -1577,6 +1577,21 @@ export interface RunSession {
    * absent before, for a run that reports to no instance, and for one whose reporter predates it.
    */
   page?: RunPage;
+  /**
+   * Whether a failure no pause bar shows waits at its line in this run (**Hold failures**), and who said so; absent for
+   * a run nobody attends, whose failures always go on at once.
+   */
+  hold?: RunHoldFailures;
+}
+
+/**
+ * A run's **Hold failures**: whether a failure no pause bar shows waits at its line for an answer (`on`), and who said
+ * so last: the run's own start (`start`: on for a run built to be watched, off otherwise), a person on a surface
+ * (`person`), or an agent (`agent`).
+ */
+export interface RunHoldFailures {
+  on: boolean;
+  by: 'start' | 'person' | 'agent';
 }
 
 /** A run's page on an instance: its number there (`#78`) and its address. */
@@ -1683,6 +1698,19 @@ export interface ShareRunParams {
 }
 
 export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+
+/**
+ * `piwi/holdRun`: **Hold failures** for the run of `ref`, as a person asks: on, a failure no pause bar shows waits at
+ * its line for an answer; off, it goes on at once, one held now included. The run keeps it whichever surface set it,
+ * the hub's `hold` and an agent's `run_follow` included. Answered with `RunControlResult`: refused for a run nobody
+ * attends.
+ */
+export interface HoldRunParams {
+  ref: string;
+  on: boolean;
+}
+
+export const HOLD_RUN_REQUEST = 'piwi/holdRun';
 
 /**
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of

@@ -7927,6 +7927,22 @@
     "message": "More",
     "description": "Runs window, the button that shows or hides Assert a region and Mock a request at a stop."
   },
+  "runs_holdFailures": {
+    "message": "Hold failures",
+    "description": "Runs window, the toggle of a run: whether a failed test waits at its line for an answer. Short."
+  },
+  "runs_holdFailuresOn": {
+    "message": "A failed test waits at its line for an answer. Click to let failures go on at once.",
+    "description": "Runs window, the tooltip of Hold failures while it is on."
+  },
+  "runs_holdFailuresOff": {
+    "message": "A failed test goes on at once. Click to have it wait at its line for an answer.",
+    "description": "Runs window, the tooltip of Hold failures while it is off."
+  },
+  "runs_holdByAgent": {
+    "message": "Set by an agent",
+    "description": "Runs window, beside Hold failures when an AI agent set it last."
+  },
   "runs_codeActions": {
     "message": "Code from this stop",
     "description": "Runs window, the name screen readers give the row of Pick, Record, Assert and More (Assert a region and Mock a request)."

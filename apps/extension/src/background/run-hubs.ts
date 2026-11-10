@@ -9,9 +9,9 @@
  * hub names a peer this side holds no token for (`peers`: a window opened since), and every `REFIND_MS` while a Runs
  * window is open. A hub whose connection was lost keeps its runs as last heard, which a window shows grayed, until it
  * answers again or is no longer named; the run shortcut and the popup's count leave them out. What each code written
- * at a stop came to goes to the listeners, with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
- * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
- * connection that opens while one is, and `on: false` as the last one closes.
+ * at a stop came to goes to the listeners, with the hub that said it. While a listener (a Runs window) is there, each
+ * connection says the runs are followed (`follow`): as the first window opens, on each connection that opens while one
+ * is, and `on: false` as the last one closes. It holds no failure: each run's **Hold failures** (`hold`) does.
  *
  * The paired desktop app is asked for the hub of the runs its shell starts, which its server is, beside the editor
  * (`desktopHubs`: `GET /api/desktop/live` with the app's token, once the app proved it holds it): its hub is connected
@@ -357,6 +357,10 @@ export class RunHubs {
         return request.on === undefined
           ? Promise.resolve(OFFLINE)
           : connection.command({ type: 'share', ref, on: request.on });
+      case 'hold':
+        return request.on === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'hold', ref, on: request.on });
       default: {
         // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
         if (since === null) return Promise.resolve(OFFLINE);

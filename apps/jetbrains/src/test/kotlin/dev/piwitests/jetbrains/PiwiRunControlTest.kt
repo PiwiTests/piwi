@@ -65,6 +65,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val picks = CopyOnWriteArrayList<PickAtParams>()
     private val binds = CopyOnWriteArrayList<StopBindParams>()
     private val shares = CopyOnWriteArrayList<ShareRunParams>()
+    private val holds = CopyOnWriteArrayList<HoldRunParams>()
     private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
     private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
@@ -88,6 +89,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 } else {
                     RunControlResult(true, if (params.on) "Sharing the run live on piwi.example.com." else "Stopped sharing the run.")
                 }
+            }
+
+            override fun holdRun(params: HoldRunParams): RunControlResult {
+                holds += params
+                return RunControlResult(true, if (params.on) "A failure no pause bar shows waits at its line in this run until someone answers it." else "A failure of this run no pause bar shows goes on at once.")
             }
 
             override fun pausedPage(params: PausedPageParams): PausedPageResult {

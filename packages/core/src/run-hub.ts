@@ -9,8 +9,9 @@
  * as it changes (`HubSessionMessage`), what each action that writes code at a stop came to, whichever surface
  * started it (`HubCodeMessage`: its sentence, never the code), and the other live hubs of the machine as they come and
  * go (`HubPeersMessage`: their addresses, never their tokens); `welcome` and the desktop app's live answer list what
- * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there
- * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
+ * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there (a Runs window
+ * is open), which holds nothing; `hold` turns a run's **Hold failures** on or off, whichever surface asks; `view` has
+ * it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
  * asks. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
@@ -56,14 +57,28 @@ export const MAX_HUB_PEERS = 64;
 
 /**
  * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
- * other live hubs of the machine as they come and go (`peers`), and shows a lane of a run while it runs (`lanes`: the
- * command `watch`, its frames `lane-frame`). A reader keeps those it knows; a hub that predates the list does none of
- * them.
+ * other live hubs of the machine as they come and go (`peers`), shows a lane of a run while it runs (`lanes`: the
+ * command `watch`, its frames `lane-frame`), and keeps **Hold failures** for each run (`hold`: the command `hold`, the
+ * session's `hold`). A reader keeps those it knows; a hub that predates the list does none of them.
  */
-export type HubFeature = 'peers' | 'lanes';
+export type HubFeature = 'peers' | 'lanes' | 'hold';
 
 /** The features of a hub of this version. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes'];
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes', 'hold'];
+
+/**
+ * Who set a run's **Hold failures** last: the run's own start (`start`: a run built to be watched, a debug run, a
+ * reproduction), a person on a surface (`person`), or an agent (`agent`).
+ */
+export type HubHoldBy = 'start' | 'person' | 'agent';
+
+/** Whether a failure no pause bar shows waits at its line in a run (`on`), and who said so last (`by`). */
+export interface HubHold {
+  on: boolean;
+  by: HubHoldBy;
+}
+
+const HOLD_BY: readonly HubHoldBy[] = ['start', 'person', 'agent'];
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -288,6 +303,12 @@ export interface HubSession {
    * absent before, for a run that reports to none, and from a service or a reporter that predates it.
    */
   page?: RunPage;
+  /**
+   * Whether a failure no pause bar shows waits at its line in this run (**Hold failures**), and who said so: absent
+   * for a run nobody attends, whose failures always go on at once, and from a hub without the `hold` feature, whose
+   * failures wait while a Runs window follows the runs.
+   */
+  hold?: HubHold;
 }
 
 /**
@@ -330,10 +351,15 @@ export type HubCommand =
   /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
   | { type: 'subscribe'; id: number }
   /**
-   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. While one connection
-   * follows them, a failure no pause bar shows is held for it; a connection that never says so, or closes, does not.
+   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. It holds no failure:
+   * a hub with the `hold` feature holds them by each run's **Hold failures** (`hold`), whoever watches.
    */
   | { type: 'follow'; id: number; on: boolean }
+  /**
+   * Turn the run's **Hold failures** on (`on`: a failure no pause bar shows waits at its line for an answer) or off
+   * (it goes on at once, one held now included), as a person asks on a surface. Refused for a run nobody attends.
+   */
+  | { type: 'hold'; id: number; ref: string; on: boolean }
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`, `end`. `since` names the stop the
@@ -688,6 +714,12 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   if (value.type === 'follow') {
     return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
   }
+  if (value.type === 'hold') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return typeof value.on === 'boolean'
+      ? { type: 'hold', id, ref: value.ref, on: value.on }
+      : invalid('hold needs on: true to hold the failures, false to let them go on.');
+  }
   if (value.type === 'share') {
     if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
     return typeof value.on === 'boolean'
@@ -965,6 +997,8 @@ function readSession(value: unknown): HubSession | null {
   if (progress) session.progress = progress;
   const page = value.page === undefined ? null : readRunPage(value.page);
   if (page) session.page = page;
+  const hold = value.hold === undefined ? null : readHold(value.hold);
+  if (hold) session.hold = hold;
   return session;
 }
 
@@ -998,6 +1032,13 @@ function readProgress(value: unknown): HubProgress | null {
     status: (PROGRESS_STATUSES.includes(status) ? status : 'other') as HubProgress['status'],
     failure: first,
   };
+}
+
+/** A run's **Hold failures**, field by field; null when it is not one. */
+function readHold(value: unknown): HubHold | null {
+  if (!isObject(value) || typeof value.on !== 'boolean') return null;
+  const by = HOLD_BY.find((known) => known === value.by);
+  return by ? { on: value.on, by } : null;
 }
 
 /** A run's live view on the team instance, field by field; null when it is not one. */

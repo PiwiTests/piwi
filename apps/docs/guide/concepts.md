@@ -233,6 +233,15 @@ counted from 1 in each shard; a worker Playwright starts again after a failure t
 to, at `page.pause()`, or at a failure held for a look. Each tool names it by why it stopped, in the same words
 (**Stopped at a breakpoint**, **Paused**, …).
 
+### Hold failures
+
+**Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
+started with breakpoints, a debug run or a reproduction, off otherwise, and any tool that follows the run turns it on
+or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a failure goes on at
+once, as without Piwi. A run nobody attends, such as a Flake Lab run, never holds one. Each tool shows it as the
+last one set it: the desktop app's switch turns it off as the app's last window closes only when no other tool set it
+since.
+
 ### Watch, Share live
 
 **Watch** shows a worker's page as its test runs or stands stopped. **Share live** lets a teammate watch a run on your

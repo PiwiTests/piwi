@@ -94,8 +94,8 @@ export function desktopRunHoldRefusal(run: DesktopShownRun, sessions: readonly H
   return unattended ? 'Nobody attends a run of this kind: it goes on past each failure.' : null;
 }
 
-/** Whether a run of the tray holds its failures: the person's choice (`chosen`), else its kind's, when it can. */
-export function desktopRunHolds(
+/** Whether the person has a run of the tray hold its failures: their choice (`chosen`), else its kind's, when it can. */
+export function desktopRunChosenHolds(
   run: DesktopShownRun,
   chosen: boolean | undefined,
   sessions: readonly HubSession[],
@@ -104,8 +104,28 @@ export function desktopRunHolds(
 }
 
 /**
+ * Whether a run of the tray holds its failures, as its switch shows it: the run's own Hold failures as its latest live
+ * step says it (whoever set it: this window, Piwi Picker or an agent), else the person's choice, when it can.
+ */
+export function desktopRunHolds(
+  run: DesktopShownRun,
+  chosen: boolean | undefined,
+  sessions: readonly HubSession[],
+): boolean {
+  if (desktopRunHoldRefusal(run, sessions)) return false;
+  const held = desktopHeldSessions(run, sessions);
+  const latest = held[held.length - 1];
+  return latest?.hold ? latest.hold.on : desktopRunChosenHolds(run, chosen, sessions);
+}
+
+/** The live hub sessions of a run of the tray that have a Hold failures, in the hub's order. */
+export function desktopHeldSessions(run: DesktopShownRun, sessions: readonly HubSession[]): HubSession[] {
+  return sessions.filter((session) => !!session.hold && run.hubRefs.includes(desktopRunOf(session.ref)));
+}
+
+/**
  * The runs the window shows live, so a failure no pause bar shows is held in them: the running ones whose Hold
- * failures is on (`holds`, each run's choice by its key), by each step's name as the step starts, before its workers
+ * failures the person has on (`holds`, each run's choice by its key), by each step's name as the step starts, before its workers
  * connect, so a failure right after they do waits too. Opening or closing the tray, or a run's part of it, changes
  * nothing.
  */
@@ -114,7 +134,7 @@ export function desktopShownRefs(
   holds: Readonly<Record<number, boolean>>,
   sessions: readonly HubSession[],
 ): string[] {
-  const held = runs.filter((run) => run.status === 'running' && desktopRunHolds(run, holds[run.key], sessions));
+  const held = runs.filter((run) => run.status === 'running' && desktopRunChosenHolds(run, holds[run.key], sessions));
   return [...new Set(held.flatMap((run) => run.hubRefs))].sort();
 }
 

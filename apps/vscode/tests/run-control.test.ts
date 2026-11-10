@@ -32,6 +32,9 @@ import {
   liveInstance,
   liveItem,
   progressItem,
+  holdTarget,
+  holdText,
+  runLabel,
   runName,
   runPageTarget,
   frameIsCurrent,
@@ -183,6 +186,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -222,6 +226,7 @@ describe('what the controls offer', () => {
         actions: [],
         shareable: false,
         liveShared: false,
+        holdable: false,
         watchable: false,
         waiting: null,
       });
@@ -241,6 +246,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -333,6 +339,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      holdable: false,
       watchable: false,
       waiting: null,
     });
@@ -389,6 +396,57 @@ describe('what the controls offer', () => {
     // Said of a run the editor started, it says nothing.
     const [own] = stopsOf(sessionsOf({ ...session('ed-1', stopped), runner: true }));
     expect(own).not.toHaveProperty('runner');
+  });
+});
+
+describe('Hold failures', () => {
+  const held = (ref: string, on: boolean, by: 'start' | 'person' | 'agent' = 'start'): RunSession => ({
+    ...session(ref, [worker(0, 'running')]),
+    hold: { on, by },
+    progress: { total: 9, done: 3, failed: 0, flaky: 0, skipped: 0, status: 'running', failure: null },
+  });
+
+  test('turns over the only live run’s, or the one a command names, and asks among several', () => {
+    expect(holdTarget(sessionsOf(), undefined)).toEqual({ none: 'no run of this window can hold its failures now.' });
+    expect(holdTarget(sessionsOf(held('ed-1', false)), undefined)).toEqual({ ref: 'ed-1', on: true });
+    expect(holdTarget(sessionsOf(held('ed-1', true)), undefined)).toEqual({ ref: 'ed-1', on: false });
+    const two = sessionsOf(held('ed-1', false), held('ed-2', true));
+    expect(holdTarget(two, undefined)).toEqual({ candidates: ['ed-1', 'ed-2'] });
+    expect(holdTarget(two, { ref: 'ed-2', on: true })).toEqual({ ref: 'ed-2', on: true });
+    expect(holdTarget(two, { ref: 'ed-2' })).toEqual({ ref: 'ed-2', on: false });
+    // A run nobody attends has none, and an ended run is not turned over.
+    expect(holdTarget(sessionsOf(session('lab-1', [worker(0, 'running')])), { ref: 'lab-1' })).toEqual({
+      none: 'that run holds no failure: nobody attends it.',
+    });
+    expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), undefined)).toMatchObject({
+      none: expect.any(String),
+    });
+    expect(holdTarget(sessionsOf({ ...held('ed-1', true), ended: true }), { ref: 'ed-1', on: false })).toEqual({
+      none: 'that run has ended.',
+    });
+    expect(controlState(sessionsOf(held('ed-1', false))).holdable).toBe(true);
+    expect(controlState(sessionsOf(session('lab-1', [worker(0, 'running')]))).holdable).toBe(false);
+  });
+
+  test('names each run in the tooltip once more than one has a Hold failures, page or none', () => {
+    const paged = { ...held('ed-1', true), page: { id: 42, url: 'https://piwi.example/runs/42' } };
+    const unpaged = { ...held('term-2', false), root: '/work/shop' };
+    const tooltip = progressItem(sessionsOf(paged, unpaged))!.tooltip;
+    expect(tooltip).toContain('Run #42: Hold failures on');
+    expect(tooltip).toContain('Run in shop (term-2): Hold failures off');
+    expect(runLabel(held('ed-3', false))).toBe('Run in shop (ed-3)');
+    expect(runLabel({ ...held('ed-3', false), root: null })).toBe('Run ed-3');
+  });
+
+  test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {
+    expect(holdText({ on: true, by: 'start' })).toBe('Hold failures on: a failed test waits at its line');
+    expect(holdText({ on: false, by: 'person' })).toBe('Hold failures off');
+    expect(holdText({ on: true, by: 'agent' })).toBe(
+      'Hold failures on: a failed test waits at its line, as an agent set it',
+    );
+    const item = progressItem(sessionsOf(held('ed-1', false)))!;
+    const arg = encodeURIComponent(JSON.stringify([{ ref: 'ed-1', on: true }]));
+    expect(item.tooltip).toContain(`Hold failures off · [Turn on](command:piwi.holdFailures?${arg})`);
   });
 });
 

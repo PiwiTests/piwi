@@ -844,9 +844,10 @@ starts again once the hub answers.
   not listed while the new run lives, which the window keys by the same hub and ref.
 - It sends `follow` with `on: true` while a Runs window is open (`RunHubs.listen`): as the first window's port
   connects, on each connection that opens meanwhile (a reconnection included), and `on: false` as the last one leaves.
-  Only that holds a failure no pause bar shows for the person watching: the worker, subscribed with no window open,
-  never does. The desktop app's hub holds none of a run nobody attends (its ref ends in `-unattended`: a Flake Lab, a
-  bisect, a lab job, a run repeating its tests or in UI mode), whoever follows it.
+  It holds nothing: a failure no pause bar shows waits only while its run's **Hold failures** is on, which the window's
+  toggle sends as `hold` (the toggle shows for a run whose hub sends its `hold`). A hub holds none of a run nobody
+  attends (the desktop app's: its ref ends in `-unattended`, a Flake Lab, a bisect, a lab job, a run repeating its
+  tests or in UI mode), whoever follows it.
 - Each `code` the hub sends (what a code written at a stop came to) is passed on to the windows with its hub
   (`RunHubs.listen`, `RunsCode`).
 - A window watches a stop's live view through the hub's `view` (`RunHubs.view`). The connection watches a stop while

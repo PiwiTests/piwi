@@ -23,4 +23,4 @@ export {
   type ToolDefinition,
   type ToolResult,
 } from './run-agent.js';
-export type { Notice, RunSession, StopCode } from './protocol.js';
+export type { Notice, RunHoldFailures, RunSession, StopCode } from './protocol.js';

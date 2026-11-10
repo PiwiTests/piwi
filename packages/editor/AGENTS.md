@@ -164,11 +164,12 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   view, or its lane at that stop.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else;
   following the runs (`follow`) grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
   "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
-- **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
-  or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), never in a run its host says
+- **A failure no pause bar shows is held only while its run's Hold failures is on.** On from the start of a run the
+  service built to be watched (`watched`), else as a person (`piwi/holdRun`, the hub's `hold`) or an agent
+  (`run_follow`'s `hold`) set it (`RunSessions.hold`); the hub's `follow` holds nothing. Never in a run its host says
   holds none (`holdsFailures`), and only for a worker whose `run-attach` lists `holds`, answered with `attached`
-  (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds a failure no bar shows only …", "holds no failure in
-  a run its host says …", "tells a worker that holds a failure …") and `tests/stop-actions.test.ts`.
+  (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds a failure no bar shows only while …", "holds no
+  failure in a run its host says …") and `tests/stop-actions.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
 - **The code from a stop goes to the client that writes it, placed where the stopped statement stands now, or is
   refused.** `RunLines` follows the file from the run's start (a rerun's own start) through every `didChange`, and
@@ -239,8 +240,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
 - **A run started in a terminal never waits for nobody, and its Stop stays the terminal's.** Its session (a
   `terminal-` ref the service never built, `RunSession.terminal`, an editor's test runner's run too with
-  `RunSession.runner`) holds a failure only while a Runs window follows the runs, and the clients offer no Stop for
-  it. Checked by `tests/run-sessions.test.ts` ("takes a run started in a terminal …").
+  `RunSession.runner`) holds a failure only once a person or an agent turns its Hold failures on, and the clients offer
+  no Stop for it. Checked by `tests/run-sessions.test.ts` ("takes a run started in a terminal …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
 - **Every way the service stops removes its discovery file**: `shutdown`, `exit` and the function `startServer`
   returns, and in `src/main.ts` the process's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`. Checked by

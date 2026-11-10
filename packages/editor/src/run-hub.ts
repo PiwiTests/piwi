@@ -10,9 +10,8 @@
  * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
  * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
  * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
- * is, a stop no pause bar shows waits for it. One that says a person follows the runs there (`follow`, a Runs window
- * open) holds a failure no pause bar shows too, until it says otherwise or closes: a connection that never says so,
- * such as Piwi Picker's with no Runs window, does not. The code actions it starts at a stop (Assert, Assert a region,
+ * is, a stop no pause bar shows waits for it. A failure no pause bar shows waits only in a run whose Hold failures is
+ * on, which any connection turns over (`hold`); `follow`, a Runs window open, holds nothing. The code actions it starts at a stop (Assert, Assert a region,
  * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
  * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
  * (`code`: that the code was sent to the client to write, with its warnings, or why it was refused once it started).
@@ -103,8 +102,7 @@ export interface RunHubOptions {
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
   /**
-   * A subscribed connection came or went, or one began or stopped following the runs: whether a stop no pause bar
-   * shows can be answered, or a failure is held, changed.
+   * A subscribed connection came or went: whether a stop no pause bar shows can be answered changed.
    */
   surfacesChanged(): void;
   /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
@@ -161,8 +159,6 @@ interface Connection {
   /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
   ws: Socket | null;
   subscribed: boolean;
-  /** A person follows the runs through it (`follow`): a Runs window is open. */
-  following: boolean;
   pending: number;
   /** It, as a viewer of the live views it watches. */
   viewer: Viewer;
@@ -283,12 +279,6 @@ export class RunHub {
   /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
   answersStops(): boolean {
     for (const connection of this.connections) if (connection.subscribed) return true;
-    return false;
-  }
-
-  /** Whether a person follows the runs through a subscribed connection (`follow`): a failure no bar shows waits then. */
-  follows(): boolean {
-    for (const connection of this.connections) if (connection.subscribed && connection.following) return true;
     return false;
   }
 
@@ -435,7 +425,6 @@ export class RunHub {
       transport,
       ws,
       subscribed: false,
-      following: false,
       pending: 0,
       viewer: {
         frame: (frame) => this.frame(connection, frame),
@@ -568,18 +557,11 @@ export class RunHub {
           if (first) this.options.surfacesChanged();
           return;
         }
-        case 'follow': {
-          const changed = connection.following !== command.on;
-          connection.following = command.on;
-          reply({
+        case 'follow':
+          return reply({
             ok: true,
-            message: command.on
-              ? 'A failure no pause bar shows waits for an answer while this connection follows the runs.'
-              : 'A failure no pause bar shows goes on unless another surface follows the runs.',
+            message: 'Each run’s Hold failures says whether a failure no pause bar shows waits at its line.',
           });
-          if (changed && connection.subscribed) this.options.surfacesChanged();
-          return;
-        }
         case 'runControl':
           if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
@@ -646,6 +628,8 @@ export class RunHub {
         }
         case 'share':
           return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'hold':
+          return reply(sessions.hold({ ref: command.ref, on: command.on }, 'person'));
         case 'watch': {
           const { ref, lane, on } = command;
           reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
@@ -706,6 +690,7 @@ export class RunHub {
         : {}),
       ...(session.progress ? { progress: session.progress } : {}),
       ...(session.page ? { page: session.page } : {}),
+      ...(session.hold ? { hold: { ...session.hold } } : {}),
     };
   }
 

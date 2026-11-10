@@ -215,7 +215,6 @@ export async function startDesktop(dir: string): Promise<Desktop> {
     notice: () => {},
     rootOf: (cwd) => (cwd === dir ? dir : null),
     writesCode: () => true,
-    followed: () => !!hub?.follows(),
     declines: (what) =>
       DESKTOP_DECLINES.has(what) ? `${what} ends in an editor, and the desktop app has none.` : null,
     host: 'the desktop app',

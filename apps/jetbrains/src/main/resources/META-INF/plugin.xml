@@ -236,6 +236,8 @@
             <action id="Piwi.StopSharingRun" class="dev.piwitests.jetbrains.StopSharingRunAction"
                     text="Stop Sharing the Run Live"
                     description="End the views of the run on the team instance: nothing more goes there"/>
+            <action id="Piwi.HoldFailures" class="dev.piwitests.jetbrains.HoldFailuresAction" text="Turn Hold Failures On or Off"
+                    description="Whether a failed test no pause bar shows waits at its line for an answer in the run, whichever surface set it"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>

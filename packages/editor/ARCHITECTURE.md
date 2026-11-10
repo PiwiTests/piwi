@@ -573,8 +573,8 @@ as one and offer no Stop, the terminal's to give. A run an editor's own test run
 Playwright run configuration) is one too, its process's `run-begin` or a worker's `run-attach` saying so (`runner`,
 kept as `RunSession.runner` and `HubSession.runner`): the clients name the runner in place of the terminal. It starts
 with the editor's breakpoints as the client last sent them (`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as
-lines of its code: the files as they stand when its first connection opens. A worker of it holds a failure only while
-a Runs window of Piwi Picker follows the runs as it attaches (`followed`): nobody may be there to answer it otherwise.
+lines of its code: the files as they stand when its first connection opens. Its Hold failures is off from its start:
+a failure stops a worker of it and goes on at once, until a person or an agent turns it on.
 It ends 5 s after its last worker and its process left, having no command.
 
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
@@ -691,18 +691,21 @@ when the client lacks `runControl`; when the last one goes, the stop goes on (`R
 **A held failure.** A worker's stop with the reason `failure` (a test failed while its run connection was open, its page
 held once the test ended) names the failing error's first lines (`RunStop.error`, in `piwi/runSessionChanged` and the
 hub's `session`), which a reporter that predates it leaves out. Every run the service builds has a run channel and both
-clients answer stops, so a plain Run would hold every failure. One no pause bar shows therefore waits only:
+clients answer stops, so a plain Run would hold every failure. One no pause bar shows therefore waits only while its
+run's **Hold failures** is on (`RunHoldFailures`, `RunSession.hold` and the hub's `HubSession.hold`, with who set it):
 
-- in a run started to be watched (`watched`: the service built it with the editor's breakpoints or for a
-  `page.pause()`, both headed);
-- while a Runs window follows the runs (`followed` in `src/server.ts`, `RunHub.follows`): a subscribed hub connection
-  said `follow` with `on: true`, and has not said `on: false` or closed. Piwi Picker's background, subscribed with no
-  Runs window open, and an extension that predates `follow` never count.
+- on from its start in a run started to be watched (`watched`: the service built it with the editor's breakpoints or
+  for a `page.pause()`, both headed), `by: 'start'`, off from its start otherwise;
+- as a person turns it on or off (`piwi/holdRun`, the hub's `hold`: an editor, Piwi Picker, the desktop app's window),
+  `by: 'person'`, or an agent does (`run_follow`'s `hold`), `by: 'agent'`, kept by ref (`RunSessions.hold`, the latest
+  `MAX_KEPT_RUNS`), a run whose first worker has not connected yet included.
 
-Otherwise it goes on at once, with no notice (no client hears of it), and when the last follower stops following
-(`RunSessions.surfacesChanged`). A worker holds a failure only for a service that says it shows one: its `run-attach`
-lists `holds`, answered with `attached` (`SHOWN_HOLDS`); a service that predates it says nothing, and the worker holds
-none.
+The hub's `follow` (a Runs window open) holds nothing. Otherwise a failure goes on at once, with no notice (no client
+hears of it); one held goes on when its run's Hold failures is turned off, and when no surface that answers stops is
+left (`RunSessions.surfacesChanged`). A worker holds a failure only for a service that says it shows one: its `run-attach`
+lists `holds`, answered with `attached` (`SHOWN_HOLDS`): a failure's only while its run's Hold failures is on, and
+again each time it turns over (`tellHolds`), so a worker whose run holds none does not stop at a failure. A service that
+predates it says nothing, and the worker holds none.
 
 A worker's `notice` (a control its reporter does not take) is a `piwi/notice` too.
 
@@ -741,7 +744,8 @@ not a boundary.
 **Commands.** Every later message is a command with an `id`, checked field by field (`parseHubCommand`):
 
 - `subscribe`;
-- `follow` (`on`): a person follows the runs there, a Runs window open
+- `follow` (`on`): a person follows the runs there, a Runs window open; it holds nothing;
+- `hold` (`ref`, `on`): the run's Hold failures, as a person sets it, the hub's feature `hold`
   ([Stops no pause bar shows](#stops-no-pause-bar-shows));
 - `runControl`: `pause`, and `step`, `resume` and `finish` with the `since` they need, as `piwi/runControl` takes them
   (Run to a line stays in the editor);
@@ -806,7 +810,7 @@ ping is dropped, as is one with 32 MB unread.
 **Closing.** A connection the hub closes (`closeWith`) is cut a second later (`CLOSE_GRACE_MS`) when the other side has
 not answered the close. A connection being closed holds none of the places counted above.
 
-A subscribed connection is a surface that answers stops, and one that said `follow` holds failures
+A subscribed connection is a surface that answers stops; a run's Hold failures says whether its failures wait
 ([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
 `follow` says a Runs window is open, `view` names one stop.
 
@@ -941,7 +945,7 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 
 - **The command.** The fields are checked one by one (`checkedDebugRun`: a line, a title and a project of plain
   text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
-  the one of the spec as saved whose describe blocks' titles and its own, joined by ` › `, are the title, else the
+  the one of the spec as saved whose describe blocks' titles and its own, joined by `›`, are the title, else the
   only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
   `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
   be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.

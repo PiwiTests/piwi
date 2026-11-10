@@ -41,6 +41,7 @@ import {
   RUN_CONTROL_REQUEST,
   SET_BREAKPOINTS_NOTIFICATION,
   SHARE_RUN_REQUEST,
+  HOLD_RUN_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
   STOP_BIND_REQUEST,
@@ -57,6 +58,7 @@ import {
   type RunSession,
   type SetBreakpointsParams,
   type ShareRunParams,
+  type HoldRunParams,
   type StopActionKind,
   type StopActionParams,
   type StopActionResult,
@@ -98,6 +100,9 @@ import {
   runStarted,
   runTargetArg,
   shareLiveWarning,
+  holdTarget,
+  holdText,
+  runLabel,
   sharedText,
   spelledSession,
   stopActions,
@@ -325,6 +330,7 @@ export function registerRunControl(
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
     void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runHoldable', state.holdable);
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
     const shown = new Set<string>();
@@ -341,7 +347,9 @@ export function registerRunControl(
       i.text = control.text;
       if (control.markdown) {
         const tooltip = new vscode.MarkdownString(control.tooltip);
-        tooltip.isTrusted = { enabledCommands: [RUN_COMMANDS.openPage, RUN_COMMANDS.watch] };
+        tooltip.isTrusted = {
+          enabledCommands: [RUN_COMMANDS.openPage, RUN_COMMANDS.watch, RUN_COMMANDS.holdFailures],
+        };
         i.tooltip = tooltip;
       } else i.tooltip = control.tooltip;
       i.command = control.command ?? undefined;
@@ -827,6 +835,37 @@ export function registerRunControl(
   };
 
   /**
+   * Turn a run's **Hold failures** over, or set it as the command names (`{ ref, on }`): the only live run that has
+   * one, else the one chosen. The service answers what it does now.
+   */
+  const holdFailures = async (arg: unknown) => {
+    const target = holdTarget(sessions, arg);
+    if ('none' in target) return say(target.none);
+    let chosen = 'ref' in target ? target : null;
+    if (!chosen && 'candidates' in target) {
+      const picked = await vscode.window.showQuickPick(
+        target.candidates.map((ref) => {
+          const session = sessions.get(ref);
+          return {
+            label: session ? runLabel(session) : ref,
+            description: session?.root ?? undefined,
+            detail: session?.hold ? holdText(session.hold) : undefined,
+            ref,
+            on: !session?.hold?.on,
+          };
+        }),
+        { placeHolder: 'Turn Hold failures over for which run?' },
+      );
+      chosen = picked ? { ref: picked.ref, on: picked.on } : null;
+    }
+    if (!chosen) return;
+    const answer = await lc
+      .sendRequest<RunControlResult>(HOLD_RUN_REQUEST, chosen satisfies HoldRunParams)
+      .catch(() => null);
+    say(answer?.message ?? 'the editor service did not answer.');
+  };
+
+  /**
    * Share a run live on the team instance (`on`), or stop sharing it: the command's run, else the only one it fits,
    * else the one chosen. The first share in this window says what goes out and to whom, and waits for a yes; a run
    * that cannot be shared is asked anyway, and the service says why. Shared, the answer offers the run page's link.
@@ -1150,6 +1189,7 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
     vscode.commands.registerCommand(RUN_COMMANDS.openPage, (arg?: unknown) => openRunPage(arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.holdFailures, (arg?: unknown) => holdFailures(arg)),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());

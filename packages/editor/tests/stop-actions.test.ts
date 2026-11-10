@@ -1050,10 +1050,10 @@ describe('code from a stop, started from Piwi Picker', () => {
     }
   });
 
-  test('holds a failure no pause bar shows only while a connection follows the runs, a Runs window open', async () => {
+  test('holds a failure no pause bar shows while its run’s Hold failures is on, not because a Runs window is open', async () => {
     const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
     const published = await waitFor(() => svc.published[0] ?? undefined);
-    // Piwi Picker's background worker, paired, with no Runs window open: subscribed, not following.
+    // Piwi Picker's background worker, paired: subscribed, then following as a Runs window opens.
     const picker = await hubClient(published.hub!, true);
     const { ref, channel } = await svc.command();
     const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
@@ -1070,28 +1070,37 @@ describe('code from a stop, started from Piwi Picker', () => {
     const controls = () => worker.heard.filter((m) => m.type === 'control');
     try {
       worker.begin('pays');
+      // A Runs window open holds nothing: the failure goes on at once, unseen.
+      picker.send({ type: 'follow', id: 2, on: true });
+      expect(await picker.reply(2)).toMatchObject({ ok: true });
       fail(1);
       expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
       await new Promise((r) => setTimeout(r, 100));
       expect(svc.sessions.some((s) => s.workers.some((w) => w.stop))).toBe(false);
-      // A Runs window opens: the next failure waits for an answer.
-      picker.send({ type: 'follow', id: 2, on: true });
-      expect(await picker.reply(2)).toMatchObject({ ok: true });
+      // A person turns the run's Hold failures on: the next failure waits for an answer.
+      picker.send({ type: 'hold', id: 3, ref, on: true });
+      expect(await picker.reply(3)).toMatchObject({
+        ok: true,
+        message: 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+      });
       fail(2);
       await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      expect(svc.latest(ref)?.hold).toEqual({ on: true, by: 'person' });
       await new Promise((r) => setTimeout(r, 100));
       expect(controls()).toHaveLength(1);
-      // The last Runs window closes: the failure goes on.
-      picker.send({ type: 'follow', id: 3, on: false });
+      // Turned off from the editor: the failure held goes on.
+      expect(await svc.client.sendRequest('piwi/holdRun', { ref, on: false })).toMatchObject({ ok: true });
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
       worker.send({ type: 'running', stop: 2 });
-      // Following again, then the connection closes: the failure it held goes on as well.
-      picker.send({ type: 'follow', id: 4, on: true });
+      // On again, then Piwi Picker leaves: the editor answers stops too, so the failure keeps waiting there, until the
+      // hold goes off.
+      picker.send({ type: 'hold', id: 4, ref, on: true });
       await picker.reply(4);
       fail(3);
+      picker.socket.close();
       await new Promise((r) => setTimeout(r, 100));
       expect(controls()).toHaveLength(2);
-      picker.socket.close();
+      await svc.client.sendRequest('piwi/holdRun', { ref, on: false });
       expect(await worker.next('control', 2)).toEqual({ type: 'control', action: 'resume', stop: 3 });
       expect(svc.notices).toEqual([]);
     } finally {

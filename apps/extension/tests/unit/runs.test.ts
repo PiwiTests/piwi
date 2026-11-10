@@ -228,6 +228,24 @@ describe('the live view’s commands, as the worker reads them', () => {
   });
 });
 
+describe('Hold failures, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone, and whether its failures wait', () => {
+    expect(parseRunsRequest({ ...command, what: 'hold', on: true })).toEqual({ ...command, what: 'hold', on: true });
+    expect(parseRunsRequest({ ...command, what: 'hold', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'hold' },
+      { ...command, what: 'hold', on: 'yes' },
+      { ...command, what: 'hold', on: true, worker: 0 },
+      { ...command, what: 'hold', on: true, since: 's3' },
+      { ...command, what: 'hold', on: true, lane: 1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('Share live, as the worker reads it', () => {
   const command = { type: 'command', id: 6, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
 

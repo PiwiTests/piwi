@@ -6678,6 +6678,18 @@
   "runs_more": {
     "message": "Mais"
   },
+  "runs_holdFailures": {
+    "message": "Reter falhas"
+  },
+  "runs_holdFailuresOn": {
+    "message": "Um teste com falha espera uma resposta na sua linha. Clique para que as falhas sigam na hora."
+  },
+  "runs_holdFailuresOff": {
+    "message": "Um teste com falha segue na hora. Clique para que ele espere uma resposta na sua linha."
+  },
+  "runs_holdByAgent": {
+    "message": "Definido por um agente"
+  },
   "runs_codeActions": {
     "message": "Código a partir desta parada"
   },

@@ -16,6 +16,7 @@ import {
   desktopPickItem,
   desktopRunName,
   desktopRowWorker,
+  desktopHeldSessions,
   desktopRunHoldRefusal,
   desktopRunHolds,
   desktopRunOf,
@@ -165,6 +166,15 @@ describe('a worker of a desktop run', () => {
     );
     expect(desktopShownRefs(runs, { 1: true }, unattended)).toEqual(['desktop-5']);
     expect(desktopRunHoldRefusal(reproduce, unattended)).toBeNull();
+    // Its switch shows the run's own Hold failures once a step is live, whoever set it; the shown runs stay the
+    // person's choice.
+    const agentOff = [sessionOf('desktop-5', [workerOf()], { hold: { on: false, by: 'agent' } })];
+    expect(desktopRunHolds(reproduce, undefined, agentOff)).toBe(false);
+    expect(desktopHeldSessions(reproduce, agentOff).map((s) => s.ref)).toEqual(['desktop-5']);
+    expect(desktopShownRefs(runs, {}, agentOff)).toEqual(['desktop-5']);
+    const pickerOn = [sessionOf('desktop-4', [workerOf()], { hold: { on: true, by: 'person' } })];
+    expect(desktopRunHolds(tests, false, pickerOn)).toBe(true);
+    expect(desktopHeldSessions(bisect, pickerOn)).toEqual([]);
   });
 
   test('says each stop it hears with its test and its place', () => {

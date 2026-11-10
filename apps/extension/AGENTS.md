@@ -127,18 +127,19 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause, Share live and End the test while a Pause waits (`give-up`) names the stop
-  shown (`since`),** so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and
-  Share live and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window (`runs.spec.ts`).
+- **Every Runs window control but Pause, Share live, Hold failures and End the test while a Pause waits (`give-up`)
+  names the stop shown (`since`),** so a click made twice never answers the next stop; `parseRunsRequest` refuses one
+  without it, and Share live, Hold failures and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window (`runs.spec.ts`).
   (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
   command is `aria-disabled`, never `disabled`,** so a control keeps the focus, restored across redraws by
   `data-focus` (`runs.spec.ts`). (see "The Runs window")
-- **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
-  `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
-  meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
+- **A Runs window open holds no failure: a run's Hold failures does, which the window turns on or off (`hold`).**
+  `RunHubs.listen` sends `follow` with `on: true` on each hub connection while a window is open, and `on: false`
+  as the last leaves; the toggle shows only for a run whose hub sends its `hold` (`runs.spec.ts`).
+  (see "A connection per hub")
 - **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
   the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
   input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,

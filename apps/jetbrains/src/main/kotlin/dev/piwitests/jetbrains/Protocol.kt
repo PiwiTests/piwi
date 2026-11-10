@@ -776,7 +776,15 @@ data class RunSession(
     val progress: RunProgress? = null,
     /** The run's page on the instance once its own process names it: its number there and its address. */
     val page: RunPage? = null,
+    /** Hold failures: whether a failure no pause bar shows waits at its line; null for a run nobody attends. */
+    val hold: RunHoldFailures? = null,
 )
+
+/**
+ * A run's Hold failures: whether a failure no pause bar shows waits at its line for an answer (`on`), and who said so
+ * last (`by`: `start`, `person` or `agent`).
+ */
+data class RunHoldFailures(val on: Boolean = false, val by: String? = null)
 
 /** A run's page on an instance: its number there (`#78`) and its address. */
 data class RunPage(val id: Int = 0, val url: String = "")
@@ -822,6 +830,12 @@ data class RunLive(
  * instance (`on`), or stop sharing it. Answered with what was done or why not.
  */
 data class ShareRunParams(val ref: String, val on: Boolean)
+
+/**
+ * `piwi/holdRun`: Hold failures for the run of `ref`, as the person asks: on, a failure no pause bar shows waits at its
+ * line; off, it goes on at once, one held now included. Answered with what was done or why not.
+ */
+data class HoldRunParams(val ref: String, val on: Boolean)
 
 /**
  * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
@@ -1110,6 +1124,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/shareRun")
     fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/holdRun")
+    fun holdRun(params: HoldRunParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>

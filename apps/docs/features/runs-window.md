@@ -32,13 +32,12 @@ locator call, for how long), with [**End the test**](./end-the-test#while-a-paus
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
 stays in the editor.
 
-A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
-under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.
+A failing test is held at its line, a headless one while its run's
+[**Hold failures**](/guide/concepts#hold-failures) is on: **Failed at** in red, its error under it. **Resume** lets it
+end as it failed; **Pick** replaces the failing locator. **Hold failures**, on each run, turns it on or off.
 
 **Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
-project whose live view is on. The first time in a window, it says what goes out and to whom; shared, the run says
-how many views are open until **Stop sharing**. A run that cannot be shared says why in
-its place: [Share a run live](./share-live).
+project whose live view is on, as in the editor: [Share a run live](./share-live).
 
 ## Code from a stop
 

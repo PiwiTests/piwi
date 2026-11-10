@@ -227,6 +227,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
 
+        override fun holdRun(params: HoldRunParams) = server()?.holdRun(params)?.orNull()
+
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
 
         override fun pageView(params: PageViewParams) =
@@ -1103,6 +1105,38 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /**
+     * Turn the Hold failures of a run over: the only live run that has one, else the one chosen. The editor service
+     * answers what it does now.
+     */
+    fun holdFailures() {
+        when (val target = Glue.holdTarget(sessions)) {
+            is Glue.HoldTarget.None -> PiwiCommands.notify(project, target.why)
+            is Glue.HoldTarget.One -> holdRun(target.ref, target.on)
+            is Glue.HoldTarget.Choose -> JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(target.refs)
+                .setRenderer(
+                    object : SimpleListCellRenderer<String>() {
+                        override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                            val session = value?.let { sessions[it] }
+                            text = listOfNotNull(session?.let(Glue::runLabel) ?: value, session?.hold?.let { Glue.holdText(it) }).joinToString(" · ")
+                        }
+                    },
+                )
+                .setTitle("Turn Hold Failures Over for Which Run?")
+                .setItemChosenCallback { ref -> holdRun(ref, sessions[ref]?.hold?.on != true) }
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
+    }
+
+    private fun holdRun(ref: String, on: Boolean) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.holdRun(HoldRunParams(ref, on))
+            PiwiCommands.notify(project, answer?.message ?: "The editor service did not answer.")
+        }
+    }
+
     /** End the process of the run of `ref`; false when no run of this IDE runs it. */
     fun stopRun(ref: String): Boolean = processes[ref]?.let {
         it.destroyProcess()
@@ -1468,6 +1502,8 @@ internal interface RunRemote {
     fun control(params: RunControlParams): RunControlResult?
 
     fun shareRun(params: ShareRunParams): RunControlResult?
+
+    fun holdRun(params: HoldRunParams): RunControlResult?
 
     fun pausedPage(params: PausedPageParams): PausedPageResult?
 
@@ -2210,6 +2246,24 @@ class ShareRunLiveAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.shareLive(true)
+    }
+}
+
+/**
+ * **Hold Failures**: turns the run's Hold failures over: on, a failed test no pause bar shows waits at its line for an
+ * answer; off, it goes on at once. The run keeps it whichever surface set it.
+ */
+class HoldFailuresAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.holdable
+
+    override fun update(e: AnActionEvent) {
+        super.update(e)
+        val controls = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
+        e.presentation.text = Glue.holdActionText(controls ?: Glue.RunControls(active = false, pausable = false, pausing = false, stopped = false))
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.holdFailures()
     }
 }
 
