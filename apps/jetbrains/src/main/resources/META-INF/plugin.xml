@@ -179,14 +179,14 @@
             </action>
             <separator/>
             <!--
-              A run's controls use the debugger's own shortcuts, in every keymap (Resume Program's pauses a running test
-              and resumes a stopped one, Step Over's steps, Run to Cursor's runs to the caret, Step Out's finishes):
-              each is enabled only while it applies to a run Piwi started, and from the keyboard only while no debug
-              session runs, so the debugger keeps its keys otherwise. While a run is live they go first among the actions
-              a keymap gives the same key (PiwiRunActionPromoter), and give way when they do not apply.
+              A run's controls use the debugger's own shortcuts, in every keymap (Pause Program's pauses, Resume
+              Program's resumes, Step Over's steps, Run to Cursor's runs to the caret, Step Out's finishes): each is
+              enabled only while it applies to a run Piwi started, and from the keyboard only while the debugger does
+              not take the key (RunControlAction.givesWayTo). While a run is live they go first among the actions a
+              keymap gives the same key (PiwiRunActionPromoter), and give way when they do not apply.
             -->
             <action id="Piwi.PauseRun" class="dev.piwitests.jetbrains.PauseRunAction" text="Pause the Run"
-                    icon="AllIcons.Actions.Pause" use-shortcut-of="Resume"
+                    icon="AllIcons.Actions.Pause" use-shortcut-of="Pause"
                     description="Stop the tests of the run started from Piwi before their next call"/>
             <action id="Piwi.ResumeRun" class="dev.piwitests.jetbrains.ResumeRunAction" text="Resume the Run"
                     icon="AllIcons.Actions.Resume" use-shortcut-of="Resume"

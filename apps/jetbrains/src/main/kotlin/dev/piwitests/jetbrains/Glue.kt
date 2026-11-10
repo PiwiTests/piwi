@@ -2581,6 +2581,22 @@ object Glue {
     }
 
     /**
+     * The folders a file of the project is found in, by Open in IDE and by a debug request alike: the folders the
+     * service reads (`contextRoots`), the Playwright configs' (`configDirs`), the folders searched for them
+     * (`searchRoots`, where a config beside a Rider solution is found through Git), the project's folder (above `.idea`
+     * in Rider, `projectFolder`) and its content roots; each once, in that order.
+     */
+    fun openRoots(
+        contextRoots: List<String>,
+        configDirs: List<String>,
+        searchRoots: List<String>,
+        basePath: String?,
+        contentRoots: List<String>,
+    ): List<String> =
+        (contextRoots + configDirs + searchRoots + listOfNotNull(basePath?.let(::projectFolder), basePath) + contentRoots)
+            .distinct()
+
+    /**
      * Why a file a debug request names may not be debugged, with every link followed (`canonical`, the file's
      * canonical path, and the folders'): it must be in one of `projectRoots` and under one of `configDirs`, the failing
      * line's a script file, the test's a spec. Null when it may. `named` is the path as the request named it.
