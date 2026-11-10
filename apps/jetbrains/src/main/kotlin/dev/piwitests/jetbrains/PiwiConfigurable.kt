@@ -1,5 +1,7 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.ide.ui.search.SearchableOptionContributor
+import com.intellij.ide.ui.search.SearchableOptionProcessor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
@@ -245,5 +247,25 @@ private class FailureSeverityRenderer : SimpleListCellRenderer<String>() {
             "off" -> "Nothing in the editor's problems"
             else -> "An error"
         }
+    }
+}
+
+/**
+ * The words Settings search finds **Settings → Tools → Piwi** by beyond its labels, which the release's searchable
+ * options index holds: what a developer looking for the page types.
+ */
+class PiwiSearchableOptions : SearchableOptionContributor() {
+    override fun processOptions(processor: SearchableOptionProcessor) {
+        for (word in KEYWORDS) processor.addOptions(word, null, word, CONFIGURABLE_ID, "Piwi", true)
+    }
+
+    companion object {
+        /** The id of the settings page, as `plugin.xml` registers it. */
+        const val CONFIGURABLE_ID = "dev.piwitests.piwi"
+
+        val KEYWORDS = listOf(
+            "Playwright", "dashboard", "test results", "flaky", "failures", "coverage", "reporter", "breakpoints",
+            "picker", "API key", "token", "MCP", "agent", "desktop app", "instance", "Node.js",
+        )
     }
 }

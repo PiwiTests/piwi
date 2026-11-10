@@ -92,7 +92,9 @@ intellijPlatform {
             }
         }
     }
-    buildSearchableOptions = false
+    // The index Settings search reads, built by running the IDE headless: on for a release (`-PsearchableOptions=true`
+    // in the publish workflow), off for the checks.
+    buildSearchableOptions = providers.gradleProperty("searchableOptions").map { it.toBoolean() }.orElse(false)
     // Kotlin sources and no GUI forms: nothing for the bytecode instrumenter to add.
     instrumentCode = false
 }

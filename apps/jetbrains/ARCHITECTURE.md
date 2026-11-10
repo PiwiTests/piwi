@@ -63,6 +63,12 @@ directory: `piwi-language-server.cjs`, and beside it `piwi-recorder-launcher.cjs
 `build.gradle.kts`). The tests start the language server from `dist/` (the `piwi.editor.server` system property) and
 need none of the others.
 
+**Settings search.** The release's `buildPlugin` builds the searchable options index (`-PsearchableOptions=true` in
+`reusable-publish-jetbrains.yml`, `buildSearchableOptions` in `build.gradle.kts`): it runs the IDE headless and lists
+the words of every label of **Settings → Tools → Piwi** and of every action, so Settings search and Find Action find
+them. The checks skip it, for the time it takes. `PiwiSearchableOptions` (`search.optionContributor`) adds the words the
+labels lack, such as Playwright, dashboard and token, in every build; `PiwiPluginTest` reads them.
+
 ## Starting the service
 
 The plugin starts the service through the platform's LSP API (`PiwiLspServerDescriptor`), with the project's Node.js

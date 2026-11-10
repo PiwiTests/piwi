@@ -26,6 +26,23 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class PiwiPluginTest : BasePlatformTestCase() {
+    /** Settings search finds Piwi's page by the words its labels lack, on the page's own id. */
+    fun testSettingsSearchFindsPiwisPageByItsKeywords() {
+        val contributor = com.intellij.openapi.extensions.ExtensionPointName<com.intellij.ide.ui.search.SearchableOptionContributor>("com.intellij.search.optionContributor").extensionList
+            .filterIsInstance<PiwiSearchableOptions>().single()
+        val added = mutableListOf<Pair<String, String>>()
+        contributor.processOptions(object : com.intellij.ide.ui.search.SearchableOptionProcessor() {
+            override fun addOptions(text: String, path: String?, hit: String?, configurableId: String, configurableDisplayName: String?, applyStemming: Boolean) {
+                added += text to configurableId
+            }
+        })
+        assertTrue(added.contains("Playwright" to "dev.piwitests.piwi"))
+        assertEquals(setOf("dev.piwitests.piwi"), added.map { it.second }.toSet())
+        val page = com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
+            .single { it.instanceClass == PiwiConfigurable::class.java.name }
+        assertEquals(PiwiSearchableOptions.CONFIGURABLE_ID, page.id)
+    }
+
     fun testRegistersItsExtensionsAndActions() {
         assertTrue(LspServerSupportProvider.EP_NAME.extensionList.any { it is PiwiLspServerSupportProvider })
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList
