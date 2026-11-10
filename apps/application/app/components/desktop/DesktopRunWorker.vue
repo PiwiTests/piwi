@@ -5,9 +5,9 @@
  * at each stop of a test until it is turned off (`DesktopRunLaneView`), or why it cannot; at a stop, the call about to
  * run and its place (a failure's error in their place), its page (`DesktopRunStopPage`, while its lane is not watched
  * or the stop is outside a test, with why the hub would not show the lane),
- * **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where its reporter takes it
- * (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a region** and **Mock a
- * request**, whose code comes to the window to copy; **Pause** while it runs, and while a Pause waits for the call the
+ * **Resume**, **Step** and **Finish** in one group, and apart **End the test**, which ends it there, skipped, where its
+ * reporter takes it (Resume alone at a failure), and the code actions the stop takes from the window, under **Code**:
+ * **Assert a region** and **Mock a request**, whose code comes to the window to copy; **Pause** while it runs, and while a Pause waits for the call the
  * test runs, that call, how long it has run, and **End the test**, which gives the call up where its worker takes it.
  * Every control but Pause and that End the test names the stop
  * it was drawn for (`since`), so a click made twice never answers the next stop, and while one is on its way the
@@ -46,6 +46,10 @@ const since = computed(() => stop.value?.since ?? null);
 const place = computed(() => (stop.value ? desktopStopPlace(stop.value, props.session.root) : null));
 const takes = computed(() => (stop.value ? desktopStopTakes(props.worker, stop.value) : []));
 const steering = computed(() => desktopSteering(props.worker));
+/** The controls that move a stopped test on, one group; the others, End the test and Pause, apart. */
+const MOVING: ReadonlySet<DesktopSteer> = new Set(['resume', 'step', 'finish']);
+const moving = computed(() => steering.value.filter((what) => MOVING.has(what)));
+const apart = computed(() => steering.value.filter((what) => !MOVING.has(what)));
 const codeActions = computed(() => (stop.value ? desktopCodeActions(props.worker, stop.value) : []));
 const stateText = computed(() => desktopWorkerState(props.worker, props.session.root));
 /** The clock that counts how long the call a Pause waits in has run. */
@@ -336,23 +340,46 @@ onBeforeUnmount(() => {
       {{ DESKTOP_WATCH_NEEDS_UPDATE }}
     </p>
 
-    <div v-if="steering.length" class="flex flex-wrap gap-1.5">
+    <div v-if="steering.length" class="flex flex-wrap items-center gap-1.5">
+      <!-- Resume, Step and Finish, one group; End the test and Pause apart. -->
+      <UFieldGroup v-if="moving.length" size="xs">
+        <UButton
+          v-for="what in moving"
+          :key="what"
+          :data-focus="`steer:${what}`"
+          :color="what === 'resume' ? 'primary' : 'neutral'"
+          :variant="what === 'resume' ? 'solid' : 'outline'"
+          :icon="STEER[what].icon"
+          :title="failed && what === 'resume' ? 'End the test as it failed' : STEER[what].title"
+          :aria-disabled="busy || undefined"
+          @click="!busy && steer(what)"
+        >
+          {{ STEER[what].label }}
+        </UButton>
+      </UFieldGroup>
       <UButton
-        v-for="what in steering"
+        v-for="what in apart"
         :key="what"
         :data-focus="`steer:${what}`"
         size="xs"
-        :color="what === 'resume' ? 'primary' : 'neutral'"
-        :variant="what === 'resume' ? 'solid' : 'outline'"
+        color="neutral"
+        variant="outline"
+        :class="what === 'end' && moving.length ? 'ml-auto' : undefined"
         :icon="STEER[what].icon"
-        :title="failed && what === 'resume' ? 'End the test as it failed' : STEER[what].title"
+        :title="STEER[what].title"
         :aria-disabled="busy || undefined"
         @click="!busy && steer(what)"
       >
         {{ STEER[what].label }}
       </UButton>
     </div>
-    <div v-if="codeActions.length" role="group" aria-label="Code from this stop" class="flex flex-wrap gap-1.5">
+    <div
+      v-if="codeActions.length"
+      role="group"
+      aria-label="Code from this stop"
+      class="flex flex-wrap items-center gap-1.5"
+    >
+      <span class="text-xs text-muted" aria-hidden="true">Code</span>
       <UButton
         v-for="what in codeActions"
         :key="what"
