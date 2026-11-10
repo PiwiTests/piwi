@@ -313,10 +313,17 @@ export function withRequestOrigin(
   return requestStamped(metadata, { kind: 'request', ref: requestId });
 }
 
-/** `metadata` with a requested run's origin, and without the lab stamps that would name it a lab run. */
+/**
+ * `metadata` with a requested run's origin, its request's id as the run's one name (`piwiRunRef`) in place of any the
+ * reporter gave it, and without the lab stamps that would name it a lab run.
+ */
 function requestStamped(metadata: Record<string, unknown> | null, origin: RunOrigin): Record<string, unknown> {
   const { [PROBE_RUN_METADATA_KEY]: _probe, [FLAKE_LAB_RUN_METADATA_KEY]: _lab, ...rest } = metadata ?? {};
-  return { ...rest, [RUN_ORIGIN_METADATA_KEY]: origin };
+  return {
+    ...rest,
+    [RUN_ORIGIN_METADATA_KEY]: origin,
+    ...(origin.ref ? { [RUN_REF_METADATA_KEY]: origin.ref } : {}),
+  };
 }
 
 /**

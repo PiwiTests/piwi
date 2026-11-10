@@ -249,7 +249,7 @@ class DesktopRunSessions extends RunSessions {
   override async pickAt(params: Parameters<RunSessions['pickAt']>[0]): ReturnType<RunSessions['pickAt']> {
     const picked = await super.pickAt(params);
     return picked.ok && picked.locator
-      ? { ...picked, message: `${picked.locator}: copy it in the desktop app's window.` }
+      ? { ...picked, taken: false, message: `${picked.locator}: copy it in the desktop app's window.` }
       : picked;
   }
 }

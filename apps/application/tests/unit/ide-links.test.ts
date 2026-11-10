@@ -5,6 +5,7 @@ import {
   buildPiwiPluginOpenUrl,
   buildVscodeExtensionUrl,
   buildVscodeUrl,
+  debugRunRef,
   debugTargetOf,
   encodePathForUrl,
   failurePlace,
@@ -319,6 +320,17 @@ describe('Debug in my editor', () => {
     expect(buildVscodeExtensionUrl({ scheme: 'vscode', path: 'a.ts', debug })).toBe(
       'vscode://piwitests.piwi/open?file=a.ts',
     );
+    // The name the page gives the run, which it follows the run by, comes last.
+    expect(
+      buildVscodeExtensionUrl({
+        scheme: 'vscode',
+        path: 'a.ts',
+        line: 2,
+        debug: { spec: 'a.spec.ts', title: 'pays', ref: 'ed-00ff' },
+      }),
+    ).toBe('vscode://piwitests.piwi/open?file=a.ts&line=2&debug=1&spec=a.spec.ts&test=pays&ref=ed-00ff');
+    expect(debugRunRef((bytes) => bytes.fill(171))).toBe('ed-abababababababab');
+    expect(debugRunRef()).toMatch(/^ed-[0-9a-f]{16}$/);
   });
 
   test('the Piwi plugin’s open request gains debug=1 and the test, never on a check', () => {

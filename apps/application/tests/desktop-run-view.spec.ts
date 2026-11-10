@@ -529,6 +529,34 @@ test.describe('Desktop run live view', () => {
     await expect(worker).toHaveCount(0);
   });
 
+  test('names the run by its number on the instance it reports to, and opens its page', async ({ page }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page)).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const withPage = (url: string) => {
+      const event = session(RUNNING);
+      return { ...event, session: { ...event.session, page: { id: runId, url } } };
+    };
+
+    // A run on this app's own server opens in the window.
+    const own = `${new URL(page.url()).origin}/test-runs/${runId}`;
+    await page.evaluate((event) => window.__hub.send(event), withPage(own));
+    const line = tray(page).getByTestId('desktop-run-page');
+    await expect(line).toHaveText(new RegExp(`^Run #${runId}\\s*·\\s*Open$`));
+    await expect(line.getByRole('link', { name: `Open run #${runId}` })).toHaveAttribute('href', `/test-runs/${runId}`);
+
+    // One a team instance holds opens in the browser.
+    await page.evaluate((event) => window.__hub.send(event), withPage(`https://piwi.example.com/test-runs/${runId}`));
+    const team = line.getByRole('link', { name: `Open run #${runId}` });
+    await expect(team).toHaveAttribute('href', `https://piwi.example.com/test-runs/${runId}`);
+    await expect(team).toHaveAttribute('target', '_blank');
+  });
+
   test('keeps the keyboard on the controls: Pause while a step runs, Step again at the next stop', async ({ page }) => {
     await installBridge(page);
     const commands = await playHub(page);
@@ -926,7 +954,7 @@ test.describe('Desktop run live view', () => {
       });
       expect(begun.ok()).toBeTruthy();
       await tray(page)
-        .getByRole('link', { name: `Live in Piwi — Run #${live.runId}` })
+        .getByRole('link', { name: `Open run #${live.runId}` })
         .click({ timeout: 15_000 });
       await expect(page).toHaveURL(new RegExp(`/test-runs/${live.runId}$`));
 

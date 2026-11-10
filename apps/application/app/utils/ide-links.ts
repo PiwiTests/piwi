@@ -101,6 +101,18 @@ export interface DebugTarget {
   title: string;
   project?: string | null;
   execution?: number | null;
+  /**
+   * The name the page gives the run (`ed-` then hexadecimal digits, `debugRunRef`), which the editor runs it under and
+   * the page follows it by on the instance.
+   */
+  ref?: string | null;
+}
+
+/** A name for a debug run, as the editor service names its own runs, longer: `ed-` then 16 hexadecimal digits. */
+export function debugRunRef(
+  random: (bytes: Uint8Array<ArrayBuffer>) => ArrayLike<number> = (b) => crypto.getRandomValues(b),
+): string {
+  return `ed-${Array.from(random(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** How a debug link joins a test's describe blocks' titles and its own: the editor service splits them alike. */
@@ -114,6 +126,7 @@ function debugFields(debug: DebugTarget): Array<[string, string]> {
     ['test', debug.title],
     ...(debug.project ? [['playwrightProject', debug.project] as [string, string]] : []),
     ...(debug.execution != null ? [['execution', String(debug.execution)] as [string, string]] : []),
+    ...(debug.ref ? [['ref', debug.ref] as [string, string]] : []),
   ];
 }
 
@@ -124,7 +137,7 @@ function debugFields(debug: DebugTarget): Array<[string, string]> {
  * needed. `root`, when known, is the folder the path is relative to. Line and
  * column are 1-based. Each value is percent-encoded whole, a space as `%20`.
  * With `debug` (a line is then required), the link is Debug in my editor's:
- * `&debug=1&spec=&test=&playwrightProject=&execution=`.
+ * `&debug=1&spec=&test=&playwrightProject=&execution=&ref=`.
  */
 export function buildVscodeExtensionUrl(o: {
   scheme: VscodeScheme;

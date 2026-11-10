@@ -61,7 +61,7 @@ until you turn it off. Your clicks, the wheel and your keys on the view go to th
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
 to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
-**Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
+**Pause and watch**, on a running test of the run's page in the app (**Open run #N** on the run in the tray), pauses
 the test as **Pause** does, watching its worker: the tray opens at the stop, the page live. The row
 then says where the test stopped, with **Show its page** to open the tray on it again.
 

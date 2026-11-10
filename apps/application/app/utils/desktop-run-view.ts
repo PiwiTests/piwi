@@ -241,7 +241,7 @@ interface DesktopLinkedRun {
   kind: LocalRunKind;
   status: string;
   originRef: string | null;
-  /** The Piwi run it was linked to first (**Live in Piwi**). */
+  /** The Piwi run it was linked to first (**Open run #N**). */
   piwiRunId: number | null;
   /** Its steps' names on the hub. */
   hubRefs: readonly string[];
