@@ -337,11 +337,11 @@ test('a run says how far it is and how it ended, as its own process says', async
       await expect(card.locator('.run-progress')).toHaveText('0 of 3 tests');
       // Its number and page on the instance, once its process names them.
       await expect(card.locator('.run-page')).toHaveCount(0);
-      main.send({ type: 'run-page', id: 78, url: 'https://piwi.example.com/test-runs/78' });
+      main.send({ type: 'run-page', id: 78, url: 'http://127.0.0.1:7494/test-runs/78' });
       await expect(card.locator('.run-number')).toHaveText('Run #78');
       await expect(card.getByRole('button', { name: 'Open' })).toHaveAttribute(
         'title',
-        'https://piwi.example.com/test-runs/78',
+        'http://127.0.0.1:7494/test-runs/78',
       );
       await expect(card.getByRole('button', { name: 'Copy link' })).toBeVisible();
       main.send({ type: 'run-progress', done: 2, failed: 1, flaky: 1, skipped: 0 });

@@ -37,6 +37,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
+import { runTargetConnection } from '@piwitests/editor/run-target';
 import type { RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
@@ -272,6 +273,8 @@ export class DesktopRuns {
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
+      // A run's page is linked on this machine (this app's server), or on the team instance whose requests it runs.
+      instances: () => [runTargetConnection().instance],
       notify: (session) => {
         this.hub?.push(session);
         this.liveCountChanged();

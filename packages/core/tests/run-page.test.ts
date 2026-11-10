@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseRunMainToHub, parseRunToHub, readRunPage } from '../src/run-channel';
+import { isPageOfInstance, parseRunMainToHub, parseRunToHub, readRunPage } from '../src/run-channel';
 import { parseHubMessage, type HubSession } from '../src/run-hub';
 
 /**
@@ -88,5 +88,29 @@ describe('a pick on an image', () => {
     const hub = (taken: unknown) => parseHubMessage(line({ type: 'answer', id: 3, ok: true, message: 'm', taken }));
     expect(hub(false)).toMatchObject({ taken: false });
     expect(hub('no')).not.toHaveProperty('taken');
+  });
+});
+
+describe('a run page a host links', () => {
+  test('is on this machine, or under the origin of an instance the host connects to', () => {
+    const instances = ['https://piwi.example.com', null, 'not a url'];
+    for (const url of [
+      'http://127.0.0.1:7494/test-runs/1',
+      'http://localhost:3000/test-runs/1',
+      'http://[::1]:3000/test-runs/1',
+      'https://piwi.example.com/test-runs/78',
+    ]) {
+      expect(isPageOfInstance(url, instances), url).toBe(true);
+    }
+    for (const url of [
+      'https://elsewhere.example/test-runs/78',
+      'http://piwi.example.com/test-runs/78',
+      'https://piwi.example.com.evil.example/test-runs/78',
+      'https://piwi.example.com:8443/test-runs/78',
+      'not a url',
+    ]) {
+      expect(isPageOfInstance(url, instances), url).toBe(false);
+    }
+    expect(isPageOfInstance('https://piwi.example.com/test-runs/78', [])).toBe(false);
   });
 });

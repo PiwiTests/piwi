@@ -50,6 +50,7 @@ function harness(terminal = false) {
     notice: () => {},
     rootOf: () => '/work/shop',
     terminal: () => terminal,
+    instances: () => ['https://piwi.example.com'],
     paceMs: 5,
     burstMs: 0,
     lingerMs: 50,
@@ -108,6 +109,10 @@ describe('a run’s own connection, in the run sessions', () => {
     const run = main();
     await waitFor(() => last(sent));
     expect(last(sent)).not.toHaveProperty('page');
+    // A page on an instance this host does not connect to is not linked: the test's code may name any address.
+    run.read({ type: 'run-page', id: 66, url: 'https://elsewhere.example/test-runs/66' });
+    run.read({ type: 'run-progress', done: 1, failed: 0, flaky: 0, skipped: 0 });
+    expect(await waitFor(() => (last(sent)?.progress?.done === 1 ? last(sent) : undefined))).not.toHaveProperty('page');
     run.read({ type: 'run-page', id: 78, url: 'https://piwi.example.com/test-runs/78' });
     expect(await waitFor(() => last(sent)?.page)).toEqual({ id: 78, url: 'https://piwi.example.com/test-runs/78' });
     run.read({ type: 'run-end', status: 'passed', failure: null, done: 9, failed: 0, flaky: 0, skipped: 0 });

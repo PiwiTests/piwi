@@ -1753,6 +1753,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
   const runSessions = new RunSessions({
+    // A run's page is linked under the instances the configs connect to, the desktop app's included.
+    instances: () => contexts.map((c) => c.client?.connection.serverUrl),
     // The workers' lines name the editor (`Visual Studio Code`), as it named itself at `initialize`.
     workerHost: () => clientName,
     notify: (session) => {

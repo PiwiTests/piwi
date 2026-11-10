@@ -17,7 +17,9 @@ so a run started in VS Code reads the same in the terminal, in Piwi Picker's Run
 The reporter learns the run's number as the run starts: from the global setup that registered it, else as its stream
 to the instance opens. It prints the page once, and tells it to the editor or the desktop app that follows the run.
 The page is under the instance's public address when the instance sets `PIWI_SITE_URL`, else under the address the
-reporter reached it at.
+reporter reached it at. A tool links it only on this machine or under an instance it connects to itself: in an editor,
+the instance of a Playwright config of the window; in the desktop app, the team instance whose run requests it takes. A
+page elsewhere, which the test's own code could name, is not shown, and the run reads as one with no number.
 
 | Where | What it shows |
 |---|---|

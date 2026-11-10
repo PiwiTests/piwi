@@ -38,6 +38,7 @@ import {
   type ActAnswer,
   type BindAnswer,
   type HubToRun,
+  isPageOfInstance,
   type IntentAnswer,
   type LocatorAnswer,
   type MockAnswer,
@@ -269,6 +270,11 @@ function instanceOf(page: string): string {
 export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
+  /**
+   * The addresses of the instances this host connects to: a run's page (`run-page`) is kept only on this machine or
+   * under one of them (`isPageOfInstance`). None by default.
+   */
+  instances?(): Iterable<string | null | undefined>;
   /**
    * Whether a surface shows the stops and answers them: the client (`InitializationOptions.runControl`), or a Piwi
    * Picker subscribed to the hub.
@@ -619,6 +625,7 @@ export class RunSessions {
       if (!message || message.type === 'run-begin' || session.main !== socket || !session.progress) return;
       if (message.type === 'run-page') {
         const { type: _page, ...page } = message;
+        if (!isPageOfInstance(page.url, this.options.instances?.() ?? [])) return;
         session.page = page;
         return this.changed(session, true);
       }

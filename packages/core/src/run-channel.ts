@@ -1239,6 +1239,33 @@ export function readRunPage(value: unknown): RunPage | null {
   return { id, url };
 }
 
+/** The hosts of this machine, whose pages a host links whatever instance they are: the desktop app's, a local one. */
+const THIS_MACHINE = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Whether a run's page (`readRunPage`) is a page a host may link: on this machine, or under the origin of one of the
+ * `instances` the host itself connects to. A page a run's process names elsewhere is not shown: that process is the
+ * test's, whose code may name any address.
+ */
+export function isPageOfInstance(url: string, instances: Iterable<string | null | undefined>): boolean {
+  let page: URL;
+  try {
+    page = new URL(url);
+  } catch {
+    return false;
+  }
+  if (THIS_MACHINE.has(page.hostname)) return true;
+  for (const instance of instances) {
+    if (!instance) continue;
+    try {
+      if (new URL(instance).origin === page.origin) return true;
+    } catch {
+      // Not an address: it names no instance.
+    }
+  }
+  return false;
+}
+
 /** The longest title and error a `run-end`'s first failure carries, in characters: a longer one is cut. */
 export const MAX_RUN_FAILURE_TEXT = 500;
 
