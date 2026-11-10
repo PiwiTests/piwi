@@ -1508,6 +1508,8 @@ describe('the Piwi language server', () => {
       position: { line: 6, character: 10 },
     })) as { contents: { value: string } };
     expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // No diagnostic is on this line: the hover says why, as the lens above it does.
+    expect(hover.contents.value).toContain("\n\nlocator('.cart-row').nth(2) was not found\n\n");
     expect(hover.contents.value).toContain('```text\nError: locator.click: Timeout 5000ms exceeded.\nCall log:');
     expect(hover.contents.value).toContain(
       `Called from [checkout.page.ts:5](${uri('tests/pages/checkout.page.ts')}#L5) ← [rows.spec.ts:7](${uri('tests/rows.spec.ts')}#L7)`,

@@ -142,9 +142,8 @@ latest result from `piwi/fileSummary`:
   the line names (Open in Dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**
   (`PiwiCommands.runTestAt`), at the line a range marker follows through edits;
 - the `PIWI_FAILING_TEST` background over a failing test;
-- `PIWI_FAILING_LINE` on the line it failed at, with the reason as the tooltip unless the failure's diagnostic is on
-  that line (`TestFailure.diagnosed`). The test's background goes around that line, since two backgrounds on one line
-  have no set order.
+- `PIWI_FAILING_LINE` on the line it failed at, with no tooltip of its own: the service's diagnostic and hover say
+  why. The test's background goes around that line, since two backgrounds on one line have no set order.
 
 The colors are on **Piwi**'s color settings page (`PiwiColorSettingsPage.kt`), with defaults in
 `resources/colorSchemes/`. A test the run in progress runs has the `AllIcons.RunConfigurations.TestState.Run` icon,
@@ -184,8 +183,8 @@ color of its key:
 | In a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) | `PIWI_UNCOVERED_CHANGE`         |
 
 The keys are in the **Coverage** group of `PiwiColorSettingsPage.kt`, with no background by default; each but the
-lines run also marks the scroll bar (the run marks' highlighter carries no key), so a covered file's scroll bar keeps
-its own marks. The uncovered changes are `Glue.CoverageKind.UNCOVERED`, and their tooltip ends on
+lines run also marks the scroll bar (the run marks' highlighter takes `setErrorStripeMarkColor(null)`), so a covered
+file's scroll bar keeps its own marks, and a background set on any key tints its lines. The uncovered changes are `Glue.CoverageKind.UNCOVERED`, and their tooltip ends on
 `Glue.UNCOVERED_EXPLAINED`. The four defaults are VS Code's and, for the run and not-run marks, the dashboard's
 (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
 `apps/application/tests/unit/coverage-mark-colors.test.ts`).

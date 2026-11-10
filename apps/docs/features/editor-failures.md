@@ -20,7 +20,7 @@ The failures of the latest complete [CI run](/reference/test-metadata#run-origin
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
 line a failing test failed at (often its call into a page object) is tinted darker, with **✗ Failed here**, the
-reason where no error there says it, **Run this test**, **Screenshot** and **Trace** above it.
+reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
 On a failure, the quick fixes are:
 

@@ -186,13 +186,13 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
     }
 
     /**
-     * A mark's highlighter, with its bar in the gutter and its tooltip; in the scroll bar too, but for the lines the
-     * tests ran, which would color most of a covered file's scroll bar.
+     * A mark's highlighter, with its bar in the gutter, its tooltip and the background its key sets; a mark in the scroll
+     * bar too, but for the lines the tests ran (`setErrorStripeMarkColor(null)` draws none).
      */
     private fun highlight(model: MarkupModel, document: Document, mark: Glue.CoverageMark): RangeHighlighter {
         val key = keyOf(mark.kind)
         return model.addRangeHighlighter(
-            key.takeIf { mark.kind != Glue.CoverageKind.RUN },
+            key,
             document.getLineStartOffset(mark.start),
             document.getLineEndOffset(mark.end),
             HighlighterLayer.SELECTION - 1,
@@ -200,7 +200,7 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         ).apply {
             val tooltip = Glue.coverageMarkTooltip(mark)
             lineMarkerRenderer = CoverageGutterMark(key, dashed = mark.kind == Glue.CoverageKind.CHANGED, tooltip)
-            errorStripeTooltip = tooltip
+            if (mark.kind == Glue.CoverageKind.RUN) setErrorStripeMarkColor(null) else errorStripeTooltip = tooltip
         }
     }
 

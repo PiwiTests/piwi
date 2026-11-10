@@ -38,8 +38,8 @@ click runs, and a local run's failure leading with 'Local failure:', #1121; the 
 service in the dashboard's words, under a drift test, naming the run its result is from when the latest run or the run
 in progress gives it, [TL10](#tl10); JetBrains shows it on the result icon alone, and the pass rate reads 'passed 44 of
 48 runs'), [Q12](#q12) ([TL14](#tl14): JetBrains tints a failing test's lines to the editor's edge, #1121; [TL8](#tl8):
-a failure's headline said once on its line, by its diagnostic where one is on that line (`TestFailure.diagnosed`), else
-by the line above it, the hover giving the error's detail alone while a diagnostic shows; [TL15](#tl15): the four
+a failure's headline said by its diagnostic where one is on that line (`TestFailure.diagnosed`), else by the line above
+it and the hover, JetBrains' failing line with no tooltip; VS Code's Testing view still repeats it inline; [TL15](#tl15): the four
 coverage colors in `COVERAGE_MARK_COLORS` and its test, VS Code's amber in JetBrains, and the lines run out of
 JetBrains' scroll bar), [Q20](#q20) (Run This Spec and the spec's lens run every test of the file by its path, #1121),
 [Q17](#q17) (VS Code's run items each named, read without their icon, naming no key, Resume alone at a held failure,

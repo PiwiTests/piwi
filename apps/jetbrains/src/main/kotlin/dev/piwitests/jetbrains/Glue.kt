@@ -754,17 +754,6 @@ object Glue {
     fun testResultTooltip(title: String?): String =
         "<html>${escapeHtml(listOfNotNull("Piwi", title?.ifBlank { null }).joinToString(": "))}</html>"
 
-    /**
-     * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
-     * line changed since the run.
-     */
-    fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
-        val why = headline?.ifBlank { null } ?: "Failed"
-        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escapeHtml(it)}</pre>" } ?: ""
-        val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
-        return "<html><b>$title</b><br>${escapeHtml(why)}$details</html>"
-    }
-
     /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
     val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
 

@@ -84,8 +84,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
-- **The coverage marks default to the dashboard's colors** (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`).
-  Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
+- **The coverage marks default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`**, the run and not-run marks the
+  dashboard's, as do the JetBrains color schemes. Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
 
 ### Secrets and security
 

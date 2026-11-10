@@ -653,11 +653,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .first { coverageKey(it) == "PIWI_COVERAGE_RUN" }
             val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
             assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
-            // The lines run mark the gutter alone; the other marks carry their key, which marks the scroll bar too.
-            assertNull(run.textAttributesKey)
+            // Every mark carries its key, for a background the scheme sets; the lines run draw no mark in the scroll bar.
+            val scheme = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance().globalScheme
+            assertEquals("PIWI_COVERAGE_RUN", run.textAttributesKey?.externalName)
+            assertNull(run.getErrorStripeMarkColor(scheme))
             val notRun = com.intellij.openapi.editor.impl.DocumentMarkupModel.forDocument(document, project, true).allHighlighters
                 .first { coverageKey(it) == "PIWI_COVERAGE_NOT_RUN" }
             assertEquals("PIWI_COVERAGE_NOT_RUN", notRun.textAttributesKey?.externalName)
+            assertNotNull(notRun.getErrorStripeMarkColor(scheme))
             assertTrue(marks.known)
             marks.shown = false
             com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -1143,7 +1146,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900", "failing"), test.failure)
                 assertEquals(
                     listOf(
-                        Triple(4, "✗ not found", "piwi.openInDashboard"),
+                        Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
                         Triple(4, "Run this test", "piwi.runTests"),
                         Triple(4, "Screenshot", "piwi.openScreenshot"),
                         Triple(4, "Trace", "piwi.openTrace"),
