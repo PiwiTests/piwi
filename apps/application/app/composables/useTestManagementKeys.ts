@@ -3,6 +3,7 @@ import { makeTagKeyMatcher } from '#shared/integrations/tag-keys';
 import {
   createTestCaseKeyLoader,
   type CatalogCasesResponse,
+  type TestCaseKeyLoader,
   type TestCaseKeyState,
 } from '~/utils/test-case-key-loader';
 import type { TestManagementKeyConfig } from '#shared/handlers/test-management-summary';
@@ -31,16 +32,23 @@ export function provideTestManagementKeys(projectId: MaybeRefOrGetter<number | n
   const config: Ref<TestManagementKeyConfig | null> = shallowRef(null);
   const states = reactive<Record<string, TestCaseKeyState>>({});
 
+  let loader: TestCaseKeyLoader | null = null;
   watch(
     () => toValue(projectId) ?? null,
-    async (id) => {
+    async (id, _previous, onCleanup) => {
+      let current = true;
+      onCleanup(() => {
+        current = false;
+      });
       config.value = null;
+      loader?.reset();
       for (const key of Object.keys(states)) delete states[key];
       if (id === null || !import.meta.client) return;
       try {
-        config.value = await $fetch<TestManagementKeyConfig>(`/api/projects/${id}/test-management/key-config`);
+        const loaded = await $fetch<TestManagementKeyConfig>(`/api/projects/${id}/test-management/key-config`);
+        if (current) config.value = loaded;
       } catch {
-        config.value = null; // no card: the chips keep working as they did
+        if (current) config.value = null; // no card: the chips keep working as they did
       }
     },
     { immediate: true },
@@ -48,13 +56,15 @@ export function provideTestManagementKeys(projectId: MaybeRefOrGetter<number | n
 
   const matcher = computed(() => (config.value?.bound ? makeTagKeyMatcher(config.value.pattern) : () => false));
 
-  const loader = createTestCaseKeyLoader({
+  const keyLoader: TestCaseKeyLoader = createTestCaseKeyLoader({
     states,
     fetchCases: (keys) =>
       $fetch<CatalogCasesResponse>(`/api/projects/${toValue(projectId)}/test-management/cases`, {
         query: { keys: keys.join(',') },
       }),
   });
+
+  loader = keyLoader;
 
   provide(TEST_MANAGEMENT_KEYS, {
     projectKey: () => (config.value?.bound ? config.value.projectKey : null),
@@ -65,7 +75,7 @@ export function provideTestManagementKeys(projectId: MaybeRefOrGetter<number | n
     keyForExternalId: (externalId) =>
       config.value?.bound && config.value.keySources.externalId && matcher.value(externalId) ? externalId : null,
     state: (key) => states[key],
-    load: loader.load,
+    load: keyLoader.load,
   });
 }
 

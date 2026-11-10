@@ -91,4 +91,38 @@ describe('createTestCaseKeyLoader', () => {
     await tick();
     expect(states['SHOP-T1']).toEqual({ status: 'ready', testCase: null, fetchedAt: null });
   });
+
+  test('reset drops an answer still on its way and the keys still queued', async () => {
+    let resolve: (value: CatalogCasesResponse) => void = () => {};
+    const fetchCases = vi.fn(() => new Promise<CatalogCasesResponse>((r) => (resolve = r)));
+    const { loader, states, tick } = setup(fetchCases);
+    loader.load('SHOP-T1');
+    await tick();
+    expect(fetchCases).toHaveBeenCalledTimes(1);
+    loader.load('SHOP-T2'); // queued, not yet sent
+    loader.reset();
+    for (const key of Object.keys(states)) delete states[key];
+
+    resolve(answer({ 'SHOP-T1': { name: 'Login', status: null, url: null } }));
+    await tick();
+    expect(states).toEqual({});
+    expect(fetchCases).toHaveBeenCalledTimes(1);
+
+    loader.load('SHOP-T1'); // asked for again after the reset
+    await tick();
+    expect(fetchCases).toHaveBeenCalledTimes(2);
+  });
+
+  test('reset drops the failure of a request that was on its way', async () => {
+    let reject: (reason: unknown) => void = () => {};
+    const fetchCases = vi.fn(() => new Promise<CatalogCasesResponse>((_, r) => (reject = r)));
+    const { loader, states, tick } = setup(fetchCases);
+    loader.load('SHOP-T1');
+    await tick();
+    loader.reset();
+    delete states['SHOP-T1'];
+    reject(new Error('gone'));
+    await tick();
+    expect(states).toEqual({});
+  });
 });

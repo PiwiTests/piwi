@@ -20,6 +20,8 @@ export interface CatalogCasesResponse {
 export interface TestCaseKeyLoader {
   /** Ask for `key`, once: a key already loading or loaded is not asked for again, one that failed is. */
   load: (key: string) => void;
+  /** Forget every queued key and drop the answers of requests still on their way; the caller clears `states`. */
+  reset: () => void;
 }
 
 /**
@@ -38,6 +40,7 @@ export function createTestCaseKeyLoader(options: {
   const schedule = options.schedule ?? ((fn: () => void) => void setTimeout(fn, 0));
   const queued = new Set<string>();
   let scheduled = false;
+  let epoch = 0;
 
   async function flush(): Promise<void> {
     scheduled = false;
@@ -45,12 +48,15 @@ export function createTestCaseKeyLoader(options: {
     for (const key of keys) queued.delete(key);
     if (queued.size > 0) enqueue();
     if (keys.length === 0) return;
+    const asked = epoch;
     try {
       const res = await fetchCases(keys);
+      if (asked !== epoch) return;
       for (const key of keys) {
         states[key] = { status: 'ready', testCase: res.cases[key] ?? null, fetchedAt: res.fetchedAt };
       }
     } catch {
+      if (asked !== epoch) return;
       for (const key of keys) states[key] = { status: 'error' };
     }
   }
@@ -73,6 +79,10 @@ export function createTestCaseKeyLoader(options: {
       states[key] = { status: 'loading' };
       queued.add(key);
       enqueue();
+    },
+    reset() {
+      epoch += 1;
+      queued.clear();
     },
   };
 }
