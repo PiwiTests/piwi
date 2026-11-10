@@ -877,7 +877,9 @@ export function registerRunControl(
     const stop = await chooseStop(arg, canShowBrowser);
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) return say('no test is stopped.');
-    if (!stop.stop.bar) return say('the test runs headless: its browser has no window to show. Run it headed.');
+    if (!stop.stop.bar) {
+      return say("the test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.");
+    }
     acted(stop);
     const params: StopActionParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, action: 'front' };
     const answer = await lc.sendRequest<StopActionResult>(STOP_ACTION_REQUEST, params).catch(() => null);

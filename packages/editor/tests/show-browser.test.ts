@@ -109,13 +109,13 @@ describe('Show the browser', () => {
     expect(sessions.stopIntentsOf('ed-1', 0, null)).not.toContain('front');
     expect(await sessions.front({ ref: 'ed-1', since })).toEqual({
       ok: false,
-      message: 'The test runs headless: its browser has no window to show. Run it headed.',
+      message: "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.",
     });
     expect(fronts()).toEqual([]);
     sessions.dispose();
   });
 
-  test('is refused for a reporter that does not take it, and past the stop', async () => {
+  test('is refused for a reporter that does not take it', async () => {
     const older = harness(['view-lane', 'give-up']);
     const since = await older.stopAt(1, true);
     expect(older.sessions.stopIntentsOf('ed-1', 0, null)).not.toContain('front');
@@ -124,10 +124,17 @@ describe('Show the browser', () => {
       message: "@piwitests/reporter 0.71.0 cannot bring the test's window forward: update it.",
     });
     expect(older.fronts()).toEqual([]);
-    older.read({ type: 'running', stop: 1 });
-    await waitFor(() => (older.sessions.current()[0]?.workers[0]?.stop ? undefined : true));
-    expect(await older.sessions.front({ ref: 'ed-1', since })).toMatchObject({ ok: false });
     older.sessions.dispose();
+  });
+
+  test('is refused past the stop it names, the worker never asked', async () => {
+    const { sessions, fronts, stopAt, read } = harness();
+    const since = await stopAt(1, true);
+    read({ type: 'running', stop: 1 });
+    await waitFor(() => (sessions.current()[0]?.workers[0]?.stop ? undefined : true));
+    expect(await sessions.front({ ref: 'ed-1', since })).toEqual({ ok: false, message: 'The test went on.' });
+    expect(fronts()).toEqual([]);
+    sessions.dispose();
   });
 
   test('is a hub command naming its stop', () => {

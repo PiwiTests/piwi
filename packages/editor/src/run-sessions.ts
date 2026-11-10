@@ -1506,14 +1506,18 @@ export class RunSessions {
 
   /**
    * Show the browser: at the stop a client names, the test's window comes to the front. Refused at a stop no pause bar
-   * shows (a headless run, whose browser has no window), and for a reporter that does not take it. Answers once the
+   * shows (a headless run, whose browser has no window, or a stop whose page is not known), and for a reporter that
+   * does not take it. Answers once the
    * worker did, or after `PAUSED_PAGE_WAIT_MS`.
    */
   async front(params: StopParams): Promise<RunControlResult> {
     const at = this.stopped(params);
     if ('message' in at) return at;
     if (!at.worker.stop!.view.bar) {
-      return { ok: false, message: 'The test runs headless: its browser has no window to show. Run it headed.' };
+      return {
+        ok: false,
+        message: "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.",
+      };
     }
     if (!at.worker.features.has('front')) {
       return {

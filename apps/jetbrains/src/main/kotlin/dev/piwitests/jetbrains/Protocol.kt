@@ -998,8 +998,9 @@ data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
 /**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
  * `worker`: `pick`, `record`, `assert` and `assert-region` in the test's window (where the pause bar shows), `mock`
- * with `request`, a response `piwi/stopRequests` lists. Answered with whether it started, or why not; the code of
- * `assert`, `assert-region` and `mock` comes in `piwi/stopCode`.
+ * with `request`, a response `piwi/stopRequests` lists, and `front` (Show the Browser), which brings the test's window
+ * to the front where the pause bar shows. Answered with whether it started, or why not; the code of `assert`,
+ * `assert-region` and `mock` comes in `piwi/stopCode`.
  */
 data class StopActionParams(val ref: String, val worker: Int? = null, val since: String, val action: String, val request: Int? = null)
 
