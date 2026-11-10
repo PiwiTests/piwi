@@ -233,6 +233,9 @@
                     description="Pick a region in the stopped test's window: its ARIA snapshot goes above the stopped line"/>
             <action id="Piwi.MockAtStop" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a Request at the Stop"
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
+            <action id="Piwi.ShowBrowser" class="dev.piwitests.jetbrains.ShowBrowserAction"
+                    text="Show the Stopped Test's Browser"
+                    description="Bring the stopped test's window to the front, at a stop of a headed run"/>
             <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
             <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
                     text="Share the Stopped Browser with Playwright Tools"

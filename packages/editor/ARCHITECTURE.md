@@ -650,6 +650,10 @@ the run's stop before it, so it names that stop alone.
   drops the Pause: a locator call that carries the end signal is given up at once, and after any other call the worker
   skips the test at its next locator call; the answer says which (`Ending the test: <call> is given up.`, `Ending the
   test as <call> returns.`).
+- `front` (Show the browser, `piwi/stopAction` and the hub's `front`) asks the worker stopped at `since` to bring its
+  page's window to the front (`RunSessions.front`), for a worker that lists `front` in its `features`
+  (`RunWorker.showsWindow`) at a stop its pause bar shows; the stop's `intents` list it there alone. It answers no stop
+  and takes no driving: the test stays where it stands.
 
 A worker's stop ends with its `running`, whoever ended it: the pause bar, the editor, or the test ending under it or
 closing its page, which the worker sends unanswered. A control naming that stop afterwards is refused the same way.

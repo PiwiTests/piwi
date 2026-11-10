@@ -1560,6 +1560,11 @@ export interface RunWorker {
   takes: RunTake[];
   /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
   watchable: boolean;
+  /**
+   * Its reporter brings the test's window to the front at a stop its pause bar shows: `piwi/stopAction` `front`
+   * (**Show the browser**).
+   */
+  showsWindow: boolean;
   /** The tools that watch its page now, its slot's view or its stop's, each viewer once; absent while none does. */
   watchers?: RunPresence[];
   /**
@@ -1938,15 +1943,15 @@ export const HUB_REQUEST = 'piwi/hub';
  * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element
  * there, and `assert-region` the picker, for a region whose ARIA snapshot is read; `mock` makes `page.route(…)` from a
  * response the test kept (`request`, an id `piwi/stopRequests` lists). The code of `assert`, `assert-region` and
- * `mock` comes in `piwi/stopCode`. `pick`, `record`, `assert` and `assert-region` need the pause bar (a headed
- * window); `mock` does not.
+ * `mock` comes in `piwi/stopCode`. `front` (**Show the browser**) brings the test's window to the front. `pick`,
+ * `record`, `assert`, `assert-region` and `front` need the pause bar (a headed window); `mock` does not.
  */
-export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'mock';
+export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'mock' | 'front';
 
 /**
  * `piwi/stopAction`: start an action at the stop `since` names, of the run's one stopped worker or `worker`. Answered
  * once the worker said whether it started (`pick`, `record`, `assert`, `assert-region`; the person then acts in the
- * test's window) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
+ * test's window), once its window came to the front (`front`) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
  * (`The test went on.`), a stop no pause bar shows, a reporter that does not take the action, a client without
  * `InitializationOptions.stopCode` for an action that writes code, and, before `assert` or `assert-region` starts in
  * the test's window, a stopped line no code can be written above: outside a test's or a function's body, on its

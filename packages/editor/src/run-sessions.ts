@@ -482,6 +482,7 @@ interface Session {
 type Asked =
   | 'image'
   | 'view-lane'
+  | 'front'
   | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end' | 'share'>
   | AgentQuery;
 
@@ -1504,6 +1505,29 @@ export class RunSessions {
   }
 
   /**
+   * Show the browser: at the stop a client names, the test's window comes to the front. Refused at a stop no pause bar
+   * shows (a headless run, whose browser has no window), and for a reporter that does not take it. Answers once the
+   * worker did, or after `PAUSED_PAGE_WAIT_MS`.
+   */
+  async front(params: StopParams): Promise<RunControlResult> {
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    if (!at.worker.stop!.view.bar) {
+      return { ok: false, message: 'The test runs headless: its browser has no window to show. Run it headed.' };
+    }
+    if (!at.worker.features.has('front')) {
+      return {
+        ok: false,
+        message:
+          `@piwitests/reporter ${at.worker.reporter || ''}`.trimEnd() +
+          " cannot bring the test's window forward: update it.",
+      };
+    }
+    const answer = (await this.ask(at.worker, 'front', at.worker.stop!.id)) as IntentAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.' };
+  }
+
+  /**
    * For an agent: the ARIA snapshot in AI mode of the page of the stop a client names, `depth` levels deep at most (the
    * whole tree for null), with its image when `image` is true; why there is none otherwise.
    */
@@ -1667,7 +1691,9 @@ export class RunSessions {
     if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
     return [
       ...intents,
-      ...(['view', 'input', 'input-clicks', 'pick-at', 'end'] as const).filter((what) => found.takes.has(what)),
+      ...(['view', 'input', 'input-clicks', 'pick-at'] as const).filter((what) => found.takes.has(what)),
+      ...(found.features.has('front') ? (['front'] as const) : []),
+      ...(found.takes.has('end') ? (['end'] as const) : []),
       ...(found.features.has('view-lane') ? (['watch'] as const) : []),
       // End the test while a Pause waits for its call.
       ...(found.waiting ? (['give-up'] as const) : []),
@@ -1692,7 +1718,9 @@ export class RunSessions {
           ? watching
           : what === 'end'
             ? found.stop!.view.reason !== 'failure'
-            : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
+            : what === 'front'
+              ? found.stop!.view.bar
+              : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
     );
   }
 
@@ -2100,6 +2128,7 @@ export class RunSessions {
           waiting: worker.waiting,
           takes: [...worker.takes],
           watchable: worker.features.has('view-lane'),
+          showsWindow: worker.features.has('front'),
           ...watchersField(this.watchersOf(session, worker, null)),
         })),
       ended: session.ended,

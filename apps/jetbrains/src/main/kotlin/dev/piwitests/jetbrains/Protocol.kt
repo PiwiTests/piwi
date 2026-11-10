@@ -783,6 +783,8 @@ data class RunWorker(
     val takes: List<String>? = null,
     /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
     val watchable: Boolean = false,
+    /** Its reporter brings the test's window to the front at a stop its pause bar shows (`front`, Show the Browser). */
+    val showsWindow: Boolean = false,
     /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
     val waiting: RunWaiting? = null,
     /** The tools that watch its page now, its slot's view or its stop's, each once; null while none does. */
