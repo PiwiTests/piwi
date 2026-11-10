@@ -512,8 +512,9 @@ not answer or the desktop app did not prove itself to, else the first. It is dra
 - the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
   `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Piwi: Connect**;
-- the editor service stopped and the client gave up starting it (`serviceDownView`, `Piwi: not running`):
-  **Piwi: Restart the editor service**, the tooltip offering **Open the log**;
+- the editor service's start failed, or the client stayed stopped `SERVICE_DOWN_MS`, as when it gave up starting it
+  (`serviceDownView`, `Piwi: not running`; a restart's stop is shorter): **Piwi: Restart the editor service**, the
+  tooltip offering **Open the log**;
 - no Playwright config found: nothing.
 
 **The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:

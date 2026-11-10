@@ -251,14 +251,14 @@ function configLine(
 }
 
 /**
- * The status bar item while the editor service is not running (the client stopped, or gave up starting it again): it
- * says so, a click starts it again, and the tooltip offers the log.
+ * The status bar item while the editor service is not running (its start failed, or the client gave up starting it
+ * again): it says so, a click starts it again, and the tooltip offers the log.
  */
 export function serviceDownView(): StatusBarView {
   return {
     text: '$(warning) Piwi: not running',
     tooltip: lines(
-      'The Piwi editor service is not running, so nothing of the instance is read.',
+      'The Piwi editor service is not running, so nothing of the instance is read. When it does not start again, the log says why, and reloading the window starts it anew.',
       '[Restart the editor service](command:piwi.restartService) · [Open the log](command:piwi.openLog)',
     ),
     action: 'restart',

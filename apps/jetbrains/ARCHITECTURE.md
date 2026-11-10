@@ -921,9 +921,11 @@ Nothing blocks the event thread, and nothing in a read action waits on the servi
 - `orNull` waits the same way, and a task's Cancel stops it;
 - reads of the disk and of the password safe run on a pooled thread.
 
-A request that fails, or answers nothing within its time, is written to `idea.log` under `#dev.piwitests.jetbrains`
-with its cause, a failure as a warning; a cancel is not. A failed Connect is logged there too. Every action that needs
-the service says the same while it does not run: `Glue.SERVICE_NOT_RUNNING`, which names Tools → Piwi → Refresh.
+A request that fails is written to `idea.log` under `#dev.piwitests.jetbrains` with its cause, as a warning at most
+once a minute and at debug between, since the daemon asks on every pass; one that answers nothing in its time is
+logged at debug, a cancel not at all, and a failed Connect at info. An action that needs the service says
+`Glue.SERVICE_NOT_RUNNING` while it does not run (open a test file, or Tools → Piwi → Refresh), and
+`Glue.SERVICE_NO_ANSWER` when the running service did not answer.
 
 ## Dynamic plugin loading
 

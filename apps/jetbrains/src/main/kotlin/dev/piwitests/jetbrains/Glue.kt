@@ -864,7 +864,11 @@ object Glue {
     fun heldFailuresOnly(stops: List<ShownStop>): Boolean = stops.isNotEmpty() && stops.all { it.stop.reason == "failure" }
 
     /** What every action that needs the editor service says while it is not running in the project, and how to start it. */
-    const val SERVICE_NOT_RUNNING = "The Piwi editor service is not running in this project: Tools → Piwi → Refresh starts it."
+    const val SERVICE_NOT_RUNNING =
+        "The Piwi editor service is not running in this project: open one of its test files, or Tools → Piwi → Refresh."
+
+    /** What an action says when the running service did not answer it: the request failed, or took too long. */
+    const val SERVICE_NO_ANSWER = "The Piwi editor service did not answer: idea.log says why."
 
     /** An action the Piwi tool window's empty text links, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
