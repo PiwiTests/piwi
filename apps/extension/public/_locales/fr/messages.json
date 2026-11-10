@@ -6627,6 +6627,12 @@
   "runs_pickTitle": {
     "message": "Choisir un locator dans la fenêtre du test : il remplace celui de cette ligne"
   },
+  "runs_front": {
+    "message": "Afficher le navigateur"
+  },
+  "runs_frontTitle": {
+    "message": "Mettre au premier plan la fenêtre du navigateur du test"
+  },
   "runs_record": {
     "message": "Enregistrer"
   },
