@@ -242,6 +242,15 @@ once, as without Piwi. A run nobody attends, such as a Flake Lab run, never hold
 last one set it: the desktop app's switch turns it off as the app's last window closes only when no other tool set it
 since.
 
+### Presence, driving a stop
+
+**Who else is on a run, and who acts at its stop.** Each tool says which others have the run open (a Runs window, the
+desktop app, an agent that follows it), who watches each worker's page, and who drives a stop. One drives at a time:
+an agent drives a stop it asked for or acted on, and a person takes it by acting on the page (a click, a pick, Record,
+Assert) or with **Take control**. While a person drives, the agent's actions and controls at that stop are refused and
+it is told the stop was taken; the person gives it back with **Give back** or by closing the page's view. A person's
+Resume, Step and Finish always answer the stop.
+
 ### Watch, Share live
 
 **Watch** shows a worker's page as its test runs or stands stopped. **Share live** lets a teammate watch a run on your
