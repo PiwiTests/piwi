@@ -2188,20 +2188,6 @@ class GlueTest {
     }
 
     @Test
-    fun `the failing line's tooltip says why, with the message escaped`() {
-        assertEquals(
-            "<html><b>Piwi: failed here</b><br>Timeout waiting for &lt;button&gt;<pre>Error: click\n  - waiting for &lt;button&gt; &amp; more</pre></html>",
-            Glue.failureTooltip("Timeout waiting for <button>", "Error: click\n  - waiting for <button> & more\n"),
-        )
-        assertEquals("<html><b>Piwi: failed here</b><br>Failed</html>", Glue.failureTooltip(null, " "))
-        assertEquals("<html><b>Piwi: failed here</b><br>boom</html>", Glue.failureTooltip("boom", "boom"))
-        assertEquals(
-            "<html><b>Piwi: failed here, edited since the run</b><br>boom</html>",
-            Glue.failureTooltip("boom", null, edited = true),
-        )
-    }
-
-    @Test
     fun `a Rider solution's files are in the folder above its idea folder`() {
         assertEquals("C:/src/Shop", Glue.projectFolder("C:\\src\\Shop\\.idea\\.idea.Shop"))
         assertEquals("/home/me/Shop", Glue.projectFolder("/home/me/Shop/.idea/.idea.Shop.dir/"))

@@ -1468,11 +1468,13 @@ describe('the Piwi language server', () => {
           executionId: 900,
           url: `${url}/test-run-cases/900`,
           state: 'failing',
+          // The diagnostic is on the page object's line, not on this call of it.
+          diagnosed: false,
         },
       }),
       {
         line: 6,
-        title: "✗ locator('.cart-row').nth(2) was not found",
+        title: "✗ Failed here · locator('.cart-row').nth(2) was not found",
         command: {
           title: 'Open the failure in the dashboard',
           command: 'piwi.openInDashboard',
@@ -1506,6 +1508,8 @@ describe('the Piwi language server', () => {
       position: { line: 6, character: 10 },
     })) as { contents: { value: string } };
     expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // No diagnostic is on this line: the hover says why, as the lens above it does.
+    expect(hover.contents.value).toContain("\n\nlocator('.cart-row').nth(2) was not found\n\n");
     expect(hover.contents.value).toContain('```text\nError: locator.click: Timeout 5000ms exceeded.\nCall log:');
     expect(hover.contents.value).toContain(
       `Called from [checkout.page.ts:5](${uri('tests/pages/checkout.page.ts')}#L5) ← [rows.spec.ts:7](${uri('tests/rows.spec.ts')}#L7)`,
@@ -2183,7 +2187,7 @@ describe('failures follow the edits', () => {
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
       [5, 'failing in run #41'],
-      [8, "✗ locator('.cart-row').nth(2) was not found"],
+      [8, '✗ Failed here'],
       [8, 'Run this test'],
       [8, 'Screenshot'],
       [8, 'Trace'],
@@ -2236,6 +2240,9 @@ describe('failures follow the edits', () => {
     expect(hover.contents.value).toContain(
       `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
     );
+    // The diagnostic shows the headline: the hover gives the error's detail alone.
+    expect(hover.contents.value).not.toContain("\n\nlocator('.cart-row').nth(2) was not found\n");
+    expect(hover.contents.value).toContain('Timeout 5000ms exceeded');
   });
 
   test('deleting the test takes its failure away, and putting it back brings it back', async () => {
@@ -2747,6 +2754,13 @@ describe('runs as they happen', () => {
       resolved: [],
     };
     await runsClient.sendRequest('piwi/refreshRun');
+    // `pays` failed on its own line, where its diagnostic says why: the line above marks it alone.
+    const before = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    const pays = before.lines.find((l) => l.status === 'failed')!;
+    expect(pays.failure).toMatchObject({ diagnosed: true });
+    expect(before.lines.filter((l) => l.line === pays.failure!.line).map((l) => l.title)).toContain('✗ Failed here');
     const command = await runTests();
     const startTime = '2026-09-27T15:00:00.000Z';
     runDetails.set(61, editorRun(61, command.ref, 'running', startTime));
@@ -3500,6 +3514,13 @@ describe('the severity of a failure', () => {
         uri: uri('tests/rows.spec.ts'),
       })) as FileSummary;
       expect(spec.lines.find((l) => l.line === 3)).toMatchObject({ status: 'failed', failure: { line: 6 } });
+      // With no diagnostic to say it, the line above the failing line and the hover say why the test failed.
+      expect(spec.lines.map((l) => l.title)).toContain("✗ Failed here · locator('.cart-row').nth(2) was not found");
+      const hover = (await severityClient.sendRequest('textDocument/hover', {
+        textDocument: { uri: page },
+        position: { line: 4, character: 30 },
+      })) as { contents: { value: string } };
+      expect(hover.contents.value).toContain("locator('.cart-row').nth(2) was not found");
 
       // Credentials without the setting: an error, as for a run on the checked-out branch.
       await severityClient.sendNotification('piwi/setCredentials', {});

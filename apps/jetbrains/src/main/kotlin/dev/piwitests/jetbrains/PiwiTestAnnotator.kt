@@ -80,11 +80,8 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 }
             }
             if (failure != null && failedAt != null && !failedAt.isEmpty) {
-                holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
-                    .range(failedAt)
-                    .textAttributes(FAILING_LINE)
-                    .tooltip(Glue.failureTooltip(failure.headline, failure.message, failure.state == "edited"))
-                    .create()
+                // Why it failed is the diagnostic's and the hover's, which the service writes.
+                holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(failedAt).textAttributes(FAILING_LINE).create()
             }
         }
     }

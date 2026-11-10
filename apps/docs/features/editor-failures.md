@@ -19,8 +19,8 @@ over them, and follow each failing line through your edits until a run covers it
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
-line a failing test failed at (the line that calls the page object, when it failed in one) is tinted darker, with the
-reason, **Run this test**, **Screenshot** and **Trace** above it.
+line a failing test failed at (often its call into a page object) is tinted darker, with **✗ Failed here**, the
+reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
 
 On a failure, the quick fixes are:
 

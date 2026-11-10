@@ -37,34 +37,37 @@ each refresh, and the popup's run section waiting for [M2](#m2)), the Paused Pag
 click runs, and a local run's failure leading with 'Local failure:', #1121; the gutter mark's tooltip written by the
 service in the dashboard's words, under a drift test, naming the run its result is from when the latest run or the run
 in progress gives it, [TL10](#tl10); JetBrains shows it on the result icon alone, and the pass rate reads 'passed 44 of
-48 runs'), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing test's lines to the editor's edge, #1121), [Q20](#q20)
-(Run This Spec and the spec's lens run every test of the file by its path, #1121), [Q17](#q17) (VS Code's run items each
-named, read without their icon, naming no key, Resume alone at a held failure, which is marked in red, #1122),
-[LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step, Finish and Write code…, #1122; the line's own lens
-hiding meanwhile, JetBrains' inlay and the nightly width check of [M14](#m14) remain), [LR2](#lr2)'s icons (no spinner
-at a held stop, the error's icon at a held failure, #1122; the line the service composes for both clients, [M13](#m13),
-remains), [ST23](#st23) in part (the JetBrains plugin logs a failed request to idea.log, and every action says the one
-not-running sentence; its Log tab and Piwi.OpenLog of [M19](#m19) remain), [Q24](#q24) (one name per worker, #1213),
-with an unproven desktop app told apart from an unreachable one in both status items (#1213), [Q15](#q15) (the editor
-fixture answers each spec's own cases and the nightly suite holds the spec's count, [ST6](#st6); the JetBrains script
-writes no image whose status item lacks its failing icon and color, [HM20](#hm20); both sets of images and the recording
-video captured again, #1123; WebStorm 2026.3 drew the item with both, so why an earlier capture drew it gray stays
-unexplained), [Q13](#q13) in part (every JetBrains balloon titled Piwi, in a group of its kind, results, requests
-(sticky), suggestions, problems and confirmations, the five ids in D25, an information with Piwi's icon, [HM18](#hm18),
-[HM15](#hm15); Only on Failure on a passing run's notice in both editors; remaining: a balloon titled by its run, the
-text formatted, a gear on the run notices, Don't Show Again on VS Code's other messages, and a platform test of every
-balloon's group: one reads the first run's; confirmations are a balloon group of their own, the new UI drawing no status
-bar text under its navigation bar), [Q10](#q10) (a spec's editor title in VS Code: one Piwi button by state, Stop
-recording, else Resume at a stop, else Record here, the run's other controls and the recording's in its '…' menu as the
-palette offers them, and the spec, the test at the cursor and Verify ×3 under its Run button, [AC5](#ac5), with the VS
-Code half of [LR3](#lr3)'s title; each button a glyph no other command has, Re-run failing taking the table's
-`$(run-errors)` and the recording's controls the table's recording glyphs; the other commands' icons are [Q9](#q9)'s),
-and every command, setting and action id of both editors registered in D25 and held to the manifests (#1124). Nothing
-here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11).
-Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding
-was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a
-Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's four items are
-built. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+48 runs'), [Q12](#q12) ([TL14](#tl14): JetBrains tints a failing test's lines to the editor's edge, #1121; [TL8](#tl8):
+a failure's headline said by its diagnostic where one is on that line (`TestFailure.diagnosed`), else by the line above
+it and the hover, JetBrains' failing line with no tooltip; VS Code's Testing view still repeats it inline; [TL15](#tl15): the four
+coverage colors in `COVERAGE_MARK_COLORS` and its test, VS Code's amber in JetBrains, and the lines run out of
+JetBrains' scroll bar), [Q20](#q20) (Run This Spec and the spec's lens run every test of the file by its path, #1121),
+[Q17](#q17) (VS Code's run items each named, read without their icon, naming no key, Resume alone at a held failure,
+which is marked in red, #1122), [LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step, Finish and Write
+code…, #1122; the line's own lens hiding meanwhile, JetBrains' inlay and the nightly width check of [M14](#m14) remain),
+[LR2](#lr2)'s icons (no spinner at a held stop, the error's icon at a held failure, #1122; the line the service composes
+for both clients, [M13](#m13), remains), [ST23](#st23) in part (the JetBrains plugin logs a failed request to idea.log,
+and every action says the one not-running sentence; its Log tab and Piwi.OpenLog of [M19](#m19) remain), [Q24](#q24)
+(one name per worker, #1213), with an unproven desktop app told apart from an unreachable one in both status items
+(#1213), [Q15](#q15) (the editor fixture answers each spec's own cases and the nightly suite holds the spec's count,
+[ST6](#st6); the JetBrains script writes no image whose status item lacks its failing icon and color, [HM20](#hm20);
+both sets of images and the recording video captured again, #1123; WebStorm 2026.3 drew the item with both, so why an
+earlier capture drew it gray stays unexplained), [Q13](#q13) in part (every JetBrains balloon titled Piwi, in a group of
+its kind, results, requests (sticky), suggestions, problems and confirmations, the five ids in D25, an information with
+Piwi's icon, [HM18](#hm18), [HM15](#hm15); Only on Failure on a passing run's notice in both editors; remaining: a
+balloon titled by its run, the text formatted, a gear on the run notices, Don't Show Again on VS Code's other messages,
+and a platform test of every balloon's group: one reads the first run's; confirmations are a balloon group of their own,
+the new UI drawing no status bar text under its navigation bar), [Q10](#q10) (a spec's editor title in VS Code: one Piwi
+button by state, Stop recording, else Resume at a stop, else Record here, the run's other controls and the recording's
+in its '…' menu as the palette offers them, and the spec, the test at the cursor and Verify ×3 under its Run button,
+[AC5](#ac5), with the VS Code half of [LR3](#lr3)'s title; each button a glyph no other command has, Re-run failing
+taking the table's `$(run-errors)` and the recording's controls the table's recording glyphs; the other commands' icons
+are [Q9](#q9)'s), and every command, setting and action id of both editors registered in D25 and held to the manifests
+(#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
+#1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
+no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
+views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's
+four items are built. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
 [live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,

@@ -202,8 +202,8 @@ Each visible file the service reads (C# files among them) is asked `piwi/coverag
 | Lines changed since the coverage run                                          | `piwi.coverageChangedBorder` | dashed |
 | In a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) | `piwi.uncoveredChangeBorder` | solid  |
 
-The first two colors default to the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
-`apps/application/tests/unit/coverage-mark-colors.test.ts`). Every mark but the lines run also shows in the overview
+The four colors default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, the first two the dashboard's, and
+the JetBrains plugin's color schemes hold the same (checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`). Every mark but the lines run also shows in the overview
 ruler.
 
 `piwi/coverageChanged` replaces a file's answer and draws it again, with the file's lenses. An edit asks for nothing:
