@@ -97,6 +97,11 @@ const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }
     title: 'Run the test on without stopping at a breakpoint again in this attempt',
     icon: 'i-lucide-skip-forward',
   },
+  front: {
+    label: 'Show the browser',
+    title: "Bring the test's browser window to the front",
+    icon: 'i-lucide-app-window',
+  },
   end: { label: 'End the test', title: 'End the test here: the rest of it is skipped', icon: 'i-lucide-square' },
   'give-up': {
     label: 'End the test',
@@ -168,7 +173,9 @@ async function send(body: Record<string, unknown>, at: string | null): Promise<D
 async function steer(what: DesktopSteer): Promise<void> {
   // Pause, and End the test while a Pause waits for a call, answer no stop.
   const at = what === 'pause' || what === 'give-up' ? null : since.value;
-  const result = await send({ type: 'runControl', action: what, since: at }, at);
+  // Show the browser is the hub's own command; the others are run controls.
+  const body = what === 'front' ? { type: 'front', since: at } : { type: 'runControl', action: what, since: at };
+  const result = await send(body, at);
   if (result && !result.ok) say(result, at);
 }
 

@@ -197,14 +197,25 @@ export type HubCodeIntent = 'assert' | 'assert-region';
  */
 export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
+/** What a stop its pause bar shows can do for a viewer elsewhere: bring the test's window to the front (`front`). */
+export type HubWindowAction = 'front';
+
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
- * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
+ * live view's actions, Show the browser (`front`) at a stop its pause bar shows, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
  * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
  * while it runs (`watch`, at a hub whose features list `lanes`); `give-up` too, while a Pause waits for the call its
  * test runs: End the test there (`runControl` `give-up`).
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch' | 'give-up';
+export type HubAction =
+  | HubIntent
+  | HubCodeIntent
+  | 'mock'
+  | HubViewAction
+  | HubWindowAction
+  | 'end'
+  | 'watch'
+  | 'give-up';
 
 /**
  * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
@@ -227,6 +238,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'input',
   'input-clicks',
   'pick-at',
+  'front',
   'end',
   'watch',
   'give-up',
@@ -431,6 +443,11 @@ export type HubCommand =
    * cannot write code from a stop.
    */
   | { type: HubIntent | HubCodeIntent; id: number; ref: string; worker: number | null; since: string }
+  /**
+   * At the stop `since` names, bring the test's window to the front (**Show the browser**). Refused at a stop no pause
+   * bar shows (a headless run), at a stop the test went on from, and for a reporter that does not take it.
+   */
+  | { type: HubWindowAction; id: number; ref: string; worker: number | null; since: string }
   /** The responses the test kept as it stood at the stop `since` names: the answer's `requests`. */
   | { type: 'requests'; id: number; ref: string; worker: number | null; since: string }
   /**
@@ -780,9 +797,18 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       : invalid('watch needs on: true to watch the lane, false to stop watching it.');
   }
   if (
-    !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', 'drive', ...HUB_INTENTS].includes(
-      value.type,
-    )
+    ![
+      'runControl',
+      'pausedPage',
+      'requests',
+      'mock',
+      'view',
+      'input',
+      'pick-at',
+      'drive',
+      'front',
+      ...HUB_INTENTS,
+    ].includes(value.type)
   ) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
@@ -840,7 +866,7 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     default:
       return since === null
         ? invalid(NEEDS_STOP)
-        : { type: value.type as HubIntent | HubCodeIntent, id, ref, worker, since };
+        : { type: value.type as HubIntent | HubCodeIntent | HubWindowAction, id, ref, worker, since };
   }
 }
 

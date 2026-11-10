@@ -2137,6 +2137,7 @@ describe('the status item while a run holds a stop', () => {
         test: null,
         takes: [],
         watchable: false,
+        showsWindow: false,
         pausing: false,
         waiting: null,
         stop: {

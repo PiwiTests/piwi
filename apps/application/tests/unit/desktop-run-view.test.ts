@@ -227,6 +227,14 @@ describe('a worker of a desktop run', () => {
     // End the test, where the stop takes it: its reporter ends the test there, skipped.
     const endable = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view', 'end'] }) });
     expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
+    // Show the browser, where the stop takes it (its pause bar shows): at a failure too.
+    const headed = workerOf({ state: 'stopped', stop: stopOf({ bar: true, intents: ['front', 'end'] }) });
+    expect(desktopSteering(headed)).toEqual(['resume', 'step', 'finish', 'front', 'end']);
+    const failedHeaded = workerOf({
+      state: 'stopped',
+      stop: stopOf({ reason: 'failure', bar: true, intents: ['front'] }),
+    });
+    expect(desktopSteering(failedHeaded)).toEqual(['resume', 'front']);
   });
 
   test('says the call a Pause waits in and how long it has run, with End the test where its worker takes it', () => {

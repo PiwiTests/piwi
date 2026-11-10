@@ -7220,6 +7220,74 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-front',
+    description:
+      'Local runs tray (desktop app): a worker stopped at a breakpoint of a headed run, with Show the browser beside Resume, Step, Finish and End the test',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, goto, settle, shoot }) {
+      await playDesktopRunHub(page, () => ({}));
+      await goto('/test-runs/2');
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const intents = ['assert-region', 'mock', 'view', 'pick-at', 'front', 'end'];
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        ended: false,
+        workers: [
+          {
+            worker: 0,
+            parallelIndex: 0,
+            state: 'stopped',
+            pausing: false,
+            intents,
+            test: {
+              id: 't1',
+              title: ['checkout', 'pays with a saved card'],
+              uri,
+              line: 11,
+              project: 'chromium',
+              retry: 0,
+              cannotPause: null,
+            },
+            stop: {
+              reason: 'breakpoint',
+              title: "Click getByRole('button', { name: 'Pay now' })",
+              uri,
+              line: 17,
+              character: 4,
+              locator: "getByRole('button', { name: 'Pay now' })",
+              bar: true,
+              since: 's1',
+              intents,
+            },
+          },
+        ],
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      const shown = tray.locator('[data-shot="desktop-run-worker"]');
+      await shown.getByRole('button', { name: 'Show the browser' }).waitFor();
+      await settle();
+      await shoot('', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+    },
+  },
+  {
     name: 'desktop-run-live',
     description:
       'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
