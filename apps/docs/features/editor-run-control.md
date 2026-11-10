@@ -33,7 +33,8 @@ test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcut
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
-  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**).
+  test stops), in the palette (**Piwi: Pause the run** and its kin) and the editor title (Resume, the rest under
+  `…`).
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
   menu, whose text starts `Piwi: paused · checkout.page.ts:12` while a test is stopped.
 

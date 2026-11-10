@@ -42,6 +42,62 @@ describe("the editor's context menu", () => {
   });
 });
 
+describe("a spec's editor title", () => {
+  const spec = 'resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/';
+  const commands = manifest.contributes.commands as Array<{ command: string; icon?: string }>;
+
+  test('shows one Piwi button by state: Stop recording, else Resume at a stop, else Record on a spec', () => {
+    const buttons = menus['editor/title']!.filter((e) => e.group?.startsWith('navigation'));
+    expect(buttons.map((e) => [e.command, e.when])).toEqual([
+      ['piwi.stopRecording', 'piwi.recording'],
+      ['piwi.resumeRun', '!piwi.recording && piwi.runStopped'],
+      ['piwi.record', `${spec} && !piwi.recording && !piwi.runStopped`],
+    ]);
+  });
+
+  test("keeps the other controls of a stop and of a recording in its '…' menu, as the palette offers each", () => {
+    const overflow = menus['editor/title']!.filter((e) => !e.group?.startsWith('navigation'));
+    expect(overflow.map((e) => e.command)).toEqual([
+      'piwi.pauseRun',
+      'piwi.stepRun',
+      'piwi.runToCursor',
+      'piwi.finishRun',
+      'piwi.endTest',
+      'piwi.showPausedPage',
+      'piwi.codeAtStop',
+      'piwi.stopRun',
+      'piwi.pauseRecording',
+      'piwi.resumeRecording',
+    ]);
+    const palette = menus['commandPalette']!;
+    for (const entry of overflow) {
+      expect(entry.when, entry.command).toBe(palette.find((p) => p.command === entry.command)!.when);
+    }
+  });
+
+  test('runs the spec, the test at the cursor or verifies it ×3 from the Run button, the spec first', () => {
+    expect(menus['editor/title/run']!.map((e) => [e.command, e.when])).toEqual([
+      ['piwi.runSpec', spec],
+      ['piwi.runTestAtCursor', spec],
+      ['piwi.verifyTestAtCursor', spec],
+    ]);
+  });
+
+  test('draws each button with a glyph of its own: no other command has it, but Record and Resume recording', () => {
+    const shown = [
+      ...menus['editor/title']!.filter((e) => e.group?.startsWith('navigation')),
+      ...menus['editor/title/run']!,
+    ].map((e) => e.command!);
+    const iconOf = (command: string) => commands.find((c) => c.command === command)?.icon;
+    for (const command of shown) {
+      const icon = iconOf(command);
+      expect(icon, command).toMatch(/^\$\([a-z-]+\)$/);
+      const sharing = commands.filter((c) => c.icon === icon && c.command !== command).map((c) => c.command);
+      expect(sharing, command).toEqual(command === 'piwi.record' ? ['piwi.resumeRecording'] : []);
+    }
+  });
+});
+
 describe('the commands that read the instance', () => {
   const reading = [
     'piwi.refreshRun',
