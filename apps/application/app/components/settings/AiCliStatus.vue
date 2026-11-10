@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * A local AI CLI chosen as a provider in Settings → AI: whether this server may
- * run it, whether it is installed and signed in, how to sign in (a button for
- * Claude Code, `codex login` in a terminal for Codex, the credentials of
- * DeepSeek Harness), and its usage since the server started.
+ * run it, whether it is installed and signed in, how to sign in (`claude auth
+ * login` or `codex login` in a terminal, the credentials of DeepSeek Harness),
+ * and its usage since the server started.
  */
 import type { LocalCliProvider } from '~/utils/ai-provider-catalog';
 
@@ -11,7 +11,6 @@ const props = defineProps<{ provider: LocalCliProvider }>();
 
 const form = useAiSettingsForm();
 const cli = useLocalCliStatus();
-const toast = useToast();
 
 const META: Record<
   LocalCliProvider,
@@ -20,21 +19,21 @@ const META: Record<
   'claude-cli': {
     label: 'Claude Code',
     command: 'claude',
-    signIn: 'Claude Code sign-in',
+    signIn: 'account Claude Code is signed in with',
     envPath: 'PIWI_CLAUDE_CLI_PATH',
     install: 'Install Claude Code on this machine, then recheck.',
   },
   'codex-cli': {
     label: 'Codex',
     command: 'codex',
-    signIn: 'ChatGPT sign-in',
+    signIn: 'ChatGPT account Codex is signed in with',
     envPath: 'PIWI_CODEX_CLI_PATH',
     install: 'Install the Codex CLI on this machine, then recheck.',
   },
   'deepseek-cli': {
     label: 'DeepSeek Harness',
     command: 'dsh',
-    signIn: 'DeepSeek account or API key',
+    signIn: 'DeepSeek account or API key DeepSeek Harness uses',
     envPath: 'PIWI_DEEPSEEK_CLI_PATH',
     install: 'Install DeepSeek Harness on this machine, then recheck.',
   },
@@ -43,7 +42,10 @@ const META: Record<
 const meta = computed(() => META[props.provider]);
 const allowed = computed(() => form.cliAllowed(props.provider));
 const v = computed(() => cli.view(props.provider));
-const signingIn = computed(() => props.provider === 'claude-cli' && cli.claude.signingIn.value);
+/** Claude Code is signed in, but in a way this server may not use (a subscription outside the desktop app). */
+const refused = computed(
+  () => props.provider === 'claude-cli' && Boolean(cli.claude.status.value?.loggedIn) && !v.value.ready,
+);
 
 const state = computed<{ text: string; dot: string }>(() => {
   if (!v.value.checked) return { text: 'Checking…', dot: 'bg-inverted/30' };
@@ -53,6 +55,7 @@ const state = computed<{ text: string; dot: string }>(() => {
       ? { text: 'Credentials set, checked on first use', dot: 'bg-success' }
       : { text: 'No credentials', dot: 'bg-warning' };
   }
+  if (refused.value) return { text: 'Sign-in not usable here', dot: 'bg-warning' };
   return v.value.ready ? { text: 'Signed in', dot: 'bg-success' } : { text: 'Not signed in', dot: 'bg-warning' };
 });
 
@@ -60,18 +63,6 @@ function tokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
-}
-
-async function signIn() {
-  const res = await cli.claude.signIn();
-  if (res.success) toast.add({ title: 'Signed in to Claude Code', color: 'success' });
-  else toast.add({ title: 'Sign-in failed', description: res.error || 'Unknown error', color: 'error' });
-}
-
-async function signOut() {
-  const res = await cli.claude.signOut();
-  if (res.success) toast.add({ title: 'Signed out of Claude Code', color: 'neutral' });
-  else toast.add({ title: 'Sign-out failed', description: res.error || 'Unknown error', color: 'error' });
 }
 
 function check(provider: LocalCliProvider) {
@@ -103,8 +94,8 @@ watch(() => props.provider, check);
 
     <p class="text-sm text-highlighted leading-relaxed">
       Runs <code class="font-mono text-xs">{{ meta.command }}</code> on this machine with its own tools turned off: it
-      reads the evidence and answers, and cannot run commands or open files. No API key: usage counts against your
-      {{ meta.signIn }}. It reads text only, so screenshots are not sent.
+      reads the evidence and answers, and cannot run commands or open files. Piwi stores no key: usage counts against
+      the {{ meta.signIn }}. It reads text only, so screenshots are not sent.
     </p>
 
     <UAlert
@@ -151,42 +142,18 @@ watch(() => props.provider, check);
         </template>
       </dl>
 
-      <template v-if="provider === 'claude-cli'">
-        <div v-if="!v.ready" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-lucide-log-in"
-            :loading="signingIn"
-            @click="signIn"
-          >
-            {{ signingIn ? 'Finish in your browser…' : 'Sign in' }}
-          </UButton>
-          <span class="text-xs text-muted">Opens your browser to sign in with your Claude subscription.</span>
-        </div>
-        <p v-if="signingIn && cli.claude.loginUrl.value" class="text-xs text-muted break-all">
-          If your browser did not open, visit
-          <a
-            :href="cli.claude.loginUrl.value"
-            target="_blank"
-            rel="noopener"
-            class="font-mono underline decoration-dotted underline-offset-2 hover:decoration-solid"
-            >{{ cli.claude.loginUrl.value }}</a
-          >
-        </p>
-        <UButton
-          v-if="v.ready"
-          color="neutral"
-          variant="ghost"
-          size="xs"
-          icon="i-lucide-log-out"
-          :disabled="signingIn"
-          @click="signOut"
-        >
-          Sign out
-        </UButton>
-      </template>
+      <UAlert
+        v-if="refused"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="This server cannot use a Claude subscription"
+        :description="v.error || undefined"
+      />
+      <div v-else-if="provider === 'claude-cli' && !v.ready" class="space-y-2">
+        <p class="text-sm text-highlighted">Sign in on this machine, in a terminal, then recheck:</p>
+        <CodeBlock code="claude auth login" lang="bash" />
+      </div>
       <div v-else-if="provider === 'codex-cli' && !v.ready" class="space-y-2">
         <p class="text-sm text-highlighted">Sign in on this machine, in a terminal, then recheck:</p>
         <CodeBlock code="codex login" lang="bash" />

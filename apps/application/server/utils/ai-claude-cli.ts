@@ -11,19 +11,19 @@ import type { ClaudeCliStatus, ClaudeCliUsageTotals, ResolvedAiRole } from '~~/t
  * Every generation runs with its tools off; an assistant turn runs in one
  * `claude -p` with only that turn's tools attached (`runClaudeCliAgent`).
  *
- * Only usable inside the desktop app, where the bundled Nitro server runs as a
- * local Node process on the user's machine and a `claude` install is expected.
- * Authentication is the CLI's own (subscription OAuth or a setup token), so no
- * API key is ever stored by Piwi. A self-hoster running the server directly can
- * opt in by pointing `PIWI_CLAUDE_CLI_PATH` at the binary.
+ * Offered in the desktop app, where the bundled Nitro server runs as a local
+ * Node process on the user's machine, and on a server that points
+ * `PIWI_CLAUDE_CLI_PATH` at the binary. Authentication is the CLI's own: Piwi
+ * never stores, reads or relays a Claude credential, never starts a sign-in,
+ * and leaves every sign-in method of the CLI working. A Claude subscription
+ * sign-in runs only in the desktop app, where its subscriber is the one user;
+ * a server needs an API key or a cloud provider (`usesApiCredentials`).
  */
 
 /** How long a single generation may run before it is killed. Cold start + a model turn. */
 const GENERATION_TIMEOUT_MS = 180_000;
 /** Quick metadata probes (version, auth status) get a short leash. */
 const PROBE_TIMEOUT_MS = 15_000;
-/** Interactive sign-in waits on a human completing a browser flow. */
-const LOGIN_TIMEOUT_MS = 5 * 60_000;
 /** Status is polled by the settings UI; cache the (cheap but non-zero) probes briefly. */
 const STATUS_CACHE_MS = 4_000;
 
@@ -258,10 +258,12 @@ const ENV_ALLOWLIST = new Set([
   'COMSPEC',
   'PATHEXT',
 ]);
-/** Prefixes of the locale and of Claude Code's own settings and sign-in (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`). */
+/**
+ * Prefixes of the locale and of Claude Code's own settings and sign-in
+ * (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`): every
+ * sign-in method the CLI reads from its environment reaches it.
+ */
 const ENV_PREFIXES = ['LC_', 'CLAUDE_', 'ANTHROPIC_'];
-/** API credentials that would bill pay-as-you-go API credits instead of the user's Claude Code sign-in. */
-const ENV_DROPPED = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
 /** The cloud credentials Claude Code reads when it is set to Bedrock or Vertex, and only then. */
 const BEDROCK_PREFIXES = ['AWS_'];
 const VERTEX_PREFIXES = ['GOOGLE_', 'CLOUD_ML_', 'VERTEX_'];
@@ -281,7 +283,7 @@ export function cliEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(source)) {
     const upper = name.toUpperCase();
-    if (value === undefined || ENV_DROPPED.has(upper)) continue;
+    if (value === undefined) continue;
     if (ENV_ALLOWLIST.has(upper) || prefixes.some((prefix) => upper.startsWith(prefix))) env[name] = value;
   }
 
@@ -471,9 +473,29 @@ async function probeClaudeCli(): Promise<ClaudeCliStatus> {
     base.apiProvider = auth.apiProvider ?? null;
   }
   if (!base.loggedIn) {
-    base.error = 'Claude Code is installed but not signed in. Sign in to use it for AI features.';
+    base.error = desktop
+      ? 'Claude Code is installed but not signed in. Run `claude auth login` in a terminal, then re-check.'
+      : SERVER_SIGN_IN;
+  } else if (!desktop && !usesApiCredentials(base)) {
+    base.error = SERVER_SIGN_IN;
   }
   return base;
+}
+
+/** `auth status` methods that bill an Anthropic API key, not a Claude subscription. */
+const API_KEY_AUTH = new Set(['api_key', 'api_key_helper']);
+
+const SERVER_SIGN_IN =
+  'On a server, Claude Code must sign in with an Anthropic API key (ANTHROPIC_API_KEY or apiKeyHelper) or a cloud provider (Bedrock, Vertex AI, Foundry). A Claude subscription serves its subscriber only: use it in the desktop app.';
+
+/**
+ * Whether the CLI signs in with an Anthropic API key or a cloud provider, so its
+ * usage is billed to that account; false for a Claude subscription
+ * (`oauth_token`), and for a method this version does not know.
+ */
+export function usesApiCredentials(auth: Pick<ClaudeCliStatus, 'authMethod' | 'apiProvider'>): boolean {
+  if (auth.apiProvider && auth.apiProvider !== 'firstParty') return true;
+  return API_KEY_AUTH.has(auth.authMethod ?? '');
 }
 
 function cleanErr(raw: string): string {
@@ -679,8 +701,8 @@ async function assertReady(): Promise<string> {
   if (!status.available) {
     throw new Error(status.error || 'The local Claude CLI is unavailable.');
   }
-  if (!status.loggedIn) {
-    throw new Error('Claude Code is not signed in. Open Settings → AI to sign in.');
+  if (!status.loggedIn || (!status.desktop && !usesApiCredentials(status))) {
+    throw new Error(status.error || 'Claude Code is not signed in.');
   }
   return status.binaryPath!;
 }
@@ -1094,42 +1116,6 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}
-
-// ── Interactive auth (desktop only) ────────────────────────────────────────
-
-/**
- * Run `claude auth login`, streaming the CLI's progress lines to `onLine` (the
- * URL it prints, and status). The CLI opens the browser and runs its own
- * loopback callback; this resolves when the user completes it (or it times out).
- */
-export async function runClaudeLogin(
-  onLine: (line: string) => void,
-): Promise<{ success: boolean; error: string | null }> {
-  const binary = await resolveClaudeBinaryDeep();
-  if (!binary) return { success: false, error: 'The `claude` command was not found.' };
-
-  const res = await runClaude(binary, ['auth', 'login', '--claudeai'], {
-    timeoutMs: LOGIN_TIMEOUT_MS,
-    onLine: (line) => {
-      const trimmed = line.trim();
-      if (trimmed) onLine(trimmed);
-    },
-  });
-  cachedStatus = null; // force a fresh status probe after a login attempt
-  if (res.timedOut) return { success: false, error: 'Sign-in timed out. Try again.' };
-  if (res.code !== 0) return { success: false, error: cleanErr(res.stderr || res.stdout) };
-  return { success: true, error: null };
-}
-
-/** Sign the CLI out (`claude auth logout`). */
-export async function runClaudeLogout(): Promise<{ success: boolean; error: string | null }> {
-  const binary = await resolveClaudeBinaryDeep();
-  if (!binary) return { success: false, error: 'The `claude` command was not found.' };
-  const res = await runClaude(binary, ['auth', 'logout'], { timeoutMs: PROBE_TIMEOUT_MS });
-  cachedStatus = null;
-  if (res.code !== 0) return { success: false, error: cleanErr(res.stderr || res.stdout) };
-  return { success: true, error: null };
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────

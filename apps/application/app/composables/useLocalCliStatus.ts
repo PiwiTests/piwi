@@ -21,18 +21,24 @@ export interface LocalCliView {
 
 type OtherCli = Exclude<LocalCliProvider, 'claude-cli'>;
 
-const CLAUDE_AUTH: Record<string, string> = { oauth_token: 'Claude subscription', api_key: 'API key' };
+const CLAUDE_AUTH: Record<string, string> = {
+  oauth_token: 'Claude subscription',
+  api_key: 'API key',
+  api_key_helper: 'API key (apiKeyHelper)',
+  third_party: 'Cloud provider',
+};
 const CLAUDE_API: Record<string, string> = {
   firstParty: 'Anthropic',
   bedrock: 'Amazon Bedrock',
   vertex: 'Google Vertex AI',
+  foundry: 'Microsoft Foundry',
 };
 const OTHER_ACCOUNT: Record<OtherCli, string> = { 'codex-cli': 'ChatGPT', 'deepseek-cli': 'DeepSeek credentials' };
 
 /**
  * Health, sign-in and usage of the local AI CLIs (Claude Code, Codex,
  * DeepSeek Harness), shared across the components of a page. Claude Code's
- * state and sign-in come from `useClaudeCli`.
+ * state comes from `useClaudeCli`.
  */
 export function useLocalCliStatus() {
   const claude = useClaudeCli();
@@ -67,7 +73,7 @@ export function useLocalCliStatus() {
       return {
         checked: Boolean(s),
         installed: Boolean(s?.available),
-        ready: Boolean(s?.loggedIn),
+        ready: Boolean(s?.loggedIn) && !s?.error,
         version: s?.version ?? null,
         path: s?.binaryPath ?? null,
         account: s?.authMethod ? (CLAUDE_AUTH[s.authMethod] ?? s.authMethod) : null,

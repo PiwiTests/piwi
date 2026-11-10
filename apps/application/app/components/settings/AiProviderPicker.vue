@@ -145,9 +145,10 @@ onMounted(() => {
       </summary>
       <div class="space-y-2 px-3 pb-3 text-highlighted">
         <p>
-          Claude Code, Codex and DeepSeek Harness run as a command on the machine that hosts Piwi, with your own sign-in
-          instead of an API key. The desktop app offers all three; a server offers each one once the path of its command
-          is set:
+          Claude Code, Codex and DeepSeek Harness run as a command on the machine that hosts Piwi, with their own
+          sign-in: Piwi stores no key for them. The desktop app offers all three; a server offers each one once the path
+          of its command is set. On a server, Claude Code must sign in with an Anthropic API key or a cloud provider: a
+          Claude subscription runs only in the desktop app.
         </p>
         <ul class="list-disc space-y-0.5 pl-5">
           <li><code class="font-mono text-xs">PIWI_CLAUDE_CLI_PATH</code> for Claude Code</li>

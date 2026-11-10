@@ -311,7 +311,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       },
       {
         option: 'Claude Code CLI',
-        when: 'The desktop app, or a server with `PIWI_CLAUDE_CLI_PATH` set, runs the local `claude` CLI on its own sign-in, with no API key (`PIWI_AI_PROVIDER=claude-cli`).',
+        when: 'The desktop app, or a server with `PIWI_CLAUDE_CLI_PATH` set, runs the local `claude` CLI on its own sign-in (`PIWI_AI_PROVIDER=claude-cli`): your Claude subscription in the desktop app, an Anthropic API key or a cloud provider on a server.',
       },
     ],
     doc: 'guide/ai-provider',

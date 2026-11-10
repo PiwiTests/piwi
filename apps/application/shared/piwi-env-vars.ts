@@ -767,7 +767,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CLAUDE_CLI_PATH: {
     description:
-      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
+      'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app, where Claude Code must sign in with an Anthropic API key or a cloud provider: a Claude subscription runs only in the desktop app. Auto-detected otherwise.',
     category: 'ai',
     since: '0.30.0',
     example: '/usr/local/bin/claude',

@@ -192,6 +192,10 @@ message, a page's text), which must never make it run a command, read a file or 
   `ai-claude-cli.ts`): a CLI without them is refused; `--max-turns` is a print-mode option `--help` does not list. An
   assistant turn adds only the turn's MCP endpoint (in an `--mcp-config` file, so its token stays off the command line)
   and its tools.
+- **Claude Code's sign-in is its own, and a Claude subscription runs only in the desktop app** (Anthropic's terms for
+  Claude Code): Piwi never starts a sign-in or sign-out, never reads a credential, and passes every sign-in variable
+  through (`cliEnv`); outside the desktop app `usesApiCredentials` must hold (an API key or a cloud provider), or
+  `assertReady` refuses the call. `tests/unit/ai-claude-cli.test.ts` checks both.
 - **Codex runs isolated** (`ai-codex-cli.ts`): every invocation has a private home and working directory, a file-backed
   ChatGPT login snapshot, an allowlisted environment (`codexCliEnv`), disabled feature flags and model metadata with no
   built-in execution or filesystem tools. An assistant turn configures only its `piwi` MCP server and allowed tools.
