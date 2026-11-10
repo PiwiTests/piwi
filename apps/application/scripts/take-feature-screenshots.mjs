@@ -7061,7 +7061,7 @@ const SCENES = [
   {
     name: 'desktop-run-live',
     description:
-      'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+      'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
     tags: ['docs', 'desktop'],
     out: 'docs',
     outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
@@ -7122,6 +7122,8 @@ const SCENES = [
         project: 'checkout-web',
         workers: [worker],
         ended: false,
+        // Its number and page on this app's server, as the run's own process names them.
+        page: { id: 41, url: `${new URL(page.url()).origin}/test-runs/41` },
       };
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
