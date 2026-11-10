@@ -241,7 +241,8 @@ assertions:
 - the hover on the failing locator names the failing tests and the run;
 - the failures view's tree has the run, the local run since and the three cases;
 - the status bar item shows the counts;
-- the Code Lens lines above the locators and the application file name the tests behind them.
+- the Code Lens lines above the locators and the application file name the tests behind them;
+- the spec's Code Lens counts the spec's own tests.
 
 Cost: a Playwright config in `apps/vscode/tests/e2e/`, the launcher of the script moved to a shared module, the stub
 instance of `tests/integration/run.mjs` (a second copy of the fixture's, with fewer routes) folded into the fixture

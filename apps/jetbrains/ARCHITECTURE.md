@@ -974,6 +974,10 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
+The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestFailed` icon and
+the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
+directory instead (`statusItemFailing`).
 
 **The license.** The IDE's config directory stays in `.ide/config` across runs, because the license lives there. On a
 machine without one, the IDE shows its license dialog:
