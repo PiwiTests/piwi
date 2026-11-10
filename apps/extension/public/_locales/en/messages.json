@@ -7791,6 +7791,10 @@
     "message": "End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped",
     "description": "Runs window, the tooltip of End the test while a Pause waits for the call the test runs: the call is given up, or the test is skipped as it returns."
   },
+  "runs_stateFailed": {
+    "message": "Failed, held at its line",
+    "description": "Runs window, the tooltip of a worker’s tab while its failed test is held at its line."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."
@@ -7799,9 +7803,13 @@
     "message": "Between tests",
     "description": "Runs window, the state of a worker between two tests."
   },
+  "runs_workerTabs": {
+    "message": "Workers",
+    "description": "Runs window, the accessible name of the tabs of a run’s workers, one shown at a time."
+  },
   "runs_worker": {
     "message": "worker $number$",
-    "description": "Runs window, which of a run’s Playwright workers a test runs in, when there are several. Lower case.",
+    "description": "Runs window, the label of a worker’s tab in a run of several Playwright workers. Lower case.",
     "placeholders": {
       "number": {
         "content": "$1",
@@ -7923,6 +7931,10 @@
     "message": "Several tests are stopped: move the focus to the one to steer with a key.",
     "description": "Runs window, read out when Resume, Step or Finish was pressed as a key while several tests are stopped and the focus is in none of them."
   },
+  "runs_keyOtherTab": {
+    "message": "The stopped test is behind another worker’s tab: open that tab to steer it with a key.",
+    "description": "Runs window, read out when a stop key is pressed while the only stopped tests are on worker tabs not shown."
+  },
   "runs_record": {
     "message": "Record",
     "description": "Runs window, button on a stopped test: starts the pause bar’s Record here in the test’s window."
@@ -7956,6 +7968,10 @@
   "runs_imageLoading": {
     "message": "Taking an image of the page…",
     "description": "Runs window, while the image of a stopped page is on its way."
+  },
+  "runs_pageCaption": {
+    "message": "The test’s page",
+    "description": "Runs window, the heading of the card that shows the test’s page: the image of a stop, or its live view."
   },
   "runs_assert": {
     "message": "Assert",
@@ -8126,10 +8142,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Error",
-    "description": "Runs window, label before the error a failed test stopped on."
   },
   "runs_announceFailed": {
     "message": "$test$ failed at $place$.",

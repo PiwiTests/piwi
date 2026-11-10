@@ -6570,11 +6570,17 @@
   "runs_giveUpTitle": {
     "message": "Terminer le test maintenant : l’appel où il attend est abandonné si possible, et la suite du test est ignorée"
   },
+  "runs_stateFailed": {
+    "message": "En échec, retenu à sa ligne"
+  },
   "runs_stateRunning": {
     "message": "En cours"
   },
   "runs_stateBetween": {
     "message": "Entre deux tests"
+  },
+  "runs_workerTabs": {
+    "message": "Workers"
   },
   "runs_worker": {
     "message": "worker $number$",
@@ -6676,6 +6682,9 @@
   "runs_keyChoose": {
     "message": "Plusieurs tests sont arrêtés : placez le focus sur celui à piloter avec une touche."
   },
+  "runs_keyOtherTab": {
+    "message": "Le test arrêté est derrière l’onglet d’un autre worker : ouvrez cet onglet pour le piloter avec une touche."
+  },
   "runs_record": {
     "message": "Enregistrer"
   },
@@ -6702,6 +6711,9 @@
   },
   "runs_imageLoading": {
     "message": "Prise d’une image de la page…"
+  },
+  "runs_pageCaption": {
+    "message": "Page du test"
   },
   "runs_assert": {
     "message": "Vérifier"
@@ -6837,9 +6849,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Erreur"
   },
   "runs_announceFailed": {
     "message": "$test$ a échoué à $place$.",

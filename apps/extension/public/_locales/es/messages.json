@@ -6570,11 +6570,17 @@
   "runs_giveUpTitle": {
     "message": "Terminar la prueba ahora: la llamada en la que espera se abandona si se puede y se omite el resto de la prueba"
   },
+  "runs_stateFailed": {
+    "message": "Falló, retenido en su línea"
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },
   "runs_stateBetween": {
     "message": "Entre dos tests"
+  },
+  "runs_workerTabs": {
+    "message": "Workers"
   },
   "runs_worker": {
     "message": "worker $number$",
@@ -6676,6 +6682,9 @@
   "runs_keyChoose": {
     "message": "Hay varios tests detenidos: mueva el foco al que quiere dirigir con una tecla."
   },
+  "runs_keyOtherTab": {
+    "message": "El test detenido está en la pestaña de otro worker: abra esa pestaña para dirigirlo con una tecla."
+  },
   "runs_record": {
     "message": "Grabar"
   },
@@ -6702,6 +6711,9 @@
   },
   "runs_imageLoading": {
     "message": "Tomando una imagen de la página…"
+  },
+  "runs_pageCaption": {
+    "message": "Página del test"
   },
   "runs_assert": {
     "message": "Comprobar"
@@ -6837,9 +6849,6 @@
         "example": "tests/cart.spec.ts:12"
       }
     }
-  },
-  "runs_errorLabel": {
-    "message": "Error"
   },
   "runs_announceFailed": {
     "message": "$test$ falló en $place$.",
