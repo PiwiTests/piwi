@@ -206,6 +206,8 @@ export interface ShownStop {
   stop: RunStop;
   test: RunTest | null;
   takes: readonly RunTake[];
+  /** Its reporter brings the test's window to the front (`RunWorker.showsWindow`). */
+  showsWindow?: boolean;
   terminal?: boolean;
   runner?: boolean;
 }
@@ -223,6 +225,7 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
               stop: w.stop,
               test: w.test,
               takes: w.takes ?? [],
+              ...(w.showsWindow ? { showsWindow: true } : {}),
               ...(s.terminal ? { terminal: true } : {}),
               ...(s.terminal && s.runner ? { runner: true } : {}),
             },
@@ -528,6 +531,14 @@ export function pausedText(stop: RunStop, test: RunTest | null, terminal = false
   return `${why} · ${stop.title}${attempt}${where}`;
 }
 
+/**
+ * Whether a stop's window can come to the front (**Show the browser**): its pause bar shows, so the browser has a
+ * window, and its reporter brings it forward.
+ */
+export function canShowBrowser(stop: ShownStop): boolean {
+  return stop.stop.bar && !!stop.showsWindow;
+}
+
 /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
 export function canShare(stop: ShownStop): boolean {
   return stop.takes.includes('bind');
@@ -558,6 +569,7 @@ export const RUN_COMMANDS = {
   finish: 'piwi.finishRun',
   end: 'piwi.endTest',
   showPage: 'piwi.showPausedPage',
+  showBrowser: 'piwi.showBrowser',
   pick: 'piwi.pickAtStop',
   record: 'piwi.recordAtStop',
   assert: 'piwi.assertAtStop',
@@ -1023,7 +1035,7 @@ export function canEnd(stop: ShownStop): boolean {
  * above the stopped line offers them together, as **Write code…** (`stopLensControls`).
  */
 export interface StopAction extends StopControl {
-  action: StopActionKind;
+  action: CodeActionKind;
   /** The context key set while a stop offers it, which its palette entry follows. */
   key: string;
   /** The words of the choice among the actions. */
@@ -1073,8 +1085,11 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
 ];
 
+/** The code actions a stop offers, of `piwi/stopAction`'s: every one but Show the browser (`front`). */
+export type CodeActionKind = Exclude<StopActionKind, 'front'>;
+
 /** What a reporter must take for each code action. */
-const ACTION_TAKES: Record<StopActionKind, readonly RunTake[]> = {
+const ACTION_TAKES: Record<CodeActionKind, readonly RunTake[]> = {
   pick: ['pick'],
   record: ['record'],
   assert: ['assert'],
@@ -1104,9 +1119,11 @@ export interface ControlState {
   /** A stopped worker can end its test: End the test. */
   endable: boolean;
   /** The code actions a stop offers, any stop. */
-  actions: StopActionKind[];
+  actions: CodeActionKind[];
   /** A stop's browser can be shared with Playwright's own tools. */
   shareable: boolean;
+  /** A stop's window can come to the front: Show the browser. */
+  browserShowable: boolean;
   /** A run is shared live on the team instance: Stop sharing. */
   liveShared: boolean;
   /** A live run has a Hold failures to turn over. */
@@ -1172,6 +1189,7 @@ export function controlState(sessions: Sessions): ControlState {
     endable: stopsOf(sessions).some(canEnd),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
     shareable: stopsOf(sessions).some(canShare),
+    browserShowable: stopsOf(sessions).some(canShowBrowser),
     liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
     holdable: holdableRuns(sessions).length > 0,
     watchable: watchableWorkers(sessions).length > 0,

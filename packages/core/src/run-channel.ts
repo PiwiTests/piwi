@@ -127,12 +127,13 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
  * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
  * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
  * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
- * (`waiting`) and end the test there as asked (`give-up`).
+ * (`waiting`) and end the test there as asked (`give-up`); and bring the test's window to the front at a stop its pause
+ * bar shows (`front`, **Show the browser**).
  */
-export type RunFeature = 'view-lane' | 'give-up';
+export type RunFeature = 'view-lane' | 'give-up' | 'front';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up', 'front'];
 
 /** The longest title a `waiting` carries, in characters: a longer one is cut. */
 export const MAX_WAITING_TITLE = 500;
@@ -449,10 +450,10 @@ export type RunToHub =
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
   /**
-   * The answer to `view`, `view-lane` and `input`: whether the view started or stopped, the input was played, or why
-   * not.
+   * The answer to `view`, `view-lane`, `input` and `front`: whether the view started or stopped, the input was played,
+   * the test's window came to the front, or why not.
    */
-  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input'; value: IntentAnswer }
+  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input' | 'front'; value: IntentAnswer }
   /** The answer to `pick-at`. */
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
@@ -542,6 +543,11 @@ export type HubToRun =
   | { type: 'request'; request: number; what: RunIntent; stop: number }
   /** At the stop `stop`: the responses the test kept, without their bodies. */
   | { type: 'request'; request: number; what: 'requests'; stop: number }
+  /**
+   * At the stop `stop`, to a worker that lists `front` in `features`: bring the stopped page's window to the front
+   * (**Show the browser**), at a stop its pause bar shows; refused at a headless one.
+   */
+  | { type: 'request'; request: number; what: 'front'; stop: number }
   /** At the stop `stop`: the kept response `id`, with its body and status, the one to mock. */
   | { type: 'request'; request: number; what: 'mock'; stop: number; id: number }
   /**
@@ -862,6 +868,7 @@ const QUERIES = [
   'act',
   'ref-locator',
   'bind',
+  'front',
 ] as const;
 
 /** Base64, as an image's data is written. */
@@ -984,7 +991,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (outlined !== undefined) value.outlined = outlined;
         return { type: 'answer', request, what, value };
       }
-      if (what === 'view' || what === 'view-lane' || what === 'input') {
+      if (what === 'view' || what === 'view-lane' || what === 'input' || what === 'front') {
         const said = readAnswer(answered);
         return said ? { type: 'answer', request, what, value: said } : null;
       }
@@ -1128,7 +1135,7 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;
-      if (isIntent(what) || what === 'requests') return { type: 'request', request, what, stop };
+      if (isIntent(what) || what === 'requests' || what === 'front') return { type: 'request', request, what, stop };
       if (what === 'mock') return isInt(value.id, 1) ? { type: 'request', request, what, stop, id: value.id } : null;
       if (what === 'view')
         return typeof value.on === 'boolean' ? { type: 'request', request, what, stop, on: value.on } : null;

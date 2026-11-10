@@ -23,6 +23,7 @@ import {
   breakpointUpdates,
   canEnd,
   canShare,
+  canShowBrowser,
   caretText,
   accessibleLabel,
   controlItems,
@@ -123,6 +124,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   waiting: null,
   takes: [],
   watchable: false,
+  showsWindow: false,
   ...extra,
 });
 
@@ -193,6 +195,7 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
       holdable: false,
       watchable: false,
@@ -201,6 +204,16 @@ describe('what the controls offer', () => {
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
+  });
+
+  test('Show the browser at a stop its pause bar shows, whose reporter brings its window forward', () => {
+    const at = (bar: boolean, showsWindow: boolean) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5, bar), showsWindow })]));
+    expect(controlState(at(true, true)).browserShowable).toBe(true);
+    expect(canShowBrowser(stopsOf(at(true, true))[0]!)).toBe(true);
+    // A headless stop has no window; an older reporter cannot bring one forward.
+    expect(controlState(at(false, true)).browserShowable).toBe(false);
+    expect(controlState(at(true, false)).browserShowable).toBe(false);
   });
 
   test('sharing with Playwright tools at a stop whose reporter takes it alone', () => {
@@ -234,6 +247,7 @@ describe('what the controls offer', () => {
         endable: false,
         actions: [],
         shareable: false,
+        browserShowable: false,
         liveShared: false,
         holdable: false,
         watchable: false,
@@ -255,6 +269,7 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
       holdable: false,
       watchable: false,
@@ -351,6 +366,7 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      browserShowable: false,
       liveShared: false,
       holdable: false,
       watchable: false,

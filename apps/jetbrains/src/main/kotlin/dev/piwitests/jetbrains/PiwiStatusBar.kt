@@ -263,7 +263,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val RUN_ACTIONS = arrayOf(
             "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowPausedPage",
             "Piwi.PickAtStop", "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.ShareRunLive",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.ShareRunLive",
             "Piwi.StopSharingRun", "Piwi.HoldFailures", "Piwi.StopRun",
         )
 

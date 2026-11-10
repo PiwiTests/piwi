@@ -1134,6 +1134,10 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           void bindAt(at, message.on).then((value) => tellHub({ type: 'answer', request, what: 'bind', value }));
           return;
         }
+        case 'front': {
+          void showBrowser(at).then((value) => tellHub({ type: 'answer', request, what: 'front', value }));
+          return;
+        }
         default: {
           const value = at ? at.intent(message.what) : { ok: false, message: WENT_ON };
           tellHub({ type: 'answer', request, what: message.what, value });
@@ -1147,6 +1151,28 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         message: `@piwitests/reporter ${getReporterVersion()} does not take the editor's ${message.what}: update it.`,
       });
   }
+}
+
+/** Why Show the browser is refused at a stop no pause bar shows: a headless one, or one whose page is not known. */
+const HEADLESS = "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.";
+
+/**
+ * Show the browser: the stopped page's window comes to the front, as far as the system lets a window take it, at a
+ * stop its pause bar shows; `PAGE_ANSWER_MS` at most.
+ */
+async function showBrowser(at: HeldStop | null): Promise<IntentAnswer> {
+  if (!at) return { ok: false, message: WENT_ON };
+  const page = at.page;
+  if (!at.bar || !page) return { ok: false, message: HEADLESS };
+  const raised = internalCall(page, () => page.bringToFront()).then(
+    () => true,
+    () => false,
+  );
+  const shown = await answerWithin(raised, PAGE_ANSWER_MS, null);
+  if (shown === null) return { ok: false, message: NO_ANSWER };
+  return shown
+    ? { ok: true, message: "The test's window is in front." }
+    : { ok: false, message: "The test's window could not be brought to the front." };
 }
 
 /**

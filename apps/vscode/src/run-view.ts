@@ -59,7 +59,6 @@ import {
   type SetBreakpointsParams,
   type ShareRunParams,
   type HoldRunParams,
-  type StopActionKind,
   type StopActionParams,
   type StopActionResult,
   type StopBindParams,
@@ -81,6 +80,8 @@ import {
   breakpointUpdates,
   canEnd,
   canShare,
+  canShowBrowser,
+  type CodeActionKind,
   accessibleLabel,
   controlItems,
   controlState,
@@ -205,6 +206,7 @@ const STOP_COMMANDS = [
   RUN_COMMANDS.finish,
   RUN_COMMANDS.end,
   RUN_COMMANDS.showPage,
+  RUN_COMMANDS.showBrowser,
   RUN_COMMANDS.share,
   ...STOP_ACTIONS.map((a) => a.command),
 ];
@@ -347,6 +349,7 @@ export function registerRunControl(
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
     void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanShowBrowser', state.browserShowable);
     void vscode.commands.executeCommand('setContext', 'piwi.runHoldable', state.holdable);
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     void vscode.commands.executeCommand('setContext', 'piwi.runWatchable', state.watchable);
@@ -388,6 +391,7 @@ export function registerRunControl(
     const controls = [
       ...stopControls(stop),
       ...(stop.stop.bar ? [] : [{ title: 'Show the page', command: RUN_COMMANDS.showPage }]),
+      ...(canShowBrowser(stop) ? [{ title: 'Show the browser', command: RUN_COMMANDS.showBrowser }] : []),
     ].map(link);
     const actions = stopActions(stop).map(link);
     const share = canShare(stop) ? [link({ title: 'Share with Playwright tools', command: RUN_COMMANDS.share })] : [];
@@ -803,7 +807,7 @@ export function registerRunControl(
    * request lists the responses the test kept first, to choose the one to mock. The code comes in `piwi/stopCode`,
    * which says what it wrote; the other answers are said here.
    */
-  const startAction = async (action: StopActionKind, arg: unknown) => {
+  const startAction = async (action: CodeActionKind, arg: unknown) => {
     const stop = await chooseStop(arg, (s) => stopActions(s).some((a) => a.action === action));
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) return say('no test is stopped.');
@@ -863,6 +867,24 @@ export function registerRunControl(
       const stopped = await bind(false);
       say(stopped?.message ?? 'the editor service did not answer.');
     }
+  };
+
+  /**
+   * Show the browser: the window of the command's stop, the caret's or the one chosen comes to the front. Only a refusal
+   * is said: the window itself shows it worked.
+   */
+  const showBrowser = async (arg: unknown) => {
+    const stop = await chooseStop(arg, canShowBrowser);
+    if (stop === 'went-on') return say('the test went on.');
+    if (!stop) return say('no test is stopped.');
+    if (!stop.stop.bar) {
+      return say("the test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.");
+    }
+    acted(stop);
+    const params: StopActionParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, action: 'front' };
+    const answer = await lc.sendRequest<StopActionResult>(STOP_ACTION_REQUEST, params).catch(() => null);
+    if (!answer) say('the editor service did not answer.');
+    else if (!answer.ok) say(answer.message);
   };
 
   /**
@@ -1218,6 +1240,7 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.pauseAndWatch, (arg?: unknown) => watchWorker(arg, true)),
     workerPanel,
     vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.showBrowser, (arg?: unknown) => showBrowser(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
     vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
     vscode.commands.registerCommand(RUN_COMMANDS.openPage, (arg?: unknown) => openRunPage(arg)),

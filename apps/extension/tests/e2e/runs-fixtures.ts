@@ -23,6 +23,7 @@ import type { RawCaptureEvent } from '@piwitests/core/recording';
 import {
   RUN_TAKES,
   type HubToRun,
+  type RunFeature,
   type KeptResponse,
   type RunMainToHub,
   type RunTake,
@@ -381,10 +382,16 @@ export async function startLaneRun(
 }
 
 /**
- * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for, Playwright's worker
- * `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
+ * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for (or does what `features`
+ * say), Playwright's worker `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
  */
-export function laneWorker(editor: Editor, channel: Channel, ref: string, workerIndex: number): FakeWorker {
+export function laneWorker(
+  editor: Editor,
+  channel: Channel,
+  ref: string,
+  workerIndex: number,
+  features: RunFeature[] = ['view-lane', 'give-up'],
+): FakeWorker {
   const worker = new FakeWorker(channel.path, editor.dir);
   worker.send({
     type: 'run-attach',
@@ -398,7 +405,7 @@ export function laneWorker(editor: Editor, channel: Channel, ref: string, worker
     reporter: '0.67.0',
     takes: [...RUN_TAKES],
     holds: ['failure'],
-    features: ['view-lane', 'give-up'],
+    features,
   });
   return worker;
 }
