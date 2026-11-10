@@ -114,7 +114,7 @@ export const EN_COPY = {
       stops: {
         health: {
           title: 'Every project at a glance',
-          body: '**Project health** shows each project’s last 20 runs, its tendency and the pass rate of its latest run, failing projects first. Open one to see what failed.',
+          body: '**Project health** shows each project’s last 20 runs, its tendency and the pass rate of its latest run: starred projects first, then failing ones. Open one to see what failed.',
         },
         analytics: {
           title: 'Quality over time',

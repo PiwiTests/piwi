@@ -109,20 +109,23 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
     /**
      * Draws the item again: the recording in progress, where a run started here is stopped or that it is pausing, that
-     * it is shared live and how many watch it, `Piwi: refreshing…` while the latest run is read again, else the view of
-     * the selected file's context, with its icon and, while its tests fail, the error color. On the event thread.
+     * it is shared live and how many watch it, how far it is, `Piwi: refreshing…` while the latest run is read again,
+     * else the view of the selected file's context, with its icon and, while its tests fail, the error color. On the
+     * event thread.
      */
     fun update() {
         val recording = recording()
         val stopped = runs()?.let { Glue.runControlStatus(it.controls(), it.stops()) }
         val shared = runs()?.let { Glue.liveStatus(it.controls()) }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
+        val progress = runs()?.let { Glue.runProgressText(it.sessions) }
         val refreshing = service().refreshing
         val view = view()
         label.text = when {
             recording != null -> Glue.recordingStatus(recording.state, recording.steps, recording.edited, recording.stopping)
             stopped != null -> stopped
             shared != null -> shared
+            progress != null -> progress
             refreshing -> Glue.REFRESHING
             else -> view.text
         }
@@ -130,14 +133,16 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             recording != null -> PIWI_ICON
             stopped != null -> AllIcons.Actions.Pause
             shared != null -> AllIcons.Actions.Show
+            progress != null -> AnimatedIcon.Default.INSTANCE
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
         }
-        label.error = recording == null && stopped == null && shared == null && !refreshing && view.error
+        label.error = recording == null && stopped == null && shared == null && progress == null && !refreshing && view.error
         label.toolTipText = Glue.htmlTooltip(
             recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
                 ?: stopped?.let { "$it\nClick for the run's controls." }
                 ?: sharedLive?.let { "${Glue.sharedLiveText(it)}\nClick for the run's controls." }
+                ?: progress?.let { "$it\nClick for the run's controls." }
                 ?: view.tooltip,
         )
     }
@@ -153,7 +158,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     }
 
     /**
-     * The popup's actions: the controls of a run started here while one is live, then what the item's state calls for
+     * The popup's actions: while a run started here is live, each stop, named as the choice among several names it,
+     * which goes to its line, and the run's controls; then what the item's state calls for
      * (going to the recorded lines while a recording runs, with its controls), then the failing tests, the failures, the
      * dashboard and the baseline, the test at the caret and Record Here, then Refresh, Connect and the settings. The
      * registered actions keep their own logic, and the popup leaves out those that do not apply.
@@ -175,6 +181,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         fun registered(vararg ids: String) = ids.mapNotNull { manager.getAction(it) }.filter { it !== first }
         return DefaultActionGroup().apply {
             if (runs()?.controls()?.active == true) {
+                val stops = runs()?.stops().orEmpty()
+                stops.forEach { add(GoToStopAction(it)) }
+                if (stops.isNotEmpty()) addSeparator()
                 addAll(registered(*RUN_ACTIONS))
                 addSeparator()
             }
@@ -206,6 +215,26 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             ActionPlaces.STATUS_BAR_PLACE,
         )
         popup.show(RelativePoint(label, Point(0, -popup.content.preferredSize.height)))
+    }
+
+    /**
+     * A stop, as the choice among several names it (`Glue.stopLabel`): its file opened at its line with the focus, a
+     * stop whose file was left closed included.
+     */
+    private inner class GoToStopAction(private val stop: Glue.ShownStop) : DumbAwareAction(
+        Glue.stopLabel(stop),
+        "Go to the line the test is stopped at",
+        if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement,
+    ) {
+        init {
+            templatePresentation.setText(Glue.stopLabel(stop), false)
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            runs()?.goTo(stop)
+        }
     }
 
     /** **Read the Latest Run Again**: `piwi/refreshRun`, then the status, the item saying so meanwhile. */
@@ -240,7 +269,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val RUN_ACTIONS = arrayOf(
             "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowPausedPage",
             "Piwi.PickAtStop", "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.StopRun",
+            "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.ShareRunLive",
+            "Piwi.StopSharingRun", "Piwi.StopRun",
         )
 
         /** The path of the selected editor's file, whose Playwright config the item speaks for; null with none open. */

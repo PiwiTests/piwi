@@ -260,7 +260,8 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
 export const PIWI_ENV_VARS = {
   // ── General ──────────────────────────────────────────────────────────────
   PIWI_SITE_URL: {
-    description: 'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails.',
+    description:
+      'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails, and the run links the reporter prints and writes to its output.',
     category: 'general',
     type: 'url',
     example: 'https://piwi.example.com',
@@ -329,14 +330,6 @@ export const PIWI_ENV_VARS = {
     runtimeOnly: true,
     since: '0.16.0',
   },
-  PIWI_DESKTOP_LAUNCH_NONCE: {
-    description:
-      'Random value the desktop (Tauri) app gives its local server at each launch; `/api/health` echoes it so the app only loads its session from the server it started. Set automatically by the desktop shell — not user-configurable. Absent on the server build.',
-    category: 'desktop',
-    secret: true,
-    runtimeOnly: true,
-    since: '0.55.1',
-  },
 
   // ── Database ─────────────────────────────────────────────────────────────
   PIWI_DATABASE_PATH: {
@@ -374,7 +367,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions, the agents' write log and run requests that ended or expired follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',
@@ -1328,6 +1321,40 @@ export const PIWI_ENV_VARS = {
     example: 'gitlab.example.com',
     since: '0.43.0',
     docs: 'guide/source-control#which-repository',
+  },
+  PIWI_CI_SERVER_URL: {
+    description:
+      "Base URL of the instance's CI server (e.g. https://jenkins.example.com/), where a project's CI re-run goes when it dispatches through a CI server and sets no base URL of its own. The instance token is sent only to URLs under it, so a path confines it (https://jenkins.example.com/job/qa/ sends it only to the jobs of the qa folder). It goes only with a preset's request, never a Custom one.",
+    category: 'integrations',
+    type: 'url',
+    example: 'https://jenkins.example.com/',
+    since: '0.67.0',
+    docs: 'features/ci-rerun',
+  },
+  PIWI_CI_SERVER_USER: {
+    description:
+      'User name the instance CI server token belongs to, paired with it as an HTTP Basic credential (Jenkins).',
+    category: 'integrations',
+    example: 'piwi-bot',
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_TOKEN: {
+    description:
+      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
+    category: 'integrations',
+    secret: true,
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_HOSTS: {
+    description:
+      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
+    category: 'integrations',
+    type: 'list',
+    example: 'jenkins.internal:8080',
+    since: '0.67.0',
+    docs: 'features/ci-rerun',
   },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',

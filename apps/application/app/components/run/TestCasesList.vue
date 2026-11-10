@@ -10,10 +10,11 @@ import type { LiveRowNote } from '~/utils/live-row-note';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
+import { compareWorkers } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
-import { buildRetryCommand, retryCaseOf, type RetryCase } from '~/utils/retry-command';
+import { buildRetryCommand, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -41,6 +42,10 @@ const props = defineProps<{
   /** Planned suite size — the "N / total completed" denominator while live, so
    *  it counts toward the whole run, not just the tests seen so far. */
   total?: number | null;
+  /** When the run began, while it waits for its first test: the empty list says what it is doing. */
+  waitingSince?: string | Date | null;
+  /** Whether the page hears the run's events, so no test began that it would show. */
+  hearsRun?: boolean;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
@@ -232,14 +237,15 @@ const { raw: storedGroup, set: setGroup } = useGroupByCookie('run-tests', [
   'lock',
   'none',
 ]);
+// A run red when the page opens shows its tests by cluster, one green then flat, for the whole page view, a tab
+// switch included, whatever fails or retries meanwhile. A saved choice always wins.
+const openedGroup = useViewState<GroupBy>('run-tests:opened-group', () => (failedCount.value > 0 ? 'cluster' : 'none'));
 const groupBy = computed<GroupBy>({
-  // A red run opens on the cluster grouping; a green run has no clusters, so it
-  // opens flat. A saved choice always wins.
   get: () => {
     const stored = storedGroup.value as GroupBy | null;
     // A saved "lock" choice is meaningless on a run with no locks — fall back.
-    if (stored === 'lock' && !hasAnyLocks.value) return failedCount.value > 0 ? 'cluster' : 'none';
-    return stored ?? (failedCount.value > 0 ? 'cluster' : 'none');
+    if (stored === 'lock' && !hasAnyLocks.value) return openedGroup.value;
+    return stored ?? openedGroup.value;
   },
   set: (v) => setGroup(v),
 });
@@ -312,8 +318,6 @@ function sortValue(tc: TestCaseResult, key: SortKey): string | number {
       return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
     case 'duration':
       return tc.duration ?? 0;
-    case 'workerIndex':
-      return tc.workerIndex ?? -1;
     case 'retries':
       return tc.retries ?? 0;
     case 'wastedTimeMs':
@@ -336,6 +340,8 @@ const compareCases = computed<(a: TestCaseResult, b: TestCaseResult) => number>(
       return (a, b) => (compareFileOrder(positionOf(a), positionOf(b)) || runOrder(a, b)) * dir;
     case 'failures':
       return (a, b) => failureFirstCompare(a.status, b.status) || runOrder(a, b);
+    case 'workerIndex':
+      return (a, b) => compareWorkers(a, b) * dir || runOrder(a, b);
     default:
       return (a, b) => {
         const va = sortValue(a, key);
@@ -660,10 +666,18 @@ const selectedRetryCases = computed(() => {
 const selectedTestsLabel = computed(
   () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
+const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
+/** The Playwright projects the selected tests ran in, the ones the command can name. */
+const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
+const selectionCommand = computed(() =>
+  buildRetryCommand(selectedRetryCases.value, {
+    mode: retryMode.value,
+    options: retryOptionsFor(selectedProjects.value),
+  }),
+);
 const { copy: copySelection } = useCopy();
 function copySelectionCommand() {
-  const command = buildRetryCommand(selectedRetryCases.value);
-  if (command) copySelection(command, { toast: 'Retry command copied' });
+  if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
 }
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),
@@ -790,10 +804,12 @@ watch(
     if (!live) userScrolledAway.value = false;
   },
 );
+// While the run is live and the list reads in run order, it follows the newest row, unless the reader scrolled away.
 watch(
   () => rows.value.length,
   () => {
-    if (!props.isLive || userScrolledAway.value) return;
+    if (!props.isLive || userScrolledAway.value || groupBy.value !== 'none') return;
+    if (sortKey.value !== 'run' || sortDir.value !== 'asc') return;
     nextTick(() => scrollerRef.value?.scrollToBottom());
   },
 );
@@ -878,17 +894,21 @@ defineExpose({ scrollToCase });
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
         />
-        <UButton
-          v-else
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-clipboard"
-          :title="buildRetryCommand(selectedRetryCases)"
-          @click="copySelectionCommand"
-        >
-          Copy retry command
-        </UButton>
+        <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-clipboard"
+            :title="selectionCommand"
+            @click="copySelectionCommand"
+          >
+            Copy retry command
+          </UButton>
+          <template #content>
+            <RetryCommandOptions :projects="selectedProjects" />
+          </template>
+        </UPopover>
         <CoverageLossPopover
           v-if="canQuarantine"
           :project-id="projectKey ?? 0"
@@ -1085,6 +1105,12 @@ defineExpose({ scrollToCase });
         </template>
       </ClientOnly>
     </div>
+
+    <RunBeforeFirstTest
+      v-else-if="testCases.length === 0 && waitingSince"
+      :since="waitingSince"
+      :run="{ initializing: !isLive, heard: hearsRun === true, total }"
+    />
 
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 

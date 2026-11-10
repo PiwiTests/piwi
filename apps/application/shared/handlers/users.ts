@@ -7,12 +7,18 @@ import {
   roleBindings,
   groupMembers,
   shareLinks,
+  runTargets,
 } from '../../server/database/schema';
-import { eq, and, isNull, ne, sql } from 'drizzle-orm';
+import type { ConnectedApp } from '../../types/api';
+import { eq, and, desc, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import { deleteAssistantConversationsOf } from './assistant';
 import { deleteAssistantNudgeDismissalsOf } from './assistant-nudges';
+import { deleteProjectStarsOf } from './project-stars';
 import type { DrizzleDB } from './db';
+import { isOptInCapabilityOn } from './capabilities';
+import { getUserAccess } from './role-bindings';
+import { can } from '#shared/permissions';
 
 export async function listUsers(db: DrizzleDB) {
   const allUsers = await db
@@ -24,6 +30,7 @@ export async function listUsers(db: DrizzleDB) {
       email: users.email,
       emailVerified: users.emailVerified,
       oauthProvider: users.oauthProvider,
+      avatarKey: users.avatarKey,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
     })
@@ -82,6 +89,8 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // A kept run outlives the user who kept it. The SQLite `kept_by` column has no
   // ON DELETE action, so the reference is cleared before the user row goes.
   await db.update(testRuns).set({ keptBy: null }).where(eq(testRuns.keptBy, id));
+  // A requested run is seen by its requester alone: with the requester gone, nobody sees it (`requester_id` null).
+  await db.update(testRuns).set({ requesterId: null }).where(eq(testRuns.requesterId, id));
   // `scenario_gaps.triaged_by` was added by ALTER TABLE, which cannot carry the
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.
@@ -89,9 +98,10 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
   await db.delete(roleBindings).where(eq(roleBindings.userId, id));
   await db.delete(groupMembers).where(eq(groupMembers.userId, id));
-  // A user's assistant conversations and dismissed nudges are theirs alone, so they go with them.
+  // A user's assistant conversations, dismissed nudges and starred projects are theirs alone, so they go with them.
   await deleteAssistantConversationsOf(db, id);
   await deleteAssistantNudgeDismissalsOf(db, id);
+  await deleteProjectStarsOf(db, id);
   // A share link works only while its minter exists, and the delete clears `created_by`: their links are revoked.
   await db
     .update(shareLinks)
@@ -110,6 +120,7 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
       createdAt: apiKeys.createdAt,
       lastUsedAt: apiKeys.lastUsedAt,
       expiresAt: apiKeys.expiresAt,
+      clientKind: apiKeys.clientKind,
       oauthGrantId: oauthGrants.id,
     })
     .from(apiKeys)
@@ -117,6 +128,63 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
     .where(eq(apiKeys.userId, userId));
   // A key that belongs to an OAuth grant is an MCP client's connection: its own value was never shown.
   return { apiKeys: keys.map(({ oauthGrantId, ...key }) => ({ ...key, oauth: oauthGrantId != null })) };
+}
+
+/**
+ * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner): each is
+ * a key it holds. One that runs tests adds its device and when it was last seen, and `isOnline` says whether it is
+ * online now. Revoking the key disconnects the app.
+ */
+export async function listConnectedApps(
+  db: DrizzleDB,
+  userId: number,
+  isOnline: (targetId: number, lastSeenAt: Date | null) => boolean,
+) {
+  const rows = await db
+    .select({
+      id: apiKeys.id,
+      name: apiKeys.name,
+      kind: apiKeys.clientKind,
+      createdAt: apiKeys.createdAt,
+      lastUsedAt: apiKeys.lastUsedAt,
+      targetId: runTargets.id,
+      platform: runTargets.platform,
+      version: runTargets.version,
+      lastSeenAt: runTargets.lastSeenAt,
+      projectIds: runTargets.projectIds,
+    })
+    .from(apiKeys)
+    .leftJoin(runTargets, eq(runTargets.apiKeyId, apiKeys.id))
+    .where(and(eq(apiKeys.userId, userId), isNotNull(apiKeys.clientKind)))
+    .orderBy(desc(apiKeys.createdAt));
+  // A target's projects are the ones it may still receive on: `run:receive` there, and the capability on.
+  const receivable = new Map<number, boolean>();
+  if (rows.some((row) => Array.isArray(row.projectIds) && row.projectIds.length > 0)) {
+    const [owner] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId));
+    const access = owner ? await getUserAccess(db, owner) : null;
+    const ids = new Set(rows.flatMap((row) => (Array.isArray(row.projectIds) ? (row.projectIds as number[]) : [])));
+    for (const id of ids) {
+      receivable.set(
+        id,
+        !!access && can(access, 'run:receive', id) && (await isOptInCapabilityOn(db, id, 'machine-runs')),
+      );
+    }
+  }
+  return rows.map(({ targetId, platform, version, lastSeenAt, projectIds, ...app }) => ({
+    ...app,
+    kind: app.kind as ConnectedApp['kind'],
+    target:
+      targetId === null
+        ? null
+        : {
+            id: targetId,
+            platform,
+            version,
+            projectIds: Array.isArray(projectIds) ? (projectIds as number[]).filter((id) => receivable.get(id)) : [],
+            lastSeenAt,
+            online: isOnline(targetId, lastSeenAt),
+          },
+  }));
 }
 
 export async function createUserApiKeyRecord(

@@ -11,8 +11,19 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
-import { runSummaryText } from '~/utils/run-summary';
+import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
+import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
+import { streamReopener } from '~/utils/stream-reopen';
+import {
+  isFinalRefetch,
+  refetchKeeping,
+  refetchReason,
+  settleInOrder,
+  type FinalRefetchFailure,
+} from '~/utils/refetch-keeping';
+import { runReadEndedNotice } from '~/utils/run-read-ended';
+import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
@@ -20,9 +31,17 @@ import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
-import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import {
+  liveWatchAddress,
+  liveWorkerKey,
+  parseLiveWatchAddress,
+  type LiveLane,
+  type LiveViewRunState,
+  type LiveWorkerState,
+} from '#shared/live-view';
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { TestStop } from '@piwitests/core/wire';
 
 const route = useRoute();
 const router = useRouter();
@@ -30,10 +49,75 @@ const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/$/, '');
 const isDesktop = useIsDesktop();
-const { can } = useAuth();
+const { can, authState } = useAuth();
+const toast = useToast();
 
-const { data: testRun, error: testRunError, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+const { data: testRun, error: testRunError } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 if (testRunError.value) showPageLoadError(testRunError.value, 'test run');
+// Every later read of the run goes through `reloadRun`: a read that fails (a proxy's 502 while the instance restarts, a
+// run deleted meanwhile) leaves the run the page shows, and resolves to why it failed.
+let lastReadError: unknown = null;
+const readRun = refetchKeeping(testRun, () =>
+  $fetch<TestRunDetails>(`/api/test-runs/${runId}`).catch((error: unknown) => {
+    lastReadError = error;
+    throw error;
+  }),
+);
+/**
+ * Why the page can no longer read the run, after a final failure (`isFinalRefetch`): the run was deleted, the session
+ * ended, or the viewer's access was removed. The page stops following the run and says why, until a read answers.
+ */
+const runReadEnded = ref<FinalRefetchFailure | null>(null);
+// Each result acts in the order its read started: an older read's answer never undoes a newer one's.
+const reloadRun = settleInOrder(readRun, (result) => {
+  if (isFinalRefetch(result)) {
+    runReadEnded.value = result;
+    disconnectStream();
+  } else if (result === 'answered' && runReadEnded.value) {
+    runReadEnded.value = null;
+    if (shouldStream.value) connectToStream();
+  }
+});
+/** A read the person asked for (Refresh, a keep, a label change): one that failed says so, with why. */
+async function reloadRunAsked(): Promise<void> {
+  if ((await reloadRun()) !== 'failed') return;
+  const reason = refetchReason(lastReadError) ?? 'The instance did not answer.';
+  toast.add({
+    title: 'The run could not be read again',
+    description: `${reason} The page shows the run as it last read it.`,
+    color: 'error',
+  });
+}
+const authEnabled = Boolean(useRuntimeConfig().public.authEnabled);
+/** What the page says once it can no longer read the run, and the action it offers. */
+const runReadEndedView = computed(() =>
+  runReadEnded.value ? runReadEndedNotice(runReadEnded.value, authEnabled) : null,
+);
+/** The notice's action as a button: Piwi's sign-in page, coming back here, or the page loaded again. */
+const runReadEndedActions = computed(() => {
+  const action = runReadEndedView.value?.action;
+  if (action === 'sign-in')
+    return [
+      {
+        label: 'Sign in again',
+        color: 'neutral' as const,
+        variant: 'outline' as const,
+        to: { path: '/login', query: { redirect: route.fullPath } },
+      },
+    ];
+  if (action === 'reload')
+    return [
+      {
+        label: 'Load the page again',
+        color: 'neutral' as const,
+        variant: 'outline' as const,
+        onClick: () => reloadNuxtApp(),
+      },
+    ];
+  return [];
+});
+// The page left: nothing opens a stream for it any more.
+let pageLeft = false;
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
@@ -46,12 +130,18 @@ useRunStream(refreshLatestRun);
 
 // Which of this project's tests are quarantined — marks the matching rows in the
 // executions list. `candidates=false` skips the heavier flaky-analysis proposal.
-const { data: quarantineData, refresh: refreshQuarantine } = projectId
-  ? await useFetch<{ entries: Array<{ testCaseId: number }> }>(
-      `/api/projects/${projectId}/quarantine?candidates=false`,
-      { key: `run-quarantine-${projectId}` },
+type RunQuarantine = { entries: Array<{ testCaseId: number }> };
+const { data: quarantineData } = projectId
+  ? await useFetch<RunQuarantine>(`/api/projects/${projectId}/quarantine?candidates=false`, {
+      key: `run-quarantine-${projectId}`,
+    })
+  : { data: ref<RunQuarantine | null>(null) };
+// A read that fails keeps the marks the list shows.
+const reloadQuarantine = projectId
+  ? refetchKeeping(quarantineData, () =>
+      $fetch<RunQuarantine>(`/api/projects/${projectId}/quarantine?candidates=false`),
     )
-  : { data: ref<{ entries: Array<{ testCaseId: number }> } | null>(null), refresh: async () => {} };
+  : async () => 'answered' as const;
 const quarantinedCaseIds = computed(() => new Set((quarantineData.value?.entries ?? []).map((e) => e.testCaseId)));
 
 const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.project?.latestRunId ?? null);
@@ -66,10 +156,34 @@ const { release: releaseKeep, canRelease } = useRunKeep();
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
 const isFinalizing = ref(false);
+// Each test's latest attempt, while the run is live: the row the list shows.
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
-// Worker index → the step the worker is currently on (from transient SSE step
-// events; nothing is persisted from them). Rendered inline on the matching
+// The attempts a retry followed, by `liveCaseKey` and retry: the timeline keeps their bars while the run is live.
+const liveEarlierAttempts = ref<Record<string, TestCaseResult>>({});
+function keepEarlierAttempt(tc: TestCaseResult): void {
+  const key = `${liveCaseKey(tc)}#${tc.retries ?? 0}`;
+  liveEarlierAttempts.value = { ...liveEarlierAttempts.value, [key]: mergeAttempt(liveEarlierAttempts.value[key], tc) };
+}
+/**
+ * An attempt as one more event tells it: what the event leaves out (a replay of the stream's catch-up sends no start,
+ * error or steps; a resent batch's no ids) stays as the attempt kept it.
+ */
+function mergeAttempt(kept: TestCaseResult | undefined, tc: TestCaseResult): TestCaseResult {
+  if (!kept) return tc;
+  const merged = { ...kept };
+  for (const [field, value] of Object.entries(tc) as Array<[keyof TestCaseResult, unknown]>) {
+    if (value !== undefined && value !== null) (merged as Record<string, unknown>)[field] = value;
+  }
+  if (tc.executionId < 0 && kept.executionId > 0) merged.executionId = kept.executionId;
+  if (!tc.testCaseId && kept.testCaseId) merged.testCaseId = kept.testCaseId;
+  return merged;
+}
+// A row the database holds no execution for yet gets a unique negative id, unlinked until its test completes.
+let placeholderIds = 0;
+const placeholderId = () => -++placeholderIds;
+// The step each worker is on, by its shard and its worker (`liveWorkerKey`), from transient SSE step
+// events; nothing is persisted from them. Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
 // What the run's reporters measured so far (CPU, memory, open pages), one part
@@ -84,8 +198,25 @@ const liveViewKeyed = ref(false);
 // The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
 const liveViewState = ref<LiveViewRunState | null>(null);
 const liveViewConnected = ref(false);
+// The stream has not opened for `STREAM_STALL_MS`, or opened again within `STREAM_RECONNECT_STALL_MS` of a drop: the
+// toolbar says so, with Retry.
+const liveStreamStalled = ref(false);
+const streamStall = stallWatch(
+  () => liveViewConnected.value,
+  () => (liveStreamStalled.value = true),
+);
+function stopWatchingForStall() {
+  streamStall.disarm();
+  liveStreamStalled.value = false;
+}
 // The run finished on the stream: its status leaves the toolbar before the refetched run says so.
 const liveRunEnded = ref(false);
+/** How the run ended, in a sentence, once the page read it ended: an open live view says it. */
+const runVerdict = computed(() => {
+  const run = testRun.value;
+  if (!liveRunEnded.value || !run || ['running', 'initializing', 'finalizing'].includes(run.status)) return null;
+  return runVerdictText({ status: run.status, total: run.totalTests ?? 0, failed: run.failedTests ?? 0 });
+});
 // Whether a worker of the run's view connected since the page opened, and whether tests have run for
 // `NO_WORKER_GRACE_MS` since the page first heard of one: both, the status says no worker opened the view.
 const liveWorkerSeen = ref(false);
@@ -110,18 +241,93 @@ const desktopSessions = useDesktopRunSessions(() => ({
   kind: runOrigin(testRun.value?.metadata),
   ref: runOriginRef(testRun.value?.metadata),
 }));
-// The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
-const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
+// The worker someone opened Watch on, its lane, and the execution of the row they opened it from (null when the
+// page's address opened it): the view starts on that test, and follows the lane's next tests when the worker says
+// its lane.
+const watching = ref<{
+  worker: number;
+  shard: number | null;
+  slot?: number;
+  test: string;
+  executionId: number | null;
+} | null>(null);
 const watchOpen = ref(false);
-function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
+/** Whether the view opened from a row's Watch, which gives it the focus; the page's address opens it without. */
+const watchAsked = ref(false);
+// The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
+const watchAddress = ref<LiveLane | null>(null);
+function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
+  // Watch on a row replaces a lane the address still waits for.
+  if (testCase) watchAddress.value = null;
+  watchAsked.value = testCase !== null;
   watching.value = {
     worker: worker.worker,
     shard: worker.shard,
-    test: testCase.title,
-    executionId: testCase.executionId,
+    ...(worker.slot !== undefined ? { slot: worker.slot } : {}),
+    test: testCase?.title ?? '',
+    executionId: testCase?.executionId ?? null,
   };
   watchOpen.value = true;
 }
+/** The worker in a lane: the newest Playwright started in it, the one the instance serves its views from. */
+function laneWorker(lane: LiveLane): LiveWorkerState | null {
+  let found: LiveWorkerState | null = null;
+  for (const worker of Object.values(liveWorkers.value)) {
+    if (worker.shard !== lane.shard || worker.slot !== lane.slot) continue;
+    if (!found || worker.worker > found.worker) found = worker;
+  }
+  return found;
+}
+/** The step the watched worker is on: of the worker now in the view's lane, none while the lane has none. */
+const watchedStep = computed(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  const now = shown.slot === undefined ? shown : laneWorker({ shard: shown.shard, slot: shown.slot });
+  return now ? (liveSteps.value[liveWorkerKey(now)] ?? null) : null;
+});
+/** Whether the run is over, so no lane of it is waited for. */
+const runOver = computed(
+  () =>
+    liveRunEnded.value ||
+    (!!testRun.value && !['running', 'initializing', 'finalizing'].includes(testRun.value.status)),
+);
+/** Open the view of the lane the address waits for, once a worker of it is in the run's live view. */
+function openAddressed(): void {
+  const lane = watchAddress.value;
+  const worker = lane ? laneWorker(lane) : null;
+  if (!worker) return;
+  watchAddress.value = null;
+  watchWorker(worker, null);
+}
+// An address that names a lane, as the page opens or as a link reaches the page already open, opens its view.
+watch(
+  () => route.query.watch,
+  (value) => {
+    const lane = parseLiveWatchAddress(value);
+    const shown = watching.value;
+    // The address of the view open now, which the page wrote itself.
+    if (!lane || (watchOpen.value && shown?.shard === lane.shard && shown.slot === lane.slot)) return;
+    watchAddress.value = runOver.value ? null : lane;
+    openAddressed();
+  },
+  { immediate: true },
+);
+watch(liveWorkers, openAddressed);
+watch(runOver, (over) => {
+  if (over) watchAddress.value = null;
+});
+/** The page's address names the lane the view follows while it is open, so it can be shared, and a lane it waits for. */
+function syncAddress(): void {
+  if (!import.meta.client || watchAddress.value) return;
+  const shown = watching.value;
+  const address =
+    watchOpen.value && shown?.slot !== undefined
+      ? liveWatchAddress({ shard: shown.shard, slot: shown.slot })
+      : undefined;
+  if (route.query.watch !== address) void replaceQuery(router, { watch: address });
+}
+watch([watchOpen, watching, watchAddress], syncAddress);
+onMounted(syncAddress);
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -150,11 +356,16 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
 
+/** What the page shows while live: the attempts a retry followed, then each test's latest attempt. */
+function showLive(): void {
+  displayTestCases.value = [...Object.values(liveEarlierAttempts.value), ...liveTestCases.value];
+}
+
 watch(
   [isLive, testRun],
   () => {
     if (isLive.value && liveTestCases.value.length > 0) {
-      displayTestCases.value = [...liveTestCases.value];
+      showLive();
     } else if (testRun.value?.testCases) {
       displayTestCases.value = testRun.value.testCases;
     } else {
@@ -173,7 +384,9 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
     const key = liveCaseKey(tc);
     const idx = seeded.get(key);
     if (idx !== undefined) {
-      if ((tc.retries ?? 0) > (rows[idx]!.retries ?? 0)) rows[idx] = tc;
+      const [earlier, later] = (tc.retries ?? 0) > (rows[idx]!.retries ?? 0) ? [rows[idx]!, tc] : [tc, rows[idx]!];
+      keepEarlierAttempt(earlier);
+      rows[idx] = later;
     } else if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true);
       seeded.set(key, rows.length);
@@ -181,7 +394,7 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
     }
   }
   liveTestCases.value = rows;
-  displayTestCases.value = [...liveTestCases.value];
+  showLive();
 }
 
 // The planned suite size as the run's stream last reported it: it grows as each
@@ -210,12 +423,19 @@ function flushPendingEvents() {
         suitePath?: string[] | null;
         location: string;
         workerIndex?: number;
+        parallelIndex?: number | null;
         startedAt?: number;
         browser?: { projectName?: string } | null;
         repeatEachIndex?: number;
         stepCategory?: string | null;
         shardIndex?: number | null;
         stuck?: StuckAttempt | null;
+        stop?: TestStop | null;
+        retries?: number | null;
+        maxRetries?: number | null;
+        tags?: string[] | null;
+        locks?: string[] | null;
+        testMeta?: TestCaseResult['testMeta'];
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -234,7 +454,7 @@ function flushPendingEvents() {
             // The persisted execution row only exists once the test completes —
             // a unique negative placeholder keeps the row keyed (and unlinked)
             // until test-completed delivers the real id.
-            executionId: -(liveTestCases.value.length + 1),
+            executionId: placeholderId(),
             testCaseId: 0,
             title: d.title,
             filePath: d.filePath,
@@ -242,35 +462,58 @@ function flushPendingEvents() {
             status: 'running',
             location: d.location,
             workerIndex: d.workerIndex ?? null,
+            parallelIndex: d.parallelIndex ?? null,
             shardIndex: d.shardIndex ?? null,
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
             stuck: d.stuck ?? null,
+            liveStop: d.stop ?? null,
+            retries: d.retries ?? 0,
+            maxRetries: d.maxRetries ?? null,
+            tags: d.tags ?? null,
+            locks: d.locks ?? null,
+            testMeta: d.testMeta ?? null,
           },
         ];
-        displayTestCases.value = [...liveTestCases.value];
+        showLive();
       } else {
-        // A known test begins again: a retry starts (its row runs again, unmarked), or a
-        // reconnected stream catches up on a running attempt (its row takes the mark it carries).
+        // A known test begins again: a retry starts, or a reconnected stream catches up on a running
+        // attempt (its row takes the mark it carries). A reporter that does not say which attempt begins
+        // starts a retry when the row's attempt ended.
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         const existing = idx >= 0 ? liveTestCases.value[idx]! : null;
-        if (existing && (existing.status !== 'running' || d.stuck)) {
-          const copy = [...liveTestCases.value];
-          copy[idx] =
-            existing.status === 'running'
-              ? { ...existing, stuck: d.stuck ?? existing.stuck }
-              : {
-                  ...existing,
-                  status: 'running',
-                  workerIndex: d.workerIndex ?? existing.workerIndex,
-                  shardIndex: d.shardIndex ?? existing.shardIndex,
-                  startedAt: d.startedAt ?? Date.now(),
-                  stuck: d.stuck ?? null,
-                };
-          liveTestCases.value = copy;
-          displayTestCases.value = [...copy];
-        }
+        if (!existing) continue;
+        const retry =
+          d.retries ?? (existing.status === 'running' ? (existing.retries ?? 0) : (existing.retries ?? 0) + 1);
+        const copy = [...liveTestCases.value];
+        if (retry > (existing.retries ?? 0)) {
+          // The attempt that ended keeps its bar on the timeline; the row runs as the retry, unlinked until it ends.
+          if (existing.status !== 'running') keepEarlierAttempt(existing);
+          copy[idx] = {
+            ...existing,
+            executionId: placeholderId(),
+            status: 'running',
+            duration: null,
+            error: null,
+            stepEvents: null,
+            wastedTimeMs: null,
+            failureClusterId: null,
+            retries: retry,
+            maxRetries: d.maxRetries ?? existing.maxRetries ?? null,
+            workerIndex: d.workerIndex ?? existing.workerIndex,
+            parallelIndex: d.parallelIndex ?? existing.parallelIndex,
+            shardIndex: d.shardIndex ?? existing.shardIndex,
+            startedAt: d.startedAt ?? Date.now(),
+            stuck: d.stuck ?? null,
+            liveStop: d.stop ?? null,
+          };
+        } else if (existing.status === 'running' && (d.stuck || d.stop !== undefined)) {
+          // A reconnected stream catches up on the mark and the stop the attempt carries.
+          copy[idx] = { ...existing, stuck: d.stuck ?? existing.stuck ?? null, liveStop: d.stop ?? null };
+        } else continue;
+        liveTestCases.value = copy;
+        showLive();
       }
     } else if (parsed.type === 'test-stuck') {
       // A running test has run far longer than it usually does: its row says so until it completes.
@@ -285,7 +528,27 @@ function flushPendingEvents() {
       if (row) {
         row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
         liveTestCases.value = [...liveTestCases.value];
-        displayTestCases.value = [...liveTestCases.value];
+        showLive();
+      }
+    } else if (parsed.type === 'test-stopped' || parsed.type === 'test-resumed') {
+      // A running test of a run outside CI stopped, or went on: its row says where it stands until then.
+      const d = data as unknown as {
+        title: string;
+        location: string;
+        browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
+        retries?: number | null;
+        stop?: TestStop;
+      };
+      const key = liveCaseKey(d);
+      const row = liveTestCases.value.find(
+        (tc) =>
+          tc.status === 'running' && liveCaseKey(tc) === key && (d.retries == null || (tc.retries ?? 0) === d.retries),
+      );
+      if (row) {
+        row.liveStop = parsed.type === 'test-stopped' ? (d.stop ?? null) : null;
+        liveTestCases.value = [...liveTestCases.value];
+        showLive();
       }
     } else if (parsed.type === 'test-completed') {
       const d = data as {
@@ -301,6 +564,8 @@ function flushPendingEvents() {
         stepEvents?: TestStepEvent[] | null;
         wastedTimeMs?: number | null;
         workerIndex?: number;
+        parallelIndex?: number | null;
+        shardIndex?: number | null;
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
@@ -309,18 +574,62 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
         executionId?: number | null;
         testCaseId?: number | null;
+        tags?: string[] | null;
+        locks?: string[] | null;
+        testMeta?: TestCaseResult['testMeta'];
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
       const key = liveCaseKey(d);
+      /** The attempt as the event tells it, for a row the list has not shown yet. */
+      const completedRow = (): TestCaseResult => ({
+        executionId: d.executionId ?? placeholderId(),
+        testCaseId: d.testCaseId ?? 0,
+        title: d.title,
+        externalId: d.externalId ?? null,
+        displayTitle: d.displayTitle ?? null,
+        filePath: d.filePath,
+        suitePath: d.suitePath ?? undefined,
+        status: d.status,
+        duration: d.duration,
+        location: d.location,
+        error: d.error,
+        stepEvents: d.stepEvents ?? null,
+        wastedTimeMs: d.wastedTimeMs ?? null,
+        workerIndex: d.workerIndex ?? null,
+        parallelIndex: d.parallelIndex ?? null,
+        shardIndex: d.shardIndex ?? null,
+        startedAt: d.startedAt ?? undefined,
+        browser: d.browser ?? null,
+        retries: d.retries ?? null,
+        attempts: d.attempts ?? null,
+        repeatEachIndex: d.repeatEachIndex ?? 0,
+        tags: d.tags ?? null,
+        locks: d.locks ?? null,
+        testMeta: d.testMeta ?? null,
+      });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!;
-          // A replayed earlier attempt of a test whose later attempt the row shows changes nothing.
-          if (existing.status !== 'running' && (d.retries ?? 0) < (existing.retries ?? 0)) continue;
+          // An earlier attempt of a test whose later attempt the row shows keeps its bar on the timeline, and leaves
+          // the row as it is.
+          if ((d.retries ?? 0) < (existing.retries ?? 0)) {
+            keepEarlierAttempt(completedRow());
+            // The row of a retry that began before its earlier attempt's end came takes the test's id and history, so
+            // the two are one test's attempts.
+            if (!existing.testCaseId && d.testCaseId) {
+              const copy = [...liveTestCases.value];
+              copy[idx] = { ...existing, testCaseId: d.testCaseId, attempts: existing.attempts ?? d.attempts ?? null };
+              liveTestCases.value = copy;
+            }
+            showLive();
+            continue;
+          }
+          // A later attempt whose begin the page missed: the one the row showed keeps its bar.
+          if ((d.retries ?? 0) > (existing.retries ?? 0) && existing.status !== 'running') keepEarlierAttempt(existing);
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,
@@ -329,8 +638,9 @@ function flushPendingEvents() {
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
-            // The attempt said to be stuck ended.
+            // The attempt said to be stuck, or stopped, ended.
             stuck: null,
+            liveStop: null,
             duration: d.duration,
             // A live event always carries the attempt's error, null on a pass; the stream's catch-up of the persisted
             // cases leaves it out, so the error the page loaded stays.
@@ -338,6 +648,8 @@ function flushPendingEvents() {
             stepEvents: d.stepEvents ?? existing.stepEvents,
             wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
+            parallelIndex: d.parallelIndex ?? existing.parallelIndex,
+            shardIndex: d.shardIndex ?? existing.shardIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
             // A later attempt's retry count and attempt history win, so a
@@ -348,37 +660,17 @@ function flushPendingEvents() {
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
             testCaseId: d.testCaseId ?? existing.testCaseId,
+            tags: d.tags ?? existing.tags,
+            locks: d.locks ?? existing.locks,
+            testMeta: d.testMeta ?? existing.testMeta,
           };
           liveTestCases.value = copy;
-          displayTestCases.value = [...copy];
+          showLive();
         }
       } else {
         liveTestCaseKeys.set(key, true);
-        liveTestCases.value = [
-          ...liveTestCases.value,
-          {
-            executionId: d.executionId ?? -(liveTestCases.value.length + 1),
-            testCaseId: d.testCaseId ?? 0,
-            title: d.title,
-            externalId: d.externalId ?? null,
-            displayTitle: d.displayTitle ?? null,
-            filePath: d.filePath,
-            suitePath: d.suitePath ?? undefined,
-            status: d.status,
-            duration: d.duration,
-            location: d.location,
-            error: d.error,
-            stepEvents: d.stepEvents ?? null,
-            wastedTimeMs: d.wastedTimeMs ?? null,
-            workerIndex: d.workerIndex ?? null,
-            startedAt: d.startedAt ?? undefined,
-            browser: d.browser ?? null,
-            retries: d.retries ?? null,
-            attempts: d.attempts ?? null,
-            repeatEachIndex: d.repeatEachIndex ?? 0,
-          },
-        ];
-        displayTestCases.value = [...liveTestCases.value];
+        liveTestCases.value = [...liveTestCases.value, completedRow()];
+        showLive();
       }
     } else if (parsed.type === 'step-begin') {
       const d = parsed.data as {
@@ -387,17 +679,20 @@ function flushPendingEvents() {
         stepCategory?: string | null;
         parentTitle?: string | null;
         workerIndex?: number;
+        shardIndex?: number | null;
+        startedAt?: number | null;
       };
       // Suite-level hooks (no worker) keep flowing to the timeline instead.
       if (d.workerIndex == null) continue;
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
           status: undefined,
           parentTitle: d.parentTitle ?? null,
+          startedAt: d.startedAt ?? null,
         },
       };
     } else if (parsed.type === 'step-end') {
@@ -408,18 +703,21 @@ function flushPendingEvents() {
         parentTitle?: string | null;
         status?: string;
         workerIndex?: number;
+        shardIndex?: number | null;
+        startedAt?: number | null;
       };
       if (d.workerIndex == null) continue;
       // Keep the ended step visible (with its outcome) until the next step
       // begins, so the readout shows "last thing this worker did".
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
           status: d.status ?? 'passed',
           parentTitle: d.parentTitle ?? null,
+          startedAt: d.startedAt ?? null,
         },
       };
     } else if (parsed.type === 'live-worker') {
@@ -432,36 +730,50 @@ function flushPendingEvents() {
       liveWorkers.value = next;
     } else if (parsed.type === 'live-view') {
       const state = data as unknown as LiveViewRunState;
-      liveViewKeyed.value = state.keyed === true;
+      // A key opens the run's live view only while the project has it on.
+      liveViewKeyed.value = state.keyed === true && state.enabled !== false;
       liveViewState.value = state;
       // Catch-up starts with the view state and then its current workers.
-      if (parsed.seq === 0 || !state.keyed) liveWorkers.value = {};
+      if (parsed.seq === 0 || !liveViewKeyed.value) liveWorkers.value = {};
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
     } else if (parsed.type === 'run-finished') {
-      isFinalizing.value = false;
-      liveRunEnded.value = true;
-      liveSteps.value = {};
-      liveWorkers.value = {};
-      liveViewKeyed.value = false;
-      liveViewState.value = null;
-      disconnectStream();
-      refresh();
-      // Nudge the Changes tab to refetch — it keeps its own fetch state and
-      // would otherwise show stale/partial data from before the run finalized.
-      runRefreshKey.value++;
-      pollForReports();
+      onRunEnded();
     }
   }
+}
+
+/** The run ended: the page leaves its live state, reads the run again and waits for its reports, once. */
+function onRunEnded(): void {
+  if (liveRunEnded.value) return;
+  // Events still waiting for the batch are of the run that ended.
+  pendingEvents = [];
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = null;
+  isFinalizing.value = false;
+  liveRunEnded.value = true;
+  liveSteps.value = {};
+  liveWorkers.value = {};
+  liveViewKeyed.value = false;
+  liveViewState.value = null;
+  disconnectStream();
+  // A run read running again (one its reporter revived) is live again, and its next end runs as the first did.
+  void reloadRun().then((result) => {
+    if (result === 'answered' && testRun.value?.status === 'running') liveRunEnded.value = false;
+  });
+  // Nudge the Changes tab to refetch — it keeps its own fetch state and
+  // would otherwise show stale/partial data from before the run finalized.
+  runRefreshKey.value++;
+  pollForReports();
 }
 
 // The reporter may upload HTML/Monocart reports and traces after the run
 // finishes: the page reads the run again a few times so they appear without a
 // manual refresh, and stops when it leaves.
-const reportsPoll = useReportsPoll(refresh);
+const reportsPoll = useReportsPoll(reloadRun);
 
 function pollForReports(): void {
   if (isDemoMode) return; // demo mode has no file uploads
@@ -508,7 +820,9 @@ function connectToDemoStream() {
 }
 
 function connectToStream() {
-  if (!import.meta.client) return;
+  if (!import.meta.client || pageLeft) return;
+  // A run that streams again is live again: its next end runs as the first did.
+  liveRunEnded.value = false;
 
   if (isDemoMode) {
     connectToDemoStream();
@@ -526,11 +840,13 @@ function connectToStream() {
 
   const source = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
   eventSource = source;
+  streamStall.arm();
 
   source.onopen = () => {
     liveViewConnected.value = true;
+    stopWatchingForStall();
     liveViewState.value = null;
-    reopenDelay = STREAM_REOPEN_MIN_MS;
+    reopener.reset();
   };
 
   source.onmessage = (event) => {
@@ -543,34 +859,30 @@ function connectToStream() {
 
   source.onerror = () => {
     liveViewConnected.value = false;
+    if (eventSource === source) streamStall.arm(STREAM_RECONNECT_STALL_MS);
     // EventSource reconnects by itself, unless an error answer closed it for good.
     if (source.readyState === EventSource.CLOSED && eventSource === source) reopenStream();
   };
 }
 
 // The browser gives up on a stream whose reconnection gets an error answer (a proxy's 502 while the instance restarts,
-// an expired session): the page refetches the run and opens the stream again, waiting longer each time.
-const STREAM_REOPEN_MIN_MS = 2_000;
-const STREAM_REOPEN_MAX_MS = 30_000;
-let reopenDelay = STREAM_REOPEN_MIN_MS;
-let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+// an expired session): the page reads the run again and opens the stream again, waiting longer each time. While the
+// instance does not answer, the page keeps the run it shows, says the stream stalled, and tries again later. A run
+// deleted, a session ended or an access removed stops the tries: `reloadRun` says why (`runReadEnded`).
+const reopener = streamReopener(reloadRun, () => {
+  if (shouldStream.value) connectToStream();
+});
 
 function reopenStream() {
   eventSource?.close();
   eventSource = null;
-  if (reopenTimer) return;
-  reopenTimer = setTimeout(async () => {
-    reopenTimer = null;
-    await refresh();
-    if (shouldStream.value) connectToStream();
-  }, reopenDelay);
-  reopenDelay = Math.min(reopenDelay * 2, STREAM_REOPEN_MAX_MS);
+  reopener.schedule();
 }
 
 function disconnectStream() {
   liveViewConnected.value = false;
-  if (reopenTimer) clearTimeout(reopenTimer);
-  reopenTimer = null;
+  stopWatchingForStall();
+  reopener.reset();
   if (eventSource) {
     eventSource.close();
     eventSource = null;
@@ -581,10 +893,16 @@ function disconnectStream() {
   }
 }
 
+// Retry, from the toolbar of a stalled stream: a new stream, whose catch-up brings the run's state.
+function retryStream() {
+  disconnectStream();
+  connectToStream();
+}
+
 // A run shown as initializing is refetched once it starts, and then streams.
 // In demo mode the page already listens while the run initializes, for the
 // tests that begin before the refetch lands.
-useRunStart(Number(runId), () => testRun.value?.status, refresh);
+useRunStart(Number(runId), () => testRun.value?.status, reloadRun);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 
 watch(
@@ -599,7 +917,9 @@ watch(
   { immediate: true },
 );
 
+// Leaving drops a reopening that waits or reads the run: it opens no stream after, nor does a read that answers late.
 onUnmounted(() => {
+  pageLeft = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
   disconnectStream();
 });
@@ -685,11 +1005,17 @@ const tabIndicator = useTabRunIndicator(() => {
 // leave the live state. The global stream is closed while the tab is hidden, so
 // a live run is also refetched when the tab comes back.
 useRunEvents((event) => {
-  if (event.type === 'run-cancelled' && event.runId === Number(runId) && isLive.value) refresh();
+  if (event.runId !== Number(runId) || !isLive.value) return;
+  // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open. The demo's
+  // own stream always hears the end.
+  if (event.type === 'run-cancelled') reloadRun();
+  else if (isDemoMode || liveViewConnected.value) return;
+  else if (event.type === 'run-finished' || event.type === 'run-submitted') onRunEnded();
+  else if (event.type === 'run-finalizing') reloadRun();
 });
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {
-  if (state === 'visible' && isLive.value) refresh();
+  if (state === 'visible' && isLive.value) reloadRun();
 });
 
 useHead(
@@ -805,6 +1131,10 @@ watch(
   { immediate: true },
 );
 
+// A read asked from outside the page (the assistant, once a proposal is applied) goes through the page's own reads,
+// which keep what it shows when they fail.
+usePageReload(() => Promise.all([reloadRun(), reloadQuarantine(), showFailureTabs.value ? fetchClusterMeta() : null]));
+
 // Increments when a live run finishes, so child tabs that keep their own
 // fetch state can refetch instead of showing stale pre-finish data.
 const runRefreshKey = ref(0);
@@ -815,15 +1145,10 @@ watch(runRefreshKey, () => {
   if (showFailureTabs.value) fetchClusterMeta();
 });
 
-const uniqueWorkerCount = computed(() => {
-  const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases;
-  if (!cases || cases.length === 0) return 0;
-  const workers = new Set<number>();
-  for (const tc of cases) {
-    if (tc.workerIndex != null && tc.workerIndex >= 0) workers.add(tc.workerIndex);
-  }
-  return workers.size;
-});
+/** The cases the workers timeline draws: while the run is live, the latest list once per frame. */
+const timelineCases = computed(() => (isLive.value ? throttledTestCases.value : displayTestCases.value));
+/** The Timeline tab's count: the lanes the timeline lays out, the workers its header counts. */
+const timelineLanes = computed(() => timelineLaneCount(timelineCases.value));
 
 const tabItems = computed(() => [
   {
@@ -841,7 +1166,7 @@ const tabItems = computed(() => [
     disabledReason: isLive.value ? 'available once the run finishes' : undefined,
   },
   {
-    label: `Timeline${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`,
+    label: `Timeline${timelineLanes.value > 0 ? ` (${timelineLanes.value})` : ''}`,
     icon: 'i-lucide-timeline',
     value: 'workers',
     slot: 'workers',
@@ -956,7 +1281,7 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
+  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => reloadRunAsked() });
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
     items.push({
@@ -970,11 +1295,17 @@ const moreMenuItems = computed(() => {
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
       onSelect: async () => {
-        if (await releaseKeep(Number(runId))) refresh();
+        if (await releaseKeep(Number(runId))) await reloadRunAsked();
       },
     });
   }
-  if (can('run:delete', testRun.value?.projectId)) {
+  // Its requester deletes their own requested run, as anyone with run:delete deletes any run.
+  const ownRequestedRun =
+    testRun.value?.origin === 'request' &&
+    testRun.value.requesterId != null &&
+    testRun.value.requesterId === authState.value.user?.id &&
+    can('run:request', testRun.value.projectId);
+  if (can('run:delete', testRun.value?.projectId) || ownRequestedRun) {
     // A kept run cannot be deleted until it is released.
     items.push({
       label: kept ? 'Delete run (release it first)' : 'Delete run',
@@ -989,191 +1320,220 @@ const moreMenuItems = computed(() => {
 </script>
 
 <template>
-  <UDashboardPanel id="test-run-detail">
-    <template #header>
-      <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
-      <UDashboardNavbar>
-        <template #leading>
-          <UDashboardSidebarCollapse />
-          <BreadcrumbNav
-            :items="[
-              { label: 'Home', icon: 'i-lucide-house', to: '/' },
-              { label: 'Projects', to: '/projects' },
-              ...(testRun?.project?.id
-                ? [
-                    {
-                      label: testRun.project.label || testRun.project.name || 'Project',
-                      to: `/projects/${testRun.project.id}`,
-                      slot: 'project',
-                    },
-                  ]
-                : [{ label: 'Project' }]),
-              { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
-            ]"
-          >
-            <template #project="{ item }">
-              <NuxtLink
-                :to="item?.to"
-                class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
-              >
-                {{ item?.label }}
-              </NuxtLink>
-              <RunFreshnessPill
-                class="ml-1"
-                :latest-run-id="latestRunId"
-                :current-run-id="Number(runId)"
-                :is-active="isLatestRunActive"
+  <!-- The run page, and the live view docked beside it while someone watches a worker. -->
+  <div class="flex min-h-0 min-w-0 flex-1">
+    <UDashboardPanel id="test-run-detail" :ui="{ root: 'lg:not-last:border-e-0' }">
+      <template #header>
+        <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
+        <UDashboardNavbar>
+          <template #leading>
+            <UDashboardSidebarCollapse />
+            <BreadcrumbNav
+              :items="[
+                { label: 'Home', icon: 'i-lucide-house', to: '/' },
+                { label: 'Projects', to: '/projects' },
+                ...(testRun?.project?.id
+                  ? [
+                      {
+                        label: testRun.project.label || testRun.project.name || 'Project',
+                        to: `/projects/${testRun.project.id}`,
+                        slot: 'project',
+                      },
+                    ]
+                  : [{ label: 'Project' }]),
+                { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
+              ]"
+            >
+              <template #project="{ item }">
+                <NuxtLink
+                  :to="item?.to"
+                  class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
+                >
+                  {{ item?.label }}
+                </NuxtLink>
+                <RunFreshnessPill
+                  class="ml-1"
+                  :latest-run-id="latestRunId"
+                  :current-run-id="Number(runId)"
+                  :is-active="isLatestRunActive"
+                />
+              </template>
+            </BreadcrumbNav>
+          </template>
+          <template #right>
+            <div class="flex items-center shrink-0 min-w-0">
+              <ExportMenu
+                :endpoint="`/api/test-runs/${runId}/export`"
+                :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
+                :base-name="`piwi-run-${runId}`"
+                class="mr-1"
               />
-            </template>
-          </BreadcrumbNav>
-        </template>
-        <template #right>
-          <div class="flex items-center shrink-0 min-w-0">
-            <ExportMenu
-              :endpoint="`/api/test-runs/${runId}/export`"
-              :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
-              :base-name="`piwi-run-${runId}`"
-              class="mr-1"
+              <UDropdownMenu :items="moreMenuItems">
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-ellipsis-vertical"
+                  aria-label="More actions"
+                  title="More actions"
+                  data-tour="run-more-actions"
+                />
+              </UDropdownMenu>
+            </div>
+          </template>
+        </UDashboardNavbar>
+      </template>
+
+      <template #body>
+        <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
+          <template #summary>
+            <UAlert
+              v-if="runReadEndedView"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :title="runReadEndedView.title"
+              :description="runReadEndedView.description"
+              :actions="runReadEndedActions"
+              class="mb-4 max-sm:rounded-none max-sm:border-x-0"
+              data-testid="run-read-ended"
+              data-shot="run-read-ended"
+              :data-state="runReadEnded"
             />
-            <UDropdownMenu :items="moreMenuItems">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-ellipsis-vertical"
-                aria-label="More actions"
-                title="More actions"
-                data-tour="run-more-actions"
-              />
-            </UDropdownMenu>
-          </div>
-        </template>
-      </UDashboardNavbar>
-    </template>
+            <RunHeader
+              v-if="testRun"
+              :test-run="testRun"
+              :display-progress="displayProgress"
+              :all-reports="allReports"
+              :finalizing="isFinalizing"
+              :live-cases="isLive ? dedupedDisplayCases : null"
+              :active-statuses="testCaseActiveStatuses"
+              :total-wasted-time="totalWastedTime"
+              :stopped="runReadEnded !== null"
+              @toggle-status="handleFilterStatus"
+              @label-updated="reloadRunAsked"
+            />
+          </template>
 
-    <template #body>
-      <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
-        <template #summary>
-          <RunHeader
-            v-if="testRun"
-            :test-run="testRun"
-            :display-progress="displayProgress"
-            :all-reports="allReports"
-            :finalizing="isFinalizing"
-            :active-statuses="testCaseActiveStatuses"
-            :total-wasted-time="totalWastedTime"
-            @toggle-status="handleFilterStatus"
-            @label-updated="refresh"
-          />
-        </template>
-
-        <template #tab-test-cases>
-          <TestCasesList
-            ref="testCasesListRef"
-            data-shot="failure-clusters"
-            data-tour="run-tests"
-            v-model:search="testCaseSearch"
-            v-model:active-statuses="testCaseActiveStatuses"
-            :test-cases="dedupedDisplayCases"
-            :is-live="isLive"
-            :total="displayProgress?.totalTests"
-            :live-steps="liveSteps"
-            :live-resources="liveResources"
-            :live-workers="liveWorkers"
-            :live-note="liveNote"
-            :desktop-sessions="isLive ? desktopSessions : null"
-            :cluster-meta="clusterMeta"
-            :quarantined-case-ids="quarantinedCaseIds"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :run-id="Number(runId)"
-            class="flex-1 min-h-0"
-            @quarantine-changed="refreshQuarantine"
-            @watch="watchWorker"
-          >
-            <template #toolbar-extra>
-              <RunLiveViewStatus
-                v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded"
-                :project-id="testRun.projectId"
-                :readiness="{
-                  desktop: isDesktop,
-                  demo: isDemoMode,
-                  connected: liveViewConnected,
-                  state: liveViewState,
-                  ci: !!testRun.metadata?.ci,
-                  workers: Object.keys(liveWorkers).length,
-                  testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
-                }"
-              />
-            </template>
-          </TestCasesList>
-        </template>
-
-        <template #tab-changes>
-          <ChangesView
-            data-tour="run-changes"
-            :test-run="testRun"
-            :test-cases="displayTestCases"
-            :cluster-meta="clusterMeta"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :refresh-key="runRefreshKey"
-          />
-        </template>
-
-        <template #tab-workers>
-          <div class="space-y-6" data-tour="run-workers">
-            <WorkersTimeline
-              :test-cases="isLive ? throttledTestCases : displayTestCases"
-              :setup-steps="testRun?.setupSteps ?? null"
-              :shard-total="testRun?.shardTotal ?? null"
-              :live="isLive"
-              :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
-              :run-id="Number(runId)"
-              :has-resources="testRun?.hasResources ?? false"
+          <template #tab-test-cases>
+            <TestCasesList
+              ref="testCasesListRef"
+              data-shot="failure-clusters"
+              data-tour="run-tests"
+              v-model:search="testCaseSearch"
+              v-model:active-statuses="testCaseActiveStatuses"
+              :test-cases="dedupedDisplayCases"
+              :is-live="isLive"
+              :total="displayProgress?.totalTests"
+              :waiting-since="
+                !runReadEnded && (testRun?.status === 'initializing' || testRun?.status === 'running')
+                  ? testRun?.startTime
+                  : null
+              "
+              :hears-run="liveViewConnected || isDemoMode"
+              :live-steps="liveSteps"
               :live-resources="liveResources"
-              @select-test-case="handleSelectTestCase"
-            />
-            <RunTimelineExtras
-              v-if="!isLive"
+              :live-workers="liveWorkers"
+              :live-note="liveNote"
+              :desktop-sessions="isLive ? desktopSessions : null"
+              :cluster-meta="clusterMeta"
+              :quarantined-case-ids="quarantinedCaseIds"
+              :project-key="testRun?.projectId"
+              :project-name="testRun?.project?.name"
+              :run-id="Number(runId)"
+              class="flex-1 min-h-0"
+              @quarantine-changed="reloadQuarantine"
+              @watch="watchWorker"
+            >
+              <template #toolbar-extra>
+                <RunLiveViewStatus
+                  v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded && !runReadEnded"
+                  :project-id="testRun.projectId"
+                  :readiness="{
+                    desktop: isDesktop,
+                    demo: isDemoMode,
+                    connected: liveViewConnected,
+                    stalled: liveStreamStalled,
+                    state: liveViewState,
+                    ci: !!testRun.metadata?.ci,
+                    workers: Object.keys(liveWorkers).length,
+                    testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
+                  }"
+                  @retry="retryStream"
+                />
+              </template>
+            </TestCasesList>
+          </template>
+
+          <template #tab-changes>
+            <ChangesView
+              data-tour="run-changes"
+              :test-run="testRun"
               :test-cases="displayTestCases"
               :cluster-meta="clusterMeta"
               :project-key="testRun?.projectId"
               :project-name="testRun?.project?.name"
+              :refresh-key="runRefreshKey"
             />
-          </div>
-        </template>
+          </template>
 
-        <template #tab-resources>
-          <RunResources
-            data-tour="run-resources"
-            :run-id="Number(runId)"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :refresh-key="runRefreshKey"
-            @open-timeline="activeTab = 'workers'"
-          />
-        </template>
-      </DetailPageLayout>
-    </template>
-  </UDashboardPanel>
+          <template #tab-workers>
+            <div class="space-y-6" data-tour="run-workers">
+              <WorkersTimeline
+                :test-cases="timelineCases"
+                :setup-steps="testRun?.setupSteps ?? null"
+                :shard-total="testRun?.shardTotal ?? null"
+                :live="isLive"
+                :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+                :run-id="Number(runId)"
+                :has-resources="testRun?.hasResources ?? false"
+                :live-resources="liveResources"
+                @select-test-case="handleSelectTestCase"
+              />
+              <RunTimelineExtras
+                v-if="!isLive"
+                :test-cases="displayTestCases"
+                :cluster-meta="clusterMeta"
+                :project-key="testRun?.projectId"
+                :project-name="testRun?.project?.name"
+              />
+            </div>
+          </template>
+
+          <template #tab-resources>
+            <RunResources
+              data-tour="run-resources"
+              :run-id="Number(runId)"
+              :project-key="testRun?.projectId"
+              :project-name="testRun?.project?.name"
+              :refresh-key="runRefreshKey"
+              @open-timeline="activeTab = 'workers'"
+            />
+          </template>
+        </DetailPageLayout>
+      </template>
+    </UDashboardPanel>
+    <ClientOnly>
+      <LanePanel
+        v-if="watching"
+        :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
+        v-model:open="watchOpen"
+        :take-focus="watchAsked"
+        :run-id="Number(runId)"
+        :worker="watching.worker"
+        :shard="watching.shard"
+        :slot="watching.slot"
+        :test="watching.test"
+        :verdict="runVerdict"
+        :step="watchedStep"
+        :project-key="testRun?.projectId"
+        :project-name="testRun?.project?.name"
+      />
+    </ClientOnly>
+  </div>
 
   <ClientOnly>
-    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
-  </ClientOnly>
-
-  <ClientOnly>
-    <RunLiveView
-      v-if="watching"
-      :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
-      v-model:open="watchOpen"
-      :run-id="Number(runId)"
-      :worker="watching.worker"
-      :shard="watching.shard"
-      :test="watching.test"
-      :project-key="testRun?.projectId"
-      :project-name="testRun?.project?.name"
-    />
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="reloadRunAsked" />
   </ClientOnly>
 
   <ClientOnly>

@@ -24,6 +24,7 @@ const memberItems = computed(() => {
   return sortProjectAccessUsers(users).map((user) => ({
     label: projectAccessUserName(user),
     value: user.id,
+    account: { id: user.id, name: user.name, username: user.username },
   }));
 });
 
@@ -249,7 +250,7 @@ async function confirmDelete() {
     >
       <template #body>
         <LoadingState v-if="formLoading" text="Loading the group…" />
-        <form v-else class="space-y-5" data-shot="group-form" @submit.prevent="saveForm">
+        <form v-else class="space-y-5" data-shot="group-form" method="post" @submit.prevent="saveForm">
           <UFormField label="Name" name="name" required>
             <UInput v-model="form.name" placeholder="QA, Product owners, CI…" class="w-full" />
           </UFormField>
@@ -265,7 +266,11 @@ async function confirmDelete() {
               placeholder="No members"
               :search-input="{ placeholder: 'Filter users…' }"
               class="w-full"
-            />
+            >
+              <template #item-leading="{ item }">
+                <UserAvatar :account="item.account" size="2xs" />
+              </template>
+            </USelectMenu>
           </UFormField>
         </form>
       </template>

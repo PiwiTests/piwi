@@ -158,6 +158,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view',
       },
       {
+        title: 'Share a run live',
+        summary:
+          'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',
+        needs: ['fixtures'],
+        where: 'VS Code, JetBrains IDEs, Runs window, desktop app → Share live',
+        doc: 'features/share-live',
+      },
+      {
         title: 'Stuck tests',
         summary:
           'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, whoever watches.',
@@ -180,6 +188,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'Test run header; Home inbox; Project → Timeline',
         doc: 'features/environment-incidents',
+      },
+      {
+        title: 'Run environment',
+        summary:
+          'Where each run executed (runner, browsers, servers under test) and what changed between runs, shards, or a failure and its last pass.',
+        needs: [],
+        where: 'Test run → Environment, Changes; Test → State',
+        doc: 'features/run-environment',
       },
       {
         title: 'Flaky tests & quarantine',
@@ -212,6 +228,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Run → Resources; Execution → Performance; reporter output',
         doc: 'features/resource-leaks',
+      },
+      {
+        title: 'Leak history in CI',
+        summary:
+          'Each resource leak followed across runs: new to a branch or fixed after five clean runs, gated by `piwi gate` and listed in the pull-request comment.',
+        needs: ['fixtures'],
+        where: 'Run → Resources; `piwi gate`; pull-request comment; MCP',
+        doc: 'features/leak-history',
       },
       {
         title: 'CPU, memory & disk',
@@ -300,6 +324,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/issue-tracking',
       },
       {
+        title: 'Issues about a run or a test',
+        summary:
+          'A Jira issue about a whole run, or about one test with no failure cluster, with your comment first and each submission filed once.',
+        needs: ['admin'],
+        where: 'Run header, or an execution’s More actions → Create issue',
+        doc: 'features/run-issues',
+      },
+      {
         title: 'Issue automation',
         summary:
           'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',
@@ -308,11 +340,20 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/issue-automation',
       },
       {
-        title: 'Pull-request feedback & re-run',
-        summary: 'A summary of the failures on the branch posted to the PR, and a re-run triggered from the dashboard.',
+        title: 'Pull-request feedback',
+        summary:
+          'A summary of the failures on the branch posted to the PR, and a commit status for the run and the gate.',
         needs: ['scm'],
         where: 'Settings → Pull requests',
         doc: 'features/pr-feedback',
+      },
+      {
+        title: 'Re-run in CI',
+        summary:
+          'A cluster’s affected tests re-run in CI from its page: a GitHub, GitLab or Bitbucket pipeline, or a Jenkins job or any CI server one request reaches.',
+        needs: [],
+        where: 'Project → Settings → Source control → CI re-run',
+        doc: 'features/ci-rerun',
       },
       {
         title: 'CI merge gate',
@@ -518,6 +559,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/runs-window',
       },
       {
+        title: 'Piwi Picker and your editor',
+        summary:
+          'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
+        needs: ['extension'],
+        where: 'Browser extension → Settings → Send to editor',
+        doc: 'features/editor-pairing',
+      },
+      {
         title: 'Breakpoints in the browser',
         summary:
           "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
@@ -533,6 +582,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where:
           'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
         doc: 'features/editor-run-control',
+      },
+      {
+        title: 'Watch a running test',
+        summary:
+          "The page of a test running on your machine, up to ten images a second, through its next tests and stops: from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app, with Pause and watch to stop it there.",
+        needs: ['fixtures'],
+        where:
+          "Piwi: Watch a worker's test; Tools → Piwi → Watch a Worker's Test in a JetBrains IDE; Watch on a worker of the Runs window or the desktop app",
+        doc: 'features/watch-running-test',
       },
       {
         title: 'Code from a pause',
@@ -604,6 +662,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['desktop', 'fixtures'],
         where: 'Desktop app → Local runs',
         doc: 'features/desktop-runs',
+      },
+      {
+        title: 'Run on my machine',
+        summary:
+          'Ask the desktop app on your own machine to run tests from the dashboard; the app asks before every run, and the run it reports is yours alone, kept out of everything the team sees. Experimental, off by default.',
+        needs: ['desktop', 'admin'],
+        where: 'Settings → Capabilities; Settings → Account → Connected apps',
+        doc: 'features/run-on-my-machine',
       },
       {
         title: 'Browser extension',

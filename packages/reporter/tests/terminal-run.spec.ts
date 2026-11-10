@@ -7,7 +7,13 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatEditorDiscovery, type EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { lineReader } from '@piwitests/core/ide-recorder';
-import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
+import {
+  parseRunMainToHub,
+  parseRunToHub,
+  type HubToRun,
+  type RunMainToHub,
+  type RunToHub,
+} from '@piwitests/core/run-channel';
 import { terminalRunSkip } from '../src/internal/config/editors.js';
 
 /**
@@ -34,10 +40,16 @@ test('ended', async ({ page }) => {
 });
 `;
 
+/** A connection the run opened: a worker's (`heard`, from its `run-attach`), or the run's own (`main`, `run-begin`). */
 interface Connection {
   socket: net.Socket;
   heard: RunToHub[];
+  main: RunMainToHub[];
 }
+
+/** The workers' connections among those a run opened, and the run's own. */
+const workersOf = (opened: Connection[]) => opened.filter((c) => c.heard[0]?.type === 'run-attach');
+const mainsOf = (opened: Connection[]) => opened.filter((c) => c.main[0]?.type === 'run-begin');
 
 let folder = '';
 let editors = '';
@@ -116,7 +128,7 @@ beforeAll(async () => {
   editors = path.join(folder, 'editors');
   fs.mkdirSync(editors, { mode: 0o700 });
   hub = net.createServer((socket) => {
-    const connection: Connection = { socket, heard: [] };
+    const connection: Connection = { socket, heard: [], main: [] };
     connections.push(connection);
     socket.setEncoding('utf8');
     socket.on('error', () => socket.destroy());
@@ -124,6 +136,8 @@ beforeAll(async () => {
       'data',
       lineReader(
         (line) => {
+          const own = parseRunMainToHub(line);
+          if (own) connection.main.push(own);
           const message = parseRunToHub(line);
           if (!message) return;
           connection.heard.push(message);
@@ -192,17 +206,28 @@ describe('a run started in a terminal', () => {
     expect(output).toContain(
       `Following this run in Test Editor (pid ${process.pid}), whose breakpoints stop it: PIWI_EDITOR=off runs it alone.`,
     );
-    expect(opened).toHaveLength(1);
-    const [attach] = opened[0]!.heard;
-    expect(attach).toMatchObject({ type: 'run-attach', token: TOKEN, ref: expect.stringMatching(/^terminal-\d+-\d+$/) });
+    // One worker's connection, and the run's own beside it under the same ref.
+    const [worker, ...others] = workersOf(opened);
+    expect(others).toEqual([]);
+    const [attach] = worker!.heard;
+    expect(attach).toMatchObject({
+      type: 'run-attach',
+      token: TOKEN,
+      ref: expect.stringMatching(/^terminal-\d+-\d+$/),
+    });
+    const mains = mainsOf(opened);
+    expect(mains).toHaveLength(1);
+    expect(mains[0]!.main[0]).toMatchObject({ token: TOKEN, ref: attach?.type === 'run-attach' ? attach.ref : '' });
+    expect(mains[0]!.main[0]).not.toHaveProperty('runner');
+    expect(opened).toHaveLength(2);
     // It carries no record channel nor pairing: Pick a locator, Record here and Assert are not offered.
     expect(attach?.type === 'run-attach' ? attach.takes : []).not.toEqual(
       expect.arrayContaining(['pick', 'record', 'assert']),
     );
     expect(attach?.type === 'run-attach' ? attach.takes : []).toContain('end');
-    const stops = opened[0]!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
+    const stops = worker!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
     expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
-    const ends = opened[0]!.heard.filter((m) => m.type === 'test-end').map((m) => m.type === 'test-end' && m.status);
+    const ends = worker!.heard.filter((m) => m.type === 'test-end').map((m) => m.type === 'test-end' && m.status);
     expect(ends).toEqual(['passed', 'skipped']);
     // A terminal's run is no test runner's.
     expect(attach).not.toHaveProperty('runner');
@@ -212,10 +237,17 @@ describe('a run started in a terminal', () => {
     listEditors({ [`${process.pid}.json`]: discovery() });
     const { output, opened } = await run({ PW_TEST_REPORTER: path.join(project, 'ide-reporter.cjs') });
     expect(output).toContain(`Following this run in Test Editor (pid ${process.pid})`);
-    expect(opened).toHaveLength(1);
-    const [attach] = opened[0]!.heard;
-    expect(attach).toMatchObject({ type: 'run-attach', ref: expect.stringMatching(/^terminal-\d+-\d+$/), runner: true });
-    const stops = opened[0]!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
+    const [worker, ...others] = workersOf(opened);
+    expect(others).toEqual([]);
+    const [attach] = worker!.heard;
+    expect(attach).toMatchObject({
+      type: 'run-attach',
+      ref: expect.stringMatching(/^terminal-\d+-\d+$/),
+      runner: true,
+    });
+    // The run's own connection says so too.
+    expect(mainsOf(opened).map((c) => c.main[0])).toEqual([expect.objectContaining({ runner: true })]);
+    const stops = worker!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
     expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
   }, 60_000);
 
@@ -284,14 +316,17 @@ describe('a run started in a terminal', () => {
     expect(gate({}, ['node', 'cli.js', 'test', '--ui'])).toBe("Playwright's debugger or UI mode runs it");
     // Playwright opens UI mode for a UI host or port too.
     for (const ui of [['--ui-port=0'], ['--ui-port', '0'], ['--ui-host=127.0.0.1']]) {
-      expect(gate({}, ['node', 'cli.js', 'test', ...ui]), ui.join(' ')).toBe("Playwright's debugger or UI mode runs it");
+      expect(gate({}, ['node', 'cli.js', 'test', ...ui]), ui.join(' ')).toBe(
+        "Playwright's debugger or UI mode runs it",
+      );
     }
     expect(gate({}, ['node', 'cli.js', 'merge-reports', 'blob-report'])).toBe('it merges reports, running no test');
     expect(terminalRunSkip({ env: {}, argv: [], terminal: false })).toBe('its output goes to no terminal');
   });
 
   it('looks for an editor from a test runner that adds its reporter file, as a terminal’s run does', () => {
-    const gate = (env: NodeJS.ProcessEnv) => terminalRunSkip({ env, argv: ['node', 'cli.js', 'test'], terminal: false });
+    const gate = (env: NodeJS.ProcessEnv) =>
+      terminalRunSkip({ env, argv: ['node', 'cli.js', 'test'], terminal: false });
     expect(gate({ PW_TEST_REPORTER: '/ide/plugins/javascript/playwright-reporter.js' })).toBeNull();
     expect(gate({ PW_TEST_REPORTER: 'C:\\ide\\plugins\\playwright-reporter.js' })).toBeNull();
     // One of Playwright's own reporters, named: no test runner of an editor.

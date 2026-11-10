@@ -32,10 +32,14 @@ test('explains each readiness gate and updates when the project changes', async 
       'href',
       `/projects/${projectId}?tab=settings&section=live-view`,
     );
+    // A Project admin turns it on from here: the run, started without it, gets none, and the status says so.
+    await help.getByRole('button', { name: 'Turn the live view on for the next runs' }).click();
+    await expect(readiness).toHaveAttribute('data-state', 'next-run');
+    await expect(readiness).toContainText('Live view on from the next run');
     await page.keyboard.press('Escape');
 
-    await setting(true);
-    await expect(readiness).toHaveAttribute('data-state', 'unavailable');
+    await page.reload();
+    await expect(readiness).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
     await expect(help).toHaveCount(0);
     await readiness.getByRole('button', { name: 'Help: Live view prerequisites' }).click();
     await expect(help).toContainText('capture fixtures');
@@ -92,8 +96,9 @@ test('explains each readiness gate and updates when the project changes', async 
 
     await setting(false);
     await expect(readiness).toHaveAttribute('data-state', 'disabled');
+    // Turned on again, the running run's key opens its view again.
     await setting(true);
-    await expect(readiness).toHaveAttribute('data-state', 'unavailable');
+    await expect(readiness).toHaveAttribute('data-state', 'waiting');
   } finally {
     closeWorker();
     for (const run of runs) {
@@ -124,6 +129,118 @@ test('opens the run stream again after an error answer closed it', async ({ page
     const readiness = page.getByTestId('live-view-readiness');
     await expect(readiness).toHaveAttribute('data-state', 'disabled', { timeout: 20_000 });
     expect(refused).toBeGreaterThanOrEqual(2);
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});
+
+test('keeps the run it shows and opens its stream once the run reads again', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  let streams = 0;
+  let reads = 0;
+  // The first stream and the page's first read of the run answer as a proxy does while the instance restarts.
+  await page.route(`**/api/test-runs/${run.runId}/stream`, async (route) => {
+    if (streams++ === 0) await route.fulfill({ status: 502, body: 'Bad gateway' });
+    else await route.continue();
+  });
+  await page.route(`**/api/test-runs/${run.runId}`, async (route) => {
+    if (reads++ === 0) await route.fulfill({ status: 502, body: 'Bad gateway' });
+    else await route.continue();
+  });
+  try {
+    await page.goto(`/test-runs/${run.runId}`);
+    const readiness = page.getByTestId('live-view-readiness');
+    await expect.poll(() => reads, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+    await expect(readiness).toBeVisible();
+    // The page reads the run again later, then opens the stream.
+    await expect(readiness).toHaveAttribute('data-state', 'disabled', { timeout: 30_000 });
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(streams).toBeGreaterThanOrEqual(2);
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});
+
+test('stops following a run it can no longer read, and says why', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(90_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  // The suite's server runs without authentication: a 401 or 403 offers to load the page again, not to sign in.
+  const cases = [
+    { status: 404, state: 'gone', title: 'This run no longer exists', action: null },
+    { status: 401, state: 'signed-out', title: 'The instance refused to read this run', action: 'Load the page again' },
+    { status: 403, state: 'forbidden', title: 'The instance refused to read this run', action: 'Load the page again' },
+  ];
+  try {
+    for (const { status, state, title, action } of cases) {
+      let reads = 0;
+      // The stream answers with an error, and the run's read with Piwi's own final error: deleted, signed out, no access.
+      await page.route(`**/api/test-runs/${run.runId}/stream`, (route) =>
+        route.fulfill({ status, body: JSON.stringify({ statusCode: status }) }),
+      );
+      await page.route(`**/api/test-runs/${run.runId}`, (route) => {
+        reads++;
+        return route.fulfill({
+          status,
+          contentType: 'application/json',
+          body: JSON.stringify({ statusCode: status, message: 'Refused' }),
+        });
+      });
+      await page.goto(`/test-runs/${run.runId}`);
+      const notice = page.getByTestId('run-read-ended');
+      await expect(notice).toHaveAttribute('data-state', state, { timeout: 20_000 });
+      await expect(notice).toContainText(title);
+      await expect(notice.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+      await expect(notice.getByRole('button', { name: 'Load the page again' })).toHaveCount(action ? 1 : 0);
+      await expect(page.getByTestId('live-view-readiness')).toHaveCount(0);
+      // No more tries: the next would come after 4 s, then 8 s.
+      const tried = reads;
+      await page.waitForTimeout(6_000);
+      expect(reads, state).toBe(tried);
+      await page.unrouteAll();
+    }
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});
+
+test('keeps trying a run a proxy in front of Piwi answers 404 for', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  let reads = 0;
+  // The stream and the run's read get a proxy's own 404 page, as while the container restarts.
+  await page.route(`**/api/test-runs/${run.runId}/stream`, (route) =>
+    route.fulfill({ status: 404, contentType: 'text/html', body: '<h1>404 Not Found</h1>' }),
+  );
+  await page.route(`**/api/test-runs/${run.runId}`, (route) => {
+    reads++;
+    return route.fulfill({ status: 404, contentType: 'text/html', body: '<h1>404 Not Found</h1>' });
+  });
+  try {
+    await page.goto(`/test-runs/${run.runId}`);
+    await expect.poll(() => reads, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+    await expect(page.getByTestId('run-read-ended')).toHaveCount(0);
   } finally {
     await request.post(`/api/test-runs/${run.runId}/finish`, {
       data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },

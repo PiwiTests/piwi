@@ -31,7 +31,7 @@ export default eventHandler(async (event) => {
   const { db } = await requireResolvedProjectAccess(
     event,
     entityId,
-    (database, id) => resolveLinkEntityProjectId(database, entityType, id),
+    (database, id, viewerId) => resolveLinkEntityProjectId(database, entityType, id, viewerId),
     'Entity',
   );
 

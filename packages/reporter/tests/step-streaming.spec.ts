@@ -74,7 +74,7 @@ describe('PiwiDashboardReporter live step streaming', () => {
     return { reporter, eventsBodies };
   }
 
-  it('streams pw:api and expect steps and skips test.step', async () => {
+  it('streams pw:api, expect and test.step steps, and leaves out Piwi’s own', async () => {
     const { reporter, eventsBodies } = await startStreaming();
     const suite = fakeSuite();
     const test = fakeTestCase({ title: 'the test', parent: suite });
@@ -84,31 +84,45 @@ describe('PiwiDashboardReporter live step streaming', () => {
     // than drop them, which is what real fixtures/hooks do at run start.
     reporter.onBegin(fakeConfig(), suite);
 
-    reporter.onStepBegin(test, result, makeStep('pw:api'));
-    reporter.onStepBegin(test, result, makeStep('test.step', 'no-step-begin'));
-    reporter.onStepBegin(test, result, makeStep('expect'));
-    const waitForBegins = async () =>
-      waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-begin').length >= 2).catch((e) => {
-        throw new Error(
-          `${(e as Error).message} — bodies=${JSON.stringify(eventsBodies)} urls=${server.requests.map((r) => r.url).join(',')}`,
-        );
-      });
-    await waitForBegins();
-
-    reporter.onStepEnd(test, result, makeStep('pw:api', 'ended-api'));
-    reporter.onStepEnd(test, result, makeStep('test.step', 'no-step-end'));
-    reporter.onStepEnd(test, result, makeStep('expect', 'ended-expect'));
-    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-end').length >= 2);
+    const capture = makeStep('fixture', 'Fixture "piwiCapture"');
+    const resources = makeStep('fixture', 'Fixture "piwiResources"');
+    const captureCall = { ...makeStep('pw:api', 'Add init script'), parent: capture };
+    const steps = [
+      makeStep('fixture', 'Fixture "page"'),
+      capture,
+      captureCall,
+      resources,
+      makeStep('test.step', 'Log in'),
+      makeStep('pw:api', 'Click'),
+      makeStep('expect', 'Expect "toBeVisible"'),
+    ];
+    for (const step of steps) reporter.onStepBegin(test, result, step);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-begin').length >= 4);
+    for (const step of steps) reporter.onStepEnd(test, result, step);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-end').length >= 4);
 
     const all = streamed(eventsBodies);
-    const begins = all.filter((e) => e.type === 'step-begin');
-    const ends = all.filter((e) => e.type === 'step-end');
+    const titles = (type: string) => all.filter((e) => e.type === type).map((e) => e.title);
+    const shown = ['Fixture "page"', 'Log in', 'Click', 'Expect "toBeVisible"'];
+    expect(titles('step-begin')).toEqual(shown);
+    expect(titles('step-end')).toEqual(shown);
+    expect(all.every((e) => e.parentTitle === 'the test')).toBeTruthy();
+  });
 
-    expect(begins.map((e) => e.stepCategory).sort()).toEqual(['expect', 'pw:api']);
-    expect(begins.every((e) => e.parentTitle === 'the test')).toBeTruthy();
-    expect(ends.map((e) => e.stepCategory).sort()).toEqual(['expect', 'pw:api']);
-    expect(all.some((e) => e.title === 'no-step-begin')).toBeFalsy();
-    expect(all.some((e) => e.title === 'no-step-end')).toBeFalsy();
+  it.each([
+    { shard: { current: 2, total: 3 }, shardIndex: 2 },
+    { shard: null, shardIndex: null },
+  ])('names the shard of each step ($shardIndex)', async ({ shard, shardIndex }) => {
+    const { reporter, eventsBodies } = await startStreaming();
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    const result = fakeResult({ workerIndex: 0 });
+    reporter.onBegin(fakeConfig({ shard }), suite);
+    reporter.onStepBegin(test, result, makeStep('pw:api', 'Click'));
+    reporter.onStepEnd(test, result, makeStep('pw:api', 'Click'));
+    await waitFor(() => streamed(eventsBodies).filter((e) => String(e.type).startsWith('step-')).length >= 2);
+    const steps = streamed(eventsBodies).filter((e) => String(e.type).startsWith('step-'));
+    expect(steps.map((e) => e.shardIndex)).toEqual([shardIndex, shardIndex]);
   });
 
   it('streams an assertion step under the expect category Playwright reports', async () => {
@@ -266,6 +280,62 @@ describe('PiwiDashboardReporter live step streaming', () => {
       'step-begin Navigate',
       "step-begin Click getByRole('button', { name: 'Continue' })",
     ]);
+  });
+
+  it('sends the open steps in one request when someone opens the run, more of them than a batch holds', async () => {
+    const eventsBodies: EventsBody[] = [];
+    let answers = 0;
+    let inFlight = 0;
+    let mostInFlight = 0;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        eventsBodies.push(JSON.parse(req.body));
+        inFlight++;
+        mostInFlight = Math.max(mostInFlight, inFlight);
+        // Nobody watches at first; the run is open by the next request.
+        const watched = answers++ > 0;
+        setTimeout(() => {
+          inFlight--;
+          jsonRes(res, 200, { success: true, processed: 1, watched });
+        }, 30);
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 60_000,
+      streamingBatchSize: 2,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    reporter.onBegin(fakeConfig(), suite);
+    await waitFor(() => (reporter as any).streamManager?._runId === 1);
+
+    // Three workers each begin a step: the first two fill a batch, the third waits for the next request.
+    for (const [worker, title] of ['Navigate', 'Fill', 'Click'].entries()) {
+      reporter.onStepBegin(test, fakeResult({ workerIndex: worker }), makeStep('pw:api', title));
+    }
+    await waitFor(() => (reporter as any).streamManager?.watched === false);
+    void (reporter as any).streamManager.flush();
+    await waitFor(() => eventsBodies.length >= 3);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(eventsBodies.map((body) => body.testCases.map((e) => e.title))).toEqual([
+      ['Navigate', 'Fill'],
+      ['Click'],
+      ['Navigate', 'Fill', 'Click'],
+    ]);
+    expect(mostInFlight).toBe(1);
   });
 
   it('suite-level hooks keep parentTitle null and land in setupSteps', async () => {

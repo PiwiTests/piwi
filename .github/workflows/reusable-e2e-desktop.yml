@@ -95,6 +95,11 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo test
 
+      # The same crate builds Piwi Runner with the `runner` feature, which picks its keychain service.
+      - name: Run Rust unit tests (Runner feature)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --features runner
+
       # Compile up front so `tauri dev` (launched by the fixture) only has to boot,
       # keeping startup inside the fixture's startTimeout.
       - name: Pre-build the shell (e2e feature)

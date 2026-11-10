@@ -74,7 +74,7 @@ export const HELP_TOPICS = {
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
-    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
+    text: 'Every project at a glance — run history bars and a tendency badge, starred projects first (the star beside a name), so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
     doc: 'features/ui-overview#home',
   },
   'home.get-started': {
@@ -535,7 +535,7 @@ export const HELP_TOPICS = {
       '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
       '',
-      'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turning it back on needs a new run.',
+      'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
     doc: 'features/live-view',
   },
@@ -547,12 +547,28 @@ export const HELP_TOPICS = {
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
+      '- **CI server** — one request to Jenkins (a job’s `buildWithParameters`) or a Custom request, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'On GitLab and Bitbucket, set the variable name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give a GitLab job an empty default.',
+      'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs `piwi flake` for one flaky test, from its next step.',
+      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the project’s SCM token (which needs write scope); a CI server takes its own token, sent only under the base URL it was saved with. Off until you fill in a target. The optional Flake Lab target runs `piwi flake` for one flaky test, from its next step.',
     ].join('\n'),
-    doc: 'features/pr-feedback#re-run-from-the-dashboard',
+    doc: 'features/ci-rerun',
+    envVars: ['PIWI_CI_SERVER_URL', 'PIWI_CI_SERVER_USER', 'PIWI_CI_SERVER_TOKEN', 'PIWI_CI_SERVER_HOSTS'],
+  },
+  'project.tag-keys': {
+    title: 'Keys in test tags',
+    text: [
+      'Two patterns that read a key out of a test’s tags, so the issue tracker and the test management integration can tell the tags apart.',
+      '',
+      '- **Issue key** — a tag naming the issue a test is tracked in, such as `SHOP-1234`.',
+      '- **Test case key** — a tag naming the test case a test covers, such as `SHOP-T123`.',
+      '',
+      'Each is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor it with `^` and `$` (`^SHOP-T[0-9]+$`) and use letters, digits, character classes and quantifiers only: no groups or `|`. A pattern that breaks the rule, matches an empty tag, or does not compile is refused. Leave a field empty to turn it off; both are off by default.',
+      '',
+      'When both are on, the tags of the last complete run (the whole suite, finished) that both patterns match are listed with a test that carries each. Such a tag would be read as an issue and as a test case.',
+    ].join('\n'),
+    doc: 'reference/test-metadata#keys-in-test-tags',
   },
   'project.local-folder': {
     title: 'Linked local folder',
@@ -576,7 +592,7 @@ export const HELP_TOPICS = {
     text: [
       'Live result counts do not by themselves mean a browser can be watched. The status beside the search field reports what this instance can establish.',
       '',
-      '- **Project setting** — a Project admin enables Live view before the run starts. Enabling it later, or restarting the instance, needs a new run.',
+      '- **Project setting** — a Project admin enables Live view before the run starts, in the project settings or from here. A run that started without it gets none: the next run does. A run that had a view gets it back after the instance restarts, or the setting is turned off and on again.',
       '- **Run setup** — register the run at startup with `wrapConfig` and keep result streaming enabled.',
       '- **Capture fixtures** — import `test` from your capture fixtures in the specs you run; creating the fixtures file alone does not activate them.',
       '- **Worker connection** — waiting can mean startup, reconnection or missing fixtures. Once available, choose **Watch** beside a running test. Images go only to viewers; the view is read-only.',
@@ -609,18 +625,30 @@ export const HELP_TOPICS = {
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
     ].join('\n'),
-    doc: 'features/live-view#share-a-run-from-your-machine',
+    doc: 'features/share-live',
+  },
+  'run.live-stalled': {
+    title: 'Live updates stalled',
+    text: [
+      'This page has had no live connection for a few seconds: its results are as of the last time it had one. Two causes:',
+      '',
+      '- **No connection left** — over HTTP/1.1 (plain HTTP, or HTTPS without HTTP/2) a browser opens at most six connections to one address, and other Piwi pages hold them: the pages of running runs and their tests, in other tabs and windows. Close some, or serve Piwi through a proxy that speaks HTTP/2, which has no such limit.',
+      '- **The instance does not answer** — it is restarting, or a proxy in front of it refuses the connection.',
+      '',
+      '**Retry** opens a new connection.',
+    ].join('\n'),
+    doc: 'operate/deployment#reverse-proxy-https',
   },
   'run.live-desktop': {
     title: 'Live view of a local run',
     text: [
-      'The desktop app shows each test’s steps as it runs. Its page shows where the run is steered, once the test stops at a breakpoint, a `page.pause()` or **Pause**:',
+      'The desktop app shows each test’s steps as it runs. Its page shows where the run is steered: as the test runs, where its reporter shows it, else once it stops at a breakpoint, a `page.pause()` or **Pause**:',
       '',
-      '- **Local runs** — this app’s tray, with **Watch live**, for a run it started. **Pause and watch**, on a running test of such a run, stops it before its next call and shows its page live there.',
-      '- **Piwi Picker** — the Runs window, where **Watch live** follows it, for a run your editor or this app started.',
+      '- **Local runs** — this app’s tray, for a run it started. **Watch**, on a running test of such a run, shows its page there as it runs and at each stop; **Pause and watch** stops it before its next call and shows its page live there.',
+      '- **Piwi Picker** — the Runs window, where **Watch** follows it, for a run your editor or this app started.',
       '- **VS Code or a JetBrains IDE** — the paused page, for a run it started.',
       '',
-      'To watch a test without stopping it, run it headed, or report the run to your team’s instance, in a project with its live view on, and share it there.',
+      'With an older reporter, to watch a test without stopping it, run it headed, or report the run to your team’s instance, in a project with its live view on, and share it there.',
     ].join('\n'),
     doc: 'features/live-view#where-to-watch-a-run',
   },
@@ -651,6 +679,11 @@ export const HELP_TOPICS = {
     text: "Each of these IDs is declared by more than one test (with `piwi:id`, or in the title read by the reporter’s `externalId.pattern`). An ID names one test, so this run matched those tests by file, describe path and title instead, as if they had no ID: a renamed or moved one starts a new history. Give each test its own ID; set `externalId.onDuplicate: 'fail'` to fail the run while two tests share one.",
     doc: 'reference/test-metadata#external-test-ids',
   },
+  'run.tagsTruncated': {
+    title: 'Tags cut',
+    text: "These tests declare more than 20 tags, counting the config's, each `describe` block's, the title's and the test's own `tag` option. Piwi keeps the first 20 of each test and drops the rest, so a dropped tag is neither searched nor filtered on. Playwright lists config and describe tags first and the test's own `tag` option last: keep config and describe tags few, or put the tags that matter in the test title.",
+    doc: 'reference/test-metadata#tag-limit',
+  },
   'run.coverageIncomplete': {
     title: 'Incomplete server coverage',
     text: 'Part of this run’s server coverage is missing. A backend that **restarted** during the run starts its coverage empty: the lines each test ran are kept, but what the earlier process ran outside a request (startup, background work) is lost. One **unreachable** at the end of the run sent no run-level coverage: only the lines the tests ran are kept. The commit’s combined coverage says so in its notes.',
@@ -660,6 +693,19 @@ export const HELP_TOPICS = {
     title: 'Shuffled run',
     text: 'Playwright ran this run’s tests in a random order (`--shuffle`). Click the seed to copy `--shuffle <seed>`: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
     doc: 'features/run-changes#shuffled-runs',
+  },
+  'run.retryOptions': {
+    title: 'Retry command options',
+    text: [
+      'Playwright options the copied command carries, on the run page, its selection and the execution page. This browser remembers them, except the project.',
+      '',
+      '- **Headed** — `--headed`: the browser window shows.',
+      '- **Trace** — `--trace=on` records every test; `retain-on-failure` keeps the trace of a failed one only.',
+      '- **Repeat each** — `--repeat-each`: each test runs that many times.',
+      "- **Workers** — `--workers`, or your Playwright config's number when left to the config.",
+      "- **Project** — runs every test under one Playwright project instead of each test's own.",
+    ].join('\n'),
+    doc: 'features/ci-rerun',
   },
   'run.metadata': {
     title: 'Tags, links & custom data',
@@ -691,18 +737,19 @@ export const HELP_TOPICS = {
       '- **Click a test** to expand its steps into a nested waterfall on the same axis, like a span viewer.',
       '- **Show waits** marks the wasted waits; **Show locks** shows when each named lock was held and how much of the run it serialized.',
       '- **Paused** — a pale striped band over a test is a stop at an editor breakpoint: the test stood still while someone looked at the page. Its time stays on the clock and out of the test’s duration (for a test that ended under the bar, Piwi corrects the runner’s count where Playwright lets it), and the slowest-step and wasted-time figures leave it out too; the bar of a test that stood paused ends where the test ended.',
+      '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
       '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
     doc: 'features/ui-overview#test-run-detail',
   },
   'run.resource-findings': {
     title: 'Resource findings',
-    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter only counts browsers and contexts opened and closed in each file’s steps: those are probable leaks.',
+    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open and the line that last used them, where the close belongs), objects a test closed long after it last used them (lingering), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter reads each test’s steps for the browsers, contexts and `browser.newPage()` pages no close matched: those are probable leaks, at the line that opened them.',
     doc: 'features/resource-leaks#what-it-reports',
   },
   'run.resource-pages': {
     title: 'Open pages over time',
-    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows. A line that keeps rising is a page left open test after test.',
+    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows, the share earlier tests left open in red. A line that keeps rising is a page left open test after test. Under each worker row, **Show leaks** draws each object left open past its test, from that test to its close, and each object open long after its last use.',
     doc: 'features/resource-leaks#in-the-dashboard',
   },
   'run.resource-machine': {
@@ -1206,6 +1253,11 @@ export const HELP_TOPICS = {
     text: 'Tokens (prefixed pd_) that let the reporter or scripts authenticate without a password. Shown once at creation; revoke anytime.',
     doc: 'operate/api-keys',
   },
+  'settings.connected-apps': {
+    title: 'Connected apps',
+    text: 'The apps connected from their own window (Piwi Picker, an editor, the desktop app), each with a key of its own. **Revoke** disconnects one; an app that runs tests shows whether it is online.',
+    doc: 'features/run-on-my-machine#connected-apps',
+  },
   'settings.tags': {
     text: 'Reusable labels you can attach to projects for grouping and filtering across the dashboard.',
   },
@@ -1304,6 +1356,11 @@ export const HELP_TOPICS = {
   'account.display-name': {
     title: 'Display name',
     text: 'A friendly name shown alongside your account. Optional, and visible only within the dashboard.',
+  },
+  'account.profile-picture': {
+    title: 'Profile picture',
+    text: "Shown to you in place of your sign-in provider's picture, in the user menu and beside your name in Settings; other people see your initials. PNG, JPEG or WebP, under 1 MB and at most 1000 × 1000 pixels: the server stores it as a small square, without the photo's metadata (such as its location), and serves it from this instance.",
+    doc: 'operate/authentication#user-management',
   },
   'account.connected-accounts': {
     title: 'Connected accounts',
@@ -1417,7 +1474,26 @@ export const HELP_TOPICS = {
   // ── Environment diff ────────────────────────────────────────────────────
   'environment-diff': {
     title: 'Environment diff',
-    text: 'Compares this execution’s environment (Playwright version, browser config, locale, viewport, CI provider, …) against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+    text: [
+      'Compares this execution’s environment against the same test’s last passing run on the same browser — from the same environment when one exists, then the same branch, then the most recent; the subtitle says when the baseline had to come from another environment. Only changed keys are shown — an empty diff rules out environment drift as the cause.',
+      '- **Run** — Playwright and reporter versions, environment label, CI provider, branch.',
+      '- **Runner** — the machine that ran Playwright: time zone, `TZ`, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — the declared settings, then what the page reported (time zone, locale, version). A value marked inferred was not observed: the declared value, else the runner’s.',
+      '- **Server** — each instrumented server under test: time zone, culture, runtime, app version.',
+    ].join('\n'),
+    doc: 'features/run-environment',
+  },
+
+  'run-environment': {
+    title: 'Run environment',
+    text: [
+      'Where this run executed, as the reporter recorded it. A value that changed against the baseline, or that the shards of the run disagree on, is a possible cause of a failure that happens only there.',
+      '- **Runner** — one column per shard: time zone, locale, OS, Node.js, CI runner image.',
+      '- **Browser** — one per project, as its page reported itself (needs the capture fixtures).',
+      '- **Server** — each instrumented server under test (`/__piwi/environment`), with its clock offset from the runner and whether it restarted during the run.',
+      'A run from an older reporter shows nothing here: it was never recorded.',
+    ].join('\n'),
+    doc: 'features/run-environment',
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────

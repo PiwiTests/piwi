@@ -3,7 +3,7 @@
  * the longer of `STUCK_FLOOR_MS` and `STUCK_FACTOR` times the test's longest duration among its last
  * `STUCK_HISTORY` passing executions on the same browser; a test with fewer than `STUCK_MIN_PASSING` of them is never
  * said to be stuck. The server checks the attempts of its live runs (`server/utils/stuck-tests.ts`), the demo its
- * simulated ones, both from the attempt's start, whoever watches.
+ * simulated ones, both from the attempt's start, the time it stood stopped left out (`runningMs`), whoever watches.
  */
 
 /** The least time an attempt runs before it may be said to be stuck, whatever its test usually takes. */
@@ -21,6 +21,17 @@ export interface StuckAttempt {
   elapsedMs: number;
   /** The test's longest duration among its last passing executions, in milliseconds. */
   usualMs: number;
+}
+
+/**
+ * How long a running attempt has run at `now` from its start (`startedAt`), the time it stood stopped left out: the
+ * `pausedMs` its begin payload holds, which a test outside CI tells as it stops and goes on (`testStopRunEvent`,
+ * `server/utils/live-case-events.ts`). Null while it stands stopped (`stop`): a stopped test is never said to be stuck.
+ */
+export function runningMs(begin: Record<string, unknown>, startedAt: number, now: number): number | null {
+  if (begin.stop) return null;
+  const paused = typeof begin.pausedMs === 'number' && begin.pausedMs > 0 ? begin.pausedMs : 0;
+  return Math.max(0, now - startedAt - paused);
 }
 
 /**

@@ -19,15 +19,26 @@ import type {
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
   WireRunError,
   WireRunProfile,
   WorkerHealth,
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
 // re-export them so `#shared/types` consumers keep importing them from here.
 export type {
+  WireEnvironmentSnapshot,
+  WireRunnerEnvironment,
+  WireBrowserEnvironment,
+  WireServerEnvironment,
+  EnvironmentKind,
   BrowserConfig,
   FilterDetails,
   SuiteConfigEntry,
@@ -47,6 +58,7 @@ export type {
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceSpan,
   WireResourceTimeline,
   WireRunError,
   WireRunProfile,
@@ -110,6 +122,11 @@ export interface TestCasePayload {
   ariaSnapshot?: unknown;
   ariaSnapshotJson?: unknown;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: BrowserConfig | null;
@@ -188,6 +205,8 @@ export interface TestRunSubmitPayload {
   setupSteps?: TestRunFinishPayload['setupSteps'];
   /** The errors Playwright reported outside any test, as `/finish` takes them. */
   runErrors?: WireRunError[];
+  /** Where the run executed: the runner, each project's browser, each server under test (`environment-snapshots`). */
+  environments?: WireEnvironmentSnapshot[];
   /**
    * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
    * repeating a key the project already took answers with the run it went to and stores nothing.
@@ -203,7 +222,11 @@ export interface TestRunSubmitPayload {
 // ── Streaming event payload ───────────────────────────────────────────────────
 
 export interface StreamEventPayload {
-  type: 'begin' | 'complete' | 'step-begin' | 'step-end';
+  type: 'begin' | 'complete' | 'step-begin' | 'step-end' | 'test-stopped' | 'test-resumed';
+  /** On a `test-stopped` event: the stop the attempt stands at (`TestStop`, `@piwitests/core/wire`). */
+  stop?: unknown;
+  /** On a `test-resumed` event: how long the attempt has stood stopped in all, in ms. */
+  pausedMs?: number | null;
   title: string;
   location: string;
   status?: string;
@@ -212,6 +235,8 @@ export interface StreamEventPayload {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /** On a `begin` event: the retries the test is allowed. */
+  maxRetries?: number | null;
   /**
    * Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to, each its own test result.
    * Absent from older reporters, read as 0.
@@ -220,6 +245,11 @@ export interface StreamEventPayload {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
@@ -325,6 +355,8 @@ export interface TestRunFinishPayload {
    * teardown), read through `sanitizeRunErrors`; a sharded run adds each shard's to the others'.
    */
   runErrors?: WireRunError[];
+  /** Where the shard executed: its runner, each project's browser, each server under test. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────
@@ -345,6 +377,8 @@ export interface TestRunStartPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** The runner's environment snapshot, sent by `/start` and `/begin`. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 // ── Declared surface manifest (Test Map) ──────────────────────────────────────

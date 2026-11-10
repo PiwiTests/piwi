@@ -12,6 +12,9 @@ import type {
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  usedDesktopToken,
+  requestedRunProblem,
+  requestedRunTarget,
   desktopReplacedServer,
   normalizeBoolEnv,
   usedDotEnv,
@@ -22,7 +25,8 @@ import {
   type DotEnvUse,
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
-import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
+import { applyRequestedRunEnv, namesRequestedRun } from '../internal/config/requested-run.js';
+import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -33,27 +37,40 @@ import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
+import { RunHubLink } from '../internal/streaming/run-hub-link.js';
 import {
   collectStepMetrics,
   extractTestStepEvents,
   extractWaitEvents,
   hideTypedStepTitle,
 } from '@piwitests/core/step-analysis';
+import { isCaptureStep } from '@piwitests/core/step-tree';
 import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
-import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
+import {
+  collectSourceFrames,
+  extractFailingLine,
+  readSourceSnippet,
+  sourceLineReader,
+} from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
-import { workerIndexOf } from '../internal/support/worker-index.js';
+import { parallelIndexOf, workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
-import { isListMode } from '../internal/support/run-mode.js';
-import { peekSetupInfo, readSetupInfo } from '../internal/support/setup-file.js';
+import { isListMode, isMergeReports } from '../internal/support/run-mode.js';
+import { peekSetupFailure, peekSetupInfo, readSetupInfo, type SetupInfo } from '../internal/support/setup-file.js';
 import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
-import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
+import {
+  LIVE_VIEW_ENV,
+  formatLiveViewEnv,
+  formatLiveViewMissing,
+  type LiveViewMissing,
+} from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import { RUN_INTERACTIVE_METADATA_KEY } from '@piwitests/core/wire';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -68,7 +85,12 @@ import {
   resolveUnrunReason,
   linkBlockedTests,
 } from '@piwitests/core/status-classify';
-import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
+import {
+  collectTestLocks,
+  collectTestMetadata,
+  collectTestTags,
+  formatTagsTruncated,
+} from '../internal/collect/test-meta.js';
 import {
   formatExternalIdDuplicates,
   planExternalIds,
@@ -79,6 +101,7 @@ import { buildErrorText } from '../internal/collect/error-text.js';
 import { runErrorOf } from '../internal/collect/run-errors.js';
 import { testOutputOf } from '../internal/collect/test-output.js';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import { collectTagsTruncated } from '@piwitests/core/test-meta';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
 import {
@@ -109,6 +132,8 @@ import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/serv
 import { backendManifestFetch } from '../internal/manifest/collect.js';
 import { configDirFromConfig, relativeTestPath } from '../internal/support/test-paths.js';
 import { RunManifests } from '../internal/manifest/run-manifests.js';
+import { collectRunnerEnvironment } from '../internal/collect/environment.js';
+import { RunEnvironments } from '../internal/collect/run-environments.js';
 import type {
   CollectedTestCase,
   StreamEvent,
@@ -118,6 +143,8 @@ import type {
   WireResourceReport,
   WireRunError,
 } from '../types.js';
+import type { WireEnvironmentSnapshot } from '../types/wire.js';
+import { readStopNotes, type StopNote, type StopNotesReader } from '../internal/support/stop-notes.js';
 
 /**
  * Relative `file:line:column` location string for a test, normalized to POSIX
@@ -149,6 +176,11 @@ function uncapturedCalls(steps: readonly TestStep[]): boolean {
       );
     });
   return !captured(steps, false) && calls;
+}
+
+/** Whether a test's steps set up Playwright's `page` fixture: a test without one has no page to watch. */
+function usesPage(steps: readonly TestStep[]): boolean {
+  return steps.some((step) => (step.category === 'fixture' && /"page"/.test(step.title)) || usesPage(step.steps));
 }
 
 /** How many of the other spec files that ran without the capture fixtures the run's last line names. */
@@ -202,10 +234,21 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
-  /** The spec files said to have run without the capture fixtures in a run that can stop (`noteUncaptured`). */
+  /**
+   * The spec files said to have run without the capture fixtures in a run that can stop, or whose workers stream to
+   * the instance's live view (`noteUncaptured`).
+   */
   private uncapturedSpecs = new Set<string>();
+  /** Whether the run is a CI run whose workers stream to the instance's live view, set in `onBegin`. */
+  private liveViewOn = false;
+  /** The run's own connection to the hub its workers reach, from `onBegin` to `onEnd`; null for a run without one. */
+  private hubLink: RunHubLink | null = null;
   /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
   private openSteps = new Map<unknown, StreamEvent>();
+  /** The attempts running now, by test id, for the stops their workers note (`heardStop`). */
+  private runningTests = new Map<string, { test: TestCase; result: TestResult }>();
+  /** Reads the stops the workers note (`readStopNotes`). */
+  private stopNotes: StopNotesReader | null = null;
   /**
    * The failed attempts with retries left, by `test.id`: each is its test's last failure when no later attempt has a
    * say in its outcome (`decidesOutcome`), the run stopping before the retry or the retry not running.
@@ -235,8 +278,12 @@ export class PiwiDashboardReporter {
    * finalizing a run would create an empty phantom run and upload an empty report.
    */
   private readonly listMode: boolean;
+  /** True under `playwright merge-reports`, which replays blob reports: no test runs and nothing of the run is live. */
+  private readonly mergingReports = isMergeReports();
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
+  /** The team instance a requested run uploads to, or why it uploads nowhere. */
+  private requestedRun: { instance: string | null; problem: string | null };
   /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
   private readonly desktopReplaced: string | null;
   /** The config folder's `.env` file and the connection variables taken from it, if any. */
@@ -253,6 +300,8 @@ export class PiwiDashboardReporter {
   private resourceCensuses: ResourceCensus[] = [];
   /** Lifecycle steps of the tests that ran without the fixtures. */
   private lifecycleTallies: LifecycleTally[] = [];
+  /** The spec and helper files those steps point at, read once each. */
+  private readonly sourceLines = sourceLineReader();
   /** The user fixtures set up by the tests that left a page unused, by test id. */
   private fixturesByTest = new Map<string, string[]>();
   /** The file workers append their shutdown census to, set in `onBegin`. */
@@ -273,6 +322,8 @@ export class PiwiDashboardReporter {
   private lastTestWatch: LastTestWatch | null = null;
   /** The manifests of the instrumented origins the run reaches beyond its base URLs. */
   private manifests: RunManifests | null = null;
+  /** Where the run executes: the runner, each project's browser and each server under test; null when off. */
+  private environments: RunEnvironments | null = null;
   /** Result events that stream once their test's server coverage is in. */
   private coverageSends: Array<Promise<void>> = [];
   /** The errors Playwright reported outside any test (`onError`), the first `MAX_RUN_ERRORS` of them. */
@@ -300,6 +351,7 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl && !this.serverUrlProblem;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.requestedRun = { instance: requestedRunTarget(), problem: requestedRunProblem() };
     this.desktopReplaced = desktopReplacedServer();
     this.viaDotEnv = usedDotEnv();
     this.ignoredEnv = ignoredEnvValues();
@@ -307,7 +359,13 @@ export class PiwiDashboardReporter {
 
     const logger = new Logger(this.options.verbose ?? false);
     this.logger = logger;
-    this.httpClient = new HttpClient(this.options.serverUrl ?? 'http://localhost:3000', logger);
+    this.httpClient = new HttpClient(
+      this.options.serverUrl ?? 'http://localhost:3000',
+      logger,
+      undefined,
+      undefined,
+      usedDesktopToken() ? (this.options.apiKey ?? null) : null,
+    );
     this.fileHandler = new FileHandler(logger);
     this.uploader = new Uploader(this.httpClient, this.fileHandler, logger);
     this.recovery = new CrashRecovery(this.httpClient.baseUrl, this.options.projectName!, logger);
@@ -358,6 +416,8 @@ export class PiwiDashboardReporter {
     }
     // The workers, which start after this hook, read the boolean variables as the reporter does.
     normalizeBoolEnv(process.env);
+    // A requested run's workers reach neither the config's server nor its credentials.
+    if (namesRequestedRun(process.env)) applyRequestedRunEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
     const followed = followEditor([configDirFromConfig(config), process.cwd()], {
@@ -372,8 +432,11 @@ export class PiwiDashboardReporter {
           `${PIWI_EDITOR_ENV}=off runs it alone.`,
       );
     }
+    // The hub its workers reach hears how far the run is, from its own process.
+    this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
     if (!this.enabled) {
-      if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
+      if (this.requestedRun.problem) this.logger.warn(`${this.requestedRun.problem} Nothing is sent to the dashboard.`);
+      else if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
       else this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       // A run the editor follows says why it cannot be shared live.
       if (!detectCi(process.env)) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing('no-instance');
@@ -381,6 +444,9 @@ export class PiwiDashboardReporter {
     }
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
+    if (this.requestedRun.instance) {
+      this.logger.info(`Sending the run to ${this.requestedRun.instance}, which asked for it.`);
+    }
     if (this.viaDesktopApp) {
       this.logger.info(
         this.desktopReplaced
@@ -457,6 +523,9 @@ export class PiwiDashboardReporter {
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
+    // A run a hub steers names it: its stops are a person's, at the editor's or the desktop app's breakpoints.
+    const interactive = runInteractive(process.env, followed);
+    if (interactive) this.metadata[RUN_INTERACTIVE_METADATA_KEY] = interactive;
 
     // Stamp a probe run at the source, before any run body is sent. The
     // streaming start/begin and finish calls carry this same metadata object, so
@@ -486,6 +555,7 @@ export class PiwiDashboardReporter {
     // attempts.
     this.plannedTests = suite.allTests();
     this.planExternalIds();
+    this.noteTagsTruncated();
 
     // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
     this.shardInfo = resolveShardInfo(config);
@@ -496,6 +566,16 @@ export class PiwiDashboardReporter {
       this.options.projectName!,
       resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
     );
+
+    if (
+      this.options.collectEnvironmentInfo !== false &&
+      process.env[PIWI_ENV_KEYS.collectEnvironmentInfo] !== 'false'
+    ) {
+      this.environments = new RunEnvironments(
+        collectRunnerEnvironment(process.env, this.shardInfo?.current ?? null),
+        backendManifestFetch(ignoresHttpsErrors(config)),
+      );
+    }
 
     // Workers start after this hook and inherit the environment, so the
     // capture fixtures record the coverage the options switch on.
@@ -508,7 +588,10 @@ export class PiwiDashboardReporter {
         backendManifestFetch(ignoresHttpsErrors(config)),
       );
     }
-    if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
+    // The run's last test ending is when the servers under test are read again: Playwright stops a `webServer`
+    // before `onEnd`.
+    if (coverage.server !== 'off' || this.environments)
+      this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
     if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
       if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
@@ -537,13 +620,17 @@ export class PiwiDashboardReporter {
       // The planned suite size for this shard, known before any test runs, so
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
+      this.environments?.atBegin(),
     );
     if (this.streamManager) {
-      // A person who opens the run sees the step each test is in now, not only the steps that begin after.
+      // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
-        for (const event of this.openSteps.values()) this.streamManager?.queueEvent(event);
+        const open = [...this.openSteps.values()];
+        if (open.length > 0) this.streamManager?.queueEventsNow(open);
       };
+      // A test outside CI may stop, at a breakpoint or a Pause: the run page says so, as text.
+      if (!detectCi(process.env)) this.stopNotes = readStopNotes((note) => this.heardStop(note));
     }
     if (this.streamManager && this.options.captureResources !== false) {
       const live = new LiveResources(
@@ -567,28 +654,41 @@ export class PiwiDashboardReporter {
    * environment: the key the instance gave the global setup, for a project that turned its live view on, for this run
    * alone. A CI run's workers stream with it at once; a run outside CI's hold it until a person shares the run (Share
    * live), and such a run without a key names why instead, for the surfaces that would share it; a CI run without one
-   * says why in its log (`ciLiveViewNote`). Read before the stream starts, which takes the setup file.
+   * says why in its log (`ciLiveViewNote`). Read before the stream starts, which takes the setup file. A run that
+   * merges blob reports starts no worker and is not live: it says nothing of the live view.
    */
   private shareLiveView(): void {
+    if (this.mergingReports) return;
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
     if (!setup?.liveViewKey) {
-      const why = setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered';
+      const why = this.liveViewMissing(setup);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
-      else if (why !== 'local') this.logger.info(ciLiveViewNote(this.streamManager ? why : 'streaming-off'));
+      else if (why !== 'local') {
+        const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
+        this.logger.info(ciLiveViewNote(why, failure));
+      }
       return;
     }
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
     if (ci) {
+      this.liveViewOn = true;
       this.logger.info(
-        "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
+        "Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.",
       );
     } else if (process.env[RUN_CHANNEL_ENV]) {
       this.logger.info(
         'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
       );
     }
+  }
+
+  /** Why the run holds no live view key, from what its global setup left (`setup`, its registration, if any). */
+  private liveViewMissing(setup: SetupInfo | null): Exclude<LiveViewMissing, 'no-instance'> {
+    if (!this.streamManager) return 'streaming-off';
+    if (setup) return setup.liveViewLocal ? 'local' : 'off';
+    return peekSetupFailure(this.options.projectName!) !== null ? 'setup-failed' : 'unregistered';
   }
 
   /**
@@ -624,6 +724,36 @@ export class PiwiDashboardReporter {
     this.externalIds = plan;
   }
 
+  /**
+   * Name the planned tests whose tags are cut at the limit, once, and record them on the run so the dashboard shows
+   * them too. A planned test whose properties cannot be read is left out.
+   */
+  private noteTagsTruncated(): void {
+    const readable: Array<{
+      filePath: string;
+      suitePath: string[];
+      title: string;
+      line: number;
+      tags: unknown;
+    }> = [];
+    for (const test of this.plannedTests) {
+      try {
+        readable.push({
+          filePath: testFile(test, this.testPathBase),
+          suitePath: this.metadataCollector.getSuiteInfo(test).suitePath ?? [],
+          title: test.title,
+          line: test.location.line,
+          tags: test.tags,
+        });
+      } catch (error) {
+        this.logger.debug(`Tags of a planned test not read: ${errorMessage(error)}`);
+      }
+    }
+    const found = collectTagsTruncated(readable);
+    for (const line of formatTagsTruncated(found)) this.logger.warn(line);
+    if (found) this.metadata = { ...this.metadata, tagsTruncated: found };
+  }
+
   /** The external ID fields of a test's payload: `null` tells the dashboard the test has none to match on. */
   private externalIdFields(test: TestCase): { externalId?: string | null; displayTitle?: string | null } {
     if (!this.externalIds) return {};
@@ -631,24 +761,60 @@ export class PiwiDashboardReporter {
     return { externalId: id?.externalId ?? null, displayTitle: id?.displayTitle ?? null };
   }
 
+  /**
+   * A stop a worker noted (`stop-notes.ts`), of an attempt running now: a `test-stopped` event as it shows and a
+   * `test-resumed` as it ends, named as its `begin` named the attempt, sent whoever watches.
+   */
+  private heardStop(note: StopNote): void {
+    const running = this.runningTests.get(note.testId);
+    if (!running || running.result.retry !== note.retry || !this.streamManager) return;
+    const { test, result } = running;
+    const of = {
+      title: test.title,
+      location: testLocation(test, this.testPathBase),
+      retries: note.retry,
+      repeatEachIndex: test.repeatEachIndex,
+      workerIndex: workerIndexOf(result),
+      parallelIndex: parallelIndexOf(result),
+      shardIndex: this.shardInfo?.current ?? null,
+      browser: this.metadataCollector.getBrowserConfig(test) || undefined,
+    };
+    if (note.kind === 'stopped') {
+      this.streamManager.queueEvent({ type: 'test-stopped', ...of, stop: note.stop });
+    } else {
+      this.streamManager.queueEvent({ type: 'test-resumed', ...of, pausedMs: note.pausedMs });
+    }
+  }
+
   /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
+    this.runningTests.set(test.id, { test, result });
     this.lastTestWatch?.begin(test.id);
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
+    const tags = collectTestTags(test);
+    const locks = collectTestLocks(test);
     const beginEvent: CollectedTestCase = {
       type: 'begin',
       title: test.title,
       location: testLocation(test, this.testPathBase),
+      // The attempt beginning, and how many retries the test has, so a retry reads as one while it runs.
+      retries: result?.retry ?? 0,
+      maxRetries: test.retries ?? 0,
       repeatEachIndex: test.repeatEachIndex,
       workerIndex: workerIndexOf(result),
+      parallelIndex: parallelIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
       suitePath,
       suiteConfig,
+      // What the run page's search reads, known before the test runs.
+      tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
+      testMeta: collectTestMetadata((test.annotations ?? []) as TestAnnotation[]),
     };
 
     if (this.streamManager) {
-      this.streamManager.queueBeginEvent(toWireTestCase(beginEvent) as StreamEvent);
+      this.streamManager.queueEvent(toWireTestCase(beginEvent) as StreamEvent);
     }
   }
 
@@ -672,37 +838,48 @@ export class PiwiDashboardReporter {
   private setupSteps: SetupStep[] = [];
 
   /** Step categories streamed live while the run executes. */
-  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect']);
+  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect', 'test.step']);
 
   /**
-   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`
-   * and no ancestor is an `expect` step. The steps inside an assertion are its
-   * polling — every `expect.poll` attempt and `toPass` retry — not a step a
-   * human watches; the meaningful readout is the assertion around them.
+   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`,
+   * no ancestor is an `expect` step, and neither it nor an ancestor is Piwi's
+   * own (`isCaptureStep`: its fixtures, its attachments, its page reads). The
+   * steps inside an assertion are its polling — every `expect.poll` attempt and
+   * `toPass` retry — not a step a human watches; the meaningful readout is the
+   * assertion around them.
    */
   private static isLiveStep(step: TestStep): boolean {
     if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(step.category)) return false;
+    if (PiwiDashboardReporter.isOwnStep(step)) return false;
     for (let parent = step.parent; parent; parent = parent.parent) {
-      if (parent.category === 'expect') return false;
+      if (parent.category === 'expect' || PiwiDashboardReporter.isOwnStep(parent)) return false;
     }
     return true;
   }
 
+  /** Whether a step is Piwi's own, by core's rule for a stored step. */
+  private static isOwnStep(step: TestStep): boolean {
+    const at = step.location;
+    return isCaptureStep({ title: step.title, location: at ? `${at.file}:${at.line}:${at.column}` : '' });
+  }
+
   /**
-   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say of the first spec file
-   * whose test made Playwright calls without the capture fixtures, where the stops happen, that it never stops at a
-   * breakpoint nor at Pause, which nothing else says; the others are named in one line as the run ends
+   * Say of the first spec file whose test made Playwright calls without the capture fixtures what it misses in this
+   * run, which nothing else says: in a run that can stop (breakpoints, or a run channel to an editor or the desktop
+   * app, where the stops happen), its tests never stop at a breakpoint nor at Pause; in a CI run whose workers stream
+   * to the instance's live view, nobody can watch them. The others are named in one line as the run ends
    * (`noteOtherUncaptured`).
    */
   private noteUncaptured(test: TestCase, result: TestResult): void {
-    if (!process.env.PIWI_PAUSE_AT && !process.env[RUN_CHANNEL_ENV]) return;
+    const missed = this.uncapturedCosts(usesPage(result.steps));
+    if (!missed.length) return;
     if (!uncapturedCalls(result.steps)) return;
     const file = testFile(test, this.testPathBase);
     if (this.uncapturedSpecs.has(file)) return;
     this.uncapturedSpecs.add(file);
     if (this.uncapturedSpecs.size > 1) return;
     this.logger.warn(
-      `${file} ran without Piwi's capture fixtures, so its tests never stop at a breakpoint or at Pause: ` +
+      `${file} ran without Piwi's capture fixtures, so ${missed.map((cost) => cost.its).join(', and ')}: ` +
         "import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
     );
   }
@@ -713,17 +890,40 @@ export class PiwiDashboardReporter {
     if (!others.length) return;
     const named = others.slice(0, MAX_UNCAPTURED_NAMED).join(', ');
     const more = others.length > MAX_UNCAPTURED_NAMED ? `, and ${others.length - MAX_UNCAPTURED_NAMED} more` : '';
+    const missed = this.uncapturedCosts(true).map((cost) => cost.their);
     this.logger.warn(
       `${others.length} more spec file${others.length === 1 ? '' : 's'} ran without Piwi's capture fixtures, ` +
-        `so their tests never stop at a breakpoint or at Pause either: ${named}${more}.`,
+        `so ${missed.join(', and ')}: ${named}${more}.`,
     );
+  }
+
+  /**
+   * What a spec file that runs without the capture fixtures misses in this run, said of one file and of several: the
+   * live view only for a test with a page (`page`).
+   */
+  private uncapturedCosts(page: boolean): Array<{ its: string; their: string }> {
+    const costs: Array<{ its: string; their: string }> = [];
+    if (this.mergingReports) return costs;
+    if (process.env.PIWI_PAUSE_AT || process.env[RUN_CHANNEL_ENV]) {
+      costs.push({
+        its: 'its tests never stop at a breakpoint or at Pause',
+        their: 'their tests never stop at a breakpoint or at Pause either',
+      });
+    }
+    if (this.liveViewOn && page) {
+      costs.push({
+        its: 'nobody can watch its tests live on the dashboard',
+        their: 'nobody can watch their tests live either',
+      });
+    }
+    return costs;
   }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     // Gate on the stream manager *existing*, not on it being live yet: the
     // first fixtures and hooks run while `/start` is still in flight, and
-    // `queueBeginEvent` buffers until the run id lands (same as `onTestBegin`).
+    // `queueEvent` holds the events until the stream opens (same as `onTestBegin`).
     if (!this.enabled || !this.streamManager) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
@@ -736,10 +936,11 @@ export class PiwiDashboardReporter {
       stepCategory: cat,
       parentTitle: test?.title || null,
       workerIndex: workerIndexOf(_result),
+      shardIndex: this.shardInfo?.current ?? null,
       startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
     };
     this.openSteps.set(step, event);
-    this.streamManager?.queueBeginEvent(event);
+    this.streamManager?.queueEvent(event);
   }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
@@ -762,6 +963,7 @@ export class PiwiDashboardReporter {
       stepCategory: cat,
       parentTitle: test?.title || null,
       workerIndex,
+      shardIndex: this.shardInfo?.current ?? null,
       startedAt,
     };
     this.streamManager?.queueEvent(event);
@@ -782,6 +984,10 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
+    // The worker noted the end of the test's last stop before the test ended: it goes before the test's end.
+    this.stopNotes?.read();
+    this.runningTests.delete(test.id);
+    this.hubLink?.testEnded(test, result);
     this.totalTests++;
     // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
     const worker = workerIndexOf(result);
@@ -829,6 +1035,7 @@ export class PiwiDashboardReporter {
       repeatEachIndex: test.repeatEachIndex,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
+      parallelIndex: parallelIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || [],
@@ -940,6 +1147,7 @@ export class PiwiDashboardReporter {
         break;
     }
 
+    this.environments?.noteTestEnd(result.attachments ?? [], testCase.networkRequests);
     this.testCases.push(testCase);
     if (status === 'failed' || status === 'timedOut') this.failedCases.push(testCase);
 
@@ -967,6 +1175,8 @@ export class PiwiDashboardReporter {
     if (isFailure && result.retry >= (test.retries ?? 0)) this.failureLinks.add(failedTest());
     else if (isFailure) this.failuresAwaitingRetry.set(test.id, failedTest);
     const liveRunId = this.streamManager?.runId;
+    const livePage = this.streamManager?.runUrl;
+    if (liveRunId != null && livePage) this.failureLinks.knowPage(liveRunId, livePage);
     if (liveRunId != null) this.failureLinks.printPending(liveRunId);
 
     if (this.streamManager) {
@@ -987,13 +1197,14 @@ export class PiwiDashboardReporter {
       result.retry < (test.retries ?? 0);
     if (this.lastTestWatch?.end(test.id, willRetry)) {
       this.coverage?.lastTestEnded();
+      this.environments?.lastTestEnded();
     }
   }
 
   /**
    * Add up the files a test attached, and keep its resource census; for a test
-   * that ran without the capture fixtures, tally the browsers and contexts its
-   * steps opened and closed.
+   * that ran without the capture fixtures, tally the browsers, contexts and
+   * pages its steps opened and closed.
    */
   private collectResources(test: TestCase, result: TestResult, testCase: CollectedTestCase): void {
     const artifacts = emptyArtifacts();
@@ -1019,9 +1230,14 @@ export class PiwiDashboardReporter {
       return;
     }
     if (!result.steps?.length) return;
-    const tally = tallyLifecycleSteps(testFile(test, this.testPathBase), result.steps);
-    if (tally.opened.length > 0 || tally.closed.context > 0 || tally.closed.browser > 0)
-      this.lifecycleTallies.push(tally);
+    const attempt = {
+      file: testFile(test, this.testPathBase),
+      test: test.id,
+      worker: result.workerIndex,
+      failed: result.status !== test.expectedStatus,
+    };
+    const tally = tallyLifecycleSteps(attempt, result.steps, this.sourceLines);
+    if (tally.calls.length > 0) this.lifecycleTallies.push(tally);
   }
 
   /**
@@ -1165,6 +1381,9 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    this.stopNotes?.stop();
+    this.stopNotes = null;
+    await this.hubLink?.end(result?.status ?? 'other');
     this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =
@@ -1178,6 +1397,16 @@ export class PiwiDashboardReporter {
         `Failing the run: ${duplicates} external ID${duplicates === 1 ? ' is' : 's are'} declared by more than one test.`,
       );
       return { status: 'failed' };
+    }
+  }
+
+  /** Every environment snapshot of the run; none when collection is off or reading them failed. */
+  private async readEnvironments(): Promise<WireEnvironmentSnapshot[] | undefined> {
+    try {
+      return await this.environments?.atEnd();
+    } catch (error) {
+      this.logger.debug(`Environment snapshots skipped: ${errorMessage(error)}`);
+      return undefined;
     }
   }
 
@@ -1245,13 +1474,16 @@ export class PiwiDashboardReporter {
           resourceReport: this.resourceReport,
           htmlReport: this.htmlReport,
           runErrors: this.runErrors,
+          environments: await this.readEnvironments(),
         },
         result,
       );
-      if (submitted && this.coverage) {
+      // A requested run's token starts the run alone: coverage and manifests are not taken from it.
+      const requested = this.requestedRun.instance !== null;
+      if (submitted && this.coverage && !requested) {
         await this.coverage.sendRunCoverage(this.httpClient, submitted.runId, submitted.auth);
       }
-      if (submitted && this.manifests) {
+      if (submitted && this.manifests && !requested) {
         const branch = resolveScmBranch(process.env) ?? null;
         await this.manifests.upload(this.httpClient, submitted.auth, this.options.projectName, branch);
       }

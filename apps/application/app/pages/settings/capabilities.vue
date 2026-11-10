@@ -6,7 +6,12 @@
  * this instance or to reconsider one.
  */
 import type { SetupStatus, SetupCapabilityId } from '#shared/handlers/setup-status';
-import { DESKTOP_HIDDEN_CAPABILITIES, type CapabilityId, type CapabilityState } from '#shared/capabilities';
+import {
+  DESKTOP_HIDDEN_CAPABILITIES,
+  type CapabilityId,
+  type CapabilityState,
+  type InstanceDecision,
+} from '#shared/capabilities';
 import { SETUP_CAPABILITIES, ladderGroupOf, type SetupCapabilityCopy } from '~/utils/setup-capabilities';
 
 const isDesktop = useIsDesktop();
@@ -38,7 +43,7 @@ const copyById = new Map<SetupCapabilityId, SetupCapabilityCopy>(SETUP_CAPABILIT
 interface LadderRow extends SetupCapabilityCopy {
   active: boolean;
   state: CapabilityState;
-  decision: 'declined' | null;
+  decision: InstanceDecision | null;
   isNew: boolean;
   isCore: boolean;
 }
@@ -224,5 +229,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
         </section>
       </div>
     </UCard>
+
+    <OptInCapabilities />
   </div>
 </template>

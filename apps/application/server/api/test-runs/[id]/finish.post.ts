@@ -5,8 +5,9 @@ import { runEventBus } from '../../../utils/run-events';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
 import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
@@ -19,17 +20,19 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import { storableRunErrors } from '../../../utils/storable-values';
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed. A run that does not exist answers 404, and one that is neither running nor interrupted 409, before the body is read.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed. A run that does not exist answers 404, and one that is neither running nor interrupted 409, before the body is read.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -145,6 +148,7 @@ export default eventHandler(async (event) => {
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
   const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
@@ -161,7 +165,7 @@ export default eventHandler(async (event) => {
   };
   const settledAnswer = async () => {
     const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
-    return { success: true, runId: id, status: current?.status ?? status };
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: current?.status ?? status };
   };
 
   // Fold timed-out into failed for both the DB write and the live SSE events.
@@ -177,8 +181,14 @@ export default eventHandler(async (event) => {
   const reportedMetadata = body.metadata
     ? keepIncidentMetadata(
         testRun.metadata,
-        carryExternalIdDuplicates(
-          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        carryRequestOrigin(
+          carryTagsTruncated(
+            carryExternalIdDuplicates(
+              carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+              testRun.metadata,
+            ),
+            testRun.metadata,
+          ),
           testRun.metadata,
         ),
       )
@@ -294,6 +304,7 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     runId: id,
+    runUrl: publicRunUrl(id),
     status: hasPendingUploads ? 'finalizing' : status,
   };
 });
@@ -327,7 +338,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
 
   if (!recorded) {
     const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
-    return { success: true, runId: id, status: current?.status ?? 'running' };
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: current?.status ?? 'running' };
   }
 
   await applyReporterKeep(db, id, body.keep);
@@ -335,6 +346,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
   // each write theirs, and none overwrites another's.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   await db
     .update(testRuns)
@@ -352,5 +364,5 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
   const finalStatus = await finalizeShardedRun(db, id, 'run-finished');
   if (!finalStatus) await publishShardProgress(db, id);
 
-  return { success: true, runId: id, status: finalStatus ?? 'running' };
+  return { success: true, runId: id, runUrl: publicRunUrl(id), status: finalStatus ?? 'running' };
 }

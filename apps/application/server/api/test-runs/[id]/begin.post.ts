@@ -6,8 +6,9 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { pinProjectRepository } from '../../../utils/scm/project-repository';
 import { withInstanceRunLock } from '../../../utils/ingest-locks';
@@ -25,13 +26,15 @@ import {
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { publicRunUrl } from '#shared/run-url';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -165,7 +168,10 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       updatedAt: new Date(),
     };
     const reported = (stored: unknown) =>
-      carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored);
+      carryRequestOrigin(
+        carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored),
+        stored,
+      );
 
     let metadata: Record<string, unknown> | null;
     if (isSharded) {
@@ -173,18 +179,26 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       metadata = await updateRunMetadata(
         db,
         id,
-        (stored) => withBegunShard(id, reported(stored), stored, body.setupToken, streamToken),
+        (stored) =>
+          withBegunShard(
+            id,
+            withShardTagsTruncated(reported(stored), stored, body.metadata),
+            stored,
+            body.setupToken,
+            streamToken,
+          ),
         running,
       );
     } else {
-      metadata = reported(testRun.metadata);
+      metadata = carryTagsTruncated(reported(testRun.metadata), testRun.metadata);
       await db
         .update(testRuns)
         .set({ ...running, metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
         .where(eq(testRuns.id, id));
     }
 
-    await pinProjectRepository(db, testRun.projectId, metadata);
+    // A private run pins nothing of the project's.
+    if (runOrigin(metadata) !== 'request') await pinProjectRepository(db, testRun.projectId, metadata);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and
@@ -198,7 +212,13 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       db,
       id,
       (stored) =>
-        withBegunShard(id, { ...sanitizeMetadata(body.metadata), ...stored }, stored, body.setupToken, streamToken),
+        withBegunShard(
+          id,
+          withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
+          stored,
+          body.setupToken,
+          streamToken,
+        ),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         // The first shard to report a branch names the run's branch.
@@ -215,14 +235,18 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: testRun.projectId,
       streamToken: body.setupToken,
     };
   }
 
+  await saveEnvironmentSnapshots(db, id, body.environments);
+
   return {
     success: true,
     runId: testRun.id,
+    runUrl: publicRunUrl(testRun.id),
     projectId: testRun.projectId,
     streamToken,
   };

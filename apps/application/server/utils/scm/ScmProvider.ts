@@ -162,6 +162,8 @@ export interface ScmCommitStatus {
   description: string;
   targetUrl: string;
   context: string;
+  /** The branch the run reported; Bitbucket shows a status on a pull request only with its source branch. */
+  ref?: string | null;
 }
 
 /** One file to create/update in a commit. */

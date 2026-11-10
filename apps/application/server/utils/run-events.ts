@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { WireLiveResources } from '#shared/types';
+import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from './map-step-events';
+import type { StreamEventPayload } from '#shared/types';
 import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
@@ -21,6 +23,9 @@ export interface RunEvent {
     | 'test-begin'
     /** A running test has run far longer than it usually does (`#shared/stuck-tests`): its key and `StuckAttempt`. */
     | 'test-stuck'
+    /** A test outside CI stopped, or its stop ended (`testStopRunEvent`): the attempt, and its `TestStop` or time stopped. */
+    | 'test-stopped'
+    | 'test-resumed'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'
@@ -107,6 +112,14 @@ class RunEventBus {
   private liveResources = new Map<number, RunResourceTimelinePart[]>();
   /** Whether each live run's project declined the resources capability, read once per run. */
   private liveResourcesDeclined = new Map<number, boolean>();
+  /**
+   * Each live run's latest step event per worker (`liveStepKey`), so whoever opens the run while a test is in a step
+   * sees it, as the first person to open it does. A worker's next step replaces it; its test's end, or the answer to
+   * its reporter that nobody watches, drops it; the run's go on cleanup.
+   */
+  private liveSteps = new Map<number, Map<string, KeptLiveStep>>();
+  /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
+  private lastGlobalEventAt = new Map<number, number>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -200,6 +213,11 @@ class RunEventBus {
     cases.set(key, data);
   }
 
+  /** The begin payload of the case `key` of a run while it runs, as `recordRunningCase` kept it. */
+  getRunningCase(runId: number, key: string): Record<string, unknown> | undefined {
+    return this.runningCases.get(runId)?.get(key);
+  }
+
   /** Drop every running case of a run that ended without completing them. */
   clearRunningCases(runId: number): void {
     this.runningCases.delete(runId);
@@ -208,6 +226,35 @@ class RunEventBus {
   /** Drop a running case once it completes. */
   clearRunningCase(runId: number, key: string): void {
     this.runningCases.get(runId)?.delete(key);
+  }
+
+  /** Apply a reporter's streamed batch to the run's kept steps (`keepBatchSteps`), `token` the stream token it sent. */
+  noteLiveSteps(runId: number, events: StreamEventPayload[], token: string | null): void {
+    let steps = this.liveSteps.get(runId);
+    if (!steps) {
+      steps = new Map();
+      this.liveSteps.set(runId, steps);
+    }
+    keepBatchSteps(steps, events, token ? shardTokenDigest(token) : null);
+  }
+
+  /**
+   * Whether anyone watches the run, as the answer to the reporter that sent `token`. Told nobody does, that reporter
+   * sends no step until someone does, then sends again the step each of its tests is in: the steps it sent are dropped.
+   */
+  answerWatched(runId: number, token: string | null): boolean {
+    const watched = this.isWatched(runId);
+    const steps = this.liveSteps.get(runId);
+    if (!watched && steps) {
+      const reporter = token ? shardTokenDigest(token) : null;
+      for (const [key, kept] of steps) if (kept.reporter === reporter) steps.delete(key);
+    }
+    return watched;
+  }
+
+  /** The latest step event of each worker of a run, as `noteLiveSteps` kept them. */
+  getLiveSteps(runId: number): StepRunEvent[] {
+    return [...(this.liveSteps.get(runId)?.values() ?? [])].map((kept) => kept.event);
   }
 
   /** The begin payloads of every case still running for a run. */
@@ -255,6 +302,7 @@ class RunEventBus {
     this.sequences.delete(runId);
     this.runStates.delete(runId);
     this.runningCases.delete(runId);
+    this.liveSteps.delete(runId);
     this.liveResources.delete(runId);
     this.liveResourcesDeclined.delete(runId);
   }
@@ -263,7 +311,20 @@ class RunEventBus {
    * Broadcast a global run lifecycle event to all dashboard subscribers.
    */
   publishGlobal(event: GlobalRunEvent): void {
+    this.lastGlobalEventAt.set(event.projectId, Date.now());
     this.globalEmitter.emit('global', event);
+  }
+
+  /**
+   * When the last global run lifecycle event of a project `allows` was published since this server started, or null
+   * for none.
+   */
+  lastGlobalEvent(allows: (projectId: number) => boolean): number | null {
+    let last: number | null = null;
+    for (const [projectId, at] of this.lastGlobalEventAt) {
+      if (allows(projectId) && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /**

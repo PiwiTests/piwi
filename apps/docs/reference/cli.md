@@ -27,7 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
-| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) from the dashboard asked for |
+| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/ci-rerun) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
@@ -36,6 +36,8 @@ npx @piwitests/reporter <command> [options]
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
 The commands that talk to a dashboard, all but `ai resolve`, find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). `bug`, `codegen` and `preflight` read the `.env` of the Playwright config's folder (the nearest one within the repository), the working directory and the repository root, in that order: the URL comes from the first of them that names one, with that file's API key or none, and the project from the first that sets one. A key in a `.env` that names no URL is never sent to another file's URL. The other commands read the working directory's `.env`. An empty variable counts as unset. `PIWI_DESKTOP_APP` places the desktop app with the reporter's three modes: `off` never uses it, `prefer` uses it before the environment and the `.env` outside CI (a `--server-url` flag still wins), and `fallback`, the default, uses it only when no flag, variable or `.env` names a URL or an API key. The command line reads the mode from `PIWI_DESKTOP_APP` only, not from the `desktopApp` option of the Playwright config that `init --desktop-app` writes: set `PIWI_DESKTOP_APP=prefer` in the environment to get the same behavior from the commands. `ai resolve` reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` from the environment only.
+
+The desktop app's token is held to a proof: the first request that carries it waits for the server at the address to prove it holds the token, and a command whose server does not stops with one line instead of sending it. A command the app starts marks the key it exports with `PIWI_DESKTOP_KEY=1`; a key you set yourself is sent as before.
 
 An API key goes only to the URL it came with: a key exported in the environment is never sent to a URL the `.env` names, and an `--api-key` flag is never sent to a URL that comes from a `.env` or the desktop app. The command then says so in one line on stderr; pass `--server-url` with the key to name the instance it is for.
 
@@ -238,8 +240,8 @@ When `run` spawns Playwright and the target config has **no Piwi reporter**, it 
 
 ## `rerun`
 
-Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) dispatched from the dashboard asked for,
-in a GitLab or Bitbucket job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
+Run the tests a [CI re-run](/features/ci-rerun) dispatched from the dashboard asked for,
+in a GitLab, Bitbucket or Jenkins job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
 each one double-quoted (`"tests/login.spec.ts:10" --project="chromium"`). `rerun` splits them as they were quoted,
 without reading them through a shell, and starts `playwright test` with them, followed by any arguments given on its
 own command line, after an optional `--`. The same command works on Linux, macOS and Windows runners.

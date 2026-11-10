@@ -109,18 +109,41 @@ function write(file: string, text: string): void {
   fs.writeFileSync(path.join(project, file), text);
 }
 
+/** An image the worker posted: when it came, when its page looked so, the call it was taken at, and the JPEG. */
+interface SentImage {
+  at: number;
+  pageAt: number | undefined;
+  call: string | null;
+  data: string;
+  image: Image;
+}
+
 /** The images the worker posted for `test`, decoded, with when each came. */
-const images = (test = TEST_TITLE): Array<{ at: number; image: Image }> =>
+const images = (test = TEST_TITLE): SentImage[] =>
   posts.flatMap((p) =>
     p.message.type === 'frame' && 'data' in p.message && p.message.test === test
       ? [
           {
             at: p.at,
+            pageAt: p.message.at,
+            call: p.message.call?.title ?? null,
+            data: p.message.data,
             image: jpeg.decode(Buffer.from(p.message.data, 'base64'), { useTArray: true, formatAsRGBA: true }),
           },
         ]
       : [],
   );
+
+/** Where the images a check finds unpainted are saved, outside the project the run removes. */
+const UNPAINTED_DIR = path.join(pkgRoot, 'test-results', 'live-view-mask');
+
+/** A masked box of an image that shows a field's pixels, or not the mask's gray. */
+interface Unpainted {
+  index: number;
+  box: string;
+  fieldPixels: number;
+  mean: number[];
+}
 
 /** Image pixels a CSS pixel: the viewport is 1280 by 720 (16:9), then 1000 by 800 (5:4). */
 const scaleOf = (image: Image): number => image.width / (image.width / image.height > 1.5 ? 1280 : 1000);
@@ -153,6 +176,35 @@ function fieldPixels(image: Image, box: { x: number; y: number; width: number; h
     }
   }
   return count;
+}
+
+/**
+ * Each unpainted box with its image's index, when the image was posted and when its page looked so (milliseconds from
+ * the first image), its size, the scale it was read at and the call it was taken at; each such image saved as a JPEG,
+ * the first one also in base64, so a failure on a runner that keeps no files can be told apart.
+ */
+function describeUnpainted(sent: SentImage[], unpainted: Unpainted[]): string {
+  const since = (at: number) => `${at < sent[0]!.at ? '' : '+'}${at - sent[0]!.at} ms`;
+  fs.rmSync(UNPAINTED_DIR, { recursive: true, force: true });
+  fs.mkdirSync(UNPAINTED_DIR, { recursive: true });
+  const indexes = [...new Set(unpainted.map((u) => u.index))];
+  const saved = indexes.map((index) => {
+    const file = path.join(UNPAINTED_DIR, `image-${index}.jpg`);
+    fs.writeFileSync(file, Buffer.from(sent[index]!.data, 'base64'));
+    return file;
+  });
+  const lines = unpainted.map(({ index, box, fieldPixels: count, mean }) => {
+    const { at, pageAt, call, image } = sent[index]!;
+    return (
+      `image ${index} of ${sent.length}: posted at ${since(at)}, page at ` +
+      `${pageAt === undefined ? 'unknown' : since(pageAt)}, ${image.width}x${image.height}, ` +
+      `scale ${scaleOf(image).toFixed(3)}, box ${box}: ${count} field pixels, mean color ${mean.join(',')}, ` +
+      `call ${JSON.stringify(call)}`
+    );
+  });
+  return [...lines, `saved: ${saved.join(', ')}`, `image ${indexes[0]} in base64: ${sent[indexes[0]!]!.data}`].join(
+    '\n',
+  );
 }
 
 beforeAll(async () => {
@@ -271,15 +323,35 @@ describe('the live view’s masking', () => {
   it('paints over the secret fields and the project’s own element in every image, in every frame', () => {
     const sent = images();
     expect(sent.length, JSON.stringify(posts.map((p) => p.message.type))).toBeGreaterThanOrEqual(4);
-    // Images of both viewports went.
-    expect(new Set(sent.map(({ image }) => image.width / image.height > 1.5))).toEqual(new Set([true, false]));
-    for (const { image } of sent) {
-      for (const box of [FIELDS.code, FIELDS.iban, FIELDS.frame]) {
-        expect(fieldPixels(image, box)).toBe(0);
-        const [r, g, b] = meanColor(image, box);
-        expect(Math.abs(r! - 96) + Math.abs(g! - 96) + Math.abs(b! - 96)).toBeLessThan(30);
+    // Images of both viewports went. Each image's size, when it was posted and when its page looked so, and what the
+    // viewers heard in place of an image.
+    const timeline = JSON.stringify([
+      ...sent.map(({ at, pageAt, image }) => ({
+        at: at - sent[0]!.at,
+        pageAt: pageAt === undefined ? null : pageAt - sent[0]!.at,
+        size: `${image.width}x${image.height}`,
+      })),
+      ...posts.flatMap((p) =>
+        p.message.type === 'frame' && 'refused' in p.message
+          ? [{ at: p.at - sent[0]!.at, refused: p.message.refused }]
+          : [],
+      ),
+    ]);
+    expect(new Set(sent.map(({ image }) => image.width / image.height > 1.5)), timeline).toEqual(
+      new Set([true, false]),
+    );
+    const unpainted: Unpainted[] = [];
+    sent.forEach(({ image }, index) => {
+      for (const name of ['code', 'iban', 'frame'] as const) {
+        const count = fieldPixels(image, FIELDS[name]);
+        const mean = meanColor(image, FIELDS[name]);
+        const [r, g, b] = mean;
+        if (count > 0 || Math.abs(r! - 96) + Math.abs(g! - 96) + Math.abs(b! - 96) >= 30) {
+          unpainted.push({ index, box: name, fieldPixels: count, mean });
+        }
       }
-    }
+    });
+    expect(unpainted, unpainted.length ? describeUnpainted(sent, unpainted) : '').toEqual([]);
   });
 
   it('leaves the rest of the page as it is', () => {

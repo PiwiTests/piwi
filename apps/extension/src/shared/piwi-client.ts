@@ -1,9 +1,4 @@
-import {
-  DESKTOP_CHALLENGE_HEADER,
-  DESKTOP_PROOF_HEADER,
-  desktopTokenProof,
-  newDesktopChallenge,
-} from '@piwitests/core/desktop-proof';
+import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -696,20 +691,8 @@ async function proveDesktop(desktop: DesktopSettings): Promise<void> {
 }
 
 /** Whether the program at the paired address proved it holds the paired token, did not, or did not answer. */
-async function desktopProof(desktop: DesktopSettings): Promise<'proven' | 'unproven' | 'unreachable'> {
-  const challenge = newDesktopChallenge();
-  let res: Response;
-  try {
-    res = await request(`${desktop.url}/api/health`, {
-      headers: { [DESKTOP_CHALLENGE_HEADER]: challenge },
-      signal: timeout(),
-    });
-  } catch {
-    return 'unreachable';
-  }
-  const proof = res.headers.get(DESKTOP_PROOF_HEADER);
-  const port = Number(new URL(desktop.url).port || 80);
-  return proof && proof === (await desktopTokenProof(desktop.token, port, challenge)) ? 'proven' : 'unproven';
+function desktopProof(desktop: DesktopSettings): Promise<DesktopProof> {
+  return proveDesktopServer(desktop.url, desktop.token, { request, timeoutMs: REQUEST_TIMEOUT_MS });
 }
 
 /** What the paired desktop app answered for the hub of the runs its shell starts, or why it gave none. */

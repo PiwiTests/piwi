@@ -1,5 +1,6 @@
 import { describeFailureText, stepHeadlineContext, type HeadlineStepLike } from '@piwitests/core/describe-failure';
 import type { Logger } from './logger.js';
+import { runUrl } from './run-url.js';
 
 /** A test whose final attempt failed, with what the dashboard needs to find its execution. */
 export interface FailedTest {
@@ -36,12 +37,12 @@ export interface FailureLink extends FailedTest {
 
 /**
  * Deterministic dashboard URL for one execution, built from what the reporter
- * knows before the server assigns execution ids: the run id plus the test's
- * file, title, retry, project and, past the first, its `--repeat-each`
- * repetition. The dashboard's `/test-runs/:id/locate` route resolves it to
- * `/test-run-cases/:id`.
+ * knows before the server assigns execution ids: the run's page (`runPage`,
+ * `/test-runs/:id`) plus the test's file, title, retry, project and, past the
+ * first, its `--repeat-each` repetition. The dashboard's `/test-runs/:id/locate`
+ * route resolves it to `/test-run-cases/:id`.
  */
-export function caseLocateUrl(serverUrl: string, runId: number | string, test: FailedTest): string {
+export function caseLocateUrl(runPage: string, test: FailedTest): string {
   const params = [
     `file=${encodeURIComponent(test.file)}`,
     `title=${encodeURIComponent(test.title)}`,
@@ -49,7 +50,7 @@ export function caseLocateUrl(serverUrl: string, runId: number | string, test: F
   ];
   if (test.browser) params.push(`browser=${encodeURIComponent(test.browser)}`);
   if (test.repeatEachIndex) params.push(`repeat=${test.repeatEachIndex}`);
-  return `${serverUrl.replace(/\/+$/, '')}/test-runs/${runId}/locate?${params.join('&')}`;
+  return `${runPage.replace(/\/+$/, '')}/locate?${params.join('&')}`;
 }
 
 /** The terminal line printed for one failed test: `✗ <title> — <headline> → <url>`. */
@@ -66,11 +67,18 @@ export function formatFailureLine(link: FailureLink): string {
 export class FailureLinks {
   private readonly failures: FailedTest[] = [];
   private printed = 0;
+  /** The pages the instance named for its runs (`knowPage`). */
+  private readonly pages = new Map<string, string>();
 
   constructor(
     private readonly serverUrl: string,
     private readonly logger: Logger,
   ) {}
+
+  /** The page the instance named for run `runId`, which the links lead under from now on. */
+  knowPage(runId: number | string, page: string): void {
+    this.pages.set(String(runId), page);
+  }
 
   /** Number of failed tests recorded so far. */
   get count(): number {
@@ -83,7 +91,8 @@ export class FailureLinks {
 
   /** Every recorded failure with its link under `runId`. */
   resolve(runId: number | string): FailureLink[] {
-    return this.failures.map((test) => ({ ...test, url: caseLocateUrl(this.serverUrl, runId, test) }));
+    const page = this.pages.get(String(runId)) ?? runUrl(this.serverUrl, runId);
+    return this.failures.map((test) => ({ ...test, url: caseLocateUrl(page, test) }));
   }
 
   /** Print the lines that have not been printed yet. */

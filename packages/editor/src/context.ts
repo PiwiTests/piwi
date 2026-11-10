@@ -30,6 +30,7 @@ import {
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
+import { holdDesktopToken } from './http.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -117,14 +118,20 @@ export interface DesktopDiscovery {
 
 /** The running desktop app, from its discovery file; null when it does not run. */
 export function readDesktopDiscovery(env: Record<string, string | undefined>): DesktopDiscovery | null {
-  const discovery = readJson(desktopConfigPath(env)) as { url?: unknown; token?: unknown; projects?: unknown } | null;
+  const discovery = readJson(desktopConfigPath(env)) as {
+    url?: unknown;
+    token?: unknown;
+    projects?: unknown;
+  } | null;
   if (!discovery || typeof discovery.url !== 'string' || typeof discovery.token !== 'string') return null;
   const projects = Array.isArray(discovery.projects)
     ? discovery.projects.flatMap((p: { id?: unknown; path?: unknown }) =>
         typeof p?.id === 'number' && typeof p.path === 'string' && p.path ? [{ id: p.id, path: p.path }] : [],
       )
     : [];
-  return { url: discovery.url.replace(/\/+$/, ''), token: discovery.token, projects };
+  const url = discovery.url.replace(/\/+$/, '');
+  holdDesktopToken(url, discovery.token);
+  return { url, token: discovery.token, projects };
 }
 
 function isInside(child: string, parent: string): boolean {
@@ -218,6 +225,7 @@ export function namedInstance(
   const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
   if (env.PIWI_DASHBOARD_URL || dotEnv.PIWI_DASHBOARD_URL) {
     const found = resolvePiwiConnection({ env, dotEnv, desktop })!;
+    if (found.desktop && found.apiKey) holdDesktopToken(found.serverUrl, found.apiKey);
     // The key saved in the editor belongs to the server it was saved for: a URL
     // from the environment or a workspace `.env` never gets another's.
     const editorUrl = editor.serverUrl?.replace(/\/+$/, '');

@@ -466,6 +466,7 @@ export type StuckTestNotice = Pick<
   | 'browserName'
   | 'repeatEachIndex'
   | 'workerIndex'
+  | 'parallelIndex'
   | 'shardIndex'
   | 'startedAt'
   | 'elapsedMs'
@@ -474,15 +475,13 @@ export type StuckTestNotice = Pick<
 
 /**
  * Emit `test.stuck` for a running attempt of a live run, once per attempt (its run, its start and its test key its
- * deliveries): the run must still run and send notifications.
+ * deliveries): the run must still run, and the `stuck-notifications` use must read it, which leaves out every run
+ * started on a developer's machine.
  */
 export async function emitTestStuck(db: DbClient, runId: number, stuck: StuckTestNotice): Promise<void> {
   try {
     const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-    // A run that sends notifications once complete: a full run counts as complete while it runs, a partial one never.
-    if (!runRow || runRow.status !== 'running' || !isEligibleRun({ ...runRow, status: 'passed' }, 'notifications')) {
-      return;
-    }
+    if (!runRow || runRow.status !== 'running' || !isEligibleRun(runRow, 'stuck-notifications')) return;
     const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
     if (!project) return;
     const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;

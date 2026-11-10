@@ -21,7 +21,7 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
-import { eligibleRunSql } from '#shared/run-eligibility';
+import { eligibleRunSql, notPrivateRun } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
 import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
@@ -76,6 +76,8 @@ import type { AiAttachedImage } from './ai-provider';
 import { getStorage } from '../storage';
 import type { DbClient } from '../database';
 import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
+import { shownWorkerNumber } from '#shared/worker-lane';
+import { liveWorkerName } from '#shared/live-view';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
@@ -450,6 +452,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       evidenceSources: testRunsCases.evidenceSources,
       testAnnotations: testRunsCases.testAnnotations,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
       shardIndex: testRunsCases.shardIndex,
       testCaseId: testRunsCases.testCaseId,
       browserName: testRunsCases.browserName,
@@ -526,7 +529,6 @@ function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   }
   if (meta?.scm?.branch) lines.push(`- Branch: ${meta.scm.branch}`);
   if (meta?.ci?.provider) lines.push(`- CI: ${meta.ci.provider}`);
-  if (env?.workerIndex != null) lines.push(`- Worker: ${env.workerIndex}`);
   if (env?.os) lines.push(`- OS: ${env.os}`);
   if (env?.hostname) lines.push(`- Hostname: ${env.hostname}`);
   return lines;
@@ -601,11 +603,10 @@ export function runContextSection(rep: RepresentativeRow): string | null {
   const sp = rep.testSuitePath;
   if (sp) lines.push(`- Describe path: ${sp.split('\x1f').join(' › ')}`);
 
-  if (rep.workerIndex != null) {
-    const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
-    lines.push(
-      `- Parallel worker #${rep.workerIndex}${shard} — consider a race if peers on the same worker also failed`,
-    );
+  const worker = shownWorkerNumber(rep);
+  if (worker != null) {
+    const name = liveWorkerName({ shard: rep.shardIndex ?? null, worker });
+    lines.push(`- Ran on ${name} — consider a race if peers on the same worker also failed`);
   }
 
   if (rep.flakyRootCause) {
@@ -1239,7 +1240,7 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
           db
             .select({ id: testRuns.id })
             .from(testRuns)
-            .where(eq(testRuns.projectId, cluster.projectId))
+            .where(and(eq(testRuns.projectId, cluster.projectId), notPrivateRun(testRuns.origin)))
             .orderBy(desc(testRuns.startTime))
             .limit(30),
         ),

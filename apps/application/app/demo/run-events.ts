@@ -19,6 +19,8 @@ export interface DemoRunEvent {
   type:
     | 'test-begin'
     | 'test-stuck'
+    | 'test-stopped'
+    | 'test-resumed'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'

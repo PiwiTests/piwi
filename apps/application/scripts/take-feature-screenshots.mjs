@@ -976,6 +976,7 @@ const REPRO_SCENE_STEPS = (() => {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
+ *   update      — desktop mode: `{ check, releaseNotes }`, an update on offer and its release notes (default none)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
  *                 other scene captures as if Don't show again had been chosen,
  *                 so the hint never lands in an illustration by chance
@@ -1033,6 +1034,90 @@ async function shopPageJpeg(context) {
   const data = (await shot.screenshot({ type: 'jpeg', quality: 70 })).toString('base64');
   await shot.close();
   return data;
+}
+
+/**
+ * A desktop scene's local run, live on the run page: the run page's Re-run starts it, the played hub names its one
+ * worker running `intents` (`playDesktopRunHub` first), the run reports to the app with the reference the app gave it,
+ * its test begun on that worker, and **Live in Piwi** opens its page. Answers the tray, the spec's URI, the running
+ * worker, a session message of a worker, and `finish`, which ends the live run.
+ */
+async function openDesktopLiveRun({ page, base, goto, intents }) {
+  await goto('/test-runs/2');
+  await page
+    .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+    .first()
+    .click();
+  const tray = page.getByRole('region', { name: 'Local runs' });
+  await tray.waitFor();
+  await page.waitForFunction(() => window.__hub?.open() === 1);
+  const root = '/home/dev/code/acme-checkout';
+  const uri = `file://${root}/tests/checkout.spec.ts`;
+  const running = {
+    worker: 0,
+    parallelIndex: 0,
+    state: 'running',
+    pausing: false,
+    intents,
+    stop: null,
+    test: {
+      id: 't1',
+      title: ['checkout', 'pays with a saved card'],
+      uri,
+      line: 10,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    },
+  };
+  const session = (worker) => ({
+    type: 'session',
+    session: {
+      ref: 'desktop-41',
+      root,
+      label: 'acme-checkout',
+      command: null,
+      project: 'checkout-web',
+      workers: [worker],
+      ended: false,
+    },
+  });
+  await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+  await page.evaluate((event) => window.__hub.send(event), session(running));
+
+  const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+  await page.waitForFunction(() => window.__runArgs?.originRef);
+  const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+  const post = async (path, data) => {
+    const res = await page.request.post(`${base}${path}`, { data });
+    if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
+    return res.json();
+  };
+  const started = await post('/api/test-runs/start', {
+    projectName: source.project.name,
+    startTime: new Date().toISOString(),
+    metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+  });
+  const finish = () =>
+    page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
+      data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+    });
+  try {
+    const begin = {
+      type: 'begin',
+      title: 'pays with a saved card',
+      location: 'tests/checkout.spec.ts:11:3',
+      workerIndex: 0,
+      startedAt: Date.now(),
+      browser: { projectName: 'chromium' },
+    };
+    await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
+    await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
+  } catch (error) {
+    await finish();
+    throw error;
+  }
+  return { tray, uri, running, session, started, post, finish };
 }
 
 const ESC = '\u001b';
@@ -1099,6 +1184,31 @@ async function signInForScene({ base, request }) {
   });
   // With authentication off the server refuses any login.
   if (!res.ok()) throw new Error(`signing in as ${login.slice(0, separator)} failed (${res.status()}): ${hint}`);
+}
+
+/**
+ * `prepare` step after `signInForScene`: uploads a plain square as the signed-in
+ * user's profile picture, which `removeScenePicture` removes after the shot.
+ * Refuses an account that already has an uploaded picture, since replacing it
+ * deletes it.
+ */
+async function uploadScenePicture({ base, request }) {
+  const me = await (await request.get(`${base}/api/auth/me`)).json();
+  if (me.user?.avatarUploaded) {
+    throw new Error(
+      `${me.user.username} already has an uploaded profile picture, which this scene would delete: set PIWI_SCREENS_LOGIN to an account without one`,
+    );
+  }
+  const png = await sharp({ create: { width: 256, height: 256, channels: 3, background: '#7c3aed' } })
+    .png()
+    .toBuffer();
+  const res = await request.put(`${base}/api/auth/avatar`, { headers: { 'Content-Type': 'image/png' }, data: png });
+  if (!res.ok()) throw new Error(`uploading the profile picture failed (${res.status()}): ${await res.text()}`);
+}
+
+/** Removes the picture `uploadScenePicture` uploaded for the signed-in user. */
+async function removeScenePicture(page) {
+  await page.request.delete(new URL('/api/auth/avatar', page.url()).href);
 }
 
 /** Ticks the row checkboxes of the `count` newest runs in project 1's runs list that are not kept. */
@@ -1197,6 +1307,15 @@ async function classifyFlakyTests({ base, request }) {
   for (const test of flaky.items ?? []) {
     await request.post(`${base}/api/projects/1/flaky-classify`, { data: { testCaseId: test.testCaseId } });
   }
+}
+
+/** Tag key patterns whose test case pattern also reads the story key SHOP-1234. */
+const TAG_KEYS_THAT_OVERLAP = { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-[A-Z]?[0-9]+$' };
+
+/** Saves `tagKeys` on project 1; null turns both patterns off. */
+async function setSceneTagKeys(request, base, tagKeys) {
+  const res = await request.patch(`${base}/api/projects/1`, { data: { tagKeys } });
+  if (!res.ok()) throw new Error(`setting the tag key patterns failed (${res.status()}): ${await res.text()}`);
 }
 
 /** An agent's diagnosis and two fix attempts on cluster 2, once per server. */
@@ -1768,6 +1887,48 @@ const RESOURCES_TIMELINE_EXECUTION = 705;
  * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
  * the readout gives their values, at `width` px in `colorScheme`.
  */
+/**
+ * The leaky run's workers timeline: under each worker's row, what it kept open
+ * for nothing (each test's login context until the worker ended, a preview
+ * popup open long after its last use), the left-open share on the open pages,
+ * and the pointer over the lingering popup's tail.
+ */
+function runTimelineLeaksScene(colorScheme, suffix) {
+  // The light one illustrates the Resource leaks page.
+  const docs = colorScheme === 'light' ? { tags: ['docs'], out: 'docs' } : {};
+  return {
+    name: `run-timeline-leaks${suffix}`,
+    description: `Run timeline of the leaky run: leak tails under each worker, the lingering popup hovered (${colorScheme})`,
+    // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
+    route: '/test-runs/62?tab=workers',
+    viewport: { width: 1400, height: 1000 },
+    colorScheme,
+    ...docs,
+    async run({ page, settle, shoot }) {
+      const tail = page.locator('[data-shot="run-timeline"] [data-span-tails-verdict="lingering"]').first();
+      await tail.waitFor({ state: 'attached', timeout: 30_000 });
+      // Scrolled into view before the pointer moves, so the capture does not move the page under it.
+      await page.locator('[data-shot="run-timeline"]').scrollIntoViewIfNeeded();
+      await settle();
+      const box = await tail.boundingBox();
+      if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      const tooltip = page.getByTestId('timeline-span-tooltip');
+      await tooltip.waitFor({ timeout: 10_000 });
+      // The timeline and its tooltip, which can reach below it, clipped as they are: a capture region would
+      // move the page under the pointer.
+      const timeline = (await page.locator('[data-shot="run-timeline"]').boundingBox()) ?? undefined;
+      const tip = (await tooltip.boundingBox()) ?? undefined;
+      if (!timeline || !tip) return shoot();
+      const pad = 12;
+      const x = Math.max(0, timeline.x - pad);
+      const y = Math.max(0, timeline.y - pad);
+      const right = Math.max(timeline.x + timeline.width, tip.x + tip.width) + pad;
+      const bottom = Math.max(timeline.y + timeline.height, tip.y + tip.height) + pad;
+      await shoot(undefined, { clip: { x, y, width: right - x, height: bottom - y } });
+    },
+  };
+}
+
 function timelineResourcesScene(width, colorScheme, suffix) {
   return {
     name: `failure-timeline-resources${suffix}`,
@@ -2059,6 +2220,76 @@ async function routeNudgeScene(page, clusterId) {
   });
 }
 
+/** The release notes the desktop shell reads for an update from v0.64.0 to v0.67.0, cut down from the real releases. */
+const DESKTOP_UPDATE_RELEASE_NOTES = {
+  installed: '0.64.0',
+  offered: '0.67.0',
+  complete: true,
+  releases: [
+    {
+      version: '0.67.0',
+      date: '2026-11-05T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.67.0',
+      body: [
+        '### ⚠ BREAKING CHANGES',
+        '',
+        "* **app:** the run insights endpoint's `workerImbalance` entries are `{ worker, workerIndex, shardIndex, count }`: `worker` is the lane from 1",
+        '',
+        '### Features',
+        '',
+        '* **app:** dispatch CI re-runs to a CI server (Jenkins and Custom presets) ([a4e9ce7](https://github.com/PiwiTests/piwi/commit/a4e9ce7))',
+        '* **app:** dock the live view beside the run page, with its address, zoom and verdict ([513f252](https://github.com/PiwiTests/piwi/commit/513f252))',
+        '* **app:** name each worker by its lane, sent by the reporter with every test ([6760875](https://github.com/PiwiTests/piwi/commit/6760875))',
+        '',
+        '### Bug Fixes',
+        '',
+        '* **app:** keep a reported history when a later batch carries its earlier attempt ([da47453](https://github.com/PiwiTests/piwi/commit/da47453))',
+        '* **reporter:** keep run errors and test output ([c95053f](https://github.com/PiwiTests/piwi/commit/c95053f))',
+      ].join('\n'),
+    },
+    {
+      version: '0.66.0',
+      date: '2026-11-04T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.66.0',
+      body: [
+        'This release makes the branch a first-class dimension, saves test selections and reads impact from a diff.',
+        '',
+        '**Full diff:** [v0.65.0…v0.66.0](https://github.com/PiwiTests/piwi/compare/v0.65.0...v0.66.0)',
+        '',
+        '## ✨ Highlights',
+        '',
+        '- **🌿 Branch as a first-class dimension** — Every page filters by branch, and the default branch is read from the repository.',
+        '- **🎯 Test selections** — Save a set of tests and run it again from the dashboard or the editor.',
+        '- **🔍 Impact-from-diff** — Paste a diff and see the tests it touches.',
+        '',
+        '## Features',
+        '',
+        '### Branches',
+        '',
+        '- **app:** filter every project tab by branch',
+        "- **reporter:** add `piwi rerun` to run a CI re-run's arguments without a shell",
+        '',
+        '## Bug Fixes',
+        '',
+        "- **app:** complete a stored retry's history when its earlier attempt comes with one",
+        '',
+        '<!-- notes:polished -->',
+      ].join('\n'),
+    },
+    {
+      version: '0.65.0',
+      date: '2026-11-03T10:00:00Z',
+      url: 'https://github.com/PiwiTests/piwi/releases/tag/v0.65.0',
+      body: [
+        '### Features',
+        '',
+        '* **app:** pause and watch a running test from its row on the run page ([e98d6cc](https://github.com/PiwiTests/piwi/commit/e98d6cc))',
+        '* **app:** allow more host names with authentication off through PIWI_ALLOWED_HOSTS ([36b40ba](https://github.com/PiwiTests/piwi/commit/36b40ba))',
+      ].join('\n'),
+    },
+  ],
+};
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -2212,6 +2443,74 @@ const SCENES = [
       await shoot('phone', { of: '[data-shot="assistant-panel"]' });
     },
     outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
+  },
+  {
+    name: 'run-on-my-machine',
+    mode: 'demo',
+    description:
+      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, the window opened again on that outcome, and Settings → Account → Your runs on my machine',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the request.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const button = page.getByRole('button', { name: 'Run on my machine' });
+      await button.waitFor({ timeout: 90_000 });
+      await button.click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('radio').first().waitFor({ timeout: 15_000 });
+      await settle();
+      await shoot('menu', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1000 });
+      await settle();
+      await shoot('menu-phone', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await dialog.getByRole('button', { name: 'Send' }).click();
+      const state = dialog.getByTestId('run-request-state');
+      await state.filter({ hasText: 'Running in' }).waitFor({ timeout: 20_000 });
+      await settle();
+      await shoot('running', { of: '[role="dialog"]', pad: 0 });
+      await state.filter({ hasText: 'Ended' }).waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('ended', { of: '[role="dialog"]', pad: 0 });
+      // Opened again, the window still shows the request that ended, until New request.
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      await button.click();
+      await dialog.getByTestId('run-request-state').filter({ hasText: 'Ended' }).waitFor();
+      await settle();
+      await shoot('reopened', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await page.goto(page.url().replace(/\/test-run-cases\/.*$/, '/settings/account'));
+      await page
+        .locator('[data-shot="account-run-requests"] [data-testid="run-requests-list"]')
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('list', { of: '[data-shot="account-run-requests"]', pad: 12 });
+      await page.goBack({ waitUntil: 'domcontentloaded' });
+      await page
+        .getByRole('link', { name: /^Run #\d+$/ })
+        .first()
+        .click();
+      await page
+        .locator('[data-shot="run-header"]')
+        .getByRole('button', { name: 'Run on my machine' })
+        .waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot('run-header', { of: '[data-shot="run-header"]', pad: 0 });
+    },
+    outputs: [
+      'run-on-my-machine-run-header.png',
+      'run-on-my-machine-menu.png',
+      'run-on-my-machine-menu-phone.png',
+      'run-on-my-machine-running.png',
+      'run-on-my-machine-ended.png',
+      'run-on-my-machine-reopened.png',
+      'run-on-my-machine-list.png',
+    ],
   },
   {
     name: 'demo-simulator',
@@ -2729,6 +3028,38 @@ const SCENES = [
     })),
   ),
   ...[
+    { name: 'project-tag-keys', width: 1280 },
+    { name: 'project-tag-keys-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Keys in test tags with two patterns that both read SHOP-1234, listed in the overlap warning, at ${width} px. The scene sets the patterns and puts the project's own back after the shot`,
+    viewport: { width, height: 1800 },
+    of: '[data-shot="project-tag-keys-settings"]',
+    async run({ page, base, goto, shoot, settle }) {
+      const res = await page.request.get(`${base}/api/projects/1`);
+      if (!res.ok()) throw new Error(`reading project 1 failed (${res.status()}): ${await res.text()}`);
+      const ownTagKeys = (await res.json()).tagKeys ?? null;
+      await setSceneTagKeys(page.request, base, TAG_KEYS_THAT_OVERLAP);
+      let shot = false;
+      try {
+        await goto('/projects/1?tab=settings&section=tag-keys');
+        await page.locator('[data-shot="project-tag-keys-settings"]').waitFor({ timeout: 90000 });
+        await page.getByText('Both patterns match these tags').waitFor({ timeout: 30000 });
+        await page.locator('[data-testid="tag-keys-overlaps"] code', { hasText: 'SHOP-1234' }).waitFor();
+        await settle();
+        await shoot();
+        shot = true;
+      } finally {
+        const restored = setSceneTagKeys(page.request, base, ownTagKeys);
+        if (shot) await restored;
+        else
+          await restored.catch((error) =>
+            console.error(`restoring project 1's tag key patterns failed: ${error.message}`),
+          );
+      }
+    },
+  })),
+  ...[
     { name: 'project-settings', width: 1280, height: 1100 },
     { name: 'project-settings-mobile', width: 375, height: 1500 },
   ].map(({ name, width, height }) => ({
@@ -2737,6 +3068,35 @@ const SCENES = [
     route: '/projects/1?tab=settings&section=source-control',
     viewport: { width, height },
     of: '[data-shot="project-settings"]',
+  })),
+  ...[
+    { name: 'project-ci-server-settings', width: 1280, height: 1600 },
+    { name: 'project-ci-server-settings-mobile', width: 375, height: 2400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: a CI re-run to Jenkins, its fields and the request preview, at ${width} px`,
+    route: '/projects/2?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="project-settings"]',
+  })),
+  ...[
+    { name: 'project-ci-server-check', width: 1280, height: 1600 },
+    { name: 'project-ci-server-check-mobile', width: 375, height: 2400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: Check the jobs on the Jenkins target, and what it found, at ${width} px`,
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="ci-server-target"]',
+    async run({ page, shoot, settle }) {
+      const form = page.locator('[data-shot="ci-server-target"]');
+      await form.getByRole('button', { name: 'Check the jobs' }).click();
+      await form.getByTestId('ci-server-check').locator('dd').first().waitFor({ timeout: 30000 });
+      await form.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot();
+    },
   })),
   ...[
     { name: 'project-live-view-settings', width: 1280, height: 800 },
@@ -3148,6 +3508,29 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  ...[
+    { name: 'connected-apps', width: 1280 },
+    { name: 'connected-apps-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Connected apps (shared ConnectedAppsManager) in the Users admin modal: the seeded desktop app, its version and when last seen, with Revoke, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      // The table is a card list below md: open the modal at full width, then narrow the viewport.
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await page
+        .getByRole('row')
+        .filter({ hasText: 'Avery (Admin)' })
+        .getByRole('button', { name: 'Manage API keys' })
+        .click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('[data-shot="connected-apps"]').waitFor({ timeout: 15000 });
+      if (width < 1280) await page.setViewportSize({ width, height: 1600 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
   {
     name: 'permission-grid-mobile',
     description:
@@ -3173,6 +3556,86 @@ const SCENES = [
       await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
       await settle();
       await shoot();
+    },
+  })),
+  ...[
+    { name: 'letter-avatars', width: 1280, height: 900, colorScheme: 'light' },
+    { name: 'letter-avatars-dark', width: 1280, height: 900, colorScheme: 'dark' },
+    { name: 'letter-avatars-mobile', width: 390, height: 1400, colorScheme: 'light' },
+  ].map(({ name, width, height, colorScheme }) => ({
+    name,
+    description: `Letter avatars: each account's initials on its own color in Settings → Users, the user menu and the group member picker, ${colorScheme}, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator`,
+    prepare: signInForScene,
+    route: '/settings/users',
+    viewport: { width, height },
+    colorScheme,
+    async run({ page, goto, shoot, settle }) {
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot('users', { of: '[data-shot="users-table"]' });
+      if (width >= 1024) await shoot('menu', { of: '[data-shot="user-menu"]', pad: 8 });
+      await goto('/settings/groups');
+      await page.locator('[data-shot="groups-table"]').waitFor({ timeout: 90000 });
+      await page.getByRole('button', { name: 'Edit QA' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="group-form"]').waitFor({ timeout: 15000 });
+      await page.getByRole('dialog').getByRole('button', { name: 'Members', exact: true }).click();
+      await page.getByRole('listbox').waitFor();
+      await settle();
+      await shoot('members');
+    },
+  })),
+  ...[
+    { name: 'settings-account-picture', width: 1280 },
+    { name: 'settings-account-picture-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Settings → Account → Profile picture with an uploaded picture, its Upload and Remove buttons, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an account with no uploaded picture (the scene uploads one, then removes it)`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      await uploadScenePicture({ base, request });
+    },
+    route: '/settings/account',
+    viewport: { width, height: 900 },
+    of: '[data-shot="account-profile-picture"]',
+    async run({ page, shoot, settle }) {
+      try {
+        await page.locator('[data-shot="account-profile-picture"] img').waitFor({ timeout: 15000 });
+        await settle();
+        await shoot();
+      } finally {
+        await removeScenePicture(page);
+      }
+    },
+  })),
+  ...[
+    { name: 'settings-users-remove-picture', width: 1280, height: 900 },
+    { name: 'settings-users-remove-picture-mobile', width: 390, height: 2000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users with the signed-in administrator's uploaded picture: the Remove profile picture row action and the confirmation it opens, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator with no uploaded picture (the scene uploads one, then removes it)`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      await uploadScenePicture({ base, request });
+    },
+    route: '/settings/users',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      try {
+        await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+        await settle();
+        await shoot('table', { of: '[data-shot="users-table"]' });
+        const username = (process.env.PIWI_SCREENS_LOGIN ?? '').split(':')[0];
+        await page
+          .getByRole('button', { name: `Remove the profile picture of ${username}`, exact: true })
+          .filter({ visible: true })
+          .first()
+          .click();
+        await page.getByRole('dialog', { name: 'Remove profile picture' }).waitFor();
+        await settle();
+        await shoot('confirm', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        await removeScenePicture(page);
+      }
     },
   })),
   ...[
@@ -3546,6 +4009,57 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 1100 } },
+    { suffix: '-phone', viewport: { width: 390, height: 844 } },
+  ].flatMap(({ suffix, viewport }) => [
+    {
+      name: `run-create-issue${suffix}`,
+      description: "Create issue on a run's header: the modal with its Comment field and the run's body in the preview",
+      prepare: prepareJiraSceneConnection,
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await routeJiraScreen(page);
+        await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+          route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+        );
+        await page.route('**/api/integrations/issue-draft*', async (route) => {
+          const draft = await (await route.fetch()).json();
+          await route.fulfill({
+            json: {
+              ...draft,
+              connectionId: jiraSceneConnectionId,
+              projectKey: 'CHK',
+              issueType: '10004',
+              projectBound: true,
+              fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+            },
+          });
+        });
+        await page.locator('[data-tour="run-create-issue"]').click();
+        await page.getByRole('dialog').waitFor();
+        await page
+          .getByRole('dialog')
+          .getByLabel('Comment')
+          .fill('The coupon is accepted twice when the page reloads during checkout.');
+        await settle();
+        await shoot(undefined, suffix ? {} : { of: '[role="dialog"]', pad: 0 });
+      },
+    },
+    {
+      name: `retry-command-options${suffix}`,
+      description: "Copy retry command's menu on a red run: how the tests are named and the run options",
+      route: '/test-runs/63',
+      viewport,
+      async run({ page, shoot, settle }) {
+        await page.locator('[data-tour="run-retry-command"]').click();
+        await page.locator('[data-shot="retry-command-options"]').waitFor();
+        await settle();
+        await shoot();
+      },
+    },
+  ]),
   {
     name: 'cluster-issue-line',
     description:
@@ -3886,6 +4400,8 @@ const SCENES = [
       await shoot();
     },
   },
+  runTimelineLeaksScene('light', ''),
+  runTimelineLeaksScene('dark', '-dark'),
   pausedTestScene(1280, 'light', ''),
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
@@ -4180,6 +4696,50 @@ const SCENES = [
     },
   },
   {
+    name: 'starred-projects',
+    description:
+      "Starred projects: the star beside a name in Home's Project health puts the project first there, under a Starred divider, and in the sidebar's Starred group",
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      const includePartial = page.getByRole('button', { name: 'Include partial runs' });
+      if (await includePartial.count()) {
+        await includePartial.first().click();
+        await settle();
+      }
+      await shoot('before');
+      const health = page.locator('[data-tour="project-health"]');
+      // Two projects lower in the table, so their move to the top shows.
+      for (const nth of [4, 2]) {
+        await health
+          .getByRole('button', { name: /^Star / })
+          .nth(nth)
+          .click();
+        await settle();
+      }
+      await shoot('after');
+      await shoot('sidebar', { of: '#dashboard-sidebar-default' });
+    },
+  },
+  {
+    name: 'starred-projects-phone',
+    description: 'Starred projects at phone width: the Starred label and divider in the card list of Project health',
+    route: '/',
+    viewport: { width: 390, height: 1900 },
+    async run({ page, shoot, settle }) {
+      const health = page.locator('[data-tour="project-health"]');
+      for (const nth of [4, 2]) {
+        await health
+          .getByRole('button', { name: /^Star / })
+          .filter({ visible: true })
+          .nth(nth)
+          .click();
+        await settle();
+      }
+      await shoot(undefined, { of: '[data-tour="project-health"]', pad: 8 });
+    },
+  },
+  {
     name: 'failure-clusters-tab',
     description:
       'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',
@@ -4351,6 +4911,25 @@ const SCENES = [
       await shoot('details');
     },
   },
+  // Seeded run #6 has two tests that declare more tags than a test keeps.
+  ...[
+    { suffix: '', viewport: { width: 1280, height: 720 } },
+    { suffix: '-mobile', viewport: { width: 390, height: 1400 } },
+  ].map(({ suffix, viewport }) => ({
+    name: `run-tags-truncated${suffix}`,
+    description: `Run page at ${viewport.width} px of a run whose tests lost tags past the limit: the Tags cut fact on the facts line, and the Tags cut row in Details`,
+    route: '/test-runs/6',
+    viewport,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-tags-truncated-fact"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await page.locator('[data-shot="run-tags-truncated"]').waitFor();
+      await settle();
+      await shoot('details');
+    },
+  })),
   {
     name: 'run-errors',
     description:
@@ -4913,6 +5492,52 @@ const SCENES = [
     },
   },
   {
+    name: 'run-read-ended',
+    description:
+      'A running run the page can no longer read: deleted while it was open, then the instance refusing it, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['run-read-ended.png', 'run-read-ended-narrow.png', 'run-read-ended-refused.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const run = await (
+        await postRetrying(request, base, '/api/test-runs/start', {
+          data: { projectName: 'web-dashboard', startTime: new Date().toISOString() },
+        })
+      ).json();
+      /** The stream closes on an error answer and the run's read gets Piwi's own `status` error. */
+      const refuse = async (status) => {
+        await page.unrouteAll();
+        const body = JSON.stringify({ statusCode: status, message: 'Refused' });
+        await page.route(`**/api/test-runs/${run.runId}/stream`, (route) => route.fulfill({ status, body }));
+        await page.route(`**/api/test-runs/${run.runId}`, (route) =>
+          route.fulfill({ status, contentType: 'application/json', body }),
+        );
+      };
+      const capture = async (state, name = '') => {
+        await page.locator(`[data-shot="run-read-ended"][data-state="${state}"]`).waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot(name);
+      };
+      try {
+        await refuse(404);
+        await goto(`/test-runs/${run.runId}`);
+        await capture('gone');
+        await page.setViewportSize({ width: 390, height: 800 });
+        await capture('gone', 'narrow');
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await refuse(401);
+        await goto(`/test-runs/${run.runId}`);
+        await capture('signed-out', 'refused');
+      } finally {
+        await page.unrouteAll();
+        await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+          data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+        });
+      }
+    },
+  },
+  {
     name: 'run-live-view',
     description:
       'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',
@@ -5173,74 +5798,14 @@ const SCENES = [
       await playDesktopRunHub(page, (command) =>
         command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
       );
-      await goto('/test-runs/2');
-      await page
-        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
-        .first()
-        .click();
-      const tray = page.getByRole('region', { name: 'Local runs' });
-      await tray.waitFor();
-      await page.waitForFunction(() => window.__hub?.open() === 1);
-      const root = '/home/dev/code/acme-checkout';
-      const uri = `file://${root}/tests/checkout.spec.ts`;
       const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
-      const running = {
-        worker: 0,
-        parallelIndex: 0,
-        state: 'running',
-        pausing: false,
+      const { tray, uri, running, session, started, post, finish } = await openDesktopLiveRun({
+        page,
+        base,
+        goto,
         intents,
-        stop: null,
-        test: {
-          id: 't1',
-          title: ['checkout', 'pays with a saved card'],
-          uri,
-          line: 10,
-          project: 'chromium',
-          retry: 0,
-          cannotPause: null,
-        },
-      };
-      const session = (worker) => ({
-        type: 'session',
-        session: {
-          ref: 'desktop-41',
-          root,
-          label: 'acme-checkout',
-          command: null,
-          project: 'checkout-web',
-          workers: [worker],
-          ended: false,
-        },
-      });
-      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
-      await page.evaluate((event) => window.__hub.send(event), session(running));
-
-      // The run reports to the app with the reference the app gave it, and its test begins.
-      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
-      await page.waitForFunction(() => window.__runArgs?.originRef);
-      const originRef = await page.evaluate(() => window.__runArgs?.originRef);
-      const post = async (path, data) => {
-        const res = await page.request.post(`${base}${path}`, { data });
-        if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
-        return res.json();
-      };
-      const started = await post('/api/test-runs/start', {
-        projectName: source.project.name,
-        startTime: new Date().toISOString(),
-        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
       });
       try {
-        const begin = {
-          type: 'begin',
-          title: 'pays with a saved card',
-          location: 'tests/checkout.spec.ts:11:3',
-          workerIndex: 0,
-          startedAt: Date.now(),
-          browser: { projectName: 'chromium' },
-        };
-        await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
-        await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
         const watch = page.getByRole('button', { name: 'Pause and watch' });
         await watch.waitFor({ timeout: 60_000 });
         // Its step reaches the pages open as it streams: the run's page, now.
@@ -5303,9 +5868,117 @@ const SCENES = [
         await settle();
         await shoot('closed');
       } finally {
-        await page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
-          data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+        await finish();
+      }
+    },
+  },
+  {
+    name: 'run-live-desktop-watch',
+    description:
+      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    outputs: [
+      'run-live-desktop-watch.png',
+      'run-live-desktop-watch-narrow.png',
+      'run-live-desktop-watch-tray.png',
+      'run-live-desktop-watch-tray-narrow.png',
+      'run-live-desktop-watch-stop.png',
+      'run-live-desktop-watch-running.png',
+      'run-live-desktop-watch-waiting.png',
+      'run-live-desktop-watch-outdated.png',
+    ],
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at', 'watch'];
+      const { tray, uri, running, session, finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      const send = (event) => page.evaluate((e) => window.__hub.send(e), event);
+      const laneFrame = (since) =>
+        send({
+          type: 'lane-frame',
+          ref: 'desktop-41',
+          lane: 0,
+          worker: 0,
+          test: 't1',
+          since,
+          width: 1280,
+          height: 800,
+          data: image,
         });
+      try {
+        // The running row: Watch beside Pause and watch.
+        const watch = page.getByRole('button', { name: 'Watch: checkout › pays with a saved card', exact: true });
+        await watch.waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('narrow');
+        await page.setViewportSize({ width: 1280, height: 900 });
+
+        // Watched: the tray opens on the worker, its page live as the test runs.
+        await watch.click();
+        const worker = tray.locator('[data-shot="desktop-run-worker"]');
+        await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
+        await laneFrame(null);
+        await worker.getByRole('img', { name: 'The page, live', exact: true }).waitFor();
+        await settle();
+        await shoot('tray', { of: '[aria-label="Local runs"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('tray-narrow');
+        await page.setViewportSize({ width: 1280, height: 900 });
+
+        // At a stop, the lane shows the stopped page, which takes the clicks and keys on it.
+        const stop = {
+          reason: 'pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        };
+        await send(session({ ...running, state: 'stopped', stop }));
+        await laneFrame('s1');
+        await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
+        await settle();
+        await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
+
+        // Resumed: the last image stays, dimmed and marked as running, until the next frame.
+        await send(session(running));
+        await worker.locator('img[data-stale]').waitFor();
+        await settle();
+        await shoot('running', { of: '[aria-label="Local runs"]', pad: 0 });
+
+        // Paused while the test waits in a long call: the call, how long it has run, and End the test there.
+        const waiting = {
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          since: new Date(Date.now() - 12_000).toISOString(),
+          endable: true,
+        };
+        await send(session({ ...running, pausing: true, waiting, intents: [...intents, 'give-up'] }));
+        await worker.getByTestId('desktop-waited').waitFor();
+        await settle();
+        await shoot('waiting', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+
+        // A worker of an older reporter offers no Watch, and says what would.
+        await send(session({ ...running, intents: intents.filter((what) => what !== 'watch') }));
+        await worker.getByTestId('desktop-watch-needs-update').waitFor();
+        await settle();
+        await shoot('outdated', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+      } finally {
+        await finish();
       }
     },
   },
@@ -6222,6 +6895,43 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-update-notes',
+    description:
+      "Settings → About in the desktop app with an update on offer: the Updates card's summary of the releases since the installed version, then What's new open, breaking changes first, at 1280 and 390 px",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    update: {
+      check: { state: 'available', version: '0.67.0', date: null },
+      releaseNotes: DESKTOP_UPDATE_RELEASE_NOTES,
+    },
+    outputs: [
+      'desktop-update-notes.png',
+      'desktop-update-notes-modal.png',
+      'desktop-update-notes-narrow.png',
+      'desktop-update-notes-modal-narrow.png',
+    ],
+    async run({ page, shoot, settle }) {
+      const capture = async (suffix) => {
+        const card = page.locator('[data-shot="desktop-update-card"]');
+        await card.getByRole('button', { name: "What's new" }).waitFor({ timeout: 60_000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot(suffix || undefined, { of: '[data-shot="desktop-update-card"]', pad: 24 });
+        await card.getByRole('button', { name: "What's new" }).click();
+        await page.locator('[data-shot="desktop-release-notes"]').waitFor();
+        await settle();
+        await shoot(suffix ? `modal-${suffix}` : 'modal');
+        await page.keyboard.press('Escape');
+      };
+      await capture('');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await capture('narrow');
+    },
+  },
+  {
     name: 'settings-desktop',
     description:
       'Settings → Desktop app (desktop app), the first page of Settings there: the address and token, Piwi Picker pairing, the data location and the background service',
@@ -7021,6 +7731,98 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-team-run-request',
+    description:
+      'A run request from a team instance, asked about in the desktop window: the tests, the checks of the linked folder (off the run’s commit, so by title) and the command (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      // The desktop event stream delivers the request; outside the shell the
+      // run-target routes do not exist, so the stream is answered here.
+      const request = {
+        id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
+        instance: 'https://piwi.example.com',
+        projectId: 1,
+        tests: [
+          { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
+          {
+            filePath: 'tests/checkout.spec.ts',
+            title: 'applies a coupon to the total',
+            line: 77,
+            projectName: 'chromium',
+          },
+        ],
+        options: { headed: true, trace: 'retain-on-failure' },
+        source: { runId: 2, branch: 'main', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e' },
+        checks: [
+          { id: 'folder', level: 'ok', message: 'Linked folder: /home/dev/code/acme-checkout' },
+          { id: 'config', level: 'ok', message: 'Playwright config: playwright.config.ts' },
+          { id: 'specs', level: 'ok', message: 'Both spec files are in the folder' },
+          { id: 'playwright', level: 'ok', message: '@playwright/test 1.61.0 is installed' },
+          {
+            id: 'commit',
+            level: 'warn',
+            message:
+              'The run was on main at a1b2c3d; this folder is on feat/coupons at 9f8e7d6: the tests are picked by title',
+          },
+        ],
+        runnable: true,
+        command:
+          'npx playwright test /home/dev/code/acme-checkout/tests/checkout.spec.ts "--grep=(?:^| )(?:pays with a saved card|applies a coupon to the total)(?: @\\S+)*$" --project=chromium --headed --trace=retain-on-failure',
+        hasFolder: true,
+        answerBy: new Date(Date.now() + 600_000).toISOString(),
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      await page.locator('[data-shot="desktop-team-run-request"]').waitFor({ timeout: 60_000 });
+      // **Run** is armed once the request has been shown, unchanged, for a second.
+      await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Run$/ }).waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-team-instance-card',
+    description:
+      'Settings → Desktop app → Run on my machine: connected to a team instance, with a linked folder (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/desktop',
+    requestFolders: { 1: '/home/dev/code/acme-checkout' },
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      const connection = {
+        state: 'online',
+        instance: 'https://piwi.example.com',
+        userCode: null,
+        verificationUrl: null,
+        error: null,
+        keyToKeep: false,
+        linkedProjectIds: [1],
+      };
+      await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-target', connection })}\n\n`,
+        }),
+      );
+      await page.reload();
+      const card = page.locator('[data-shot="desktop-team-instance-card"]');
+      await card.getByText('Connected: requests from your pages come here').waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="desktop-team-instance-card"]', pad: 16 });
+    },
+  },
+  {
     name: 'desktop-reproduce-section',
     description:
       "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",
@@ -7390,6 +8192,44 @@ const SCENES = [
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────
+  ...[
+    { name: 'opt-in-capabilities', width: 1280 },
+    { name: 'opt-in-capabilities-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Settings → Capabilities → Off until turned on: Run on my machine off, then on with Turn off, and the project's Capabilities listing it while it is on, at ${width} px`,
+    async prepare({ base, request }) {
+      await request.patch(`${base}/api/capabilities`, { data: { decisions: { 'machine-runs': null } } });
+    },
+    route: '/settings/capabilities',
+    viewport: { width, height: 1600 },
+    async run({ page, base, goto, shoot, settle }) {
+      const card = page.locator('[data-shot="opt-in-capabilities"]');
+      const turn = (decision) =>
+        page.request.patch(`${base}/api/capabilities`, { data: { decisions: { 'machine-runs': decision } } });
+      try {
+        await card.waitFor({ timeout: 90000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('off', { of: '[data-shot="opt-in-capabilities"]', pad: 12 });
+        // The screenshot server runs with sign-in off, where Turn on is disabled: turn it on through the API.
+        await turn('enabled');
+        await goto('/settings/capabilities');
+        await card.waitFor({ timeout: 90000 });
+        await card.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('on', { of: '[data-shot="opt-in-capabilities"]', pad: 12 });
+        await goto('/projects/1?tab=settings&section=capabilities');
+        const project = page.locator('[data-shot="project-capabilities"]').first();
+        await project.waitFor({ timeout: 90000 });
+        await project.scrollIntoViewIfNeeded();
+        await settle();
+        await shoot('project', { of: '[data-shot="project-capabilities"]', pad: 12 });
+      } finally {
+        await turn(null);
+      }
+    },
+  })),
   {
     name: 'setup-ladder-declined',
     description: 'Setup ladder grouped by state, with a declined capability folded under Declined',

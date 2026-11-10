@@ -90,6 +90,25 @@ describe('renderEventSubject', () => {
     );
   });
 
+  test('test.stuck opens the run searched for its test, with the live view of its worker’s lane when it has one', () => {
+    const stuck = {
+      runId: 9,
+      projectId: 2,
+      projectName: 'my-project',
+      testTitle: 'pays',
+      startedAt: 1000,
+      elapsedMs: 60_000,
+      usualMs: 2000,
+    };
+    expect(notificationTargetPath('test.stuck', stuck)).toBe('/test-runs/9?search=pays');
+    expect(notificationTargetPath('test.stuck', { ...stuck, parallelIndex: 1 })).toBe(
+      '/test-runs/9?search=pays&watch=2',
+    );
+    expect(notificationTargetPath('test.stuck', { ...stuck, parallelIndex: 0, shardIndex: 3 })).toBe(
+      '/test-runs/9?search=pays&watch=3.1',
+    );
+  });
+
   test('diagnosis.completed opens the cluster, or the failure a diagnosis of one execution is about', () => {
     const cluster = { clusterId: 5, projectId: 2, completedAt: 1000 };
     const failure = { ...cluster, executionId: 90 };

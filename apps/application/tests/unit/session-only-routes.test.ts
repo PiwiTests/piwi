@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
 import type { User } from '../../server/database/schema';
-import { buildAccessSummary, InstanceRole } from '#shared/permissions';
+import { buildAccessSummary, InstanceRole, ProjectRole } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
 
 /**
@@ -49,6 +49,8 @@ vi.mock('../../server/utils/oauth', () => ({
 vi.mock('../../server/utils/rate-limit', () => ({
   limitLookupMisses: async (_event: unknown, _key: string, _limit: unknown, lookup: () => Promise<unknown>) => lookup(),
   rateLimitClientIp: () => 'test',
+  checkRateLimit: () => true,
+  rateLimitedError: () => new Error('rate limited'),
   takeRateLimitSlots: () => [],
   releaseRateLimit: () => {},
 }));
@@ -69,7 +71,39 @@ vi.mock('../../server/utils/mcp-oauth', () => ({
     return { status: 'approved', redirectTo: 'http://localhost/callback?code=x' };
   },
 }));
+vi.mock('../../server/utils/project-access', async (original) => ({
+  ...(await original<typeof import('../../server/utils/project-access')>()),
+  requireProjectPermission: async () => {},
+  resolveRunProjectId: async () => 1,
+}));
+vi.mock('../../server/utils/run-requests', () => ({
+  newRunRequestId: () => '0123456789abcdef0123456789abcdef',
+  requireMachineRunsOn: async () => {},
+  requireSignInForRunRequests: () => {},
+  runRequestView: async () => ({}),
+}));
+vi.mock('#shared/handlers/run-requests', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#shared/handlers/run-requests')>()),
+  createRunRequest: async () => {
+    state.acted.push('run-request');
+    return { ok: true, row: { id: '0123456789abcdef0123456789abcdef' }, skipped: 0 };
+  },
+}));
 vi.mock('../../server/utils/public-base-url', () => ({ publicBaseUrl: () => 'http://localhost' }));
+vi.mock('../../server/utils/profile-picture', () => ({
+  saveProfilePicture: async () => {
+    state.acted.push('picture');
+    return 'avatars/7/picture.webp';
+  },
+  removeProfilePicture: async () => {
+    state.acted.push('picture-removed');
+    return true;
+  },
+}));
+vi.mock('h3', async (original) => ({
+  ...(await original<typeof import('h3')>()),
+  getRequestWebStream: () => undefined,
+}));
 
 interface FakeEvent {
   body?: unknown;
@@ -88,7 +122,7 @@ async function loadRoute(path: string): Promise<Handler> {
   return underRoutePermission(state, (await import(path)).default as Handler);
 }
 
-const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: string }> = [
+const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: string; contributor?: true }> = [
   {
     name: 'POST /api/users/:id/api-keys',
     handler: await loadRoute('../../server/api/users/[id]/api-keys/index.post'),
@@ -108,6 +142,18 @@ const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: st
     acts: 'unlink',
   },
   {
+    name: 'PUT /api/auth/avatar',
+    handler: await loadRoute('../../server/api/auth/avatar.put'),
+    event: {},
+    acts: 'picture',
+  },
+  {
+    name: 'DELETE /api/auth/avatar',
+    handler: await loadRoute('../../server/api/auth/avatar.delete'),
+    event: {},
+    acts: 'picture-removed',
+  },
+  {
     name: 'POST /api/extension/connect/decision',
     handler: await loadRoute('../../server/api/extension/connect/decision.post'),
     event: { body: { userCode: 'BCDF-GHJK', allow: true } },
@@ -119,24 +165,36 @@ const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: st
     event: { params: { id: 'request' }, body: { allow: true } },
     acts: 'mcp-oauth',
   },
+  {
+    name: 'POST /api/run-requests',
+    handler: await loadRoute('../../server/api/run-requests/index.post'),
+    event: { body: { source: { runId: 1, tests: 'failed' } } },
+    acts: 'run-request',
+    contributor: true,
+  },
 ];
 
 const user = { id: 7, role: InstanceRole.MEMBER, username: 'robin', name: null } as unknown as User;
 const signedIn: RouteCaller = { user, access: buildAccessSummary(InstanceRole.MEMBER, []) };
+const contributor: RouteCaller = {
+  user,
+  access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.CONTRIBUTOR }]),
+};
 
 beforeEach(() => {
   state.acted = [];
 });
 
-describe.each(ROUTES)('$name', ({ handler, event, acts }) => {
+describe.each(ROUTES)('$name', ({ handler, event, acts, contributor: needsRole }) => {
+  const caller = needsRole ? contributor : signedIn;
   test('refuses an API key before it acts', async () => {
-    state.caller = { ...signedIn, apiKey: true };
+    state.caller = { ...caller, apiKey: true };
     await expect(handler(event)).rejects.toMatchObject({ statusCode: 403 });
     expect(state.acted).toEqual([]);
   });
 
   test('acts for a signed-in session', async () => {
-    state.caller = signedIn;
+    state.caller = caller;
     await handler(event);
     expect(state.acted).toContain(acts);
   });

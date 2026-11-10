@@ -65,9 +65,18 @@ and `local` otherwise. A launcher names itself through these environment variabl
 Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `bisect` with the cluster id), the
 editors (`editor`, with a ref of their own on each test run, which they find the run by), `piwi preflight --run`
 (`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab and probes. The desktop app also names each
-run it starts with `PIWI_RUN_REF`, so two runs started for the same cluster each find their own Piwi run. A
-[re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as `ci-rerun` once
-Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
+run it starts with `PIWI_RUN_REF`, so two runs started for the same cluster each find their own Piwi run. Every run
+outside CI records a `piwiRunRef`, with `@piwitests/reporter` 0.68.0 or later: the one given, else an editor's
+`PIWI_ORIGIN_REF`, else one of its own, `local-<pid>-<time>`. A
+[re-run dispatched from the dashboard](/features/ci-rerun) is recorded as `ci-rerun` once
+Piwi recognizes it, an imported report as `import`, and a run a person asked for from the dashboard as `request`,
+by the server from the request token that started it: a `request` the reporter sends is dropped. You rarely set them
+yourself.
+
+A run whose workers connect to an editor or the desktop app, which steer it at their breakpoints (a run either of them
+started, or one [started in a terminal](/features/terminal-runs) that follows an editor), also records
+`piwiInteractive`: the editor's name (else the `PIWI_ORIGIN` its launcher set) as `client`, and the run's name there
+as `ref`.
 
 What each origin feeds:
 
@@ -79,13 +88,14 @@ What each origin feeds:
   [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
   [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with three exceptions. An editor's CI
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with four exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
   none. An `editor` run's failures join their clusters without counting as occurrences. An `editor` run, or a `local`
   or `desktop` run of part of the suite, fires no run, new-cluster, fixed, regressed, flakiness or
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
-  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
+  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own. No local run, and
+  no `piwi bug` run, sends [`test.stuck`](/features/stuck-tests#the-notification), complete or not.
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
@@ -128,6 +138,42 @@ next run that reports the test.
 
 Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
 leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+
+#### Tag limit
+
+Piwi keeps at most 20 tags per test, each cut to 60 characters, in the order Playwright lists them; duplicates count
+once. A test that declares more keeps its first 20 and loses the rest. The reporter warns about it once as the run
+begins, naming the tests (20 at most), and records them on the run: the run page shows "Tags cut at 20 on N tests",
+with the tests in its Details. When more than 20 tests lost tags, the page shows "at least 20 tests", the number it
+lists, since merging a run's reports (shards, or a payload sent in batches) can count a test twice. The dashboard does
+the same for a run sent without the reporter, or imported from a blob report.
+
+Which tags are cut depends on Playwright's order. Playwright 1.64.1 builds `TestCase.tags` from the config's `tag`
+first, then each `describe` from the outermost in (the @-words of its title, then its `tag` option), then the @-words
+of the test title, and the test's own `tag` option last. So a tag in the test's `tag` option is the first to go. To
+keep the tags that matter:
+
+- keep config and `describe` tags few;
+- put the tags that matter in the test title (`test('checkout @SHOP-T123', …)`), which comes before the `tag` option;
+- for the one identifier that matters most, use an [external test ID](#external-test-ids) instead of a tag.
+
+#### Keys in test tags
+
+A tag can name the issue a test is tracked in (`SHOP-1234`) or the test case it covers (`SHOP-T123`). Two patterns, under
+**Project → Settings → Integrations → Keys in test tags**, tell Piwi which tags are which:
+
+- **Issue key**: a tag naming an issue, such as `^[A-Z][A-Z0-9]+-[0-9]+$`.
+- **Test case key**: a tag naming a test case, such as `^SHOP-T[0-9]+$`.
+
+A pattern is a regular expression without flags, tested against the tag without its `@`, at most 200 characters. Anchor
+it with `^` and `$` and use letters, digits, character classes and quantifiers only, with no groups or `|`:
+`^SHOP-T[0-9]+$` matches `SHOP-T123` and not `SHOP-1234`. A pattern that breaks that rule, does not compile, or matches
+an empty tag (and so every tag) is refused. Leave a field empty to turn it off; both are off by default, and neither
+needs a tracker connection. Saving needs the same role as the rest of the project's settings.
+
+When both patterns are on, the section lists the tags of the project's last complete run (the whole suite, finished;
+partial, lab and private runs are skipped) that both patterns match, each with a test that carries it. Piwi would read
+such a tag as an issue and as a test case, so anchor the patterns until the list is empty. It lists 20 tags at most.
 
 ### Test locks
 
@@ -324,6 +370,18 @@ lines and characters were cut between them. The dashboard stores each stream onc
 executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
 [offline export](/features/offline-export) and through the MCP `get_test_run_case` tool. An
 [imported blob report](/guide/importing-runs) keeps each attempt's output the same way.
+
+### Worker lanes
+
+The reporter sends each attempt's worker twice: Playwright's `workerIndex`, the worker process, which is new every time
+Playwright starts one (after a failed test, or for a test that needs another project or other worker options), and
+its `parallelIndex`, the lane the process runs in, which the process started in its place keeps. The dashboard names a
+worker by its lane, from 1 in each shard: **Worker 2** on the run's Timeline, in the Tests list's **Worker** sort, on
+the execution page, in its [offline export](/features/offline-export) and in a `test.stuck`
+[notification](/reference/notification-events), and `worker: 2` in the MCP `get_run` and `get_test_run_case` tools.
+A [blob report you import](/guide/importing-runs) keeps both. A run from a reporter that sends no lane names a worker
+by its process, and its Timeline works the lanes out from when each process ran; the MCP tools then give its
+`workerIndex` in place of `worker`.
 
 ### Hooks
 

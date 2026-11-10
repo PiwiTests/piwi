@@ -33,7 +33,7 @@ import {
   SCOPE_ROLES,
   type HighlightSpan,
   type TokenRole,
-} from '#shared/highlight';
+} from '@piwitests/run-ui/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { stepLabelParts } from '@piwitests/core/step-analysis';
 import { percent, type OutcomeSegment } from '#shared/notifications/message-parts';

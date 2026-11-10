@@ -153,6 +153,7 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
   note.textContent = view.note ?? '';
   document.getElementById('caption')!.textContent = view.caption;
   picture.classList.toggle('pick', !!view.pick && !active());
+  picture.classList.toggle('stale', !!view.stale);
   if (view.image?.data) {
     picture.src = `data:image/jpeg;base64,${view.image.data}`;
     picture.hidden = false;

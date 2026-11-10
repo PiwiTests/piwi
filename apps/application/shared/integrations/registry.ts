@@ -5,15 +5,33 @@
  * it loads unchanged in the app, the demo and plain Node.
  */
 
-/** Whether a provider files tickets (tracker) or publishes pages (wiki). */
-export type IntegrationKind = 'tracker' | 'wiki';
+/**
+ * What a provider is for: it files tickets (tracker), receives test results (test management) or publishes pages
+ * (wiki). The outbox reads a project's binding and builds a client per kind: a kind with neither runs nothing.
+ */
+export type IntegrationKind = 'tracker' | 'test-management' | 'wiki';
+
+/** One host a `region` provider can be reached on. */
+export interface ProviderRegion {
+  id: string;
+  label: string;
+  baseUrl: string;
+}
+
+/**
+ * How a provider is reached: at an address the administrator types (`url`, a Jira site), or on one of the hosts the
+ * provider runs (`region`), whose base URL the server derives so no typed host reaches the outbound client.
+ */
+export type ProviderEndpoint = { kind: 'url' } | { kind: 'region'; regions: readonly ProviderRegion[] };
 
 /** A field the connect form collects into the connection's credential blob. */
 export interface CredentialField {
   /** Key inside the encrypted credentials JSON. */
   key: string;
   label: string;
-  type: 'text' | 'password';
+  type: 'text' | 'password' | 'select';
+  /** The choices of a `select` field. */
+  options?: readonly { value: string; label: string }[];
   /** Redacted on read and never returned by any endpoint. */
   secret?: boolean;
   required?: boolean;
@@ -26,6 +44,8 @@ export interface IntegrationProviderMeta {
   label: string;
   /** Icon name for the provider (Nuxt UI icon syntax). */
   icon: string;
+  /** How the connection reaches the provider. */
+  endpoint: ProviderEndpoint;
   /** What the provider's client can do. */
   capabilities: readonly string[];
   /** The credential inputs the connect form generates, beyond name and base URL. */
@@ -39,6 +59,7 @@ export const INTEGRATION_PROVIDERS = {
     kind: 'tracker',
     label: 'Jira',
     icon: 'i-simple-icons-jira',
+    endpoint: { kind: 'url' },
     capabilities: ['create', 'update', 'comment', 'transition', 'search', 'attach', 'assignable-users', 'webhook'],
     credentialFields: [
       {
@@ -94,4 +115,62 @@ export function nonSecretCredentials(
     if (typeof value === 'string' && value !== '') out[field.key] = value;
   }
   return out;
+}
+
+/** How a provider is reached, or null for a provider this build does not know. */
+export function providerEndpoint(provider: string): ProviderEndpoint | null {
+  return isIntegrationProvider(provider) ? (INTEGRATION_PROVIDERS[provider].endpoint as ProviderEndpoint) : null;
+}
+
+/**
+ * The base URL a connection reached through `endpoint` is stored with: the typed address for a `url` endpoint, the
+ * chosen region's host for a `region` endpoint, which ignores any typed address and also returns the region. An error
+ * message when the input does not name one.
+ */
+export function endpointBaseUrl(
+  endpoint: ProviderEndpoint,
+  input: { baseUrl?: string | null; region?: string | null },
+): { baseUrl: string; region?: string } | { error: string } {
+  if (endpoint.kind === 'region') {
+    const region = endpoint.regions.find((r) => r.id === input.region);
+    return region ? { baseUrl: region.baseUrl, region: region.id } : { error: 'Choose one of the provider’s regions' };
+  }
+  if (!input.baseUrl) return { error: 'Enter the address of the site' };
+  try {
+    new URL(input.baseUrl);
+  } catch {
+    return { error: 'Must be a valid URL' };
+  }
+  return { baseUrl: input.baseUrl };
+}
+
+/** {@link endpointBaseUrl} for a provider by name. */
+export function connectionBaseUrl(
+  provider: string,
+  input: { baseUrl?: string | null; region?: string | null },
+): { baseUrl: string; region?: string } | { error: string } {
+  const endpoint = providerEndpoint(provider);
+  return endpoint ? endpointBaseUrl(endpoint, input) : { error: 'Unknown provider' };
+}
+
+/** Why a credential map does not fit `fields`: a `select` field set to none of its options. Else null. */
+export function selectFieldError(
+  fields: readonly CredentialField[],
+  credentials: Record<string, string> | null | undefined,
+): string | null {
+  for (const field of fields) {
+    const value = credentials?.[field.key];
+    if (field.type !== 'select' || value == null || value === '') continue;
+    if (!field.options?.some((option) => option.value === value)) return `${field.label}: choose one of its options`;
+  }
+  return null;
+}
+
+/** {@link selectFieldError} for a provider's credential fields; null for a provider this build does not know. */
+export function credentialFieldError(
+  provider: string,
+  credentials: Record<string, string> | null | undefined,
+): string | null {
+  if (!isIntegrationProvider(provider)) return null;
+  return selectFieldError(INTEGRATION_PROVIDERS[provider].credentialFields as readonly CredentialField[], credentials);
 }

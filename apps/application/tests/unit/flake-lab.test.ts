@@ -323,6 +323,19 @@ describe('combining arms', () => {
     ]);
     expect(lab.combineFlakeArms([{ conditions: [{ kind: 'cpu', rate: 4 }] }])).toBeNull();
   });
+
+  test('keeps one time zone and one locale', () => {
+    expect(
+      lab.combineFlakeArms([
+        { conditions: [{ kind: 'timezone', timeZone: 'UTC' }] },
+        { conditions: [{ kind: 'locale', locale: 'fr-FR' }] },
+        { conditions: [{ kind: 'timezone', timeZone: 'Europe/Paris' }] },
+      ]),
+    ).toEqual([
+      { kind: 'timezone', timeZone: 'UTC' },
+      { kind: 'locale', locale: 'fr-FR' },
+    ]);
+  });
 });
 
 const DELAY = [{ kind: 'delay', route: 'GET /api/cart', ms: 1800 }];

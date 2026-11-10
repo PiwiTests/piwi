@@ -26,17 +26,18 @@ channel, so a per-user install pulls a per-user update.
    `desktop_set_retention_days`) reaches the server as `PIWI_RETENTION_DAYS`;
    until one is picked, the server follows the environment the app started in.
 2. It polls `GET /api/health` (200 = database migrated) until the answer
-   carries the random nonce the shell gave this launch's sidecar
-   (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
-   process that took the port never receives the token, then points the window
-   at the server via a one-time token bootstrap (`/__piwi/session`). The
+   answers the probe's fresh challenge with the proof of the desktop token
+   (`X-Piwi-Desktop-Proof`), so another process that took the port never
+   receives the token, then points the window
+   at the server via a single-use session code (`/__piwi/session?code=…`). The
    window may only navigate to its bundled pages and that server's exact origin,
    and the app's IPC commands are granted to that origin alone
    (`src-tauri/runtime-capabilities/remote.json`, added at startup for the port).
    The splash says when the server takes longer than a minute and keeps waiting;
    it says the server stopped once the supervisor, which restarts a crashed server
-   with a backoff, gives up. The dashboard shows the restarts as a toast
-   (`server-status` events).
+   with a backoff, gives up. While the server restarts, the window shows the
+   splash with that status and the other windows close; the dashboard loads again
+   once the new process proves it holds the token.
 3. The tray offers **Run in background** (keep serving after the window closes;
    on macOS a click on the Dock icon brings the window back), **Start on login**,
    **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
@@ -156,12 +157,14 @@ channel, so a per-user install pulls a per-user update.
     none. A link that launched the app (its one argument on Windows and Linux)
     or came while the server started waits in `LinkedPage` and reaches the
     session bootstrap as `to`, which redirects to it once `desktopPagePath`
-    accepts it. One that comes while the dashboard page loads waits until the
-    page listens and takes it (`desktop_take_linked_page`); after that, a link
-    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
-    its link to the running app through single-instance's `deep-link` feature.
-    Only the `open` host is read, so a link shows a page and never acts, and a
-    launch whose first argument is a link acts on no other argument
+    accepts it. One that comes while the dashboard page loads, or after the
+    server exits (`SessionWindows::hold_links`), waits until the page listens
+    and takes it (`desktop_take_linked_page`), the restarted session's page
+    included; while the session is not live, no page takes it. After that, a
+    link goes to the window as `piwi:open-page` (`open_links`). A second launch
+    hands its link to the running app through single-instance's `deep-link`
+    feature. Only the `open` host is read, so a link shows a page and never
+    acts, and a launch whose first argument is a link acts on no other argument
     (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
     it can split.
 
@@ -301,6 +304,13 @@ keeps the previous release the latest when it creates one, and the `latest` job 
 `reusable-publish-desktop.yml` promotes the new one after the four legs pass. While
 a release builds, or when one of its legs failed, the app keeps finding the
 previous release and its complete manifests.
+
+When a check finds an update, the card asks the shell for the notes of every
+release after the installed version up to the offered one
+(`desktop_get_release_notes`): the shell reads GitHub's public releases API
+(`api.github.com/repos/PiwiTests/piwi/releases`, anonymous, up to two pages of
+100) and keeps the answer for that version. GitHub allows 60 anonymous requests
+an hour per address; past that, the card links to the releases page instead.
 
 The `.exe` channel installs **quietly**: its overlay sets the updater's
 `windows.installMode` to `quiet`, so the plugin starts the NSIS installer with

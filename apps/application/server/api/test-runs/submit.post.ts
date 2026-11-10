@@ -19,14 +19,16 @@ import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import type { TestRunSubmitPayload } from '#shared/types';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Submit test results as JSON',
     description:
-      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
+      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -93,11 +95,12 @@ export default eventHandler(async (event) => {
       // share, and the last shard to arrive settles it.
       const run = await batchShardRun(db, project.id, instanceId, body);
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+      await saveEnvironmentSnapshots(db, run.id, body.environments);
       await applyReporterKeep(db, run.id, body.keep);
       if (testCases.length > 0) await persistRunCases(db, project.id, run.id, testCases.map(mapWireCaseToRunCase));
       await addBatchShard(db, run.id, batchShardTally(body, testCases));
       if (!(await finalizeShardedRun(db, run.id, 'run-submitted'))) await publishShardProgress(db, run.id);
-      return { success: true, runId: run.id, projectId: project.id };
+      return { success: true, runId: run.id, runUrl: publicRunUrl(run.id), projectId: project.id };
     }
 
     // A run of its own: not sharded, or sharded with no instance id to join its shards by
@@ -115,6 +118,7 @@ export default eventHandler(async (event) => {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
     };
   });

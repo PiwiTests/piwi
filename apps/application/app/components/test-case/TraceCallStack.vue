@@ -11,7 +11,7 @@
 import type { TraceStackFrame } from '~~/types/api';
 import type { DebugInIdeTarget } from '~/composables/useOpenInIde';
 import { atFailurePlace } from '~/utils/ide-links';
-import { highlightLines, languageForPath } from '#shared/highlight';
+import { highlightLines, languageForPath } from '@piwitests/run-ui/highlight';
 
 const props = defineProps<{
   frames: TraceStackFrame[];

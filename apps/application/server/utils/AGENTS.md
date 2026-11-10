@@ -229,11 +229,16 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **The window's stream counts what the window has not read.** `runs/events.get.ts` writes to the response itself, its
   sink's `buffered()` being `res.writableLength`, so a frame waits past 1 MB unread and the stream is cut past 32 MB, as
   the hub does with a WebSocket; a `ReadableStream` handed to h3 counts nothing (`desktop-runs-events.test.ts`).
+- **The run target's part of the window's streams and the session is the editor service's.** `desktop/events.get.ts`
+  and `desktop/notifications.get.ts` call `openWindowStream` and `openShellStream`, and `__piwi/session.get.ts` sets
+  the answer of `answerSession` (`@piwitests/editor/run-target-stream`, `run-target-session`): never a copy of what they
+  say or of the token check. These streams hand h3 a `ReadableStream`, so they count nothing unread, unlike
+  `runs/events.get.ts` (`desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
   (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
-  its disk text, and refused once the file was written since the run's first worker connected.
+  its disk text, and refused once the file was written since the run's first connection opened.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
   **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref

@@ -24,7 +24,7 @@ import { describeDidNotRun } from '../did-not-run';
 import { ticketReconcileKey } from '#shared/cluster-state';
 import { clusterFailureGoesOn, getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, notLabRunOrOwn } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -71,9 +71,10 @@ import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
  * repetition, read from its final attempt (`testCaseAggregates`), so a retry
  * never counts as a run of its own. Executions of lab runs (probes, flake
  * experiments) replay the test under injected conditions, so they never count
- * toward the stats nor show as its history.
+ * toward the stats nor show as its history. `viewerId`'s own requested runs
+ * (origin `request`) show in its recent executions, and count in nothing.
  */
-export async function getTestCase(db: DrizzleDB, id: number) {
+export async function getTestCase(db: DrizzleDB, id: number, viewerId: number | null = null) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
   if (!testCase) return null;
   const realExecution = and(eq(testRunsCases.testCaseId, id), notLabExecution(testRunsCases.testRunId));
@@ -125,6 +126,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         runId: testRuns.id,
         runStatus: testRuns.status,
         runLabel: testRuns.label,
+        runOrigin: testRuns.origin,
         startTime: testRuns.startTime,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
@@ -132,7 +134,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.origin)))
+      .where(and(eq(testRunsCases.testCaseId, id), notLabRunOrOwn(viewerId, testRuns.origin)))
       .orderBy(desc(testRuns.startTime))
       .limit(20),
     db
@@ -381,7 +383,7 @@ export async function getTestRunCase(
   if (testRun) {
     const [projectResult] = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
     if (projectResult) {
-      const { scmToken: _scmToken, ...projectPublic } = projectResult;
+      const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectPublic } = projectResult;
       project = projectPublic;
     }
   }
@@ -588,7 +590,7 @@ export async function getTestRunCase(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
   // cluster and owner — built from what is already loaded above, and for a retry
@@ -802,6 +804,7 @@ export async function getTestRunCase(
     ariaSnapshot: evidence.ariaSnapshot,
     evidenceSources: trc.evidenceSources,
     workerIndex: trc.workerIndex,
+    parallelIndex: trc.parallelIndex ?? null,
     shardIndex: trc.shardIndex,
     browser: trc.browser,
     isNewRegression: trc.isNewRegression ?? null,

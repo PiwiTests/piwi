@@ -18,6 +18,7 @@
 import { testTextLabel } from '#shared/utils/test-label';
 import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import {
   bugReports,
   failureClusters,
@@ -489,20 +490,23 @@ export async function postRunPrFeedback(
   let statusPosted = false;
   const statuses: string[] = [];
   if (settings.status && commit) {
-    statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    statusPosted = await provider.postCommitStatus(commit, {
+      ...buildCommitStatus(summary, settings.statusContext),
+      ref: branch,
+    });
     if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
     if (effectiveChangeCoverage && hasChangeCoverage(effectiveChangeCoverage)) {
       const coverageContext = `${settings.statusContext}/change-coverage`;
       const coveragePosted = await provider
-        .postCommitStatus(
-          commit,
-          buildChangeCoverageStatus(
+        .postCommitStatus(commit, {
+          ...buildChangeCoverageStatus(
             effectiveChangeCoverage,
             changeCoverageStatusUrl(effectiveChangeCoverage, summary.runUrl),
             coverageContext,
           ),
-        )
+          ref: branch,
+        })
         .catch(() => false);
       if (coveragePosted) statuses.push(coverageContext);
     }
@@ -632,7 +636,7 @@ export async function refreshCommitPrFeedback(db: DbClient, projectId: number, c
   const runs = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit)))
+    .where(and(eq(testRuns.projectId, projectId), eq(testRuns.commit, commit), notPrivateRun()))
     .orderBy(desc(testRuns.id))
     .limit(REFRESHED_RUNS_SCANNED);
   if (runs.length === 0) return;

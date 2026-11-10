@@ -102,7 +102,7 @@ describe('buildResourceBands', () => {
     expect(band!.tracks.memory).toMatchObject({ yMax: 4 * GB, atCapacity: false, scaleLabel: 'peak 4.0 GB' });
     expect(band!.workers).toEqual([
       {
-        name: 'Worker 0',
+        name: 'Worker 1',
         lane: 0,
         points: [
           [0, 1],
@@ -113,7 +113,7 @@ describe('buildResourceBands', () => {
         ],
       },
       {
-        name: 'Worker 1',
+        name: 'Worker 2',
         lane: 1,
         points: [
           [500, 1],
@@ -150,7 +150,7 @@ describe('buildResourceBands', () => {
       ['resources-1', 0, 'S1'],
       ['resources-2', 2, 'S2'],
     ]);
-    expect(bands[1]!.workers.map((w) => w.name)).toEqual(['S2 W0', 'S2 W1']);
+    expect(bands[1]!.workers.map((w) => w.name)).toEqual(['S2 W1', 'S2 W2']);
   });
 
   test('pairs a single reporter with a single shard of rows whatever their numbers', () => {
@@ -265,8 +265,8 @@ describe('the strip under each worker', () => {
     const set = buildWorkerStrips('pages', input)!;
     expect(set).toMatchObject({ yMax: 2, scaleLabel: '2 pages' });
     expect(set.strips.map((strip) => [strip.name, strip.mode, strip.points.length])).toEqual([
-      ['Worker 0', 'step', 5],
-      ['Worker 1', 'step', 2],
+      ['Worker 1', 'step', 5],
+      ['Worker 2', 'step', 2],
     ]);
     expect(stripReading(set, set.strips[0]!, 1500)).toBe('2 open');
   });
@@ -392,5 +392,19 @@ describe('layOutTimelineRows', () => {
       [148, 174, 192],
     ]);
     expect(layout.height).toBe(192);
+  });
+
+  test('puts the tails of what a worker kept open right under its bars, and the strip under them', () => {
+    const layout = layOutTimelineRows(rows, {
+      ...sizes,
+      bandHeights: new Map(),
+      tailHeights: new Map([[0, 12]]),
+      strips: true,
+    });
+    expect(layout.rows.map((r) => [r.top, r.tailTop, r.stripTop, r.bottom])).toEqual([
+      [28, 54, 66, 84],
+      [84, null, 142, 160],
+      [160, null, 186, 204],
+    ]);
   });
 });

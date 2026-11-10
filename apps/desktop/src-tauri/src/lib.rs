@@ -18,7 +18,9 @@ mod mcp_clients;
 mod mcp_stdio;
 mod private_fs;
 mod repro;
+mod run_target;
 mod runner;
+mod session;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;
@@ -54,8 +56,8 @@ use mcp_clients::{
     desktop_skills_write,
 };
 use updates::{
-    desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
-    desktop_set_update_notification,
+    desktop_check_update, desktop_get_release_notes, desktop_get_update_settings, desktop_install_update,
+    desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
@@ -63,6 +65,10 @@ use runner::{
     desktop_set_project_link, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
+use run_target::{
+    desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder, desktop_request_folders,
+    desktop_run_requested_tests, desktop_unlink_request_folder,
+};
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
 };
@@ -95,9 +101,17 @@ const READY_TIMEOUT_SECS: u64 = 60;
 /// The splash's status line once the server takes longer than `READY_TIMEOUT_SECS`.
 const SPLASH_SLOW: &str =
     "The local server is taking longer than usual to start. Still waiting: the window opens the dashboard once it is up.";
+/// The splash's status line while the server restarts.
+const SPLASH_RESTARTING: &str = "The local server stopped. Restarting it: the window opens the dashboard again once it is up.";
 /// The splash's status line once the supervisor stopped restarting the server.
 const SPLASH_STOPPED: &str =
     "The local server stopped and could not be restarted. Quit and relaunch, or open the logs from the tray.";
+/// How the wait for the server's proof paces itself.
+const PROOF_PACE: session::ProofPace = session::ProofPace {
+    slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
+    poll: Duration::from_millis(250),
+    slow_poll: Duration::from_millis(1000),
+};
 /// Backoff before each auto-restart of a crashed server, capped at the last value.
 const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
 /// Stop auto-restarting once the server has crashed this many times inside
@@ -147,7 +161,7 @@ struct ShuttingDown(Arc<AtomicBool>);
 
 /// Set once the supervisor stopped restarting the server: the readiness wait ends then.
 #[derive(Default)]
-struct ServerGaveUp(AtomicBool);
+pub(crate) struct ServerGaveUp(AtomicBool);
 
 /// Shared "keep serving after the window closes" flag (tray toggle + close handler).
 struct RunInBackground(Arc<AtomicBool>);
@@ -172,11 +186,6 @@ struct LogFile(PathBuf);
 /// Whether this launch enabled debug mode (`--devtools` / `PIWI_DEBUG`), so the
 /// aux-window opener can mirror the main window and open the inspector too.
 struct DebugMode(bool);
-
-/// The nonce this launch gave its server (`PIWI_DESKTOP_LAUNCH_NONCE`): a
-/// request carrying the desktop token goes only to a server whose readiness
-/// probe echoes it (`health_ok`).
-struct LaunchNonce(String);
 
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
@@ -248,7 +257,8 @@ fn link_page(url: &tauri::Url) -> Option<String> {
 /// The page a link asked for while the dashboard page could not open it: the
 /// session bootstrap opens it (`bootstrap_url`), or the page takes it once it
 /// listens (`desktop_take_linked_page`). From then on, until the window loads
-/// another document, the window opens a link's page itself.
+/// another document, the window opens a link's page itself. While the session
+/// is not live, a link waits and no page takes it.
 #[derive(Default)]
 struct LinkedPage(Mutex<LinkedPageInner>);
 
@@ -260,10 +270,11 @@ struct LinkedPageInner {
 
 impl LinkedPage {
     /// Keep `page` until the dashboard page can open it: `false` while it
-    /// listens, when the window opens it instead. The last link wins.
-    fn hold(&self, page: &str) -> bool {
+    /// listens and the session is `live`, when the window opens it instead.
+    /// The last link wins.
+    fn hold(&self, page: &str, live: impl FnOnce() -> bool) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if inner.page_listens {
+        if inner.page_listens && live() {
             return false;
         }
         inner.waiting = Some(page.to_string());
@@ -276,14 +287,20 @@ impl LinkedPage {
     }
 
     /// The dashboard page listens: the page a link asked for so far, if any.
-    /// Links that come after go to the window.
-    fn take_as_page_listens(&self) -> Option<String> {
+    /// Links that come after go to the window. A page that asks while the
+    /// session is not `live` belongs to a sidecar that exited: it gets
+    /// nothing, and links keep waiting.
+    fn take_as_page_listens(&self, live: impl FnOnce() -> bool) -> Option<String> {
         let mut inner = self.0.lock().unwrap();
+        if !live() {
+            return None;
+        }
         inner.page_listens = true;
         inner.waiting.take()
     }
 
-    /// The window loads another document: links wait until it listens again.
+    /// The window loads another document, or the sidecar the page belongs to exits: links wait until the next
+    /// dashboard page listens.
     fn page_unloads(&self) {
         self.0.lock().unwrap().page_listens = false;
     }
@@ -293,7 +310,12 @@ impl LinkedPage {
 /// window hears of each link (`OPEN_PAGE_EVENT`).
 #[tauri::command]
 fn desktop_take_linked_page(app: tauri::AppHandle) -> Option<String> {
-    app.try_state::<LinkedPage>().and_then(|linked| linked.take_as_page_listens())
+    app.try_state::<LinkedPage>().and_then(|linked| linked.take_as_page_listens(|| session_is_live(&app)))
+}
+
+/// Whether the dashboard window's session is live (`session::Session::is_live`).
+fn session_is_live(app: &AppHandle) -> bool {
+    app.try_state::<session::Session>().is_some_and(|session| session.is_live())
 }
 
 /// The command-line arguments the app acts on: all of them, or only its own
@@ -335,7 +357,7 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
         }
         return;
     };
-    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page));
+    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page, || session_is_live(app)));
     if held {
         if let Some(w) = app.get_webview_window("main") {
             bring_to_front(&w);
@@ -345,11 +367,12 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
     }
 }
 
-/// The URL that signs the window in to the server (`/__piwi/session`), then
-/// shows `page`, or the home page.
-fn bootstrap_url(port: u16, token: &str, page: Option<&str>) -> String {
+/// The URL that signs the window in to the server (`/__piwi/session`) with the
+/// single-use session `code`, then shows `page`, or the home page. The access
+/// token is never in it.
+fn bootstrap_url(port: u16, code: &str, page: Option<&str>) -> String {
     let mut url = tauri::Url::parse(&format!("http://127.0.0.1:{port}/__piwi/session")).expect("a valid URL");
-    url.query_pairs_mut().append_pair("token", token);
+    url.query_pairs_mut().append_pair("code", code);
     if let Some(page) = page {
         url.query_pairs_mut().append_pair("to", page);
     }
@@ -615,7 +638,7 @@ fn desktop_set_run_progress(
 pub(crate) fn random_hex_32() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -718,51 +741,212 @@ fn pick_port(preferred: u16) -> u16 {
         .expect("failed to acquire a free loopback port")
 }
 
-/// The response header the sidecar's `/api/health` echoes the launch nonce in.
-const LAUNCH_NONCE_HEADER: &str = "x-piwi-desktop-nonce";
+/// The request header carrying the readiness probe's challenge.
+const DESKTOP_CHALLENGE_HEADER: &str = "x-piwi-desktop-challenge";
+
+/// The response header the sidecar answers the challenge in.
+const DESKTOP_PROOF_HEADER: &str = "x-piwi-desktop-proof";
 
 /// How long one readiness probe waits to connect. Windows retries a connect to a
 /// loopback port nobody listens on for seconds before refusing it; this bound
 /// keeps each probe made while the server is still starting short.
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Dependency-free readiness probe. `/api/health` returns 200 only after the
-/// database has migrated, so a 200 means the app is ready to load — when it
-/// also carries this launch's nonce, which only the sidecar this app spawned
-/// knows. Another process that took the port first never gets the session
-/// bootstrap and its token.
-fn health_ok(port: u16, nonce: &str) -> bool {
+/// Readiness probe. `/api/health` returns 200 only after the database has
+/// migrated, so a 200 means the app is ready to load, when it also answers this
+/// probe's fresh challenge with the proof that it holds `token`
+/// (`proof_matches`), which only the sidecar this app spawned knows. Another
+/// process that took the port first never gets the session bootstrap and the
+/// token, and an answer it recorded earlier proves nothing for a new challenge.
+fn health_ok(port: u16, token: &str) -> bool {
     use std::io::{Read, Write};
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let req =
-        format!("GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    let challenge = random_hex_32();
+    let req = format!(
+        "GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: close\r\n\r\n"
+    );
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
     // The headers fit well within this; a read cut short by the timeout keeps what arrived.
     let mut buf = Vec::new();
     let _ = stream.take(16 * 1024).read_to_end(&mut buf);
-    health_response_proves(&String::from_utf8_lossy(&buf), nonce)
+    health_response_proves(&String::from_utf8_lossy(&buf), token, port, &challenge)
 }
 
-/// Whether a raw `/api/health` response is a 200 carrying `nonce` in
-/// [`LAUNCH_NONCE_HEADER`].
-fn health_response_proves(response: &str, nonce: &str) -> bool {
+/// The most a proof response may hold, head and body together.
+const MAX_PROOF_RESPONSE: usize = 16 * 1024;
+
+/// Open a connection to the server on `port` for a request that carries `token`, once the
+/// server has proved on that connection that it holds the token (`health_ok`'s challenge). The
+/// connection is kept open and returned, so the request with the token goes to the process that
+/// proved it, never to one that took the port after the proof. A server that answers the proof
+/// and ends the connection gets nothing: the caller opens no other. Every request the shell makes
+/// with the token goes through here, the request for the webview's session code
+/// (`session::session_url`) included: the webview's own request carries the code, never the token.
+pub(crate) fn connect_proving_token(port: u16, token: &str) -> Result<std::net::TcpStream, String> {
+    use std::io::{Read, Write};
+    const NOT_ANSWERING: &str = "the local server is not answering";
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, PROBE_CONNECT_TIMEOUT)
+        .map_err(|_| NOT_ANSWERING.to_string())?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let challenge = random_hex_32();
+    let request = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{DESKTOP_CHALLENGE_HEADER}: {challenge}\r\nConnection: keep-alive\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).map_err(|_| NOT_ANSWERING.to_string())?;
+    let mut received = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let (head, exact) = loop {
+        if let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+            let body = &received[end + 4..];
+            let head = String::from_utf8_lossy(&received[..end]).to_string();
+            match response_body_len(&head, body) {
+                Ok(Some(len)) => break (head, len == body.len()),
+                Ok(None) => {}
+                Err(()) => return Err(NOT_ANSWERING.to_string()),
+            }
+        }
+        if received.len() > MAX_PROOF_RESPONSE {
+            return Err(NOT_ANSWERING.to_string());
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return Err(NOT_ANSWERING.to_string()),
+            Ok(n) => received.extend_from_slice(&chunk[..n]),
+        }
+    };
+    if !exact
+        || head_has_connection_close(&head)
+        || !health_response_proves(&head, token, port, &challenge)
+        || !connection_is_open(&stream)
+    {
+        return Err(NOT_ANSWERING.to_string());
+    }
+    let _ = stream.set_read_timeout(None);
+    Ok(stream)
+}
+
+/// How many bytes of `body` the response with `head` has, when `body` holds all of it: `Some`, or
+/// `None` when more is to come. A response whose end is not framed (no `Content-Length`, not chunked) is
+/// `Err`: it ends only with the connection.
+fn response_body_len(head: &str, body: &[u8]) -> Result<Option<usize>, ()> {
+    let header = |wanted: &str| {
+        head.split("\r\n").skip(1).find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim().eq_ignore_ascii_case(wanted).then(|| value.trim().to_string())
+        })
+    };
+    if header("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked")) {
+        return Ok(chunked_body_len(body));
+    }
+    let len: usize = header("content-length").ok_or(())?.parse().map_err(|_| ())?;
+    Ok((body.len() >= len).then_some(len))
+}
+
+/// The length of the chunked body at the start of `body` through its last chunk and trailer, or
+/// `None` while it is incomplete or unreadable.
+fn chunked_body_len(body: &[u8]) -> Option<usize> {
+    let mut at = 0;
+    loop {
+        let line_end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+        let size_text = std::str::from_utf8(&body[at..line_end]).ok()?;
+        let size = usize::from_str_radix(size_text.split(';').next()?.trim(), 16).ok()?;
+        at = line_end + 2;
+        if size == 0 {
+            // Trailer lines, then the empty line.
+            loop {
+                let end = at + body.get(at..)?.windows(2).position(|w| w == b"\r\n")?;
+                let empty = end == at;
+                at = end + 2;
+                if empty {
+                    return Some(at);
+                }
+            }
+        }
+        at = at.checked_add(size)?.checked_add(2)?;
+        if body.len() < at {
+            return None;
+        }
+    }
+}
+
+/// Whether a response head says the server ends the connection after it.
+fn head_has_connection_close(head: &str) -> bool {
+    head.split("\r\n").skip(1).any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("connection") && value.to_ascii_lowercase().contains("close")
+        })
+    })
+}
+
+/// Whether the peer still holds `stream` open with nothing more to say: a closed or reset
+/// connection, or bytes nobody asked for, is not one to send a token on.
+fn connection_is_open(stream: &std::net::TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return false;
+    }
+    let open = matches!(
+        stream.peek(&mut [0u8; 1]),
+        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+    );
+    stream.set_nonblocking(false).is_ok() && open
+}
+
+/// Whether a raw `/api/health` response is a 200 carrying, in
+/// [`DESKTOP_PROOF_HEADER`], the proof of `token` for `challenge` on `port`.
+fn health_response_proves(response: &str, token: &str, port: u16, challenge: &str) -> bool {
     let head = response.split("\r\n\r\n").next().unwrap_or("");
     let mut lines = head.split("\r\n");
     let ok = lines
         .next()
         .is_some_and(|status| status.split_whitespace().nth(1) == Some("200"));
-    ok && !nonce.is_empty()
+    ok && !token.is_empty()
         && lines.any(|line| {
             line.split_once(':').is_some_and(|(name, value)| {
-                name.trim().eq_ignore_ascii_case(LAUNCH_NONCE_HEADER) && value.trim() == nonce
+                name.trim().eq_ignore_ascii_case(DESKTOP_PROOF_HEADER)
+                    && proof_matches(token, port, challenge, value.trim())
             })
         })
+}
+
+/// Whether `proof` (hex) is HMAC-SHA256 keyed by `token` over
+/// `piwi-desktop-proof:<port>:<challenge>`, compared in constant time (the same
+/// proof `@piwitests/core/desktop-proof` makes).
+fn proof_matches(token: &str, port: u16, challenge: &str, proof: &str) -> bool {
+    use hmac::{Hmac, Mac};
+    let Some(proof) = decode_hex(proof) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()) else {
+        return false;
+    };
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.verify_slice(&proof).is_ok()
+}
+
+/// The proof an honest server makes for `challenge` (the Rust side of `desktopTokenProof`).
+#[cfg(test)]
+pub(crate) fn proof_of(token: &str, port: u16, challenge: &str) -> String {
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+    mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn decode_hex(text: &str) -> Option<Vec<u8>> {
+    let nibbles = text.chars().map(|c| c.to_digit(16)).collect::<Option<Vec<_>>>()?;
+    if nibbles.len() % 2 != 0 {
+        return None;
+    }
+    nibbles
+        .chunks(2)
+        .map(|pair| u8::try_from(pair[0] * 16 + pair[1]).ok())
+        .collect()
 }
 
 /// The origin the bundled server is served from: the only web origin the
@@ -801,6 +985,24 @@ fn main_window_may_navigate(
         "file" => false,
         _ => true,
     }
+}
+
+/// The port of the sidecar the dashboard window may navigate to: none while its session is not live, so history
+/// and a page's reload cannot return to the sidecar's origin without a proof.
+pub(crate) fn live_sidecar_port(app: &AppHandle) -> Option<u16> {
+    let port = app.try_state::<mcp_clients::ServerInfo>().map(|s| s.port);
+    app.try_state::<session::Session>().and_then(|session| session.sidecar_port(port))
+}
+
+/// A window of the sidecar's origin that was just built stays only if the session is still live on `port`: when the
+/// sidecar exited since the live check, `leave_server` has already closed the other windows and this one, built
+/// after, would stay on the dead origin, so `close` runs and the open fails.
+fn keep_window_if_live(live: Option<u16>, port: u16, close: impl FnOnce()) -> Result<(), String> {
+    if live == Some(port) {
+        return Ok(());
+    }
+    close();
+    Err("the server is not running".into())
 }
 
 /// The IPC grants of the dashboard (`runtime-capabilities/remote.json`), scoped
@@ -1006,8 +1208,6 @@ struct ServerConfig {
     storage_dir: PathBuf,
     secret: String,
     token: String,
-    /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own server.
-    launch_nonce: String,
     port: u16,
     /// `PIWI_RETENTION_DAYS` for the server, when the user chose a retention.
     retention_days: Option<u32>,
@@ -1061,7 +1261,6 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         .env("PIWI_STORAGE_PATH", node_path(&cfg.storage_dir))
         .env("PIWI_SECRET_KEY", cfg.secret.clone())
         .env("PIWI_DESKTOP_TOKEN", cfg.token.clone())
-        .env("PIWI_DESKTOP_LAUNCH_NONCE", cfg.launch_nonce.clone())
         // Tell the bundled Nuxt app it is running in the desktop shell so it hides
         // account/user management (single-user, auth off) and surfaces the local
         // connection details (data location, reporter token, MCP endpoint).
@@ -1082,17 +1281,39 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
     }
 }
 
+/// What the supervisor does about a sidecar that exited without a deliberate quit.
+#[derive(Debug, PartialEq)]
+struct CrashDecision {
+    /// The crashes counted so far are older than `RESTART_WINDOW_SECS`: count from this one.
+    new_window: bool,
+    /// The sidecar crashed `MAX_RESTARTS_IN_WINDOW` times inside the window: stop restarting it.
+    give_up: bool,
+    /// How long to wait before starting it again.
+    backoff: Duration,
+}
+
+/// The decision after a crash, given the `restarts` already made in the window and how long ago the window began.
+fn crash_decision(restarts: u32, window_age: Duration) -> CrashDecision {
+    let new_window = window_age > Duration::from_secs(RESTART_WINDOW_SECS);
+    let restarts = if new_window { 0 } else { restarts };
+    let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+    CrashDecision { new_window, give_up: restarts >= MAX_RESTARTS_IN_WINDOW, backoff: Duration::from_secs(backoff) }
+}
+
 /// Own the sidecar for the life of the app: tee its output to the log and, when
 /// it exits without a deliberate quit (an OOM crash, say), restart it on the same
 /// port and token with a capped backoff so the window is never left pointed at a
 /// dead port. A tight crash-loop (`MAX_RESTARTS_IN_WINDOW` inside
 /// `RESTART_WINDOW_SECS`) stops the loop rather than hammering. Runs on its own
-/// thread and keeps `ServerProcess` pointing at the live child.
+/// thread and keeps `ServerProcess` pointing at the live child. `respawn` starts
+/// the sidecar again; its output goes to `log_path`.
 fn supervise_server(
     app: AppHandle,
-    cfg: ServerConfig,
+    log_path: PathBuf,
+    respawn: impl Fn(&AppHandle) -> Option<(Receiver<CommandEvent>, CommandChild)> + Send + 'static,
     initial: (Receiver<CommandEvent>, CommandChild),
     shutting_down: Arc<AtomicBool>,
+    server: session::ServerSession,
 ) {
     let (mut rx, child) = initial;
     app.state::<ServerProcess>().0.lock().unwrap().replace(child);
@@ -1107,17 +1328,17 @@ fn supervise_server(
             while let Some(event) = rx.blocking_recv() {
                 match event {
                     CommandEvent::Stdout(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
                     CommandEvent::Stderr(line) => append_log(
-                        &cfg.log_path,
+                        &log_path,
                         &format!("[server:err] {}", String::from_utf8_lossy(&line).trim_end()),
                     ),
-                    CommandEvent::Error(err) => append_log(&cfg.log_path, &format!("[server:proc] {err}")),
+                    CommandEvent::Error(err) => append_log(&log_path, &format!("[server:proc] {err}")),
                     CommandEvent::Terminated(payload) => {
                         append_log(
-                            &cfg.log_path,
+                            &log_path,
                             &format!("[server] exited: code={:?} signal={:?}", payload.code, payload.signal),
                         );
                         break;
@@ -1133,37 +1354,44 @@ fn supervise_server(
 
             // A server that stayed up past the window has recovered; forget older
             // crashes so a much later, isolated crash still gets the full budget.
-            if window_start.elapsed() > Duration::from_secs(RESTART_WINDOW_SECS) {
+            let decision = crash_decision(restarts, window_start.elapsed());
+            if decision.new_window {
                 restarts = 0;
                 window_start = Instant::now();
             }
-            if restarts >= MAX_RESTARTS_IN_WINDOW {
+            if decision.give_up {
                 append_log(
-                    &cfg.log_path,
+                    &log_path,
                     "[server] crashed repeatedly — stopping auto-restart; relaunch the app or check the logs.",
                 );
+                // The give-up is marked before the session ends, so a proof read earlier no longer stands when it does.
                 give_up_server(&app);
+                session::server_gave_up(&app, &server);
                 break;
             }
 
-            let backoff = RESTART_BACKOFFS_SECS[(restarts as usize).min(RESTART_BACKOFFS_SECS.len() - 1)];
+            let restart = session::server_stopped(&app, &server);
             restarts += 1;
-            append_log(&cfg.log_path, &format!("[server] restarting in {backoff}s (attempt {restarts})"));
+            append_log(
+                &log_path,
+                &format!("[server] restarting in {}s (attempt {restarts})", decision.backoff.as_secs()),
+            );
             let _ = app.emit("server-status", "restarting");
-            std::thread::sleep(Duration::from_secs(backoff));
+            std::thread::sleep(decision.backoff);
 
             if shutting_down.load(Ordering::SeqCst) {
                 break;
             }
 
-            match spawn_server_process(&app, &cfg) {
+            match respawn(&app) {
                 Some((new_rx, new_child)) => {
                     app.state::<ServerProcess>().0.lock().unwrap().replace(new_child);
                     rx = new_rx;
-                    let _ = app.emit("server-status", "ready");
+                    session::server_restarted(&app, server.clone(), restart, shutting_down.clone());
                 }
                 None => {
                     give_up_server(&app);
+                    session::server_gave_up(&app, &server);
                     break;
                 }
             }
@@ -1194,7 +1422,8 @@ fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
 }
 
 /// Watch the local runs, once a second, for the rest of the app's life: list
-/// them in the tray, each with its Stop item (`refresh_tray_runs`), and keep the
+/// them in the tray, each with its Stop item (`refresh_tray_runs`), enable the
+/// Windows taskbar thumbnail's Stop while any runs (`set_stop_enabled`), and keep the
 /// machine from sleeping while one is going: a run, a reproduction, a bisect
 /// or a Flake Lab session can take an hour, and a sleeping machine stops it. Idle sleep only: the display still turns off, and
 /// closing a laptop's lid still puts it to sleep. On Linux it also takes
@@ -1213,7 +1442,11 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
             if runs != listed {
                 listed = runs.clone();
                 let handle = app.clone();
-                let _ = app.run_on_main_thread(move || refresh_tray_runs(&handle, &runs));
+                let _ = app.run_on_main_thread(move || {
+                    #[cfg(windows)]
+                    taskbar_win::set_stop_enabled(!runs.is_empty());
+                    refresh_tray_runs(&handle, &runs);
+                });
             }
             let running = !listed.is_empty();
             match awake_change(running, held.is_some(), tried) {
@@ -1350,16 +1583,30 @@ fn splash_status_script(text: &str) -> String {
     )
 }
 
-/// Write `text` in the splash's status line and bring the window up: a launch
-/// to the tray hides it.
-fn show_splash_status(app: &AppHandle, text: &'static str) {
+/// Write `text` in the splash's status line. With `reveal`, bring the window up too: a launch to the tray hides
+/// it, and a server that does not start is news the person has to see. Without it the window stays as it was, so
+/// a restart after a crash does not open a window the person closed to the tray.
+fn show_splash_status(app: &AppHandle, text: &'static str, reveal: bool) {
+    if let Some(session) = app.try_state::<session::Session>() {
+        session.set_status(Some(text));
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
             let _ = w.eval(&splash_status_script(text));
-            let _ = w.show();
+            if reveal {
+                let _ = w.show();
+            }
         }
     });
+}
+
+/// Write the splash's status line again once the splash loads: a status set while the window was still
+/// leaving the server's page would be lost.
+pub(crate) fn reapply_splash_status(webview: &tauri::Webview) {
+    if let Some(text) = webview.try_state::<session::Session>().and_then(|s| s.status()) {
+        let _ = webview.eval(&splash_status_script(text));
+    }
 }
 
 /// Everything leaving the app must undo: remember the window state, stop the
@@ -1722,7 +1969,7 @@ static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
 #[tauri::command]
 async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
@@ -1733,6 +1980,9 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     // In debug mode, open the inspector on the new window too (the trace viewer,
     // an attachment) so it can be debugged like the main window.
     if app.try_state::<DebugMode>().is_some_and(|d| d.0) {
@@ -1784,7 +2034,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
     if !is_output_window_name(&name) {
         return Err("invalid output window name".into());
     }
-    let port = app.state::<mcp_clients::ServerInfo>().port;
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
     let url = tauri::Url::parse(&format!(
         "{}/desktop/run-output?name={name}",
         sidecar_origin(port)
@@ -1795,7 +2045,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         "{OUTPUT_WINDOW_PREFIX}{name}_{}",
         AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
     );
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+    let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
         .title("Piwi Dashboard")
         .inner_size(960.0, 640.0)
         .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
@@ -1805,6 +2055,9 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
         .on_navigation(move |url| is_sidecar_url(url, port))
         .build()
         .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
     Ok(label)
 }
 
@@ -2032,7 +2285,7 @@ fn read_event_stream(reader: impl std::io::BufRead, mut on_data: impl FnMut(&str
 /// ended cleanly.
 fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered: &mut bool) -> Result<(), String> {
     use std::io::{BufRead, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(NOTIFICATION_STREAM_IDLE));
     let request = format!(
         "GET /api/desktop/notifications HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2053,15 +2306,25 @@ fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered:
             break;
         }
     }
-    read_event_stream(reader, |data| match serde_json::from_str::<ServerNotification>(data) {
+    read_event_stream(reader, |data| {
+        if run_target::take_server_command(app, data) {
+            return;
+        }
+        show_or_log_notification(app, data);
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Show a notification the server streamed, or log one the shell cannot read.
+fn show_or_log_notification(app: &AppHandle, data: &str) {
+    match serde_json::from_str::<ServerNotification>(data) {
         Ok(notification) => show_server_notification(app, notification),
         Err(e) => {
             if let Some(log) = app.try_state::<LogFile>() {
                 append_log(&log.0, &format!("unreadable notification from the server: {e}"));
             }
         }
-    })
-    .map_err(|e| e.to_string())
+    }
 }
 
 /// Show the server's notifications for as long as the app runs, whether or
@@ -2069,15 +2332,17 @@ fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered:
 /// ends, as soon as the server answers its readiness probe (`health_ok`), so a
 /// server restart loses only what happened while it was down. A stream the
 /// server refuses is asked for again less and less often.
-fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String, shutting_down: Arc<AtomicBool>) {
+fn follow_notifications(app: AppHandle, port: u16, token: String, shutting_down: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut retry = NOTIFICATION_RETRY_FIRST;
         let mut last_error: Option<String> = None;
         while !shutting_down.load(Ordering::SeqCst) {
-            if !health_ok(port, &nonce) {
+            if !health_ok(port, &token) {
                 std::thread::sleep(NOTIFICATION_RETRY_FIRST);
                 continue;
             }
+            // The server keeps no key: each start of it gets the kept one back.
+            run_target::hand_kept_key(&app);
             let mut answered = false;
             let outcome = follow_notification_stream(&app, port, &token, &mut answered);
             if answered {
@@ -2255,13 +2520,12 @@ async fn desktop_download(app: tauri::AppHandle, url: String, filename: String) 
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
-    let nonce = app.state::<LaunchNonce>().0.clone();
     let dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let name = download_file_name(&filename);
     let target = request_target(&parsed);
     let saved = tauri::async_runtime::spawn_blocking(move || {
         // The token goes only to the server this launch spawned.
-        if !health_ok(port, &nonce) {
+        if !health_ok(port, &token) {
             return Err("the local server is not answering".to_string());
         }
         stream_download(port, &token, &target, &dir, &name)
@@ -2295,7 +2559,7 @@ const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// ends short of its `Content-Length`, removes the partial file.
 fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str) -> Result<PathBuf, String> {
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let mut stream = connect_proving_token(port, token)?;
     let _ = stream.set_read_timeout(Some(DOWNLOAD_READ_TIMEOUT));
     let request = format!(
         "GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
@@ -2391,14 +2655,28 @@ pub(crate) fn confirm_stopping_local_runs(
         });
 }
 
-/// Quit the app, asking first while local test runs are going: the tray's Quit
-/// and, on macOS, the app menu's.
-fn quit_after_confirming(app: &AppHandle) {
-    let handle = app.clone();
-    confirm_stopping_local_runs(app, "Quit Piwi?", "quitting", "Quit", move || {
-        handle.exit(0);
-    });
+/// The question asked before quitting stops local runs, titled with the app's name.
+fn quit_question(app_name: &str) -> String {
+    format!("Quit {app_name}?")
 }
+
+/// Quit the app called `app_name`, asking first while local test runs are going:
+/// the tray's Quit and, on macOS, the app menu's.
+fn quit_after_confirming(app: &AppHandle, app_name: &str) {
+    let handle = app.clone();
+    confirm_stopping_local_runs(
+        app,
+        &quit_question(app_name),
+        "quitting",
+        "Quit",
+        move || {
+            handle.exit(0);
+        },
+    );
+}
+
+/// What the desktop app's questions call it ([`quit_question`]).
+const DESKTOP_APP_NAME: &str = "Piwi";
 
 /// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
@@ -2450,9 +2728,9 @@ fn app_menu_action(id: &str) -> Option<AppMenuAction> {
 
 /// Run an app menu item's action.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
+fn run_app_menu_action(app: &AppHandle, app_name: &str, action: AppMenuAction) {
     match action {
-        AppMenuAction::Quit => quit_after_confirming(app),
+        AppMenuAction::Quit => quit_after_confirming(app, app_name),
         AppMenuAction::OpenPage(path) => show_page(app, path),
         AppMenuAction::Import => pick_files_to_open(app),
         AppMenuAction::History(direction) => {
@@ -2524,6 +2802,34 @@ fn desktop_pick_files_to_open(app: tauri::AppHandle) {
     pick_files_to_open(&app);
 }
 
+/// The app menu's Quit (Cmd+Q): it goes through [`quit_after_confirming`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn quit_menu_item<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    app_name: &str,
+) -> tauri::Result<tauri::menu::MenuItem<R>> {
+    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)
+}
+
+/// Swap the predefined Quit at the end of the app submenu for [`quit_menu_item`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn replace_quit<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    submenu: &tauri::menu::Submenu<R>,
+    app_name: &str,
+) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+
+    if let Some(MenuItemKind::Predefined(quit)) = submenu.items()?.last() {
+        if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
+            submenu.remove(quit)?;
+        }
+    }
+    submenu.append(&quit_menu_item(app, app_name)?)
+}
+
 /// The macOS app menu: Tauri's default menu with Piwi's own items, which
 /// [`run_app_menu_action`] runs. Settings… (Cmd+,) in the app menu; its Quit
 /// (Cmd+Q) goes through [`quit_after_confirming`], since the predefined Quit
@@ -2552,16 +2858,10 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
         };
         let title = submenu.text()?;
         if title == app_name {
-            let items = submenu.items()?;
-            if let Some(MenuItemKind::Predefined(quit)) = items.last() {
-                if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
-                    submenu.remove(quit)?;
-                }
-            }
             // After About and its separator, where macOS applications put Settings.
             submenu.insert(&item(APP_MENU_SETTINGS_ID, "Settings…", Some("CmdOrCtrl+,"))?, 2)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-            submenu.append(&item(APP_MENU_QUIT_ID, &format!("Quit {app_name}"), Some("CmdOrCtrl+Q"))?)?;
+            replace_quit(app, &submenu, &app_name)?;
         } else if title == "File" {
             submenu.insert(&item(APP_MENU_IMPORT_ID, "Import Playwright report…", Some("CmdOrCtrl+O"))?, 0)?;
             submenu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
@@ -2586,7 +2886,7 @@ fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
 /// has already agreed to stop it. Confirming closes the window again, which runs
 /// the normal exit path; `QuitConfirmed` is what tells that close apart from the
 /// one the user made.
-fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
+fn hold_close_for_local_runs(window: &tauri::Window, app_name: &str) -> bool {
     let confirmed = window
         .try_state::<QuitConfirmed>()
         .is_some_and(|s| s.0.load(Ordering::SeqCst));
@@ -2604,7 +2904,7 @@ fn hold_close_for_local_runs(window: &tauri::Window) -> bool {
     let target = window.clone();
     confirm_stopping_local_runs(
         window.app_handle(),
-        "Quit Piwi?",
+        &quit_question(app_name),
         "quitting",
         "Quit",
         move || {
@@ -2629,6 +2929,9 @@ const E2E_PLAYWRIGHT_CAPABILITY: &str = r#"{
   "permissions": ["playwright:default"]
 }"#;
 
+// After the commands it registers, whose macros it reaches by their position in this file.
+mod runner_app;
+
 pub fn run() {
     // Windows: a stop request for a local run starts a short-lived copy of this
     // binary to deliver the Ctrl+C (see interrupt.rs). Handled first — it never
@@ -2639,6 +2942,16 @@ pub fn run() {
         if args.first().map(String::as_str) == Some(interrupt::HELPER_ARG) {
             interrupt::run_helper(args.get(1).map(String::as_str));
         }
+    }
+
+    // The app's context, made once: the macro embeds the bundle's Info.plist, which one crate holds a single copy of.
+    let context = tauri::generate_context!();
+
+    // Piwi Runner is this same crate built with the `runner` feature: it has its own entry, with no server, tray or
+    // reporter discovery file (`runner_app`).
+    if cfg!(feature = "runner") {
+        runner_app::run(context);
+        return;
     }
 
     let args = args_to_act_on(std::env::args().collect());
@@ -2705,15 +3018,14 @@ pub fn run() {
                         None
                     };
                     webview.label() != "main"
-                        || main_window_may_navigate(
-                            url,
-                            webview.try_state::<mcp_clients::ServerInfo>().map(|s| s.port),
-                            dev_url,
-                        )
+                        || main_window_may_navigate(url, live_sidecar_port(webview.app_handle()), dev_url)
                 })
                 // A new page in the dashboard window leaves no one to feed the
                 // run output windows: they close.
                 .on_page_load(|webview, payload| {
+                    if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        reapply_splash_status(webview);
+                    }
                     if webview.label() == "main"
                         && payload.event() == tauri::webview::PageLoadEvent::Started
                     {
@@ -2734,8 +3046,6 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_playwright::init());
     }
-
-    let context = tauri::generate_context!();
 
     // Update support exists only in builds made with the signing key: CI then
     // applies an updater overlay (tauri.updater.conf.json for .msi,
@@ -2773,6 +3083,12 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_keep_run_target_key,
+            desktop_forget_run_target,
+            desktop_request_folders,
+            desktop_link_request_folder,
+            desktop_unlink_request_folder,
+            desktop_run_requested_tests,
             desktop_run_repro,
             desktop_reproduce_here,
             desktop_bisect_here,
@@ -2789,6 +3105,7 @@ pub fn run() {
             desktop_skills_read,
             desktop_skills_write,
             desktop_check_update,
+            desktop_get_release_notes,
             desktop_install_update,
             desktop_restart_app,
             desktop_get_update_settings,
@@ -2799,12 +3116,15 @@ pub fn run() {
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())
         .manage(runner::LocalRuns::default())
+        .manage(run_target::KeptKey::default())
+        .manage(run_target::RequestedRuns::default())
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())
         .manage(LinkedPage::default())
         .manage(updates::UpdaterSupport(updater_supported))
         .manage(updates::PendingUpdate::default())
+        .manage(updates::ReleaseNotesState::default())
         .setup(move |app| {
             // --- data locations (survive app updates; outside the read-only bundle) ---
             let app_data_dir = app.path().app_data_dir()?;
@@ -2830,6 +3150,10 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            app.manage(session::Session::new(
+                app.get_webview_window("main").and_then(|w| w.url().ok()),
+                app.config().build.dev_url.as_ref().filter(|_| tauri::is_dev()),
+            ));
             #[cfg(not(target_os = "macos"))]
             report_notification_clicks(app.handle());
 
@@ -2841,19 +3165,19 @@ pub fn run() {
             if port != preferred_port {
                 append_log(&log_path, &format!("port {preferred_port} is in use, listening on {port}"));
             }
-            let launch_nonce = random_hex_32();
 
             // The dashboard's IPC grants, for this sidecar's exact origin only.
             app.handle().add_capability(remote_capability(port))?;
 
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
-            app.manage(LaunchNonce(launch_nonce.clone()));
             app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
-            // MCP client configs written on earlier launches embed the URL and
-            // token — bring any that drifted (a different port this launch)
-            // back in line before a client tries the dead address.
+            // Rewrite this app's own `piwi-desktop` entry in a client config
+            // when it is the bridge entry whose command names this app and no
+            // longer exists, or exactly the older URL-and-token shape; any other
+            // entry is left as is. Nothing is written from a dev build or a
+            // place that does not last (a disk image, a translocated copy).
             mcp_clients::heal_configured_clients(app.handle());
 
             // --- publish connection details for the Playwright reporter ---
@@ -2934,7 +3258,6 @@ pub fn run() {
                 storage_dir: storage_dir.clone(),
                 secret,
                 token: token.clone(),
-                launch_nonce: launch_nonce.clone(),
                 port,
                 retention_days,
                 log_path: log_path.clone(),
@@ -2946,7 +3269,25 @@ pub fn run() {
                 }),
             };
             if let Some(initial) = spawn_server_process(app.handle(), &server_config) {
-                supervise_server(app.handle().clone(), server_config, initial, shutting_down.clone());
+                let respawn_config = server_config;
+                let supervised_log = respawn_config.log_path.clone();
+                supervise_server(
+                    app.handle().clone(),
+                    supervised_log,
+                    move |app| spawn_server_process(app, &respawn_config),
+                    initial,
+                    shutting_down.clone(),
+                    session::ServerSession {
+                        port,
+                        token: token.clone(),
+                        texts: session::SplashTexts {
+                            restarting: SPLASH_RESTARTING,
+                            slow: SPLASH_SLOW,
+                            stopped: SPLASH_STOPPED,
+                        },
+                        pace: &PROOF_PACE,
+                    },
+                );
             } else {
                 give_up_server(app.handle());
             }
@@ -2958,44 +3299,53 @@ pub fn run() {
             let ready_log = log_path.clone();
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
-                let started = Instant::now();
-                let mut slow = false;
-                let ready = loop {
-                    if health_ok(port, &launch_nonce) {
-                        break true;
-                    }
-                    let gave_up = nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst);
-                    if gave_up || quitting.load(Ordering::SeqCst) {
-                        break false;
-                    }
-                    if !slow && started.elapsed() >= Duration::from_secs(READY_TIMEOUT_SECS) {
-                        slow = true;
+                let proved = session::await_first_proof(
+                    port,
+                    &token,
+                    &PROOF_PACE,
+                    || session::generation_of(&nav_handle),
+                    || {
+                        if let Some(session) = nav_handle.try_state::<session::Session>() {
+                            session.mark_opened();
+                        }
+                    },
+                    || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
+                    || {
                         append_log(&ready_log, "server not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW);
-                    }
-                    std::thread::sleep(Duration::from_millis(if slow { 1000 } else { 250 }));
-                };
+                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
+                    },
+                );
+                let ready = proved.is_some();
                 append_log(&ready_log, if ready { "server ready" } else { "server never became ready" });
                 // Startup has settled: look for an update and announce one
                 // (a no-op when the build cannot update or the user opted out).
                 tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED);
+                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
                     }
                     return;
                 }
                 // The server's notifications show from now on, page or no page.
-                follow_notifications(nav_handle.clone(), port, token.clone(), launch_nonce.clone(), quitting.clone());
+                follow_notifications(nav_handle.clone(), port, token.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
-                let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
-                let inner = nav_handle.clone();
-                let _ = nav_handle.run_on_main_thread(move || {
-                    if let Some(w) = inner.get_webview_window("main") {
-                        let _ = w.eval(&format!("window.location.replace('{bootstrap_url}')"));
-                    }
-                });
+                let holds = session::proof_holds(&nav_handle, proved.unwrap_or_default(), quitting.clone());
+                // The session code is asked over a connection that proved the token; no code, no session. A few
+                // tries while the proof holds, then the stopped splash.
+                let server = session::ServerSession {
+                    port,
+                    token: token.clone(),
+                    texts: session::SplashTexts {
+                        restarting: SPLASH_RESTARTING,
+                        slow: SPLASH_SLOW,
+                        stopped: SPLASH_STOPPED,
+                    },
+                    pace: &PROOF_PACE,
+                };
+                if let Err(error) = session::open_first_session(&nav_handle, &server, page.as_deref(), holds) {
+                    append_log(&ready_log, &format!("no session code: {error}"));
+                }
             });
 
             // --- tray ---
@@ -3071,7 +3421,7 @@ pub fn run() {
                         let _ = if enabled { mgr.disable() } else { mgr.enable() };
                         let _ = login_i.set_checked(!enabled);
                     }
-                    "quit" => quit_after_confirming(app),
+                    "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
                             let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
@@ -3087,7 +3437,7 @@ pub fn run() {
                 app.set_menu(app_menu(app.handle())?)?;
                 app.on_menu_event(|app, event| {
                     if let Some(action) = app_menu_action(event.id().as_ref()) {
-                        run_app_menu_action(app, action);
+                        run_app_menu_action(app, DESKTOP_APP_NAME, action);
                     }
                 });
             }
@@ -3214,7 +3564,7 @@ pub fn run() {
                     api.prevent_close();
                     return;
                 }
-                if hold_close_for_local_runs(window) {
+                if hold_close_for_local_runs(window, DESKTOP_APP_NAME) {
                     api.prevent_close();
                 }
             }
@@ -3258,9 +3608,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{
+        crash_decision, CrashDecision,
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
-        health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
+        connect_proving_token, connection_is_open, decode_hex, head_has_connection_close, health_ok, response_body_len, health_response_proves, proof_matches, proof_of, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
@@ -3358,19 +3711,40 @@ mod tests {
     #[test]
     fn a_link_waits_while_the_page_cannot_open_it() {
         let linked = LinkedPage::default();
+        let live = || true;
         // Before the dashboard shows: the session bootstrap opens the last one.
-        assert!(linked.hold("/settings"));
-        assert!(linked.hold("/test-runs/146"));
+        assert!(linked.hold("/settings", live));
+        assert!(linked.hold("/test-runs/146", live));
         assert_eq!(linked.take_waiting().as_deref(), Some("/test-runs/146"));
         // While the dashboard page loads: the page takes it once it listens.
-        assert!(linked.hold("/settings"));
-        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/settings"));
-        assert!(!linked.hold("/test-runs/146"));
-        assert_eq!(linked.take_as_page_listens(), None);
+        assert!(linked.hold("/settings", live));
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/settings"));
+        assert!(!linked.hold("/test-runs/146", live));
+        assert_eq!(linked.take_as_page_listens(live), None);
         // The window loads another document: links wait again.
         linked.page_unloads();
-        assert!(linked.hold("/test-runs/146"));
-        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
+        assert!(linked.hold("/test-runs/146", live));
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/test-runs/146"));
+    }
+
+    #[test]
+    fn a_link_that_comes_after_the_server_exits_waits_for_the_next_page() {
+        let linked = LinkedPage::default();
+        let (live, ended) = (|| true, || false);
+        // The dashboard page listens, then the server exits: the page is dying, so the link waits.
+        assert_eq!(linked.take_as_page_listens(live), None);
+        assert!(linked.hold("/settings", ended));
+        linked.page_unloads();
+        assert!(linked.hold("/test-runs/146", ended));
+        // A page of the exited server that only now listens takes nothing, and links keep waiting.
+        assert_eq!(linked.take_as_page_listens(ended), None);
+        assert!(linked.hold("/test-runs/146", ended));
+        // The restarted session's page takes the last link, once; the bootstrap has nothing left to open.
+        assert_eq!(linked.take_as_page_listens(live).as_deref(), Some("/test-runs/146"));
+        assert_eq!(linked.take_waiting(), None);
+        assert_eq!(linked.take_as_page_listens(live), None);
+        // Once it listens, a link goes to the window again.
+        assert!(!linked.hold("/settings", live));
     }
 
     #[test]
@@ -3394,10 +3768,10 @@ mod tests {
 
     #[test]
     fn the_bootstrap_carries_the_page_to_show() {
-        assert_eq!(bootstrap_url(3000, "pd_x", None), "http://127.0.0.1:3000/__piwi/session?token=pd_x");
+        assert_eq!(bootstrap_url(3000, "pds_x", None), "http://127.0.0.1:3000/__piwi/session?code=pds_x");
         assert_eq!(
-            bootstrap_url(3000, "pd_x", Some("/test-runs/146?tab=changes&x='")),
-            "http://127.0.0.1:3000/__piwi/session?token=pd_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
+            bootstrap_url(3000, "pds_x", Some("/test-runs/146?tab=changes&x='")),
+            "http://127.0.0.1:3000/__piwi/session?code=pds_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
         );
     }
 
@@ -3509,27 +3883,201 @@ mod tests {
         }
     }
 
-    /// Answer one request on a free loopback port with `response`; the handle
-    /// yields the request it received.
-    fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
+    /// Read one request's head from `stream`, and the body its `Content-Length` announces.
+    pub(crate) fn read_request_from(stream: &mut std::net::TcpStream) -> String {
+        use std::io::Read;
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let announced = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + announced {
+                    break;
+                }
+            }
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).to_string()
+    }
+
+    /// The proof response of a server that holds `token`, for the challenge in `request`.
+    pub(crate) fn proof_response(request: &str, token: &str, port: u16) -> String {
+        let challenge = request
+            .lines()
+            .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+            .unwrap_or_default();
+        health_answer(
+            "200 OK",
+            &format!("x-piwi-desktop-proof: {}", proof_of(token, port, challenge)),
+        )
+    }
+
+    /// A server on a free loopback port that holds `token`: it answers the readiness probe with the
+    /// proof, then `response` to the request after it, on the same connection. The handle yields
+    /// that request.
+    pub(crate) fn serve_as_holder_of(
+        token: &'static str,
+        response: Vec<u8>,
+    ) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let asked = read_request_from(&mut stream);
+            stream.write_all(proof_response(&asked, token, port).as_bytes()).unwrap();
+            let request = read_request_from(&mut stream);
+            stream.write_all(&response).unwrap();
+            request
+        });
+        (port, handle)
+    }
+
+    /// A process that took the port: it answers the readiness probe with a 200 and no proof, and
+    /// accepts no other connection. The handle yields the one request it saw.
+    pub(crate) fn serve_as_squatter() -> (u16, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0u8; 1024];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = stream.read(&mut buf).unwrap();
-                if n == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buf[..n]);
-            }
-            stream.write_all(&response).unwrap();
-            String::from_utf8_lossy(&request).to_string()
+            let mut buf = [0u8; 2048];
+            let read = stream.read(&mut buf).unwrap();
+            stream.write_all(health_answer("200 OK", "").as_bytes()).unwrap();
+            String::from_utf8_lossy(&buf[..read]).to_string()
         });
         (port, handle)
+    }
+
+    #[test]
+    fn a_connection_for_the_token_needs_a_server_that_proves_it_holds_it() {
+        let (port, squatter) = serve_as_squatter();
+        let error = connect_proving_token(port, "pd_x").unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let seen = squatter.join().unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-piwi-token"), "{seen}");
+
+        let (port, holder) = serve_as_holder_of("pd_x", Vec::new());
+        assert!(connect_proving_token(port, "pd_x").is_ok());
+        let _ = holder.join();
+    }
+
+    /// A server that holds `token` and counts the connections it accepts: it proves itself on the
+    /// first and, when `keep_open`, answers the request after the proof on it with `after` (else
+    /// ends the connection). The handle yields the connections accepted and the requests seen on
+    /// the first.
+    fn serve_counting_connections(
+        token: &'static str,
+        keep_open: bool,
+        proof_headers: &'static str,
+        after: &'static str,
+    ) -> (u16, std::thread::JoinHandle<(usize, Vec<String>)>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut accepted = 1;
+            let mut seen = Vec::new();
+            let (mut first, _) = listener.accept().unwrap();
+            let asked = read_request_from(&mut first);
+            let mut answer = proof_response(&asked, token, port);
+            if !proof_headers.is_empty() {
+                answer = answer.replacen("\r\n\r\n", &format!("\r\n{proof_headers}\r\n\r\n"), 1);
+            }
+            seen.push(asked);
+            first.write_all(answer.as_bytes()).unwrap();
+            if keep_open {
+                seen.push(read_request_from(&mut first));
+                first.write_all(after.as_bytes()).unwrap();
+            } else {
+                drop(first);
+            }
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + Duration::from_millis(400);
+            while std::time::Instant::now() < until {
+                if listener.accept().is_ok() {
+                    accepted += 1;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            (accepted, seen)
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn the_proof_and_the_token_request_travel_on_one_connection() {
+        use std::io::{Read, Write};
+        let (port, server) = serve_counting_connections(
+            "pd_x",
+            true,
+            "",
+            "HTTP/1.1 200 OK\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}",
+        );
+        let mut stream = connect_proving_token(port, "pd_x").unwrap();
+        stream
+            .write_all(b"GET /api/x HTTP/1.0\r\nx-piwi-token: pd_x\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).unwrap();
+        assert!(answer.ends_with("{\"ok\":true}"), "{answer}");
+        let (accepted, seen) = server.join().unwrap();
+        assert_eq!(accepted, 1, "the proof and the token request share a connection");
+        assert!(seen[0].starts_with("GET /api/health HTTP/1.1\r\n"), "{seen:?}");
+        assert!(!seen[0].to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        assert!(seen[1].contains("x-piwi-token: pd_x"), "{seen:?}");
+    }
+
+    #[test]
+    fn a_server_that_ends_the_connection_after_the_proof_gets_no_token() {
+        for (keep_open, headers) in [(false, ""), (true, "connection: close")] {
+            let (port, server) = serve_counting_connections("pd_x", keep_open, headers, "");
+            let error = connect_proving_token(port, "pd_x");
+            assert_eq!(error.unwrap_err(), "the local server is not answering");
+            let (accepted, seen) = server.join().unwrap();
+            assert_eq!(accepted, 1, "no other connection is opened for the token");
+            assert!(!seen.join("").to_ascii_lowercase().contains("x-piwi-token"), "{seen:?}");
+        }
+    }
+
+    #[test]
+    fn a_connection_the_peer_closed_is_not_open() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (peer, _) = listener.accept().unwrap();
+        assert!(connection_is_open(&client));
+        drop(peer);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!connection_is_open(&client));
+    }
+
+    #[test]
+    fn a_proof_response_is_read_to_its_framed_end() {
+        let sized = "HTTP/1.1 200 OK\r\nContent-Length: 2";
+        assert_eq!(response_body_len(sized, b"{}"), Ok(Some(2)));
+        assert_eq!(response_body_len(sized, b"{"), Ok(None));
+        // Bytes beyond the body are counted out, for the caller to refuse.
+        assert_eq!(response_body_len(sized, b"{}extra"), Ok(Some(2)));
+        // A body that ends with the connection has no end to read to.
+        assert_eq!(response_body_len("HTTP/1.1 200 OK", b"{}"), Err(()));
+        assert_eq!(response_body_len("HTTP/1.1 200 OK\r\nContent-Length: x", b""), Err(()));
+        let chunked = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked";
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n\r\n"), Ok(Some(12)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\nx: y\r\n\r\n"), Ok(Some(18)));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"2\r\n{}\r\n0\r\n"), Ok(None));
+        assert_eq!(response_body_len(chunked, b"zz\r\n"), Ok(None));
+        assert!(head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: Close"));
+        assert!(!head_has_connection_close("HTTP/1.1 200 OK\r\nConnection: keep-alive"));
     }
 
     fn download_dir(test: &str) -> std::path::PathBuf {
@@ -3548,7 +4096,7 @@ mod tests {
                 .into_bytes();
         response.extend_from_slice(&body);
 
-        let (port, server) = serve_once(response.clone());
+        let (port, server) = serve_as_holder_of("pd_x", response.clone());
         let saved = stream_download(port, "pd_x", "/api/files/a.zip?x=1", &dir, "trace.zip").unwrap();
         assert_eq!(saved, dir.join("trace.zip"));
         assert_eq!(fs::read(&saved).unwrap(), body);
@@ -3558,7 +4106,7 @@ mod tests {
         assert!(request.contains("\r\nSec-Fetch-Site: same-origin\r\n"), "{request}");
 
         // The same name again never replaces the first file.
-        let (port, server) = serve_once(response);
+        let (port, server) = serve_as_holder_of("pd_x", response);
         let again = stream_download(port, "pd_x", "/api/files/a.zip", &dir, "trace.zip").unwrap();
         server.join().unwrap();
         assert_eq!(again, dir.join("trace (1).zip"));
@@ -3570,13 +4118,13 @@ mod tests {
     fn a_refused_or_cut_download_leaves_no_file() {
         let dir = download_dir("refused");
         let refusal = b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n\r\n{\"message\":\"Trace not found\"}";
-        let (port, server) = serve_once(refusal.to_vec());
+        let (port, server) = serve_as_holder_of("pd_x", refusal.to_vec());
         let error = stream_download(port, "pd_x", "/api/files/gone.zip", &dir, "gone.zip").unwrap_err();
         server.join().unwrap();
         assert_eq!(error, "Trace not found");
 
         let cut = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nonly ten b".to_vec();
-        let (port, server) = serve_once(cut);
+        let (port, server) = serve_as_holder_of("pd_x", cut);
         let error = stream_download(port, "pd_x", "/api/files/cut.zip", &dir, "cut.zip").unwrap_err();
         server.join().unwrap();
         assert!(error.contains("before the whole file"), "{error}");
@@ -3908,20 +4456,129 @@ mod tests {
         assert!(script.starts_with("var s=document.getElementById('splash-status');"));
     }
 
+    const PROOF_TOKEN: &str = "pd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PROOF_CHALLENGE: &str =
+        "abababababababababababababababababababababababababababababababab";
+    /// What `desktopTokenProof` of `@piwitests/core/desktop-proof` makes of the two for port 4318.
+    const PROOF_4318: &str = "bd60241a0312fff0960cb18ebc24dc439b0f32cb3a1d82bf1a13d65367acf0ad";
+
+    fn health_answer(status: &str, headers: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: 2\r\n{headers}\r\n\r\n{{}}")
+    }
+
     #[test]
-    fn the_readiness_probe_needs_a_200_carrying_the_launch_nonce() {
-        let ok = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
-                  X-Piwi-Desktop-Nonce: abc123\r\n\r\n{}";
-        assert!(health_response_proves(ok, "abc123"));
-        // Another server on the port: a 200 without the nonce, or with another one.
-        assert!(!health_response_proves("HTTP/1.1 200 OK\r\n\r\n{}", "abc123"));
-        assert!(!health_response_proves(&ok.replace("abc123", "zzz"), "abc123"));
-        // The nonce in the body, not a header, proves nothing.
-        let in_body = "HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-nonce: abc123";
-        assert!(!health_response_proves(in_body, "abc123"));
+    fn the_readiness_probe_needs_a_200_carrying_the_proof_of_the_token() {
+        let proves =
+            |response: &str| health_response_proves(response, PROOF_TOKEN, 4318, PROOF_CHALLENGE);
+        let ok = health_answer("200 OK", &format!("X-Piwi-Desktop-Proof: {PROOF_4318}"));
+        assert!(proves(&ok));
+        // Another server on the port: a 200 without a proof, or with one made from another token, port or challenge.
+        assert!(!proves(&health_answer("200 OK", "")));
+        assert!(!proves(&ok.replace("bd60", "bd61")));
+        assert!(!health_response_proves(
+            &ok,
+            "pd_other",
+            4318,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4319,
+            PROOF_CHALLENGE
+        ));
+        assert!(!health_response_proves(
+            &ok,
+            PROOF_TOKEN,
+            4318,
+            &"cd".repeat(32)
+        ));
+        // The proof in the body, not a header, proves nothing.
+        let in_body = format!("HTTP/1.1 200 OK\r\n\r\nx-piwi-desktop-proof: {PROOF_4318}");
+        assert!(!proves(&in_body));
         let unavailable = ok.replace(" 200 OK", " 503 Service Unavailable");
-        assert!(!health_response_proves(&unavailable, "abc123"));
-        assert!(!health_response_proves(ok, ""));
+        assert!(!proves(&unavailable));
+        assert!(!health_response_proves(&ok, "", 4318, PROOF_CHALLENGE));
+    }
+
+    #[test]
+    fn a_proof_that_is_not_hex_is_refused() {
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, ""));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "xyz"));
+        assert!(!proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318[1..]
+        ));
+        assert!(!proof_matches(PROOF_TOKEN, 4318, PROOF_CHALLENGE, "é"));
+        // A sign or a prefix is not a digit.
+        for signed in ["+f", "-1", "0x", " f", "f "] {
+            assert_eq!(decode_hex(signed), None, "{signed:?}");
+        }
+        assert_eq!(decode_hex("0aFf"), Some(vec![0x0a, 0xff]));
+        assert_eq!(decode_hex(""), Some(vec![]));
+        assert_eq!(decode_hex("abc"), None);
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            PROOF_4318
+        ));
+        assert!(proof_matches(
+            PROOF_TOKEN,
+            4318,
+            PROOF_CHALLENGE,
+            &PROOF_4318.to_uppercase()
+        ));
+    }
+
+    #[test]
+    fn a_server_that_replays_an_earlier_answer_is_refused() {
+        use std::io::{Read, Write};
+        // The squatter records the proof of the first challenge it sees and answers every probe with it.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let token = PROOF_TOKEN;
+        let honest = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 2048];
+            let read = first.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let challenge = request
+                .lines()
+                .find_map(|line| line.strip_prefix("x-piwi-desktop-challenge: "))
+                .unwrap()
+                .to_string();
+            use hmac::Mac;
+            let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(token.as_bytes()).unwrap();
+            mac.update(format!("piwi-desktop-proof:{port}:{challenge}").as_bytes());
+            let proof: String = mac
+                .finalize()
+                .into_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let answer = health_answer("200 OK", &format!("x-piwi-desktop-proof: {proof}"));
+            first.write_all(answer.as_bytes()).unwrap();
+            drop(first);
+            // Every later probe gets that same answer.
+            for _ in 0..2 {
+                let (mut next, _) = listener.accept().unwrap();
+                let _ = next.read(&mut buffer);
+                next.write_all(answer.as_bytes()).unwrap();
+            }
+        });
+        assert!(
+            health_ok(port, token),
+            "the first answer is for the first challenge"
+        );
+        assert!(
+            !health_ok(port, token),
+            "a recorded answer proves nothing for a new challenge"
+        );
+        assert!(!health_ok(port, "pd_other"));
+        honest.join().unwrap();
     }
 
     #[test]
@@ -4096,5 +4753,33 @@ mod tests {
             ]
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The supervisor restarts a crashed sidecar with a growing backoff, gives up at the fifth crash inside the
+    /// window, and starts counting again once the window has passed.
+    #[test]
+    fn a_sidecar_that_crashes_again_and_again_is_given_up_on() {
+        let age = Duration::from_secs(10);
+        let mut seen = Vec::new();
+        let mut restarts = 0;
+        loop {
+            let decision = crash_decision(restarts, age);
+            if decision.give_up {
+                break;
+            }
+            seen.push(decision.backoff.as_secs());
+            restarts += 1;
+        }
+        assert_eq!(seen, vec![1, 2, 4, 8, 8]);
+        assert_eq!(restarts, 5);
+
+        // The window passed since the first crash: the older crashes no longer count.
+        assert_eq!(
+            crash_decision(5, Duration::from_secs(61)),
+            CrashDecision { new_window: true, give_up: false, backoff: Duration::from_secs(1) }
+        );
+        assert!(!crash_decision(5, Duration::from_secs(60)).new_window);
+        assert!(crash_decision(5, Duration::from_secs(60)).give_up);
+        assert!(!crash_decision(4, Duration::from_secs(60)).give_up);
     }
 }

@@ -70,9 +70,12 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 
 ### Instance and connection
 
-- **`src/piwi-client.ts` is the only file that talks to an instance.** Its requests go through `src/http.ts`, which
-  follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`).
+- **`src/piwi-client.ts` is the only file that talks to an instance, with `src/request-host.ts` for a run target.**
+  Both go through `src/http.ts`, which follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`); the
+  request host carries the target's key alone, which holds `run:receive` (`tests/request-host.test.ts`).
   ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
+- **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
+  on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`).
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
@@ -87,6 +90,12 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   named instance (`namedInstance`: the environment, the workspace `.env`, the editor's settings), then the desktop app's
   discovery file; the reporter keeps its own order. Checked by `tests/context.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#connection-order-and-watching-head))
+- **The desktop app's token goes out only after the server proves it holds it.** `readDesktopDiscovery` registers
+  the token (`holdDesktopToken`), and so does `namedInstance` for a `PIWI_API_KEY` marked `PIWI_DESKTOP_KEY=1`; `instanceFetch` waits for `requireDesktopProof` (the shared `proveDesktopServer`)
+  before a request whose `X-API-Key` or bearer is a registered token (either header), and `piwi/mcp` leaves out a
+  desktop server that did not prove it. Each such request asks for its own proof; requests that start while a proof is
+  being asked share it (`shareInFlight`), and a proof that has arrived is never used again, and the request follows no redirect. Every request goes through `instanceFetch`; a new call site must too. Checked by
+  `tests/desktop-token-proof.test.ts` and `tests/lsp.test.ts` ("the desktop app’s MCP server for the agent").
 - **The desktop app sits beside a shared instance, never replaces it.** `piwi/status` keeps the named instance
   (`instance`) and says whether the app runs (`desktopUrl`), so Connect offers both. Checked by `tests/lsp.test.ts`
   ("the desktop app chosen with Connect").
@@ -139,17 +148,21 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
   and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included
   (`PIWI_EDITOR_SEND`). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **`peers` names hubs, never their tokens.** A hub names the other live hubs by their address alone (`hubPeersOf`);
+  their tokens go only through the editor's `GET …/live`, to the pairing's holder. Checked by `tests/run-hub.test.ts`
+  ("the other live hubs"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
-- **A live view's frames go only to viewers of that stop, and never outlive it.** The editor client opts in through
-  `ClientPageView`; hub connections opt in through `RunHub`. No frame goes to an instance or a file, none of a stop
-  that ended, and neither transport keeps a history: a viewer that comes to a view on
-  has the worker send its latest frame again (`RunSessions.watch`, `RunHub.frame`). Checked by `tests/run-view.test.ts`.
+- **A live view's frames go only to viewers of that stop, and never outlive it; a lane's only to that lane's
+  viewers.** The editor client opts in through `ClientPageView` and `ClientLaneView`; hub connections opt in through
+  `RunHub`. No frame goes to an instance or a file, none of a stop that ended, and neither transport keeps a history:
+  a viewer that comes to a view on has the worker send its latest frame again (`RunSessions.watch`, `watchLane`,
+  `RunHub.frame`). Checked by `tests/run-view.test.ts` and `tests/run-lanes.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
-  view.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else; following the runs (`follow`)
-  grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
+  view, or its lane at that stop.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else;
+  following the runs (`follow`) grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
   "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
   or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), never in a run its host says
@@ -185,6 +198,15 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its
   tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
+- **The run target runs without the language server too, with one guard for every host.** `src/run-target.ts`
+  imports nothing of the LSP and reaches the instance only through `src/request-host.ts`. Its routes, their body checks
+  and the refusal of a browser on the shell-only ones are `src/run-target-routes.ts`, and who may call a host is
+  `src/host-guard.ts`: the desktop app's Nitro routes and guard call them, never a copy.
+  The window's session and its two event streams are `src/run-target-session.ts` and `src/run-target-stream.ts`, the
+  app's routes being adapters of them too. `tests/run-target-routes.test.ts` holds the contract on the bare `node:http`
+  host (`src/run-target-http.ts`), and `apps/application/tests/unit/desktop-run-target.test.ts`,
+  `desktop-session-routes.test.ts` and `desktop-events-stream.test.ts` the body, id, browser, session and stream checks
+  through the Nitro routes: a change here runs both. ([ARCHITECTURE.md](ARCHITECTURE.md#the-run-targets-streams))
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { testRuns } from '../../database/schema';
+import { testRuns, type User } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
@@ -11,15 +11,17 @@ import { findActiveShardedRun } from '../../utils/sharded-runs';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
-import { liveViewRelay } from '../../utils/live-view';
+import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
+import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
+import { liveViewRelay, storeLiveViewKey } from '../../utils/live-view';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId and shardTotal. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with: the workers of a CI run at once, those of a run outside CI only once its developer shares it. It opens nothing else and ends with the run. The desktop app, which no teammate reaches, gives none and answers `liveView.refused: local` instead.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId and shardTotal. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with: the workers of a CI run at once, those of a run outside CI only once its developer shares it. It opens nothing else and ends with the run; the run keeps its digest, never the key, so an instance started again takes it back while the run lasts. The desktop app, which no teammate reaches, gives none and answers `liveView.refused: local` instead.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -52,8 +54,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
-  const user = await requireAuth(event);
+  // A request token starts its request's run, checked once the body is read and spent once the run is stored, so a
+  // refused or failed start leaves it to a retry; otherwise `run:submit` on at least one project, from the route meta,
+  // and the project itself is checked below.
+  const signedIn = presentsRequestToken(event) ? null : await requireAuth(event);
 
   const body = await readBody(event);
 
@@ -64,22 +68,32 @@ export default eventHandler(async (event) => {
       message: 'Missing required field: projectName',
     });
   }
+  const grant = await checkRequestToken(event, body);
+  const user = (grant ? grant.requester : signedIn) as User;
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any, 'run:submit');
+  const project = grant
+    ? await grantedProject(db, grant)
+    : await resolveIngestProject(
+        db,
+        await getProjectScope(db, user as any, 'run:submit'),
+        body.projectName,
+        body.projectDescription,
+      );
 
-  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
-
-  const instanceId = body.instanceId || null;
+  // A requested run belongs to no instance: it cancels no other run, and no other run cancels it.
+  const instanceId = grant ? null : body.instanceId || null;
   /**
-   * The run's live view key for its workers, when the reporter asks and the project turned the live view on. The
-   * desktop app gives none, saying why: no teammate reaches it.
+   * The run's live view key for its workers, when the reporter asks and the project turned the live view on, its
+   * digest kept with the run. The desktop app gives none, saying why: no teammate reaches it.
    */
-  const liveViewOf = (runId: number) => {
-    if (body.liveView !== true) return {};
+  const liveViewOf = async (runId: number) => {
+    if (body.liveView !== true || grant) return {};
     if (process.env.PIWI_DESKTOP_TOKEN) return { liveView: { refused: 'local' } };
     const key = project.liveView ? liveViewRelay.mintKey(runId, project.id) : null;
-    return key ? { liveView: { key } } : {};
+    if (!key) return {};
+    await storeLiveViewKey(db, runId, key);
+    return { liveView: { key } };
   };
   const shardTotal = body.shardTotal as number | undefined;
   const isSharded = !!(shardTotal && shardTotal > 1);
@@ -100,9 +114,10 @@ export default eventHandler(async (event) => {
         return {
           success: true,
           runId: existingShardedRun.id,
+          runUrl: publicRunUrl(existingShardedRun.id),
           projectId: project.id,
           setupToken,
-          ...liveViewOf(existingShardedRun.id),
+          ...(await liveViewOf(existingShardedRun.id)),
         };
       }
 
@@ -164,9 +179,10 @@ export default eventHandler(async (event) => {
       return {
         success: true,
         runId: testRun.id,
+        runUrl: publicRunUrl(testRun.id),
         projectId: project.id,
         setupToken,
-        ...liveViewOf(testRun.id),
+        ...(await liveViewOf(testRun.id)),
       };
     }
 
@@ -174,6 +190,7 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId);
 
     const setupToken = randomBytes(32).toString('hex');
+    const requestMetadata = grant ? withRequestOrigin(null, grant.requestId) : null;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -190,9 +207,10 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: null,
-        origin: runOrigin(null),
-        commit: runCommit(null),
+        metadata: requestMetadata,
+        origin: runOrigin(requestMetadata),
+        commit: runCommit(requestMetadata),
+        requesterId: grant?.requester.id ?? null,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -211,15 +229,18 @@ export default eventHandler(async (event) => {
       });
     }
 
-    await applyReporterKeep(db, testRun.id, body.keep);
+    // A requested run is never kept: retention and its requester remove it.
+    if (grant) await spendRequestToken(db, grant, testRun.id);
+    else await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       setupToken,
-      ...liveViewOf(testRun.id),
+      ...(await liveViewOf(testRun.id)),
     };
   });
 });

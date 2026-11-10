@@ -31,6 +31,7 @@ import { isEligibleRun } from '#shared/run-eligibility';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
+import { overlappingTagKeys, validateTagKeyPattern } from '#shared/integrations/tag-keys';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -57,11 +58,11 @@ function q(sql: string): Row[] {
 // tracked public/demo/seed.sql — another test file's beforeAll regenerates
 // concurrently (vitest runs files in parallel) and would otherwise race on
 // the same path, producing a torn read and a SQL parse error.
-function regenerate(outDir: string): string {
+function regenerate(outDir: string, env: NodeJS.ProcessEnv = {}): string {
   execFileSync('node', ['scripts/generate-demo-seed.mjs'], {
     cwd: rootDir,
     stdio: 'ignore',
-    env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
+    env: { ...process.env, ...env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
   });
   return readFileSync(join(outDir, 'seed.sql'), 'utf-8');
 }
@@ -88,9 +89,9 @@ afterAll(() => {
 });
 
 describe('demo seed generation is deterministic', () => {
-  test('regenerating without source changes produces the same content hash', () => {
-    const before = regenerate(tempOutDir());
-    const after = regenerate(tempOutDir());
+  test('regenerating without source changes produces the same content, in any time zone', () => {
+    const before = regenerate(tempOutDir(), { TZ: 'Pacific/Kiritimati' });
+    const after = regenerate(tempOutDir(), { TZ: 'America/Los_Angeles' });
     // Compare content only, excluding the timestamp comment line (see the
     // generator's own hash-stability comment).
     const strip = (s: string) =>
@@ -550,6 +551,41 @@ describe('evidence rules', () => {
   test('every executed test_runs_cases row has a browser_name', () => {
     const rows = q(`select count(*) as n from test_runs_cases where browser_name is null`);
     expect(rows[0]!.n).toBe(0);
+  });
+
+  test("every run lists the Playwright projects its executions ran, and only those, as the run's config", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) {
+      const executed = q(
+        `select distinct browser_name from test_runs_cases where test_run_id = ${run.id as number} order by browser_name`,
+      ).map((r) => r.browser_name);
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name?: string }> };
+      } | null;
+      const listed = (metadata?.htmlReport?.projects ?? []).map((p) => p.name);
+      expect([...listed].sort(), `run ${run.id as number}`).toEqual(executed);
+    }
+  });
+
+  test("lists each project with its executions' browser and viewport, as the reporter records the config's", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    for (const run of runs) {
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name: string; use?: { browserName?: string; viewport?: unknown } }> };
+      } | null;
+      for (const project of metadata?.htmlReport?.projects ?? []) {
+        const [execution] = q(
+          `select browser from test_runs_cases where test_run_id = ${run.id as number}
+            and browser_name = '${project.name}' order by id limit 1`,
+        );
+        const browser = JSON.parse(execution!.browser as string) as { browserName: string; viewport: unknown };
+        expect(project.use, `run ${run.id as number}: ${project.name}`).toMatchObject({
+          browserName: browser.browserName,
+          viewport: browser.viewport,
+        });
+      }
+    }
   });
 
   test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
@@ -1464,6 +1500,29 @@ describe('environment incidents', () => {
       select count(*) as n from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
       where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
     expect(rows[0]!.n).toBe(0);
+  });
+});
+
+describe('keys in test tags', () => {
+  test('the checkout project stores both patterns, each reads its own seeded tag and no tag matches both', () => {
+    const [project] = q('select tag_keys from projects where id = 1');
+    const patterns = JSON.parse(String(project!.tag_keys)) as { issue: string; testCase: string };
+    expect(validateTagKeyPattern(patterns.issue).ok).toBe(true);
+    expect(validateTagKeyPattern(patterns.testCase).ok).toBe(true);
+
+    const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
+    const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
+    expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
+    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123']);
+    expect(
+      tagged.flatMap((row) =>
+        overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the other projects leave them off', () => {
+    expect(q('select id from projects where id <> 1 and tag_keys is not null')).toEqual([]);
   });
 });
 

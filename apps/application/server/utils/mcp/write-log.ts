@@ -33,7 +33,9 @@ export type McpCallResult = 'ok' | 'error' | 'not-found';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const PROJECT_OF: Partial<Record<McpCallSubjectType, (db: DbClient, id: number) => Promise<number | null>>> = {
+const PROJECT_OF: Partial<
+  Record<McpCallSubjectType, (db: DbClient, id: number, viewerId: number | null) => Promise<number | null>>
+> = {
   cluster: resolveClusterProjectId,
   execution: resolveTestRunCaseProjectId,
   'bug-report': resolveBugReportProjectId,
@@ -45,7 +47,7 @@ const PROJECT_OF: Partial<Record<McpCallSubjectType, (db: DbClient, id: number) 
 
 async function subjectProjectId(db: DbClient, subject: McpCallSubject | null): Promise<number | null> {
   const resolve = subject ? PROJECT_OF[subject.type] : undefined;
-  return resolve ? await resolve(db, subject!.id).catch(() => null) : null;
+  return resolve ? await resolve(db, subject!.id, null).catch(() => null) : null;
 }
 
 /** Whether the instance keeps the agents' write log. */

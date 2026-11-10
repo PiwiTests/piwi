@@ -166,8 +166,7 @@ pub(crate) fn http_body(response: &[u8]) -> Result<&[u8], String> {
 /// is built by the caller from validated parts only.
 pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_json::Value, String> {
     use std::io::{Read, Write};
-    let mut stream =
-        std::net::TcpStream::connect(("127.0.0.1", server.port)).map_err(|e| e.to_string())?;
+    let mut stream = crate::connect_proving_token(server.port, &server.token)?;
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(60)));
     let request = format!(
         "GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{}\r\nx-piwi-token: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
@@ -187,15 +186,9 @@ pub(crate) fn local_get_json(server: &ServerInfo, path: &str) -> Result<serde_js
 /// A new directory for one run's verdict file: a random name under the temp
 /// dir, created fresh (never one that already exists) and, on Unix, open to the
 /// user only, so another local user can neither predict the file nor plant one.
-fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
+pub(crate) fn private_run_dir(prefix: &str) -> std::io::Result<PathBuf> {
     let dir = std::env::temp_dir().join(format!("{prefix}{}", crate::random_hex_32()));
-    let mut builder = std::fs::DirBuilder::new();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt as _;
-        builder.mode(0o700);
-    }
-    builder.create(&dir)?;
+    crate::private_fs::private_dir_builder().create(&dir)?;
     Ok(dir)
 }
 
@@ -210,8 +203,7 @@ fn fetch_spec(
     if !crate::runner::valid_project_id(project_id) {
         return Err("invalid project id".into());
     }
-    let mut stream =
-        std::net::TcpStream::connect(("127.0.0.1", server.port)).map_err(|e| e.to_string())?;
+    let mut stream = crate::connect_proving_token(server.port, &server.token)?;
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
     let dir = spec_dir
         .map(|d| format!("&specDir={}", query_escape(d)))
@@ -402,7 +394,27 @@ pub async fn desktop_run_repro(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::serve_as_squatter;
     use std::path::Component;
+
+    #[test]
+    fn the_token_goes_to_no_server_that_cannot_prove_it_holds_it() {
+        let server = |port| ServerInfo {
+            port,
+            token: "pd_x".into(),
+        };
+        let (port, squatter) = serve_as_squatter();
+        let error = local_get_json(&server(port), "/api/desktop/run-channel").unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let seen = squatter.join().unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-piwi-token"), "{seen}");
+
+        let (port, squatter) = serve_as_squatter();
+        let error = fetch_spec(&server(port), "req1", "12", None).unwrap_err();
+        assert_eq!(error, "the local server is not answering");
+        let seen = squatter.join().unwrap();
+        assert!(!seen.to_ascii_lowercase().contains("x-piwi-token"), "{seen}");
+    }
 
     #[test]
     fn each_run_gets_a_new_private_verdict_dir() {

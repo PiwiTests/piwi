@@ -11,7 +11,7 @@
  *   2  no report (bad arguments, unreachable dashboard)
  */
 import * as fs from 'node:fs';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -154,7 +154,7 @@ export function failsOn(tone: Tone, failOn: Tone | null): boolean {
 }
 
 async function fetchReport(args: ReportArgs, query: URLSearchParams): Promise<Response> {
-  const res = await fetch(`${args.serverUrl}/api/reports/preview?${query}`, {
+  const res = await cliFetch(`${args.serverUrl}/api/reports/preview?${query}`, {
     headers: args.apiKey ? { 'X-API-Key': args.apiKey } : {},
   });
   if (!res.ok) {

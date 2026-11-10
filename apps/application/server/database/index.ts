@@ -175,6 +175,25 @@ async function reclusterFailureClusters(target: DB): Promise<void> {
 }
 
 /**
+ * Give the stored resource findings the current identity
+ * (`rekeyResourceFindingsOnce`), once per identity version. Startup waits for
+ * it, so no run is recorded under the current identity beside a finding still
+ * stored under the one before. A failure is logged, and the next start tries
+ * again; a finding a run recorded meanwhile keeps the current identity.
+ */
+async function rekeyResourceFindings(target: DB): Promise<void> {
+  try {
+    const { rekeyResourceFindingsOnce } = await import('#shared/handlers/resource-findings');
+    const rekeyed = await rekeyResourceFindingsOnce(target as any);
+    if (rekeyed && (rekeyed.updated || rekeyed.merged)) {
+      console.log(`[Database] Resource findings re-keyed: ${rekeyed.updated} updated, ${rekeyed.merged} merged`);
+    }
+  } catch (err) {
+    console.error('[Database] Re-keying the resource findings failed:', err);
+  }
+}
+
+/**
  * Release the `cluster.new` claim the migration adding `announced_at` set on
  * the clusters no run announced (`releaseUnannouncedClusterClaimsOnce`), once
  * per instance. Startup waits for it, so no run claims a cluster before it. A
@@ -238,6 +257,7 @@ async function openDatabase(): Promise<DB> {
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
           await reclusterFailureClusters(db);
+          await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
           rewriteRouteKeys(db as any);
@@ -294,6 +314,7 @@ async function openDatabase(): Promise<DB> {
           }
           console.log('[Database] SQLite migrations completed successfully');
           await reclusterFailureClusters(db);
+          await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
           rewriteRouteKeys(db);

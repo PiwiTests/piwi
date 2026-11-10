@@ -12,12 +12,14 @@
  * must not import app `shared/`); a change here is a server-contract change.
  */
 import type { Locator, Page, Response } from '@playwright/test';
+import { proveDesktopServer, shareInFlight, type DesktopProof } from '@piwitests/core/desktop-proof';
 import { ariaSnapshotBestEffort } from '../capture/capture-fixtures.js';
 import type { LocatorEntry, Postcondition, RunEntry, RunStep } from './artifact.js';
 import { ARTIFACT_VERSION } from './artifact.js';
 import { groundElement } from './ground.js';
 import { assertPostcondition, buildLocator, executeStep } from './interpreter.js';
 import { extractPlaceholders, isParametric, maskValues, type ParamValues } from './params.js';
+import { DesktopNotProvenError } from '../transport/http-client.js';
 
 /** ARIA snapshots can be large; cap what we send so cost/latency stay bounded. */
 const MAX_SNAPSHOT_CHARS = 24_000;
@@ -79,16 +81,36 @@ export interface StepResolver {
 
 /** Posts each iteration to the dashboard's reporter-authenticated resolution endpoint. */
 export class ServerStepResolver implements StepResolver {
+  private readonly proofsInFlight = shareInFlight<DesktopProof>();
+
+  /** `desktopToken` is the desktop app's token when `apiKey` is that token; it is sent only after the server proves it. */
   constructor(
     private readonly serverUrl: string,
     private readonly apiKey: string | null,
+    private readonly desktopToken: string | null = null,
   ) {}
+
+  /**
+   * Resolves once the server proved it holds the desktop token. Each step asks for its own proof; steps that arrive
+   * while a proof is being asked share it.
+   */
+  private async requireProof(): Promise<void> {
+    const proof = await this.proofsInFlight('proof', () => proveDesktopServer(this.serverUrl, this.desktopToken!));
+    if (proof !== 'proven') throw new DesktopNotProvenError(this.serverUrl, proof);
+  }
 
   async resolveStep(request: StepResolutionRequest): Promise<StepResolutionResponse> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.apiKey) headers['X-API-Key'] = this.apiKey;
     const url = `${this.serverUrl.replace(/\/+$/, '')}/api/ai/step-resolution`;
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(request) });
+    const carriesDesktopToken = !!this.desktopToken && this.apiKey === this.desktopToken;
+    if (carriesDesktopToken) await this.requireProof();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+      ...(carriesDesktopToken ? { redirect: 'error' as const } : {}),
+    });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(body.message || `piwi AI: step resolution failed (${res.status})`);

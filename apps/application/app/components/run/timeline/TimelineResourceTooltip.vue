@@ -5,6 +5,7 @@
  * worker's strip, that worker's value then.
  */
 import { computed } from 'vue';
+import type { SeriesPoint } from '#shared/types';
 import { formatTimelineTime } from '~/utils/timeline';
 import {
   RESOURCE_TRACK_KINDS,
@@ -27,6 +28,8 @@ const props = defineProps<{
   };
   /** The tracks shown in each band, by its key. */
   tracksFor: (band: ResourceBand) => ResourceTrack[];
+  /** The pages earlier tests left open in each band's workers. */
+  leftOpenFor?: (band: ResourceBand) => SeriesPoint[] | null;
 }>();
 
 /** The most workers the readout lists by name. */
@@ -47,6 +50,9 @@ const rows = computed(() => {
         .filter((worker) => worker.n > 0);
       const listed = open.slice(0, WORKERS_LISTED).map((worker) => `${worker.name}: ${worker.n}`);
       if (open.length > WORKERS_LISTED) listed.push(`${open.length - WORKERS_LISTED} more`);
+      const leftOpen = props.leftOpenFor?.(band);
+      const left = leftOpen?.length ? Math.min(value ?? 0, valueAt(leftOpen, props.state.t, true) ?? 0) : 0;
+      if (left > 0) listed.unshift(`${left} left open by earlier tests`);
       detail = listed.join(' · ') || null;
     }
     return {

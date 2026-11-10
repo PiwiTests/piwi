@@ -107,15 +107,16 @@ export function liveRunPage(address: LiveViewAddress): string {
 }
 
 /**
- * Why a run outside CI holds no live view key: it reports to no Piwi instance (`no-instance`), the reporter's global
- * setup did not register it as it started (`unregistered`: the reporter entry without `wrapConfig`, a run that reports
- * at its end alone, or an instance the setup could not reach), the instance gave none (`off`: its project has the
- * live view off, or the instance predates it), or it reports to the desktop app on this machine, which gives none
- * since no teammate reaches it (`local`: its setup answers `liveView.refused: 'local'`).
+ * Why a run holds no live view key: it reports to no Piwi instance (`no-instance`), it reports at its end alone
+ * (`streaming-off`: `streaming: false`, so it has no live run), the reporter's global setup did not register it as it
+ * started (`unregistered`: the reporter entry without `wrapConfig`, or a config that does not list Piwi's reporter),
+ * that setup could not register it (`setup-failed`: the instance did not answer, or refused it), the instance gave none (`off`: its project has the live view off, or the
+ * instance predates it), or it reports to the desktop app on this machine, which gives none since no teammate reaches
+ * it (`local`: its setup answers `liveView.refused: 'local'`).
  */
-export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off' | 'local';
+export type LiveViewMissing = 'no-instance' | 'streaming-off' | 'unregistered' | 'setup-failed' | 'off' | 'local';
 
-const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off', 'local'];
+const MISSING: readonly string[] = ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'];
 
 /** The value of `PIWI_LIVE_VIEW` for a run outside CI that holds no key: why. */
 export function formatLiveViewMissing(why: LiveViewMissing): string {
@@ -132,8 +133,12 @@ export function parseLiveViewMissing(value: string | undefined): LiveViewMissing
 export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
   'no-instance':
     "This run cannot be shared live: it reports to no Piwi instance. Name your team's instance in PIWI_DASHBOARD_URL.",
+  'streaming-off':
+    'This run cannot be shared live: it sends its results at its end alone (streaming: false), so it has no live run on the instance.',
   unregistered:
-    "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
+    "This run cannot be shared live: the reporter's global setup did not register it as it started (wrapConfig adds it, and it registers a run whose config lists Piwi's reporter).",
+  'setup-failed':
+    "This run cannot be shared live: the instance did not register it as it started (the reporter's global setup could not reach it, or was refused: its warning says why).",
   off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
   local:
     "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team's instance in PIWI_DASHBOARD_URL to share a run there.",
@@ -144,17 +149,18 @@ export const LIVE_SHARE_UNKNOWN =
   'This run cannot be shared live: the Piwi reporter gave its workers no live view key.';
 
 /**
- * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404), the key no longer
- * taken (401, 403: the instance started again, or gave the key up), the run no longer live (410), the run held as
- * interrupted after the retries (409); and the instance that did not answer after them.
+ * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404) and the key not
+ * taken (401), which the setting turned on again or a new try may lift; the key refused (403), the run no longer live
+ * (410), the run held as interrupted after the retries (409); and the instance that did not answer after them.
  */
 export function liveShareRefusal(status: number | null): string {
   switch (status) {
     case 404:
-      return "Sharing stopped: the project's live view was turned off on the instance.";
+      return "Sharing stopped: the project's live view was turned off on the instance. Share the run again once it is back on.";
     case 401:
+      return "Sharing stopped: the instance does not take this run's live view key now. Share the run again to try once more.";
     case 403:
-      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or gave the key up).";
+      return "Sharing stopped: the instance refuses this run's live view key.";
     case 410:
       return 'Sharing stopped: the run is no longer live on the instance.';
     case 409:
@@ -172,10 +178,30 @@ export interface LiveCall {
   line: number | null;
 }
 
-/** A worker of a run: its shard (null in a run that is not sharded) and Playwright's worker index. */
+/**
+ * A worker of a run: its shard (null in a run that is not sharded), Playwright's worker index, and its lane (`slot`,
+ * Playwright's `parallelIndex`, which a worker started again after a failure keeps; absent from an older reporter).
+ */
 export interface LiveWorkerId {
   shard: number | null;
   worker: number;
+  slot?: number;
+}
+
+/** How a test a worker ran ended: its title, Playwright's status and how long it ran, in ms. */
+export interface LiveTestOutcome {
+  test: string | null;
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
+  ms: number;
+}
+
+const OUTCOME_STATUSES: readonly string[] = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
+
+/** A test's outcome, checked field by field; null when it is not one. */
+export function readLiveTestOutcome(value: unknown): LiveTestOutcome | null {
+  if (!isObject(value) || !OUTCOME_STATUSES.includes(value.status as string)) return null;
+  if (!isInt(value.ms, 0, 7 * 24 * 3_600_000)) return null;
+  return { test: readLiveTestTitle(value.test), status: value.status as LiveTestOutcome['status'], ms: value.ms };
 }
 
 /** The title of a test a message names, cut short; null for none. */
@@ -277,16 +303,19 @@ export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'mas
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
-  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the test's title. */
-  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null })
+  /**
+   * A frame of the test's page, a JPEG in base64, the call it was taken at, the test's title and, from a reporter that
+   * says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's clock.
+   */
+  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number })
   /** Why no frame goes: the sentence the viewers see in place of the view. */
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
   /** The call the worker's test is in, as Playwright logs it, and the test's title, as a frame names it. */
   | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
-  /** The test the viewers watched ended, or none runs: their view closes. */
-  | (LiveWorkerId & { type: 'ended' })
+  /** The test the viewers watched ended, how when the worker knows (`outcome`), or none runs. */
+  | (LiveWorkerId & { type: 'ended'; outcome?: LiveTestOutcome | null })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
   | (LiveWorkerId & { type: 'unshared' });
 
@@ -304,18 +333,26 @@ function wholeNumber(value: unknown): number {
   return typeof value === 'string' && /^\d{1,6}$/.test(value) ? Number(value) : Number.NaN;
 }
 
-/** A worker's shard and index, from a message or a query: null when either is not one. */
-export function readLiveWorkerId(shard: unknown, worker: unknown): LiveWorkerId | null {
+/** A worker's shard, index and lane, from a message or a query: null when the shard or the index is not one. */
+export function readLiveWorkerId(shard: unknown, worker: unknown, slot?: unknown): LiveWorkerId | null {
   const shardValue = shard === null || shard === undefined || shard === '' ? null : wholeNumber(shard);
   const workerValue = wholeNumber(worker);
   if (shardValue !== null && !isInt(shardValue, 1, 10_000)) return null;
   if (!isInt(workerValue, 0, 100_000)) return null;
-  return { shard: shardValue, worker: workerValue };
+  const slotValue = wholeNumber(slot);
+  return isInt(slotValue, 0, 10_000)
+    ? { shard: shardValue, worker: workerValue, slot: slotValue }
+    : { shard: shardValue, worker: workerValue };
 }
 
 /** The key the instance files a worker under: `<shard>:<worker>`, the shard empty in a run that is not sharded. */
 export function liveWorkerKey(id: LiveWorkerId): string {
   return `${id.shard ?? ''}:${id.worker}`;
+}
+
+/** The key of a worker's lane, its shard and its slot (`<shard>#<slot>`), which a restarted worker keeps. */
+export function liveLaneKey(lane: { shard: number | null; slot: number }): string {
+  return `${lane.shard ?? ''}#${lane.slot}`;
 }
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
@@ -439,6 +476,11 @@ export function readLiveCallLog(value: unknown): LiveCallLog | null {
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/** Whether `value` is a time in epoch milliseconds: a finite number after 2001. */
+export function isEpochMs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 1e12;
+}
+
 /** Whether `data` is a live frame's data: base64, not empty, at most `MAX_LIVE_FRAME_BASE64` characters. */
 export function isLiveFrameData(data: unknown): data is string {
   return typeof data === 'string' && data.length > 0 && data.length <= MAX_LIVE_FRAME_BASE64 && BASE64.test(data);
@@ -447,7 +489,7 @@ export function isLiveFrameData(data: unknown): data is string {
 /** A message a worker posted, checked field by field; why not, as a sentence, when it is not one this version reads. */
 export function readWorkerToInstance(value: unknown): WorkerToInstance | string {
   if (!isObject(value)) return 'The message is not an object.';
-  const id = readLiveWorkerId(value.shard, value.worker);
+  const id = readLiveWorkerId(value.shard, value.worker, value.slot);
   if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
   switch (value.type) {
     case 'frame': {
@@ -456,7 +498,8 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       }
       if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
-      return { type: 'frame', ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      const frame = { type: 'frame' as const, ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      return isEpochMs(value.at) ? { ...frame, at: Math.round(value.at) } : frame;
     }
     case 'stop': {
       if (value.stop === null) return { type: 'stop', ...id, stop: null };
@@ -474,8 +517,10 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
         ? { type: 'call-log', ...id, log, test: readLiveTestTitle(value.test) }
         : 'A call log names its call, its status and its lines.';
     }
-    case 'ended':
-      return { type: 'ended', ...id };
+    case 'ended': {
+      const outcome = readLiveTestOutcome(value.outcome);
+      return outcome ? { type: 'ended', ...id, outcome } : { type: 'ended', ...id };
+    }
     case 'unshared':
       return { type: 'unshared', ...id };
     default:

@@ -12,12 +12,15 @@ import {
   MAX_RUN_EVENT_TEXT,
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
+  MAX_WAITING_TITLE,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
+  RUN_FEATURES,
   RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
   isSnapshotRef,
+  parseRunMainToHub,
   parseRunToHub,
   type HubToRun,
   type KeptRequest,
@@ -741,6 +744,176 @@ describe('the run channel', () => {
       ]) {
         expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
       }
+    });
+  });
+
+  describe('what the run’s own process sends', () => {
+    const begin = {
+      type: 'run-begin',
+      token: 't'.repeat(32),
+      ref: 'terminal-41-1730000000000',
+      cwd: '/work/shop',
+      pid: 41,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 9,
+      workers: 2,
+      shard: { current: 1, total: 3 },
+    } as const;
+
+    test('reads its begin, and refuses one without a ref, a folder, a count or a shard it can read', () => {
+      expect(parseRunMainToHub(line(begin))).toEqual(begin);
+      expect(parseRunMainToHub(line({ ...begin, shard: null }))).toEqual({ ...begin, shard: null });
+      expect(parseRunMainToHub(line({ ...begin, playwright: 3 }))).toEqual({ ...begin, playwright: '' });
+      for (const broken of [
+        { ...begin, ref: 'a ref' },
+        { ...begin, cwd: '' },
+        { ...begin, total: -1 },
+        { ...begin, workers: 0 },
+        { ...begin, shard: { current: 4, total: 3 } },
+        { ...begin, shard: 'one' },
+        { ...begin, token: 7 },
+      ]) {
+        expect(parseRunMainToHub(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+      // A worker's reader takes none of them, nor the run's reader a worker's attach.
+      expect(parseRunToHub(line(begin))).toBeNull();
+      expect(parseRunMainToHub(line({ type: 'run-attach' }))).toBeNull();
+    });
+
+    test('reads its counts, none above what ended', () => {
+      const progress = { type: 'run-progress', done: 4, failed: 1, flaky: 1, skipped: 1 };
+      expect(parseRunMainToHub(line(progress))).toEqual(progress);
+      expect(parseRunMainToHub(line({ ...progress, failed: 3 }))).toBeNull();
+      expect(parseRunMainToHub(line({ ...progress, done: 1.5 }))).toBeNull();
+    });
+
+    test('reads how the run ended, a status of a newer Playwright as other, its failure cut short', () => {
+      const end = {
+        type: 'run-end',
+        status: 'failed',
+        failure: { title: 'cart › adds a mug', error: 'expect(locator).toBeVisible() failed' },
+        done: 9,
+        failed: 1,
+        flaky: 0,
+        skipped: 0,
+      };
+      expect(parseRunMainToHub(line(end))).toEqual(end);
+      expect(parseRunMainToHub(line({ ...end, status: 'crashed' }))).toMatchObject({ status: 'other' });
+      expect(parseRunMainToHub(line({ ...end, failure: null }))).toMatchObject({ failure: null });
+      expect(parseRunMainToHub(line({ ...end, failure: { title: 'x'.repeat(900), error: null } }))).toMatchObject({
+        failure: { title: 'x'.repeat(500), error: null },
+      });
+      expect(parseRunMainToHub(line({ ...end, failure: { title: ' ', error: null } }))).toBeNull();
+      expect(parseRunMainToHub(line({ ...end, status: 4 }))).toBeNull();
+    });
+  });
+
+  describe('the lane view', () => {
+    test('reads the call a pausing worker waits in, and End the test there', () => {
+      const waiting = {
+        type: 'waiting',
+        title: "Click getByRole('button', { name: 'Pay' })",
+        place: { file: 'tests/pages/checkout.page.ts', line: 12, column: 5 },
+        ms: 4200,
+        endable: true,
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(waiting))).toEqual(waiting);
+      expect(parseRunToHub(line({ ...waiting, place: null }))).toEqual({ ...waiting, place: null });
+      expect(parseRunToHub(line({ ...waiting, ms: null }))).toEqual({ ...waiting, ms: null });
+      expect(parseRunToHub(line({ ...waiting, title: 'x'.repeat(MAX_WAITING_TITLE + 10) }))).toMatchObject({
+        title: 'x'.repeat(MAX_WAITING_TITLE),
+      });
+      for (const wrong of [{ title: '' }, { ms: -1 }, { endable: 'yes' }, { place: { file: '', line: 0 } }]) {
+        expect(parseRunToHub(line({ ...waiting, ...wrong }))).toBeNull();
+      }
+      // Once it waits in no call, a null title, whatever else the line says.
+      expect(parseRunToHub(line({ ...waiting, title: null }))).toEqual({
+        type: 'waiting',
+        title: null,
+        place: null,
+        ms: null,
+        endable: false,
+      });
+      // End the test names the test the call was waited in.
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: 't1' }))).toEqual({
+        type: 'control',
+        action: 'give-up',
+        testId: 't1',
+      });
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
+    });
+
+    test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {
+      const attach = {
+        type: 'run-attach',
+        token: 't'.repeat(32),
+        ref: 'ed-0a1b2c3d',
+        cwd: '/work/shop',
+        workerIndex: 2,
+        parallelIndex: 1,
+        pid: 4242,
+        playwright: '1.64.1',
+        reporter: '0.70.0',
+        takes: ['view'],
+        features: ['view-lane'],
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(attach))).toEqual(attach);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up']);
+      expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
+        features: ['view-lane'],
+      });
+      expect(parseRunToHub(line({ ...attach, features: 'view-lane' }))).not.toHaveProperty('features');
+      expect(parseRunToHub(line({ ...attach, features: Array(65).fill('view-lane') }))).toMatchObject({
+        features: [],
+      });
+    });
+
+    test('reads a request to turn the lane view on or off, which names no stop', () => {
+      for (const on of [true, false]) {
+        const asked = { type: 'request', request: 7, what: 'view-lane', on } satisfies HubToRun;
+        expect(parseHubToRun(line(asked))).toEqual(asked);
+      }
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'view-lane' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'request', request: 0, what: 'view-lane', on: true }))).toBeNull();
+      const answer = { type: 'answer', request: 7, what: 'view-lane', value: { ok: true, message: 'On.' } };
+      expect(parseRunToHub(line(answer))).toEqual(answer);
+    });
+
+    test('reads a frame of the lane, of its test and of the stop it stands at, and why none goes', () => {
+      const frame = {
+        type: 'lane-frame',
+        test: 'a1b2-c3',
+        stop: null,
+        width: 1280,
+        height: 720,
+        data: '/9j/4AAQ',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(frame))).toEqual(frame);
+      expect(parseRunToHub(line({ ...frame, stop: 3 }))).toEqual({ ...frame, stop: 3 });
+      for (const broken of [
+        { ...frame, stop: 0 },
+        { ...frame, stop: undefined },
+        { ...frame, test: null },
+        { ...frame, test: '' },
+        { ...frame, test: 'x'.repeat(257) },
+        { ...frame, width: 0 },
+        { ...frame, data: 'not base64' },
+        { ...frame, data: 'A'.repeat(MAX_VIEW_FRAME_BASE64 + 4) },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+      }
+      const refused = { type: 'lane-frame', test: null, stop: null, refused: 'No page.' } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, test: 'a1', stop: 2, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        test: 'a1',
+        stop: 2,
+        refused: 'x'.repeat(500),
+      });
+      expect(parseRunToHub(line({ ...refused, refused: ' ' }))).toBeNull();
+      expect(parseRunToHub(line({ ...refused, test: 4 }))).toBeNull();
     });
   });
 

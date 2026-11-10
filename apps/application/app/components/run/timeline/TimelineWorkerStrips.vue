@@ -32,6 +32,7 @@ const paths = computed(() =>
     ...(strip.mode === 'spans'
       ? { line: '', area: spansPath(strip.spans, props.set.yMax, stripPlot) }
       : seriesPaths(strip.points, props.set.yMax, strip.mode === 'step', stripPlot)),
+    leftOpen: strip.leftOpen.length > 0 ? seriesPaths(strip.leftOpen, props.set.yMax, true, stripPlot).area : '',
   })),
 );
 
@@ -63,6 +64,7 @@ function onMove(strip: WorkerStrip, event: MouseEvent): void {
         <g clip-path="url(#timeline-worker-strip-clip)">
           <g :transform="`translate(${labelWidth}, 0) scale(${pxPerMs}, 1)`">
             <path :d="item.area" class="fill-gray-400/40 dark:fill-gray-400/30" />
+            <path v-if="item.leftOpen" :d="item.leftOpen" class="fill-red-500/45 dark:fill-red-400/40" />
             <path
               v-if="item.line"
               :d="item.line"

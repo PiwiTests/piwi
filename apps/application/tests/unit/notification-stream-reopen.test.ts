@@ -6,12 +6,23 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
  */
 
 vi.mock('../../app/composables/useDiagnosisNotification', () => ({
-  useDiagnosisNotification: () => ({ active: { value: true } }),
+  useDiagnosisNotification: () => ({ enabled: { value: true } }),
 }));
 vi.mock('../../app/composables/useBrowserNotificationCookie', () => ({
   useBrowserNotificationCookie: () => ({ isEventSubscribed: () => true }),
 }));
 vi.mock('~/demo/run-events', () => ({ subscribeDemoEvents: () => () => {} }));
+
+/** The lease of the notification stream, as the test hands it to the tab or takes it back. */
+const lease = vi.hoisted(() => ({ held: () => {}, lost: () => {} }));
+vi.mock('~/utils/tab-lease', () => ({
+  holdInOneTab: (options: { held: () => void; lost: () => void }) => {
+    lease.held = options.held;
+    lease.lost = options.lost;
+    options.held();
+    return () => {};
+  },
+}));
 
 /** The browser's EventSource, played by the test. */
 class FakeSource {
@@ -67,6 +78,16 @@ async function start() {
 }
 
 describe('the notification stream', () => {
+  test('closes in a tab that lost the lease, and opens again in one that holds it', async () => {
+    await start();
+    FakeSource.all[0]!.open();
+    lease.lost();
+    expect(FakeSource.all[0]!.closed).toBe(true);
+    lease.held();
+    expect(FakeSource.all).toHaveLength(2);
+    expect(FakeSource.all[1]!.closed).toBe(false);
+  });
+
   test('opens again after an error answer, waiting longer each time until one opens', async () => {
     await start();
     expect(FakeSource.all[0]!.url).toBe('/api/notifications/stream');

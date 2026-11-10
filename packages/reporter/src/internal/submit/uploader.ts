@@ -7,9 +7,10 @@ import type { FileHandler, UploadableAttachment } from '../files/file-handler.js
 import type { ArchiveFile } from '../files/compression.js';
 import { errorMessage } from '../support/errors.js';
 import { Logger } from '../support/logger.js';
+import { requestedRunTarget } from '../config/env.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
 import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport, SetupStep } from '../../types.js';
-import type { WireRunError } from '../../types/wire.js';
+import type { WireEnvironmentSnapshot, WireRunError } from '../../types/wire.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -60,6 +61,8 @@ export interface RunPayload {
   setupSteps?: SetupStep[];
   /** The errors Playwright reported outside any test (`onError`), as `/finish` takes them */
   runErrors?: WireRunError[];
+  /** The run's environment snapshots (runner, browsers, servers under test). */
+  environments?: WireEnvironmentSnapshot[];
   /**
    * Generated once per run (per shard) and sent with every attempt to deliver it, so the dashboard
    * stores a delivery it already took once: a slow upload the reporter gave up on, then sent again.
@@ -576,6 +579,11 @@ export async function uploadCaseFilesInTurn(
           `Run #${run.runId} takes no more files (${errorMessage(error)}): skipping those of the remaining tests.`,
         );
         return;
+      }
+      // A requested run keeps only the tests its project knows: the files of any other have no test to go to.
+      if (error instanceof HttpError && error.status === 404 && requestedRunTarget()) {
+        logger.debug(`Kept the files of "${tc.title}" here: the instance does not know the test.`);
+        continue;
       }
       logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
       // Any HTTP status means the dashboard answered; only a request that got

@@ -19,6 +19,8 @@ import {
   parseLiveViewEnv,
   parseLiveViewMissing,
   readLiveCall,
+  liveLaneKey,
+  readLiveTestOutcome,
   readLiveWorkerId,
   readWorkerToInstance,
   compressCallLog,
@@ -71,7 +73,7 @@ describe('the live view address', () => {
   });
 
   test('a run outside CI without a key names why, which no address reads as one', () => {
-    for (const why of ['no-instance', 'unregistered', 'off'] as const) {
+    for (const why of ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'] as const) {
       const value = formatLiveViewMissing(why);
       expect(value).toBe(`none:${why}`);
       expect(parseLiveViewMissing(value)).toBe(why);
@@ -85,7 +87,9 @@ describe('the live view address', () => {
 
   test('says why a shared stream was given up, by the instance’s answer', () => {
     expect(liveShareRefusal(404)).toMatch(/live view was turned off/);
-    expect(liveShareRefusal(401)).toBe(liveShareRefusal(403));
+    expect(liveShareRefusal(404)).toMatch(/Share the run again once it is back on/);
+    expect(liveShareRefusal(401)).toMatch(/Share the run again to try once more/);
+    expect(liveShareRefusal(403)).not.toMatch(/Share the run again/);
     expect(liveShareRefusal(410)).toMatch(/no longer live/);
     expect(liveShareRefusal(409)).toMatch(/holds the run as interrupted/);
     expect(liveShareRefusal(null)).toMatch(/did not answer/);
@@ -119,6 +123,14 @@ describe('the messages', () => {
     }
     expect(liveWorkerKey({ shard: null, worker: 3 })).toBe(':3');
     expect(liveWorkerKey({ shard: 2, worker: 3 })).toBe('2:3');
+  });
+
+  test('a worker names its lane, from 0, which the instance keys apart from the worker', () => {
+    expect(readLiveWorkerId('2', '5', '1')).toEqual({ shard: 2, worker: 5, slot: 1 });
+    expect(readLiveWorkerId(null, 5, -1)).toEqual({ shard: null, worker: 5 });
+    expect(readLiveWorkerId(null, 5, 'one')).toEqual({ shard: null, worker: 5 });
+    expect(liveLaneKey({ shard: null, slot: 1 })).toBe('#1');
+    expect(liveLaneKey({ shard: 2, slot: 0 })).toBe('2#0');
   });
 
   test('a call names no text a fill or a typing typed, from a reporter that hid it or not', () => {
@@ -178,6 +190,13 @@ describe('the messages', () => {
       call: null,
       test: null,
     });
+    // When the page looked so, in the worker's clock, kept when it is a time and left out when not.
+    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at: 1_760_000_000_000.4 })).toMatchObject({
+      at: 1_760_000_000_000,
+    });
+    for (const at of ['soon', -1, 5, Number.NaN, null]) {
+      expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at })).not.toHaveProperty('at');
+    }
     expect(readWorkerToInstance({ type: 'frame', worker: 1, refused: 'Too heavy.' })).toEqual({
       type: 'frame',
       shard: null,
@@ -227,6 +246,21 @@ describe('the messages', () => {
       expect(typeof readWorkerToInstance(value), JSON.stringify(value)).toBe('string');
     }
     expect(readWorkerToInstance({ type: 'ended', worker: 4 })).toEqual({ type: 'ended', shard: null, worker: 4 });
+    const outcome = { test: 'pays', status: 'failed', ms: 1200 };
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, slot: 0, outcome })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+      slot: 0,
+      outcome,
+    });
+    // An outcome this version cannot read leaves the end alone.
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, outcome: { status: 'done', ms: 1 } })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+    });
+    expect(readLiveTestOutcome({ test: 'pays', status: 'passed', ms: -1 })).toBeNull();
     expect(readWorkerToInstance({ type: 'unshared', shard: 2, worker: 1 })).toEqual({
       type: 'unshared',
       shard: 2,

@@ -54,9 +54,9 @@ const TEARDOWN_CONTAINER_RE = /^(?:after hooks|worker cleanup|worker teardown)$/
 const NAMED_HOOK_RE = /^(before|after)(each|all) hook$/i;
 const FIXTURE_TITLE_RE = /^fixture\s+["“](.+)["”]$/i;
 
-/** A step Piwi's capture attached (`Attach "piwi-…"`), and its own auto fixture. */
+/** A step Piwi's capture attached (`Attach "piwi-…"`), and its own auto fixtures. */
 const CAPTURE_ATTACH_RE = /^attach\s+["“]piwi-/i;
-const CAPTURE_FIXTURE_RE = /^fixture\s+["“]piwiCapture["”]$/i;
+const CAPTURE_FIXTURE_RE = /^fixture\s+["“]piwi(?:Capture|Resources)["”]$/i;
 /** A capture read made through the reporter bundle (recorded by reporters that did not keep them internal). */
 const CAPTURE_PROBE_TITLE_RE = /^(?:evaluate|aria snapshot|locator\.(?:evaluate|ariasnapshot)|page\.evaluate)\b/i;
 const REPORTER_BUNDLE_RE = /[\\/](?:@piwitests[\\/]reporter|packages[\\/]reporter)[\\/]dist[\\/]/;
@@ -111,8 +111,8 @@ function isRecoveredStep(step: TreeStepLike): boolean {
 
 /**
  * Whether a step belongs to Piwi's own capture rather than to the test: its
- * `piwiCapture` fixture, an `Attach "piwi-…"` step, or a page read the capture
- * fixtures made through the reporter bundle.
+ * `piwiCapture` and `piwiResources` fixtures, an `Attach "piwi-…"` step, or a
+ * page read the capture fixtures made through the reporter bundle.
  */
 export function isCaptureStep(step: TreeStepLike): boolean {
   const title = str(step.title).trim();

@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-runner-controls",
+  "description": "Let the Piwi Runner window, served from the local loopback host, call the app's own IPC commands: open external links in the OS browser, bring the window to the front, and take run requests from one team instance (keep and forget its key in the OS keychain, link the folders of its projects, start a requested run with the command and request token the host gives the shell, and stop it). Added at startup scoped to the exact origin of the host this launch spawned (`http://127.0.0.1:<port>`, set in place of the placeholder below) — no other site or local port is granted access, and only the Runner webview has the native bridge.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:0"]
+  },
+  "permissions": [
+    "core:default",
+    "allow-desktop-bring-to-front",
+    "allow-desktop-open-external",
+    "allow-desktop-stop-local-tests",
+    "allow-desktop-keep-run-target-key",
+    "allow-desktop-forget-run-target",
+    "allow-desktop-request-folders",
+    "allow-desktop-link-request-folder",
+    "allow-desktop-unlink-request-folder",
+    "allow-desktop-run-requested-tests"
+  ]
+}

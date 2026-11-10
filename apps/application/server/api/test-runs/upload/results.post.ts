@@ -8,6 +8,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { getProjectScope } from '../../../utils/project-access';
 import { resolveIngestProject } from '../../../utils/ingest-project';
 import type { TestRunSubmitPayload } from '#shared/types';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
@@ -67,6 +68,7 @@ export default eventHandler(async (event) => {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       streamToken,
     };

@@ -75,12 +75,14 @@ import {
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
 import {
+  flakeContextOptions,
   flakeResultLine,
   flakeRoleForTest,
   installFlakeConditions,
   isFlakeMode,
   labModeConflict,
   loadFlakePlan,
+  markFlakeContext,
   pageBrowserName,
   recordFlakeResult,
   unappliedReports,
@@ -89,7 +91,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -151,7 +153,8 @@ import { watchCalls, watchPageEvents } from './run-events.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
-import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { PIWI_ORIGIN_ENV, PIWI_STOP_NOTES_ENV } from '../config/env.js';
+import { noteStop } from '../support/stop-notes.js';
 import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
@@ -164,8 +167,10 @@ import {
   openLiveView,
 } from './live-view.js';
 import { trackCalls } from './live-call-log.js';
+import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
+import { stepLabel } from '@piwitests/core/step-analysis';
 import {
   closeRunChannel,
   editorSendAddress,
@@ -182,6 +187,7 @@ import {
 import {
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
+  MAX_WAITING_TITLE,
   RUN_INTENT_NAMES,
   type IntentAnswer,
   type PickAtAnswer,
@@ -200,8 +206,9 @@ import {
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
-import { configDirFromConfig } from '../support/test-paths.js';
+import { configDirFromConfig, relativeTestPath } from '../support/test-paths.js';
 import { boxCaptureFrames, callMethod, internalCall } from './quiet-capture.js';
+import { attachBrowserEnvironment, readBrowserEnvironment } from './browser-environment.js';
 import {
   codeReachRoots,
   pageMapFetcher,
@@ -216,6 +223,7 @@ import {
 import { resolveCssCoverage } from './css-coverage.js';
 import {
   activeResourceLedger,
+  noteResourceClosing,
   noteResourceUse,
   recordResourceCensus,
   startResourceLedger,
@@ -440,6 +448,8 @@ interface CaptureSink {
   // signal (`withEndSignal`), which End aborts, so a call the debugger holds never runs. `skip` is the runner's own
   // error that skips the attempt, taken once (`skipOf`).
   ended: boolean;
+  // While a Pause waits for the call the test runs, the timer that reads that call again (`watchWaiting`).
+  waitingWatch: ReturnType<typeof setInterval> | null;
   end: AbortController;
   skip: unknown;
   // The calls a stop let go when the test ended under it, each settling once its call does (at once for a call
@@ -516,6 +526,7 @@ function createSink(): CaptureSink {
     ending: false,
     functionEnded: false,
     ended: false,
+    waitingWatch: null,
     end: new AbortController(),
     skip: undefined,
     released: [],
@@ -1579,6 +1590,8 @@ interface LocatorCall {
   picked: boolean;
   /** The call carries the attempt's end signal (`withEndSignal`): End the test at a stop on it gives it up. */
   endable: boolean;
+  /** When it began (`Date.now()`). */
+  startedAt: number;
   /** Settles once the call did, whatever its outcome (`forgetLocatorCall`). */
   settled: Promise<void>;
   settle: () => void;
@@ -1595,7 +1608,17 @@ function knowLocatorCall(
   if (!sink?.pause || !location) return null;
   let settle = (): void => {};
   const settled = new Promise<void>((resolve) => (settle = resolve));
-  const call: LocatorCall = { page, target, location, origin, picked: false, endable: false, settled, settle };
+  const call: LocatorCall = {
+    page,
+    target,
+    location,
+    origin,
+    picked: false,
+    endable: false,
+    startedAt: Date.now(),
+    settled,
+    settle,
+  };
   sink.locatorCalls.set(callSiteLine(location), call);
   return call;
 }
@@ -1831,13 +1854,15 @@ interface FailureStop {
 async function showStop(
   sink: CaptureSink,
   context: BrowserContext,
-  title: string,
+  calledAs: string,
   location: string,
   reason: StopReason,
   call: LocatorCall | undefined,
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
+  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
+  const title = hideSecretsInText(hideTypedText(calledAs));
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
@@ -1875,6 +1900,8 @@ async function showStop(
   const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
   const intents = page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
+  // How long the attempt stood stopped before this stop.
+  const pausedBefore = sink.stops.reduce((sum, earlier) => sum + Math.max(0, earlier.duration), 0);
   sink.stops.push(record);
   // The run page's live view says the worker is paused, until the stop ends.
   const stoppedAt = callSitePlace(location);
@@ -1882,6 +1909,21 @@ async function showStop(
     reason,
     call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
     test: testInfo.title,
+  });
+  // The reporter's process tells the instance, while someone has the run open (`stop-notes.ts`).
+  const noted = { testId: testInfo.testId, retry: testInfo.retry };
+  noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+    kind: 'stopped',
+    ...noted,
+    stop: {
+      reason,
+      title,
+      file: stoppedAt ? stopFile(stoppedAt.file, configDirFromConfig(testInfo.config)) : null,
+      line: stoppedAt?.line ?? null,
+      bar,
+      since: record.startedAt,
+      pausedMs: Math.round(pausedBefore),
+    },
   });
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
   // comes down then.
@@ -2019,6 +2061,11 @@ async function showStop(
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
     sink.shownStops.delete(end);
     goneOn();
+    noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+      kind: 'resumed',
+      ...noted,
+      pausedMs: Math.round(pausedBefore + Math.max(0, record.duration)),
+    });
     await held?.release();
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
@@ -2350,6 +2397,7 @@ export function errorPlace(error: unknown, windows: boolean = process.platform =
 type RunnerStep = {
   category?: unknown;
   title?: unknown;
+  subtitle?: unknown;
   endWallTime?: unknown;
   steps?: unknown;
   stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
@@ -2357,9 +2405,9 @@ type RunnerStep = {
 };
 
 /**
- * The call still running in the test, its title and where the runner placed it in the test's code: the innermost step
- * not ended of a Playwright call, an assertion or a `test.step` (the runner's steps, a Playwright internal,
- * feature-checked). Null for none.
+ * The call still running in the test, its title with its target (`stepLabel`: `Click getByRole('button')`) and where
+ * the runner placed it in the test's code: the innermost step not ended of a Playwright call, an assertion or a
+ * `test.step` (the runner's steps, a Playwright internal, feature-checked). Null for none.
  */
 function callInProgress(testInfo: TestInfo): { title: string | null; place: CodePlace } | null {
   let found: { title: string | null; place: CodePlace } | null = null;
@@ -2371,7 +2419,7 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
       const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
       if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
         found = {
-          title: typeof step.title === 'string' ? step.title : null,
+          title: typeof step.title === 'string' ? stepLabel(step) : null,
           place: { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 },
         };
       }
@@ -2380,6 +2428,16 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
   };
   visit((testInfo as unknown as { _steps?: unknown })._steps);
   return found;
+}
+
+/**
+ * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
+ * failed; any other status as Playwright tells it.
+ */
+function liveOutcomeStatus(testInfo: TestInfo): TestInfo['status'] {
+  if (testInfo.expectedStatus !== 'failed') return testInfo.status;
+  if (testInfo.status === 'failed') return 'passed';
+  return testInfo.status === 'passed' ? 'failed' : testInfo.status;
 }
 
 /** The call still running in the test, where a test timeout cut it short (`callInProgress`). Null for none. */
@@ -2391,7 +2449,7 @@ function stepInProgress(testInfo: TestInfo): CodePlace | null {
  * The call the test is on, as the run page's live view names it beside each frame, its file relative to the working
  * directory. Null for none.
  */
-function runningCall(testInfo: TestInfo): LiveCall | null {
+export function runningCall(testInfo: TestInfo): LiveCall | null {
   const call = callInProgress(testInfo);
   if (!call?.title) return null;
   const file = path.relative(process.cwd(), call.place.file).split(path.sep).join('/');
@@ -2847,6 +2905,8 @@ function instrumentPage(page: Page): void {
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
   watchPageEvents(page);
+  // A page the running test opens shows on its lane while it shows no other.
+  laneSawPage(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -2901,6 +2961,7 @@ function instrumentPage(page: Page): void {
   if (typeof page.close === 'function') {
     const originalClose = page.close.bind(page);
     page.close = async (...args: Parameters<Page['close']>): Promise<void> => {
+      noteResourceClosing(page);
       let closed = (): void => {};
       CLOSING_PAGES.set(page, new Promise<void>((resolve) => (closed = resolve)));
       try {
@@ -3264,7 +3325,7 @@ function instrumentContext(context: BrowserContext): void {
   // stub call instead of the probe's source. Best-effort: `probeElement` falls
   // back to shipping the source for any document this does not reach.
   if (process.env.PIWI_CAPTURE_LOCATORS !== 'false' && typeof context.addInitScript === 'function') {
-    void Promise.resolve(context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
+    void internalCall(context, () => context.addInitScript({ content: PROBE_INIT_SCRIPT })).catch(() => {
       /* the fallback covers it */
     });
   }
@@ -3286,6 +3347,7 @@ function instrumentContext(context: BrowserContext): void {
   if (typeof context.close === 'function') {
     const originalClose = context.close.bind(context);
     context.close = async (...args: Parameters<BrowserContext['close']>): Promise<void> => {
+      noteResourceClosing(context);
       await settleContextClose(context);
       return originalClose(...args);
     };
@@ -3318,7 +3380,11 @@ function patchBrowser(browser: Browser): void {
 
   const originalNewContext = browser.newContext.bind(browser);
   browser.newContext = async (...args: Parameters<Browser['newContext']>): Promise<BrowserContext> => {
-    const context = await originalNewContext(...args);
+    // A flake-lab arm's time zone and locale, for every context its target test creates.
+    const flake = currentSink?.flake;
+    const emulation = flake?.role === 'target' ? flakeContextOptions(flake.plan) : null;
+    const context = await originalNewContext(...(emulation ? ([{ ...args[0], ...emulation }] as const) : args));
+    if (emulation) markFlakeContext(context);
     instrumentContext(context);
     await armStops([context]);
     return context;
@@ -3330,6 +3396,7 @@ function patchBrowser(browser: Browser): void {
   if (typeof browser.close === 'function') {
     const originalClose = browser.close.bind(browser);
     browser.close = async (...args: Parameters<Browser['close']>): Promise<void> => {
+      noteResourceClosing(browser);
       await drainPendingProbes(1000);
       for (const context of typeof browser.contexts === 'function' ? browser.contexts() : []) {
         await settleContextClose(context);
@@ -3436,6 +3503,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   }
   // A page read live, unless its failure was held: its evidence is what it was as the hold began.
   const live = pageReadable && sink.frozenAt === null;
+
+  await attachBrowserEnvironment(testInfo);
 
   // The stops the pause bar showed.
   if (sink.stops.length > 0) {
@@ -3743,6 +3812,35 @@ const runControl: RunControl = {
     }
     sink.pause.pause = true;
     void armStops(OPEN_CONTEXTS);
+    watchWaiting(sink);
+  },
+  giveUp(testId) {
+    const sink = currentSink;
+    const waiting = sink?.testInfo ? callInProgress(sink.testInfo) : null;
+    if (!sink?.testInfo || sink.testInfo.testId !== testId || sink.functionEnded || sink.ended) {
+      // As the editor shows it: no test waits for the Pause any more.
+      if (sink?.pause) sink.pause.pause = false;
+      pauseNextTest = false;
+      tellHub({
+        type: 'notice',
+        message: 'The test left the call it waited in before it could be ended: it goes on, and the Pause is dropped.',
+      });
+      return;
+    }
+    const line = waiting ? `${runFile(waiting.place.file)}:${waiting.place.line}` : null;
+    const endable =
+      !!line && [...sink.locatorCalls.values()].some((c) => c.endable && callSiteLine(c.location) === line);
+    sink.ended = true;
+    // Ended in place of the stop the Pause waited for: the next test does not stop for it.
+    if (sink.pause) sink.pause.pause = false;
+    skipAtFunctionEnd(sink);
+    sink.end.abort(new Error(ENDED_REASON));
+    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const said = endable
+      ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
+      : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
+    console.log(`[piwi] ${said}`);
+    tellHub({ type: 'notice', message: said });
   },
   breakpoints(places) {
     const set = replacePauseSet(places);
@@ -3759,7 +3857,55 @@ const runControl: RunControl = {
   },
 };
 
+/** How often the call a Pause waits for is read again, while it waits. */
+const WAITING_WATCH_MS = 250;
+
+/**
+ * Asked to pause, tell the hub the call the test waits in before it can stop (`waiting`), and again each time that
+ * call changes, while the Pause waits and the test's function runs: its title, its place, how long it has run (a
+ * locator call's, which the fixtures know; null for another), and whether End the test gives it up (a locator call on
+ * its line that carries the end signal). A null title once it waits in none.
+ */
+function watchWaiting(sink: CaptureSink): void {
+  if (sink.waitingWatch) return;
+  let said = '';
+  const look = (): void => {
+    const waits = currentSink === sink && !!sink.pause?.pause && !sink.functionEnded && !sink.ended;
+    const call = waits && sink.testInfo ? callInProgress(sink.testInfo) : null;
+    const file = call?.title ? runFile(call.place.file) : '';
+    const key = call?.title ? `${call.title}\n${file}:${call.place.line}` : '';
+    if (key !== said) {
+      said = key;
+      if (!call?.title) tellHub({ type: 'waiting', title: null, place: null, ms: null, endable: false });
+      else {
+        const line = `${file}:${call.place.line}`;
+        const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
+        tellHub({
+          type: 'waiting',
+          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
+          ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
+          endable: !!locatorCall?.endable,
+        });
+      }
+    }
+    if (!waits && sink.waitingWatch) {
+      clearInterval(sink.waitingWatch);
+      sink.waitingWatch = null;
+    }
+  };
+  sink.waitingWatch = setInterval(look, WAITING_WATCH_MS);
+  sink.waitingWatch.unref?.();
+  look();
+}
+
 /** A file of the run as the run channel names it: relative to the working directory, with forward slashes. */
+/** A stop's file as the instance names test files: relative to the config's folder, none on another drive. */
+function stopFile(file: string, base: string): string | null {
+  const relative = relativeTestPath(file, base);
+  return relative && !path.isAbsolute(relative) ? relative : null;
+}
+
 function runFile(file: string): string {
   return path.relative(process.cwd(), file).split(path.sep).join('/') || file;
 }
@@ -3867,12 +4013,22 @@ export const piwiFixtures: Fixtures<
   // Safety net for the standard `page` fixture, in case its page is created
   // through an internal path the browser patch doesn't see. Idempotent, so it
   // never double-wraps a page the browser patch already instrumented.
-  page: async ({ page }: PlaywrightTestArgs, use: UseFn<Page>) => {
+  page: async (
+    { page, timezoneId, locale, colorScheme }: PlaywrightTestArgs & PlaywrightTestOptions,
+    use: UseFn<Page>,
+    testInfo: TestInfo,
+  ) => {
     instrumentPage(page);
+    // The page is still blank: what the browser reports of itself, once per worker and project, from a test that
+    // runs with the project's own options.
+    if (currentSink?.flake?.role !== 'target') {
+      await readBrowserEnvironment(page, testInfo, { timezoneId, locale, colorScheme });
+    }
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
-    // The page the run page's live view shows, while someone watches this worker.
+    // The page the lane shows, and the run page's live view, while someone watches this worker.
+    lanePage(page);
     liveViewPage(page);
     await use(page);
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
@@ -3934,6 +4090,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
+      laneTestBegan(testInfo.testId);
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
@@ -3947,7 +4104,7 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
-        await liveViewTestEnded();
+        await liveViewTestEnded(liveOutcomeStatus(testInfo));
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.
@@ -3991,6 +4148,8 @@ export const piwiFixtures: Fixtures<
           await flushSink(sink, testInfo);
         } finally {
           stopKeeping();
+          // The lane shows the test until it ended for the editor, a failure it held while flushing included.
+          await laneTestEnded();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

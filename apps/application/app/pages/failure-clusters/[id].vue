@@ -29,6 +29,7 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { issueLineForm } from '~/utils/issue-line';
 import { buildNextStepChange } from '~/utils/next-step-change';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -47,14 +48,17 @@ const {
   coverage: contextCoverage,
   scmChanges,
   suspectLines: clusterSuspectLines,
+  fetchDiagnosis,
 } = provideClusterDiagnosis(clusterId);
 
-const {
-  data: cluster,
-  error: clusterError,
-  refresh: refreshCluster,
-} = await useFetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`);
+const { data: cluster, error: clusterError } = await useFetch<FailureClusterDetail>(
+  `/api/failure-clusters/${clusterId}`,
+);
 if (clusterError.value) showPageLoadError(clusterError.value, 'failure cluster');
+// Every later read of the cluster keeps the one the page shows when it fails.
+const reloadCluster = refetchKeeping(cluster, () => $fetch<FailureClusterDetail>(`/api/failure-clusters/${clusterId}`));
+// A read asked from outside the page (the assistant, once a proposal is applied): the cluster and its diagnosis.
+usePageReload(() => Promise.all([reloadCluster(), fetchDiagnosis()]));
 const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
 provideExternalIdUrl(() => cluster.value?.project?.externalIdUrl);
 const canTriage = computed(() => can('triage:write', clusterProjectId.value));
@@ -315,7 +319,7 @@ const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
 const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
 
 function refresh() {
-  refreshCluster();
+  void reloadCluster();
   refreshRerun();
 }
 
@@ -960,11 +964,7 @@ const breadcrumbItems = computed(() => [
                   :source-run-id="cluster.lastSeenRunId"
                 />
                 <ClientOnly>
-                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
-                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                  </span>
+                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
               </div>
             </div>

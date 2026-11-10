@@ -51,8 +51,7 @@ interface Bridge {
 
 /**
  * Say what the shell's `server-status` events report about the bundled server:
- * `restarting` once it stopped, `ready` once the shell started it again,
- * `crashed` once the shell gave up on it. One toast, updated in place.
+ * `restarting` once it stopped, `crashed` once the shell gave up on it. One toast, updated in place.
  */
 function installServerStatus() {
   const events = tauriEvent();
@@ -62,8 +61,6 @@ function installServerStatus() {
   void events.listen<string>('server-status', ({ payload }) => {
     if (payload === 'restarting') {
       toast.add({ id, title: 'The local server stopped', description: 'Restarting it…', color: 'warning' });
-    } else if (payload === 'ready') {
-      toast.add({ id, title: 'The local server restarted', description: undefined, color: 'success' });
     } else if (payload === 'crashed') {
       toast.add({
         id,

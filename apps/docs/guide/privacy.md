@@ -10,9 +10,9 @@ Test results are revealing: they carry your source paths, error messages, screen
 network calls, and sometimes your git history. This page is the inventory of where those bytes go.
 
 The short version: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
-activation call. The server never checks for updates; the desktop app checks once at startup (turn that off in
-**Settings → About**) and when you click **Check for updates** there. Every outbound call the server makes is listed
-below, and all but two are something you switched on. An air-gapped instance works the same.
+activation call. The server never checks for updates; the desktop app checks at startup (optional, in
+**Settings → About**) and on **Check for updates**, then reads the newer releases' notes from GitHub, anonymously.
+Every outbound call the server makes is listed below; all but two are opt-in. An air-gapped instance works the same.
 
 ## What leaves your server
 

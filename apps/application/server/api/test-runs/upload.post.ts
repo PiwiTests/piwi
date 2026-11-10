@@ -20,7 +20,7 @@ import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { isVisibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { cancelInstanceRuns, cancelReplacedRun } from '../../utils/cancel-instance-runs';
@@ -44,15 +44,17 @@ import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 import { storableRunErrors } from '../../utils/storable-values';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
-      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
+      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -239,7 +241,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   if (existingTestRunId) {
     const existingRunRows = await db.select().from(testRuns).where(eq(testRuns.id, existingTestRunId));
     const existingRun = existingRunRows[0];
-    if (!existingRun) {
+    if (!existingRun || !isVisibleRun(existingRun, user.id)) {
       throw apiError({ statusCode: 404, message: 'Existing test run not found' });
     }
     const projectRows = await db.select().from(projects).where(eq(projects.id, existingRun.projectId));
@@ -327,6 +329,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       const run = await batchShardRun(db, project.id, instanceId!, testRunData);
       testRun = { id: run.id, projectId: run.projectId };
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
+      await saveEnvironmentSnapshots(db, run.id, testRunData.environments);
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
       // Create a new test run (standard batch upload). Like `/submit`, it replaces the instance's run still in flight:
@@ -378,6 +381,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
         status: resultTestRun.status,
       };
       if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
+      await saveEnvironmentSnapshots(db, resultTestRun.id, testRunData.environments);
       await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
     }
 
@@ -588,6 +592,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
     };

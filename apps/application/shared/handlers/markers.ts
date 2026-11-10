@@ -1,5 +1,9 @@
 import { markers, testRuns } from '../../server/database/schema';
-import { eq, and, asc, desc, lt, ne } from 'drizzle-orm';
+import { eq, and, asc, desc, isNull, like, lt, ne, notLike, or } from 'drizzle-orm';
+import { eligibleRunSql, isEligibleRun, notPrivateRun } from '../run-eligibility';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { ENVIRONMENT_MARKER_PREFIX, environmentChangeMarkers } from '../environment-snapshots';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
@@ -23,12 +27,12 @@ export async function listProjectMarkers(db: DrizzleDB, projectId: number) {
   return { markers: rows };
 }
 
-/** A marker may link only to a run of its own project. */
+/** A marker may link only to a run of its own project, never a private run. */
 export async function markerRunBelongsToProject(db: DrizzleDB, projectId: number, runId: number): Promise<boolean> {
   const rows = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId)));
+    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)));
   return rows.length > 0;
 }
 
@@ -94,7 +98,14 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const alreadyMarked = await db
     .select({ id: markers.id })
     .from(markers)
-    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto'), ne(markers.category, 'incident')));
+    .where(
+      and(
+        eq(markers.runId, runId),
+        eq(markers.source, 'auto'),
+        ne(markers.category, 'incident'),
+        or(isNull(markers.description), notLike(markers.description, `${ENVIRONMENT_MARKER_PREFIX}%`)),
+      ),
+    );
   if (alreadyMarked.length > 0) return;
 
   // Previous runs of this project, most recent first. Filter to the same
@@ -102,7 +113,9 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const candidates = await db
     .select()
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, run.projectId), lt(testRuns.startTime, run.startTime)))
+    .where(
+      and(eq(testRuns.projectId, run.projectId), lt(testRuns.startTime, run.startTime), notPrivateRun(testRuns.origin)),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(25);
   const prev = candidates.find((c) => (c.environment ?? null) === (run.environment ?? null));
@@ -126,4 +139,61 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
     source: 'auto',
     runId: run.id,
   });
+}
+
+/**
+ * Auto-create one timeline marker per kind of environment that changed between a finished run and the previous
+ * eligible run on the same branch and environment label: its runner or browser (category `infra`), or a server under
+ * test (`config`), labeled with the fields that changed. A kind either run did not record is no change, so a change
+ * is marked once, on the run where it appeared. Idempotent per run and kind; gated by `PIWI_AUTO_MARKERS` like
+ * `syncAutoMarkersForRun`, and by the project's `markers` capability.
+ */
+export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number): Promise<void> {
+  if (typeof process !== 'undefined' && process.env?.PIWI_AUTO_MARKERS === 'false') return;
+  const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+  if (!run || !isEligibleRun(run, 'baseline')) return;
+  if (await isPassiveCapabilityDeclined(db, run.projectId, 'markers')) return;
+
+  const conds = [
+    eq(testRuns.projectId, run.projectId),
+    lt(testRuns.startTime, run.startTime),
+    eligibleRunSql('baseline'),
+    run.environment == null ? isNull(testRuns.environment) : eq(testRuns.environment, run.environment),
+    run.branch == null ? isNull(testRuns.branch) : eq(testRuns.branch, run.branch),
+  ];
+  const [prev] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(...conds))
+    .orderBy(desc(testRuns.startTime))
+    .limit(1);
+  if (!prev) return;
+
+  const snapshots = await loadRunsSnapshots(db, [prev.id, run.id]);
+  const before = snapshots.get(prev.id) ?? [];
+  const after = snapshots.get(run.id) ?? [];
+  const marked = await db
+    .select({ description: markers.description })
+    .from(markers)
+    .where(
+      and(
+        eq(markers.runId, runId),
+        eq(markers.source, 'auto'),
+        like(markers.description, `${ENVIRONMENT_MARKER_PREFIX}%`),
+      ),
+    );
+
+  for (const change of environmentChangeMarkers(before, after)) {
+    if (marked.some((m) => m.description === change.description)) continue;
+    await db.insert(markers).values({
+      projectId: run.projectId,
+      label: change.label,
+      description: change.description,
+      occurredAt: run.startTime,
+      category: change.category,
+      environment: run.environment ?? null,
+      source: 'auto',
+      runId: run.id,
+    });
+  }
 }

@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as path from 'node:path';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
@@ -7,13 +8,21 @@ import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash
 import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
-import { HttpError } from '../src/internal/transport/http-client.js';
+import { DesktopNotProvenError, HttpClient, HttpError } from '../src/internal/transport/http-client.js';
+import { getSetupFilePath, writeSetupInfo } from '../src/internal/support/setup-file.js';
+import { Logger } from '../src/internal/support/logger.js';
+import { desktopTokenProof } from '@piwitests/core/desktop-proof';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } from '../src/types/wire.js';
 
 const projectName = 'piwi-stream-test-' + process.pid;
 const projectHash = hashForProject(projectName);
 const RECOVERY_SERVER = 'http://localhost:3000';
+
+/** The error Node raises for a connection the instance refused: the request reached no instance. */
+function refusedConnection(): Error {
+  return Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+}
 
 function cleanup(): void {
   const tmp = privateTempDir();
@@ -66,6 +75,7 @@ function stepBeginEvent(title: string): StepBeginStreamEvent {
     stepCategory: 'pw:api',
     parentTitle: 'the test',
     workerIndex: 0,
+    shardIndex: null,
     startedAt: null,
   };
 }
@@ -504,6 +514,25 @@ describe('StreamManager live steps', () => {
     expect(sent(requests)).toEqual(['complete a', 'step-end s']);
   });
 
+  it('brings its first heartbeat forward once the dashboard first says nobody watches', async () => {
+    vi.useFakeTimers();
+    try {
+      const { sm, requests } = makeEnabledManager(() => ({ success: true, watched: false }));
+      // The stream just opened: whether anyone watches is not known, so the first heartbeat is a watched run's.
+      (sm as any).heartbeatInterval = 15_000;
+      (sm as any).unwatchedHeartbeatInterval = 5_000;
+      (sm as any).lastActivityAt = Date.now();
+      (sm as any).scheduleHeartbeat();
+      sm.queueEvent(completeEvent('a'));
+      await sm.flush();
+      expect((sm as any).watched).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(requests.some((r) => r.url.endsWith('/heartbeat'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('heartbeats sooner while nobody watches, and a heartbeat answer turns the steps back on', async () => {
     const { sm, requests } = makeEnabledManager((url) => ({ success: true, watched: url.endsWith('/heartbeat') }));
     sm.queueEvent(completeEvent('a'));
@@ -726,7 +755,7 @@ describe('StreamManager request sizing', () => {
       const buffer = new StreamBuffer(projectName);
       buffer.bindRun(1);
       const sm = makeManager(async () => {
-        throw new Error('connect ECONNREFUSED');
+        throw refusedConnection();
       }, buffer);
       for (const event of events) sm.queueEvent(event);
       const drained = sm.drain();
@@ -824,7 +853,7 @@ describe('StreamManager events the dashboard does not take', () => {
 
     // A later result, a retry or the heartbeat would only be refused again.
     sm.queueEvent(completeEvent('later'));
-    sm.queueBeginEvent({ ...completeEvent('next'), type: 'begin' } as any);
+    sm.queueEvent({ ...completeEvent('next'), type: 'begin' } as any);
     await vi.advanceTimersByTimeAsync(120_000);
     await drain(sm);
 
@@ -840,7 +869,7 @@ describe('StreamManager events the dashboard does not take', () => {
     let down = true;
     const sm = makeManager(
       async (_url, body) => {
-        if (down) throw new Error('connect ECONNREFUSED');
+        if (down) throw refusedConnection();
         sent.push(...body.testCases.map((e: any) => e.title));
         return {};
       },
@@ -889,7 +918,7 @@ describe('StreamManager events the dashboard does not take', () => {
     let attempts = 0;
     const sm = makeManager(async () => {
       attempts++;
-      throw new Error('connect ECONNREFUSED');
+      throw refusedConnection();
     });
     sm.queueEvent({ type: 'step-end', title: 'step' } as any);
     void sm.flush();
@@ -932,7 +961,7 @@ describe('StreamManager end-of-run bounds', () => {
 
   it('uploadRemaining stops after three uploads in a row get no response', async () => {
     const uploadCaseFiles = vi.fn(async () => {
-      throw new Error('connect ECONNREFUSED');
+      throw refusedConnection();
     });
     const sm = makeManager({}, { uploadCaseFiles });
     await sm.uploadRemaining(cases(10));
@@ -1013,9 +1042,294 @@ describe('StreamManager start refused', () => {
   });
 
   it("prints the dashboard's own reason for a 403, not the API key advice", async () => {
-    const refusal = 'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
+    const refusal =
+      'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
     const warning = await warningFor(new HttpError(403, refusal));
     expect(warning).toContain(refusal);
     expect(warning).not.toContain('apiKey');
   });
+});
+
+describe('StreamManager start asked again', () => {
+  let lines: string[];
+
+  beforeEach(() => {
+    cleanup();
+    vi.useFakeTimers();
+    lines = [];
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => void lines.push(String(line)));
+    vi.spyOn(console, 'warn').mockImplementation((line: unknown) => void lines.push(String(line)));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    cleanup();
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+  });
+
+  function makeManager(
+    postJSON: (url: string, body: any) => Promise<any>,
+    options: Partial<PiwiDashboardOptions> = {},
+  ): StreamManager {
+    return new StreamManager(
+      { postJSON, resolveAuth: async () => null } as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000, ...options }),
+    );
+  }
+
+  async function drain(sm: StreamManager): Promise<void> {
+    const drained = sm.drain();
+    await vi.runAllTimersAsync();
+    await drained;
+  }
+
+  const beginEvent = (title: string) => ({ ...completeEvent(title), type: 'begin' }) as any;
+  const linesWith = (text: string) => lines.filter((line) => line.includes(text));
+
+  it('begins the registered run once the dashboard answers, with what queued meanwhile, saying once how late', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sent: string[] = [];
+    const failures = [new Error('connect ECONNREFUSED 127.0.0.1:7494'), new HttpError(503), new HttpError(429)];
+    const sm = makeManager(async (url, body) => {
+      requests.push(url);
+      const failure = failures.shift();
+      if (failure) throw failure;
+      if (url === '/api/test-runs/5/begin') return { runId: 5, streamToken: 'tok' };
+      sent.push(...body.testCases.map((e: any) => `${e.type} ${e.title}`));
+      return {};
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    sm.queueEvent(beginEvent('early'));
+    sm.queueEvent(stepBeginEvent('a step'));
+    sm.queueEvent(completeEvent('early'));
+
+    // Tries at 0, 1 and 3 s fail; the one at 7 s is answered.
+    await vi.advanceTimersByTimeAsync(6_900);
+    expect(sm.enabled).toBe(false);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sm.runId).toBe(5);
+    await drain(sm);
+
+    expect(requests.filter((url) => url === '/api/test-runs/5/begin')).toHaveLength(4);
+    expect(requests).not.toContain('/api/test-runs/start');
+    expect(sent).toEqual(['begin early', 'step-begin a step', 'complete early']);
+    expect(linesWith('Live streaming could not start (connect ECONNREFUSED')).toHaveLength(1);
+    expect(linesWith('Streaming started')).toEqual(['[Piwi Dashboard] Streaming started 7 s late, once the dashboard answered. Run ID: 5']);
+    expect(sm.lostResults).toBe(false);
+  });
+
+  it('asks for a fresh run once the registered one cannot begin (409), and asks for that one again after', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    let starts = 0;
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      if (url === '/api/test-runs/5/begin') throw new HttpError(409);
+      if (url === '/api/test-runs/start' && ++starts === 1) throw new HttpError(502);
+      return { runId: 8, streamToken: 'tok' };
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(1_100);
+
+    expect(requests).toEqual(['/api/test-runs/5/begin', '/api/test-runs/start', '/api/test-runs/start']);
+    expect(sm.runId).toBe(8);
+    await drain(sm);
+  });
+
+  it('does not ask again for a /start the dashboard may have taken, its answer lost', async () => {
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new Error('Request to /api/test-runs/start timed out after 30000ms');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requests).toEqual(['/api/test-runs/start']);
+    expect(sm.enabled).toBe(false);
+    await drain(sm);
+  });
+
+  it('says an earlier try began the registered run when a /begin asked again is refused', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      if (requests.length === 1) throw new Error('Request to /api/test-runs/5/begin timed out after 30000ms');
+      throw new HttpError(403, 'Invalid setup token');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(requests).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
+    expect(linesWith('began the run on an earlier try whose answer was lost')).toHaveLength(1);
+    await drain(sm);
+  });
+
+  it('gives the registered run up at once when the server did not prove the desktop token, and asks again when it did not answer', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new DesktopNotProvenError('http://localhost:3000', 'unproven');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(requests).toEqual(['/api/test-runs/5/begin']);
+    expect(sm.enabled).toBe(false);
+    await drain(sm);
+
+    cleanup();
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const asked: string[] = [];
+    const again = makeManager(async (url) => {
+      asked.push(url);
+      if (asked.length === 1) throw new DesktopNotProvenError('http://localhost:3000', 'unreachable');
+      return { runId: 5, streamToken: 'tok' };
+    });
+    again.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(asked).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
+    expect(again.runId).toBe(5);
+    await drain(again);
+  });
+
+  it.each([400, 403, 404])('gives the stream up at once on a %i, keeping no event for it', async (status) => {
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new HttpError(status);
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await sm.startPromise;
+    sm.queueEvent(completeEvent('after'));
+    await vi.advanceTimersByTimeAsync(120_000);
+    await drain(sm);
+
+    expect(requests).toEqual(['/api/test-runs/start']);
+    expect(sm.enabled).toBe(false);
+    expect((sm as any).pendingEvents.length).toBe(0);
+    expect(linesWith('Live streaming is unavailable')).toHaveLength(1);
+  });
+
+  it('keeps what queues while the stream opens within maxStreamBufferBytes, shedding progress before results', async () => {
+    const sm = makeManager(
+      async () => {
+        throw refusedConnection();
+      },
+      { maxStreamBufferBytes: 20_000 },
+    );
+    sm.start(new Date().toISOString(), {}, 'instance');
+    for (let i = 0; i < 50; i++) {
+      for (let j = 0; j < 4; j++) sm.queueEvent(stepEndEvent(`step ${i}.${j}`));
+      sm.queueEvent(completeEvent(`result ${i}`));
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    const queue = (sm as any).pendingEvents;
+    expect(queue.bytes).toBeLessThanOrEqual(20_000);
+    expect(queue.snapshot().filter((e: any) => e.type === 'complete')).toHaveLength(50);
+    expect(queue.droppedCount).toBeGreaterThan(0);
+    expect(sm.lostResults).toBe(false);
+    await drain(sm);
+  });
+
+  it('tries once more at once as the run ends, then gives the stream up for the batch', async () => {
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw refusedConnection();
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    // Tries at 0 and 1 s; the next one waits until 3 s.
+    await vi.advanceTimersByTimeAsync(1_500);
+    sm.queueEvent(completeEvent('queued'));
+    const drained = sm.drain();
+    await vi.advanceTimersByTimeAsync(0);
+    await drained;
+
+    expect(requests).toHaveLength(3);
+    expect(sm.enabled).toBe(false);
+    expect(linesWith('Live streaming did not start before the run ended (connect ECONNREFUSED)')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requests).toHaveLength(3);
+  });
+
+  it('opens the stream on its last try as the run ends, and drains what queued', async () => {
+    const sent: string[] = [];
+    let ending = false;
+    const sm = makeManager(async (url, body) => {
+      if (!ending) throw new HttpError(503);
+      if (url === '/api/test-runs/start') return { runId: 3, streamToken: 'tok' };
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    sm.queueEvent(completeEvent('queued'));
+    await vi.advanceTimersByTimeAsync(20_000);
+    ending = true;
+    await drain(sm);
+
+    expect(sm.runId).toBe(3);
+    expect(sent).toEqual(['queued']);
+    expect(linesWith('Streaming started 20 s late')).toHaveLength(1);
+  });
+});
+
+describe("StreamManager with the desktop app's token", () => {
+  const TOKEN = 'pd_desktop_token';
+  beforeEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+  });
+
+  it('keeps asking for /begin through a database error that came with a correct proof, and does not end live streaming', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const seen: { url: string; authorization: string | undefined }[] = [];
+    let begins = 0;
+    const server = http.createServer(async (req, res) => {
+      req.resume();
+      seen.push({ url: req.url ?? '', authorization: req.headers['authorization'] as string | undefined });
+      if (req.url === '/api/health') {
+        const port = (server.address() as { port: number }).port;
+        const proof = await desktopTokenProof(TOKEN, port, String(req.headers['x-piwi-desktop-challenge']));
+        res.writeHead(503, { 'x-piwi-desktop-proof': proof });
+        res.end('{}');
+        return;
+      }
+      begins++;
+      res.writeHead(begins === 1 ? 503 : 200, { 'Content-Type': 'application/json' });
+      res.end(begins === 1 ? '{}' : JSON.stringify({ runId: 5, streamToken: 'tok' }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    try {
+      const client = new HttpClient(url, new Logger(false), 30000, 1000, TOKEN);
+      const sm = new StreamManager(
+        client,
+        new StreamBuffer(projectName),
+        new CrashRecovery(url, projectName),
+        {} as any,
+        new FileHandler(),
+        makeOptions({ serverUrl: url, apiKey: TOKEN, streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+      );
+      sm.start(new Date().toISOString(), {}, 'instance');
+      await sm.startPromise;
+      expect(sm.enabled).toBe(true);
+      expect(sm.runId).toBe(5);
+      expect(begins).toBe(2);
+      expect(seen.filter((r) => r.url.endsWith('/begin')).map((r) => r.authorization)).toEqual([
+        `Bearer ${TOKEN}`,
+        `Bearer ${TOKEN}`,
+      ]);
+      await sm.drain();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      fs.rmSync(recoveryFilePath(url, projectName), { force: true });
+    }
+  }, 15_000);
 });

@@ -9,6 +9,7 @@ import { stripAnsi } from '#shared/error-fingerprint';
 import { errorLines, runSegments, type OutcomeSegment } from '#shared/notifications/message-parts';
 import type { StatusColorKey } from '#shared/status-colors';
 import { testLabel } from '#shared/utils/test-label';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import type { ExportBundle, ExportCase, ExportRun, ExportRunTest } from './types';
 
 /** A label/value pair; `null` values are dropped by the renderers. */
@@ -61,13 +62,14 @@ export function fmtDate(value: unknown): string | null {
 export function caseFacts(exportCase: ExportCase): Fact[] {
   const d = exportCase.detail as Record<string, any>;
   const browser = (d.browser ?? {}) as Record<string, any>;
+  const worker = shownWorkerNumber(d);
 
   return [
     ['Duration', fmtDuration(d.duration)],
     ['Retries', d.retries != null ? String(d.retries) : null],
     ['Started', fmtDate(d.startedAt)],
     ['Browser', browser.projectName ?? browser.browserName ?? null],
-    ['Worker', d.workerIndex != null ? String(d.workerIndex) : null],
+    ['Worker', worker != null ? String(worker) : null],
     ['Shard', d.shardIndex != null ? String(d.shardIndex) : null],
     ['New regression', d.isNewRegression ? 'yes' : null],
     ['Newly flaky', d.isNewFlaky ? 'yes' : null],
@@ -113,7 +115,17 @@ export function runFacts(run: Record<string, any>): Fact[] {
     ['Commit', commit],
     ['CI build', build],
     ['Playwright', run.playwrightVersion ?? null],
+    ['Runner', runnerFact(run.environments?.runner)],
   ];
+}
+
+/** The runner's time zone, locale and OS in one line, every shard's when they differ; null when not recorded. */
+function runnerFact(runners: Array<Record<string, any>> | undefined): string | null {
+  if (!Array.isArray(runners) || runners.length === 0) return null;
+  const lines = [
+    ...new Set(runners.map((r) => [r.timeZone, r.locale, r.os, r.ciImage].filter(Boolean).join(' · ')).filter(Boolean)),
+  ];
+  return lines.length ? lines.join(' / ') : null;
 }
 
 /** How a run's tests ended, by outcome, or null for a run that counted none. */

@@ -43,9 +43,6 @@ describe('a snapshot without the secret fields’ values', () => {
   });
 });
 
-/** The style the agent's image is taken with: Piwi's pause bar hidden. */
-const BAR_HIDDEN_HERE = '#__piwi-pause-bar { display: none !important; }';
-
 describe('a stopped page with secrets, for an agent', () => {
   let browser: Browser;
   let page: Page;
@@ -158,7 +155,7 @@ style="width:200px;height:30px"><div style="height:12000px"></div><iframe loadin
       );
       await other.goto('https://piwi.test/');
       const started = Date.now();
-      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 });
+      const image = await maskedImage(other, { quality: 90, withoutBar: true, timeout: 5000 });
       expect(Date.now() - started).toBeLessThan(4000);
       expect(image).not.toBeNull();
       expect(painted(await pixel(image!, 100, 15))).toBe(true);
@@ -188,7 +185,7 @@ const t = Date.now(); while (Date.now() - t < 6000); });</script>`,
       );
       await other.goto('https://piwi.test/');
       await other.evaluate('document.querySelector("iframe").contentWindow.postMessage("busy", "*")');
-      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 3000 });
+      const image = await maskedImage(other, { quality: 90, withoutBar: true, timeout: 3000 });
       if (image) {
         for (const [x, y] of [
           [20, 10],
@@ -212,7 +209,7 @@ const t = Date.now(); while (Date.now() - t < 6000); });</script>`,
 value="246810" style="display:block;border:0;background:#f00;width:200px;height:60px">`);
       expect(await zoomed.evaluate('visualViewport.scale')).toBe(2);
       // At twice its size, the field shows from (0, 200) to (400, 320) of the image: no image goes.
-      expect(await maskedImage(zoomed, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 })).toBeNull();
+      expect(await maskedImage(zoomed, { quality: 90, withoutBar: true, timeout: 5000 })).toBeNull();
     } finally {
       await context.close();
     }
@@ -228,7 +225,7 @@ Element.prototype.getBoundingClientRect = function () {
   const r = own.call(this);
   return new DOMRect(r.x / 2, r.y / 2, r.width / 2, r.height / 2);
 };</script>`);
-      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 });
+      const image = await maskedImage(other, { quality: 90, withoutBar: true, timeout: 5000 });
       expect(image).not.toBeNull();
       for (const [x, y] of [
         [10, 105],

@@ -23,14 +23,23 @@ import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
 import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
-import { runLauncherRef, runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
+import {
+  isVisibleRun,
+  notPrivateRun,
+  runLauncherRef,
+  runOrigin,
+  runOriginIs,
+  runOriginRef,
+} from '#shared/run-eligibility';
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { notLabRun } from './probes';
-import { isPassiveCapabilityDeclined } from './capabilities';
+import { isOptInCapabilityOn, isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
+import { loadRunEnvironments } from './environment-snapshots';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
+import { workerKey } from '#shared/worker-lane';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -61,10 +70,16 @@ export function parseLatestRunNames(value: unknown): string[] | null | undefined
  * one its launcher stamped with that kind and ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a
  * local process of its own produced, and `name`, the launcher's name for the run (`PIWI_RUN_REF`), null when the
  * reporter recorded none. With `origin.runs`, a run its launcher named matches only under one of those names; a run
- * the reporter recorded no name for still matches. Throws `Project not found` for a project that does not exist.
+ * the reporter recorded no name for still matches. A private run is found by its origin alone, and only for its
+ * requester (`viewerId`). Throws `Project not found` for a project that does not exist.
  */
-export async function getProjectLatestRun(db: DrizzleDB, projectId: number, origin: LatestRunOrigin | null = null) {
-  const latest = await findProjectLatestRun(db, projectId, origin);
+export async function getProjectLatestRun(
+  db: DrizzleDB,
+  projectId: number,
+  origin: LatestRunOrigin | null = null,
+  viewerId: number | null = null,
+) {
+  const latest = await findProjectLatestRun(db, projectId, origin, viewerId);
   if (latest) return latest;
   const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error('Project not found');
@@ -75,12 +90,19 @@ async function findProjectLatestRun(
   db: DrizzleDB,
   projectId: number,
   origin: LatestRunOrigin | null,
+  viewerId: number | null,
 ): Promise<{ id: number; status: string; name?: string | null } | null> {
   if (origin) {
     const ref = parseRunOriginRef(origin.ref);
     if (!ref) return null;
     const rows = await db
-      .select({ id: testRuns.id, status: testRuns.status, metadata: testRuns.metadata })
+      .select({
+        id: testRuns.id,
+        status: testRuns.status,
+        metadata: testRuns.metadata,
+        origin: testRuns.origin,
+        requesterId: testRuns.requesterId,
+      })
       .from(testRuns)
       .where(
         and(
@@ -93,6 +115,7 @@ async function findProjectLatestRun(
     const runs = origin.runs ? new Set(origin.runs) : null;
     const found = rows.find((r) => {
       if (runOrigin(r.metadata) !== origin.kind || runOriginRef(r.metadata) !== ref) return false;
+      if (!isVisibleRun(r, viewerId)) return false;
       const named = runLauncherRef(r.metadata);
       return !runs || named === null || runs.has(named);
     });
@@ -101,7 +124,7 @@ async function findProjectLatestRun(
   const rows = await db
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     // Rank by start_time (id as a deterministic tiebreaker): rows can be
     // ingested out of chronological order (historical uploads on the server;
     // the demo seed inserts runs newest-first). Matches `listProjects`.
@@ -129,7 +152,7 @@ export async function getTestRun(
   const latestRunResult = await db
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
-    .where(eq(testRuns.projectId, testRun.projectId))
+    .where(and(eq(testRuns.projectId, testRun.projectId), notPrivateRun(testRuns.origin)))
     // Rank by start_time (as findProjectLatestRun does) so the "Newer run" pill points
     // at the chronologically newest run, not MAX(id).
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
@@ -184,6 +207,7 @@ export async function getTestRun(
       wastedTimeMs: testRunsCases.wastedTimeMs,
       stepEvents: testRunsCases.stepEvents,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
       shardIndex: testRunsCases.shardIndex,
       startedAt: testRunsCases.startedAt,
       browser: testRunsCases.browser,
@@ -256,6 +280,7 @@ export async function getTestRun(
           : null)),
     stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     workerIndex: tc.workerIndex,
+    parallelIndex: tc.parallelIndex ?? null,
     shardIndex: tc.shardIndex,
     startedAt: tc.startedAt,
     browser: tc.browser,
@@ -285,7 +310,7 @@ export async function getTestRun(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun;
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun;
 
   let keptByName: string | null = null;
   if (testRun.keptBy) {
@@ -298,7 +323,7 @@ export async function getTestRun(
 
   let projectPublic;
   if (project) {
-    const { scmToken: _scmToken, ...projectRest } = project;
+    const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectRest } = project;
     projectPublic = { ...projectRest, latestRunId, latestRunStatus };
   }
 
@@ -342,7 +367,9 @@ export async function getTestRun(
     isFullRun: testRun.isFullRun === 1,
     hasResources:
       (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
+    machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
     project: projectPublic,
+    environments: await loadRunEnvironments(db, id),
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,
@@ -398,7 +425,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), inScope))
+      .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), notPrivateRun(testRuns.origin), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
       .select(RECENT_FIELDS)
@@ -464,7 +491,7 @@ export async function getActiveTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
     .select(RECENT_FIELDS)
     .from(testRuns)
     .innerJoin(projects, eq(testRuns.projectId, projects.id))
-    .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
+    .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime));
   return scope === 'all' ? runs : runs.filter((run) => scope.has(run.projectId));
 }
@@ -642,6 +669,9 @@ interface GroupCase {
   filePath: string;
   retries: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`); null from an older reporter. */
+  parallelIndex: number | null;
+  shardIndex: number | null;
   passedOnRetry: boolean;
 }
 
@@ -659,6 +689,7 @@ interface FailureGroup {
   firstSeenAt: Date | null;
   occurrences: number;
   flaky: boolean;
+  /** All of the group's tests, two or more, failed on one worker (a lane in its shard), in a run that used several. */
   workerCorrelated: boolean;
   cases: GroupCase[];
   diagnosis: DiagnosisCompact | null;
@@ -676,6 +707,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       status: testRunsCases.status,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
       passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
@@ -686,7 +719,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   const repetitionKey = (row: { testCaseId: number; browserName: string | null; repeatEachIndex: number }) =>
     `${row.testCaseId}\x00${row.browserName ?? ''}\x00${row.repeatEachIndex}`;
   const passedRepetitions = new Set(allRows.filter((r) => r.passedAfterFailure).map(repetitionKey));
-  const runWorkers = new Set(allRows.map((r: any) => r.workerIndex).filter((w: any) => w !== null));
+  const runWorkers = new Set(allRows.map(workerKey).filter((key) => key !== null));
 
   const clusteredRows = await db
     .select({
@@ -696,6 +729,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
       title: testCases.title,
       filePath: testCases.filePath,
       clusterId: failureClusters.id,
@@ -764,6 +799,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
         existing.retries = row.retries ?? 0;
         existing.executionId = row.executionId;
         existing.workerIndex = row.workerIndex;
+        existing.parallelIndex = row.parallelIndex;
+        existing.shardIndex = row.shardIndex;
       }
     } else {
       g.caseById.set(row.testCaseId, {
@@ -773,6 +810,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
         filePath: row.filePath,
         retries: row.retries ?? 0,
         workerIndex: row.workerIndex,
+        parallelIndex: row.parallelIndex,
+        shardIndex: row.shardIndex,
         passedOnRetry,
       });
     }
@@ -782,7 +821,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   for (const group of groups.values()) {
     const { caseById, ...rest } = group;
     const cases = [...caseById.values()].sort((a, b) => a.title.localeCompare(b.title));
-    const caseWorkers = new Set(cases.map((c) => c.workerIndex).filter((w) => w !== null));
+    const caseWorkers = new Set(cases.map(workerKey).filter((key) => key !== null));
 
     result.push({
       ...rest,

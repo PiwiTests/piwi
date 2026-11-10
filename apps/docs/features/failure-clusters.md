@@ -57,7 +57,7 @@ The inbox has queues, each with a live count, shareable in the URL as `?queue=`.
 | **All open** | Every open, non-snoozed cluster. |
 | **New** | Clusters first seen, or seen again, since your previous browser session (kept per browser). |
 | **Mine** | Clusters whose assignee, or `piwi:owner` annotation, is you. |
-| **Needs ticket** | Untracked default-branch clusters older than 2 days, by default; see [issue tracking](./issue-tracking). |
+| **Needs ticket** | Untracked default-branch clusters older than the binding's age (2 days by default); see [issue tracking](./issue-tracking). |
 | **Regressions** | Clusters that regressed on the default branch and are still failing there. |
 | **Fix didn't hold** | Clusters whose fix landed then regressed. |
 | **Quarantine ready** | Quarantined clusters whose tests stopped failing. |

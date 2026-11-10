@@ -58,7 +58,7 @@ import {
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isLabRun } from '#shared/handlers/probes';
-import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
+import { eligibleExecutionSql, isEligibleRun, isPrivateRunOrigin } from '#shared/run-eligibility';
 import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import {
@@ -77,6 +77,8 @@ import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import { int32, int64, storableRunCase } from './storable-values';
+import { workerLane } from '#shared/worker-lane';
+import { recordTagsTruncated } from './tags-truncated';
 import type { DbClient as DB } from '../database';
 
 /**
@@ -161,6 +163,8 @@ export interface RunCaseInput {
   testSource?: string | null;
   testSourceFrames?: unknown;
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), stored only as a non-negative integer (`workerLane`). */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
@@ -186,7 +190,12 @@ export interface RunCaseInput {
  * Cache hits still fire a background update so mode/annotations stay fresh
  * when a describe block's config changes between runs.
  */
-async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): Promise<Map<string, number>> {
+async function resolveSuites(
+  db: DB,
+  projectId: number,
+  cases: RunCaseInput[],
+  { knownOnly = false } = {},
+): Promise<Map<string, number>> {
   // Collect unique (filePath, levelPath, mode, annotations) — one entry per
   // describe level per unique suitePath across all cases in the batch.
   type SuiteSpec = { filePath: string; levelPath: string; mode: string; annotations: unknown[] };
@@ -219,8 +228,8 @@ async function resolveSuites(db: DB, projectId: number, cases: RunCaseInput[]): 
     const cached = projectSuiteCache.get(`${spec.filePath}\x00${spec.levelPath}`);
     if (cached !== undefined) {
       suiteIdMap.set(key, cached);
-      toUpdate.push({ id: cached, mode: spec.mode, annotations: spec.annotations });
-    } else {
+      if (!knownOnly) toUpdate.push({ id: cached, mode: spec.mode, annotations: spec.annotations });
+    } else if (!knownOnly) {
       toUpsert.push({ key, ...spec });
     }
   }
@@ -366,8 +375,26 @@ export async function persistRunCases(
   const limits = resolveIngestLimits();
   const cases = await Promise.all(input.map(storableRunCase));
 
+  // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
+  // its tests without renaming, moving or giving an ID to any of them, and a private run writes no test or suite at
+  // all, its executions of a test the project does not know left out.
+  const [run] = await db
+    .select({
+      metadata: testRuns.metadata,
+      branch: testRuns.branch,
+      startTime: testRuns.startTime,
+      origin: testRuns.origin,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  const writesTestState = isEligibleRun(
+    { metadata: run?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
+  const knownOnly = isPrivateRunOrigin(run?.origin);
+
   // --- Step 1: Resolve all suites referenced in this batch ---
-  const suiteIdMap = await resolveSuites(db, projectId, cases);
+  const suiteIdMap = await resolveSuites(db, projectId, cases, { knownOnly });
 
   // --- Step 2: Resolve test case IDs and build junction rows ---
 
@@ -384,17 +411,10 @@ export async function persistRunCases(
       line: int32(c.line),
     };
   });
-  // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
-  // its tests without renaming, moving or giving an ID to any of them.
-  const [run] = await db
-    .select({ metadata: testRuns.metadata, branch: testRuns.branch, startTime: testRuns.startTime })
-    .from(testRuns)
-    .where(eq(testRuns.id, testRunId));
-  const writesTestState = isEligibleRun(
-    { metadata: run?.metadata, historicalImport: options.keepTestState },
-    'shared-state',
-  );
-  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, { readOnly: !writesTestState });
+  const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, {
+    readOnly: !writesTestState,
+    knownOnly,
+  });
 
   // Each case's error as it is kept: what may be a secret hidden, once for all.
   const errors = cases.map((c) => hiddenErrorText(c.error));
@@ -574,6 +594,7 @@ export async function persistRunCases(
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
       workerIndex: int32(c.workerIndex),
+      parallelIndex: workerLane(c.parallelIndex),
       shardIndex: int32(c.shardIndex),
       startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
@@ -611,7 +632,8 @@ export async function persistRunCases(
   await dedupeGreenSamples(db, runCasesRows, rowPayloads);
 
   // Coverage fragments land first, so each execution's payload can name them.
-  const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
+  // A private run's coverage joins nothing of the project's.
+  const rowFragments = knownOnly ? [] : await upsertCoverageFragments(db, projectId, rowCoverage);
   const perCaseCoverage: TestCoverageCase[] = [];
   rowFragments.forEach((fragments, i) => {
     if (!fragments) return;
@@ -725,6 +747,7 @@ export async function persistRunCases(
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,

@@ -10,7 +10,8 @@ An API key is a long-lived token tied to one user account, and the recommended w
 Playwright reporter and scripts once [authentication](./authentication) is on. A key carries its owner's access: their
 [instance role](./authentication#roles) and the [project roles](./project-access) they hold, directly or through
 their groups. A key for a Member with the Uploader role on one project can read that project and upload to it, and
-nothing else.
+nothing else. The key a connected run target receives (the desktop app) is the one exception: it holds
+`run:receive` alone, and serves only that app's routes.
 
 For CI, create a dedicated account: a **Member** with the **Uploader** role on the projects CI reports to (on All
 projects if CI should create projects from a new project name), and a key for it. A leaked CI key then cannot triage,
@@ -55,9 +56,10 @@ dedicated CI account.
 2. Click **Generate key**, and copy the key **immediately**: it will never be shown again.
 3. Store it as a CI secret (e.g. `PIWI_API_KEY`).
 
-Connecting the [browser extension](/features/extension-connection) creates a key the same way, once you click
-**Allow** on the page it opens: it is named after the browser ("Piwi Picker in Chrome on Windows") and listed with the
-others.
+Connecting the [browser extension](/features/extension-connection), an editor or the desktop app creates a key too,
+once you click **Allow** on the page it opens: it is named after the app ("Piwi Picker in Chrome on Windows") and
+listed under **Settings → Account → [Connected apps](/features/run-on-my-machine#connected-apps)**, not with these
+keys.
 
 <figure>
   <img src="/screenshots/user-api-keys.png" alt="A user's API keys dialog: one key named GitHub Actions CI with its prefix, creation date and Never used, a revoke button, and Create API key">

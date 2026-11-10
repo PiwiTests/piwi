@@ -41,6 +41,7 @@ import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
 import {
   accessRefusal,
@@ -69,6 +70,15 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import { resolveTagKeyPatterns } from '#shared/integrations/tag-keys';
+import { lastCompleteRunTagOverlap } from '#shared/handlers/tag-key-overlap';
+import {
+  apiCreateRunRequest,
+  apiGetRunRequest,
+  apiListRunRequests,
+  apiStopRunRequest,
+  demoReadRunRequestBody,
+} from './run-requests';
 import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
@@ -183,6 +193,7 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidTagKeysError,
   updateProject,
   createProject,
   getProjectMenu,
@@ -370,6 +381,7 @@ import {
 } from './integrations';
 import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
+import { isSubmissionId, MAX_ISSUE_COMMENT_LENGTH } from '#shared/integrations/run-issue';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -390,7 +402,7 @@ import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/han
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
 import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
-import { listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
+import { listConnectedApps, listUserApiKeys, deleteUserApiKeyRecord } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
 import {
@@ -409,7 +421,7 @@ import {
   apiHeartbeatTestRun,
   apiLiveResourcesTestRun,
 } from './reporter';
-import { demoRunningCases } from './stuck-tests';
+import { demoLiveSteps, demoRunningCases } from './stuck-tests';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
@@ -445,6 +457,7 @@ import {
   apiUndoAssistantNudgeDismissal,
 } from './assistant-nudges';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
+import { apiListProjectStars, apiStarProject, apiUnstarProject } from './project-stars';
 import { demoHttpError } from './http-error';
 import {
   addProjectUrlPattern,
@@ -474,6 +487,16 @@ import {
   updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
+import {
+  assertDemoCiServerTarget,
+  demoCiServerCheck,
+  demoCiServerTokenMarker,
+  demoCiServerTokenUrl,
+  demoClusterRerunInfo,
+  demoExecutionRerunInfo,
+  demoRerunCluster,
+  demoRerunExecution,
+} from './ci-rerun';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -646,8 +669,20 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
   }
 }
 
+/** The person a run request belongs to: the acting persona, as the server's routes need a signed-in caller. */
+function demoRequester(ctx: DemoCtx | undefined): number {
+  if (!ctx?.actingUserId) {
+    throw demoHttpError(403, 'Run on my machine needs sign-in turned on: a request belongs to the person who made it');
+  }
+  return ctx.actingUserId;
+}
+
+function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
+  return ctx?.access ?? ADMIN_ACCESS;
+}
+
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
-const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
+const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
 
 /** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
@@ -668,6 +703,19 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/** The name a demo issue gives the person filing it: the acting persona's. */
+async function demoFiledByName(
+  db: Awaited<ReturnType<typeof getDemoDb>>,
+  ctx: DemoCtx | undefined,
+): Promise<string | null> {
+  if (!ctx?.actingUserId) return null;
+  const [row] = await db
+    .select({ name: users.name, username: users.username })
+    .from(users)
+    .where(eq(users.id, ctx.actingUserId));
+  return row ? row.name?.trim() || row.username : null;
 }
 
 /**
@@ -848,7 +896,11 @@ const routes: RouteEntry[] = [
       // rows carry it); do the same so a demo visitor's stored token never comes
       // back over the wire.
       const items = rows.map((p) => {
-        const { scmToken: _scm, ...rest } = p as { scmToken?: string | null } & typeof p;
+        const {
+          scmToken: _scm,
+          ciServerToken: _ciServerToken,
+          ...rest
+        } = p as { scmToken?: string | null; ciServerToken?: string | null } & typeof p;
         return rest;
       });
       return { items };
@@ -870,6 +922,27 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/stars$/,
+    handler: async (_, __, ___, ctx) => apiListProjectStars(ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiStarProject(ctx?.actingUserId ?? null, +m[1]!);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiUnstarProject(ctx?.actingUserId ?? null, +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/menu$/,
     handler: async (_, __, ___, ctx) => ({ items: await getProjectMenu(await getDemoDb(), ctx?.scope) }),
   },
@@ -882,8 +955,13 @@ const routes: RouteEntry[] = [
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
       const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
-      const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
-      return rest;
+      const {
+        scmToken: _scm,
+        ciServerToken,
+        ...rest
+      } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
+      const ciServerTokenUrl = demoCan(ctx, 'project:manage', +m[1]!) ? demoCiServerTokenUrl(ciServerToken) : null;
+      return { ...rest, ciServerTokenUrl, ciServerInstanceUrl: null };
     },
   },
   {
@@ -893,11 +971,15 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the token is stored as-is —
-      // but every GET strips it, so it never leaves the browser's own DB.
+      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
+      // and every GET strips it. A CI server token is never stored: only the
+      // base URL it would be bound to.
       try {
+        const db = await getDemoDb();
         const update = body as Parameters<typeof updateProject>[2];
-        const project = await updateProject(await getDemoDb(), +m[1]!, update);
+        assertDemoCiServerTarget(update);
+        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
+        const project = await updateProject(db, +m[1]!, { ...update, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -911,6 +993,7 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
+        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -1131,6 +1214,31 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const days = Math.min(90, Math.max(1, parseInt(q?.get('days') || '30')));
       return getProjectAiStepCoverage(await getDemoDb(), +m[1]!, days);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/tag-key-overlaps$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const [project] = await db
+        .select({ tagKeys: projects.tagKeys })
+        .from(projects)
+        .where(eq(projects.id, +m[1]!))
+        .limit(1);
+      if (!project) throw demoHttpError(404, 'Project not found');
+      return lastCompleteRunTagOverlap(db, +m[1]!, resolveTagKeyPatterns(project.tagKeys));
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/ci-server-check$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiServerCheck(body as { ciServer?: unknown } | null);
     },
   },
   {
@@ -1386,9 +1494,13 @@ const routes: RouteEntry[] = [
   {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
-    permission: 'run:delete',
+    permission: ['run:delete', 'run:request'],
     handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      // The demo holds no requested run: every run it deletes takes `run:delete`.
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      if (projectId !== null && !demoCan(ctx, 'run:delete', projectId)) {
+        throw demoHttpError(403, 'Insufficient permissions');
+      }
       return apiDeleteTestRun(+m[1]!);
     },
   },
@@ -1759,29 +1871,22 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run availability — always off in the browser demo (no server, token
-    // or CI to dispatch to), so the button renders disabled with a clear reason.
+    // CI re-run availability: on for a project that dispatches to a CI server,
+    // off with a clear reason for every other project.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoClusterRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunCluster(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -1967,8 +2072,8 @@ const routes: RouteEntry[] = [
   },
 
   // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
-  // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution
-  // and then each test still running.
+  // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution,
+  // each test still running and the step each worker is in.
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
@@ -1987,6 +2092,7 @@ const routes: RouteEntry[] = [
         events: [
           ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
           ...demoRunningCases(id).map((data) => event('test-begin', data)),
+          ...demoLiveSteps(id).map((step) => event(step.type, step.data)),
         ],
       };
     },
@@ -2001,7 +2107,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-cases\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return getTestCase(await getDemoDb(), +m[1]!);
+      return getTestCase(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -2351,28 +2457,21 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run of one execution's test — always off in the browser demo, like a cluster's.
+    // CI re-run of one execution's test, available as a cluster's is.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoExecutionRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunExecution(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -3292,6 +3391,41 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/api\/users\/(\d+)\/connected-apps$/,
+    handler: async (m, _b, _q, ctx) => {
+      assertDemoSelfOrAdmin(ctx, +m[1]!);
+      // The demo's simulated desktop app holds its stream open for as long as the demo runs.
+      return { items: await listConnectedApps(await getDemoDb(), +m[1]!, () => true) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests$/,
+    handler: async (_m, _b, q, ctx) => apiListRunRequests(demoRequester(ctx), demoAccess(ctx), q),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests$/,
+    permission: 'run:request',
+    handler: async (_m, body, _q, ctx) => {
+      const requesterId = demoRequester(ctx);
+      const input = await demoReadRunRequestBody(body, requesterId);
+      assertDemoScope(ctx, input.projectId);
+      return apiCreateRunRequest(requesterId, input);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/run-requests\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => apiGetRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/run-requests\/([^/]+)\/stop$/,
+    handler: async (m, _b, _q, ctx) => apiStopRunRequest(m[1]!, demoRequester(ctx), demoAccess(ctx)),
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/users\/(\d+)\/api-keys$/,
     handler: (m, body, _q, ctx) => {
@@ -3548,11 +3682,13 @@ const routes: RouteEntry[] = [
         throw demoHttpError(400, 'entityType and entityId are required');
       }
       await assertDemoIssueEntity(ctx, entityType, entityId);
+      const db = await getDemoDb();
       const draft = await demoIssueDraft(
-        await getDemoDb(),
+        db,
         entityType,
         entityId,
         toIssueLocale(q?.get('locale')) ?? undefined,
+        await demoFiledByName(db, ctx),
       );
       if (!draft) throw demoHttpError(404, 'No tracker connected or entity unavailable');
       return draft;
@@ -3570,7 +3706,13 @@ const routes: RouteEntry[] = [
         title?: string;
         issueType?: string;
         fields?: unknown;
+        comment?: string;
+        submissionId?: string;
       };
+      const commentOk =
+        b.comment === undefined || (typeof b.comment === 'string' && b.comment.length <= MAX_ISSUE_COMMENT_LENGTH);
+      const submissionOk = b.submissionId === undefined || isSubmissionId(b.submissionId);
+      if (!commentOk || !submissionOk) throw demoHttpError(400, 'Invalid request body');
       if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
         throw demoHttpError(400, 'Invalid request body');
       }
@@ -3579,9 +3721,13 @@ const routes: RouteEntry[] = [
       if (b.connectionId !== getDemoProjectIntegration().connectionId) {
         throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
       }
-      const created = await demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+      const db = await getDemoDb();
+      const created = await demoCreateIssue(db, b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,
+        comment: b.comment ?? null,
+        filedBy: await demoFiledByName(db, ctx),
+        submissionId: b.submissionId ?? null,
       });
       if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
       return created;
@@ -3963,6 +4109,8 @@ routes.push(
           role: ctx.access.instanceRole,
           name: user.name,
           avatarUrl: user.avatarUrl,
+          avatarVersion: accountPictureVersion(user),
+          avatarUploaded: Boolean(user.avatarKey),
           email: user.email,
           emailVerified: user.emailVerified,
           oauthProvider: user.oauthProvider,
@@ -3992,8 +4140,20 @@ routes.push(
     handler: () => Promise.resolve({ success: true, username: '' }),
   },
   { method: 'POST', pattern: /^\/api\/auth\/change-password$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/auth\/avatar$/,
+    handler: () => Promise.reject(demoHttpError(403, 'Uploading a profile picture is not available in the demo')),
+  },
+  { method: 'DELETE', pattern: /^\/api\/auth\/avatar$/, handler: () => Promise.resolve({ removed: false }) },
   { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
   { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/users\/(\d+)\/avatar$/,
+    permission: 'users:manage',
+    handler: () => Promise.resolve({ removed: false }),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/users\/(\d+)\/invite$/,

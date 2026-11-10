@@ -48,7 +48,7 @@ definePageMeta({ layout: false });
         <p class="text-sm text-gray-500 mb-4">
           Enter your email address and we'll send you a link to reset your password.
         </p>
-        <form class="space-y-4" @submit.prevent="submit">
+        <form class="space-y-4" method="post" @submit.prevent="submit">
           <UFormField label="Email" name="email" required>
             <UInput
               v-model="email"

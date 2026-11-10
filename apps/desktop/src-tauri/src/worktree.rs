@@ -327,7 +327,9 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
 /// (`discovery`), has a reporter or a `piwi` that knows it take the address and
 /// the token together from the file, before a server the Playwright config
 /// names, outside CI. A reporter that predates `prefer` pairs a server its
-/// config names with the token.
+/// config names with the token. `PIWI_DESKTOP_KEY=1` marks `PIWI_API_KEY` as
+/// this app's token: a reporter or `piwi` that knows the marker sends it to
+/// the address only after the server there proves it holds it.
 pub(crate) fn flake_lab_env(
     server: &ServerInfo,
     discovery: Option<&Path>,
@@ -339,6 +341,7 @@ pub(crate) fn flake_lab_env(
         ),
         ("PIWI_API_KEY", server.token.clone()),
         ("PIWI_DESKTOP_APP", "prefer".into()),
+        ("PIWI_DESKTOP_KEY", "1".into()),
         (
             "PIWI_DESKTOP_CONFIG",
             discovery
@@ -2037,6 +2040,7 @@ mod tests {
         assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
         assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
         assert_eq!(get("PIWI_DESKTOP_APP"), Some("prefer"));
+        assert_eq!(get("PIWI_DESKTOP_KEY"), Some("1"));
         assert_eq!(
             get("PIWI_DESKTOP_CONFIG"),
             Some("/home/dev/.piwi/desktop.json")
@@ -2044,7 +2048,7 @@ mod tests {
         assert_eq!(get("FORCE_COLOR"), Some("1"));
         assert_eq!(get("NO_COLOR"), Some(""));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 6);
+        assert_eq!(env.len(), 7);
         // With no discovery file written, the reporter looks for one at its default path.
         let without = flake_lab_env(&server, None);
         let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");

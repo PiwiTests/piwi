@@ -173,11 +173,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /**
-     * The stops whose file was opened at their line, whose page was shown, and what is drawn of each, by
-     * `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
+     * What the IDE shows of the stops (`Glue.StopsShown`), the stops whose file opens once found, in order, and what is
+     * drawn of each, by `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
      */
-    private val revealed = HashSet<String>()
-    private val paged = HashSet<String>()
+    private val shownStops = Glue.StopsShown()
+    private val unopened = LinkedHashSet<String>()
     private val drawn = HashMap<String, DrawnStop>()
     private val refreshed = HashSet<String>()
 
@@ -195,6 +195,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageRelease = false
     private val pageInputAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
+    /** Draws again once the Paused Page tab stops waiting for a slot's next stop (`Glue.StopsShown.waitsUntil`). */
+    private val waitAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
+    /** The Worker tab, and the slot it watches (a run's ref, a parallel index); on the event thread. */
+    private var workerTab: Content? = null
+    private var laneTarget: Pair<String, Int>? = null
+    @Volatile private var watchingLane: LaneViewParams? = null
+    private val pendingLaneFrame = AtomicReference<LaneFrame?>(null)
+    private val drawingLaneFrame = AtomicBoolean(false)
+
     private val breakpointsQueued = AtomicBoolean()
 
     /** The IDE's breakpoints as the service last heard them (`piwi/setBreakpoints`), as text; under [lock]. */
@@ -208,7 +218,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     internal var remote: RunRemote = object : RunRemote {
         private fun server() = project.service<PiwiProjectService>().server()
 
-        override fun control(params: RunControlParams) = server()?.runControl(params)?.orNull()
+        /** A control no service runs to take is refused here (`ok: false`): nothing sent it. */
+        override fun control(params: RunControlParams): RunControlResult? {
+            val server = server() ?: return RunControlResult(false, NOT_RUNNING)
+            return server.runControl(params).orNull()
+        }
 
         override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
 
@@ -219,6 +233,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 ?.pageView(params)?.orNull()
 
         override fun pageInput(params: PageInputParams) = server()?.pageInput(params)?.orNull()
+
+        override fun laneView(params: LaneViewParams) =
+            (if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server())
+                ?.laneView(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -511,27 +529,38 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Draw each stop at the line it stands on now: its file opened at its line the first time, its execution point and
-     * an inlay in each editor of its file; a stop no pause bar shows, its page in the Paused Page tab, whether its file
-     * is found or not. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a
-     * stop that went on drew goes. On the event thread.
+     * Draw each stop at the line it stands on now: a new stop's file opened at its line once found, with the focus as
+     * `Glue.StopsShown` decides then (`reveal`), its execution point and an inlay in each editor of its file; the page
+     * `Glue.StopsShown` gives in the Paused Page tab, whether its file is found or not, the tab selected unless the
+     * Worker tab is. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a stop
+     * that went on drew goes. On the event thread.
      */
     private fun draw() {
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
-        revealed.retainAll(keys)
-        paged.retainAll(keys)
+        unopened.retainAll(keys)
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
+        val shownPage = livePage()
+        if (shownPage == null) shownStops.view(null)
+        val show = shownStops.changed(sessions, stops)
+        wakeWhenWaited()
+        show.open.forEach { unopened.add(Glue.stopKey(it)) }
+        val byKey = stops.associateBy(Glue::stopKey)
+        for (key in unopened.toList()) {
+            val stop = byKey[key] ?: continue
+            val file = fileOf(stop.stop.uri) ?: continue
+            unopened.remove(key)
+            val focus = shownStops.focusFor(stop)
+            shownStops.opened(stop, focus, reveal(stop, file, focus))
+        }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
             val file = fileOf(stop.stop.uri)
-            if (file == null) refresh(stop.stop.uri)
-            if (file != null && revealed.add(key)) {
-                OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(true)
+            if (file == null) {
+                refresh(stop.stop.uri)
+                continue
             }
-            if (!stop.stop.bar && paged.add(key)) showPage(stop)
-            if (file == null) continue
             val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
             if (stop.stop.line < 0 || stop.stop.line >= document.lineCount) continue
             val shown = drawn.getOrPut(key) { DrawnStop(highlight(document, stop)) }
@@ -541,13 +570,66 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     ?.let { shown.inlays[editor] = it }
             }
         }
-        val shownPage = livePage()
-        if (shownPage != null && pageStop != null && pageStop !in keys) {
+        if (show.page != null) {
+            showPage(show.page, select = selectsPage())
+        } else if (shownPage != null && pageStop != null && pageStop !in keys) {
             stopPageView()
             pageStop = null
             (shownPage.component as PausedPagePanel).ended("The test went on.")
         }
         if (shownPage != null && pageStop == null && sessions.isEmpty()) (shownPage.component as PausedPagePanel).ended("The run ended.")
+        val worker = liveWorkerTab()?.component as? PausedPagePanel
+        val target = laneTarget
+        if (worker != null && target != null) {
+            worker.caption(Glue.laneShown(sessions[target.first], target.second, stops).caption)
+            // The service ends the view with the run, and Watch is off for the next.
+            if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
+                watchingLane = null
+                pendingLaneFrame.set(null)
+                worker.watching(false)
+                worker.liveWanted = false
+            }
+        }
+    }
+
+    /**
+     * Open a stop's file at its line; whether the file is in sight then. With the focus, as the debugger does. Without
+     * it, the editor in use is left alone: a file open in an editor already keeps its caret, and while an editor shows a
+     * file, another stays closed, the stop drawn in it when it opens; with no editor shown, it opens without the focus.
+     * On the event thread.
+     */
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean): Boolean {
+        val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
+        val manager = FileEditorManager.getInstance(project)
+        return when {
+            focus -> {
+                descriptor.navigate(true)
+                true
+            }
+            manager.isFileOpen(file) -> file in manager.selectedFiles
+            manager.selectedFiles.isNotEmpty() -> false
+            else -> {
+                descriptor.navigate(false)
+                true
+            }
+        }
+    }
+
+    /**
+     * Open a stop's file at its line with the focus, from the status bar item's menu: the person is then on its slot.
+     * On the event thread.
+     */
+    fun goTo(stop: Glue.ShownStop) {
+        val file = fileOf(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
+        shownStops.opened(stop, true, reveal(stop, file, true))
+        draw()
+    }
+
+    /** Draw again once the Paused Page tab stops waiting for a slot's next stop. On the event thread. */
+    private fun wakeWhenWaited() {
+        waitAlarm.cancelAllRequests()
+        val until = shownStops.waitsUntil() ?: return
+        waitAlarm.addRequest({ draw() }, (until - System.currentTimeMillis()).coerceAtLeast(0L).toInt())
     }
 
     private fun toolWindow() = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)
@@ -588,6 +670,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             (caretInlay?.takeIf { it.isValid }?.renderer as? CaretCountInlay)?.text,
             panel?.picks == true,
             panel?.note,
+            (liveWorkerTab()?.component as? PausedPagePanel)?.caption,
+            liveWorkerTab()?.displayName,
+            (liveWorkerTab()?.component as? PausedPagePanel)?.liveWanted == true,
+            toolWindow()?.contentManager?.selectedContent?.displayName,
         )
     }
 
@@ -601,6 +687,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val pagePicks: Boolean = false,
         /** What the last pick on the image came to. */
         val pageNote: String? = null,
+        /** What the Worker tab says of its slot, the tab's name, and whether its Watch is on. */
+        val workerCaption: String? = null,
+        val workerTab: String? = null,
+        val workerWatch: Boolean = false,
+        /** The tab of the Piwi tool window in sight. */
+        val selectedTab: String? = null,
     )
 
     /** A click at `x`, `y` of the Paused Page tab's image, as a person's click reaches it, which the tests send. */
@@ -608,11 +700,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         (livePage()?.component as? PausedPagePanel)?.click(x, y)
     }
 
-    /** The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker. On the event thread. */
-    fun showPage(stop: Glue.ShownStop) {
+    /**
+     * The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker, the tab selected unless
+     * `select` is false (the Worker tab is in sight, and keeps the place). On the event thread.
+     */
+    fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
         stopPageView()
         val key = Glue.stopKey(stop)
         pageStop = key
+        shownStops.view(stop)
         val window = toolWindow() ?: return
         val content = livePage() ?: ContentFactory.getInstance()
             .createContent(PausedPagePanel(), PAUSED_PAGE, false)
@@ -621,12 +717,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 window.contentManager.addContent(it)
                 page = it
             }
-        window.contentManager.setSelectedContent(content)
-        window.show(null)
+        if (select) {
+            window.contentManager.setSelectedContent(content)
+            window.show(null)
+        }
         val panel = content.component as PausedPagePanel
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks")) { on -> watchPage(stop, on) }
         panel.viewport = null
-        panel.input = { events -> pageInput(stop, events) }
+        panel.input = { events ->
+            if (Glue.actsOnPage(events) && shownStops.acted(stop)) draw()
+            pageInput(stop, events)
+        }
         panel.releaseInput = {
             if (pageStop == key && watchingPage != null) {
                 pageRelease = true
@@ -671,6 +772,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
         val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
         panel.note("Picking the element under the click…")
+        if (shownStops.acted(stop)) draw()
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
             ApplicationManager.getApplication().invokeLater({
@@ -718,6 +820,129 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 panel.note(result?.message ?: "The editor service did not answer.")
                 panel.liveWanted = false
             }
+        }
+    }
+
+    /** The Worker tab while the tool window holds it: closing it removes it. */
+    private fun liveWorkerTab(): Content? =
+        workerTab?.takeIf { toolWindow()?.contentManager?.getIndexOfContent(it)?.let { i -> i >= 0 } == true }
+
+    /**
+     * Watch the slot `lane` of the run `ref` in the Worker tab of the Piwi tool window (`piwi/laneView`): the page of
+     * the test the worker there runs, through its tests and stops and the worker Playwright starts in its place, the
+     * caption saying what it does. One slot at a time. On the event thread.
+     */
+    fun showWorker(ref: String, lane: Int) {
+        val window = toolWindow() ?: return
+        val content = liveWorkerTab() ?: ContentFactory.getInstance()
+            .createContent(PausedPagePanel(), Glue.workerName(lane), false)
+            .apply { isCloseable = true }
+            .also {
+                window.contentManager.addContent(it)
+                workerTab = it
+                laneTarget = null
+            }
+        content.displayName = Glue.workerName(lane)
+        window.contentManager.setSelectedContent(content)
+        window.show(null)
+        val panel = content.component as PausedPagePanel
+        if (laneTarget != ref to lane) {
+            stopLaneView()
+            laneTarget = ref to lane
+            panel.forWorker()
+            panel.configureLive(true, false, false) { on -> watchLane(on) }
+            panel.visibilityChanged = { visible ->
+                if (!visible) {
+                    stopLaneView()
+                    panel.watching(false)
+                } else if (panel.liveWanted && watchingLane == null) watchLane(true)
+            }
+            panel.show(Glue.laneShown(sessions[ref], lane, stops()).caption, null)
+        }
+        panel.liveWanted = true
+        if (watchingLane == null) watchLane(true)
+    }
+
+    /** Whether a new page selects the Paused Page tab (`Glue.selectsPausedPage`). On the event thread. */
+    private fun selectsPage(): Boolean {
+        val window = toolWindow() ?: return true
+        val tab = liveWorkerTab()
+        return Glue.selectsPausedPage(tab != null && window.contentManager.selectedContent == tab, window.isVisible)
+    }
+
+    /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
+    fun giveUp(waiting: Glue.WaitingWorker) {
+        control(RunControlParams(waiting.ref, waiting.worker, "give-up"))
+    }
+
+    /** Pause the worker `worker` of the run `ref` and watch its slot `lane` in the Worker tab. On the event thread. */
+    fun pauseAndWatch(target: Glue.WatchTarget) {
+        showWorker(target.ref, target.lane)
+        control(RunControlParams(target.ref, target.worker, "pause"))
+    }
+
+    @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
+        viewCalls = viewCalls.handle { _, _ -> Unit }.thenApplyAsync({
+            val result = runCatching { remote.laneView(params) }.getOrNull()
+            if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
+            Unit
+        }, AppExecutorUtil.getAppExecutorService())
+    }
+
+    private fun stopLaneView() {
+        val previous = watchingLane
+        watchingLane = null
+        pendingLaneFrame.set(null)
+        if (previous != null) requestLaneView(previous.copy(on = false))
+    }
+
+    private fun watchLane(on: Boolean) {
+        stopLaneView()
+        val panel = liveWorkerTab()?.component as? PausedPagePanel ?: return
+        panel.watching(false)
+        val (ref, lane) = laneTarget ?: return
+        if (!on || !panel.isShowing) return
+        val params = LaneViewParams(ref, lane, true)
+        watchingLane = params
+        requestLaneView(params) { result ->
+            if (watchingLane !== params) return@requestLaneView
+            if (result?.ok == true) panel.watching(true)
+            else {
+                stopLaneView()
+                panel.note(result?.message ?: "The editor service did not answer.")
+                panel.liveWanted = false
+            }
+        }
+    }
+
+    /** A frame of the slot the Worker tab watches: one is decoded off the event thread, the newest alone waiting behind it. */
+    fun laneFrame(frame: LaneFrame) {
+        val own = watchingLane ?: return
+        if (own.ref != frame.ref || own.lane != frame.lane) return
+        pendingLaneFrame.set(frame)
+        drawLaneFrame()
+    }
+
+    private fun drawLaneFrame() {
+        if (pendingLaneFrame.get() == null || !drawingLaneFrame.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val frame = pendingLaneFrame.getAndSet(null)
+            val picture = frame?.takeIf { it.refused == null && (it.data?.length ?: Int.MAX_VALUE) <= 524288 }
+                ?.let { Glue.pausedImageBytes(PausedImage("image/jpeg", it.data, it.width, it.height)) }
+                ?.let(::decode)
+            ApplicationManager.getApplication().invokeLater({
+                val own = watchingLane
+                val panel = liveWorkerTab()?.component as? PausedPagePanel
+                if (frame != null && own != null && panel?.isShowing == true && own.ref == frame.ref && own.lane == frame.lane) {
+                    if (frame.refused != null) panel.note(frame.refused)
+                    else if (picture != null) {
+                        panel.note(null)
+                        panel.frame(picture)
+                    }
+                }
+                drawingLaneFrame.set(false)
+                drawLaneFrame()
+            }, gone)
         }
     }
 
@@ -791,10 +1016,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`, a line of the run's code), naming it, off the
-     * event thread, saying why not.
+     * event thread, saying why not: a refusal undoes what `Glue.StopsShown` recorded of it, the stops drawn again then.
+     * On the event thread.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
-        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since))
+        val token = shownStops.answered(stop, action)
+        wakeWhenWaited()
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { result ->
+            // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
+            if (result == null || result.ok) shownStops.taken(token) else if (shownStops.refused(token)) draw()
+        }
     }
 
     /** Pause every run started here: each of its workers stops before its next call. */
@@ -802,13 +1033,18 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         sessions.keys.forEach { control(RunControlParams(it, action = "pause")) }
     }
 
-    private fun control(params: RunControlParams) {
+    /**
+     * Send a control off the event thread, saying why not; `settled` runs on the event thread then, with the run's
+     * answer (null when the service did not answer; `ok: false` when it refused it, or was not running to take it).
+     */
+    private fun control(params: RunControlParams, settled: ((RunControlResult?) -> Unit)? = null) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
             }
+            if (settled != null) ApplicationManager.getApplication().invokeLater({ settled(result) }, gone)
         }
     }
 
@@ -872,14 +1108,25 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     } ?: false
 
     /**
-     * Run `action` on the stop the caret of `editor` is at, else the only one, else the one chosen; among those `offers`
-     * keeps, when it keeps any. On the event thread.
+     * Run `action` on the stop `Glue.StopsShown.choose` gives for the caret of `editor` (for a `control` in the moments
+     * after an answer, one of the slot answered or none), else on the one chosen; among those `offers` keeps, when it
+     * keeps any. On the event thread.
      */
-    fun atCaret(editor: Editor?, offers: (Glue.ShownStop) -> Boolean = { true }, action: (Glue.ShownStop) -> Unit) {
+    fun atCaret(
+        editor: Editor?,
+        offers: (Glue.ShownStop) -> Boolean = { true },
+        control: Boolean = false,
+        action: (Glue.ShownStop) -> Unit,
+    ) {
         val uri = editor?.virtualFile?.let { fileUri(it) }
+        val line = editor?.caretModel?.logicalPosition?.line
         val all = stops()
-        val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, editor?.caretModel?.logicalPosition?.line)
-        if (candidates.size < 2) return candidates.firstOrNull()?.let(action) ?: PiwiCommands.notify(project, "No test is stopped.")
+        val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, line)
+        when (val chosen = shownStops.choose(candidates, uri, line, control)) {
+            is Glue.StopChoice.One -> return action(chosen.stop)
+            Glue.StopChoice.None -> return if (candidates.isEmpty()) PiwiCommands.notify(project, "No test is stopped.") else Unit
+            Glue.StopChoice.Ask -> Unit
+        }
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(candidates)
             .setRenderer(
@@ -991,6 +1238,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun start(stop: Glue.ShownStop, action: Glue.StopAction, request: Int? = null) {
         val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        if (shownStops.acted(stop)) draw()
         ApplicationManager.getApplication().executeOnPooledThread {
             if (action == Glue.StopAction.MOCK && request == null) {
                 val listed = remote.requests(StopRequestsParams(stop.ref, stop.worker, since))
@@ -1140,6 +1388,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         watchingPage = null
         pendingPageFrame.set(null)
         if (watched != null) requestPageView(watched.copy(on = false))
+        val lane = watchingLane
+        watchingLane = null
+        pendingLaneFrame.set(null)
+        if (lane != null) requestLaneView(lane.copy(on = false))
         disposed = true
         listeners.clear()
         processes.clear()
@@ -1162,6 +1414,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         const val PAUSED_PAGE = "Paused Page"
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
         const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
+
+        /** What a control says when no editor service runs to send it to. */
+        private const val NOT_RUNNING = "The Piwi editor service is not running in this project."
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L
@@ -1217,6 +1472,8 @@ internal interface RunRemote {
     fun pageView(params: PageViewParams): RunControlResult?
 
     fun pageInput(params: PageInputParams): RunControlResult?
+
+    fun laneView(params: LaneViewParams): RunControlResult?
 
     fun pickAt(params: PickAtParams): PickAtResult?
 
@@ -1332,6 +1589,12 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private fun pressOnPage(key: String) {
         flushClick()
         input?.invoke(listOf(PageInput("key", "press", key = key)))
+    }
+
+    /** The panel of the Worker tab: Watch shows the page of the worker's test, running or stopped. */
+    fun forWorker() {
+        live.text = "Watch"
+        live.toolTipText = "Show the page of the test this worker runs, a few images a second, through its tests and stops. Nothing is stored or shared."
     }
 
     fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, changed: (Boolean) -> Unit) {
@@ -1812,7 +2075,7 @@ abstract class StopControlAction(private val control: Glue.StopControl) : RunCon
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
         val sessions = sessions(e) ?: return
-        sessions.atCaret(editor, { control in Glue.stopControls(it) }) { sessions.perform(it, control, editor) }
+        sessions.atCaret(editor, { control in Glue.stopControls(it) }, control = true) { sessions.perform(it, control, editor) }
     }
 }
 
@@ -1833,7 +2096,27 @@ class FinishRunAction : StopControlAction(Glue.StopControl.FINISH)
  * with no shortcut.
  */
 class EndTestAction : StopControlAction(Glue.StopControl.END) {
-    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.endable
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.endable || controls.waiting != null
+
+    /** At a stop, as the other controls; else where a Pause waits for the call a test runs. */
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        if (sessions.controls().endable) return super.actionPerformed(e)
+        val waiting = Glue.waitingWorkers(sessions.sessions)
+        if (waiting.size < 2) return waiting.firstOrNull()?.let(sessions::giveUp) ?: Unit
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(waiting)
+            .setTitle("End Which Waiting Test?")
+            .setRenderer(object : ColoredListCellRenderer<Glue.WaitingWorker>() {
+                override fun customizeCellRenderer(list: JList<out Glue.WaitingWorker>, value: Glue.WaitingWorker?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                    append(value?.waiting?.title.orEmpty())
+                    append("   worker ${value?.worker ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                }
+            })
+            .setItemChosenCallback { sessions.giveUp(it) }
+            .createPopup()
+            .showInBestPositionFor(e.dataContext)
+    }
 }
 
 /** **Show the Paused Page**: the page of the stopped test, in the Piwi tool window. */
@@ -1844,6 +2127,50 @@ class ShowPausedPageAction : RunControlAction() {
         val sessions = sessions(e) ?: return
         sessions.atCaret(e.getData(CommonDataKeys.EDITOR)) { sessions.showPage(it) }
     }
+}
+
+/**
+ * **Watch a Worker's Test**: the page of the test a worker runs, in the Worker tab of the Piwi tool window, for a worker
+ * whose reporter shows it: the only one, or the one chosen.
+ */
+class WatchWorkerAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.watchable
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        chooseWorker(e, Glue.watchableWorkers(sessions.sessions)) { sessions.showWorker(it.ref, it.lane) }
+    }
+}
+
+/** **Pause and Watch a Worker's Test**: the worker chosen stops before its next call, watched in the Worker tab. */
+class PauseAndWatchAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.watchable && controls.pausable
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        val targets = Glue.watchableWorkers(sessions.sessions, pausable = true)
+        if (targets.isEmpty()) {
+            e.project?.let { PiwiCommands.notify(it, "No running test can be paused and watched.") }
+            return
+        }
+        chooseWorker(e, targets) { sessions.pauseAndWatch(it) }
+    }
+}
+
+/** The only worker of `targets`, or the one chosen in a popup; nothing for none. */
+private fun chooseWorker(e: AnActionEvent, targets: List<Glue.WatchTarget>, then: (Glue.WatchTarget) -> Unit) {
+    if (targets.size < 2) return targets.firstOrNull()?.let(then) ?: Unit
+    JBPopupFactory.getInstance()
+        .createPopupChooserBuilder(targets)
+        .setTitle("Watch Which Worker?")
+        .setRenderer(object : ColoredListCellRenderer<Glue.WatchTarget>() {
+            override fun customizeCellRenderer(list: JList<out Glue.WatchTarget>, value: Glue.WatchTarget?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                append(value?.label.orEmpty())
+            }
+        })
+        .setItemChosenCallback { then(it) }
+        .createPopup()
+        .showInBestPositionFor(e.dataContext)
 }
 
 /** A code action at a stop: the one at the caret's line among those offering it, else the only one, else the one chosen. */

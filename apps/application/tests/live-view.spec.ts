@@ -20,7 +20,7 @@ import { holdWorkerStream } from './utils/live-view';
  * at. In a project with the live view off, and for a run outside CI nobody shared, the run's workers send this server
  * nothing; a run outside CI its editor shares (Share live, played by this spec on the run channel) shows Watch, and
  * its view ends, saying why, as the sharing stops. A worker of the run's live view, played by this spec, shows
- * **Paused** on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
+ * where it stopped on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
  * as the project turns the live view off.
  */
 
@@ -58,11 +58,37 @@ interface Run {
   release: () => void;
 }
 
-/** Start the suite as a project's run against this server, in a CI job or outside one, `extra` in its environment. */
-async function startRun(projectName: string, ci: boolean, extra: NodeJS.ProcessEnv = {}): Promise<Run> {
+/**
+ * A test that fails on its first attempt and passes on its retry, each attempt waiting on its slow page until its file
+ * (`attempt-0`, `attempt-1`) is written.
+ */
+const RETRY_SPEC = (folder: string) => `const fs = require('node:fs');
+const { test, expect } = require('./fixture.cjs');
+test('pays on its second try', async ({ page }, testInfo) => {
+  await page.setContent(${JSON.stringify(SLOW_PAGE)});
+  const released = () => fs.existsSync(require('node:path').join(${JSON.stringify(folder)}, 'attempt-' + testInfo.retry));
+  const until = Date.now() + 90000;
+  while (!released() && Date.now() < until) {
+    await page.getByRole('button', { name: 'Pay' }).click({ timeout: 2500 }).catch(() => {});
+  }
+  expect(released()).toBe(true);
+  expect(testInfo.retry, 'the first attempt fails').toBe(1);
+});
+`;
+
+/**
+ * Start a suite (`SPEC` unless `options.spec` names another, retried `options.retries` times) as a project's run
+ * against this server, in a CI job or outside one, `extra` in its environment.
+ */
+async function startRun(
+  projectName: string,
+  ci: boolean,
+  extra: NodeJS.ProcessEnv = {},
+  options: { spec?: (folder: string) => string; retries?: number; project?: string } = {},
+): Promise<Run> {
   fs.mkdirSync(join(process.cwd(), '.test-temp'), { recursive: true });
   const folder = fs.mkdtempSync(join(process.cwd(), '.test-temp', 'live-view-'));
-  fs.writeFileSync(join(folder, 'live.spec.cjs'), SPEC(folder));
+  fs.writeFileSync(join(folder, 'live.spec.cjs'), (options.spec ?? SPEC)(folder));
   fs.writeFileSync(
     join(folder, 'fixture.cjs'),
     `const { test: base, expect } = require('@playwright/test');
@@ -80,8 +106,9 @@ module.exports = wrapConfig(defineConfig({
   outputDir: './test-results',
   timeout: 120000,
   workers: 1,
+  retries: ${options.retries ?? 0},
   reporter: 'line',
-  use: { headless: true, viewport: { width: 1000, height: 625 } },
+  use: { headless: true, viewport: { width: 1000, height: 625 } },${options.project ? `\n  projects: [{ name: ${JSON.stringify(options.project)}, use: { browserName: 'chromium' } }],` : ''}
 }), { serverUrl: ${JSON.stringify(target.baseUrl)}, projectName: ${JSON.stringify(projectName)}, uploadTraces: false, uploadReport: false });
 `,
   );
@@ -217,6 +244,56 @@ async function startShareHub(): Promise<{
   };
 }
 
+/**
+ * An editor on a run channel that pauses each test as it begins, and lets it go on when told (`resume`), as **Debug in
+ * my editor** steers a run.
+ */
+async function startPauseHub(): Promise<{
+  env: NodeJS.ProcessEnv;
+  resume: () => Promise<void>;
+  close: () => Promise<void>;
+}> {
+  const folder = fs.mkdtempSync(join(os.tmpdir(), 'piwi-pause-'));
+  const path = join(folder, 'channel.sock');
+  const sockets: net.Socket[] = [];
+  const stops: Array<{ socket: net.Socket; stop: number }> = [];
+  const send = (socket: net.Socket, message: unknown) => socket.write(`${JSON.stringify(message)}\n`);
+  const server = net.createServer((socket) => {
+    sockets.push(socket);
+    socket.setEncoding('utf8');
+    socket.on('error', () => socket.destroy());
+    socket.on(
+      'data',
+      lineReader(
+        (line) => {
+          const message = parseRunToHub(line);
+          if (message?.type === 'test-begin') send(socket, { type: 'control', action: 'pause' });
+          if (message?.type === 'stopped') stops.push({ socket, stop: message.stop });
+        },
+        () => socket.destroy(),
+      ),
+    );
+  });
+  await new Promise<void>((done) => server.listen(path, done));
+  return {
+    env: {
+      PIWI_RUN_CHANNEL: formatRecordChannel({ path, token: 'pause-hub-token-0123456789abcdef' }),
+      PIWI_ORIGIN: 'editor',
+      PIWI_ORIGIN_REF: 'ed-pause-hub',
+    },
+    resume: async () => {
+      await expect.poll(() => stops.length, { timeout: 60_000 }).toBeGreaterThan(0);
+      const { socket, stop } = stops.shift()!;
+      send(socket, { type: 'control', action: 'resume', stop });
+    },
+    close: async () => {
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise<void>((done) => server.close(() => done()));
+      fs.rmSync(folder, { recursive: true, force: true });
+    },
+  };
+}
+
 test.describe('Live view of a run', () => {
   test.skip(target.desktop, 'the desktop app guards every route with its token, which a test worker does not hold');
   test.describe.configure({ mode: 'serial' });
@@ -239,7 +316,7 @@ test.describe('Live view of a run', () => {
       await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
-      const view = page.getByRole('dialog');
+      const view = page.getByTestId('lane-panel');
       await expect(view).toContainText('pays on a slow page');
       await expect(view.getByRole('heading', { name: /^Worker \d+ · live$/ })).toBeVisible();
       const frame = view.getByTestId('live-frame');
@@ -255,6 +332,14 @@ test.describe('Live view of a run', () => {
       await expect(view.getByTestId('live-call-target')).toHaveText('Its element is not enabled', { timeout: 20_000 });
       await expect(view.getByTestId('live-call-state')).toContainText('Running for');
       await expect(view.getByTestId('live-target-box')).toBeAttached();
+      // The page's address names the lane the view follows.
+      await expect(page).toHaveURL(/[?&]watch=1(&|$)/);
+      // Zoom to the element crops the image around the element the test waits on, and a click on it shows it whole.
+      await view.getByRole('button', { name: 'Zoom to the element' }).click();
+      await expect(view.getByTestId('live-stage')).toHaveAttribute('style', /scale\((?!1\))/);
+      await page.screenshot({ path: testInfo.outputPath('live-view-zoomed.png') });
+      await view.getByTestId('live-stage').click();
+      await expect(view.getByTestId('live-stage')).not.toHaveAttribute('style', /scale/);
       // The status region stays in the page, empty while images show.
       await expect(view.getByRole('status')).toHaveText('');
       // The image is the page as it paints: a spinner turns, so the image changes.
@@ -282,14 +367,60 @@ test.describe('Live view of a run', () => {
       expect(frames).toBeGreaterThan(1);
       expect(frames / seconds).toBeLessThanOrEqual(4.5);
 
-      // The test ends: so does its view.
+      // The test ends: the view says how, and follows the worker's lane until the run ends.
       run.release();
-      await expect(view.getByTestId('live-status')).toHaveText('The test ended.', { timeout: 20_000 });
+      await expect(view.getByTestId('live-outcome')).toContainText('passed', { timeout: 20_000 });
+      // The run's end ends the view, which says the run's verdict and drops "live".
+      await expect(view.getByTestId('live-status')).toHaveText('The run passed: 1 test.', { timeout: 40_000 });
+      await expect(view.getByRole('heading', { name: /^Worker \d+$/ })).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(view).toBeHidden();
+      await expect(page).not.toHaveURL(/[?&]watch=/);
 
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).toContain('Live view on');
+    } finally {
+      await endRun(run);
+    }
+  });
+
+  test('a view follows its lane through a failing test and its retry, and the page’s address opens it', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+    const before = await latestRunId(request, project);
+
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, true, {}, { spec: RETRY_SPEC, retries: 1 });
+    try {
+      const runId = await liveRunId(request, project, before);
+      // The address of a lane opens its view as its worker joins the run's live view.
+      await page.goto(`/test-runs/${runId}?watch=1`);
+      const view = page.getByTestId('lane-panel');
+      await expect(view.getByRole('heading', { name: 'Worker 1 · live' })).toBeVisible({ timeout: 60_000 });
+      await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
+      await expect(view).toContainText('pays on its second try');
+
+      // The first attempt fails: the view says so and waits for the lane's next test, which is its retry.
+      fs.writeFileSync(join(run.folder, 'attempt-0'), '');
+      await expect(view.getByTestId('live-outcome')).toContainText('pays on its second try failed', {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-outcome')).toContainText("waiting for the worker's next test");
+      await page.screenshot({ path: testInfo.outputPath('live-view-failed.png') });
+      // Playwright starts the lane's worker again for the retry: the view goes on with it, the failure kept below.
+      await expect(view.getByTestId('live-outcome')).toHaveCount(0, { timeout: 40_000 });
+      await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
+      await expect(view.getByTestId('live-earlier')).toContainText('pays on its second try failed');
+
+      fs.writeFileSync(join(run.folder, 'attempt-1'), '');
+      await expect(view.getByTestId('live-outcome')).toContainText('pays on its second try passed', {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-status')).toHaveText('The run passed: 1 test.', { timeout: 40_000 });
+      expect(await run.exited, run.output()).toBe(0);
     } finally {
       await endRun(run);
     }
@@ -340,6 +471,8 @@ test.describe('Live view of a run', () => {
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
+        viewers: 0,
+        maxViewers: 16,
         received: { requests: 0, frames: 0, bytes: 0 },
       });
       const refused = await request.get(`/api/test-runs/${runId}/live-view/watch?worker=0`);
@@ -428,7 +561,7 @@ test.describe('Live view of a run', () => {
       await expect(watch).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await watch.click();
-      const view = page.getByRole('dialog');
+      const view = page.getByTestId('lane-panel');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
       // The editor hears someone watches.
       await expect.poll(() => hub.heard().at(-1)?.viewers, { timeout: 10_000 }).toBe(1);
@@ -453,7 +586,7 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('a run outside CI its editor shares hears its sharing stopped as the project turns its live view off', async ({
+  test('a run outside CI its editor shares hears its sharing stopped as the project turns its live view off, and may share again', async ({
     request,
   }) => {
     test.setTimeout(240_000);
@@ -467,13 +600,13 @@ test.describe('Live view of a run', () => {
       await expect.poll(() => hub.heard().some((live) => live.on), { timeout: 60_000 }).toBe(true);
       await expect.poll(async () => (await liveWorkers(request, runId)).workers.length, { timeout: 20_000 }).toBe(1);
       expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
-      // Its worker opens its stream again and hears the setting is off: not that its key is unknown.
+      // Its worker opens its stream again and hears the setting is off, not that its key is unknown: it may share again.
       await expect
         .poll(() => hub.heard().at(-1), { timeout: 20_000 })
         .toMatchObject({
-          can: false,
+          can: true,
           on: false,
-          why: "Sharing stopped: the project's live view was turned off on the instance.",
+          why: "Sharing stopped: the project's live view was turned off on the instance. Share the run again once it is back on.",
         });
       run.release();
       expect(await run.exited, run.output()).toBe(0);
@@ -484,7 +617,38 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('Paused shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
+  test('a run outside CI an editor steers, nobody sharing it, shows where its test stopped on the test’s row', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    const before = await latestRunId(request, project);
+    const hub = await startPauseHub();
+    // A named Playwright project: the stop names the attempt as its begin did, its project included.
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, false, hub.env, { project: 'chromium' });
+    try {
+      const runId = await liveRunId(request, project, before);
+      await page.goto(`/test-runs/${runId}`);
+      const paused = page.getByTestId('live-paused');
+      await expect(paused).toBeVisible({ timeout: 60_000 });
+      await expect(paused).toHaveAttribute('data-reason', 'pause');
+      await expect(paused).toContainText('Paused');
+      await expect(paused).toContainText('live.spec.cjs:');
+      // Nothing of the run's pages was sent: the stop is text.
+      expect((await liveWorkers(request, runId)).received.frames).toBe(0);
+
+      await hub.resume();
+      await expect(paused).toBeHidden({ timeout: 15_000 });
+      run.release();
+      expect(await run.exited, run.output()).toBe(0);
+    } finally {
+      await endRun(run);
+      await hub.close();
+    }
+  });
+
+  test('the stop shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
     page,
     request,
   }, testInfo) => {
@@ -555,7 +719,7 @@ test.describe('Live view of a run', () => {
       const watch = page.getByRole('button', { name: 'Watch worker 0 live' });
       await expect(watch).toHaveCount(1);
       await expect(rowOf(page.getByTestId('live-watch'))).toContainText('stops to look');
-      await expect(paused).toContainText('Paused');
+      await expect(paused).toContainText('Stopped at page.pause()');
       // The call's place opens in the editor.
       await expect(paused.getByText('tests/live.spec.ts:10', { exact: true })).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('live-view-paused.png') });
@@ -570,7 +734,7 @@ test.describe('Live view of a run', () => {
       expect((await post({ type: 'stop', stop })).ok()).toBeTruthy();
       await expect(paused).toBeVisible({ timeout: 10_000 });
 
-      // The setting turns off: Paused and Watch leave the open page, and the worker's stream closes.
+      // The setting turns off: the stop and Watch leave the open page, and the worker's stream closes.
       expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
       await expect(paused).toBeHidden({ timeout: 10_000 });
       await expect(watch).toHaveCount(0);

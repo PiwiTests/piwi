@@ -25,6 +25,14 @@ The desktop app needs no pairing with the editor: while it runs, it publishes it
 `~/.piwi/desktop.json`, which the editor reads, as the reporter does. The editor notices within seconds when the app
 starts or quits. With nothing else naming an instance, the editor uses the app as soon as it runs.
 
+The editor sends the app's token only to a server that proves it holds that token: before its first request that
+carries the token, the editor asks the address in `desktop.json` for the app's proof. A server that gives none, or the
+wrong one, gets no token, and the editor says the app's token was not sent. An app that does not answer is asked
+again on the next request, and so is an app after a request with the token failed to connect or was refused, or after
+the app restarts (a new process in `desktop.json`). The MCP server entries the editor offers for AI assistants (**Copy MCP Server
+Configuration** and the VS Code agent's server list) include the app's token only after the same proof; the
+assistant that receives the entry sends the token to the address itself.
+
 The app is looked for on the machine the extension runs on: in a remote window of VS Code (Remote SSH, WSL, Dev
 Containers), that is the remote machine, and `localhost` in `piwi.serverUrl` names it too.
 
@@ -61,7 +69,8 @@ the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** to
    `https://piwi.example.com`.
 2. When the instance has a login, choose **Sign in with the browser**. The instance's page opens with a code: check
    that the editor shows the same code, then click **Allow**. The editor receives an [API key](/operate/api-keys)
-   created for you and named after it, such as "Piwi in WebStorm on macOS", which you can revoke with your other keys.
+   created for you and named after it, such as "Piwi in WebStorm on macOS", which you revoke under **Settings →
+   Account → [Connected apps](/features/run-on-my-machine#connected-apps)**.
    Or paste a key you created yourself. An instance without a login needs no key.
 3. Pick the project.
 

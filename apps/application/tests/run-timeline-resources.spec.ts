@@ -114,7 +114,7 @@ test.describe('Run timeline resource tracks', () => {
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
     const tooltip = page.getByTestId('timeline-resource-tooltip');
     await expect(tooltip).toContainText('90%');
-    await expect(tooltip).toContainText('3 open · Worker 0: 1 · Worker 1: 2');
+    await expect(tooltip).toContainText('3 open · Worker 1: 1 · Worker 2: 2');
     await expect(page.getByTestId('timeline-resource-cursor')).toBeAttached();
 
     await page.mouse.move(0, 0);
@@ -145,17 +145,17 @@ test.describe('Run timeline resource tracks', () => {
     await expect(strips).toHaveCount(2);
     await expect(page.locator('[data-worker-strips="cpu"]')).toContainText('1.5 cores');
 
-    // A quarter into worker 0's strip: its first test, 3 s of CPU over 2 s.
+    // A quarter into the first worker's strip: its first test, 3 s of CPU over 2 s.
     const box = (await strips.first().boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
     const tooltip = page.getByTestId('timeline-worker-strip-tooltip');
-    await expect(tooltip).toContainText('Worker 0');
+    await expect(tooltip).toContainText('Worker 1');
     await expect(tooltip).toContainText('1.5 cores for “adds an item”');
 
-    // Worker 1's strip draws the sampler's readings of its processes.
+    // The second worker's strip draws the sampler's readings of its processes.
     const sampled = (await strips.nth(1).boundingBox())!;
     await page.mouse.move(sampled.x + sampled.width * 0.25, sampled.y + sampled.height / 2);
-    await expect(tooltip).toContainText('Worker 1');
+    await expect(tooltip).toContainText('Worker 2');
     await expect(tooltip).toContainText('cores, the worker and its browsers');
 
     await page.mouse.move(0, 0);
@@ -168,5 +168,144 @@ test.describe('Run timeline resource tracks', () => {
     await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
     await page.keyboard.press('Escape');
     await expect(strips).toHaveCount(0);
+  });
+});
+
+test.describe('Run timeline leaks', () => {
+  let runId = 0;
+  const t0 = Date.now() - 60_000;
+
+  test.beforeAll(async ({ request }) => {
+    const testCase = (title: string, workerIndex: number, start: number) => ({
+      title,
+      status: 'passed',
+      duration: 2000,
+      location: `tests/cart.spec.ts:${10 + start}:5`,
+      workerIndex,
+      startedAt: t0 + start * 1000,
+    });
+    const response = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_TIMELINE_RESOURCES,
+        status: 'passed',
+        startTime: new Date(t0).toISOString(),
+        duration: 5000,
+        totalTests: 3,
+        passedTests: 3,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          testCase('adds an item', 0, 0),
+          testCase('removes an item', 0, 3),
+          testCase('previews the receipt', 1, 0),
+        ],
+        resourceReport: {
+          v: 1,
+          findings: [],
+          counts: { leaked: 1, lingering: 1, idle: 0, piling: 0, handle: 0, probable: 0 },
+          profile: null,
+          workers: [],
+          artifactBytes: {},
+          workerHealth: null,
+          timeline: {
+            startedAt: t0,
+            cpuPct: [],
+            memoryBytes: [],
+            pages: [
+              {
+                worker: 0,
+                points: [
+                  [100, 1],
+                  [3100, 2],
+                  [5000, 0],
+                ],
+              },
+            ],
+            spans: [
+              // The first test's context, left open until worker 0 ended.
+              {
+                worker: 0,
+                verdict: 'leaked',
+                kind: 'context',
+                where: 'tests/cart.spec.ts:12',
+                site: 'tests/cart.spec.ts:12',
+                lastUse: 'tests/cart.spec.ts:14',
+                from: 2000,
+                to: 5000,
+                untilWorkerEnd: true,
+                scope: 'test',
+                pages: 1,
+                test: { title: 'adds an item', file: 'tests/cart.spec.ts' },
+              },
+              // A popup worker 1's test last used a second in and closed as it ended.
+              {
+                worker: 1,
+                verdict: 'lingering',
+                kind: 'page',
+                where: 'popup after locator.click at tests/cart.spec.ts:30',
+                site: 'tests/cart.spec.ts:30',
+                lastUse: 'tests/cart.spec.ts:31',
+                from: 800,
+                to: 1950,
+                pages: 1,
+                test: { title: 'previews the receipt', file: 'tests/cart.spec.ts' },
+              },
+            ],
+          },
+        },
+      },
+      timeout: 20000,
+    });
+    expect(response.ok()).toBeTruthy();
+    runId = ((await response.json()) as { runId: number }).runId;
+  });
+
+  test('draws what each worker kept open for nothing under its row, explains it on hover, and opens its test', async ({
+    page,
+  }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+    await expect(page.getByTestId('timeline-left-open')).toHaveText('1 left open');
+    await expect(page.getByTestId('timeline-lingering')).toHaveText('1 lingering');
+    await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
+
+    // The open pages track draws the page left open; its readout says so.
+    await expect(page.locator('[data-resource-left-open]')).toHaveCount(1);
+    const band = page.getByTestId('timeline-resource-band');
+    const bandBox = (await band.boundingBox())!;
+    await page.mouse.move(bandBox.x + bandBox.width * 0.85, bandBox.y + bandBox.height / 2);
+    await expect(page.getByTestId('timeline-resource-tooltip')).toContainText('1 left open by earlier tests');
+
+    const leaked = page.locator('[data-span-tails-verdict="leaked"]');
+    const box = (await leaked.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const tooltip = page.getByTestId('timeline-span-tooltip');
+    await expect(tooltip).toContainText('Leaked context');
+    await expect(tooltip).toContainText('tests/cart.spec.ts:12');
+    await expect(tooltip).toContainText('“adds an item”');
+    await expect(tooltip).toContainText('3.0 s past its test, until the worker shut down');
+    await expect(tooltip).toContainText('tests/cart.spec.ts:14');
+
+    const lingering = page.locator('[data-span-tails-verdict="lingering"]');
+    const lingeringBox = (await lingering.boundingBox())!;
+    await page.mouse.move(lingeringBox.x + lingeringBox.width / 2, lingeringBox.y + lingeringBox.height / 2);
+    await expect(tooltip).toContainText('Lingering page');
+    await expect(tooltip).toContainText('1.1 s after its last use');
+
+    // A click opens the test the leak outlived.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page).toHaveURL(/tab=test-cases/);
+  });
+
+  test('turns the tails off, and back on', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+    await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
+    await page.getByRole('switch', { name: 'Show leaks' }).click();
+    await expect(page.getByTestId('timeline-span-tails')).toHaveCount(0);
+    await expect(page.locator('[data-resource-left-open]')).toHaveCount(0);
+    await page.getByRole('switch', { name: 'Show leaks' }).click();
+    await expect(page.getByTestId('timeline-span-tails')).toHaveCount(2);
   });
 });

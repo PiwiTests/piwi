@@ -11,10 +11,12 @@ import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
 import { computePerformanceSummary } from '@piwitests/core/step-analysis';
 import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './serializer.js';
-import { runUrl } from '../support/run-url.js';
+import { answeredRunUrl } from '../support/run-url.js';
+import { requestedRunTarget } from '../config/env.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport, WireRunError } from '../../types.js';
+import type { WireEnvironmentSnapshot } from '../../types/wire.js';
 
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -79,6 +81,8 @@ export interface CollectedRun {
   htmlReport?: string | null;
   /** The errors Playwright reported outside any test (`onError`), as the run keeps them. */
   runErrors?: WireRunError[];
+  /** The run's environment snapshots: the runner's, each project's browser and each server under test. */
+  environments?: WireEnvironmentSnapshot[];
 }
 
 /** The run the dashboard took, and the credential that reached it. */
@@ -197,8 +201,8 @@ export class RunSubmitter {
       run.metadata.performance = computePerformanceSummary(run.testCases);
     }
 
+    // The drain settles a stream that has not opened yet first: it is tried once more, or given up for the batch.
     const sm = this.streamManager;
-    if (sm?.startPromise) await sm.startPromise;
     await sm?.drain();
 
     let auth: string | null;
@@ -213,7 +217,8 @@ export class RunSubmitter {
 
     // A streaming session retries the recovery file when it opens; without one,
     // retry it here so a saved payload still reaches the server.
-    if (!sm) await this.recovery.tryUpload(this.httpClient, auth);
+    const requested = requestedRunTarget() !== null;
+    if (!sm && !requested) await this.recovery.tryUpload(this.httpClient, auth);
 
     // The reports on disk that go with the run, found once for every rung.
     const reports = this.uploader.findReports(this.reportOptions(run));
@@ -227,15 +232,26 @@ export class RunSubmitter {
     // in. Fall through to the batch upload, which re-sends the full run from the
     // reporter's own in-memory collection, so the missing detail is recovered. A
     // run the dashboard ended while it streamed takes nothing more, so it goes
-    // whole in the batch upload too.
+    // whole in the batch upload too. A requested run has no batch upload, so it finishes with what reached the
+    // instance.
     if (sm?.runEnded) {
       fallbackReason = 'run-ended';
     } else if (sm?.enabled && sm?.runId != null) {
-      if (sm.lostResults) fallbackReason = 'results-lost';
+      if (sm.lostResults && !requested) fallbackReason = 'results-lost';
       else {
         outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests, reports);
         if (!outcome.done) fallbackReason = 'finish-failed';
       }
+    }
+
+    // A request token starts one streamed run: the batch upload and the recovery copy cannot deliver its run.
+    if (!outcome.done && requested) {
+      this.logger.warn(
+        fallbackReason
+          ? `The run was not finished on the instance that asked for it (${fallbackReason}).`
+          : 'The instance that asked for the run did not take it.',
+      );
+      return null;
     }
 
     // The multipart upload runs only with a file to carry. Once the time budget
@@ -260,6 +276,7 @@ export class RunSubmitter {
     if (!outcome.output) return null;
     // Failures that had no run id yet (batch mode, or a stream that never
     // opened) get their link lines now, ahead of the run URL.
+    this.failureLinks?.knowPage(outcome.output.runId, outcome.output.runUrl);
     this.failureLinks?.printPending(outcome.output.runId);
     emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
     return { runId: outcome.output.runId, auth };
@@ -271,10 +288,11 @@ export class RunSubmitter {
     projectId: number | string | undefined,
     run: CollectedRun,
     status: string,
+    answer?: unknown,
   ): RunOutput | null {
     if (runId == null) return null;
     return {
-      runUrl: runUrl(this.httpClient.baseUrl, runId),
+      runUrl: answeredRunUrl(answer, this.httpClient.baseUrl, runId),
       runId,
       projectId,
       projectName: run.options.projectName!,
@@ -324,6 +342,7 @@ export class RunSubmitter {
       resourceReport: run.resourceReport ?? null,
       setupSteps: run.setupSteps,
       runErrors: run.runErrors,
+      environments: run.environments,
       deliveryKey: this.deliveryKey,
       replacesRun: this.streamedRun(run),
     };
@@ -379,6 +398,7 @@ export class RunSubmitter {
       };
       if (run.resourceReport) finishBody.resourceReport = run.resourceReport;
       if (run.runErrors?.length) finishBody.runErrors = run.runErrors;
+      if (run.environments?.length) finishBody.environments = run.environments;
       if (run.shardInfo) {
         finishBody.shardIndex = run.shardInfo.current;
         finishBody.shardTotal = run.shardInfo.total;
@@ -392,7 +412,7 @@ export class RunSubmitter {
       if (reports.length > 0) {
         await this.uploader.uploadReportsAndSettle(run.options.projectName!, sm.runId!, reports, run.startTime, auth);
       }
-      return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus) };
+      return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus, { runUrl: sm.runUrl }) };
     } catch (error) {
       this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
@@ -462,7 +482,10 @@ export class RunSubmitter {
         (await this.uploadInParts(run, payload, reports, auth)) ??
         (await this.uploadInOne(run, payload, reports, auth));
       this.dropLocalCopies();
-      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
+      return {
+        done: true,
+        output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
+      };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
@@ -591,7 +614,10 @@ export class RunSubmitter {
       const response = await this.uploader.uploadJSON(payload, auth);
       this.dropLocalCopies();
       await this.sendFilesOfHeldRepeat(run, response, reports, auth);
-      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
+      return {
+        done: true,
+        output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
+      };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);

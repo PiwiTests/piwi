@@ -96,7 +96,7 @@ export class RunLines {
   }
 
   /**
-   * A run starts: the service built its command, or, for one it did not build, its first worker connected (`keep`,
+   * A run starts: the service built its command, or, for one it did not build, its first connection opened (`keep`,
    * which leaves a start known as it is). `unsaved` reads the documents the editor holds whose text is not their
    * disk's.
    */

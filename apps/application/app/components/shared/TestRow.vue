@@ -21,7 +21,7 @@
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
-import type { LiveWorkerState } from '#shared/live-view';
+import { liveWorkerName, type LiveWorkerState } from '#shared/live-view';
 import { liveRowShows, type LiveRowNote } from '~/utils/live-row-note';
 import type { DesktopRowWorker } from '~/utils/desktop-run-view';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
@@ -30,6 +30,7 @@ import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
 import { testLabel } from '#shared/utils/test-label';
+import { shownWorkerNumber } from '#shared/worker-lane';
 
 const props = withDefaults(
   defineProps<{
@@ -145,12 +146,29 @@ const tc = computed(() => props.testCase);
 const liveShows = computed(() =>
   liveRowShows({ liveWorker: !!props.liveWorker, desktopWorker: !!props.desktopWorker, note: props.liveNote }),
 );
-/** The row's test stands at a stop: in the run's live view, or in a run the desktop app started. */
-const stopped = computed(() => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped');
+/**
+ * Where the row's test stands stopped, as text, from a run outside CI whose reporter told it (`test-stopped`): shown
+ * unless the run's live view or the desktop app's own hub shows the stop.
+ */
+const toldStop = computed(() =>
+  tc.value?.liveStop && !props.liveWorker?.paused && liveShows.value !== 'pause-and-watch' ? tc.value.liveStop : null,
+);
+/** The row's test stands at a stop: in the run's live view, in a run the desktop app started, or as its reporter told. */
+const stopped = computed(
+  () => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped' || !!tc.value?.liveStop,
+);
+/** Whether the row has a live line under its title: the step, where it is paused, or the run's note. */
+const liveLine = computed(
+  () =>
+    (!!props.liveStep && !stopped.value) ||
+    !!toldStop.value ||
+    (liveShows.value === 'watch' ? !!props.liveWorker?.paused : !!liveShows.value),
+);
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
   const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
-  return `What worker ${tc.value?.workerIndex ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
+  const worker = tc.value ? shownWorkerNumber(tc.value) : null;
+  return `What worker ${worker ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
 });
 
 const title = computed(() => props.title ?? tc.value?.title ?? '');
@@ -278,7 +296,10 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
-                  <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
+                  <span v-if="(tc.retries ?? 0) > 0" class="text-info" data-testid="live-retry">
+                    Retry {{ tc.retries }}<template v-if="tc.maxRetries"> of {{ tc.maxRetries }}</template>
+                  </span>
+                  <TestRowStuck v-if="tc.stuck && !stopped" :stuck="tc.stuck" />
                   <span v-else-if="!liveStep && !stopped" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
@@ -293,7 +314,7 @@ const clusterLabel = computed(() =>
                 <DurationValue v-else-if="tc.duration" :ms="tc.duration" />
                 <BrowserBadge :browser="tc.browser" size="sm" />
                 <UBadge
-                  v-if="(tc.retries ?? 0) > 0"
+                  v-if="(tc.retries ?? 0) > 0 && tc.status !== 'running'"
                   color="warning"
                   variant="soft"
                   size="xs"
@@ -349,15 +370,23 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveShows" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveLine" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
-          <TestRowLiveWorker
-            v-if="liveWorker && liveShows === 'watch'"
-            :worker="liveWorker"
+          <TestRowLivePause
+            v-if="liveWorker?.paused && liveShows === 'watch'"
+            :reason="liveWorker.paused.reason"
+            :call="liveWorker.paused.call"
             :project-key="projectKey"
             :project-name="projectName"
-            @watch="emit('watch')"
+          />
+          <TestRowLivePause
+            v-else-if="toldStop"
+            :reason="toldStop.reason"
+            :call="toldStop"
+            :since="toldStop.since"
+            :project-key="projectKey"
+            :project-name="projectName"
           />
           <TestRowDesktopWorker
             v-else-if="desktopWorker && liveShows === 'pause-and-watch'"
@@ -388,6 +417,20 @@ const clusterLabel = computed(() =>
           </span>
         </div>
       </div>
+      <!-- Watch keeps one place at the row's end, whatever the live step beside it says. -->
+      <UButton
+        v-if="liveWorker && liveShows === 'watch'"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-eye"
+        class="shrink-0"
+        :aria-label="`Watch ${liveWorkerName(liveWorker)} live`"
+        :title="`Watch the page ${liveWorkerName(liveWorker)} is on, live`"
+        data-testid="live-watch"
+        @click.stop="emit('watch')"
+        ><span class="hidden sm:inline">Watch</span></UButton
+      >
     </div>
   </div>
 </template>

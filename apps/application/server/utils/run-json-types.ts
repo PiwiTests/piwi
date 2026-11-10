@@ -1,5 +1,5 @@
 import type { BrowserConfig } from '#shared/types';
-import type { RunOrigin } from '@piwitests/core/wire';
+import type { RunInteractive, RunOrigin } from '@piwitests/core/wire';
 import type { ServerLogEntry, ServerSpanEntry } from '~~/types/api';
 
 /**
@@ -70,6 +70,8 @@ export interface RunMetadata {
     provider?: string | null;
     pipelineId?: string | null;
     buildNumber?: string | null;
+    /** The build's page (Jenkins' `BUILD_URL`). */
+    buildUrl?: string | null;
     /** The CI's own repository, `owner/repo` (GitHub Actions, Bitbucket Pipelines). */
     repository?: string | null;
   } | null;
@@ -77,6 +79,8 @@ export interface RunMetadata {
   piwiOrigin?: RunOrigin | null;
   /** The launcher's name for the run (`PIWI_RUN_REF`); read through `runLauncherRef` in `#shared/run-eligibility`. */
   piwiRunRef?: string | null;
+  /** The local hub that steers the run (`RunInteractive`), kept as `parseRunInteractive` reads it. */
+  piwiInteractive?: RunInteractive | null;
   htmlReport?: {
     projects?: Array<{
       name?: string | null;

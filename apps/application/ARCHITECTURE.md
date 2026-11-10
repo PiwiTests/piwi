@@ -83,23 +83,23 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 
 ### Tables by area
 
-| Area                 | Tables                                                                                                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core results         | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`, `run_deliveries`                                                                               |
-| Failure analysis     | `failure_clusters`, `failure_cluster_aliases`, `failure_cluster_test_routes`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions`                                |
-| Flaky tests          | `quarantined_tests`, `flake_experiments`, `flake_arms`                                                                                                                                      |
-| Evidence & storage   | `files`, `trace_resources`, `trace_blobs`, `trace_blob_resources`, `case_payloads`, `locator_snapshots`, `locator_usages`                                                                   |
-| Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                |
-| Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                     |
-| CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                               |
-| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                              |
-| Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                          |
-| Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
-| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                    |
-| Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                         |
-| Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                  |
-| Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                          |
-| Resources            | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                                                                                    |
+| Area                 | Tables                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Core results         | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`, `run_deliveries`                                                                                                |
+| Failure analysis     | `failure_clusters`, `failure_cluster_aliases`, `failure_cluster_test_routes`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions`                                                 |
+| Flaky tests          | `quarantined_tests`, `flake_experiments`, `flake_arms`                                                                                                                                                       |
+| Evidence & storage   | `files`, `trace_resources`, `trace_blobs`, `trace_blob_resources`, `case_payloads`, `locator_snapshots`, `locator_usages`                                                                                    |
+| Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                                 |
+| Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                                      |
+| CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                                                |
+| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
+| Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
+| Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
+| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                                     |
+| Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                                          |
+| Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                                   |
+| Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                                           |
+| Resources            | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                                                                                                     |
 
 Each table's comment in `schema.sqlite.ts` says what a row is.
 
@@ -145,13 +145,17 @@ Each table's comment in `schema.sqlite.ts` says what a row is.
   `attempts` and `scheduledFor` drive progressive retry: five retries, after 1, 5, 15, 60 and 240 minutes
   (`server/utils/outbox.ts`). `heal_actions` and `integration_actions` are outboxes of the same kind.
 - **`resource_findings`**: one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict, kind,
-  scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start time.
-  `resource_occurrences` holds each run's showing with the run's branch. `shared/handlers/resource-findings.ts` writes
-  them when a run finishes. It also:
-  - marks a finding fixed after five clean full runs of the default branch;
+  scope and the line or fixture location that opened it), with the run it was first seen in and the last full
+  default-branch run that showed it, ordered by start time. `resource_occurrences` holds each run's showing with the
+  run's branch. `shared/handlers/resource-findings.ts` writes them in one transaction when a run finishes; only a full
+  run of the default branch changes a finding, any other run adds its showing. It also:
+  - marks a finding fixed after five full runs of the default branch that could have shown it came without it (the
+    tests of its file passed, the report was not cut);
   - moves a finding to its new line when an edit above it shifted it (the same identity without line numbers, closest
-    line first);
-  - tells the gate and the pull-request comment which findings are new to the base branch.
+    line first, among the open findings the default branch showed);
+  - tells the gate and the pull-request comment which findings are new to the base branch;
+  - gives the stored findings a new identity at startup when `RESOURCE_IDENTITY_VERSION` changes
+    (`rekeyResourceFindingsOnce`).
 - **`test_run_resource_reports`**: one row per run and shard with that reporter's resource report. Each shard's finish
   upserts its row whole, so concurrent shards never overwrite each other. Reads fold the rows in shard order
   (`shared/handlers/resource-reports.ts`).
@@ -182,10 +186,13 @@ Each entry names folders under `server/api/`.
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
-    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (one worker's
-    view, to a person who may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
+    worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
+    may open the run) and `[id]/live-view/workers` (its workers and how many views are open, which `LanePanel` reads to
+    say why a view did not open). All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
-    gets the latest frame alone; `setup` mints the key.
+    gets the latest frame alone; `setup` mints the key and stores its digest with the run
+    (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
@@ -587,7 +594,7 @@ rule):
     the `ChartMarkerLines` in its slot, outside the SVG), `ChartTooltip`, `ChartMarkerLines`, `ChartLegend`,
     `ChartMarkerTooltip`; and `MiniRunBars`.
   - `DurationValue`: a tight `210ms`, through the pure `splitDuration`.
-  - `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`.
+  - `CodeBlock` (from the `@piwitests/run-ui` layer), `MarkdownPreview`, `DiffPatch` / `DiffFile`.
   - `CoverageSourceView`: a source file with the lines a coverage ran and the executable lines it did not, the
     functions that ran linked above it, and an optional per-line annotation column; without the source, the line
     numbers alone.
@@ -614,6 +621,8 @@ rule):
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
     `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+  - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
+    picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
     `ScreenshotLightbox` (full screen, keyboard navigation, an actual-size zoom toggle for large captures, and a
     details panel naming the test, the step and the error raised on the page; `LightboxImage` in
@@ -635,7 +644,7 @@ rule):
 `app/composables/` holds state and behavior shared across components:
 
 - **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
-  `useTauri.ts`).
+  `useTauri.ts`, which lives in the `@piwitests/run-ui` layer).
 - **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
   the browser tab's favicon and title).
 - **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
@@ -659,7 +668,7 @@ rule):
 - **The assistant**: `useAssistant` (the panel's state across navigation, the question asked with its page, the
   answer's event stream, its Stop and Try again, the question being typed, the question history) and
   `useAssistantDock` (where the panel sits, and its width).
-- **Small utilities**: `useCopy` / `useCopyRich` (use them instead of calling `navigator.clipboard` by hand),
+- **Small utilities**: `useCopy` (from the `@piwitests/run-ui` layer) / `useCopyRich` (use them instead of calling `navigator.clipboard` by hand),
   `useAiStatus`, `useChartTooltip`.
 
 How the guide engine plays a guide (`app/composables/useGuide.ts`):
@@ -680,7 +689,7 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
 `app/utils/` holds pure helpers. The main ones:
 
 - `index.ts`: `formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`,
-  `createSortHeader`, `formatBytes`, `errorMessage`, patch and commit helpers, the cluster color maps.
+  `createSortHeader`, `formatBytes`, patch and commit helpers, the cluster color maps.
 - `page-error.ts`: `showPageLoadError`. A detail page whose entity does not load shows `app/error.vue`, inside the
   dashboard layout, and answers with the API's 404 or 403.
 - `route-query.ts`: `replaceQuery`. Query changes made in the same tick (a tab switch and the list the tab mounts) add

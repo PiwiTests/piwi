@@ -3,6 +3,7 @@
  * call and no provider import, so the demo mirror can share it with the server.
  */
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+import { notPrivateRun } from '#shared/run-eligibility';
 import { projects, testRuns } from '../../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { FALLBACK_DEFAULT_BRANCH } from './git-url';
@@ -26,7 +27,14 @@ export async function mostCommonRunBranches(db: DrizzleDB, projectIds: number[])
     const query = db
       .select({ projectId: testRuns.projectId, branch: testRuns.branch })
       .from(testRuns)
-      .where(and(inArray(testRuns.projectId, chunk), isNotNull(testRuns.branch), ne(testRuns.branch, '')))
+      .where(
+        and(
+          inArray(testRuns.projectId, chunk),
+          isNotNull(testRuns.branch),
+          ne(testRuns.branch, ''),
+          notPrivateRun(testRuns.origin),
+        ),
+      )
       .groupBy(testRuns.projectId, testRuns.branch)
       .orderBy(sql`count(*) desc`, sql`max(${testRuns.id}) desc`)
       .$dynamic();

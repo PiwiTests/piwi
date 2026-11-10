@@ -1,0 +1,169 @@
+name: Publish Piwi Runner installers
+
+# Builds Piwi Runner (Windows .msi + .exe, macOS .dmg, Linux .deb/.rpm/.AppImage) and keeps the installers as the run's
+# artifacts (release.yml calls it). Runner is not released yet: nothing is attached to the GitHub release, on a tag or
+# off one, so the legs stay tested without Runner showing next to the desktop app. Runner is the desktop crate built
+# with the `runner` feature and runner.conf.json: it needs no server bundle, only its own host and window. It has no
+# updater and is unsigned, so the workflow takes no secrets and writes no updater manifest.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  runner:
+    name: runner (${{ matrix.target }}, ${{ matrix.bundles }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One leg for both Windows installers: neither has an updater channel to keep apart, as the desktop app's do.
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+          # Ad hoc signed by the base config's signingIdentity "-", like the desktop app.
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+          # Ubuntu 22.04 (not latest) for the same reason as the desktop app: AppImage bundles the host's glibc, and
+          # 22.04 is the last runner carrying webkit2gtk-4.1.
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The host and the window build in the npm workspace (Nuxt, the editor package, the run-ui layer).
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      # Tauri's Linux prerequisites, the desktop app's list.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            xdg-utils \
+            squashfs-tools
+
+      # The runner feature changes the crate's dependencies, so it keeps a cache of its own apart from the desktop app's.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: runner
+
+      - name: Install desktop tooling
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Fetch Node sidecar
+        working-directory: apps/desktop
+        run: node scripts/fetch-node.mjs --target ${{ matrix.target }}
+
+      - name: Build the Runner host
+        run: npm run runner:build -w apps/runner
+
+      - name: Build the Runner window
+        run: npm run runner:window -w apps/runner
+
+      - name: Stage the Runner host and window
+        run: npm run runner:stage -w apps/runner
+
+      # Runner has no icon of its own yet: it takes the dashboard's logo.
+      - name: Generate app icons
+        working-directory: apps/desktop
+        run: npx tauri icon ../application/public/logo.svg
+
+      # The action reads the product name and version from the base config with runner.conf.json merged over it
+      # (utils.ts getInfo), so the files are named "Piwi Runner_<version>_<arch>..." and never match the dashboard's
+      # "Piwi Dashboard_<version>_<arch>...". No TAURI_SIGNING_* is set, and the updater manifest is never written. With
+      # no tagName and no releaseId, tauri-action only builds.
+      - name: Build Piwi Runner
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        env:
+          # Linux AppImage bundling runs linuxdeploy, a self-mounting AppImage; GitHub runners have no libfuse2, so it
+          # extracts and runs instead. No-op on Windows/macOS.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        with:
+          projectPath: apps/desktop
+          retryAttempts: 3
+          uploadUpdaterJson: false
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --features runner --config src-tauri/runner.conf.json
+
+      # The macOS app must carry a signature that seals the whole bundle, or Gatekeeper reports a downloaded copy as
+      # damaged, and the Node sidecar the bundler re-signed must still run the host: start it from the bundle, as the
+      # shell does on launch, and wait for /api/health. The bundler deletes the .app once the dmg holds it, so the check
+      # opens the dmg: the file a user installs from.
+      - name: Check the macOS app bundle
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg
+        run: |
+          dmg=(*.dmg)
+          if [[ ${#dmg[@]} -ne 1 ]]; then
+            echo "::error::Expected one dmg, found ${#dmg[@]}"
+            exit 1
+          fi
+          mount="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmg[0]}" > /dev/null
+          log="$(mktemp)"
+          host=""
+          cleanup() {
+            if [[ -n "$host" ]]; then kill "$host" 2>/dev/null || true; wait "$host" 2>/dev/null || true; fi
+            hdiutil detach "$mount" -quiet || true
+          }
+          trap cleanup EXIT
+          app="$mount/Piwi Runner.app"
+          codesign --verify --strict --verbose=2 "$app"
+          codesign --display --entitlements - "$app/Contents/MacOS/node"
+          PIWI_DESKTOP_TOKEN="pd_$(openssl rand -hex 32)" PIWI_RUNNER_PORT=3918 \
+            "$app/Contents/MacOS/node" "$app/Contents/Resources/resources/runner-host/server.cjs" > "$log" 2>&1 &
+          host=$!
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3918/api/health > /dev/null 2>&1; then
+              echo "The bundled host answered /api/health"
+              exit 0
+            fi
+            kill -0 "$host" 2>/dev/null || break
+            sleep 1
+          done
+          cat "$log"
+          echo "::error::The bundled host did not answer /api/health"
+          exit 1
+
+      # The installers are the run's artifacts, never release assets. A tag's are kept for 90 days, so a release's
+      # builds stay downloadable while Runner is tried out.
+      - name: Upload installers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: piwi-runner-${{ matrix.target }}
+          path: |
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.msi
+            apps/desktop/src-tauri/target/**/release/bundle/**/*-setup.exe
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.deb
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.rpm
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
+          if-no-files-found: warn
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 7 }}

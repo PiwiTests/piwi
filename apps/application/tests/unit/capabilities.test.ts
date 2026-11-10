@@ -123,9 +123,11 @@ describe('resolveCapabilities', () => {
     expect(states['locator-healing']).toBe('active');
   });
 
-  test('resolves every registry capability', () => {
+  test('resolves every registry capability: undecided, or off for an opt-in one', () => {
     const states = resolveCapabilities({});
-    for (const capability of CAPABILITIES) expect(states[capability.id]).toBe('undecided');
+    for (const capability of CAPABILITIES) {
+      expect(states[capability.id]).toBe(capability.optIn ? 'declined' : 'undecided');
+    }
   });
 
   test('server-probes follows test-map: a test-map decline cascades', () => {
@@ -222,6 +224,36 @@ describe('decision parsing and patching', () => {
     const next = applyDecisionPatch({}, { fixtures: 'enabled', notifications: 'declined' }, false);
     expect(next).toEqual({ notifications: 'declined' });
   });
+
+  test('an instance turns on an opt-in capability, and only an opt-in one', () => {
+    expect(parseInstanceDecisions({ decisions: { 'machine-runs': 'enabled', fixtures: 'enabled' } })).toEqual({
+      'machine-runs': 'enabled',
+    });
+    expect(applyDecisionPatch({}, { 'machine-runs': 'enabled', fixtures: 'enabled' }, false)).toEqual({
+      'machine-runs': 'enabled',
+    });
+  });
+});
+
+describe('an opt-in capability', () => {
+  const machineRuns = CAPABILITY_BY_ID['machine-runs'];
+
+  test('machine-runs is the only one, so every other capability resolves from its evidence and decisions', () => {
+    expect(CAPABILITIES.filter((c) => c.optIn).map((c) => c.id)).toEqual(['machine-runs']);
+  });
+
+  test.each<[string, CapabilityInput, CapabilityState]>([
+    ['off with no decision', { evidence: false }, 'declined'],
+    ['data does not turn it on', { evidence: true }, 'declined'],
+    ['configured does not turn it on', { evidence: false, configured: true }, 'declined'],
+    ['a project enable alone does not turn it on', { evidence: false, projectDecision: 'enabled' }, 'declined'],
+    ['the instance turns it on', { evidence: false, instanceDecision: 'enabled' }, 'available'],
+    ['on, with data', { evidence: true, instanceDecision: 'enabled' }, 'active'],
+    ['a project declines it', { evidence: true, instanceDecision: 'enabled', projectDecision: 'declined' }, 'declined'],
+    ['an instance decline', { evidence: true, instanceDecision: 'declined' }, 'declined'],
+  ])('%s', (_name, input, expected) => {
+    expect(resolveCapability(machineRuns, input)).toBe(expected);
+  });
 });
 
 describe('capabilityHidden', () => {
@@ -234,8 +266,8 @@ describe('capabilityHidden', () => {
   });
 
   test('the desktop build hides pull-request feedback and auto-heal, whatever their state', () => {
-    expect([...DESKTOP_HIDDEN_CAPABILITIES].sort()).toEqual(['auto-heal', 'pr-feedback']);
-    for (const id of ['pr-feedback', 'auto-heal'] as const) {
+    expect([...DESKTOP_HIDDEN_CAPABILITIES].sort()).toEqual(['auto-heal', 'machine-runs', 'pr-feedback']);
+    for (const id of ['pr-feedback', 'auto-heal', 'machine-runs'] as const) {
       for (const state of ['active', 'available', 'undecided'] as const) {
         expect(capabilityHidden(id, state, true)).toBe(true);
         expect(capabilityHidden(id, state, false)).toBe(false);

@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
+import { HIDDEN_VALUE } from '@piwitests/core/mask';
 import { parseRunToHub, type HubToRun, type PausedImage, type RunToHub } from '@piwitests/core/run-channel';
 import { collectStepMetrics, unpausedDuration } from '@piwitests/core/step-analysis';
 import { startServer, type FakeServer, withoutCi } from './_helpers.js';
@@ -431,7 +432,9 @@ const where = (stop: Stopped) => [stop.reason, stop.place.line, stop.bar];
 
 describe('a run steered over the run channel', () => {
   it('passes every test, a stop longer than the test timeout and a connection closed under a stop included', () => {
-    expect(exitCode, output).toBe(0);
+    // The run's output, and each test's status and errors, which its output leaves out.
+    const outcomes = JSON.stringify(tests.map((t) => [t.title, t.status, t.errors]));
+    expect(exitCode, `${output}\n${outcomes}`).toBe(0);
     expect(tests.map((t) => [t.title, t.project, t.status])).toEqual([
       ['steered', 'headed', 'passed'],
       ['bar first', 'headed', 'passed'],
@@ -483,7 +486,11 @@ describe('a run steered over the run channel', () => {
       ['step', mark('headed', 'step-here'), true],
       ['run-to', mark('headed', 'run-to'), true],
     ]);
-    expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual(['Fill "one"', 'Click']);
+    // The text a fill types stays in the worker: the editor hears the call without it, and so do the terminal and
+    // the pause bar.
+    expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual([`Fill "${HIDDEN_VALUE}"`, 'Click']);
+    expect(output).toContain(`before Fill "${HIDDEN_VALUE}"`);
+    expect(output).not.toMatch(/Paused at [^\n]* before Fill "one"/);
     expect(stops[0]).toMatchObject({ locator: "locator('input')" });
     // Every stop ends with the editor's answer, and the bar it showed came down (the test checks it).
     const ended = heardIn('steered').filter((m) => m.type === 'running');
@@ -520,7 +527,7 @@ describe('a run steered over the run channel', () => {
     const result = test('headless');
     expect(result.duration).toBeLessThan(TIMEOUT_MS);
     const pauses = readPauses(Buffer.from(result.pauses ?? ''));
-    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "h"']]);
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', `Fill "${HIDDEN_VALUE}"`]]);
     // The held call keeps its clock; the step statistics leave the stop out of it.
     const fill = allSteps(result.steps).find((s) => callOf(s.title) === 'Fill "h"')!;
     expect(fill.duration).toBeGreaterThanOrEqual(HOLD_MS - 50);
@@ -570,7 +577,7 @@ describe('a run steered over the run channel', () => {
     expect(stopsIn('connection closes').map(where)).toEqual([['breakpoint', mark('headless', 'bp', 3), false]]);
     expect(output).toContain('[piwi] The connection to the editor closed: the test goes on.');
     const pauses = readPauses(Buffer.from(test('connection closes').pauses ?? ''));
-    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "z"']]);
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', `Fill "${HIDDEN_VALUE}"`]]);
   });
 
   it('lists the stops the editor answered in piwi-pauses, and as pause step events, with their reasons', () => {

@@ -677,11 +677,71 @@ class GlueTest {
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
+        // How far the runs are, as their own processes say: none from a reporter that predates it.
+        assertEquals(null, Glue.runProgressText(mapOf("ed-1" to ready)))
+        val counted = ready.copy(progress = RunProgress(total = 9, done = 3))
+        assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
+        val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
+        assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
+    }
+
+    @Test
+    fun `the workers a Worker tab can watch, and what it says of its slot`() {
+        val sessions = mapOf(
+            "ed-1" to session(
+                "ed-1",
+                RunWorker(0, 0, "running", runTest(), watchable = true),
+                RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5), watchable = true),
+                RunWorker(2, 2, "running", runTest()),
+                RunWorker(3, 3, "between", watchable = true),
+            ),
+        )
+        assertEquals(
+            listOf("Worker 1 · running checkout › pays", "Worker 2 · stopped in checkout › pays", "Worker 4 · between tests"),
+            Glue.watchableWorkers(sessions).map { it.label },
+        )
+        assertEquals(listOf(0, 3), Glue.watchableWorkers(sessions, pausable = true).map { it.worker })
+        assertTrue(Glue.runControls(sessions).watchable)
+        assertFalse(Glue.runControls(mapOf("ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))).watchable)
+        val stops = Glue.stopsOf(sessions)
+        assertEquals("Worker 1 · the run ended.", Glue.laneShown(null, 0, stops).caption)
+        assertEquals("Worker 6 · starting…", Glue.laneShown(sessions["ed-1"], 5, stops).caption)
+        assertEquals("Worker 4 · between tests", Glue.laneShown(sessions["ed-1"], 3, stops).caption)
+        assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
+        val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
+        assertEquals(stops.single(), stopped.stop)
+        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+    }
+
+    @Test
+    fun `a Pause that waits for a call says which, and End the Test ends the test there`() {
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", specUri, 4, "2026-10-25T10:00:00.000Z", true)
+        val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting)))
+        val controls = Glue.runControls(sessions)
+        assertEquals(waiting, controls.waiting)
+        assertEquals(
+            "Piwi: pausing… · waits in Click getByRole('button', { name: 'Pay' })",
+            Glue.runControlStatus(controls, Glue.stopsOf(sessions)),
+        )
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting)), Glue.waitingWorkers(sessions))
+        assertEquals(
+            "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+            Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
+        )
+        // A long call is cut in the status bar.
+        val long = waiting.copy(title = "Click " + "getByRole('row').".repeat(10))
+        val longSessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = long)))
+        val status = Glue.runControlStatus(Glue.runControls(longSessions), emptyList())!!
+        assertEquals("Piwi: pausing… · waits in " + long.title.take(59).trimEnd() + "…", status)
+        // A worker no Pause reached waits in nothing.
+        val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
+        assertNull(Glue.runControls(going).waiting)
+        assertEquals(emptyList<Glue.WaitingWorker>(), Glue.waitingWorkers(going))
     }
 
     @Test
@@ -702,6 +762,431 @@ class GlueTest {
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
+    }
+
+    /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`, or with the pause bar for `bar`. */
+    private fun stoppedAt(index: Int, line: Int, bar: Boolean = false, slot: Int = index, reason: String = "breakpoint") =
+        RunWorker(index, slot, "stopped", runTest(), stopAt(specUri, line, bar).copy(reason = reason))
+
+    private fun runningWorker(index: Int) = RunWorker(index, index, "running", runTest())
+
+    /**
+     * The pushes of run `ed-1` as the service sends them, 100 ms apart, through `Glue.StopsShown` as the plugin takes
+     * them: each new stop's file opened in its turn, or left closed for a line in `closed` (none for a line in
+     * `unopened`, whose file is not found), and the page the tab opens shown there. Each push says which workers' files
+     * opened with the focus or without, and the page opened, as `worker to line`.
+     */
+    private class Pushes(private val unopened: Set<Int> = emptySet(), private val closed: Set<Int> = emptySet()) {
+        val shown = Glue.StopsShown()
+        var now = 0L
+
+        fun push(vararg workers: RunWorker): Pair<List<Pair<Int, Boolean>>, Pair<Int, Int>?> {
+            now += 100
+            val sessions = mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))
+            val change = shown.changed(sessions, Glue.stopsOf(sessions), now)
+            val opened = change.open.filter { it.stop.line !in unopened }.map { stop ->
+                val focus = shown.focusFor(stop, now)
+                shown.opened(stop, focus, focus || stop.stop.line !in closed)
+                stop.worker to focus
+            }
+            change.page?.let(shown::view)
+            return opened to change.page?.let { it.worker to it.stop.line }
+        }
+
+        fun stopOf(worker: RunWorker): Glue.ShownStop =
+            Glue.stopsOf(mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(worker)))).single()
+
+        /** A control from the IDE answers `stop`, as it is sent: the token to settle it with. */
+        fun answer(action: String, stop: RunWorker): Int = shown.answered(stopOf(stop), action, now)
+    }
+
+    private val none = emptyList<Pair<Int, Boolean>>()
+
+    @Test
+    fun `the IDE opens the first stop with the focus, and its page`() {
+        assertEquals(listOf(0 to true) to (0 to 3), Pushes().push(stoppedAt(0, 3), runningWorker(1)))
+    }
+
+    @Test
+    fun `the IDE opens a second worker's stop without the focus while the person is on the first, the tab keeping its stop`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
+        // A failure held for another worker leaves them alone too.
+        assertEquals(listOf(2 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7, reason = "failure")))
+    }
+
+    @Test
+    fun `the IDE gives the focus and the tab to the first stop of a Pause with three workers, in one push or in three`() {
+        val together = Pushes()
+        assertEquals(none to null, together.push(runningWorker(0), runningWorker(1), runningWorker(2)))
+        assertEquals(
+            listOf(0 to true, 1 to false, 2 to false) to (0 to 3),
+            together.push(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7)),
+        )
+        val apart = Pushes()
+        assertEquals(listOf(0 to true) to (0 to 3), apart.push(stoppedAt(0, 3), runningWorker(1), runningWorker(2)))
+        assertEquals(listOf(1 to false) to null, apart.push(stoppedAt(0, 3), stoppedAt(1, 5), runningWorker(2)))
+        assertEquals(listOf(2 to false) to null, apart.push(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7)))
+    }
+
+    @Test
+    fun `the IDE waits for the next stop of a worker stepped from the IDE, through the push where it runs`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertEquals(none to null, pushes.push(runningWorker(0), stoppedAt(1, 5)))
+        assertEquals(listOf(0 to true) to (0 to 4), pushes.push(stoppedAt(0, 4), stoppedAt(1, 5)))
+    }
+
+    @Test
+    fun `the IDE hands the tab to a stop held once the worker it shows is resumed, then follows that one's Step`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(none to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
+        pushes.answer("step", stoppedAt(1, 5))
+        assertEquals(none to null, pushes.push(runningWorker(0), runningWorker(1)))
+        assertEquals(listOf(1 to true) to (1 to 6), pushes.push(runningWorker(0), stoppedAt(1, 6)))
+    }
+
+    @Test
+    fun `the IDE hands the tab on after a control from elsewhere, and opens a lone worker's next stop`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        val lone = Pushes()
+        lone.push(stoppedAt(0, 3))
+        assertNull(lone.push(runningWorker(0)).second)
+        assertEquals(0 to 4, lone.push(stoppedAt(0, 4)).second)
+    }
+
+    @Test
+    fun `the IDE stops waiting for a stepped worker's next stop once its worker left the run`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertEquals(none to (1 to 5), pushes.push(stoppedAt(1, 5)))
+        assertNull(pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE waits for a stepped worker's next stop RESERVED_MILLIS at most, saying when to ask again`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        assertNull(pushes.shown.waitsUntil())
+        pushes.answer("run-to", stoppedAt(0, 3))
+        assertEquals(pushes.now + Glue.RESERVED_MILLIS, pushes.shown.waitsUntil())
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        // Asked again when the wait is over, with no push since: the stop held takes the tab.
+        pushes.now += Glue.RESERVED_MILLIS
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertNull(pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE gives the focus to the next stop of the slot whose stop took it, moved on from elsewhere`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        // Piwi Picker steps worker 0.
+        pushes.push(runningWorker(0), stoppedAt(1, 5))
+        assertEquals(listOf(0 to true), pushes.push(stoppedAt(0, 4), stoppedAt(1, 5)).first)
+    }
+
+    @Test
+    fun `the IDE moves the focus to the worker a control answered`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("resume", stoppedAt(1, 5))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to true) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)))
+    }
+
+    @Test
+    fun `the IDE keeps the focus on the slot of a worker restarted after a failure`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3, reason = "failure"), stoppedAt(1, 5))
+        pushes.answer("resume", stoppedAt(0, 3, reason = "failure"))
+        pushes.push(stoppedAt(1, 5))
+        assertEquals(listOf(2 to true) to null, pushes.push(stoppedAt(2, 4, slot = 0), stoppedAt(1, 5)))
+    }
+
+    @Test
+    fun `the IDE counts a stop whose file is not found as none shown, and one left closed as shown`() {
+        val unfound = Pushes(unopened = setOf(3))
+        unfound.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to true), unfound.push(stoppedAt(0, 3), stoppedAt(1, 5)).first)
+        // Worker 1's file stayed closed, the editor in use left alone: a third worker's stop takes no focus either.
+        val closed = Pushes()
+        closed.push(stoppedAt(0, 3), runningWorker(1), runningWorker(2))
+        assertEquals(listOf(1 to false), closed.push(stoppedAt(0, 3), stoppedAt(1, 5), runningWorker(2)).first)
+        closed.answer("resume", stoppedAt(0, 3))
+        closed.push(runningWorker(0), stoppedAt(1, 5), runningWorker(2))
+        assertEquals(listOf(2 to false), closed.push(runningWorker(0), stoppedAt(1, 5), stoppedAt(2, 7)).first)
+    }
+
+    @Test
+    fun `the IDE opens no page at a stop with a pause bar, and a new stop's page in a tab that is closed`() {
+        val pushes = Pushes()
+        assertNull(pushes.push(stoppedAt(0, 3, bar = true), runningWorker(1)).second)
+        assertEquals(1 to 5, pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5)).second)
+        pushes.shown.view(null)
+        assertNull(pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5)).second)
+        assertEquals(2 to 7, pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5), stoppedAt(2, 7)).second)
+    }
+
+    @Test
+    fun `the IDE gives a stop of the slot the Worker tab watches the Paused Page for its input, but not the focus`() {
+        // The Worker tab only watches slot 1: its stop is any other worker's to the focus and the Paused Page tab.
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
+        pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(none to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
+    }
+
+    @Test
+    fun `the IDE keeps the focus off another worker's stop while a stepped worker's next stop is awaited`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.push(runningWorker(0), runningWorker(1))
+        // No other stop's file is open, and worker 1's stop still leaves the caret to worker 0.
+        assertEquals(listOf(1 to false) to null, pushes.push(runningWorker(0), stoppedAt(1, 5)))
+        assertEquals(listOf(0 to true) to (0 to 4), pushes.push(stoppedAt(0, 4), stoppedAt(1, 5)))
+        // In one push, worker 1's stop first.
+        val together = Pushes()
+        together.push(stoppedAt(0, 3), runningWorker(1))
+        together.answer("step", stoppedAt(0, 3))
+        together.push(runningWorker(0), runningWorker(1))
+        assertEquals(listOf(1 to false, 0 to true) to (0 to 4), together.push(stoppedAt(1, 5), stoppedAt(0, 4)))
+    }
+
+    @Test
+    fun `the IDE ends the wait as the stepped worker's next stop opens, found later or not`() {
+        val pushes = Pushes(unopened = setOf(4))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.push(runningWorker(0), runningWorker(1))
+        pushes.push(stoppedAt(0, 4), runningWorker(1))
+        assertTrue(pushes.shown.waitsUntil() != null)
+        pushes.shown.opened(pushes.stopOf(stoppedAt(0, 4)), false)
+        assertNull(pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE lets another worker's stop take the focus once the wait for a stepped worker is over`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.push(runningWorker(0), runningWorker(1))
+        pushes.now += Glue.RESERVED_MILLIS
+        assertEquals(listOf(1 to true) to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
+    }
+
+    @Test
+    fun `the IDE makes the slot the person acted on theirs - a code action, input or a pick on the Paused Page`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        // The person types on worker 1's page: worker 0's next stop leaves them there.
+        pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5)))
+        assertEquals(listOf(0 to false), pushes.push(stoppedAt(0, 4), stoppedAt(1, 5)).first)
+        pushes.push(stoppedAt(0, 4), runningWorker(1))
+        assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 4), stoppedAt(1, 6)).first)
+        // Acting on another worker ends the wait for a stepped one.
+        pushes.answer("step", stoppedAt(0, 4))
+        pushes.shown.acted(pushes.stopOf(stoppedAt(1, 6)))
+        assertNull(pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE forgets an answer the run refused - no wait, and the slot the person was on`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.shown.taken(pushes.answer("resume", stoppedAt(1, 5)))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        // A Step on worker 0's stop, which went on meanwhile.
+        assertTrue(pushes.shown.refused(pushes.answer("step", stoppedAt(0, 3))))
+        assertNull(pushes.shown.waitsUntil())
+        assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
+        // An answer taken, or settled already, undoes nothing.
+        val taken = pushes.answer("step", stoppedAt(0, 3))
+        pushes.shown.taken(taken)
+        assertFalse(pushes.shown.refused(taken))
+        assertEquals(pushes.now + Glue.RESERVED_MILLIS, pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE undoes each of two refused answers in flight, in either order`() {
+        for (order in listOf(listOf(0, 1), listOf(1, 0))) {
+            val pushes = Pushes()
+            pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+            val tokens = listOf(pushes.answer("step", stoppedAt(0, 3)), pushes.answer("step", stoppedAt(1, 5)))
+            order.forEach { pushes.shown.refused(tokens[it]) }
+            assertNull(pushes.shown.waitsUntil())
+            // Neither answer holds the run actions: the only stop shown is answered.
+            val a = pushes.stopOf(stoppedAt(0, 3))
+            assertEquals(Glue.StopChoice.One(a), pushes.shown.choose(listOf(a), null, null, true, pushes.now))
+        }
+    }
+
+    @Test
+    fun `the IDE gives a run action the stop at the caret, else none but the one just answered, else the only one shown`() {
+        val pushes = Pushes(closed = setOf(5))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7))
+        val all = Glue.stopsOf(mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7)))))
+        val (a, b, c) = all
+        assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(all, specUri, 5, true))
+        assertEquals(Glue.StopChoice.Ask, pushes.shown.choose(all, specUri, 1, true))
+        // The only stop left: one whose file stayed closed is asked for.
+        assertEquals(Glue.StopChoice.Ask, pushes.shown.choose(listOf(b), specUri, 1, true))
+        assertEquals(Glue.StopChoice.One(c), pushes.shown.choose(listOf(c), specUri, 1, true))
+        // Worker 0 resumed from the caret: a second press before the next stop answers no other stop, but a code action
+        // takes the only one shown.
+        pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(Glue.StopChoice.One(a), pushes.shown.choose(listOf(a), specUri, 9, true, 150))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(c), specUri, 3, true, 150))
+        assertEquals(Glue.StopChoice.One(c), pushes.shown.choose(listOf(c), specUri, 3, false, 150))
+        assertEquals(Glue.StopChoice.One(c), pushes.shown.choose(listOf(c), specUri, 3, true, 100 + Glue.RESUMED_MILLIS))
+        // A stop whose page shows is one the person was shown.
+        pushes.shown.view(b)
+        assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(listOf(b), specUri, 3, true, 5_000))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(emptyList(), specUri, 3, true))
+    }
+
+    @Test
+    fun `the IDE ends the moments after an answer once no worker of its run holds the slot`() {
+        val shown = Glue.StopsShown()
+        val first = mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(stoppedAt(0, 3))))
+        shown.changed(first, Glue.stopsOf(first), 100)
+        val a = Glue.stopsOf(first).single()
+        shown.opened(a, true)
+        shown.answered(a, "resume", 100)
+        // The run ends, and another run's worker stops within the moments after the answer.
+        val second = mapOf("ed-2" to RunSession("ed-2", "/work/shop", listOf(stoppedAt(0, 5))))
+        shown.changed(second, Glue.stopsOf(second), 200)
+        val b = Glue.stopsOf(second).single()
+        shown.opened(b, true)
+        assertEquals(Glue.StopChoice.One(b), shown.choose(listOf(b), specUri, 5, true, 300))
+    }
+
+    @Test
+    fun `the IDE ends the moments after an answer at the next stop`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.push(runningWorker(0), stoppedAt(1, 5))
+        val b = pushes.stopOf(stoppedAt(1, 5))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), null, null, true, 400))
+        pushes.push(stoppedAt(0, 4), stoppedAt(1, 5))
+        assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(listOf(b), null, null, true, 500))
+    }
+
+    @Test
+    fun `the IDE keeps a run action on the answered worker until its next stop opens, whatever the caret and other stops say`() {
+        val pushes = Pushes(unopened = setOf(4))
+        // Two workers stopped at the same line: an action asks which, and the person steps worker 0.
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 3), runningWorker(2))
+        val a = pushes.stopOf(stoppedAt(0, 3))
+        val b = pushes.stopOf(stoppedAt(1, 3))
+        assertEquals(Glue.StopChoice.Ask, pushes.shown.choose(listOf(a, b), specUri, 3, true))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertEquals(Glue.StopChoice.One(a), pushes.shown.choose(listOf(a, b), specUri, 3, true, 150))
+        // Worker 0 runs and worker 2 stops: an action pressed again answers neither worker 1 nor worker 2.
+        pushes.push(runningWorker(0), stoppedAt(1, 3), stoppedAt(2, 7))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), specUri, 3, true, 250))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(pushes.stopOf(stoppedAt(2, 7))), specUri, 7, true, 250))
+        // Worker 0's next stop, heard but its file not found yet, has not moved the caret: the action waits for it.
+        pushes.push(stoppedAt(0, 4), stoppedAt(1, 3), stoppedAt(2, 7))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), specUri, 3, true, 350))
+        // Its file open, the moments after the answer end.
+        pushes.shown.opened(pushes.stopOf(stoppedAt(0, 4)), true)
+        assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(listOf(b), specUri, 3, true, 350))
+    }
+
+    @Test
+    fun `the IDE says when acting ended a wait, for the tab to be drawn again, as after a refusal`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertTrue(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertFalse(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
+        // A refused Step says it ended the wait: the tab drawn again opens the stop held.
+        val refused = Pushes()
+        refused.push(stoppedAt(0, 3), runningWorker(1))
+        refused.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        val step = refused.answer("step", stoppedAt(0, 3))
+        assertNull(refused.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertTrue(refused.shown.refused(step))
+        assertEquals(1 to 5, refused.push(runningWorker(0), stoppedAt(1, 5)).second)
+    }
+
+    @Test
+    fun `the IDE undoes of a refused answer only what nothing changed since`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        val step = pushes.answer("step", stoppedAt(0, 3))
+        // The person types on worker 1's page before the refusal comes.
+        pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5)))
+        pushes.shown.refused(step)
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
+        // Worker 1 answered, then worker 0 stepped and typed on: the slot the person is on stays worker 0's.
+        val again = Pushes()
+        again.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        again.shown.taken(again.answer("resume", stoppedAt(1, 5)))
+        again.push(stoppedAt(0, 3), runningWorker(1))
+        val stepped = again.answer("step", stoppedAt(0, 3))
+        again.shown.acted(again.stopOf(stoppedAt(0, 3)))
+        again.shown.refused(stepped)
+        assertEquals(listOf(1 to false), again.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
+    }
+
+    @Test
+    fun `the IDE keeps waiting when the stepped stop's own file opens after the Step`() {
+        val pushes = Pushes(unopened = setOf(3))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.shown.opened(pushes.stopOf(stoppedAt(0, 3)), false)
+        assertTrue(pushes.shown.waitsUntil() != null)
+    }
+
+    @Test
+    fun `the IDE counts a press, a click, a key, text or the wheel on a page as acting, not a pointer moving or a release`() {
+        assertFalse(Glue.actsOnPage(listOf(PageInput("mouse", "move", 1.0, 2.0))))
+        assertFalse(Glue.actsOnPage(listOf(PageInput("mouse", "up", 1.0, 2.0, "left"))))
+        assertFalse(Glue.actsOnPage(listOf(PageInput("key", "up", key = "a"))))
+        assertFalse(Glue.actsOnPage(emptyList()))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "down", 1.0, 2.0, "left"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "click", 1.0, 2.0, "left", 1))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("key", "press", key = "Enter"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("key", "down", key = "a"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("text", text = "MORNING10"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("wheel", x = 1.0, y = 2.0, deltaX = 0.0, deltaY = 40.0))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "move", 1.0, 2.0), PageInput("key", "press", key = "Tab"))))
+    }
+
+    @Test
+    fun `a new page selects the Paused Page tab unless the Worker tab is selected in a tool window that shows`() {
+        assertFalse(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = true))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = false))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = false, windowVisible = true))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = false, windowVisible = false))
     }
 
     @Test

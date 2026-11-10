@@ -67,6 +67,8 @@ export interface UserListItem {
   email: string | null;
   emailVerified: boolean;
   oauthProvider: string | null;
+  /** Whether the user uploaded a profile picture, which an administrator may remove. */
+  avatarUploaded: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

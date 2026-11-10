@@ -59,7 +59,10 @@ export interface PerfettoExecution {
   filePath?: string | null;
   location?: string | null;
   status: string;
+  /** Playwright's worker process, new at every start. */
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), which names its thread from 1; null from an older reporter. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   /** Absolute start time in milliseconds. */
   startedAt?: number | null;

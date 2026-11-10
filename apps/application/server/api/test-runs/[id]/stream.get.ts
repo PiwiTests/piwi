@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds).',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds), then the tests still running (`test-begin`) and the step each worker is in (`step-begin` or `step-end`, kept while anyone watches the run).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -80,7 +80,10 @@ export default eventHandler(async (event) => {
     }
     // Whether the project's live view is on and the run holds a key, then the workers in its view now and their stops:
     // the live events that follow change them.
-    const viewState: LiveViewRunState = { keyed: liveViewRelay.holdsKey(id), enabled: project?.liveView === true };
+    const viewState: LiveViewRunState = {
+      keyed: liveViewRelay.holdsKey(id, { digests: testRun.liveViewKeyDigests, createdAt: testRun.createdAt }),
+      enabled: project?.liveView === true,
+    };
     const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
     for (const worker of liveViewRelay.workersOf(id)) {
@@ -109,6 +112,11 @@ export default eventHandler(async (event) => {
             timestamp: Date.now(),
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(beginEvent)}\n\n`));
+        }
+        // Then the step each worker is in, after the running cases it belongs to.
+        for (const step of runEventBus.getLiveSteps(id)) {
+          const stepEvent = { type: step.type, data: step.data, seq: 0, timestamp: Date.now() };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stepEvent)}\n\n`));
         }
       } catch {
         // Ignore errors during catch-up

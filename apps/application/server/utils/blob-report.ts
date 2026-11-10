@@ -24,13 +24,15 @@ import {
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { distinctRunCountsFromAttempts, normalizeTestCaseStatus } from '#shared/utils/test-counts';
-import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
+import { parseTestMetadata } from '@piwitests/core/test-meta';
 import { MAX_RUN_ERRORS, runErrorOfReported } from '@piwitests/core/run-errors';
 import { boundTestOutput } from '@piwitests/core/test-output';
 import type { WireRunError } from '@piwitests/core/wire';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
 import type { RunCaseInput } from './persist-run-cases';
+import { workerLane } from '#shared/worker-lane';
+import type { WireRunnerEnvironment } from '@piwitests/core/wire';
 
 /**
  * Reads one entry out of the archive, or null when it is absent or unreadable.
@@ -96,6 +98,8 @@ export interface ParsedBlobReport {
    * the first `MAX_RUN_ERRORS`, each text with what may be a secret hidden.
    */
   runErrors: WireRunError[];
+  /** The partial runner snapshot the blob report's user agent tells (OS, architecture, Node.js), marked imported. */
+  runner: WireRunnerEnvironment | null;
   cases: ImportedRunCase[];
 }
 
@@ -147,6 +151,8 @@ interface ResultAccumulator {
   testId: string;
   retry: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`). */
+  parallelIndex: number | null;
   startedAt: number | null;
   rootSteps: StepNode[];
   stepsById: Map<string, StepNode>;
@@ -166,6 +172,7 @@ interface PlannedTest {
   column: number | null;
   suitePath: string[];
   annotations: TestAnnotation[];
+  /** As Playwright lists them: `persistRunCases` normalizes them and records the tests whose tags it cuts. */
   tags: string[];
   timeout: number | null;
   /** Playwright's `repeatEachIndex`: each `--repeat-each` repetition is a test of its own. */
@@ -282,7 +289,7 @@ function collectPlannedTests(
           column: typeof location.column === 'number' ? location.column : null,
           suitePath,
           annotations: Array.isArray(child.annotations) ? (child.annotations as TestAnnotation[]) : [],
-          tags: normalizeTestTags(child.tags),
+          tags: Array.isArray(child.tags) ? child.tags.filter((tag): tag is string => typeof tag === 'string') : [],
           timeout: typeof child.timeout === 'number' ? child.timeout : projectTimeout,
           repeatEachIndex: typeof child.repeatEachIndex === 'number' ? child.repeatEachIndex : 0,
           projectName,
@@ -476,6 +483,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         testId,
         retry: typeof result.retry === 'number' ? result.retry : 0,
         workerIndex: typeof result.workerIndex === 'number' ? result.workerIndex : null,
+        parallelIndex: workerLane(result.parallelIndex),
         startedAt: typeof result.startTime === 'number' ? result.startTime : null,
         rootSteps: [],
         stepsById: new Map(),
@@ -587,6 +595,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           slowestStepDuration: metrics.slowestStep?.duration ?? null,
           wastedTimeMs: metrics.waitTotalDuration,
           workerIndex: acc?.workerIndex ?? null,
+          parallelIndex: acc?.parallelIndex ?? null,
           startedAt: acc?.startedAt ?? null,
           browser: plan?.browser ?? null,
           stdout: testOutputOf(acc?.stdout ?? []),
@@ -677,6 +686,31 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     projectNames,
     scm: readBlobScm(config.metadata),
     runErrors,
+    runner: runnerFromUserAgent((metadataEvent?.params as Record<string, unknown> | undefined)?.userAgent, shard),
     cases,
+  };
+}
+
+/**
+ * The runner a blob report's user agent describes, as Playwright writes it in `onBlobReportMetadata`
+ * (`Playwright/1.56.0 (x64; ubuntu 24.04) node/24.3`, a CI suffix after it): its OS, architecture and Node.js
+ * version, marked imported. Null for any other shape.
+ */
+export function runnerFromUserAgent(
+  userAgent: unknown,
+  shard: { current: number } | null = null,
+): WireRunnerEnvironment | null {
+  if (typeof userAgent !== 'string') return null;
+  const match = userAgent.match(/^Playwright\/\S+ \(([^;()]+);\s*([^)]+)\)\s+node\/(\S+)/);
+  if (!match) return null;
+  const node = match[3]!;
+  return {
+    kind: 'runner',
+    v: 1,
+    shardIndex: shard?.current ?? null,
+    arch: match[1]!.trim(),
+    os: match[2]!.trim(),
+    nodeVersion: node.startsWith('v') ? node : `v${node}`,
+    imported: true,
   };
 }

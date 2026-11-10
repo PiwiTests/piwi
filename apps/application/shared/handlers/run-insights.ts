@@ -10,8 +10,13 @@ import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scop
 import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '../utils/test-counts';
 import { passRatePercent } from '../utils/pass-rate';
 import { notLabRun } from './probes';
+import { isVisibleRun } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
+import { liveWorkerName } from '#shared/live-view';
+import { workerKey, workerNumber } from '#shared/worker-lane';
+import { loadRunsSnapshots } from './environment-snapshots';
+import { comparableSnapshots, disagreeingFields } from '#shared/environment-snapshots';
 
 interface TestCaseEntry {
   executionId: number;
@@ -53,6 +58,18 @@ export interface InsightsEarlierRun {
 /** How the baseline was picked: the automatic ladder, a run, or a base branch someone chose. */
 export type InsightsBaselineSource = 'auto' | 'run' | 'branch';
 
+/**
+ * How many test results one worker ran, within the shard `shardIndex` names in a sharded run (null otherwise):
+ * `worker` is its lane from 1 as the run page names it (`Worker 2`), whichever processes Playwright started in it; a
+ * result without a lane, from an older reporter, counts under its worker process, `workerIndex`, and `worker` is null.
+ */
+export interface WorkerTestCount {
+  worker: number | null;
+  workerIndex: number | null;
+  shardIndex: number | null;
+  count: number;
+}
+
 /** How many earlier runs the Changes tab offers to compare with. */
 const EARLIER_RUN_LIMIT = 50;
 
@@ -79,6 +96,8 @@ export interface RunInsightsResult {
   newFailures: number;
   commitRange: CommitRange | null;
   metadataDiff: MetaDiffEntry[];
+  /** The runner fields this run's shards disagree on (another time zone, another image), by label. */
+  shardDisagreement: string[];
   totalTests: number;
   passedTests: number;
   failedTests: number;
@@ -95,7 +114,8 @@ export interface RunInsightsResult {
   slowestTests: Array<{ executionId: number; title: string; filePath: string; duration: number }>;
   mostImproved: PerfChangeEntry[];
   mostRegressed: PerfChangeEntry[];
-  workerImbalance: Array<{ workerIndex: number; count: number }>;
+  workerImbalance: WorkerTestCount[];
+  /** Names the busiest worker and the least busy one when it ran at least 1.5 times as many tests. */
   workerImbalanceWarning: string | null;
   flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }>;
   clusterNew: Array<{
@@ -147,6 +167,8 @@ export async function computeRunInsights(
       retries: testRunsCases.retries,
       passedAfterFailure: testRunsCases.passedAfterFailure,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
       title: testCases.title,
       filePath: testCases.filePath,
     })
@@ -213,7 +235,8 @@ export async function computeRunInsights(
   let baselineMatch: RunBaselineMatch | null = null;
   if (options?.baselineId != null && options.baselineId !== runId) {
     const [picked] = await db.select().from(testRuns).where(eq(testRuns.id, options.baselineId));
-    if (picked && picked.projectId === run.projectId) {
+    // A private run is never a baseline: the page that picks one is read by the whole project.
+    if (picked && picked.projectId === run.projectId && isVisibleRun(picked, null)) {
       baselineRun = picked as TestRun;
       baselineSource = 'run';
     }
@@ -246,6 +269,7 @@ export async function computeRunInsights(
     newFailures: 0,
     commitRange: null,
     metadataDiff: [],
+    shardDisagreement: [],
     totalTests: 0,
     passedTests: 0,
     failedTests: 0,
@@ -266,7 +290,13 @@ export async function computeRunInsights(
     clusterNew: [],
   };
 
-  if (!baselineRun) return empty;
+  // Shards that disagree say so whether or not a baseline exists.
+  const snapshots = await loadRunsSnapshots(db, baselineRun ? [baselineRun.id, run.id] : [run.id]);
+  const currentSnapshots = snapshots.get(run.id) ?? [];
+  const shardDisagreement = disagreeingFields(
+    comparableSnapshots(currentSnapshots).filter((s) => s.kind === 'runner'),
+  ).map((f) => f.label);
+  if (!baselineRun) return { ...empty, shardDisagreement };
 
   const baselineRows: any[] = await db
     .select({
@@ -388,28 +418,40 @@ export async function computeRunInsights(
     .sort((a, b) => a.pctChange - b.pctChange)
     .slice(0, 10);
 
-  // Worker imbalance
-  const workerCounts = new Map<number, number>();
+  // Worker imbalance: test results per worker, a lane in its shard
+  const workerCounts = new Map<string, WorkerTestCount>();
   for (const cc of currentCases) {
-    if (cc.workerIndex != null) {
-      workerCounts.set(cc.workerIndex, (workerCounts.get(cc.workerIndex) ?? 0) + 1);
+    const key = workerKey(cc);
+    if (key === null) continue;
+    const known = workerCounts.get(key);
+    if (known) known.count++;
+    else {
+      const worker = workerNumber(cc.parallelIndex);
+      workerCounts.set(key, {
+        worker,
+        workerIndex: worker === null ? (cc.workerIndex ?? null) : null,
+        shardIndex: cc.shardIndex ?? null,
+        count: 1,
+      });
     }
   }
-  const workerImbalance = [...workerCounts.entries()]
-    .map(([workerIndex, count]) => ({ workerIndex, count }))
-    .sort((a, b) => a.workerIndex - b.workerIndex);
+  const shown = (w: WorkerTestCount) => w.worker ?? w.workerIndex ?? 0;
+  const workerImbalance = [...workerCounts.values()].sort(
+    (a, b) =>
+      (a.shardIndex ?? -1) - (b.shardIndex ?? -1) ||
+      Number(a.worker === null) - Number(b.worker === null) ||
+      shown(a) - shown(b),
+  );
 
-  // Worker imbalance warning
   let workerImbalanceWarning: string | null = null;
-  if (workerCounts.size > 1) {
-    const counts = [...workerCounts.values()];
-    const maxCount = Math.max(...counts);
-    const minCount = Math.min(...counts);
-    if (minCount > 0 && maxCount >= minCount * 1.5) {
-      const maxWorker = [...workerCounts.entries()].find(([, c]) => c === maxCount)?.[0];
-      const minWorker = [...workerCounts.entries()].find(([, c]) => c === minCount)?.[0];
-      const ratio = Math.round((maxCount / minCount) * 10) / 10;
-      workerImbalanceWarning = `Worker W${maxWorker} ran ${ratio}\u00d7 more tests than worker W${minWorker}`;
+  if (workerImbalance.length > 1) {
+    const busiest = workerImbalance.reduce((max, w) => (w.count > max.count ? w : max));
+    const idlest = workerImbalance.reduce((min, w) => (w.count < min.count ? w : min));
+    if (busiest.count >= idlest.count * 1.5) {
+      const name = (w: WorkerTestCount) => liveWorkerName({ shard: w.shardIndex, worker: shown(w) });
+      const ratio = Math.round((busiest.count / idlest.count) * 10) / 10;
+      const sentence = `${name(busiest)} ran ${ratio}\u00d7 more tests than ${name(idlest)}`;
+      workerImbalanceWarning = sentence.charAt(0).toUpperCase() + sentence.slice(1);
     }
   }
 
@@ -424,7 +466,10 @@ export async function computeRunInsights(
     baseMeta?.scm?.commit ?? null,
     currMeta?.scm?.commit ?? null,
   );
-  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment);
+  const metadataDiff = computeMetadataDiff(baseMeta, currMeta, baselineRun.environment, run.environment, {
+    before: { playwrightVersion: baselineRun.playwrightVersion, snapshots: snapshots.get(baselineRun.id) ?? [] },
+    after: { playwrightVersion: run.playwrightVersion, snapshots: currentSnapshots },
+  });
 
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
@@ -469,6 +514,7 @@ export async function computeRunInsights(
     newFailures: newRegressions.length,
     commitRange,
     metadataDiff,
+    shardDisagreement,
     totalTests,
     passedTests,
     failedTests,

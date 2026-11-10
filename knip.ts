@@ -94,6 +94,17 @@ const config: KnipConfig = {
       // Native modules the published server installs for the bundled Nitro output.
       ignoreDependencies: ['@libsql/client', 'sharp'],
     },
+    'packages/run-ui': {
+      // The layer's components, composables and utils are auto-imported by the hosts that extend it (the dashboard,
+      // Piwi Runner).
+      entry: ['app/**/*.{ts,vue}'],
+    },
+    'apps/runner': {
+      // The Node host the sidecar runs (bundled by `scripts/build.mjs`) and the window's Nuxt app.
+      entry: ['server/main.ts', 'app/**/*.{ts,vue}'],
+      // `nuxt typecheck` runs `vue-tsc`.
+      ignoreDependencies: ['vue-tsc'],
+    },
     'integrations/nitro': {},
   },
 };

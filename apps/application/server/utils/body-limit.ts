@@ -5,7 +5,7 @@ import { resolveMaxSubmitBytes } from './upload-limits';
 /** Largest non-multipart request body the server reads. Uploads are multipart and carry their own limits. */
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 
-/** Largest body read by a route that reads it before checking any credential. */
+/** Largest body read by a route that takes a small one: the open routes, and the desktop app's run-target routes. */
 export const MAX_OPEN_ROUTE_BODY_BYTES = 64 * 1024;
 
 /**
@@ -18,15 +18,16 @@ export const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 // up to `PIWI_SUBMIT_MAX_BYTES` (`resolveMaxSubmitBytes`).
 const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 
-// The routes that read a small body before checking any credential: sign-in, the first administrator, the password
-// reset, the OAuth registration, token and revocation endpoints of MCP clients, the connect request of Piwi Picker and
-// the editors and its poll, the desktop app's pairing request, and a streaming run's heartbeat, whose body carries its
-// stream token.
+// The routes that take a small body: those that read it before checking any credential (sign-in, the first
+// administrator, the password reset, the OAuth registration, token and revocation endpoints of MCP clients, the connect
+// request of Piwi Picker and the editors and its poll, the desktop app's pairing request, and a streaming run's
+// heartbeat, whose body carries its stream token), and the desktop app's run-target routes.
 const OPEN_ROUTE_PATHS = [
   /^\/api\/auth\/(?:login|setup|forgot-password|reset-password)$/,
   /^\/oauth\/(?:register|token|revoke)$/,
   /^\/api\/extension\/connect(?:\/token)?$/,
   /^\/api\/desktop\/picker-pairings$/,
+  /^\/api\/desktop\/run-target(?:\/|$)/,
   /^\/api\/test-runs\/[^/]+\/heartbeat$/,
 ];
 

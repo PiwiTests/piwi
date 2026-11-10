@@ -11,6 +11,7 @@ import { traceManifestPath } from '../../utils/trace-manifest';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
+import { storedFileVisible } from '../../utils/stored-file-visibility';
 import { etagMatches } from '../../utils/json-etag';
 import { parseByteRange } from '../../utils/byte-range';
 import { escapesStorageRoot } from '../../utils/sanitize-filename';
@@ -80,7 +81,11 @@ export default eventHandler(async (event) => {
   const projectMatch = path.match(/^project-(\d+)\//);
   const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
   if (projectMatch) {
-    await requireProjectAccess(event, Number(projectMatch[1]));
+    const user = await requireProjectAccess(event, Number(projectMatch[1]));
+    // Another person's private run's files read as missing.
+    if (!(await storedFileVisible(await getDatabase(), Number(projectMatch[1]), path, user.id))) {
+      throw apiError({ statusCode: 404, message: 'File not found' });
+    }
   } else if (bugReportMatch) {
     await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');
   } else {

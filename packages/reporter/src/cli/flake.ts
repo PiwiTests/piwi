@@ -39,7 +39,7 @@ import {
   type LabPlan,
   type VerifyVerdict,
 } from '../internal/flake/lab.js';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { cliFetch, resolveCliConnection } from '../internal/support/connection.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
@@ -290,7 +290,7 @@ interface Http {
 }
 
 async function getJson<T>(http: Http, url: string): Promise<T> {
-  const res = await fetch(`${http.serverUrl}${url}`, { headers: http.headers });
+  const res = await cliFetch(`${http.serverUrl}${url}`, { headers: http.headers });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
     throw new FlakeError(body.message || `the dashboard returned ${res.status} for ${url.split('?')[0]}`);
@@ -675,7 +675,7 @@ export async function runFlake(argv: string[], runner?: FlakeRunner): Promise<nu
   let uploaded = false;
   if (args.upload && http && plan.experimentId) {
     try {
-      const res = await fetch(`${http.serverUrl}/api/projects/${plan.projectId}/flake-lab/results`, {
+      const res = await cliFetch(`${http.serverUrl}/api/projects/${plan.projectId}/flake-lab/results`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...http.headers },
         body: JSON.stringify({

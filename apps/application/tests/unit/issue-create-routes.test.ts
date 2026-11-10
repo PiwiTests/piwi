@@ -228,6 +228,29 @@ describe('POST /api/integrations/issues', () => {
     expect(filed).toEqual([{ host: 'web.atlassian.net', project: 'WEB' }]);
   });
 
+  test("files a run's issue through the project's own connection, and refuses another", async () => {
+    state.caller = robin;
+    // Each project's run has its cluster's id.
+    const run = { ...body(CLUSTER[WEB], webJira, 'WEB'), entityType: 'test_run', entityId: CLUSTER[WEB] };
+    expect(await refusal(createIssue({ body: { ...run, connectionId: billingJira } }))).toMatchObject({
+      statusCode: 403,
+    });
+    expect((await createIssue({ body: run })).status).toBe('done');
+    expect(filed).toEqual([{ host: 'web.atlassian.net', project: 'WEB' }]);
+  });
+
+  test('refuses a comment over the limit and a submission id that is not a UUID', async () => {
+    state.caller = robin;
+    const base = body(CLUSTER[WEB], webJira, 'WEB');
+    expect(await refusal(createIssue({ body: { ...base, comment: 'x'.repeat(5001) } }))).toMatchObject({
+      statusCode: 400,
+    });
+    expect(await refusal(createIssue({ body: { ...base, submissionId: 'not-a-uuid' } }))).toMatchObject({
+      statusCode: 400,
+    });
+    expect(filed).toEqual([]);
+  });
+
   test("refuses a Contributor of another project, even through that project's connection", async () => {
     state.caller = sam;
     expect(await refusal(createIssue({ body: body(CLUSTER[WEB], billingJira) }))).toEqual({

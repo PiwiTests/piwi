@@ -140,7 +140,7 @@ watch(
         {{ running ? 'Running the lab…' : 'Reproduce this flake' }}
       </UButton>
       <template #content>
-        <form class="w-72 p-3 space-y-3" data-testid="flake-lab-desktop-options" @submit.prevent="start">
+        <form class="w-72 p-3 space-y-3" data-testid="flake-lab-desktop-options" method="post" @submit.prevent="start">
           <p class="text-xs text-muted leading-relaxed">
             Runs the lab at the commit of the latest failure, in a throwaway worktree of the linked folder. Your
             checkout is untouched.

@@ -17,6 +17,7 @@ import {
 } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
 import { bearerToken } from './bearer';
@@ -512,17 +513,29 @@ export function generateApiKey(): { plaintext: string; hash: string; prefix: str
 /**
  * Look up a user by a plaintext API key value.
  * Updates `last_used_at` on a successful match.
- * Returns null if the key does not exist, is expired, or belongs to no user.
+ * Returns null if the key does not exist, is expired, belongs to no user, or
+ * holds only some permissions (a target key), which never acts as its owner.
  */
 export async function getUserByApiKey(plaintext: string): Promise<User | null> {
-  return (await resolveApiKey(plaintext))?.user ?? null;
+  const resolved = await resolveApiKey(plaintext);
+  return resolved && !resolved.permissions ? resolved.user : null;
+}
+
+/** An API key resolved to its owner, with the only permissions it holds when it holds some only. */
+export interface ResolvedApiKey {
+  user: User;
+  keyId: number;
+  /** Null for a key that carries its owner's access; else the only permissions it holds (`['run:receive']`). */
+  permissions: string[] | null;
 }
 
 /**
- * Look up the user and the key id of a plaintext API key value, under the same
- * rules as {@link getUserByApiKey}.
+ * Look up the user and the key id of a plaintext API key value: null when the
+ * key does not exist, is expired or belongs to no user. A key that holds only
+ * some permissions resolves too; every caller but the target routes' helper
+ * refuses it.
  */
-export async function resolveApiKey(plaintext: string): Promise<{ user: User; keyId: number } | null> {
+export async function resolveApiKey(plaintext: string): Promise<ResolvedApiKey | null> {
   if (!plaintext.startsWith(API_KEY_PREFIX)) {
     return null;
   }
@@ -549,7 +562,11 @@ export async function resolveApiKey(plaintext: string): Promise<{ user: User; ke
   }
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
-  return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
+  if (!userResults[0]) return null;
+  // Only a null column carries the owner's access; any other value that is not a list of permissions is refused.
+  if (key.permissions != null && !Array.isArray(key.permissions)) return null;
+  const permissions = key.permissions == null ? null : (key.permissions as unknown[]).map(String);
+  return { user: userResults[0], keyId: key.id, permissions };
 }
 
 /**
@@ -584,6 +601,7 @@ function virtualAdministrator(): User {
     role: InstanceRole.ADMINISTRATOR,
     name: 'System',
     avatarUrl: null,
+    avatarKey: null,
     oauthProvider: null,
     oauthProviderId: null,
     email: null,
@@ -650,6 +668,13 @@ export async function requireAuth(event: H3Event, permission?: RoutePermission |
         message: 'Invalid or expired API key',
       });
     }
+    // A key that holds only some permissions (a target key) serves its own routes alone, never as its owner.
+    if (resolved.permissions) {
+      throw apiError({
+        statusCode: 403,
+        message: 'This key belongs to a connected app and serves only that app’s routes',
+      });
+    }
     user = resolved.user;
     // The key a request was made with, for the records that name who acted (the agents' write log).
     event.context.apiKeyId = resolved.keyId;
@@ -713,6 +738,8 @@ export async function authUserView(db: DrizzleDB, user: User) {
     role: access.instanceRole,
     name: user.name,
     avatarUrl: user.avatarUrl,
+    avatarVersion: accountPictureVersion(user),
+    avatarUploaded: Boolean(user.avatarKey),
     email: user.email,
     emailVerified: user.emailVerified,
     oauthProvider: user.oauthProvider,

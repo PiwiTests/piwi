@@ -60,6 +60,16 @@ describe('docs checkpoints', () => {
     expect(snippet('reporter-not-enabled.txt')).toBe(`${prefix}${message}`);
   });
 
+  test('live-view-on.txt is the line a CI run with a live view prints', () => {
+    const source = readFileSync(join(repoRoot, 'packages/reporter/src/public/reporter.ts'), 'utf8');
+    const prefix = /private readonly prefix = '([^']+)'/.exec(
+      readFileSync(join(repoRoot, 'packages/reporter/src/internal/support/logger.ts'), 'utf8'),
+    )?.[1];
+    const message = /"(Live view on for the specs[^"]*)"/.exec(source)?.[1];
+    expect(prefix && message, 'the reporter still logs a Live view on line').toBeTruthy();
+    expect(snippet('live-view-on.txt')).toBe(`${prefix}${message}`);
+  });
+
   test('gate-output.txt is what piwi gate prints for the CI page policy', () => {
     const result = evaluateGatePolicy(
       {

@@ -69,6 +69,10 @@ How the server merges shards:
   write that shards of one run make one at a time (`tests/unit/sharded-run-setup.test.ts`).
 - **A shard's resource report replaces the one it sent before, whole**: one `test_run_resource_reports` row per run
   and shard (`saveResourceReportPart`, `shared/handlers/resource-reports.ts`), never merged into another shard's row.
+- **An environment snapshot replaces its row whole**: one `test_run_environment_snapshots` row per run, kind and scope
+  (shard, shard and project, origin), written only through `saveEnvironmentSnapshots`
+  (`shared/handlers/environment-snapshots.ts`), which keeps the listed fields alone; every ingest route, `begin`,
+  `start` and the demo's mirror included, passes it `body.environments` (`tests/unit/environment-snapshots.test.ts`).
 
 ### Stream tokens
 
@@ -80,6 +84,12 @@ How the server merges shards:
   token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`): in `test_runs.stream_token`, in the
   in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a shard, in the run's
   `metadata.shardTokens`, which project members can read.
+- **A requested run starts only with its request token, and its origin is the server's**
+  (`server/utils/request-tokens.ts`): `/setup` and `/start` check it (`checkRequestToken`) in place of `requireAuth`,
+  store the run, then spend the token on it (`spendRequestToken`), report into the request's project, stamp `request`
+  (`withRequestOrigin`), set `requester_id` and ignore `keep`. `sanitizeMetadata` drops a `request` origin the reporter
+  sends, every later write of the reporter's metadata goes through `carryRequestOrigin`, and `runOrigin` reads `request`
+  before any lab stamp (`tests/unit/request-tokens.test.ts`).
 - **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
   `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
   with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload
@@ -109,6 +119,10 @@ How the server merges shards:
   or cancel; an interruption closes the streams and keeps it once it streamed) or the setting, a key that ended
   answering 410 or 404 rather than 401 (`refuseLiveViewKey`; `tests/unit/live-view-routes.test.ts`). At their bounds
   the keys that never opened a stream go first (`tests/unit/live-view-relay.test.ts`).
+- **A run keeps its live view keys' digests, never a key** (`live_view_key_digests`, `storeLiveViewKey` in `setup`),
+  and no response carries them. Both routes authorize through `authorizeLiveViewKey`: a key the relay does not hold
+  (a restart, the setting turned off and on) is taken back only for that run, compared in constant time, while it is
+  initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
   export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays

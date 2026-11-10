@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.66.0",
+  "version": "0.68.0",
   "license": "MIT",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
@@ -72,7 +72,8 @@
     "./hash": "./src/hash.ts",
     "./page-interaction": "./src/page-interaction.ts",
     "./run-errors": "./src/run-errors.ts",
-    "./test-output": "./src/test-output.ts"
+    "./test-output": "./src/test-output.ts",
+    "./run-request": "./src/run-request.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

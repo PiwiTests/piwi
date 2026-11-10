@@ -9,12 +9,14 @@ import {
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
   MAX_HUB_MESSAGE,
+  MAX_HUB_PEERS,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
   MAX_FORWARDED_PORTS,
   MAX_HUB_WARNINGS,
   forwardedPorts,
   hubHostPort,
+  hubPeersOf,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -157,6 +159,15 @@ describe('the hub’s WebSocket', () => {
     expect(
       parseHubCommand(json({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' })),
     ).toEqual({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' });
+    // End the test while a Pause waits for the call: no stop to name.
+    expect(parseHubCommand(json({ type: 'runControl', id: 5, ref: 'ed-1', worker: 1, action: 'give-up' }))).toEqual({
+      type: 'runControl',
+      id: 5,
+      ref: 'ed-1',
+      worker: 1,
+      action: 'give-up',
+      since: null,
+    });
     expect(parseHubCommand(json({ type: 'pausedPage', id: 4, ref: 'ed-1', worker: 0 }))).toEqual({
       type: 'pausedPage',
       id: 4,
@@ -251,7 +262,15 @@ describe('the hub’s WebSocket', () => {
 
   test('has the extension read every message the hub sends, field by field', () => {
     const messages: HubMessage[] = [
-      { type: 'welcome', pid: 4242, version: '0.60.0', client: 'WebStorm', roots: ['/work/shop'], keepaliveMs: 20_000 },
+      {
+        type: 'welcome',
+        pid: 4242,
+        version: '0.60.0',
+        client: 'WebStorm',
+        roots: ['/work/shop'],
+        keepaliveMs: 20_000,
+        features: ['peers'],
+      },
       { type: 'answer', id: 1, ok: true, message: 'Pausing at the next call.' },
       {
         type: 'answer',
@@ -317,6 +336,30 @@ describe('the hub’s WebSocket', () => {
       { type: 'keepalive' },
     ];
     for (const message of messages) expect(parseHubMessage(json(message))).toEqual(message);
+    // A pausing worker's call it waits in; none read of a worker not pausing, nor one this version cannot read.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: 'file:///work/shop/tests/pages/checkout.page.ts',
+      line: 11,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const pausing = { ...session.workers[0]!, state: 'running' as const, stop: null, pausing: true, waiting };
+    const withWaiting = { ...session, workers: [pausing] };
+    expect(parseHubMessage(json({ type: 'session', session: withWaiting }))).toEqual({
+      type: 'session',
+      session: withWaiting,
+    });
+    for (const worker of [
+      { ...pausing, pausing: false },
+      { ...pausing, waiting: { ...waiting, uri: 'https://x' } },
+    ]) {
+      const read = parseHubMessage(json({ type: 'session', session: { ...session, workers: [worker] } }));
+      expect(read).toMatchObject({ type: 'session' });
+      expect((read as { session: { workers: Array<{ waiting?: unknown }> } }).session.workers[0]).not.toHaveProperty(
+        'waiting',
+      );
+    }
     const worker = session.workers[0]!;
     expect(
       parseHubMessage(
@@ -404,7 +447,6 @@ describe('the hub’s WebSocket', () => {
   });
 
   test('has the extension refuse a message it cannot read', () => {
-    const worker = session.workers[0]!;
     for (const broken of [
       { type: 'answer', id: 1, ok: 'yes', message: '' },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/svg+xml', data: 'PHN2Zz4=' } },
@@ -414,19 +456,9 @@ describe('the hub’s WebSocket', () => {
       { type: 'welcome', pid: 0, version: '1', client: null, roots: [], keepaliveMs: 1 },
       { type: 'session', session: { ...session, ref: 'ed 1' } },
       { type: 'session', session: { ...session, command: 5 } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, state: 'gone' }] } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, line: -1 } }] } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, test: { ...worker.test, title: [1] } }] } },
+      { type: 'session', session: { ...session, workers: 'all' } },
       { type: 'session', session: { ...session, command: 'x'.repeat(MAX_HUB_COMMAND + 1) } },
       { type: 'session', session: { ...session, project: 'x'.repeat(MAX_HUB_PROJECT + 1) } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, error: 5 } }] } },
-      {
-        type: 'session',
-        session: {
-          ...session,
-          workers: [{ ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } }],
-        },
-      },
       { type: 'answer', id: 1, ok: true, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
       {
         type: 'welcome',
@@ -442,6 +474,38 @@ describe('the hub’s WebSocket', () => {
       expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
     }
     expect(parseHubMessage('not json')).toBeNull();
+  });
+
+  test('has the extension read a worker state of a newer service as other, and keep the run', () => {
+    const worker = session.workers[0]!;
+    const read = parseHubMessage(
+      json({ type: 'session', session: { ...session, workers: [{ ...worker, state: 'waiting-for-you' }] } }),
+    );
+    expect(read).toEqual({ type: 'session', session: { ...session, workers: [{ ...worker, state: 'other' }] } });
+    for (const state of [5, null, 'x'.repeat(65)]) {
+      expect(
+        parseHubMessage(json({ type: 'session', session: { ...session, workers: [{ ...worker, state }] } })),
+        JSON.stringify(state),
+      ).toEqual({ type: 'session', session: { ...session, workers: [] } });
+    }
+  });
+
+  test('has the extension leave out a worker it cannot read, and keep the run and its other workers', () => {
+    const worker = session.workers[0]!;
+    const next = { ...worker, worker: 1, parallelIndex: 1, state: 'running', stop: null };
+    for (const broken of [
+      { ...worker, worker: -1 },
+      { ...worker, stop: { ...worker.stop, line: -1 } },
+      { ...worker, test: { ...worker.test, title: [1] } },
+      { ...worker, stop: { ...worker.stop, error: 5 } },
+      { ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } },
+      'worker',
+    ]) {
+      expect(
+        parseHubMessage(json({ type: 'session', session: { ...session, workers: [broken, next] } })),
+        JSON.stringify(broken),
+      ).toEqual({ type: 'session', session: { ...session, workers: [next] } });
+    }
   });
 });
 
@@ -462,7 +526,7 @@ describe('Share live on the hub', () => {
     });
   });
 
-  test('has the extension read how a run stands on the instance, and refuse what it cannot read', () => {
+  test('has the extension read how a run stands on the instance, and leave out what it cannot read', () => {
     const live = {
       shared: true,
       refused: null,
@@ -494,10 +558,10 @@ describe('Share live on the hub', () => {
       { ...live, page: 'javascript:alert(1)' },
       'shared',
     ]) {
-      expect(
-        parseHubMessage(json({ type: 'session', session: { ...session, live: broken } })),
-        json(broken),
-      ).toBeNull();
+      expect(parseHubMessage(json({ type: 'session', session: { ...session, live: broken } })), json(broken)).toEqual({
+        type: 'session',
+        session,
+      });
     }
   });
 });
@@ -678,6 +742,111 @@ describe('the live view on the hub', () => {
   });
 });
 
+describe('a lane watched on the hub', () => {
+  test('reads watch, naming the run and its lane, and refuses one without either', () => {
+    const watch = { type: 'watch', id: 3, ref: 'ed-1', lane: 2, on: true };
+    expect(parseHubCommand(json(watch))).toEqual(watch);
+    expect(parseHubCommand(json({ ...watch, on: false }))).toEqual({ ...watch, on: false });
+    for (const broken of [
+      { ...watch, ref: 'ed 1' },
+      { ...watch, lane: -1 },
+      { ...watch, lane: 1.5 },
+      { ...watch, lane: undefined },
+      { ...watch, on: 'yes' },
+    ]) {
+      expect(parseHubCommand(json(broken))).toMatchObject({ type: 'invalid', id: 3 });
+    }
+  });
+
+  test('has the extension read a frame of a lane, of its test and its stop, and why none comes', () => {
+    const frame: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: 'abc',
+      since: null,
+      width: 1280,
+      height: 720,
+      data: '/9j/4A==',
+    };
+    expect(parseHubMessage(json(frame))).toEqual(frame);
+    const atStop = { ...frame, since: '2026-10-25T10:00:00.000Z' };
+    expect(parseHubMessage(json(atStop))).toEqual(atStop);
+    for (const broken of [
+      { ...frame, lane: -1 },
+      { ...frame, worker: undefined },
+      { ...frame, test: null },
+      { ...frame, test: '' },
+      { ...frame, since: '' },
+      { ...frame, since: undefined },
+      { ...frame, data: '<svg>' },
+    ]) {
+      expect(parseHubMessage(json(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+    }
+    const refused: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: null,
+      since: null,
+      refused: 'No page to show.',
+    };
+    expect(parseHubMessage(json(refused))).toEqual(refused);
+    expect(parseHubMessage(json({ ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) }))).toBeNull();
+  });
+
+  test('is offered by a hub whose welcome lists lanes, for a worker whose intents list watch', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['lanes', 'peers'] }))).toEqual({
+      ...welcome,
+      features: ['peers', 'lanes'],
+    });
+    const watched = { ...session, workers: [{ ...session.workers[0]!, intents: ['pick', 'watch'] }] };
+    expect(parseHubMessage(json({ type: 'session', session: watched }))).toEqual({
+      type: 'session',
+      session: watched,
+    });
+  });
+});
+
+describe('how far a run is, on the hub', () => {
+  const progress = {
+    total: 9,
+    done: 3,
+    failed: 1,
+    flaky: 0,
+    skipped: 0,
+    status: 'running',
+    failure: null,
+  } as const;
+
+  test('has the extension read it, a status of a newer service as other, and leave out what it cannot read', () => {
+    const read = (value: unknown) =>
+      (parseHubMessage(json({ type: 'session', session: { ...session, progress: value } })) as { session: HubSession })
+        .session.progress;
+    expect(read(progress)).toEqual(progress);
+    expect(read({ ...progress, status: 'exploded' })).toEqual({ ...progress, status: 'other' });
+    const ended = { ...progress, done: 9, status: 'failed', failure: { title: 'cart › adds', error: null } };
+    expect(read(ended)).toEqual(ended);
+    for (const broken of [
+      { ...progress, done: 10 },
+      { ...progress, failed: 4 },
+      { ...progress, total: -1 },
+      { ...progress, failure: { title: '', error: null } },
+      { ...progress, status: 3 },
+      'nine',
+    ]) {
+      expect(read(broken), JSON.stringify(broken)).toBeUndefined();
+    }
+    // A session without it reads as one from a service that predates it.
+    expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
+      'progress',
+    );
+  });
+});
+
 describe('the live endpoint', () => {
   test('sits beside the Send to editor endpoint, in both editors', () => {
     expect(liveUrlOf('http://127.0.0.1:43123/piwi/send')).toBe('http://127.0.0.1:43123/piwi/live');
@@ -729,5 +898,79 @@ describe('the live endpoint', () => {
         ].map((url) => ({ ...hubs[0], url })),
       }),
     ).toEqual([]);
+  });
+
+  test('names the desktop app’s features beside its hub, those this version knows', () => {
+    const hub = {
+      url: 'ws://127.0.0.1:43123/piwi/hub',
+      token: 'h'.repeat(32),
+      pid: 4242,
+      version: '0.67.0',
+      client: 'Piwi desktop app',
+      roots: [],
+      startedAt: '2026-10-25T10:00:00.000Z',
+    };
+    expect(parseLiveAnswer({ hubs: [{ ...hub, features: ['view-lane', 'peers'] }] })).toEqual([
+      { ...hub, features: ['peers'] },
+    ]);
+    expect(parseLiveAnswer({ hubs: [{ ...hub, features: 'peers' }] })).toEqual([{ ...hub, features: [] }]);
+    expect(parseLiveAnswer({ hubs: [hub] })).toEqual([hub]);
+  });
+});
+
+describe('the other live hubs a hub names', () => {
+  const live = (port: number, client: string | null = 'Visual Studio Code') => ({
+    url: `ws://127.0.0.1:${port}/piwi/hub`,
+    token: `${'t'.repeat(30)}${port}`,
+    pid: port,
+    version: '0.67.0',
+    client,
+    roots: [`/work/${port}`],
+    startedAt: '2026-10-25T10:00:00.000Z',
+  });
+
+  test('are the others, without their tokens, their names and folders cut to what a reader takes', () => {
+    const own = live(43_001);
+    const long = {
+      ...live(43_002, 'C'.repeat(MAX_HUB_CLIENT + 50)),
+      roots: Array.from({ length: 80 }, (_, i) => `/r${i}`),
+    };
+    const peers = hubPeersOf([own, long, live(43_003)], own.url);
+    expect(peers.map((p) => p.url)).toEqual(['ws://127.0.0.1:43002/piwi/hub', 'ws://127.0.0.1:43003/piwi/hub']);
+    expect(JSON.stringify(peers)).not.toContain('t'.repeat(30));
+    expect(peers[0]!.client).toHaveLength(MAX_HUB_CLIENT);
+    expect(peers[0]!.roots).toHaveLength(MAX_HUB_ROOTS);
+    const many = Array.from({ length: MAX_HUB_PEERS + 5 }, (_, i) => live(44_000 + i));
+    expect(hubPeersOf(many, own.url)).toHaveLength(MAX_HUB_PEERS);
+  });
+
+  test('are read by the extension field by field, on 127.0.0.1, leaving out an entry it cannot read', () => {
+    const { token: _token, ...peer } = live(43_002);
+    const message = { type: 'peers', hubs: [peer] };
+    expect(parseHubMessage(json(message))).toEqual(message);
+    expect(parseHubMessage(json({ type: 'peers', hubs: [{ ...peer, url: 'ws://localhost:43002/piwi/hub' }] }))).toEqual(
+      message,
+    );
+    expect(
+      parseHubMessage(
+        json({ type: 'peers', hubs: [peer, { ...peer, url: 'ws://evil.test:1/piwi/hub' }, { ...peer, pid: 0 }, 'x'] }),
+      ),
+    ).toEqual(message);
+    // A token a hub sends anyway is not kept.
+    expect(parseHubMessage(json({ type: 'peers', hubs: [{ ...peer, token: 'h'.repeat(32) }] }))).toEqual(message);
+    expect(parseHubMessage(json({ type: 'peers', hubs: [] }))).toEqual({ type: 'peers', hubs: [] });
+    expect(parseHubMessage(json({ type: 'peers' }))).toBeNull();
+    expect(
+      parseHubMessage(json({ type: 'peers', hubs: Array.from({ length: MAX_HUB_PEERS + 1 }, () => peer) })),
+    ).toBeNull();
+  });
+
+  test('come from a hub whose welcome lists them; a hub that predates the list lists none', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json(welcome))).toEqual({ ...welcome, features: [] });
+    expect(parseHubMessage(json({ ...welcome, features: ['dance', 'peers'] }))).toEqual({
+      ...welcome,
+      features: ['peers'],
+    });
   });
 });

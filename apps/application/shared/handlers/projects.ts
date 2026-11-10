@@ -59,7 +59,7 @@ import {
   scopedExecutionInProjectJoin,
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
@@ -67,6 +67,7 @@ import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
 import { projectHealth } from '../project-health';
+import { deleteProjectStarsOn } from './project-stars';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -81,6 +82,7 @@ import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
 import { MAX_LIVE_MASKS, MAX_LIVE_MASK_LENGTH, parseLiveMasks } from '@piwitests/core/live-view';
 import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
+import { parseTagKeyPatterns, resolveTagKeyPatterns } from '../integrations/tag-keys';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -212,7 +214,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
       lastRunAt: max(testRuns.startTime),
     })
     .from(testRuns)
-    .where(inArray(testRuns.projectId, projectIds))
+    .where(and(inArray(testRuns.projectId, projectIds), notPrivateRun()))
     .groupBy(testRuns.projectId);
 
   const runCountByProjectId = new Map<number, number>();
@@ -458,7 +460,13 @@ export async function getProject(
   const runs: any[] = await db
     .select(RUN_SUMMARY_COLUMNS)
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, id), ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : [])))
+    .where(
+      and(
+        eq(testRuns.projectId, id),
+        notPrivateRun(),
+        ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : []),
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(runLimit);
   const unscopedRuns: any[] | null = scope
@@ -471,7 +479,7 @@ export async function getProject(
           isFullRun: testRuns.isFullRun,
         })
         .from(testRuns)
-        .where(eq(testRuns.projectId, id))
+        .where(and(eq(testRuns.projectId, id), notPrivateRun()))
         .orderBy(desc(testRuns.startTime))
         .limit(runLimit)
     : null;
@@ -487,6 +495,8 @@ export async function getProject(
     ...project,
     effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
+    hasCiServerToken: !!project.ciServerToken,
+    tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
@@ -513,7 +523,7 @@ export async function getProject(
  * mostly old ones, past the window `getProject` loads, so they list on their own.
  */
 export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
-  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt));
+  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt), notPrivateRun());
   const runs: any[] = await db
     .select(RUN_SUMMARY_COLUMNS)
     .from(testRuns)
@@ -577,6 +587,14 @@ export const INVALID_LIVE_VIEW_MASKS = `liveViewMasks must be a list of at most 
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
 
+/** The error `updateProject` throws for tag key patterns `parseTagKeyPatterns` refuses; the message names the field. */
+export class InvalidTagKeysError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidTagKeysError';
+  }
+}
+
 /**
  * The status filter `updateProject` stores: null for none, and for a filter
  * every non-lab run passes (every branch, every environment, partial runs too).
@@ -598,6 +616,8 @@ export async function updateProject(
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
     scmToken?: string | null;
+    /** The CI server token, already sealed with its base URL; null removes it. */
+    ciServerToken?: string | null;
     /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
@@ -624,6 +644,8 @@ export async function updateProject(
     coverageAreas?: unknown;
     /** The runs that set the project's status (`ProjectRunScope`); null for every run. */
     statusFilter?: unknown;
+    /** The patterns that read the issue key and the test case key out of a test's tags (`TagKeyPatterns`); null turns both off. */
+    tagKeys?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -636,6 +658,7 @@ export async function updateProject(
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    ciServerToken,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -651,6 +674,7 @@ export async function updateProject(
     coverageScope,
     coverageAreas,
     statusFilter,
+    tagKeys,
     tagIds: dataTagIds,
   } = data;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
@@ -673,6 +697,12 @@ export async function updateProject(
   const areasChanged =
     storedAreas !== undefined &&
     JSON.stringify(storedAreas) !== JSON.stringify(projectResults[0].coverageAreas ?? null);
+  let storedTagKeys: ReturnType<typeof resolveTagKeyPatterns> | null | undefined;
+  if (tagKeys !== undefined) {
+    const parsed = parseTagKeyPatterns(tagKeys);
+    if (!parsed.ok) throw new InvalidTagKeysError(parsed.message);
+    storedTagKeys = parsed.tagKeys;
+  }
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
@@ -685,6 +715,7 @@ export async function updateProject(
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
         scmToken: scmToken !== undefined ? scmToken : undefined,
+        ciServerToken,
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
@@ -698,6 +729,7 @@ export async function updateProject(
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
+        tagKeys: storedTagKeys,
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),
@@ -738,7 +770,7 @@ export async function updateProject(
     .innerJoin(tags, eq(projectTags.tagId, tags.id))
     .where(eq(projectTags.projectId, id));
 
-  const { scmToken: _scmToken, ...updatedProjectPublic } = updatedProject[0];
+  const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...updatedProjectPublic } = updatedProject[0];
 
   return {
     success: true,
@@ -831,6 +863,8 @@ export async function deleteProjectData(
   await db.delete(handbackOutcomes).where(eq(handbackOutcomes.projectId, projectId));
   await db.delete(handbackOutcomeRollups).where(eq(handbackOutcomeRollups.projectId, projectId));
   await db.delete(mcpToolCalls).where(eq(mcpToolCalls.projectId, projectId));
+  // Deleted explicitly rather than through the foreign key's cascade, which the demo's database does not enforce.
+  await deleteProjectStarsOn(db, projectId);
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
@@ -1391,7 +1425,7 @@ export async function getProjectAiStepCoverage(db: DrizzleDB, projectId: number,
   const recentRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notPrivateRun()))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return empty;

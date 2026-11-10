@@ -515,9 +515,9 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The CI re-run setting: the GitHub workflow or the GitLab or Bitbucket pipeline that re-runs a cluster’s tests from its page, or a Flake Lab experiment.',
+      'The CI re-run setting: the repository’s workflow or pipeline, or the Jenkins job or CI server request, that re-runs a cluster’s tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
-    doc: 'features/pr-feedback#re-run-from-the-dashboard',
+    doc: 'features/ci-rerun',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
   {
@@ -609,6 +609,18 @@ export const PROJECTS_ANCHORS = [
     requires: { permission: 'project:manage' },
     doc: 'features/issue-tracking#the-project-binding',
     sample: { route: '/projects/1?tab=settings&section=issue-tracker', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-settings-tag-keys',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'tag-keys' } }],
+    describes:
+      'The Keys in test tags section: the patterns that read an issue key and a test case key out of a test’s tags, and the tags both match.',
+    requires: { permission: 'project:manage' },
+    help: 'project.tag-keys',
+    doc: 'reference/test-metadata#keys-in-test-tags',
+    sample: { route: '/projects/1?tab=settings&section=tag-keys', persona: 1, expect: PROJECT_1 },
   },
   {
     id: 'issue-tracker-required-fields',

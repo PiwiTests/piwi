@@ -16,6 +16,7 @@ import {
 } from 'vscode-jsonrpc/node';
 import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } from '@piwitests/core/desktop-proof';
 import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { parseRecordChannel } from '@piwitests/core/ide-recorder';
@@ -275,6 +276,15 @@ beforeAll(async () => {
   server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const u = req.url ?? '';
+    const challenge = req.headers[DESKTOP_CHALLENGE_HEADER];
+    if (u === '/api/health' && typeof challenge === 'string') {
+      // The desktop app's proof of its token.
+      void desktopTokenProof('pd_desktop', (server.address() as AddressInfo).port, challenge).then((proof) => {
+        res.setHeader(DESKTOP_PROOF_HEADER, proof);
+        res.end('{}');
+      });
+      return;
+    }
     const runsKey = req.headers['x-api-key'] === RUNS_KEY;
     const slowKey = req.headers['x-api-key'] === SLOW_KEY;
     if (slowKey && releaseSlow && /^\/api\/projects\/7\/(flake-lab|selections)\b/.test(u)) {
@@ -2946,6 +2956,43 @@ describe('the desktop app', () => {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();
       desktopClient.dispose();
+    }
+  });
+});
+
+describe('the desktop app’s MCP server for the agent', () => {
+  test('is offered with the token only when the server proved it holds the token', async () => {
+    const impostor = http.createServer((_req, res) => res.end('{}'));
+    await new Promise<void>((resolve) => impostor.listen(0, '127.0.0.1', resolve));
+    const impostorUrl = `http://127.0.0.1:${(impostor.address() as AddressInfo).port}`;
+    const desktopFile = path.join(dir, '.desktop-unproven.json');
+    fs.writeFileSync(desktopFile, JSON.stringify({ url: impostorUrl, token: 'pd_desktop', projects: [] }));
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopDesktop = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+    });
+    const desktopClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    desktopClient.listen();
+    try {
+      await desktopClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await desktopClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await desktopClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.source === 'desktop' ? s : undefined;
+      });
+      expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([]);
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopDesktop();
+      desktopClient.dispose();
+      await new Promise<void>((resolve) => impostor.close(() => resolve()));
     }
   });
 });

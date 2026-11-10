@@ -13,7 +13,14 @@ import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql, inArray } from 'drizzle-orm';
 import { DEMO_SIMULATOR_INSTANCE_ID, liveSimulatorPages, simulatorPageOf } from '../simulator-instance';
 import { getDemoDb } from '../db.client';
-import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
+import {
+  checkDemoStuckTests,
+  demoRunningCase,
+  forgetDemoRun,
+  noteDemoBegin,
+  noteDemoComplete,
+  noteDemoSteps,
+} from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
   projects,
@@ -23,10 +30,10 @@ import {
   testSuites,
   networkRequests,
 } from '~~/server/database/schema.sqlite';
-import { parseLocation } from '#shared/parse-location';
 import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
 import { wireCaseProblem } from '~~/server/utils/wire-case-problem';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
+import { testBeginData, testCompletedData, testStopRunEvent } from '~~/server/utils/live-case-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
@@ -41,6 +48,7 @@ import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
+import { carryTagsTruncated, withShardTagsTruncated } from '#shared/tags-truncated';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import {
   displayTitleOf,
@@ -66,6 +74,7 @@ import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeTestOutput } from '@piwitests/core/test-output';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { int32, int64, storableRunCase, storableRunErrors } from '~~/server/utils/storable-values';
+import { workerLane } from '#shared/worker-lane';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { isEligibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -94,7 +103,7 @@ import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-c
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { syncAutoMarkersForRun, syncEnvironmentMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
 import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
@@ -121,6 +130,7 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import {
   readShardDurations,
   readShardSpans,
@@ -130,6 +140,8 @@ import {
   withShardDurations,
 } from '~~/server/utils/shard-spans';
 import { updateRunMetadata } from '~~/server/utils/run-metadata';
+import { recordTagsTruncated } from '~~/server/utils/tags-truncated';
+import { publicRunUrl } from '#shared/run-url';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -302,7 +314,13 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
       await applyReporterKeep(db, existingShardedRun.id, body.keep);
-      return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
+      return {
+        success: true,
+        runId: existingShardedRun.id,
+        runUrl: publicRunUrl(existingShardedRun.id),
+        projectId: project.id,
+        setupToken,
+      };
     }
 
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
@@ -342,7 +360,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
     if (!testRun) throw new Error('Failed to create test run');
     await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
-    return { success: true, runId: testRun.id, projectId: project.id, setupToken };
+    return { success: true, runId: testRun.id, runUrl: publicRunUrl(testRun.id), projectId: project.id, setupToken };
   }
 
   await cancelInstanceRuns(db, project.id, instanceId);
@@ -383,7 +401,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
-  return { success: true, runId: testRun.id, projectId: project.id, setupToken };
+  return { success: true, runId: testRun.id, runUrl: publicRunUrl(testRun.id), projectId: project.id, setupToken };
 }
 
 /** POST /api/test-runs/:id/begin */
@@ -399,6 +417,7 @@ export async function apiBeginTestRun(
     shardTotal?: number;
     isFullRun?: boolean;
     filterDetails?: Record<string, unknown> | null;
+    environments?: unknown;
   },
 ) {
   const db = await getDemoDb();
@@ -443,13 +462,16 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
-    const metadata = carryExternalIdDuplicates(
+    const reported = carryExternalIdDuplicates(
       carryIngestHealth(
         sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
         testRun.metadata,
       ),
       testRun.metadata,
     );
+    const metadata = isSharded
+      ? withShardTagsTruncated(reported, testRun.metadata, body.metadata)
+      : carryTagsTruncated(reported, testRun.metadata);
     await db
       .update(testRuns)
       .set({
@@ -480,21 +502,35 @@ export async function apiBeginTestRun(
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
-    await updateRunMetadata(db, id, (stored) => ({ ...sanitizeMetadata(body.metadata), ...stored }), {
-      ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
-      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-    });
+    await updateRunMetadata(
+      db,
+      id,
+      (stored) => withShardTagsTruncated({ ...sanitizeMetadata(body.metadata), ...stored }, stored, body.metadata),
+      {
+        ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+      },
+    );
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: testRun.projectId,
       streamToken: testRun.streamToken ?? streamToken,
     };
   }
 
-  return { success: true, runId: testRun.id, projectId: testRun.projectId, streamToken };
+  await saveEnvironmentSnapshots(db, id, body.environments);
+
+  return {
+    success: true,
+    runId: testRun.id,
+    runUrl: publicRunUrl(testRun.id),
+    projectId: testRun.projectId,
+    streamToken,
+  };
 }
 
 // ── persistRunCases (mirrors server/utils/persist-run-cases.ts) ────────────
@@ -542,6 +578,8 @@ export interface RunCaseInput {
   ariaSnapshot?: string | null;
   ariaSnapshotJson?: string | null;
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), stored only as a non-negative integer (server behavior). */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
@@ -817,6 +855,7 @@ export async function persistRunCases(
       wastedTimeMs: int32(c.wastedTimeMs),
       resources: sanitizeExecutionResources(c.resources),
       workerIndex: int32(c.workerIndex),
+      parallelIndex: workerLane(c.parallelIndex),
       shardIndex: int32(c.shardIndex),
       startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
@@ -911,6 +950,7 @@ export async function persistRunCases(
   await upsertTestCoverage(db, projectId, perCaseCoverage).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordExternalIdDuplicates(db, testRunId, resolved.duplicates);
+  await recordTagsTruncated(db, testRunId, cases);
   await recordIngestHealth(
     db,
     testRunId,
@@ -958,29 +998,22 @@ export async function apiPostRunEvents(
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
-    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
-    const filePath = loc.filePath;
-    const beginData = {
-      title: tc.title,
-      filePath,
-      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-      location: tc.location,
-      workerIndex: tc.workerIndex ?? null,
-      shardIndex: tc.shardIndex ?? null,
-      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
-      browser: tc.browser ?? null,
-      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-    };
+    const beginData = testBeginData(tc, Date.now());
     publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
     noteDemoBegin(id, beginData);
   }
-  for (const tc of results) noteDemoComplete(id, tc);
+
+  // A test's stop, and its going on, publish as the server's events handler publishes them, on its running attempt.
+  for (const tc of validEvents) {
+    const stopEvent = testStopRunEvent(tc, demoRunningCase(id, tc));
+    if (stopEvent) publishDemoRunEvent(id, stopEvent);
+  }
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
-  for (const stepEvent of stepRunEvents) {
-    publishDemoRunEvent(id, stepEvent);
-  }
+  for (const stepEvent of stepRunEvents) publishDemoRunEvent(id, stepEvent);
+  noteDemoSteps(id, validEvents);
+  for (const tc of results) noteDemoComplete(id, tc);
 
   // Mirrors the server's stuck check, on the time the run's events reached (`./stuck-tests`).
   await checkDemoStuckTests(db, testRun, validEvents);
@@ -1030,34 +1063,7 @@ export async function apiPostRunEvents(
 
   for (const [index, tc] of completeEvents.entries()) {
     const persisted = persistedByInputIndex.get(index);
-    publishDemoRunEvent(id, {
-      type: 'test-completed',
-      data: {
-        title: tc.title,
-        externalId: externalIdOf(cases[index]!) ?? null,
-        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
-        filePath: cases[index]!.filePath,
-        suitePath: tc.suitePath ?? null,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        error: hiddenErrorText(tc.error),
-        stepEvents: hiddenStepEventErrors(tc.stepEvents),
-        wastedTimeMs: tc.wastedTimeMs ?? null,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        // Mirrors the server: the attempt number and the attempt history up to it let
-        // the live page tell a flaky pass (an earlier attempt failed) from another pass.
-        retries: tc.retries ?? null,
-        attempts: persisted ? persisted.attempts : (tc.attempts ?? null),
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-        executionId: persisted?.id ?? null,
-        testCaseId: persisted?.testCaseId ?? null,
-        passedAfterFailure: persisted?.passedAfterFailure ?? null,
-      },
-    });
+    publishDemoRunEvent(id, { type: 'test-completed', data: testCompletedData(tc, cases[index]!, persisted) });
   }
 
   publishDemoRunEvent(id, {
@@ -1116,6 +1122,12 @@ export async function apiLiveResourcesTestRun(
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */
 /**
+ * The resource findings of the run recorded last: the demo's database has one connection, which holds one
+ * transaction at a time, so runs that finish together record their findings in turn.
+ */
+let recordingFindings: Promise<unknown> = Promise.resolve();
+
+/**
  * What a finished run records beside its own row: its incident flag, its markers, its resource findings and its
  * rollup. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
  * demo has no reports poll to read it again.
@@ -1123,7 +1135,9 @@ export async function apiLiveResourcesTestRun(
 async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
-  await recordRunResourceFindings(db, id).catch(() => {});
+  await syncEnvironmentMarkersForRun(db, id).catch(() => {});
+  recordingFindings = recordingFindings.then(() => recordRunResourceFindings(db, id)).catch(() => {});
+  await recordingFindings;
   await upsertDailyRollup(db, id).catch(() => {});
 }
 
@@ -1144,6 +1158,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   // This reporter's resource report, in its own row next to the other shards'.
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  await saveEnvironmentSnapshots(db, id, body.environments);
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
@@ -1251,7 +1266,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       });
     }
 
-    return { success: true, runId: id, status: finalStatus ?? 'running' };
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: finalStatus ?? 'running' };
   }
 
   // Non-sharded
@@ -1279,7 +1294,13 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     : testRun.failedTests;
 
   const reportedMetadata = body.metadata
-    ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
+    ? carryTagsTruncated(
+        carryExternalIdDuplicates(
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+          testRun.metadata,
+        ),
+        testRun.metadata,
+      )
     : null;
   const runErrors = storableRunErrors(body.runErrors);
 
@@ -1333,7 +1354,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   forgetDemoRun(id);
   publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
-  return { success: true, runId: id, status };
+  return { success: true, runId: id, runUrl: publicRunUrl(id), status };
 }
 
 /**

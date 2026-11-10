@@ -33,7 +33,7 @@ import { getExecutionsCoverage, getFileCoverage, getFileVersions } from '../../s
 import { asRuntime } from '../../server/utils/code-reach';
 import { storedIdentityForms } from '../../server/utils/storable-values';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { notLabRun } from '../run-eligibility';
+import { isVisibleRun, notLabRun } from '../run-eligibility';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import {
   EXPLANATION_MIN_SIDE,
@@ -167,13 +167,18 @@ function factsOf(row: ExecutionRow): ExecutionFacts {
   };
 }
 
-async function loadExecution(db: DrizzleDB, executionId: number): Promise<ExecutionFacts | null> {
+/** An execution of a run `viewerId` sees (`isVisibleRun`), or null. */
+async function loadExecution(
+  db: DrizzleDB,
+  executionId: number,
+  viewerId: number | null,
+): Promise<ExecutionFacts | null> {
   const [row] = await db
-    .select(EXECUTION_COLUMNS)
+    .select({ ...EXECUTION_COLUMNS, run: { origin: testRuns.origin, requesterId: testRuns.requesterId } })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(eq(testRunsCases.id, executionId));
-  return row ? factsOf(row as ExecutionRow) : null;
+  return row && isVisibleRun(row.run, viewerId) ? factsOf(row as ExecutionRow) : null;
 }
 
 // ── Divergence ───────────────────────────────────────────────────────────────
@@ -189,8 +194,9 @@ async function loadExecution(db: DrizzleDB, executionId: number): Promise<Execut
 export async function getCoverageDivergence(
   db: DrizzleDB,
   executionId: number,
+  viewerId: number | null = null,
 ): Promise<CoverageDivergenceAnswer | null> {
-  const execution = await loadExecution(db, executionId);
+  const execution = await loadExecution(db, executionId, viewerId);
   if (!execution) return null;
   if (!isFailedStatus(execution.status)) return unavailableDivergence(executionId, 'not-failing');
   if (execution.coveragePayloadId == null) return unavailableDivergence(executionId, 'no-coverage');
@@ -741,6 +747,7 @@ export async function getCoverageReach(
   db: DrizzleDB,
   testCaseId: number,
   input: { file: string; lines: LineRange[]; executionId?: number | null },
+  viewerId: number | null = null,
 ): Promise<CoverageReachAnswer | null> {
   const [test] = await db
     .select({ id: testCases.id, projectId: testCases.projectId })
@@ -749,7 +756,7 @@ export async function getCoverageReach(
   if (!test) return null;
   let execution: ExecutionFacts | null;
   if (input.executionId != null) {
-    execution = await loadExecution(db, input.executionId);
+    execution = await loadExecution(db, input.executionId, viewerId);
     if (!execution || execution.testCaseId !== testCaseId) {
       throw new CoverageInsightInputError(`Execution ${input.executionId} is not an execution of test ${testCaseId}`);
     }

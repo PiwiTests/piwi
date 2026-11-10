@@ -39,8 +39,8 @@ That's deliberate: a loud failure you can restore from beats silent corruption.
 
 On the upgrade that adds project roles, a migration turns each Reporter account into a Member with the Maintainer role
 on the projects it could open, and each User account into a Member with the Viewer role, so nobody gains or loses a
-right (see [Upgrading from the three roles](./project-access#upgrading-from-the-three-roles)). A database from before
-project access existed gets the same roles on all projects, as that upgrade granted.
+right (see [Project access](./project-access#project-roles)). A database from before project access existed gets the
+same roles on all projects, as that upgrade granted.
 
 On the upgrade that makes email addresses unique ignoring case, a migration first looks for users whose addresses
 differ only by letter case (`Bob@corp.com` and `bob@corp.com`), such as a second account an OAuth sign-in created for

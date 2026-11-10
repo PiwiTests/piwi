@@ -9,6 +9,7 @@
  */
 
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { isVisibleRun, notPrivateRun } from '#shared/run-eligibility';
 import { projects, testRuns, failureClusters, scenarioGaps } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { RunMetadata } from '../run-json-types';
@@ -570,7 +571,7 @@ export async function readChangeCoverage(
 
   if (runId != null) {
     const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-    if (!run || run.projectId !== projectId) return empty(false);
+    if (!run || run.projectId !== projectId || !isVisibleRun(run, null)) return empty(false);
     const meta = (run.metadata as RunMetadata | null) ?? null;
     headSha = meta?.scm?.commit?.trim() || null;
     repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
@@ -595,7 +596,7 @@ export async function readChangeCoverage(
     const runs = await db
       .select({ metadata: testRuns.metadata })
       .from(testRuns)
-      .where(eq(testRuns.projectId, projectId))
+      .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
       .orderBy(desc(testRuns.id))
       .limit(50);
     for (const r of runs) {

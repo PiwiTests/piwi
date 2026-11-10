@@ -32,18 +32,21 @@ import { hasHealingAlternatives } from '#shared/locator-healing';
 import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 import { coverageLossPreview } from '~/utils/coverage-insights';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const {
-  data: testCase,
-  error: testCaseError,
-  refresh,
-} = await useFetch<ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>>(
-  `/api/test-run-cases/${testCaseId}`,
-);
+type ExecutionDetail = ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>;
+const { data: testCase, error: testCaseError } = await useFetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`);
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'execution');
+// Every later read of the execution keeps the one the page shows when it fails.
+const readExecution = refetchKeeping(testCase, () => $fetch<ExecutionDetail>(`/api/test-run-cases/${testCaseId}`));
+async function refresh(): Promise<void> {
+  await readExecution();
+}
+// A read asked from outside the page (the assistant, once a proposal is applied); the diagnosis panel adds its own.
+usePageReload(refresh);
 provideExternalIdUrl(() => testCase.value?.testRun?.project?.externalIdUrl);
 
 // Server-rendered fetches carry the viewer's session.
@@ -455,7 +458,11 @@ const retryCases = computed(() => [
     projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
   },
 ]);
-const retryCommand = computed(() => buildRetryCommand(retryCases.value));
+// This one test by its file and line, with the run options the browser remembers from the run page.
+const { optionsFor: retryOptionsFor } = useRetryOptions();
+const retryCommand = computed(() =>
+  buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() }),
+);
 const { copy: copyRetry } = useCopy();
 
 onMounted(() => {
@@ -591,6 +598,15 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
     });
   } else if (canFileIssue.value && failureCluster.value) {
     issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+  } else if (canFileIssue.value && testCase.value?.id) {
+    // An execution with no failure cluster files an issue of its own: a test that
+    // passed but misses a case, a skipped one, a failure not grouped.
+    issue.push({
+      label: 'Create issue',
+      icon: 'i-lucide-file-plus',
+      'data-tour': 'execution-create-issue',
+      onSelect: () => (issueModalOpen.value = true),
+    });
   }
   if (canEditLinks.value && failureCluster.value) {
     issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
@@ -639,7 +655,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 let eventSource: EventSource | null = null;
 function connectToRunStream() {
-  if (!import.meta.client || isDemoMode || eventSource) return;
+  if (!import.meta.client || isDemoMode || eventSource || document.visibilityState === 'hidden') return;
   const runId = testCase.value?.testRun?.id;
   if (!runId) return;
   eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
@@ -677,6 +693,16 @@ watch(
   { immediate: true },
 );
 onUnmounted(disconnectRunStream);
+// A hidden tab holds no stream. Shown again, the page reads the execution and its traces, whose files may have come
+// meanwhile, and listens again: the stream says at once when the run ended meanwhile.
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (!runIsActive.value) return;
+  if (state === 'hidden') return disconnectRunStream();
+  refresh();
+  refreshTraces();
+  connectToRunStream();
+});
 
 // ── Section locator ─────────────────────────────────────────────────────────
 // A clue or diagnosis citation reveals the evidence it came from: the evidence
@@ -786,6 +812,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
               label="Re-run this test"
               :run-title="testLabel(testCase)"
               :source-run-id="testCase?.testRun?.id"
+            />
+            <RunOnMyMachineButton
+              v-if="testCase?.testRun?.project?.id"
+              class="mr-2"
+              :project-id="testCase.testRun.project.id"
+              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
             />
             <NuxtLink
               v-if="testCase?.testCaseId"
@@ -1103,11 +1135,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   Re-run the cluster in CI
                 </UButton>
                 <ClientOnly>
-                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
-                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                  </span>
+                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
               </div>
             </template>

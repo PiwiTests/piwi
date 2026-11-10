@@ -75,11 +75,15 @@ export interface CollectedTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** On a `begin` event: the retries the test is allowed (`TestCase.retries`). */
+  maxRetries?: number;
   /** Playwright's `TestCase.repeatEachIndex`: which `--repeat-each` repetition this is (0 without repeats). */
   repeatEachIndex?: number;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`, kept by a worker Playwright starts again in the same slot. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   /** Raw Playwright attachments — never sent on the wire. */

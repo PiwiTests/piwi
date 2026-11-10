@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { errorMessage, filterCommits, formatRelativeTime } from '~/utils';
+import { filterCommits, formatRelativeTime } from '~/utils';
 import type { CommitListItem, ScmChangedFile } from '~~/types/api';
 
 const props = defineProps<{

@@ -1,6 +1,6 @@
 ---
 title: Runs window
-description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, watch a headless test's page live, click and type on it, pick a locator on its image, and share a run live with your team."
+description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, watch a test's page live while it runs, click and type on it at a stop, pick a locator on its image, and share a run live with your team."
 lang: en-US
 ---
 
@@ -10,22 +10,25 @@ lang: en-US
 
 Piwi Picker's Runs window follows the test runs VS Code or a JetBrains IDE starts, from a window of its own beside
 the test's browser. It pauses, steps and resumes them, writes code from a stop through the editor, and, for a test
-that runs headless or in a remote container, shows its page live, takes your clicks and keys on it, and picks a
-locator on its image. The editor shows the same stops: [Pause and step from the editor](./editor-run-control).
+that runs headless or in a remote container, shows its page live while it runs, takes your clicks and keys on it, and
+picks a locator on its image. The editor shows the same stops: [Pause and step from the editor](./editor-run-control).
 
 ## Open it
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), or with the
 [desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), the popup shows a **Runs** tile under
-**More tools** while one of them answers. It opens the Runs window, to keep beside the test's
-browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
-and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. While
-none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A run
-[started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
+**More tools**, muted with **Not connected** while none of them answers. It opens the Runs window, to keep beside the
+test's browser. For each run the editor [started](./editor-runs), it shows the folder and the command, how many of
+its tests ended (`3 of 9 tests · 1 failed`), then each worker's test and whether it runs or where it stopped: the file
+and line, the call about to run, and an image of the page. A run that ended says how: passed, failed with its first
+failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. While none
+of its tests is stopped, a run without [**Watch**](#watch-live) says how one stops: at a breakpoint, a `page.pause()`
+or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
 
 ## The controls
 
-**Pause** stops a running test before its next call. At a stop, **Resume**, **Step**, **Finish** and
+**Pause** stops a running test before its next call; while the test waits in a long one, its row says which (a
+locator call, for how long), with [**End the test**](./end-the-test#while-a-pause-waits-for-a-call). At a stop, **Resume**, **Step**, **Finish** and
 [**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
 stays in the editor.
 
@@ -35,37 +38,40 @@ under it. **Resume** lets it end as it failed; **Pick** replaces the failing loc
 **Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
 project whose live view is on. The first time in a window, it says what goes out and to whom; shared, the run says
 how many views are open, with its page's link to copy, until **Stop sharing**. A run that cannot be shared says why in
-its place: [Share a run from your machine](./live-view#share-a-run-from-your-machine).
+its place: [Share a run live](./share-live).
 
 ## Code from a stop
 
 The other actions send code to the editor, which writes it at the stopped line, when its Piwi extension and your
 reporter take them. **Pick** and **Record** start the pause bar's **Pick a locator** and **Record here**, **Assert**
 the recorder's **Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes `toMatchAriaSnapshot`.
-They run in the test's page: where the pause bar shows, or, at a headless stop, once you [watch it
-live](#watch-live), driven through the view. **Mock a request** lists the page's fetch and XHR requests, credentials
-hidden: the one you choose becomes a `page.route`. Under the test, the window says the code went to the editor, with
-what to review in it, or why not.
+They run in the test's page: where the pause bar shows, or, at a headless stop, once you [watch it](#watch-live),
+driven through the view; until then they show held, saying **Watch to use**. **Mock a request** lists the page's fetch
+and XHR requests, credentials hidden: the one you choose becomes a `page.route`. Under the test, the window says the
+code went to the editor, with what to review in it, or why not.
 
 <figure>
   <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its place, an image of the page, its controls and code actions">
   <figcaption>The Runs window, beside a test stopped at a breakpoint.</figcaption>
 </figure>
 
-## Watch live
+## Watch a test {#watch-live}
 
-A stop has **Watch live** above its image, with a reporter newer than 0.61.0. It shows the page as it paints, in place
-of the image, at most ten frames a second, at the window's width, with a red **Live** badge. Only the window that asked
+**Watch**, on a worker's row, shows its test's page as it paints, running or stopped, and **Pause and watch** pauses
+it too: [Watch a running test](./watch-running-test). The last frame stays, marked **Running…**, until the next one
+comes. An older reporter's row says to update it; with one newer than 0.61.0, its stops have **Watch live**, which
+watches each stop alone and, left on, the worker's next ones.
+
+The view fills the window's width, at most ten frames a second, with a red **Live** badge. Only the window that asked
 gets the frames, and nothing stores them: they go from the test's worker to the editor service and the extension's
 background worker, on your machine or through the port your IDE forwards from a [remote
 window](/guide/remote-development).
 
-The view ends with the stop, when you turn **Watch live** off, minimize the window, or close it. Left on, it starts
-again at the worker's next stop, and as the window shows again.
+Watching ends when you turn it off, the run ends or you close the window, and pauses while the window is minimized or
+the connection to the editor is lost.
 
-At a headless stop, nobody sees the test's page: **Pick**, **Record**, **Assert** and **Assert a region** show once you
-watch it. The picker, the recorder's panel and the check panel appear in the view, and you answer them there as in a
-headed browser; their code reaches the editor the same way.
+At a headless stop, nobody sees the test's page. Watched, the picker, the recorder's panel and the check panel appear
+in the view, and you answer them there as in a headed browser; their code reaches the editor the same way.
 
 <figure>
   <img src="/screenshots/picker-runs-live.png" width="488" alt="The Runs window at a headless stop, watching the shop page live: Watch live pressed, the Live badge on the view, the picker over the page, and Pick, Record, Assert and Assert a region among the controls">
@@ -82,14 +88,14 @@ While you watch, your input on the view goes to the page as a person's would, th
   arrows, Backspace, Delete, Home, End) pressed, with Shift, and `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the
   editing keys. A paste types the clipboard's text.
 - **What stays the window's**: the browser's other shortcuts, the function keys, and `Esc`, which gives the keys
-  back to the window and moves the focus to **Watch live**. `Tab` moves the focus on past the view, unless you
+  back to the window and moves the focus to **Watch** or **Watch live**. `Tab` moves the focus on past the view, unless you
   clicked into it: then `Tab` and `Shift+Tab` go to the page too, until `Esc`.
 
 A hint under the view says so the first time. What you hold down is let go before the test goes on.
 
 ## Pick on the image
 
-**Pick on the image**, beside **Watch live**, or a `Shift`+click on the image or the view, names the element a click
+**Pick on the image**, above the image, or a `Shift`+click on the image or the view, names the element a click
 under the pointer would reach (a dialog or a banner over the page included), without touching the page: the locator
 the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the stopped line's. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
 turns it off. It needs Playwright 1.60 or later, and says so on an older one.
@@ -109,21 +115,13 @@ editor, so **Pick**, **Record** and **Assert** in the test's window are not offe
 **Mock a request** make goes to the app's window, to copy there, and the window here says so: [Desktop app
 runs](./desktop-runs).
 
-## How it connects
-
-The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
-pairing's token ([how the pieces connect](./editor-run-control#how-it-works)), as the desktop app proves it holds its
-own. The window talks to that worker alone, and makes no network call of its own. An older editor extension gives the
-image and the controls alone.
-
 ## Limits
 
 - **The top frame.** Pick on the image refuses an element inside an iframe.
 - **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
   size and quality; when none can start, it is an image of the page twice a second.
 - **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a
-  second; when even that is too heavy, the window says so under the stop's image.
-- **The browser's keys stay its own.** A shortcut of the browser, a function key and `Esc` never reach the page.
+  second; when even that is too heavy, the window says so in place of the view.
 - **No input method.** Characters an input method composes (Chinese, Japanese, Korean) do not reach the page; paste
   them instead.
 - **The test's own page alone.** A popup the page opens is not shown.
@@ -139,3 +137,5 @@ image and the controls alone.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
 - [Remote development](/guide/remote-development): the runs of a dev container or a remote window.
 - [Desktop app runs](./desktop-runs): the same runs, in the desktop app's window.
+- [Piwi Picker and your editor](./editor-pairing): how the pairing reaches each editor window and the desktop app,
+  on your machine alone.

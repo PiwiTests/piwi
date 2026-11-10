@@ -6,33 +6,34 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 ## Layout
 
-| File                                       | Runs on                                      | Does                                                                                                         |
-| ------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `workflows/ci.yml`                         | pull requests, pushes to `main`              | every check, behind the one required check `CI result`                                                       |
-| `workflows/reusable-e2e-extension.yml`     | called by `ci.yml`, on demand                | the browser extension's E2E suite, in 3 shards                                                               |
-| `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand                | the VS Code extension's integration suite                                                                    |
-| `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand                | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on `main` and on demand)      |
-| `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand                | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build                           |
-| `workflows/reusable-perf.yml`              | called by `ci.yml`                           | the performance suite on the pull request's build and its base commit's, in the job summary and an artifact  |
-| `workflows/perf-comment.yml`               | completed `ci.yml` runs of pull requests     | posts the performance comparison as one comment on the pull request, forks included                          |
-| `workflows/pr-lint.yml`                    | pull requests                                | `commitlint` (every commit), `title` (the PR title) and `actionlint`                                         |
-| `workflows/docs.yml`                       | pushes to `main` that change them, on demand | builds the docs and the demo and deploys them to GitHub Pages                                                |
-| `workflows/release-please.yml`             | pushes to `main`                             | the release PR, and the tag once it merges; the previous release stays GitHub's latest                       |
-| `workflows/release.yml`                    | release tags, on demand, PRs                 | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none                       |
-| `workflows/reusable-publish-npm.yml`       | called by `release.yml`                      | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `@piwitests/instrumentation-nitro`       |
-| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml`          | the multi-arch server image (see [The container image](#the-container-image))                                |
-| `workflows/reusable-publish-nuget.yml`     | called by `release.yml`                      | the instrumentation NuGet packages                                                                           |
-| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`                      | the desktop installers, from the shared build, attached to the GitHub release, which then becomes the latest |
-| `workflows/reusable-publish-vscode.yml`    | called by `release.yml`                      | the VS Code extension (Visual Studio Marketplace, Open VSX)                                                  |
-| `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`                      | the JetBrains plugin (JetBrains Marketplace)                                                                 |
-| `workflows/reusable-publish-extension.yml` | called by `release.yml`                      | the browser extension (Chrome, Edge, Firefox)                                                                |
-| `workflows/edge.yml`                       | pushes to `main`                             | the `edge` container image                                                                                   |
-| `workflows/release-notes.yml`              | published releases, on demand                | tidies the release body from the version's `CHANGELOG.md` section (`scripts/release-notes.mjs`)              |
-| `workflows/live-jira.yml`                  | on demand                                    | the live Jira E2E, against a real Atlassian Cloud site                                                       |
-| `workflows/nightly-vscode.yml`             | every night, on demand                       | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release                   |
-| `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`); with `film`, filmed and cut, the cut uploaded          |
-| `actions/setup-workspace/action.yml`       | the workflows above                          | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                                          |
-| `actions/container-health/action.yml`      | `ci.yml`, `reusable-publish-container.yml`   | starts a server image on an empty data folder and waits for `/api/health`                                    |
+| File                                       | Runs on                                      | Does                                                                                                                |
+| ------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `workflows/ci.yml`                         | pull requests, pushes to `main`              | every check, behind the one required check `CI result`                                                              |
+| `workflows/reusable-e2e-extension.yml`     | called by `ci.yml`, on demand                | the browser extension's E2E suite, in 3 shards                                                                      |
+| `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand                | the VS Code extension's integration suite                                                                           |
+| `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand                | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on `main` and on demand)             |
+| `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand                | the desktop shell's Rust tests (also with the `runner` feature) and E2E smoke test, on macOS, from `ci.yml`'s build |
+| `workflows/reusable-perf.yml`              | called by `ci.yml`                           | the performance suite on the pull request's build and its base commit's, in the job summary and an artifact         |
+| `workflows/perf-comment.yml`               | completed `ci.yml` runs of pull requests     | posts the performance comparison as one comment on the pull request, forks included                                 |
+| `workflows/pr-lint.yml`                    | pull requests                                | `commitlint` (every commit), `title` (the PR title) and `actionlint`                                                |
+| `workflows/docs.yml`                       | pushes to `main` that change them, on demand | builds the docs and the demo and deploys them to GitHub Pages                                                       |
+| `workflows/release-please.yml`             | pushes to `main`                             | the release PR, and the tag once it merges; the previous release stays GitHub's latest                              |
+| `workflows/release.yml`                    | release tags, on demand, PRs                 | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none                              |
+| `workflows/reusable-publish-npm.yml`       | called by `release.yml`                      | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `@piwitests/instrumentation-nitro`              |
+| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml`          | the multi-arch server image (see [The container image](#the-container-image))                                       |
+| `workflows/reusable-publish-nuget.yml`     | called by `release.yml`                      | the instrumentation NuGet packages                                                                                  |
+| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`                      | the desktop installers, from the shared build, attached to the GitHub release, which then becomes the latest        |
+| `workflows/reusable-publish-runner.yml`    | called by `release.yml`                      | the Piwi Runner installers, built and kept as the run's artifacts; not released yet                                 |
+| `workflows/reusable-publish-vscode.yml`    | called by `release.yml`                      | the VS Code extension (Visual Studio Marketplace, Open VSX)                                                         |
+| `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`                      | the JetBrains plugin (JetBrains Marketplace)                                                                        |
+| `workflows/reusable-publish-extension.yml` | called by `release.yml`                      | the browser extension (Chrome, Edge, Firefox)                                                                       |
+| `workflows/edge.yml`                       | pushes to `main`                             | the `edge` container image                                                                                          |
+| `workflows/release-notes.yml`              | published releases, on demand                | tidies the release body from the version's `CHANGELOG.md` section (`scripts/release-notes.mjs`)                     |
+| `workflows/live-jira.yml`                  | on demand                                    | the live Jira E2E, against a real Atlassian Cloud site                                                              |
+| `workflows/nightly-vscode.yml`             | every night, on demand                       | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release                          |
+| `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`); with `film`, filmed and cut, the cut uploaded                 |
+| `actions/setup-workspace/action.yml`       | the workflows above                          | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                                                 |
+| `actions/container-health/action.yml`      | `ci.yml`, `reusable-publish-container.yml`   | starts a server image on an empty data folder and waits for `/api/health`                                           |
 
 ## How `ci.yml` picks the jobs of a change
 
@@ -59,6 +60,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
     `s3 + postgres`), all four on `main`;
   - the package smoke test: Linux on a pull request, plus Windows, macOS and a Linux leg on the reporter's Playwright
     floor when it changes the packages or their dependencies, and all four on `main`.
+- A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the editor service or core (`runner`)
+  runs the `Piwi Runner` job: the layer's and the app's unit tests, then the host's bundle and the window's static
+  build. Neither the signing nor the installers are built there.
 - The JetBrains Plugin Verifier runs on two IDEs for a pull request and on four on `main`, where the plugin job also
   writes the Gradle cache.
 - Some jobs run on pull requests only: the extension, VS Code and desktop suites, the docs build, the container image

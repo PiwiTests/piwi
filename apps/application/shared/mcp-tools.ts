@@ -119,6 +119,10 @@ export function toolParameters(tool: Pick<McpToolDef, 'inputSchema'>): McpToolPa
   });
 }
 
+/** How an execution's worker reads, in the descriptions of the tools that report it. */
+const EXECUTION_WORKER =
+  '`worker` is the lane the execution ran on, from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure; in a sharded run it counts within the shard `shardIndex` names. `workerIndex` is Playwright’s worker process, new at every start, so two executions of one lane with different processes ran across a restart. A result from a reporter that sends no lane has no `worker`.';
+
 /** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
 const ANALYTICS_SCOPE_PROPERTIES = {
   projectIds: {
@@ -200,7 +204,8 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
-      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test. `environments` says where the run executed: each shard’s `runner` (`timeZone`, `locale`, `os`, `nodeVersion`, `ciImage`), each project’s `browser` as its page reported itself, and each instrumented `server` under test with its `clockOffsetMs` from the runner and `restarted: true` when it restarted during the run. Shards that disagree on a field, or a field that changed since the last passing run, point at a failure that happens only in one place.',
+      EXECUTION_WORKER,
     ),
     inputSchema: {
       type: 'object',
@@ -455,6 +460,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
       '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      EXECUTION_WORKER,
     ),
     inputSchema: {
       type: 'object',
@@ -535,6 +541,7 @@ export const MCP_TOOL_DEFS = [
       'Compare a run with its baseline, to answer what changed and whether a fix worked.',
       'It returns the pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, the biggest performance improvements and regressions, worker imbalance and newly opened clusters.',
       'A pass rate (`passRate`, `baselinePassRate`) is the passed tests over the tests that passed or failed, in percent, and is absent when none did.',
+      '`workerImbalance` counts the run’s test results per worker: `worker` is its lane from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure, within the shard `shardIndex` names in a sharded run; a result from a reporter that sends no lane counts under its worker process, `workerIndex`, with no `worker`. `workerImbalanceWarning` names the busiest worker and the least busy one when it ran at least 1.5 times as many tests (`Worker 2 of shard 3 ran 2× more tests than worker 1 of shard 1`).',
       'The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any branch; when no earlier full run passed, it is the last failed run, found the same way. `baseline` says why it was chosen.',
     ),
     inputSchema: {
@@ -687,12 +694,13 @@ export const MCP_TOOL_DEFS = [
       'Use it before touching a suite’s fixtures or teardown, or to check that a leak fix held. Each finding has a verdict:',
       [
         '`leaked`: a browser, context, page or API context left open past the test or describe block that opened it',
+        '`lingering`: one the test closed long after it last used it, which could have closed at its last use',
         '`idle`: a page opened and never used',
         '`piling`: pages, listeners, route handlers or DOM elements growing on a long-lived page, or a worker process whose heap after garbage collection or open file descriptors keep growing',
         '`handle`: a Node server, child process or file watcher a test left running in its worker',
         '`probable`: a leak counted from steps, without the capture fixtures',
       ],
-      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the runs it was first and last seen in, how many runs showed it, and `last`: what it held the last time (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back).',
+      'Each finding also has `site` (the `file:line` that opened it, the line to edit), the run it was first seen in and the last full run of the default branch that showed it (that first run until one did), how many runs of any branch showed it, and `last`: what it held the last time any run showed it (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch that could have shown it came without it (`cleanRuns` counts them; `reopenedRunId` is set when such a run showed a fixed one the default branch had shown before).',
     ),
     inputSchema: {
       type: 'object',
@@ -701,7 +709,7 @@ export const MCP_TOOL_DEFS = [
         status: { type: 'string', enum: ['open', 'fixed', 'all'], description: 'Which findings (default open)' },
         verdict: {
           type: 'string',
-          enum: ['leaked', 'idle', 'piling', 'handle', 'probable'],
+          enum: ['leaked', 'lingering', 'idle', 'piling', 'handle', 'probable'],
           description: 'Only findings with this verdict',
         },
         limit: { type: 'number', description: 'Max findings (default 50, max 200)' },
@@ -717,7 +725,7 @@ export const MCP_TOOL_DEFS = [
       'Get what one run cost and left open, from its reporters’ resource reports (one per shard).',
       'Use it to explain a slow or timing-out run, or to find which tests a leak slows down. It returns:',
       [
-        'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before',
+        'the findings, each with `isNew`: true when its base branch (the pull request’s target, else the default branch) had not shown it before, and for a leaked or lingering one `lastUse`: the line of the last call a test made on it, where its close belongs',
         'each shard’s machine: cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk',
         'the busiest open pages per worker',
         'the costliest tests by the CPU of their worker and browser processes, with the pages each found already open',
@@ -736,6 +744,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get one run’s failures grouped by failure cluster, with each group’s affected tests and worker correlation.',
       'The run-scoped counterpart of `list_clusters`.',
+      '`workerCorrelated: true` marks a group whose two or more tests all failed on one worker, its lane in one shard (**Worker 2** on the run page, whichever processes Playwright started in it), in a run that used several: a sign of something that worker holds, such as a worker-scoped fixture’s state, rather than of the app. An account or a database picked by `parallelIndex` is shared by that lane in every shard, which the flag does not join.',
     ),
     inputSchema: {
       type: 'object',
@@ -834,7 +843,7 @@ export const MCP_TOOL_DEFS = [
     capability: 'integrations',
     permission: 'issue:create',
     description: md(
-      'File a Jira issue for a failure cluster, a failing execution or a bug report, with the fix plan as its body.',
+      'File a Jira issue for a failure cluster, a failing execution in a cluster or a bug report, with the fix plan as its body.',
       'It is the ticket the dashboard’s **Create issue** button files. Issues are deduplicated by cluster: a second call for the same cluster returns the existing one rather than filing another. Returns the issue (`key`, `url`) and the `existing` issues that already track the cluster (a pinned link, a matching label or a fixed-before match), so you can link one instead of filing again.',
       'Needs a Jira connection and a project binding (project key and issue type). The binding’s field defaults fill the fields the Jira project requires, and `fields` sets the others.',
       'Requires `issue:create` (Contributor and above on the project).',
@@ -1413,7 +1422,7 @@ export const MCP_TOOL_DEFS = [
     permission: 'run:control',
     description: md(
       'Re-run exactly a failure cluster’s affected tests in CI.',
-      'It is the cluster page’s **Re-run in CI**: it dispatches the project’s configured workflow or pipeline with the project’s source-control token, and returns the provider and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository.',
+      'It is the cluster page’s **Re-run in CI**: it dispatches the project’s configured workflow or pipeline with the project’s source-control token, or sends one request to its CI server when the project dispatches through one, and returns the provider and the URL to watch the runs (the re-run’s own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository.',
       'Requires `run:control` (Maintainer and above on the project).',
     ),
     inputSchema: {

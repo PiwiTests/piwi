@@ -6,6 +6,7 @@ import {
   type NotificationEventData,
 } from '#shared/notifications/browser-message';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import { holdInOneTab } from '~/utils/tab-lease';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
 
@@ -28,13 +29,13 @@ if (import.meta.client) {
 }
 let _cookie: ReturnType<typeof useBrowserNotificationCookie> | null = null;
 
-let _diagnosisActive: ReturnType<typeof useDiagnosisNotification>['active'] | null = null;
+let _diagnosisEnabled: ReturnType<typeof useDiagnosisNotification>['enabled'] | null = null;
 
 function handleEvent(data: NotificationEventData) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && _windowFocused) return;
 
-  if (data.type === 'diagnosis.completed' && _diagnosisActive && !_diagnosisActive.value) {
+  if (data.type === 'diagnosis.completed' && _diagnosisEnabled && !_diagnosisEnabled.value) {
     return;
   }
 
@@ -98,9 +99,25 @@ function connectDemo() {
   });
 }
 
+/**
+ * Open the stream in one tab of the browser, the one holding the lease of `piwi-notification-stream` (`holdInOneTab`),
+ * and close it in a tab that lost the lease.
+ */
+function connectInOneTab() {
+  holdInOneTab({ key: 'piwi-notification-stream', held: connectLive, lost: disconnectLive });
+}
+
+function disconnectLive() {
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
+  sharedSource?.close();
+  sharedSource = null;
+}
+
 const REOPEN_MIN_MS = 2_000;
 const REOPEN_MAX_MS = 30_000;
 let reopenDelay = REOPEN_MIN_MS;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connectLive() {
   const source = new EventSource('/api/notifications/stream');
@@ -125,21 +142,25 @@ function connectLive() {
     if (source.readyState !== EventSource.CLOSED || sharedSource !== source) return;
     source.close();
     sharedSource = null;
-    setTimeout(connectLive, reopenDelay);
+    reopenTimer = setTimeout(() => {
+      reopenTimer = null;
+      connectLive();
+    }, reopenDelay);
     reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
   };
 }
 
 /**
  * Show the server's notification events as browser notifications while the tab is hidden or unfocused. In the
- * desktop app the shell shows them itself, from its server's stream, so the page does not.
+ * desktop app the shell shows them itself, from its server's stream, so the page does not. One tab of the browser
+ * holds the stream (`connectInOneTab`), and it reads the permission and the diagnosis switch as they are now, since
+ * another tab may have changed them.
  */
 export function useNotificationStream() {
   if (!import.meta.client || started || useIsDesktop()) return;
   started = true;
 
-  const { active } = useDiagnosisNotification();
-  _diagnosisActive = active;
+  _diagnosisEnabled = useDiagnosisNotification().enabled;
 
   const config = useRuntimeConfig();
   _router = useRouter();
@@ -155,7 +176,7 @@ export function useNotificationStream() {
     if (config.public.demoMode) {
       connectDemo();
     } else {
-      connectLive();
+      connectInOneTab();
     }
   });
 }

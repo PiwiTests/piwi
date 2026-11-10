@@ -19,8 +19,10 @@ import {
   liveHubsHere,
   loopbackPort,
   onLoopback,
+  oneStartAtATime,
   sendPairing,
   startSendListener,
+  takeSavedPort,
   type PairingStore,
   type SendListener,
 } from '../src/send-listener';
@@ -315,6 +317,131 @@ describe('the window’s pairing', () => {
     } finally {
       await close();
     }
+  });
+});
+
+describe('the saved port, held by another window', () => {
+  test('is taken once that window lets it go, by a window with no listener alone', async () => {
+    const other = http.createServer();
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as AddressInfo).port;
+    let running: SendListener | null = null;
+    const started: number[] = [];
+    const take = takeSavedPort({
+      saved: () => ({ port, token: TOKEN }),
+      listener: () => running,
+      listen: async (p) => {
+        running = await startSendListener({
+          port: p,
+          token: () => TOKEN,
+          onPayload: async () => ({ inserted: false, file: null }),
+          live: () => [],
+        });
+        return running;
+      },
+      started: (l) => void started.push(l.port),
+      everyMs: 50,
+    });
+    try {
+      await take.ready;
+      expect(running).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(running).toBeNull();
+      // The window holding it closes: this one takes the port within a try.
+      await new Promise((resolve) => other.close(resolve));
+      for (let i = 0; i < 40 && !running; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+      expect((running as SendListener | null)?.port).toBe(port);
+      expect(started).toEqual([port]);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(started).toEqual([port]);
+    } finally {
+      take.dispose();
+      await (running as SendListener | null)?.close();
+    }
+  });
+
+  test('is read again at each try, so a pairing made in another window since is taken', async () => {
+    const free = http.createServer();
+    await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve));
+    let saved: { port: number | undefined; token: string } = { port: undefined, token: '' };
+    let running: SendListener | null = null;
+    const take = takeSavedPort({
+      saved: async () => saved,
+      listener: () => running,
+      listen: async (p) => {
+        running = await startSendListener({
+          port: p,
+          token: () => TOKEN,
+          onPayload: async () => ({ inserted: false, file: null }),
+          live: () => [],
+        });
+        return running;
+      },
+      everyMs: 30,
+    });
+    try {
+      await take.ready;
+      expect(running).toBeNull();
+      saved = { port, token: TOKEN };
+      for (let i = 0; i < 40 && !running; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+      expect((running as SendListener | null)?.port).toBe(port);
+    } finally {
+      take.dispose();
+      await (running as SendListener | null)?.close();
+    }
+  });
+
+  test('is not taken over a listener a run’s pairing started meanwhile on another port', async () => {
+    const other = { port: 1, url: 'http://127.0.0.1:1/piwi/send', close: async () => {} } as unknown as SendListener;
+    const started: SendListener[] = [];
+    const take = takeSavedPort({
+      saved: () => ({ port: 2, token: TOKEN }),
+      listener: () => null,
+      listen: async () => other,
+      started: (l) => void started.push(l),
+      everyMs: 1_000_000,
+    });
+    await take.ready;
+    take.dispose();
+    expect(started).toEqual([]);
+  });
+
+  test('starts one listener at a time, a start asked meanwhile getting the one on its way', async () => {
+    let starts = 0;
+    let finish: (l: SendListener) => void = () => {};
+    const listen = oneStartAtATime((port) => {
+      starts++;
+      return new Promise<SendListener>((resolve) => {
+        finish = (l) => resolve({ ...l, port } as SendListener);
+      });
+    });
+    const first = listen(5);
+    const second = listen(0);
+    finish({} as SendListener);
+    expect(await first).toBe(await second);
+    expect(starts).toBe(1);
+    // Once it answered, the next start is a start of its own.
+    void listen(6);
+    expect(starts).toBe(2);
+  });
+
+  test('is never tried without a pairing saved', async () => {
+    let asked = 0;
+    const take = takeSavedPort({
+      saved: () => ({ port: undefined, token: '' }),
+      listener: () => null,
+      listen: async () => {
+        asked++;
+        throw new Error('no');
+      },
+      everyMs: 20,
+    });
+    await take.ready;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    take.dispose();
+    expect(asked).toBe(0);
   });
 });
 

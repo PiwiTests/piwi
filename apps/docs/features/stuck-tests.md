@@ -27,6 +27,10 @@ incident. The time counts from the start the attempt's begin event names, else f
 reporter's begin events name none.
 Each attempt is said to be stuck once; a retry is a new attempt.
 
+A test of a run on a developer's machine may stand stopped at a breakpoint or a `page.pause()`. With
+`@piwitests/reporter` 0.68.0 or later its run tells the dashboard so: the test is never said to be stuck while it
+stands stopped, and the time it stood stopped is left out of how long it ran.
+
 The question mark is meant: a test can be slow for a good reason, a large import or a cold cache. The rule says only
 that this attempt is far outside what its passing runs took.
 
@@ -35,7 +39,8 @@ that this attempt is far outside what its passing runs took.
 A stuck test's row on the run page's **Tests** tab carries a **Stuck?** badge, how long it has run and the longest
 its last passing runs took: `Running for 7 minutes, usually 41.2s at most`. The row's live step names the step it is
 in. With the project's [live view](./live-view) on, **Watch** shows its page and, in a CI run, what its current call
-waits for. The badge leaves the row when the attempt ends.
+waits for. The badge leaves the row when the attempt ends. A test that stands stopped says where in its place:
+`Stopped at a breakpoint · Click getByRole('button') · tests/checkout.spec.ts:18 · for 3 minutes`.
 
 A page opened after the test was said to be stuck shows it too: the dashboard keeps it with the running test.
 
@@ -44,12 +49,15 @@ A page opened after the test was said to be stuck shows it too: the dashboard ke
 `test.stuck` fires once per attempt, through the channels of the project's
 [subscriptions](./notifications#subscriptions) that chose it. Its message names the test, how long it has run against
 its usual time, the run with its branch and environment, the browser and worker, and the test's owner. Its button opens
-the run with its **Tests** tab searched for the test. The payload is on
+the run with its **Tests** tab searched for the test, and the [live view](./live-view#watch-a-worker) of its worker
+where the project has it on. The payload is on
 [Notification events & webhooks](/reference/notification-events#payload-fields-by-event).
 
-The branch, environment, owner and **Default branch only** filters apply to it. A run that sends no notification sends
-none: a run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop
-app.
+The branch, environment, owner and **Default branch only** filters apply to it. A run started on a developer's machine
+sends none, complete or not: a run from a terminal, the desktop app, an editor, `piwi preflight --run` or
+`piwi bug --write` is marked **Stuck?** on its run page and notifies nobody, since its test may be stopped at a
+breakpoint. A bisect step or a reproduction sends none either. A CI job the reporter does not detect as CI records its
+runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metadata#run-origin)).
 
 ## Limits
 
@@ -63,6 +71,8 @@ app.
 
 In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
 waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time.
+**Stopped at a breakpoint** plays a run from VS Code whose PayPal test stands at a breakpoint for five minutes: its row
+says where, and never reads **Stuck?**.
 
 ## Related
 

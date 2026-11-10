@@ -1,5 +1,12 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
-import { parseRunOrigin, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, RUN_REF_METADATA_KEY } from '@piwitests/core/wire';
+import {
+  parseRunInteractive,
+  parseRunOrigin,
+  parseRunOriginRef,
+  RUN_INTERACTIVE_METADATA_KEY,
+  RUN_ORIGIN_METADATA_KEY,
+  RUN_REF_METADATA_KEY,
+} from '@piwitests/core/wire';
 import { hideSecretsInError, maskTokenLike, maskUrlFragment } from '@piwitests/core/mask';
 import { capStepValue, withoutTypedText } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
@@ -87,8 +94,11 @@ export function sanitizeGitRemoteUrl(url: string): string | null {
 /**
  * Sanitize run-level metadata by stripping credentials from SCM remote URLs,
  * so the read endpoints never return a token embedded in the remote URL. The
- * run's origin is kept only when it names a known kind, rebuilt as
- * `{ kind, ref? }`, and the launcher's name for the run only when it reads as a ref.
+ * run's origin is kept only when it names a known kind other than `request`,
+ * which the server stamps from a request token alone, rebuilt as `{ kind, ref? }`,
+ * the launcher's name for the run only when it reads as a ref,
+ * and the hub that steers the run only when it names the run's ref there,
+ * rebuilt as `{ client, ref }`.
  */
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
@@ -107,7 +117,7 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
 
   if (RUN_ORIGIN_METADATA_KEY in meta) {
     const origin = parseRunOrigin(meta[RUN_ORIGIN_METADATA_KEY]);
-    if (origin) meta[RUN_ORIGIN_METADATA_KEY] = origin;
+    if (origin && origin.kind !== 'request') meta[RUN_ORIGIN_METADATA_KEY] = origin;
     else delete meta[RUN_ORIGIN_METADATA_KEY];
   }
 
@@ -115,6 +125,12 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
     const runRef = parseRunOriginRef(meta[RUN_REF_METADATA_KEY]);
     if (runRef) meta[RUN_REF_METADATA_KEY] = runRef;
     else delete meta[RUN_REF_METADATA_KEY];
+  }
+
+  if (RUN_INTERACTIVE_METADATA_KEY in meta) {
+    const interactive = parseRunInteractive(meta[RUN_INTERACTIVE_METADATA_KEY]);
+    if (interactive) meta[RUN_INTERACTIVE_METADATA_KEY] = interactive;
+    else delete meta[RUN_INTERACTIVE_METADATA_KEY];
   }
 
   return meta;

@@ -7,6 +7,7 @@
  */
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
 import type { BaseLineChange } from '@piwitests/core/suspect-lines';
+import { cliFetch } from './connection.js';
 
 export interface SelectionResolution {
   key: string | null;
@@ -55,7 +56,7 @@ export async function resolveProjectId(options: SelectionClientOptions): Promise
   if (!options.project) throw new Error('No project — pass --project or set PIWI_PROJECT_NAME');
   if (/^\d+$/.test(options.project)) return Number(options.project);
 
-  const res = await fetch(`${options.serverUrl}/api/projects/menu`, { headers: authHeaders(options.apiKey) });
+  const res = await cliFetch(`${options.serverUrl}/api/projects/menu`, { headers: authHeaders(options.apiKey) });
   if (!res.ok) throw new Error(`Could not list projects (dashboard returned ${res.status})`);
   const body = (await res.json()) as { items?: Array<{ id: number; name: string }> };
   const match = body.items?.find((p) => p.name.toLowerCase() === options.project.toLowerCase());
@@ -74,7 +75,7 @@ export async function fetchResolution(
   if (options.shard) params.set('shard', options.shard);
   if (options.order) params.set('order', options.order);
   const url = `${options.serverUrl}/api/projects/${projectId}/selections/${encodeURIComponent(options.key)}/resolve?${params}`;
-  const res = await fetch(url, { headers: authHeaders(options.apiKey) });
+  const res = await cliFetch(url, { headers: authHeaders(options.apiKey) });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(body.message || `Dashboard returned ${res.status} resolving "${options.key}"`);
@@ -93,7 +94,7 @@ export async function fetchImpact(
   changes: BaseLineChange[] = [],
 ): Promise<ImpactResolution> {
   const url = `${options.serverUrl}/api/projects/${projectId}/selections/impact`;
-  const res = await fetch(url, {
+  const res = await cliFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders(options.apiKey) },
     body: JSON.stringify({
@@ -118,7 +119,7 @@ export async function fetchLocatorIndex(
   branch?: string | null,
 ): Promise<LocatorIndex> {
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
-  const res = await fetch(`${options.serverUrl}/api/projects/${projectId}/locator-index${query}`, {
+  const res = await cliFetch(`${options.serverUrl}/api/projects/${projectId}/locator-index${query}`, {
     headers: authHeaders(options.apiKey),
   });
   if (!res.ok) {
@@ -144,7 +145,7 @@ export async function fetchCodeIndex(
   branch?: string | null,
 ): Promise<CodeIndex> {
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
-  const res = await fetch(`${options.serverUrl}/api/projects/${projectId}/code-index${query}`, {
+  const res = await cliFetch(`${options.serverUrl}/api/projects/${projectId}/code-index${query}`, {
     headers: authHeaders(options.apiKey),
   });
   if (!res.ok) throw new Error(`Dashboard returned ${res.status} fetching the code index`);

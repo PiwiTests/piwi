@@ -74,6 +74,7 @@ export interface BrowserConfig {
   javaScriptEnabled?: boolean | null;
   serviceWorkers?: string | null;
   userAgent?: string | null;
+  headless?: boolean | null;
 }
 
 /**
@@ -261,7 +262,14 @@ export interface WireExecutionResources {
   artifactBytes?: Partial<Record<ArtifactKind, number>> | null;
 }
 
-export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
+/**
+ * `leaked`: open past the scope that opened it. `lingering`: closed within its
+ * test, but long after the test last used it. `idle`: opened and never used.
+ * `piling`: a long-lived owner that grows test after test. `handle`: a server
+ * or process left running. `probable`: counted from the steps of a run without
+ * the capture fixtures.
+ */
+export type ResourceVerdict = 'leaked' | 'lingering' | 'idle' | 'piling' | 'handle' | 'probable';
 
 /** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
 export interface WireResourceFinding {
@@ -277,8 +285,10 @@ export interface WireResourceFinding {
   tests: number;
   /** The objects (or the leaks, for handles) grouped in this finding. */
   count: number;
-  /** Leaked: how long the longest one stayed open past its scope, in ms. */
+  /** Leaked: how long the longest one stayed open past its scope, in ms; lingering: past its last use. */
   heldMs?: number;
+  /** Leaked and lingering: the line of the last call a test made on it, where its close belongs. */
+  lastUse?: string | null;
   /** Leaked: at least one was still open when its worker shut down. */
   untilWorkerEnd?: boolean;
   /** Leaked contexts and browsers: the open pages that went with them. */
@@ -385,6 +395,13 @@ export interface WireResourceTimeline {
   /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
   pages: Array<{ worker: number; points: SeriesPoint[] }>;
   /**
+   * The objects behind the run's leaked and lingering findings, each with the
+   * stretch it stayed open for nothing: a leak from the end of the scope that
+   * opened it to its close or its worker's end, a lingering object from its
+   * last use to its close. Absent from reporters before it.
+   */
+  spans?: WireResourceSpan[];
+  /**
    * Each worker process with the browsers it started: the cores they used
    * over the interval ending at each point, and the bytes they held, measured
    * as `profile.memory.kind` says. Needs the run sampler, and the capture
@@ -392,6 +409,31 @@ export interface WireResourceTimeline {
    * before it.
    */
   workers?: Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
+}
+
+/** An object open for nothing over a stretch of the run, as the timeline draws it. */
+export interface WireResourceSpan {
+  /** The worker process (Playwright's `workerIndex`). */
+  worker: number;
+  verdict: 'leaked' | 'lingering';
+  kind: 'browser' | 'context' | 'page' | 'request';
+  /** Where it was opened, as its finding names it. */
+  where: string;
+  site?: string | null;
+  /** The line of the last call a test made on it. */
+  lastUse?: string | null;
+  /** Ms after the timeline's `startedAt` the stretch starts: its scope's end for a leak, its last use when lingering. */
+  from: number;
+  /** Ms after `startedAt` it ends: its close, or its worker's end. */
+  to: number;
+  /** A leak still open when its worker shut down. */
+  untilWorkerEnd?: boolean;
+  /** A leak: the scope it outlived. */
+  scope?: 'test' | 'describe';
+  /** The open pages that went with it: 1 for a page. */
+  pages?: number;
+  /** The test it outlived, or lingered in; for a `beforeAll` leak, the test that ran the hook. */
+  test?: { title: string; file: string } | null;
 }
 
 /**
@@ -472,7 +514,9 @@ export interface WireResourceReport {
  * - `flake-lab`, `probe`: runs replaying tests under injected conditions;
  * - `bisect`, `reproduce`: steps of a bisect and reproductions of a failure
  *   at an older commit;
- * - `import`: a report imported into the dashboard, stamped by the server.
+ * - `import`: a report imported into the dashboard, stamped by the server;
+ * - `request`: a run a person asked for from the dashboard, on one of their own machines (a run request), stamped by
+ *   the server from the run token, never taken from the reporter.
  */
 export const RUN_ORIGIN_KINDS = [
   'ci',
@@ -487,6 +531,7 @@ export const RUN_ORIGIN_KINDS = [
   'bisect',
   'reproduce',
   'import',
+  'request',
 ] as const;
 
 export type RunOriginKind = (typeof RUN_ORIGIN_KINDS)[number];
@@ -536,4 +581,241 @@ export function parseRunOrigin(value: unknown): RunOrigin | null {
   if (!isRunOriginKind(kind)) return null;
   const parsedRef = parseRunOriginRef(ref);
   return parsedRef === undefined ? { kind } : { kind, ref: parsedRef };
+}
+
+/**
+ * A run a local hub steers: the editor service's or the desktop app's, whose run channel the run's workers connect to
+ * (`@piwitests/core/run-channel`), where a person stops its tests at their breakpoints. The reporter stamps the run's
+ * metadata with it under {@link RUN_INTERACTIVE_METADATA_KEY}; a run that follows no hub carries none.
+ */
+export interface RunInteractive {
+  /**
+   * The hub's client as the reporter knows it: the editor's own name from its discovery file, else the launcher the
+   * run's `PIWI_ORIGIN` names (`editor`, `desktop`); null when nothing names it.
+   */
+  client: string | null;
+  /** The run's name on the hub, as its workers give it in `run-attach`: letters, digits, `_` and `-`, 64 at most. */
+  ref: string;
+}
+
+/** The run-metadata key holding the {@link RunInteractive}. */
+export const RUN_INTERACTIVE_METADATA_KEY = 'piwiInteractive';
+
+/** The longest `client` kept. */
+export const RUN_INTERACTIVE_CLIENT_MAX_LENGTH = 200;
+
+const HUB_RUN_REF = /^[\w-]{1,64}$/;
+
+/** A control character (C0, DEL, C1), a line or paragraph separator, or a bidirectional mark. */
+function isControlOrMark(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x061c ||
+    code === 0x200e ||
+    code === 0x200f ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
+/**
+ * A {@link RunInteractive} read from untrusted input, rebuilt as `{ client, ref }`, or null when its `ref` is not a
+ * hub's name for a run. A `client` that is not text of at most {@link RUN_INTERACTIVE_CLIENT_MAX_LENGTH} characters
+ * without control characters (C0, DEL, C1), line or paragraph separators and bidirectional marks reads as null.
+ */
+export function parseRunInteractive(value: unknown): RunInteractive | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { client, ref } = value as { client?: unknown; ref?: unknown };
+  if (typeof ref !== 'string' || !HUB_RUN_REF.test(ref)) return null;
+  const name = typeof client === 'string' ? client.trim() : '';
+  const oneLine = ![...name].some((char) => isControlOrMark(char.codePointAt(0)!));
+  const readable = name.length > 0 && name.length <= RUN_INTERACTIVE_CLIENT_MAX_LENGTH && oneLine;
+  return { client: readable ? name : null, ref };
+}
+
+/** Why a test stopped on a developer's machine; `other` for a reason of a newer reporter. */
+export type TestStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
+
+const TEST_STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
+
+/** The longest call title a {@link TestStop} carries, in characters: a longer one is cut. */
+export const MAX_TEST_STOP_TITLE = 500;
+
+/**
+ * A test stopped on a developer's machine, as its reporter tells the instance (`test-stopped`) while someone has the
+ * run open: why, the call it stands before (its title, without the text it types, and its place in the test's code,
+ * relative to the run's folder), whether the test's browser shows Piwi's pause bar, when it stopped (`since`, epoch
+ * ms), and how long its attempt stood stopped before this stop (`pausedMs`).
+ */
+export interface TestStop {
+  reason: TestStopReason;
+  title: string;
+  file: string | null;
+  line: number | null;
+  bar: boolean;
+  since: number;
+  pausedMs: number;
+}
+
+/** A whole number of milliseconds, 0 or more, within a year. */
+function ms(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 31_536_000_000;
+}
+
+/**
+ * A {@link TestStop} read from untrusted input, rebuilt field by field, or null when it does not read: an unknown
+ * reason reads as `other`, a title is cut to {@link MAX_TEST_STOP_TITLE} characters, a place that does not read as
+ * none.
+ */
+export function parseTestStop(value: unknown): TestStop | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { reason, title, file, line, bar, since, pausedMs } = value as Record<string, unknown>;
+  if (typeof reason !== 'string' || typeof title !== 'string' || typeof bar !== 'boolean') return null;
+  if (typeof since !== 'number' || !Number.isInteger(since) || since <= 0 || !ms(pausedMs)) return null;
+  const placed = typeof file === 'string' && file.length > 0 && file.length <= 1000;
+  return {
+    reason: TEST_STOP_REASONS.includes(reason) ? (reason as TestStopReason) : 'other',
+    title: title.slice(0, MAX_TEST_STOP_TITLE),
+    file: placed ? file : null,
+    line: placed && typeof line === 'number' && Number.isInteger(line) && line > 0 ? line : null,
+    bar,
+    since,
+    pausedMs,
+  };
+}
+
+/** How long an attempt stood stopped, in ms, as a `test-resumed` says it; null when it does not read. */
+export function parsePausedMs(value: unknown): number | null {
+  return ms(value) ? value : null;
+}
+
+// ── Environment snapshots ─────────────────────────────────────────────────────
+
+/** The longest string a snapshot field keeps; a longer one is cut. */
+export const ENVIRONMENT_STRING_MAX = 200;
+
+/** The most environment snapshots one delivery carries: one shard's runner, its browsers and the servers it read. */
+export const ENVIRONMENT_SNAPSHOTS_MAX = 64;
+
+/** The path an instrumented server answers its environment on, beside `/__piwi/manifest`. */
+export const SERVER_ENVIRONMENT_PATH = '/__piwi/environment';
+
+/**
+ * The machine and Node.js process that run Playwright and the reporter, one per shard. Every field is null when it
+ * was not read; the dashboard reads a null as "not recorded".
+ */
+export interface WireRunnerEnvironment {
+  kind: 'runner';
+  v: 1;
+  /** Playwright's shard number (1-based), null for a run that is not sharded. */
+  shardIndex?: number | null;
+  /** `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
+  timeZone?: string | null;
+  /** Minutes east of UTC at run start. */
+  utcOffsetMinutes?: number | null;
+  /** `TZ`, null when unset. */
+  tzVariable?: string | null;
+  /** `Intl.DateTimeFormat().resolvedOptions().locale`. */
+  locale?: string | null;
+  /** `LANG`, `LC_ALL` and `LC_TIME` that are set, as `NAME=value` joined by spaces. */
+  langVariables?: string | null;
+  /** Platform, kernel release and distribution or OS version. */
+  os?: string | null;
+  arch?: string | null;
+  nodeVersion?: string | null;
+  icuVersion?: string | null;
+  /** The CI runner image (`ImageOS ImageVersion`, GitLab's runner version and tags). */
+  ciImage?: string | null;
+  /** `docker` or `kubernetes` when detected. */
+  container?: string | null;
+  cpuModel?: string | null;
+  cores?: number | null;
+  memoryBytes?: number | null;
+  hostname?: string | null;
+  /** Set by the dashboard on a snapshot it built from an imported report. */
+  imported?: boolean | null;
+}
+
+/** A launched browser as its page reports itself, one per shard and Playwright project. */
+export interface WireBrowserEnvironment {
+  kind: 'browser';
+  v: 1;
+  shardIndex?: number | null;
+  /** The Playwright project's name. */
+  project: string;
+  browserName?: string | null;
+  /** `browser.version()`. */
+  browserVersion?: string | null;
+  timeZone?: string | null;
+  locale?: string | null;
+  /** `navigator.languages`, joined by `, `. */
+  languages?: string | null;
+  /** A number and a fixed UTC date as the page formats them by default. */
+  formatSample?: string | null;
+  prefersColorScheme?: string | null;
+  prefersReducedMotion?: string | null;
+  /** `width×height`. */
+  screen?: string | null;
+  devicePixelRatio?: number | null;
+  userAgent?: string | null;
+  headless?: boolean | null;
+}
+
+/** What an instrumented server answers on {@link SERVER_ENVIRONMENT_PATH}. */
+export interface ServerEnvironmentResponse {
+  v: 1;
+  runtime?: string | null;
+  os?: string | null;
+  arch?: string | null;
+  timeZone?: string | null;
+  utcOffsetMinutes?: number | null;
+  locale?: string | null;
+  globalization?: string | null;
+  environmentName?: string | null;
+  appVersion?: string | null;
+  hostname?: string | null;
+  /** An id of the server process: another one after a restart. */
+  instance?: string | null;
+  /** When the process started, as an ISO date. */
+  startedAt?: string | null;
+  /** The server's clock, epoch ms. */
+  now?: number | null;
+}
+
+/** A server under test as the reporter read it, one per origin. */
+export interface WireServerEnvironment extends Omit<ServerEnvironmentResponse, 'v' | 'now'> {
+  kind: 'server';
+  v: 1;
+  origin: string;
+  /** When the reporter read it, epoch ms. */
+  fetchedAt?: number | null;
+  /** The server's clock minus the runner's, measured against the midpoint of the request. */
+  clockOffsetMs?: number | null;
+  /** Half the request's round trip: how far off `clockOffsetMs` may be. */
+  clockOffsetErrorMs?: number | null;
+  /** True when the server answered with another `instance` or `startedAt` at the run's end. */
+  restarted?: boolean | null;
+}
+
+export type WireEnvironmentSnapshot = WireRunnerEnvironment | WireBrowserEnvironment | WireServerEnvironment;
+
+export type EnvironmentKind = WireEnvironmentSnapshot['kind'];
+
+/**
+ * The server's clock offset from one request: `sentAt` and `receivedAt` on the runner's clock, `serverNow` on the
+ * server's, all epoch ms. The server is taken to have read its clock at the midpoint of the request.
+ */
+export function clockOffset(
+  sentAt: number,
+  receivedAt: number,
+  serverNow: number,
+): { clockOffsetMs: number; clockOffsetErrorMs: number } {
+  const roundTrip = Math.max(0, receivedAt - sentAt);
+  return {
+    clockOffsetMs: Math.round(serverNow - (sentAt + roundTrip / 2)),
+    clockOffsetErrorMs: Math.round(roundTrip / 2),
+  };
 }

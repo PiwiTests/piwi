@@ -1,0 +1,6 @@
+@import 'tailwindcss' theme(static);
+@import '@nuxt/ui';
+
+@theme static {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

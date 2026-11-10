@@ -51,6 +51,25 @@ describe('desktopPagePath', () => {
     expect(desktopPagePath('/favicon.ico')).toBeNull();
   });
 
+  it('refuses a dot segment, written as is or percent-encoded', () => {
+    for (const url of [
+      '/a/../api/desktop/run-target',
+      '/a/%2e%2e/_nuxt/x',
+      '/a/%2E%2E/_nuxt/x',
+      '/a/.%2e/api/x',
+      '/a/%2e./api/x',
+      '/a/./b',
+      '/a/%2e/b',
+      '/a/..\\api',
+      '/a/../api?x=1',
+    ]) {
+      expect(desktopPagePath(url), url).toBeNull();
+    }
+    expect(desktopSessionTarget('/a/%2e%2e/api/x')).toBe('/');
+    expect(desktopPagePath('/a.b/..c/d')).toBe('/a.b/..c/d');
+    expect(desktopPagePath('/test-runs/1?next=/../x')).toBe('/test-runs/1?next=/../x');
+  });
+
   it('refuses anything that could leave the origin', () => {
     expect(desktopPagePath('//evil.example/test-runs/1')).toBeNull();
     expect(desktopPagePath('/\\evil.example')).toBeNull();

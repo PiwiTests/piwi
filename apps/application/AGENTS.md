@@ -43,6 +43,13 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   without a folder prefix (`pathPrefix: false` in `nuxt.config.ts`), so two components of the same name collide.
 - **Import `shared/` as `#shared/...`** from `app/`, `server/` and the demo, never with a relative path or
   `~~/shared/...`. `shared/` holds the types, constants and pure helpers the app, the server and the demo share.
+- **Code both this app and Piwi Runner's window use lives in the `@piwitests/run-ui` layer** (`packages/run-ui/`,
+  extended in `nuxt.config.ts`): the team run request confirmation and connection (`DesktopTeamRunRequestModal`,
+  `DesktopTeamInstance`, `useDesktopTeamRequests`, the `desktop-team-requests.client.ts` plugin), the host's event
+  stream (`subscribeDesktopEvents`), `CodeBlock`, `useCopy`, the Tauri bridge (`useTauri.ts`), `errorMessage`,
+  `copyPreview` and the syntax highlighter. Use them by auto-import; never keep a copy here. Plain TypeScript modules
+  that a vitest file loads without Nuxt import the layer's exports by name (`@piwitests/run-ui/highlight`,
+  `@piwitests/run-ui/text`). ([`packages/run-ui/AGENTS.md`](../../packages/run-ui/AGENTS.md))
 - **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
   or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
   there: `packages/core/tests/boundary.test.ts` fails on a dependency or on an import that is not relative (`node:`, a
@@ -76,6 +83,10 @@ the offline export are written once in `shared/` and differ only in the port eac
   a test's, analytics', a report's, MCP's): `passRate` / `passRatePercent` (`shared/utils/pass-rate.ts`) in memory,
   `passRateSql` and its counts (`shared/utils/pass-rate-sql.ts`) in a query. A test's or a file's flaky rate divides
   its flaky results by the same results: `flakyRate`, beside `passRate`. `tests/unit/pass-rate-rule.test.ts`.
+- **A page, a message or a tool names a worker by its lane, from 1 in each shard** (`Worker 2`, `worker: 2` in an MCP
+  tool): Playwright's `parallelIndex`, stored as `test_runs_cases.parallel_index` and read through
+  `#shared/worker-lane` (`workerNumber`, `shownWorkerNumber`, `compareWorkers`). `workerIndex`, the worker process,
+  names one only for a result without a lane, from an older reporter (`tests/unit/worker-lane.test.ts`).
 - **The demo mirrors every feature.** A new database column, API response field or visible UI change updates the seed
   generator, the demo handlers (`app/demo/api/`), the simulator, the docs and, when a tour stop shows the screen, the
   tour; then run `npm run app:seed:demo`. The five places and their checks:

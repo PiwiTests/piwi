@@ -354,9 +354,11 @@ async function resolveScript(
   const file = fileForUrl(entry.url, roots, bases);
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
-  // A module read without a map counts the lines holding code at line granularity: keep where each line's code is.
-  const code = !!file && !lookup && browserLinesInWorker() && servedAsWritten(entry.url);
-  const text = entry.source === undefined ? undefined : scriptText(entry.source, { code });
+  // At line granularity, a module read without a map keeps where each line's code is, one read through a map the code
+  // under each of the map's segments.
+  const lines = browserLinesInWorker();
+  const code = !!file && !lookup && lines && servedAsWritten(entry.url);
+  const text = entry.source === undefined ? undefined : scriptText(entry.source, { code, map: lines ? lookup : null });
   if (file) resolution = { kind: 'file', file, lookup, text };
   else resolution = lookup ? { kind: 'map', lookup, files: [], text } : { kind: 'none' };
   if (text) scriptCache.set(entry.url, version, resolution);

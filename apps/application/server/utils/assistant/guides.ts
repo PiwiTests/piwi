@@ -80,7 +80,7 @@ export async function projectExists(db: DbClient, id: number): Promise<number | 
 const ROUTE_ENTITIES: Array<{
   pattern: RegExp;
   label: string;
-  project: (db: DbClient, id: number) => Promise<number | null>;
+  project: (db: DbClient, id: number, viewerId: number | null) => Promise<number | null>;
 }> = [
   { pattern: /^\/projects\/(\d+)(?:\/|$)/, label: 'project', project: projectExists },
   { pattern: /^\/test-runs\/(\d+)$/, label: 'run', project: resolveRunProjectId },
@@ -110,7 +110,7 @@ export async function checkRouteEntities(db: DbClient, ctx: McpContext, route: s
   const entity = ROUTE_ENTITIES.find((e) => e.pattern.test(path));
   if (entity) {
     const id = Number(entity.pattern.exec(path)![1]);
-    const projectId = await entity.project(db, id);
+    const projectId = await entity.project(db, id, ctx.user?.id ?? null);
     if (projectId === null) return { ok: false, error: `no ${entity.label} ${id} exists` };
     if (!scopeAllows(ctx.scope, projectId)) return { ok: false, error: `the user cannot read ${entity.label} ${id}` };
     return { ok: true, projectId };

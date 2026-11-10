@@ -37,7 +37,15 @@ record is `proposals/roles-and-groups.md`.
   (`tests/unit/allowed-host.test.ts`).
 - **With authentication on, a request signs in with a session cookie (the browser) or an API key** (`pd_` prefix, as a
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
-  more and nothing less.
+  more and nothing less, unless its `permissions` column names the only ones it holds.
+- **A key that holds some permissions only (a run target's) serves its own routes alone**: `requireAuth` refuses it,
+  `getUserByApiKey` answers null for it, and only `requireRunTarget` (`server/utils/run-requests.ts`) takes it
+  (`tests/unit/run-requests.test.ts`).
+- **A connected app hears its requests and stops on its stream** (`server/utils/run-target-events.ts`):
+  `publishRunRequest` once a request is stored and has passed the waiting cap, a `stop` to the app that holds a
+  request, `publishWithdrawn` when a waiting request is stopped or claimed, and `revoked` on its key's revoke and on its
+  owner's delete. A path that creates, stops, claims or revokes another way publishes too
+  (`tests/unit/run-target-publish.test.ts`).
 - **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
   calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
   or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
@@ -89,8 +97,8 @@ export default eventHandler(async (event) => {
 - **`requireAuth(event, permission)` overrides the meta** for a handler whose permission depends on the request
   (`integrations/actions.get.ts` needs `connections:manage` for a connection's activity, `project:read` for a
   project's); the meta then documents the usual case.
-- **No response carries `test_runs.stream_token`**: a handler returning run rows selects `publicRunColumns()`
-  (`shared/handlers/public-run.ts`).
+- **No response carries `test_runs.stream_token` or `live_view_key_digests`**: a handler returning run rows selects
+  `publicRunColumns()` (`shared/handlers/public-run.ts`).
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and, with authentication off only,
   one without that header whose `Origin` is opaque or names neither the `Host` header's host and port nor
@@ -112,6 +120,10 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **Authenticate before any lookup by a request's id**, so a caller without credentials gets 401 whether the id exists
   or not. A handler that loads the row itself calls `requireAuth(event)`, then `requireProjectPermission(event,
   projectId)` (`tests/unit/request-access.test.ts`, `tests/unit/route-permissions.test.ts`).
+- **A private run (origin `request`) is its requester's alone** (`isVisibleRun`, `notPrivateRun` in
+  `shared/run-eligibility.ts`): the run and execution resolvers take the viewer's id and answer a run they may not see
+  as missing, and every list a project's members read leaves it out (`notLabRun` sets it aside). With no viewer, or
+  authentication off, nobody sees it (`tests/unit/request-tokens.test.ts`).
 - Both refuse with 403: "No access to this project" when the user cannot read the project, "Insufficient permissions"
   when they read it without the route's permission.
 - **A list handler takes the user's project scope**: `getProjectScope(db, user, permission = 'project:read')` returns

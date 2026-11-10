@@ -26,6 +26,9 @@ export const TIMELINE_LAYOUT = {
   /** Height a worker row's strip adds, and the height of its plot (it starts 2px under the row's last bar). */
   stripHeight: 12,
   stripPlot: 10,
+  /** Height of one tail of an object kept open for nothing, and the space between two stacked under a row. */
+  tailHeight: 4,
+  tailGap: 2,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;
@@ -149,10 +152,10 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
-/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`. */
+/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`, `Paused` for a Pause. */
 export function pauseReasonText(reason: string | null | undefined): string {
   if (reason === 'step') return 'Paused after Step';
-  if (reason === 'pause') return 'Paused from the editor';
+  if (reason === 'pause') return 'Paused';
   if (reason === 'run-to') return 'Paused at the line run to';
   if (reason === 'page-pause') return 'Paused at page.pause()';
   return 'Paused at a breakpoint';

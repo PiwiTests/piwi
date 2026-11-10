@@ -42,8 +42,10 @@ const {
     transform: (r: { items: FlakyTest[]; verifiedFixed?: VerifiedFixedFlakyTest[] }) => r,
   },
 );
-// A run that starts or ends reads the list again, as it does the tab's counts.
+// A run that starts or ends reads the list again, as it does the tab's counts, and so does a read asked from outside
+// the page (the assistant, once a proposal is applied).
 useRunStream(() => refresh());
+usePageReload(() => refresh());
 const tests = computed(() => flaky.value?.items ?? null);
 /** Tests a verified fix took off the ranking; they return to it at their next retry-pass. */
 const verifiedFixed = computed(() => flaky.value?.verifiedFixed ?? []);

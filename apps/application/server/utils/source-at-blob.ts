@@ -7,7 +7,8 @@
  * at, or not at all. Sources are kept an hour per project and blob id (a blob
  * never changes), and a source that could not be read two minutes.
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import { isVisibleRun, notPrivateRun } from '#shared/run-eligibility';
 import { gitBlobId } from '#shared/utils/hash';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
@@ -64,10 +65,15 @@ async function sourceRepository(
   let runCommit: string | null | undefined;
   if (runId != null) {
     const [run] = await db
-      .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
+      .select({
+        projectId: testRuns.projectId,
+        metadata: testRuns.metadata,
+        origin: testRuns.origin,
+        requesterId: testRuns.requesterId,
+      })
       .from(testRuns)
       .where(eq(testRuns.id, runId));
-    if (run?.projectId === projectId) {
+    if (run?.projectId === projectId && isVisibleRun(run, null)) {
       const own = repositoryOf(run.metadata);
       if (own) return own;
       const commit = (run.metadata as RunMetadata | null)?.scm?.commit;
@@ -77,7 +83,7 @@ async function sourceRepository(
   const recent = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notPrivateRun(testRuns.origin)))
     .orderBy(desc(testRuns.id))
     .limit(RECENT_RUNS);
   for (const run of recent) {

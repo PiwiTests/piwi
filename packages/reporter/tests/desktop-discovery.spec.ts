@@ -8,8 +8,9 @@ import {
   desktopReplacedServer,
   resolveOptions,
   usedDesktopDiscovery,
+  usedDesktopToken,
 } from '../src/internal/config/env.js';
-import { defaultDesktopConfigPath, readDesktopConfig } from '../src/internal/config/desktop.js';
+import { defaultDesktopConfigPath, readDesktopConfig, readDesktopToken } from '../src/internal/config/desktop.js';
 
 const DESKTOP_URL = 'http://127.0.0.1:3000';
 const DESKTOP_TOKEN = `pd_${'a'.repeat(64)}`;
@@ -35,6 +36,7 @@ const TOUCHED_ENV = [
   'PIWI_USERNAME',
   'PIWI_PASSWORD',
   'PIWI_DESKTOP_APP',
+  'PIWI_DESKTOP_KEY',
   ...CI_ENV,
 ];
 
@@ -96,6 +98,18 @@ describe('desktop discovery', () => {
       expect(readDesktopConfig(configPath)).toBe(null);
     });
 
+    it('reads the token of a file whose app is gone, and none from a file that is absent or malformed', () => {
+      const exited = spawnSync(process.execPath, ['-e', '']).pid;
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
+      expect(readDesktopConfig(configPath)).toBe(null);
+      expect(readDesktopToken(configPath)).toBe(DESKTOP_TOKEN);
+
+      publishDesktopConfig('{ truncated');
+      expect(readDesktopToken(configPath)).toBe(null);
+      fs.rmSync(configPath);
+      expect(readDesktopToken(configPath)).toBe(null);
+    });
+
     it('defaults to ~/.piwi/desktop.json', () => {
       expect(defaultDesktopConfigPath()).toBe(path.join(os.homedir(), '.piwi', 'desktop.json'));
     });
@@ -108,6 +122,83 @@ describe('desktop discovery', () => {
       expect(opts.serverUrl).toBe(DESKTOP_URL);
       expect(opts.apiKey).toBe(DESKTOP_TOKEN);
       expect(usedDesktopDiscovery()).toBe(true);
+    });
+
+    it('holds the desktop token when the file gave the key, or the app marks its own key in the environment', () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      fs.rmSync(configPath);
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+    });
+
+    it("holds a key equal to the desktop app's token wherever it was set, and no other key", () => {
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN });
+      process.env.PIWI_DASHBOARD_URL = TEAM_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      process.env.PIWI_API_KEY = 'pd_other';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+
+      delete process.env.PIWI_API_KEY;
+      resolveOptions({ apiKey: DESKTOP_TOKEN, serverUrl: TEAM_URL });
+      expect(usedDesktopToken()).toBe(true);
+    });
+
+    it('holds a key equal to the token of a file whose app is gone, for the URL the app had', () => {
+      const exited = spawnSync(process.execPath, ['-e', '']).pid;
+      publishDesktopConfig({ url: DESKTOP_URL, token: DESKTOP_TOKEN, pid: exited });
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      const opts = resolveOptions({});
+      expect(opts.serverUrl).toBe(DESKTOP_URL);
+      expect(opts.apiKey).toBe(DESKTOP_TOKEN);
+      expect(usedDesktopDiscovery()).toBe(false);
+      expect(usedDesktopToken()).toBe(true);
+    });
+
+    it('holds no desktop token for a run a team instance asked for, whatever key the environment marks', () => {
+      const tokenFile = path.join(tmpDir, 'request-token');
+      fs.writeFileSync(tokenFile, `pdq_${'c'.repeat(64)}\n`, { mode: 0o600 });
+      process.env.PIWI_DASHBOARD_URL = DESKTOP_URL;
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(true);
+
+      process.env.PIWI_REQUEST_TOKEN_FILE = tokenFile;
+      process.env.PIWI_REQUEST_INSTANCE = 'https://piwi.example.com';
+      try {
+        resolveOptions({});
+        expect(usedDesktopToken()).toBe(false);
+      } finally {
+        delete process.env.PIWI_REQUEST_TOKEN_FILE;
+        delete process.env.PIWI_REQUEST_INSTANCE;
+      }
+    });
+
+    it('does not take a key for the desktop token that the marker does not cover', () => {
+      process.env.PIWI_DESKTOP_KEY = '1';
+      resolveOptions({});
+      expect(usedDesktopToken()).toBe(false);
+      process.env.PIWI_API_KEY = DESKTOP_TOKEN;
+      fs.writeFileSync(
+        path.join(tmpDir, '.env'),
+        'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_dotenv\n',
+      );
+      expect(resolveOptions({ apiKey: 'pd_from_config' }).apiKey).toBe('pd_from_config');
+      expect(usedDesktopToken()).toBe(false);
     });
 
     it('leaves options untouched when the app is not running', () => {
