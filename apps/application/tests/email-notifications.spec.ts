@@ -167,6 +167,8 @@ test.describe.serial('Forgot & reset password', () => {
     const [d1, d2] = (await Promise.all([r1.json(), r2.json()])) as [{ success: boolean }, { success: boolean }];
     expect(d1.success).toBe(true);
     expect(d2.success).toBe(true);
+    // The account's reset email is taken here, so it cannot reach the next test, whose newer request replaces its token.
+    await mailTo(RESET_EMAIL);
   });
 
   test('reset token is delivered by email and can be used once', async () => {
@@ -326,11 +328,53 @@ test.describe.serial('User invite email', () => {
 
 test.describe.serial('Notification dispatch', () => {
   const NOTIFY_EMAIL = 'notifyuser@example.com';
+  /** A second channel on the project, whose email shows a run's deliveries were sent. */
+  const SWEEP_EMAIL = 'sweep-witness@example.com';
   let cookie: string;
   let userId: number;
   let channelId: number;
   let subscriptionId: number;
+  let sweepChannelId: number;
+  let sweepSubscriptionId: number;
   let projectId: number;
+
+  async function subscribe(channel: number): Promise<number> {
+    const res = await apiPost(
+      '/api/subscriptions',
+      { channelId: channel, projectId, events: ['run.finished'], mode: 'realtime' },
+      cookie,
+    );
+    expect(res.ok, await res.clone().text()).toBe(true);
+    return ((await res.json()) as { subscription: { id: number } }).subscription.id;
+  }
+
+  async function mute(subscription: number, muted: boolean): Promise<void> {
+    const res = await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscription}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ mutedUntil: muted ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null }),
+    });
+    expect(res.ok).toBe(true);
+  }
+
+  async function submitPassedRun(title: string) {
+    const res = await apiPost(
+      '/api/test-runs/submit',
+      {
+        projectName: PROJECT.NOTIFY_EMAIL,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [{ title, status: 'passed', duration: 500, suiteName: 'Suite' }],
+      },
+      cookie,
+    );
+    expect(res.ok).toBe(true);
+  }
 
   test.beforeAll(async () => {
     cookie = await adminLogin();
@@ -363,30 +407,21 @@ test.describe.serial('Notification dispatch', () => {
     // Create an email channel, verified by a pre-save test
     channelId = await createVerifiedEmailChannel({ name: 'Test Email', config: { address: NOTIFY_EMAIL } }, cookie);
 
-    // Subscribe to run.finished for that project
-    const subRes = await apiPost(
-      '/api/subscriptions',
-      {
-        channelId,
-        projectId,
-        events: ['run.finished'],
-        mode: 'realtime',
-      },
+    subscriptionId = await subscribe(channelId);
+    sweepChannelId = await createVerifiedEmailChannel(
+      { name: 'Sweep witness', config: { address: SWEEP_EMAIL } },
       cookie,
     );
-    const subData = (await subRes.json()) as { subscription?: { id: number } };
-    subscriptionId = subData.subscription?.id ?? 0;
+    sweepSubscriptionId = await subscribe(sweepChannelId);
   });
 
   test.afterAll(async () => {
-    if (subscriptionId)
-      await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-        method: 'DELETE',
-        headers: { Cookie: cookie },
-      });
-    if (channelId)
-      await fetch(`${EMAIL_SERVER}/api/channels/${channelId}`, { method: 'DELETE', headers: { Cookie: cookie } });
-    if (userId) await fetch(`${EMAIL_SERVER}/api/users/${userId}`, { method: 'DELETE', headers: { Cookie: cookie } });
+    const del = (path: string) => fetch(`${EMAIL_SERVER}${path}`, { method: 'DELETE', headers: { Cookie: cookie } });
+    if (sweepSubscriptionId) await del(`/api/subscriptions/${sweepSubscriptionId}`);
+    if (sweepChannelId) await del(`/api/channels/${sweepChannelId}`);
+    if (subscriptionId) await del(`/api/subscriptions/${subscriptionId}`);
+    if (channelId) await del(`/api/channels/${channelId}`);
+    if (userId) await del(`/api/users/${userId}`);
   });
 
   test.beforeEach(() => smtp.clear());
@@ -419,69 +454,26 @@ test.describe.serial('Notification dispatch', () => {
     expect(mail.subject.toLowerCase()).toMatch(/run|test|notify/i);
   });
 
-  test('deduplication: same run does not produce duplicate deliveries', async () => {
-    const runPayload = {
-      projectName: PROJECT.NOTIFY_EMAIL,
-      status: 'passed',
-      startTime: new Date().toISOString(),
-      duration: 1000,
-      totalTests: 1,
-      passedTests: 1,
-      failedTests: 0,
-      skippedTests: 0,
-      testCases: [{ title: 'Dedup Test', status: 'passed', duration: 500, suiteName: 'Suite' }],
-    };
-    await apiPost('/api/test-runs/submit', runPayload, cookie);
-
-    // Wait briefly for first delivery
-    await mailTo(NOTIFY_EMAIL, 15_000);
-
-    // Trigger the outbox sweeper again by calling the task endpoint
-    await fetch(`${EMAIL_SERVER}/api/_nitro/tasks/notifications:sweep`, {
-      method: 'POST',
-      headers: { Cookie: cookie },
-    });
-
-    // Allow a moment for a potential second delivery
-    await new Promise((r) => setTimeout(r, 2000));
-    expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(1);
+  test('deduplication: a later sweep does not send a delivered email again', async () => {
+    // Each run sends one email, and its sweep passes over every due row, the ones already sent included. Sweeps run
+    // one at a time, so the third email means the second run's sweep has finished: a delivery sent again by it is in.
+    for (const [index, title] of ['Dedup 1', 'Dedup 2', 'Dedup 3'].entries()) {
+      await submitPassedRun(title);
+      await expect.poll(() => mailsTo(NOTIFY_EMAIL).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(index + 1);
+    }
+    expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(3);
   });
 
   test('muted subscription does not deliver', async () => {
-    // Mute the subscription
-    await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ mutedUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
-    });
-
-    const runRes = await apiPost(
-      '/api/test-runs/submit',
-      {
-        projectName: PROJECT.NOTIFY_EMAIL,
-        status: 'passed',
-        startTime: new Date().toISOString(),
-        duration: 1000,
-        totalTests: 1,
-        passedTests: 1,
-        failedTests: 0,
-        skippedTests: 0,
-        testCases: [],
-      },
-      cookie,
-    );
-    expect(runRes.ok).toBe(true);
-
-    // Give dispatcher time to run
-    await new Promise((r) => setTimeout(r, 3000));
-    expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(0);
-
-    // Unmute for subsequent tests
-    await fetch(`${EMAIL_SERVER}/api/subscriptions/${subscriptionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ mutedUntil: null }),
-    });
+    await mute(subscriptionId, true);
+    try {
+      await submitPassedRun('Muted Test');
+      // The witness channel's email shows the run's deliveries were sent.
+      await expect.poll(() => mailsTo(SWEEP_EMAIL).length, { timeout: 15_000 }).toBe(1);
+      expect(mailsTo(NOTIFY_EMAIL)).toHaveLength(0);
+    } finally {
+      await mute(subscriptionId, false);
+    }
   });
 });
 

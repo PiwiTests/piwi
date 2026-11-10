@@ -105,10 +105,10 @@ export function sentTo(address: string): (raw: string) => boolean {
 /** Reads a raw message: headers unfolded and their encoded words decoded, every multipart walked to its leaves. */
 export function readMail(raw: string): Mail {
   const { headers, body } = splitHeaders(raw);
-  const parts = leafParts(headers, body);
+  const parts = leafParts(headers, body.replace(/\r\n$/, ''));
   const firstText = (type: string) => parts.find((p) => p.contentType === type)?.content.toString('utf8') ?? '';
   return {
-    to: (headers.to ?? '').match(/[^\s<>,"]+@[^\s<>,"]+/g)?.map((a) => a.toLowerCase()) ?? [],
+    to: addresses(headers.to ?? ''),
     from: headers.from ?? '',
     subject: headers.subject ?? '',
     text: firstText('text/plain'),
@@ -123,6 +123,12 @@ export function plainTextPart(raw: string): string {
   const part = parts.find((p) => p.contentType === 'text/plain');
   if (!part) throw new Error('The message has no text/plain part');
   return part.content.toString('utf8');
+}
+
+/** The addresses of an address header, a quoted display name left out (`"a@x" <b@y>` names `b@y` alone). */
+function addresses(value: string): string[] {
+  const unquoted = value.replace(/"(?:[^"\\]|\\.)*"/g, '');
+  return unquoted.match(/[^\s<>,"]+@[^\s<>,"]+/g)?.map((a) => a.toLowerCase()) ?? [];
 }
 
 function splitHeaders(entity: string): { headers: Record<string, string>; body: string } {
