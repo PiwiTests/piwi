@@ -245,10 +245,11 @@ out.
 
 **Whether a failed test waits at its line for an answer, in one run.** It is the run's own: on from the start of a run
 started with breakpoints, a debug run or a reproduction, off otherwise, unless an editor window chose
-it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)); and any tool that follows the
-run turns it on or off, the editors, Piwi Picker's Runs window, the desktop app, or an agent (`run_follow`). Off, a
-failure goes on at once, as without Piwi. A run nobody attends never holds one: a Flake Lab run, a bisect, a lab job,
-a run with `--repeat-each` above 1 and UI mode go on past each failure. Each tool shows it as the last one set it: the
+it for every run it starts ([How a run starts](/features/editor-runs#how-a-run-starts)) or the desktop app started the
+run with it on; and any tool that follows the run turns it on or off, the editors, Piwi Picker's Runs window, the
+desktop app, or an agent (`run_follow`). Off, a failure goes on at once, as without Piwi. A run nobody attends never
+holds one: a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1 that does not stop at its first
+failure (`--max-failures=1`) and UI mode go on past each failure. Each tool shows it as the last one set it: the
 desktop app's switch turns it off as the app's last window closes only when no other tool set it since.
 
 ### Presence, driving a stop

@@ -41,22 +41,34 @@ export function desktopRunOf(ref: string): string {
 
 /**
  * Whether a person attends a `playwright test` run with these arguments, as the shell reads them (`attended_args`,
- * `hub_env.rs`): not one in UI mode (`--ui`), nor one that repeats each test (`--repeat-each` above 1).
+ * `hub_env.rs`): not one in UI mode (`--ui`), nor one that repeats each test (`--repeat-each` above 1) unless it ends
+ * at its first failure (`--max-failures=1`).
  */
 export function desktopArgsAttended(args: readonly string[]): boolean {
+  let repeats = false;
+  let stopsAtFirstFailure = false;
   for (const [index, arg] of args.entries()) {
     if (arg === '--ui' || arg.startsWith('--ui=')) return false;
-    const repeat =
-      arg === '--repeat-each' ? args[index + 1] : arg.startsWith('--repeat-each=') ? arg.slice(14) : undefined;
-    if (repeat !== undefined && !(/^\d+$/.test(repeat) && Number(repeat) <= 1)) return false;
+    const repeat = optionValue(args, index, '--repeat-each');
+    if (repeat !== undefined && !(/^\d+$/.test(repeat) && Number(repeat) <= 1)) repeats = true;
+    if (optionValue(args, index, '--max-failures') === '1') stopsAtFirstFailure = true;
   }
-  return true;
+  return !repeats || stopsAtFirstFailure;
+}
+
+/** The value of `--name` at `args[index]`, given as `--name=value` or `--name value`; undefined for another arg. */
+function optionValue(args: readonly string[], index: number, name: string): string | undefined {
+  const arg = args[index]!;
+  if (arg === name) return args[index + 1] ?? '';
+  return arg.startsWith(`${name}=`) ? arg.slice(name.length + 1) : undefined;
 }
 
 /** A run of the Local runs tray, as far as holding its failures goes: what it is and what its steps run. */
 export interface DesktopHoldRun {
   kind: LocalRunKind;
   steps: ReadonlyArray<{ args: readonly string[] }>;
+  /** How the run was started: with **Hold failures** on, or not. */
+  options?: { holdFailures?: boolean };
 }
 
 /**
@@ -70,17 +82,18 @@ export function desktopHoldRefusal(run: DesktopHoldRun): string | null {
     return 'UI mode goes on past each failure.';
   }
   if (!run.steps.every((step) => desktopArgsAttended(step.args))) {
-    return 'A run that repeats its tests goes on past each failure.';
+    return 'A run that repeats its tests goes on past each failure, unless it stops at the first one.';
   }
   return null;
 }
 
 /**
  * Whether a run holds its failures until the person says otherwise (**Hold failures** on from its start): a
- * reproduction, which runs to see its failure at its line; every other run starts with it off.
+ * reproduction, which runs to see its failure at its line, and a run started with the option on; every other run
+ * starts with it off.
  */
-export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind'>): boolean {
-  return run.kind === 'reproduce';
+export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind' | 'options'>): boolean {
+  return run.kind === 'reproduce' || !!run.options?.holdFailures;
 }
 
 /** A run of the tray, as far as showing it live goes: its hold, its state and its steps' names on the hub. */

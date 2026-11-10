@@ -120,8 +120,18 @@ describe('a worker of a desktop run', () => {
       ['--repeat-each=20'],
       ['--repeat-each', '3'],
       ['--repeat-each=many'],
+      ['--repeat-each=20', '--max-failures=2'],
+      ['--repeat-each=20', '--max-failures'],
+      ['--ui', '--repeat-each=20', '--max-failures=1'],
     ]) {
       expect(desktopArgsAttended(args), args.join(' ')).toBe(false);
+    }
+    // A repeated run that ends at its first failure is one a person can attend, whatever the order of its flags.
+    for (const args of [
+      ['--repeat-each=20', '--retries=0', '--max-failures=1'],
+      ['--max-failures', '1', '--repeat-each', '5'],
+    ]) {
+      expect(desktopArgsAttended(args), args.join(' ')).toBe(true);
     }
     expect(desktopHoldRefusal(run('tests', ['tests/a.spec.ts:3']))).toBeNull();
     expect(desktopHoldRefusal(run('reproduce'))).toBeNull();
@@ -132,15 +142,21 @@ describe('a worker of a desktop run', () => {
       'UI mode goes on past each failure.',
     );
     expect(desktopHoldRefusal(run('tests', ['--grep', 'pays', '--repeat-each=20', '--trace=on']))).toBe(
-      'A run that repeats its tests goes on past each failure.',
+      'A run that repeats its tests goes on past each failure, unless it stops at the first one.',
     );
     expect(desktopHoldRefusal(run('repro', ['--repeat-each=5']))).toBe(
-      'A run that repeats its tests goes on past each failure.',
+      'A run that repeats its tests goes on past each failure, unless it stops at the first one.',
     );
     // A reproduction runs to see its failure at its line: it holds from its start; every other run starts off.
     expect(desktopHoldsByDefault({ kind: 'reproduce' })).toBe(true);
     for (const kind of ['tests', 'repro', 'bisect', 'flake'] as const)
       expect(desktopHoldsByDefault({ kind })).toBe(false);
+    // A run started with Hold failures on holds from its start.
+    expect(desktopHoldsByDefault({ kind: 'tests', options: { holdFailures: true } })).toBe(true);
+    expect(desktopHoldsByDefault({ kind: 'tests', options: { holdFailures: false } })).toBe(false);
+    expect(
+      desktopHoldRefusal(run('tests', ['--grep', 'pays', '--repeat-each=20', '--retries=0', '--max-failures=1'])),
+    ).toBeNull();
   });
 
   test('is shown live while it runs with Hold failures on, by its steps’ names, whatever the tray shows', () => {

@@ -339,7 +339,8 @@ export interface RunSessionsOptions {
   watched?(ref: string): boolean;
   /**
    * Whether a failure of the run of `ref` may be held at all, whoever watches it: true by default. A run nobody attends
-   * (the desktop app's Flake Lab, bisect and lab runs, a run repeating its tests or in UI mode) holds none: its workers
+   * (the desktop app's Flake Lab, bisect and lab runs, a run in UI mode or repeating its tests past a failure) holds
+   * none: its workers
    * hear that they hold no failure (`attached`), and a failure that stops one anyway goes on at once.
    */
   holdsFailures?(ref: string): boolean;

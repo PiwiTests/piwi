@@ -7172,6 +7172,54 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-options',
+    description:
+      "Run options (desktop app): the run button's menu with Hold failures and, for a repeat, Stop at the first failing repetition, the button naming both, and the Run with options dialog at 1280 and 390 px",
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    outputs: [
+      'desktop-run-options.png',
+      'desktop-run-options-button.png',
+      'desktop-run-options-dialog.png',
+      'desktop-run-options-dialog-narrow.png',
+    ],
+    async run({ page, settle, shoot }) {
+      const runButton = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ }).first();
+      await runButton.waitFor({ timeout: 60_000 });
+      const menu = async () => {
+        await page.getByRole('button', { name: 'Run options' }).first().click();
+        await page.getByText('Options of this button', { exact: true }).waitFor();
+      };
+      await menu();
+      await page.getByRole('menuitem', { name: /^Repeat each/ }).hover();
+      await page.getByRole('menuitemcheckbox', { name: '× 20' }).click();
+      await page.getByRole('menuitemcheckbox', { name: 'Stop at the first failing repetition' }).click();
+      await page.getByRole('menuitemcheckbox', { name: 'Hold failures' }).click();
+      await settle();
+      await shoot('', { of: '[role="menu"]', pad: 12 });
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await settle();
+      const box = await runButton.locator('xpath=..').boundingBox();
+      await shoot('button', {
+        of: false,
+        clip: { x: box.x - 12, y: box.y - 12, width: box.width + 24, height: box.height + 24 },
+      });
+      await menu();
+      await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor();
+      await settle();
+      await shoot('dialog', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1100 });
+      await settle();
+      await shoot('dialog-narrow', { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
     name: 'desktop-run-live',
     description:
       'Local runs tray (desktop app): a run the shell started, its number and page (Run #41 · Open), stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',

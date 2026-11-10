@@ -19,8 +19,8 @@ import type { StopCode } from '@piwitests/editor/run-host';
 
 /**
  * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
- * lab job, a run that repeats each test (`--repeat-each` above 1) or runs in UI mode. The server holds no failure of
- * such a run, whoever watches it.
+ * lab job, a run in UI mode, or one that repeats each test (`--repeat-each` above 1) without stopping at its first
+ * failure. The server holds no failure of such a run, whoever watches it.
  */
 export const UNATTENDED_RUN_SUFFIX = '-unattended';
 

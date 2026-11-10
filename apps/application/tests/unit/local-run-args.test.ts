@@ -4,7 +4,10 @@ import {
   buildLocalRunPlan,
   buildReproduceArgs,
   localRunCopyOptions,
+  localRunHoldRefusal,
+  localRunHoldsFailures,
 } from '../../app/utils/local-run-args';
+import { desktopArgsAttended } from '../../app/utils/desktop-run-view';
 import { buildRetryCommand } from '#shared/retry-command';
 import { splitRerunArgs } from '@piwitests/core/rerun-args';
 
@@ -72,6 +75,44 @@ describe('buildLocalRunPlan', () => {
       '--repeat-each=25',
       '--retries=0',
     ]);
+  });
+
+  test('a repeated run that stops at its first failing repetition ends at one failure', () => {
+    expect(buildLocalRunPlan([CASE], { repeatEach: 20, stopAtFirstFailure: true })[0]!.args.slice(-3)).toEqual([
+      '--repeat-each=20',
+      '--retries=0',
+      '--max-failures=1',
+    ]);
+    // A run that does not repeat runs every test, as it would without the option.
+    expect(buildLocalRunPlan([CASE], { repeatEach: 1, stopAtFirstFailure: true })[0]!.args).not.toContain(
+      '--max-failures=1',
+    );
+  });
+
+  test('Hold failures holds only in a run a person attends, as the shell names it', () => {
+    expect(localRunHoldsFailures({ holdFailures: true })).toBe(true);
+    expect(localRunHoldsFailures({ holdFailures: true, repeatEach: 20, stopAtFirstFailure: true })).toBe(true);
+    expect(localRunHoldRefusal({ holdFailures: true, repeatEach: 20 })).toBe(
+      'A repeated run goes on past each failure, unless it stops at the first one.',
+    );
+    expect(localRunHoldsFailures({ holdFailures: true, repeatEach: 20 })).toBe(false);
+    expect(localRunHoldRefusal({ runMode: 'ui', repeatEach: 20, stopAtFirstFailure: true })).toBe(
+      'UI mode goes on past each failure.',
+    );
+    // The rule is the shell's own, read from the arguments the run starts with.
+    for (const options of [
+      { repeatEach: 20 },
+      { repeatEach: 20, stopAtFirstFailure: true },
+      { runMode: 'ui' as const },
+      { repeatEach: 1, stopAtFirstFailure: true },
+    ]) {
+      const attended = desktopArgsAttended(buildLocalRunPlan([CASE], options)[0]!.args);
+      expect(localRunHoldRefusal(options) === null, JSON.stringify(options)).toBe(attended);
+    }
+  });
+
+  test('Hold failures adds no flag: the run channel carries it', () => {
+    expect(buildLocalRunPlan([CASE], { holdFailures: true })[0]!.args).toEqual(buildLocalRunPlan([CASE])[0]!.args);
   });
 
   test('debug and ui run modes map to their flags', () => {
@@ -160,6 +201,17 @@ describe('Copy as command', () => {
     const copied = buildRetryCommand([CASE], { options: localRunCopyOptions(options) });
     const plan = buildLocalRunPlan([CASE], options);
     expect(splitRerunArgs(copied)).toEqual(['npx', 'playwright', 'test', ...plan[0]!.args]);
+  });
+
+  test('a run that stops at its first failing repetition copies its limit', () => {
+    const options = { mode: 'grep' as const, repeatEach: 20, stopAtFirstFailure: true, trace: true };
+    const copied = buildRetryCommand([CASE], { mode: 'grep', options: localRunCopyOptions(options) });
+    expect(splitRerunArgs(copied)).toEqual([
+      'npx',
+      'playwright',
+      'test',
+      ...buildLocalRunPlan([CASE], options)[0]!.args,
+    ]);
   });
 
   test('a debug run copies its flag, a plain one copies none', () => {

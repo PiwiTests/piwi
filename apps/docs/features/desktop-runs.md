@@ -24,9 +24,10 @@ page. **Resume** lets the test go on, **Step** runs one call and stops before th
 end without stopping again, and [**End the test**](./end-the-test) skips the rest of it.
 
 **Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
-it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
-which runs to show you the failure. It is [the run's own](/guide/concepts#hold-failures), off again as the app's last
-window closes. A run [nobody attends](/guide/concepts#hold-failures) never holds one, and its switch says why.
+it, and **Resume** to let it end as it failed. It is on from the start for **Reproduce**, which runs to show you the
+failure, and for a run started with it on; **Run again** keeps it. It is [the run's own](/guide/concepts#hold-failures),
+off again as the app's last window closes. A run [nobody attends](/guide/concepts#hold-failures) never holds one, and
+its switch says why.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">

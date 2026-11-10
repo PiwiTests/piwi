@@ -26,6 +26,8 @@ export interface RetryRunOptions {
   repeatEach?: number | null;
   /** The number of workers; unset keeps the config's. */
   workers?: number | null;
+  /** End the run after this many failures; unset runs every test. */
+  maxFailures?: number | null;
   /** One Playwright project for every test, instead of each test's own. */
   project?: string | null;
 }
@@ -123,7 +125,7 @@ function optionCount(value: number | null | undefined): number | null {
 
 /**
  * The flags of `options`, in a fixed order: the run mode, `--trace`,
- * `--repeat-each` and `--workers`. A value that is not a whole count in bounds
+ * `--repeat-each`, `--workers` and `--max-failures`. A value that is not a whole count in bounds
  * is left out, as is a repeat count of 1. A repeat adds `--retries=0`, as the
  * editor's repeat does, so each repetition reports its own result.
  */
@@ -135,6 +137,8 @@ export function retryOptionFlags(options?: RetryRunOptions | null): string {
   if (repeatEach && repeatEach > 1) flags += ` --repeat-each=${repeatEach} --retries=0`;
   const workers = optionCount(options.workers);
   if (workers) flags += ` --workers=${workers}`;
+  const maxFailures = optionCount(options.maxFailures);
+  if (maxFailures) flags += ` --max-failures=${maxFailures}`;
   return flags;
 }
 

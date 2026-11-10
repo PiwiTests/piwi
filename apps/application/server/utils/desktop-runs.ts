@@ -15,8 +15,9 @@
  *    Piwi Picker hears, sends the same commands, and alone receives the code made at a stop, to copy (`stop-code`);
  *  - a failure no pause bar shows is held in a run whose **Hold failures** is on: the window turns it on or off
  *    (`show`), as Piwi Picker (`hold`) and an agent may, and it goes off as the last window showing the run closes;
- *    otherwise it goes on at once, and always in a run nobody attends (a Flake Lab, a bisect, a lab job, a run
- *    repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers hear that they hold no failure;
+ *    otherwise it goes on at once, and always in a run nobody attends (a Flake Lab, a bisect, a lab job, a run in UI
+ *    mode or repeating its tests past a failure: its ref ends in `-unattended`), whose workers hear that they hold no
+ *    failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
  *    linked folder alone, and refused once the file was written since the run's first connection opened (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
@@ -153,7 +154,8 @@ export const DESKTOP_AGENT_WORDS: AgentWords = {
 
 /** Why an agent is not given a run nobody attends. */
 const UNATTENDED_FOR_AGENTS =
-  'nobody attends it (a Flake Lab run, a bisect, a lab job, a run that repeats its tests or runs in UI mode), and an ' +
+  'nobody attends it (a Flake Lab run, a bisect, a lab job, a run in UI mode or one that repeats its tests past a ' +
+  'failure), and an ' +
   'agent steers only a run a person can watch.';
 
 /** The app's window as presence names it to the hub's other tools. */

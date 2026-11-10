@@ -64,7 +64,7 @@ channel, so a per-user install pulls a per-user update.
    the server's hub WebSocket, with the desktop token) can follow, pause,
    step and watch it (`apps/application/server/utils/desktop-runs.ts`), the
    window in its Local runs tray. A run nobody attends (Flake Lab, a bisect,
-   a lab job, a run repeating its tests or in UI mode) is named apart
+   a lab job, a run in UI mode or repeating its tests past a failure) is named apart
    (`-unattended`), and its failures never wait. The locators the tests pick
    go back to the server (`PIWI_EDITOR_SEND`, with a token that opens that
    route alone), which shows them in the window to copy.

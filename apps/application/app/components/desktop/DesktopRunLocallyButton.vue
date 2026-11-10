@@ -15,7 +15,13 @@
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan, localRunCopyOptions, type LocalRunOptions } from '~/utils/local-run-args';
+import {
+  buildLocalRunPlan,
+  localRunCopyOptions,
+  localRunHoldRefusal,
+  localRunHoldsFailures,
+  type LocalRunOptions,
+} from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
@@ -262,6 +268,18 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         },
       },
       {
+        label: 'Hold failures',
+        icon: 'i-lucide-hand',
+        type: 'checkbox',
+        checked: localRunHoldsFailures(options.value),
+        disabled: !!localRunHoldRefusal(options.value),
+        description: localRunHoldRefusal(options.value) ?? undefined,
+        onSelect: (e: Event) => {
+          e.preventDefault();
+          setOption({ holdFailures: !options.value.holdFailures });
+        },
+      },
+      {
         label: `Repeat each (× ${options.value.repeatEach})`,
         icon: 'i-lucide-repeat',
         children: REPEAT_CHOICES.map((n) => ({
@@ -274,6 +292,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           },
         })),
       },
+      ...(options.value.repeatEach > 1
+        ? [
+            {
+              label: 'Stop at the first failing repetition',
+              icon: 'i-lucide-octagon-x',
+              type: 'checkbox' as const,
+              checked: options.value.stopAtFirstFailure,
+              onSelect: (e: Event) => {
+                e.preventDefault();
+                setOption({ stopAtFirstFailure: !options.value.stopAtFirstFailure });
+              },
+            },
+          ]
+        : []),
       {
         label: 'Select tests by',
         icon: 'i-lucide-list-filter',

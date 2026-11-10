@@ -279,7 +279,9 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Run this test · by title · ×20 until a failure · trace', exact: true })
+      .click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Running 0/1…' })).toBeVisible();
 
@@ -488,8 +490,11 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     const defaults = page.locator('[data-shot="local-folder-run-defaults"]');
-    await defaults.getByRole('switch').click();
-    await expect(defaults.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    const trace = defaults.getByRole('switch', { name: 'Trace' });
+    await trace.click();
+    await expect(trace).toHaveAttribute('aria-checked', 'true');
+    // A run that does not repeat has nothing to stop at: its switch waits for a repeat count.
+    await expect(defaults.getByRole('switch', { name: 'Stop at the first failing repetition' })).toBeDisabled();
 
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -620,7 +625,9 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Run this test · by title · ×20 until a failure · trace', exact: true })
+      .click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
 
     const invocations = await runInvocations(page);
@@ -631,6 +638,7 @@ test.describe('Desktop local run', () => {
       '--trace=on',
       '--repeat-each=20',
       '--retries=0',
+      '--max-failures=1',
     ]);
 
     // The preset stays out of the project's saved defaults.
@@ -673,10 +681,25 @@ test.describe('Desktop local run', () => {
     await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
+    await page.getByRole('button', { name: 'Run this test · by title · ×20 until a failure', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
-    const invocations = await runInvocations(page);
-    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
+    let invocations = await runInvocations(page);
+    expect(invocations[0]!.args!.args).toEqual([
+      '--grep',
+      'checkout completes',
+      '--repeat-each=20',
+      '--retries=0',
+      '--max-failures=1',
+    ]);
+
+    // Without stopping at the first failing repetition, the run repeats every time.
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Stop at the first failing repetition' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
+    invocations = await runInvocations(page);
+    expect(invocations[1]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
   });
 
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {
