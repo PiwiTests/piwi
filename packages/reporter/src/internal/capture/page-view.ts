@@ -544,3 +544,30 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     },
   };
 }
+
+/** The holds of the pause bar so far: each holds it by its own token (`holdBarFrom`). */
+let barHolds = 0;
+
+/** A token for a new hold of the pause bar. */
+export function newBarHoldToken(): number {
+  return ++barHolds;
+}
+
+/**
+ * Runs in the page: the pause bar is inert while something holds it by its token (`token`, `hold`): a message of a
+ * viewer's input, or an agent's action. Tab then passes it by, the focus leaves it, no key presses its buttons and it
+ * leaves Escape to the page; once none holds it, it is as it was. Letting go of a bar another holds leaves it inert.
+ * Must stay self-contained.
+ */
+export function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
+  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
+  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
+  const doc = (globalThis as unknown as { document?: Document }).document;
+  const bar = doc?.getElementById('__piwi-pause-bar');
+  if (!doc || !bar) return;
+  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
+  if (hold) holds.push(token);
+  bar.__piwiKeyHolds = holds;
+  bar.inert = holds.length > 0;
+  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
+}

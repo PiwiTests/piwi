@@ -60,7 +60,7 @@ import {
 } from './lane-feed.js';
 import { jpegSize, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { pauseBarUp, viewportOf } from './page-view.js';
+import { holdBarFrom, newBarHoldToken, pauseBarUp, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -808,7 +808,7 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   const going = (): boolean => held === holding && input === own && watched(holding.stop) && !page.isClosed();
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      const keys: BarHold = { token: ++barHolds, drawn: null, held: false, sent: false };
+      const keys: BarHold = { token: newBarHoldToken(), drawn: null, held: false, sent: false };
       let skipped = 0;
       try {
         for (const [i, event] of events.entries()) {
@@ -870,9 +870,6 @@ export interface BarHold {
   sent: boolean;
 }
 
-/** The messages of a viewer's input so far: each holds the pause bar by its own token. */
-let barHolds = 0;
-
 /**
  * Whether the key event `key` of the message `hold` may be played on `page` now: a key's release, which the bar does
  * not listen to, always; a press while no pause bar shows, or once the draw of it that shows is held inert for the
@@ -901,24 +898,6 @@ export async function keyMayPlay(
   const answered = internalCall(page, () => page.evaluate(holdBarFrom, request)).then(() => true);
   hold.held = await answerWithin(Promise.race([answered, ended]), PAGE_ANSWER_MS, false);
   return hold.held;
-}
-
-/**
- * Runs in the page: the pause bar is inert while a message of a viewer's input holds it (`token`, `hold`), so Tab
- * passes it by, the focus leaves it, no key presses its buttons and it leaves Escape to the page; once none holds it,
- * it is as it was. A message that lets go of a bar another holds leaves it inert. Must stay self-contained.
- */
-function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
-  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
-  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
-  const doc = (globalThis as unknown as { document?: Document }).document;
-  const bar = doc?.getElementById('__piwi-pause-bar');
-  if (!doc || !bar) return;
-  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
-  if (hold) holds.push(token);
-  bar.__piwiKeyHolds = holds;
-  bar.inert = holds.length > 0;
-  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
 }
 
 /**
