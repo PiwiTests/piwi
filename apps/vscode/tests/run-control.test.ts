@@ -384,10 +384,21 @@ describe('what the controls offer', () => {
       accessibleLabel({
         name: 'Piwi: Run progress',
         text: '$(beaker) 3 of 9',
-        tooltip: "Piwi: the run ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+        tooltip:
+          "Piwi: [run #78](command:piwi.openRunPage) ran 3 of 9 tests.\n\n[Watch a worker's test](command:piwi.watchWorker)",
+        markdown: true,
         command: null,
       }),
-    ).toBe('Piwi: the run ran 3 of 9 tests.');
+    ).toBe('Piwi: run #78 ran 3 of 9 tests.');
+    // A plain tooltip holds the test's own words, read as they are.
+    expect(
+      accessibleLabel({
+        name: 'Piwi: Pausing',
+        text: '$(loading~spin) Pausing…',
+        tooltip: "Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns",
+        command: null,
+      }),
+    ).toBe("Piwi: the test waits in getByText('[Docs](x)'), and stops once it returns");
   });
 
   test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {

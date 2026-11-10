@@ -375,15 +375,16 @@ as a debugger's does, where the file shows already, else in the active group. Wi
 alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and another opens
 with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the right
 (`asideColumn`). It is drawn as the execution point: `media/execution-point.svg` in the gutter, and the line's
-background in `piwi.executionPointBackground` (the debugger's stack frame color by default), with a hover that holds the
-controls. A CodeLens above it reads `pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after
-`$(debug-pause)`, then Resume, Step, Run to cursor, Finish and, where `canEnd`, End test, each naming its worker and its
-stop; one whose stop went on says `the test went on.` (`targetStop`). The choice among several stops shows the same text
-after `$(debug-pause)`; the hover and the paused page's caption show it as plain text. A key or a palette command, for a
-control within `RESUMED_KEY_MS` of an answer and until another stop of that slot opens, acts on a stop of the answered
-slot or on none, whatever the caret or another worker's new stop say, so a key pressed again answers no other worker;
-else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks
-(`stopsFor`, `StopsShown.choose`).
+background in `piwi.executionPointBackground` (the debugger's stack frame color by default), a held failure's in red
+(`media/failure-point.svg`, `piwi.failurePointBackground`), with a hover that holds every control. A CodeLens above it
+reads `pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume,
+Step, Finish and **Write code…** (`stopLensControls`; Resume and Write code… at a failure), each naming its worker and
+its stop; one whose stop went on says `the test went on.` (`targetStop`). The choice among several stops shows the same
+text after `$(debug-pause)`; the hover and the paused page's caption show it as plain text. A key or a palette command,
+for a control within `RESUMED_KEY_MS` of an answer and until another stop of that slot opens, acts on a stop of the
+answered slot or on none, whatever the caret or another worker's new stop say, so a key pressed again answers no other
+worker; else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it
+asks (`stopsFor`, `StopsShown.choose`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that

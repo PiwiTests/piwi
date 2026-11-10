@@ -1740,14 +1740,14 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
 }
 
 /**
- * What a screen reader says of a run control item: its tooltip's first paragraph as plain text, a link's words kept
- * and its target dropped, never a codicon id.
+ * What a screen reader says of a run control item: its tooltip's first paragraph as plain text (in a Markdown tooltip,
+ * a link's words kept and its target dropped), never a codicon id.
  */
 export function accessibleLabel(item: ControlItem): string {
   const first = item.tooltip.split('\n\n')[0] ?? item.name;
-  return first
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\$\([a-z0-9-~]+\)\s*/g, '')
-    .replace(/\\([\\`*_[\]<>|])/g, '$1')
-    .trim();
+  // Only a Markdown tooltip has links and escapes to read through; a plain one holds the test's own words as they are.
+  const plain = item.markdown
+    ? first.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\\([\\`*_[\]<>|])/g, '$1')
+    : first;
+  return plain.replace(/\$\([a-z0-9-~]+\)\s*/g, '').trim();
 }

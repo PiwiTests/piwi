@@ -367,8 +367,13 @@ const SCENES = {
     // The count of the paused line's locator, drawn after the line's end.
     await couponRun.worker.waitFor((m) => m.type === 'request' && m.what === 'locator', 'the count asked');
     const from = couponRun.worker.heard.length;
+    // Write code… offers the code actions in a pick: Mock a request lists the responses the test kept.
     await page
-      .locator('.codelens-decoration a', { hasText: /^Mock$/ })
+      .locator('.codelens-decoration a', { hasText: /^Write code…$/ })
+      .first()
+      .click();
+    await page
+      .locator('.quick-input-widget .monaco-list-row', { hasText: 'Mock a request' })
       .first()
       .click();
     await couponRun.worker.waitFor((m) => m.type === 'request' && m.what === 'requests', 'the responses asked', from);

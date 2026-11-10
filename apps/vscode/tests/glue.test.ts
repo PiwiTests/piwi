@@ -2084,6 +2084,7 @@ describe('the status item while a run holds a stop', () => {
     expect(heldStops([])).toBeNull();
     expect(heldStops([stopped('breakpoint')])).toBe('stop');
     expect(heldStops([stopped('failure')])).toBe('failure');
+    expect(heldStops([{ ...stopped('breakpoint'), terminal: true }])).toBeNull();
     expect(heldText(live, 'stop')).toBe('$(debug-pause) Piwi: run #124 · 4/9 · 1 failing · yours');
     expect(heldText(live, 'failure')).toBe('$(error) Piwi: run #124 · 4/9 · 1 failing · yours');
     expect(heldText(live, null)).toBe(live);
