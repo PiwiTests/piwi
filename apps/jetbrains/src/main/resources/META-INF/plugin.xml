@@ -114,7 +114,7 @@
                     icon="AllIcons.Actions.Refresh"
                     description="Read the latest run and its failures again, not the indexes Refresh fetches"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
-                    text="Run the Tests That Reach This File" icon="AllIcons.Nodes.Test" description="Run them in the Run tool window">
+                    text="Run the Tests That Reach This File" description="Run them in the Run tool window">
             </action>
             <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
                     text="Run the Test at the Caret" icon="AllIcons.Actions.Execute"
@@ -131,7 +131,7 @@
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
             </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
-                    icon="AllIcons.Actions.Selectall"
+                    icon="AllIcons.Actions.ListFiles"
                     description="Run one of the project's saved selections"/>
             <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run Headed"
                     description="Run every test Piwi starts in this project headed, with its browser window shown"/>
@@ -172,7 +172,6 @@
                     description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
             <action id="Piwi.ResetRunsMcpToken" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
                     text="Reset the Runs' MCP Server Token"
-                    icon="AllIcons.Nodes.Padlock"
                     description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
@@ -253,12 +252,10 @@
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
             <action id="Piwi.ShowBrowser" class="dev.piwitests.jetbrains.ShowBrowserAction"
                     text="Show the Stopped Test's Browser"
-                    icon="AllIcons.Nodes.PpWeb"
                     description="Bring the stopped test's window to the front, at a stop of a headed run"/>
             <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
             <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
                     text="Share the Stopped Browser with Playwright Tools"
-                    icon="AllIcons.General.ExternalTools"
                     description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
             <!-- Asked with a warning the first time in the IDE's session: the run's pages go to the team instance. -->
             <action id="Piwi.ShareRunLive" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the Run Live"

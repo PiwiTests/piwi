@@ -203,16 +203,61 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
     const run = await startRun(editor);
     try {
       await waitFor(() => (editor.svc.latest(run.ref)?.workers[0]?.state === 'running' ? true : undefined));
-      expect(await shortcut()).toEqual([{ ok: true, message: 'Pausing at the next call.' }]);
+      expect(await shortcut()).toEqual({
+        action: 'pause',
+        answers: [{ ok: true, message: 'Pausing at the next call.' }],
+      });
       expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
+      // Its sign on the toolbar badge, for a moment.
+      expect(await worker.evaluate(() => chrome.action.getBadgeText({}))).toBe('II');
       run.worker.stopAt(1, 30, true);
       await waitFor(() => editor.svc.latest(run.ref)?.workers[0]?.stop ?? undefined);
       // The extension hears the stop from the hub as the editor does, a burst at most every 50 ms.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      expect(await shortcut()).toEqual([{ ok: true, message: 'Resuming.' }]);
+      expect(await shortcut()).toEqual({ action: 'resume', answers: [{ ok: true, message: 'Resuming.' }] });
       expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
     } finally {
       run.worker.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a run of several workers pauses and resumes all from its header, and F10 steps the stopped test', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    // This run alone: a run of an earlier test may still be listed.
+    const card = liveRun(runs).filter({ hasText: 'cart › pays' });
+    const { ref, channel } = await editor.svc.command();
+    const first = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const second = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 1, [...RUN_TAKES]);
+    first.begin('pays');
+    second.begin('adds a mug');
+    try {
+      await card.getByRole('button', { name: 'Pause all' }).click();
+      expect(await first.next('control')).toEqual({ type: 'control', action: 'pause' });
+      expect(await second.next('control')).toEqual({ type: 'control', action: 'pause' });
+      first.stopAt(1, 30, true);
+      second.stopAt(1, 31, true);
+      await card.getByRole('button', { name: 'Resume all' }).click();
+      expect(await first.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(await second.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      first.send({ type: 'running', stop: 1 });
+      second.send({ type: 'running', stop: 1 });
+      await expect(card.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0);
+      // The only stopped test takes the debuggers' keys, its buttons naming them.
+      first.stopAt(2, 30, true);
+      const step = card.getByRole('button', { name: 'Step', exact: true });
+      await expect(step).toHaveAttribute('aria-keyshortcuts', 'F10');
+      await expect(card.getByRole('button', { name: 'Resume all' })).toHaveCount(0);
+      await runs.keyboard.press('F10');
+      expect(await first.next('control', 2)).toEqual({ type: 'control', action: 'step', stop: 2 });
+    } finally {
+      await editor.svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
+      first.socket.destroy();
+      second.socket.destroy();
     }
   } finally {
     await context.close();
@@ -919,7 +964,7 @@ test.describe('code from a stop', () => {
         // No Step nor Finish: whatever answers it, the test ends as it failed.
         await expect(card.locator('.controls button')).toHaveText(['Resume', 'Pick', 'Record', 'Assert', 'More']);
         const resume = card.getByRole('button', { name: 'Resume' });
-        await expect(resume).toHaveAttribute('title', 'Let the test end as it failed');
+        await expect(resume).toHaveAttribute('title', 'Let the test end as it failed (F8)');
         await resume.click();
         expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
 

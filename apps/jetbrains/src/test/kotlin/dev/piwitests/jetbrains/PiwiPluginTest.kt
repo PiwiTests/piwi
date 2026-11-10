@@ -111,9 +111,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
     fun testEveryActionHasAnIconButTogglesAndThoseWaitingForPiwisGlyph() {
         val actions = ActionManager.getInstance()
         val toggles = setOf("Piwi.RunHeaded", "Piwi.ToggleCoverageMarks")
+        // Appendix A's glyphs Piwi draws, and the concepts no platform icon with a New UI glyph on 2024.1 says.
         val awaiting = setOf(
             "Piwi.Disconnect", "Piwi.PairPicker", "Piwi.PauseAndWatch", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareRunLive", "Piwi.StopSharingRun",
+            "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.RunTestsForFile", "Piwi.ResetRunsMcpToken",
+            "Piwi.ShowBrowser", "Piwi.ShareWithPlaywright",
         )
         val ids = actions.getActionIdList("Piwi.").filter { actions.getAction(it) !is com.intellij.openapi.actionSystem.ActionGroup }
         val bare = ids.filter { actions.getAction(it).templatePresentation.icon == null }.toSet()
@@ -126,8 +128,6 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
         for ((action, id) in registered) assertSame(id, actions.getAction(id).templatePresentation.icon, PiwiIcons.stopAction(action))
         assertSame(PiwiIcons.OPEN_IN_DASHBOARD, actions.getAction("Piwi.OpenInDashboard").templatePresentation.icon)
-        assertSame(PiwiIcons.SHOW_BROWSER, actions.getAction("Piwi.ShowBrowser").templatePresentation.icon)
-        assertSame(PiwiIcons.SHARE_WITH_PLAYWRIGHT, actions.getAction("Piwi.ShareWithPlaywright").templatePresentation.icon)
     }
 
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */

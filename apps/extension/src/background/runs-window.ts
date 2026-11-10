@@ -16,7 +16,15 @@ import { DESKTOP_PAIRED_AT_KEY, getDesktopSettings } from '../shared/desktop-set
 import { fetchDesktopHubs } from '../shared/piwi-client.js';
 import { secretArea } from '../shared/secret-store.js';
 import { hostPattern } from '../shared/web-origin.js';
-import { RUNS_PAGE, RUNS_PORT, liveRuns, parseRunsRequest, type RunsEvent } from '../shared/runs.js';
+import {
+  RUNS_BOUNDS_KEY,
+  RUNS_PAGE,
+  RUNS_PORT,
+  liveRuns,
+  parseRunsRequest,
+  readRunsBounds,
+  type RunsEvent,
+} from '../shared/runs.js';
 import { browserSocket } from './hub-connection.js';
 import { RunHubs, type RunsViewer } from './run-hubs.js';
 
@@ -83,7 +91,7 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     const request = parseRunsRequest(raw);
     if (!request) return;
     if (request.type === 'window') runsWindows.set(port, request.windowId);
-    else if (request.type === 'find') void runHubs.find();
+    else if (request.type === 'find') void runHubs.find().then(() => post({ type: 'found' }));
     else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
@@ -111,7 +119,19 @@ async function openRunsWindowId(url: string): Promise<number | null> {
   }
 }
 
-/** The popup's Runs tile: the Runs window comes to the front, opened in a small window of its own when none is. */
+/** Where the person left the last Runs window, when it was kept; null to let the browser place it. */
+async function keptBounds(): Promise<ReturnType<typeof readRunsBounds>> {
+  try {
+    return readRunsBounds((await chrome.storage.local.get(RUNS_BOUNDS_KEY))[RUNS_BOUNDS_KEY]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The popup's Runs tile: the Runs window comes to the front, opened in a small window of its own when none is, where
+ * the person left the last one.
+ */
 export async function openRunsWindow(): Promise<{ ok: boolean }> {
   const url = chrome.runtime.getURL(RUNS_PAGE);
   const windowId = await openRunsWindowId(url);
@@ -123,12 +143,16 @@ export async function openRunsWindow(): Promise<{ ok: boolean }> {
       // Closed meanwhile: a new one.
     }
   }
-  try {
-    await chrome.windows.create({ url, type: 'popup', ...RUNS_WINDOW, focused: true });
-    return { ok: true };
-  } catch {
-    return { ok: false };
+  const bounds = await keptBounds();
+  for (const place of bounds ? [bounds, RUNS_WINDOW] : [RUNS_WINDOW]) {
+    try {
+      await chrome.windows.create({ url, type: 'popup', ...place, focused: true });
+      return { ok: true };
+    } catch {
+      // A place the browser refuses (a screen gone): where the browser places it.
+    }
   }
+  return { ok: false };
 }
 
 /** What the popup's Runs tile shows: whether a hub answers, and how many runs are live. */
@@ -160,6 +184,4 @@ export function startRunHubs(): void {
     }
     serveRunsPort(port);
   });
-  // What the run shortcut does, for the e2e suite, which cannot press a shortcut the browser holds.
-  (globalThis as { __piwiRunShortcut?: () => Promise<unknown> }).__piwiRunShortcut = () => runHubs.shortcut();
 }

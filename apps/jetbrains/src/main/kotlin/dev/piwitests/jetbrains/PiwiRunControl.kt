@@ -1256,7 +1256,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (Glue.canShowBrowser(stop)) {
             addSeparator()
             add(
-                object : DumbAwareAction(SHOW_THE_BROWSER, null, PiwiIcons.SHOW_BROWSER) {
+                object : DumbAwareAction(SHOW_THE_BROWSER) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
                     override fun actionPerformed(e: AnActionEvent) = showBrowser(stop)
@@ -1266,7 +1266,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (Glue.canShare(stop)) {
             addSeparator()
             add(
-                object : DumbAwareAction(SHARE_WITH_PLAYWRIGHT, null, PiwiIcons.SHARE_WITH_PLAYWRIGHT) {
+                object : DumbAwareAction(SHARE_WITH_PLAYWRIGHT) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
                     override fun actionPerformed(e: AnActionEvent) = share(stop)

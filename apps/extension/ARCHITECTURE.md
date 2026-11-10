@@ -1028,12 +1028,29 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   says what the app answered.
 - The window pings the worker every 20 s (`RUNS_PING_MS`), which keeps the worker alive while the window is open.
 
+### Run-level controls, keys and the window's place
+
+- A run of several workers has **Pause all** (the hub's `runControl` `pause` with no worker) and **Resume all** (a
+  `resume` for each stopped worker, at its stop) under its name, from `runLevelControls`.
+- Resume, Step and Finish take `F8` (and `F5`), `F10` and `Shift+F11` (`stopKeyOf`, `STOP_KEYS` on the buttons'
+  `aria-keyshortcuts`), for the worker whose row holds the focus (`data-worker`), else the only stopped test
+  of a hub that answers (`keyTargetOf`); never from a field, nor at a held failure, which only its Resume button ends.
+  The live view leaves the function keys to the window (`keyOnView`).
+- The window keeps its place: the page writes its bounds to `chrome.storage.local` (`RUNS_BOUNDS_KEY`, checked by
+  `readRunsBounds`; not while maximized) as it is resized, loses the focus or closes, and the worker opens the next one
+  there, else where the browser places it when it refuses the place.
+- **Look again** says it looks (`runs_looking`) until the worker answers its `find` with `found`, `LOOKING_SHOWN_MS`
+  at least, `LOOKING_MAX_MS` at most.
+
 ### The run shortcut
 
 The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared/runs.ts`), handled by the worker.
 
 - What it does comes from `shortcutCommands`: it resumes every stopped test at its stop; with no test stopped, it
-  pauses every run with a worker.
+  pauses every run with a worker but a run nobody attends (`attendedRun`: a hub that keeps a Hold failures for each
+  run, `hold` among its features, gives that run none), whose tests are left to run; a stop of such a run still resumes.
+- Its sign is the toolbar badge for `SHORTCUT_SIGN_MS` (`badge_runsPaused`, `badge_runsResumed`, or `badge_runsNone`
+  when no run took it), then the badge of the state again (`showStateBadge`), with or without a Runs window open.
 - It has no key at install (see "The manifest and its permissions"). The Runs window's footer shows the key it was
   given (`chrome.commands.getAll`, read again when the window gets the focus back), or says it has none.
 - The footer's **Set a shortcut** opens the browser's shortcuts page: Firefox's Manage Extension Shortcuts through

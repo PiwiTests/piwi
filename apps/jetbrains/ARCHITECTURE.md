@@ -277,12 +277,15 @@ The right-click menu (`PopupHandler.installPopupMenu`) acts through `PiwiCommand
 - on a run's node: choose its baseline and open its run.
 
 **Icons.** Every action of `plugin.xml` draws a platform icon from the concept table of
-[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), present on
-2024.1 and 2026.3. The exceptions are the two toggles, whose menu rows show a check mark, and seven that wait for a glyph
-Piwi draws (Disconnect, Pair, Pause and Watch, Assert a Region, Mock a Request, Share the Run Live, Stop Sharing). The
-icons drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree
-and a held failure, Open in Dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a
-branch) and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
+[editor-ux-coherence.md](../../proposals/editor-ux-coherence.md#appendix-a-the-concept-table-first-draft), one that has
+a New UI glyph on 2024.1 and 2026.3 (checked by hand against each `PlatformIconMappings.json`). The exceptions are the
+two toggles, whose menu rows show a check mark; the record actions' `Ide.Macro.Recording_1`, which waits for Piwi's
+record glyph; and the actions that wait for a glyph of their own: Disconnect, Pair, Pause and Watch, Assert a Region,
+Mock a Request, Share the Run Live, Stop Sharing, and the four no mapped platform icon says (Run the Tests That Reach
+This File, Reset the Runs' MCP Server Token, Show the Stopped Test's Browser, Share with Playwright Tools). The icons
+drawn in code come from `PiwiIcons`: the failed mark (`TestError`) on the result icon, the status item, the tree and a
+held failure, Open in Dashboard's external link, the hand-offs of this menu (an archive, an image, a desktop, a branch)
+and the stop's code actions in its popups. `PiwiPluginTest` holds both lists.
 
 **Re-run the Failing Tests** (`Piwi.RerunFailing`, under **Tools → Piwi** and in the toolbar) runs
 `FailuresResult.rerun`, one run per Playwright config (`PiwiCommands.rerunFailing`), or one config's alone from its node
