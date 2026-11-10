@@ -274,6 +274,8 @@ no failure. The key of a node under it is the context node's key and its own, on
 - `not-configured`: no instance is named;
 - `no-project`: no project is chosen or found;
 - `refused`: a key is missing or refused;
+- `desktop-unproven`: the desktop app answered without proving it holds its token (an app older than the proof, or
+  another program on its port), so the token is not sent: the person restarts or updates the app;
 - `unreachable`: the instance did not answer, or answered with an error.
 
 A client thus tells an instance that did not answer apart from a missing connection. While an instance does not answer,

@@ -471,12 +471,14 @@ nothing on a line holding no locator. The cursor leaving the file takes the page
 
 The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright config (`statusContext`): the deepest
 config folder that holds the active editor's file, else the first connected config, else the first the instance did
-not answer, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
+not answer or the desktop app did not prove itself to, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
 
 **A click** depends on the state:
 
 - connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`);
 - the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**;
+- the desktop app did not prove its token (`problemKind: 'desktop-unproven'`, **Piwi: restart the desktop app**, the
+  `retry` action): **Piwi: Refresh**; the service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Piwi: Connect**;
 - no Playwright config found: nothing.
 

@@ -134,6 +134,19 @@ class GlueTest {
     }
 
     @Test
+    fun `when the desktop app does not prove its token, says to restart it, not that it is unreachable`() {
+        val problem = "The desktop app's token is not sent to http://127.0.0.1:3000: the server there did not prove it holds the token. Restart or update the desktop app."
+        val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "desktop-unproven")))
+        assertEquals(
+            Glue.StatusView("Piwi: restart the desktop app", problem, null, Glue.StatusAction.RETRY, Glue.StatusIcon.WARNING),
+            Glue.statusView(status, null),
+        )
+        // Beside a config with no project, the tool window and the settings page quote the desktop app's problem too.
+        val two = StatusResult(listOf(ContextStatus(root = "/a", problem = "No project.", problemKind = "no-project"), status.contexts!!.single()))
+        assertEquals("Not connected. $problem", Glue.connectionSummary(two))
+    }
+
+    @Test
     fun `a passing run, with its flaky tests, which the popup's first entry reads again`() {
         assertEquals(
             Glue.StatusView(
@@ -728,7 +741,10 @@ class GlueTest {
             "Piwi: pausing… · waits in Click getByRole('button', { name: 'Pay' })",
             Glue.runControlStatus(controls, Glue.stopsOf(sessions)),
         )
-        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting)), Glue.waitingWorkers(sessions))
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting, 0)), Glue.waitingWorkers(sessions))
+        // A worker Playwright started again in its slot is named by the slot, as the worker views name it.
+        val restarted = mapOf("ed-1" to session("ed-1", RunWorker(2, 0, "running", runTest(), pausing = true, waiting = waiting)))
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 2, waiting, 0)), Glue.waitingWorkers(restarted))
         assertEquals(
             "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
             Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
@@ -755,12 +771,12 @@ class GlueTest {
         )
         val sessions = mapOf(
             "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
-            "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),
+            "ed-2" to session("ed-2", RunWorker(3, 1, "stopped", runTest(), stopAt(pageUri, 8))),
         )
         val stops = Glue.stopsOf(sessions)
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
-        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · Worker 2", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 

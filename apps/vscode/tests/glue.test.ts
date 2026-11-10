@@ -162,6 +162,23 @@ describe('statusBarView', () => {
     expect(refused).toMatchObject({ text: '$(plug) Piwi: connect', action: 'connect' });
   });
 
+  test('when the desktop app does not prove its token, says to restart it, not that it is unreachable', () => {
+    const problem =
+      "The desktop app's token is not sent to http://127.0.0.1:3000: the server there did not prove it holds the token. Restart or update the desktop app.";
+    const view = statusBarView(
+      { contexts: [{ ...connected.contexts[0]!, connected: false, problem, problemKind: 'desktop-unproven' }] },
+      null,
+    );
+    expect(view).toEqual({
+      text: '$(warning) Piwi: restart the desktop app',
+      tooltip: `${problem}\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
+      action: 'retry',
+      url: null,
+      liveUrl: null,
+      error: false,
+    });
+  });
+
   test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',

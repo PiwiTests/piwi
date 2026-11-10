@@ -30,7 +30,7 @@ import {
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
-import { holdDesktopToken } from './http.js';
+import { DesktopNotProvenError, holdDesktopToken } from './http.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -633,6 +633,8 @@ export class PiwiContext {
             ? `${connection.serverUrl} refused the API key (${e.status}): run Piwi: Connect to sign in again.`
             : `${connection.serverUrl} needs an API key (${e.status}): run Piwi: Connect to sign in.`,
         );
+      } else if (e instanceof DesktopNotProvenError && e.proof === 'unproven') {
+        this.fail('desktop-unproven', e.message);
       } else {
         this.fail('unreachable', `Could not reach ${connection.serverUrl}: ${(e as Error).message}`);
       }

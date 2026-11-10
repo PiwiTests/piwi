@@ -6,7 +6,9 @@ uses it in Rider, and the VS Code extension (`apps/vscode/`), both thin clients 
 their seams to the dashboard, the desktop app and Piwi Picker, against one aim: a developer who moves between Piwi's
 tools meets one Piwi.
 
-**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Nothing is built, and nothing here is on
+**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built: [Q24](#q24) (one name per worker,
+#1213), with an unproven desktop app told apart from an unreachable one in both status items (#1213), and every command,
+setting and action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding is fixed; the
 live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and

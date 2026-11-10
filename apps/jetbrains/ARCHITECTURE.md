@@ -291,6 +291,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - connected: **Read the Latest Run Again** (`PiwiProjectService.refreshRun`: `piwi/refreshRun`, then `refreshStatus`,
   on a pooled thread; the item reads `Piwi: refreshing…` meanwhile);
 - the instance does not answer (`Piwi: unreachable`, `problemKind`): **Refresh**;
+- the desktop app did not prove its token (`Piwi: restart the desktop app`, `desktop-unproven`): **Refresh**; the
+  service also reads it again as the restarted app rewrites its discovery file;
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
 - the service has not started yet: **Settings**;
