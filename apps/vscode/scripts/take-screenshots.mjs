@@ -372,10 +372,7 @@ const SCENES = {
       .locator('.codelens-decoration a', { hasText: /^Write code…$/ })
       .first()
       .click();
-    await page
-      .locator('.quick-input-widget .monaco-list-row', { hasText: 'Mock a request' })
-      .first()
-      .click();
+    await page.locator('.quick-input-widget .monaco-list-row', { hasText: 'Mock a request' }).first().click();
     await couponRun.worker.waitFor((m) => m.type === 'request' && m.what === 'requests', 'the responses asked', from);
     await page
       .locator('.quick-input-widget .monaco-list-row', { hasText: '/api/shipping' })
