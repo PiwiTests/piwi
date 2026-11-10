@@ -1683,7 +1683,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
             ? vscode.ConfigurationTarget.Global
             : vscode.ConfigurationTarget.Workspace;
         await config.update('runNotifications', 'failures' satisfies RunNotifications, target);
-        vscode.window.setStatusBarMessage("Piwi: a run's notice now comes only when a test fails", 5000);
+        vscode.window.setStatusBarMessage(
+          "Piwi: a run's notice now comes only when a test fails; a verification still says how it went",
+          5000,
+        );
       }
     }),
     // A run started here: a worker started or ended a test, stopped or went on.

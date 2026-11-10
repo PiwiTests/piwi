@@ -5,7 +5,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IconLoader
-import com.intellij.openapi.wm.StatusBar
+import com.intellij.openapi.util.text.StringUtil
 import javax.swing.Icon
 
 /**
@@ -22,13 +22,16 @@ enum class PiwiNotice(val group: String) {
     /** An offer Piwi makes once, such as its MCP server or the desktop app: a suggestion. */
     OFFER("Piwi suggestions"),
 
-    /** What went wrong: the editor service, a download, a refusal. */
+    /** What went wrong: the editor service, a download, a project Piwi waits for. */
     PROBLEM("Piwi problems"),
+
+    /** A confirmation of what the person just did (`Copied.`, `Connected to …`): it fades on its own. */
+    CONFIRMATION("Piwi confirmations"),
 }
 
 /**
- * Every Piwi balloon: titled Piwi, with Piwi's icon, in the group of its kind ([PiwiNotice]); a confirmation of what the
- * person just did goes to the status bar instead ([confirm]).
+ * Every Piwi balloon: titled Piwi, in the group of its kind ([PiwiNotice]), with Piwi's icon when it is an information
+ * (a warning or an error keeps the platform's icon, which says how serious it is).
  */
 object PiwiNotifier {
     private val ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiNotifier::class.java)
@@ -37,16 +40,16 @@ object PiwiNotifier {
     fun create(kind: PiwiNotice, content: String, type: NotificationType = NotificationType.INFORMATION): Notification =
         NotificationGroupManager.getInstance().getNotificationGroup(kind.group)
             .createNotification(TITLE, content, type)
-            .setIcon(ICON)
+            .setIcon(if (type == NotificationType.INFORMATION) ICON else null)
             .setSuggestionType(kind == PiwiNotice.OFFER)
 
     /** The kind of a message `PiwiCommands.notify` shows: a warning or an error is a problem, anything else a result. */
     fun kindOf(type: NotificationType): PiwiNotice =
         if (type == NotificationType.WARNING || type == NotificationType.ERROR) PiwiNotice.PROBLEM else PiwiNotice.RESULT
 
-    /** A confirmation of what the person just did (`Copied.`, `Connected to …`): the status bar's text, no balloon. */
+    /** A confirmation of what the person just did (`Copied.`, `Connected to …`), plain text, in its own group. */
     fun confirm(project: Project, message: String) {
-        StatusBar.Info.set("$TITLE: $message", project)
+        create(PiwiNotice.CONFIRMATION, StringUtil.escapeXmlEntities(message)).notify(project)
     }
 
     const val TITLE = "Piwi"

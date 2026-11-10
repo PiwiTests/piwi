@@ -217,7 +217,7 @@ object PiwiConnectFlow {
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
         service.useDesktop(picked)
-        PiwiCommands.notify(
+        PiwiNotifier.confirm(
             project,
             "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
         )

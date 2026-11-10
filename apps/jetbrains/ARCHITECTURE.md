@@ -379,9 +379,10 @@ other command, an IDE without the runner, or a run the runner does not take, run
 (`PiwiNotice`), each its own row in **Settings → Appearance & Behavior → Notifications**: `Piwi` for results (a run's
 verdict, a job, a recording), `Piwi requests` for what waits for an answer (Debug in my editor, a run shared live, a
 shared browser), sticky, `Piwi suggestions` for an offer made once (the MCP server, the desktop app, the first run), as
-a suggestion, and `Piwi problems` for what went wrong. `PiwiCommands.notify` shows a warning or an error as a problem,
-anything else as a result; a confirmation of what the person just did (Copied., Connected to …) is the status bar's
-text instead (`PiwiNotifier.confirm`). A `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded`
+a suggestion, `Piwi problems` for what went wrong, and `Piwi confirmations` for what the person just did (Copied.,
+Connected to …, `PiwiNotifier.confirm`). `PiwiCommands.notify` shows a warning or an error as a problem, anything
+else, a refusal of the service included, as a result. An information carries Piwi's icon; a warning or an error keeps
+the platform's, which says how serious it is. D25 lists the five group ids, which users' notification settings name. A `piwi/notice` is shown through `PiwiCommands.notify`. So is `piwi/runEnded`
 (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the Failures**, **Open in Dashboard**, and **Re-run Failing**
 when something fails, or **Only on Failure** when nothing does while the setting is `always`. The run's balloon follows
 `PiwiLocalSettings.runNotifications` (**Settings → Tools → Piwi**: `always`, `failures`, `never`; in

@@ -240,7 +240,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /** Say once that the editor service starts once the project is trusted. */
     fun waitForTrust() {
         if (!trustAsked.compareAndSet(false, true)) return
-        PiwiNotifier.create(PiwiNotice.RESULT, Glue.UNTRUSTED).notify(project)
+        PiwiNotifier.create(PiwiNotice.PROBLEM, Glue.UNTRUSTED).notify(project)
     }
 
     /** Whether a Playwright config sits in the project; false until the search started with the project ends. */

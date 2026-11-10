@@ -795,8 +795,9 @@ object Glue {
     /** The action of a passing run's notice that keeps the next ones for runs that fail (`runNotifications`). */
     const val ONLY_ON_FAILURE = "Only on Failure"
 
-    /** The status bar's confirmation once Only on Failure is chosen. */
-    const val ONLY_ON_FAILURE_SET = "a run's notice now comes only when a test fails (Settings → Tools → Piwi)"
+    /** The confirmation once Only on Failure is chosen. */
+    const val ONLY_ON_FAILURE_SET =
+        "A run's notice now comes only when a test fails; a verification still says how it went (Settings → Tools → Piwi)."
 
     /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
     data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)

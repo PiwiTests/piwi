@@ -86,6 +86,7 @@
         <notificationGroup id="Piwi requests" displayType="STICKY_BALLOON"/>
         <notificationGroup id="Piwi suggestions" displayType="BALLOON"/>
         <notificationGroup id="Piwi problems" displayType="BALLOON"/>
+        <notificationGroup id="Piwi confirmations" displayType="BALLOON"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
         <!-- A run's controls go first among the actions their shortcut runs, while a run is live (below). -->
