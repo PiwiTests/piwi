@@ -75,7 +75,13 @@ glyph on 2024.1, and JetBrains' Connect, which keeps the user icon), [Q14](#q14)
 do, `pauseReasonText` reading `stopWords`, [LR15](#lr15), the editors having taken the rows' words before), [Q22](#q22)
 (the dashboard says Open in editor wherever it said Open in IDE, its feature page and the help included, and each
 JetBrains method names the Piwi plugin it asks first, [AC14](#ac14); the VS Code method keeps its name, since it
-reaches the Piwi extension only without a workspace root), and every command, setting and action id of both editors registered in D25 and held to the manifests
+reaches the Piwi extension only without a workspace root), [Q21](#q21) (both Marketplace listings, the plugin's
+README and the editors page say what Piwi needs, a desktop app, `npx @piwitests/server` or the Docker image, that it
+reads Playwright Test in JavaScript and TypeScript, and that it is self-hosted with zero telemetry, under
+`editor-listings.test.ts`, [ST5](#st5); the coverage page says the plugin is verified for compatibility with Rider,
+[RD4](#rd4), whose Rider scene of [M17](#m17) remains; the IDE's Playwright runner named for Rider, documented, and
+its option saying why it is off, [RD5](#rd5); a project with no Playwright config whose `.csproj` references
+Playwright for .NET told so once, [RD6](#rd6)), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker

@@ -33,6 +33,10 @@ In a project opened in safe mode, Piwi runs nothing and says it waits for your t
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 
+Piwi reads Playwright Test suites in JavaScript and TypeScript. A Rider solution whose Playwright tests are written in
+C# (a `.csproj` referencing `Microsoft.Playwright`) and that holds no Playwright config gets no tool window or status
+item: a notification says so, once per project.
+
 
 ## Where things are
 
@@ -72,6 +76,10 @@ The rest is native, and every action is under **Tools → Piwi**:
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
   says how many elements its locator matches on the stopped page, and a failure held there reads `Failed · …`.
+- **The IDE's Playwright runner**: **Settings → Tools → Piwi → Runs → Run the tests in the IDE's Playwright runner**,
+  off by default, runs Piwi's test runs there, with its test tree, Debug and Rerun Failed Tests, rather than in the Run
+  tool window's console. WebStorm, IntelliJ IDEA Ultimate and Rider have the runner; in another IDE, the option is off
+  and says why.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.

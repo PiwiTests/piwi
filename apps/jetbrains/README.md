@@ -10,6 +10,9 @@ finds the locator you should have used; this plugin brings that into the IDE. It
 Install it from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) (**Settings → Plugins**),
 in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with Node.js 20 or later.
 
+**You need a Piwi instance:** the [desktop app](https://piwitests.dev/features/desktop), `npx @piwitests/server` or the
+Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+
 ## What it shows
 
 - **The latest CI failures at their lines.** Each failure of the latest run on your branch is an error at the line
@@ -18,7 +21,7 @@ in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with 
 - **The heal as a quick fix.** On a broken locator, the replacement Piwi recommends from the last passing run is an
   Alt+Enter away: the same edit an auto-heal pull request would make.
 - **The Piwi tool window.** The run's failures as a tree, grouped by file, cluster or owner, with your runs since; each
-  test re-runs, opens its trace or its page in one click. Compare with another branch, a run by its id, or your local
+  test re-runs, opens its trace or its page from its right-click menu. Compare with another branch, a run by its id, or your local
   runs only.
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, and above
   each locator line and each application file the tests that use or reach it, ready to run (Code Vision).
@@ -42,8 +45,8 @@ workspace `.env`, or the Piwi desktop app. Otherwise, **Settings → Tools → P
 clicked in the dashboard open at their line in the IDE, locators picked in the Piwi Picker browser extension land at
 the caret, and Piwi's MCP server is one copy away for the AI Assistant.
 
-Nothing from your project is sent to the instance: its locator index, code reach and latest run are compared with your
-files locally.
+Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: its locator index, code reach and
+latest run are compared with your files locally.
 
 [Editor extensions](https://piwitests.dev/features/editors) documents everything the plugin shows, and
 [JetBrains plugin](https://piwitests.dev/features/jetbrains) what it needs and where it differs from VS Code.

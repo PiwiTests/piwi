@@ -140,8 +140,21 @@ object Glue {
      */
     fun playwrightConfigDirs(roots: List<Path>): List<Path> {
         val found = LinkedHashSet<Path>()
+        walkSearched(roots) { file ->
+            if (file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
+            false
+        }
+        return found.sorted()
+    }
+
+    /**
+     * Each regular file under `roots`, the roots included and down to [CONFIG_DEPTH] levels, skipping what the
+     * Playwright config search skips, until `visit` returns true.
+     */
+    private fun walkSearched(roots: List<Path>, visit: (Path) -> Boolean) {
         for (root in roots) {
             if (!Files.isDirectory(root)) continue
+            var done = false
             Files.walkFileTree(root, emptySet(), CONFIG_DEPTH + 1, object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
                     val name = dir.fileName?.toString() ?: return FileVisitResult.CONTINUE
@@ -150,14 +163,35 @@ object Glue {
                 }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (attrs.isRegularFile && file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
-                    return FileVisitResult.CONTINUE
+                    done = attrs.isRegularFile && visit(file)
+                    return if (done) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
                 }
 
                 override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
             })
+            if (done) return
         }
-        return found.sorted()
+    }
+
+    /** A `.csproj` reference to Playwright for .NET: `Microsoft.Playwright`, or its NUnit, MSTest or xUnit package. */
+    private val DOTNET_PLAYWRIGHT =
+        Regex("""<PackageReference\b[^>]*\bInclude\s*=\s*"Microsoft\.Playwright(\.[A-Za-z]+)?"""", RegexOption.IGNORE_CASE)
+
+    /** Whether the text of a `.csproj` references Playwright for .NET. */
+    fun referencesDotnetPlaywright(project: String): Boolean = DOTNET_PLAYWRIGHT.containsMatchIn(project)
+
+    /**
+     * Whether a `.csproj` under `roots`, where the Playwright configs are searched, references Playwright for .NET, whose
+     * tests Piwi does not read. A file over a megabyte is not read.
+     */
+    fun holdsDotnetPlaywright(roots: List<Path>): Boolean {
+        var found = false
+        walkSearched(roots) { file ->
+            found = file.fileName.toString().endsWith(".csproj", ignoreCase = true) &&
+                runCatching { Files.size(file) <= 1_000_000 && referencesDotnetPlaywright(Files.readString(file)) }.getOrDefault(false)
+            found
+        }
+        return found
     }
 
     /** The repository around `dir`: the nearest folder, `dir` included, that holds `.git`; null outside one. */
@@ -412,6 +446,20 @@ object Glue {
     /** What the first-run notification says Piwi does. */
     const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
         "with your local runs laid over them, and records tests at the caret."
+
+    /**
+     * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
+     * Piwi reads Playwright Test suites in JavaScript and TypeScript.
+     */
+    const val DOTNET_PLAYWRIGHT_NOTE = "Piwi reads Playwright Test suites in JavaScript and TypeScript: the Playwright " +
+        "for .NET tests of this project get no failures, results or runs from Piwi in the IDE."
+
+    /** Why the settings page's Playwright runner option is off, in an IDE without the runner. */
+    const val NO_PLAYWRIGHT_RUNNER = "This IDE has no Playwright runner (it comes with the JavaScript plugin's " +
+        "Playwright support), so the tests run in the Run tool window's console."
+
+    /** Where the docs say which suites Piwi reads: **Learn More** on `DOTNET_PLAYWRIGHT_NOTE`. */
+    const val DOTNET_PLAYWRIGHT_DOCS_URL = "https://piwitests.dev/features/jetbrains#install-and-start"
 
     /** The editor extensions' documentation, which the first-run notification's **Learn More** opens. */
     const val DOCS_URL = "https://piwitests.dev/features/editors"

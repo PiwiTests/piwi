@@ -372,8 +372,10 @@ still reports. That variable is also how the reporter of a run Piwi did not star
 test runner started it, and follows the IDE ([Run control](#run-control)).
 
 The runner's classes belong to the `JavaScript` plugin (`intellij.aqua.runners.playwright.js`, the same signatures in
-2024.1 and 2026.x). The plugin reaches them only once `PlaywrightRunnerGate.available()`, which names none of them. Any
-other command, an IDE without the runner, or a run the runner does not take, runs in the console.
+2024.1 and 2026.x), which WebStorm, IntelliJ IDEA Ultimate and Rider bundle. The plugin reaches them only once
+`PlaywrightRunnerGate.available()`, which names none of them. Any other command, an IDE without the runner, or a run the
+runner does not take, runs in the console; without the runner, the settings page's option is off and says why
+(`Glue.NO_PLAYWRIGHT_RUNNER`).
 
 ### Commands and notifications
 
@@ -651,6 +653,10 @@ installation (`piwi.firstRunShown`, an application-level `PropertiesComponent` f
 
 The balloon says what Piwi does (`Glue.FIRST_RUN`), with **Connect…** (`PiwiConnectFlow.run`, as `Piwi.Connect`),
 **Open the Failures** (the tool window) and **Learn More** (`Glue.DOCS_URL`). `PiwiPluginTest` checks the flag.
+
+A project with no Playwright config whose `.csproj`, where the configs are searched, references Playwright for .NET
+(`Glue.holdsDotnetPlaywright`) hears once, per project (`piwi.dotnetPlaywrightNoted`), that Piwi reads Playwright Test
+suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`, `PiwiProjectService.noteDotnetPlaywright`).
 
 ## Recording
 

@@ -4,6 +4,9 @@ Your Playwright suite's history at the line you are editing, from a [Piwi](https
 every run CI throws away, groups the failures by root cause and finds the locator you should have used; this extension
 brings that into VS Code, Cursor and VSCodium.
 
+**You need a Piwi instance:** the [desktop app](https://piwitests.dev/features/desktop), `npx @piwitests/server` or the
+Docker image. Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+
 ![The failing line of a page object, with the CI failure as a diagnostic and the heal as a quick fix](https://piwitests.dev/screenshots/vscode-heal.png)
 
 ## What it shows
@@ -49,8 +52,8 @@ the Piwi desktop app. Otherwise run **Piwi: Connect** and sign in with the brows
 secret storage. When the desktop app runs beside a shared instance, **Piwi: Connect** switches between them, and
 keeps both.
 
-Nothing from your workspace is sent to the instance: the project's locator index, code reach and latest run are
-compared with your files locally.
+Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: the project's locator index, code
+reach and latest run are compared with your files locally.
 
 [Editor extensions](https://piwitests.dev/features/editors) documents everything it shows; the same extension exists
 [for the JetBrains IDEs](https://plugins.jetbrains.com/plugin/34674-piwi).

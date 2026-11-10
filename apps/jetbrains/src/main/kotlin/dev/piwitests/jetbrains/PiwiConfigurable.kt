@@ -153,8 +153,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.playwrightRunner }, { local.playwrightRunner = it })
                         .enabled(PlaywrightRunnerGate.available())
                         .comment(
-                            "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
-                                "(a selection's own). Kept for you only, in .idea/workspace.xml",
+                            if (PlaywrightRunnerGate.available()) {
+                                "Otherwise in the Run tool window's console, as a command other than npx playwright test is " +
+                                    "(a selection's own). Kept for you only, in .idea/workspace.xml"
+                            } else {
+                                Glue.NO_PLAYWRIGHT_RUNNER
+                            },
                         )
                 }
             }

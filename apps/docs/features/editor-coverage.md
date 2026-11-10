@@ -124,8 +124,8 @@ VS Code and in `.idea/workspace.xml` in a JetBrains IDE, on your machine only. T
 ## C# and Razor files
 
 Both extensions read `.cs`, `.cshtml` and `.razor` files, so an ASP.NET Core project's services, controllers and views
-show their marks and lenses as any application file does. The JetBrains plugin is checked on Rider; it starts once it
-finds a Playwright config in the solution's folder or its Git repository.
+show their marks and lenses as any application file does. The JetBrains plugin is verified for compatibility with Rider;
+it starts once it finds a Playwright config in the solution's folder or its Git repository.
 
 ## Limits
 

@@ -18,6 +18,9 @@ and draws differently.
 
 ## Install and connect
 
+**You need a Piwi instance:** the [desktop app](/features/desktop), `npx @piwitests/server` or the Docker image.
+Recording needs none. Piwi reads Playwright Test suites in JavaScript and TypeScript.
+
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`
 in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**
@@ -28,11 +31,7 @@ and sign in with the browser: [Editor connection](./editor-connection) has the s
 In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in editor](./ide-integration#vs-code-the-piwi-extension).
 
-In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
-machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
-JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
-
-Nothing from your workspace is sent to the instance: the project's
+Self-hosted, zero telemetry. Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
 your files locally.
 

@@ -289,7 +289,22 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
             offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+            noteDotnetPlaywright(found)
         }
+    }
+
+    /**
+     * Once per project, on a pooled thread: a project with no Playwright config whose `.csproj` references Playwright for
+     * .NET hears that Piwi reads Playwright Test suites in JavaScript and TypeScript (`Glue.DOTNET_PLAYWRIGHT_NOTE`).
+     */
+    fun noteDotnetPlaywright(found: Glue.PlaywrightSearch) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+        if (found.configDirs.isNotEmpty() || properties.getBoolean(DOTNET_PLAYWRIGHT_NOTED)) return
+        if (!Glue.holdsDotnetPlaywright(found.roots) || gone.value(null)) return
+        properties.setValue(DOTNET_PLAYWRIGHT_NOTED, true)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.DOTNET_PLAYWRIGHT_NOTE)
+            .addAction(NotificationAction.createSimple("Learn More") { BrowserUtil.browse(Glue.DOTNET_PLAYWRIGHT_DOCS_URL) })
+            .notify(project)
     }
 
     /**
@@ -903,6 +918,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
         /** Whether the first-run notification was shown on this installation: an application-level property. */
         const val FIRST_RUN_SHOWN = "piwi.firstRunShown"
+
+        /** Set in the project once it heard `Glue.DOTNET_PLAYWRIGHT_NOTE`. */
+        const val DOTNET_PLAYWRIGHT_NOTED = "piwi.dotnetPlaywrightNoted"
 
         /** How long a file's summary answers for the same text: the indexes the service reads again push nothing. */
         const val SUMMARY_TTL_MILLIS = 5_000L

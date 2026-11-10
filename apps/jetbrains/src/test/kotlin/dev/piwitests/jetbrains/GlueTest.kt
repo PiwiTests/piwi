@@ -2217,6 +2217,22 @@ class GlueTest {
     }
 
     @Test
+    fun `finds a project referencing Playwright for dotnet where the configs are searched`() {
+        assertTrue(Glue.referencesDotnetPlaywright("""<PackageReference Include="Microsoft.Playwright.NUnit" Version="1.49.0" />"""))
+        assertTrue(Glue.referencesDotnetPlaywright("""<PackageReference Version="1.49.0" Include="Microsoft.Playwright"/>"""))
+        assertFalse(Glue.referencesDotnetPlaywright("""<PackageReference Include="Microsoft.PlaywrightSharp.Extras" />"""))
+        assertFalse(Glue.referencesDotnetPlaywright("""<PackageReference Include="NUnit" />"""))
+        val dir = tree("src/Shop/Shop.csproj", "tests/Shop.E2E/Shop.E2E.csproj", "node_modules/x/Other.csproj")
+        assertFalse(Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("node_modules/x/Other.csproj"), """<PackageReference Include="Microsoft.Playwright" />""")
+        assertFalse("a dependency's project is skipped", Glue.holdsDotnetPlaywright(listOf(dir)))
+        Files.writeString(dir.resolve("tests/Shop.E2E/Shop.E2E.csproj"), """<ItemGroup>
+            <PackageReference Include="Microsoft.Playwright.MSTest" Version="1.49.0" />
+        </ItemGroup>""")
+        assertTrue(Glue.holdsDotnetPlaywright(listOf(dir)))
+    }
+
+    @Test
     fun `a solution in a subfolder finds the tests beside it in the repository`() {
         val repo = tree(".git/HEAD", "backend/Shop.sln", "e2e/playwright.config.ts")
         val found = Glue.findPlaywright(listOf(repo.resolve("backend"), repo.resolve("backend/.idea/.idea.Shop")), null)

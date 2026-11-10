@@ -19,6 +19,10 @@ that names an instance wins:
 A project set up for the reporter needs nothing more. An editor started from the Dock or the Start menu may not see
 the variables your shell exports: the `.env` or Connect work either way.
 
+In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
+machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
+JetBrains IDE shows one notification: [JetBrains plugin](./jetbrains#install-and-start).
+
 ## With the desktop app
 
 The desktop app needs no pairing with the editor: while it runs, it publishes its address and a local token in
