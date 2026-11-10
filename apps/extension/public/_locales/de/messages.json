@@ -6877,6 +6877,21 @@
   "runs_copyRunPage": {
     "message": "Link zur Seite des Laufs kopieren"
   },
+  "runs_runNumber": {
+    "message": "Lauf #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "77"
+      }
+    }
+  },
+  "runs_openRunPage": {
+    "message": "Öffnen"
+  },
+  "runs_copyRunPageShort": {
+    "message": "Link kopieren"
+  },
   "runs_pageAtStop": {
     "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
   },

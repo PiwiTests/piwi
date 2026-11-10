@@ -122,7 +122,16 @@ const images = new Map<
  */
 const answers = new Map<
   string,
-  { ok: boolean; text: string; since: string | null; sent: boolean; warnings: string[]; rich: boolean }
+  {
+    ok: boolean;
+    text: string;
+    since: string | null;
+    sent: boolean;
+    warnings: string[];
+    rich: boolean;
+    /** A picked locator no editor took, offered to copy. */
+    copy: string | null;
+  }
 >();
 /** The requests a stopped worker's test kept, listed for Mock a request at the stop they were asked at. */
 interface RequestList {
@@ -289,11 +298,19 @@ function say(
   key: string,
   answer: RunsAnswer,
   since: string | null,
-  options: { sent?: boolean; warnings?: string[]; rich?: boolean } = {},
+  options: { sent?: boolean; warnings?: string[]; rich?: boolean; copy?: string | null } = {},
 ): void {
-  const { sent = false, warnings = [], rich = false } = options;
+  const { sent = false, warnings = [], rich = false, copy = null } = options;
   const text = answer.ok ? answer.message : failureText(answer);
-  answers.set(key, { ok: answer.ok, text, since, sent: answer.ok && sent, warnings, rich });
+  answers.set(key, {
+    ok: answer.ok,
+    text,
+    since,
+    sent: answer.ok && sent,
+    warnings,
+    rich,
+    copy: answer.ok ? copy : null,
+  });
   if (text) announce([text, ...warnings].join(' '));
 }
 
@@ -1105,7 +1122,9 @@ async function pickOnImage(
   picking.delete(key);
   const answer = await send(found.run, found.worker.worker, 'pick-at', since, point);
   if (!answer) return;
-  say(key, answer, since, { sent: true, rich: true });
+  // Sent only when an editor took it; else the locator is offered to copy.
+  const taken = answer.taken !== false;
+  say(key, answer, since, { sent: taken, rich: true, copy: taken ? null : (answer.locator ?? null) });
   render();
 }
 
@@ -1540,6 +1559,10 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       },
     ),
   ];
+  if (session.page) {
+    const page = session.page;
+    children.push(part(`${runKey}|page`, [page.id, page.url], () => renderRunPage(page)));
+  }
   if (session.progress) {
     const { total, done, failed, flaky } = session.progress;
     children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
@@ -1589,6 +1612,27 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   }
   place(section, children);
   return section;
+}
+
+/** The run's page on the instance, as its own process named it: `Run #77`, **Open** and **Copy**, ended or not. */
+function renderRunPage(page: { id: number; url: string }): HTMLElement {
+  const line = element(
+    'div',
+    'run-page piwi-actions',
+    element('span', 'run-number', t('runs_runNumber', { id: String(page.id) })),
+  );
+  const open = makeButton(t('runs_openRunPage'), () => void chrome.tabs.create({ url: page.url }), {
+    icon: 'external',
+    small: true,
+    title: page.url,
+  });
+  const copy = makeButton(t('runs_copyRunPageShort'), () => void copyWithFeedback(page.url, copy), {
+    icon: 'copy',
+    small: true,
+    title: t('runs_copyRunPage'),
+  });
+  line.append(open, copy);
+  return line;
 }
 
 /** How far a run is, under its name: how many of its tests ended, of all it holds, and how many failed or were flaky. */
@@ -1677,7 +1721,8 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
           `${t('runs_sharedLive', { instance: instanceOf(live) })} · ${watching}`,
         ),
       );
-      const page = live.page;
+      // A run that names its page offers it above, ended or not.
+      const page = run.session.page ? null : live.page;
       if (page) {
         const copy = button(t('runs_copyRunPage'), () => void copyWithFeedback(page, copy), 'copy-page', {
           icon: 'copy',
@@ -2124,6 +2169,19 @@ function renderWorker(
           : ['note', 'info'];
       const text = answer.rich ? richText(answer.text) : [answer.text];
       parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, ...text)));
+      const locator = answer.copy;
+      if (locator) {
+        parts.push(
+          part(`${key}|copy-pick`, locator, () => {
+            const copy = makeButton(t('common_copy'), () => void copyWithFeedback(locator, copy), {
+              icon: 'copy',
+              small: true,
+            });
+            copy.dataset.focus = `${key}|copy-pick`;
+            return element('div', 'piwi-actions', copy);
+          }),
+        );
+      }
       if (answer.warnings.length > 0) parts.push(part(`${key}|warnings`, answer.warnings, () => warningList(answer)));
     }
     if (listed) {
