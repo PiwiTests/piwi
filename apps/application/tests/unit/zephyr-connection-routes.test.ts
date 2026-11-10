@@ -71,6 +71,7 @@ const assignable = route(await import('../../server/api/integrations/connections
 const issuePicker = route(await import('../../server/api/integrations/connections/[id]/issue-picker.get'));
 const bind = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { getSetupStatus } = await import('../../shared/handlers/setup-status');
+const { connectionPausedUntil, pauseConnectionById } = await import('../../server/utils/integrations/actions');
 
 const as = (
   id: number,
@@ -230,6 +231,16 @@ describe('testing a Zephyr connection', () => {
       .from(schema.integrationConnections)
       .where(eq(schema.integrationConnections.id, connection.id));
     expect(row!.status).toBe('ok');
+  });
+
+  test('answers ok false without a call while the provider has the connection paused', async () => {
+    const connection = await createZephyr();
+    await pauseConnectionById(db, connection.id, 30_000, new Date());
+    sent.length = 0;
+    expect(await test_(at(connection.id))).toMatchObject({ ok: false, error: expect.stringContaining('Paused') });
+    expect(sent).toEqual([]);
+    connectionPausedUntil(connection.id, new Date(Date.now() + 1e10));
+    expect(await test_(at(connection.id))).toMatchObject({ ok: true });
   });
 
   test('answers 200 with the error for a refused token, as for Jira, and marks the connection failed', async () => {

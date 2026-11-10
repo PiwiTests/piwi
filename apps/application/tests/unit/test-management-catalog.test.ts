@@ -37,6 +37,10 @@ vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('apiError', apiError);
+const headers: Record<string, string | number> = {};
+vi.stubGlobal('setResponseHeader', (_event: FakeEvent, name: string, value: string | number) => {
+  headers[name] = value;
+});
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.catalog-payload.catalog-signature';
 const fixture = (name: string): any =>
@@ -442,6 +446,7 @@ describe('POST /api/projects/:id/test-management/catalog/refresh', () => {
     await putBinding(at(10, { connectionId: zephyrId, providerProjectKey: 'SHOP' }));
     zephyr.pages.set('0', () => json({ message: 'slow down' }, 429, { 'Retry-After': '120' }));
     expect((await refusal(refreshRoute(at(10)))).statusCode).toBe(429);
+    expect(Number(headers['Retry-After'])).toBeGreaterThan(100);
     connectionPausedUntil(zephyrId, new Date(Date.now() + 1e10));
     zephyr.pages.set('0', () => json(fixture('error-unauthorized'), 401));
     expect((await refusal(refreshRoute(at(10)))).statusCode).toBe(502);

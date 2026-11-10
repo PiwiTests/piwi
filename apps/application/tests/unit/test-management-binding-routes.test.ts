@@ -37,6 +37,11 @@ vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('apiError', apiError);
+/** The headers the route set on its answer. */
+const headers: Record<string, string | number> = {};
+vi.stubGlobal('setResponseHeader', (_event: FakeEvent, name: string, value: string | number) => {
+  headers[name] = value;
+});
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.binding-payload.binding-signature';
 const fixture = (name: string): unknown =>
@@ -47,12 +52,17 @@ const json = (body: unknown, status = 200) =>
 /** Every request sent to Zephyr, as its path, and what the next answers should be. */
 const sent: string[] = [];
 let unauthorized = false;
+/** The `Retry-After` of a 429 the stubbed Zephyr answers with, or null for no 429. */
+let rateLimited: string | null = null;
 vi.stubGlobal(
   'fetch',
   vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     sent.push(url.pathname + url.search);
     if (unauthorized) return json(fixture('error-unauthorized'), 401);
+    if (rateLimited !== null) {
+      return new Response('', { status: 429, headers: rateLimited ? { 'Retry-After': rateLimited } : {} });
+    }
     if (url.pathname.endsWith('/projects')) return json(fixture('projects-page-2'));
     if (url.pathname.endsWith('/statuses')) return json(fixture('statuses-test-execution'));
     if (url.pathname.endsWith('/folders')) return json(fixture('folders-test-cycle'));
@@ -72,6 +82,7 @@ const create = route(await import('../../server/api/integrations/connections/ind
 const putTracker = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { boundConnectionId } = await import('../../server/utils/integrations/bound-connection');
 const { testManagementOptionsCache } = await import('../../server/utils/integrations/picker-cache');
+const { connectionPausedUntil } = await import('../../server/utils/integrations/actions');
 
 const as = (
   id: number,
@@ -141,6 +152,9 @@ beforeEach(async () => {
   state.caller = projectAdmin;
   sent.length = 0;
   unauthorized = false;
+  rateLimited = null;
+  for (const name of Object.keys(headers)) delete headers[name];
+  for (const id of [zephyrId, jiraId]) connectionPausedUntil(id, new Date(Date.now() + 1e10));
   testManagementOptionsCache.deleteWhere(() => true);
   await db.delete(schema.projectTestManagement);
   await db.delete(schema.projectIntegrations);
@@ -303,6 +317,36 @@ describe('GET options', () => {
       .where(eq(schema.integrationConnections.id, zephyrId));
     expect(row!.status).toBe('failed');
     expect(row!.lastError).not.toContain(TOKEN);
+  });
+
+  test('a 429 pauses the connection for the wait Zephyr named and answers 429 with that Retry-After', async () => {
+    rateLimited = '30';
+    const query = { connectionId: String(zephyrId) };
+    expect(await refusal(getOptions(at(10, undefined, query)))).toMatchObject({ statusCode: 429 });
+    expect(headers['Retry-After']).toBe(30);
+    const until = connectionPausedUntil(zephyrId, new Date());
+    expect(until!.getTime() - Date.now()).toBeGreaterThan(25_000);
+    expect(until!.getTime() - Date.now()).toBeLessThanOrEqual(30_000);
+  });
+
+  test('a 429 that names no wait pauses the connection for a minute', async () => {
+    rateLimited = '';
+    await refusal(getOptions(at(10, undefined, { connectionId: String(zephyrId) })));
+    expect(headers['Retry-After']).toBe(60);
+    const until = connectionPausedUntil(zephyrId, new Date());
+    expect(until!.getTime() - Date.now()).toBeGreaterThan(55_000);
+  });
+
+  test('during a pause the options answer 429 with Retry-After and make no call', async () => {
+    rateLimited = '30';
+    const query = { connectionId: String(zephyrId) };
+    await refusal(getOptions(at(10, undefined, query)));
+    const calls = sent.length;
+    rateLimited = null;
+    expect(await refusal(getOptions(at(10, undefined, query)))).toMatchObject({ statusCode: 429 });
+    expect(sent).toHaveLength(calls);
+    expect(Number(headers['Retry-After'])).toBeGreaterThan(0);
+    expect(Number(headers['Retry-After'])).toBeLessThanOrEqual(30);
   });
 
   test('refuses a bad connection, a Jira connection and a bad key, before any call', async () => {
