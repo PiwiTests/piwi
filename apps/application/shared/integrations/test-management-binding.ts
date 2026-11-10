@@ -224,3 +224,38 @@ export function resolveTestManagementBinding(input: unknown): ResolvedTestManage
 export function emptyTestManagementBinding(): ResolvedTestManagementBinding {
   return resolveTestManagementBinding({});
 }
+
+/**
+ * Why a binding payload with a connection cannot be stored, or null when it can: a provider project key that is not a
+ * project key, a run name template without `{runId}` or with an unknown variable, a status name over the tool's limit,
+ * an unknown flaky handling, or `flakyAs: 'flaky'` without a flaky status. One check for the endpoint and the demo.
+ */
+export function testManagementBindingProblem(body: Record<string, unknown>): string | null {
+  const key = body.providerProjectKey;
+  if (typeof key !== 'string' || !TEST_MANAGEMENT_PROJECT_KEY.test(key.trim())) {
+    return 'Choose a project of the test management tool';
+  }
+
+  const policy = record(body.runPolicy);
+  if (policy.nameTemplate !== undefined) {
+    const check =
+      typeof policy.nameTemplate === 'string'
+        ? validateRunNameTemplate(policy.nameTemplate)
+        : ({ ok: false, message: 'Enter a name for the test run.' } as const);
+    if (!check.ok) return check.message;
+  }
+
+  const statuses = record(body.statuses);
+  for (const name of ['pass', 'fail', 'flaky', 'notExecuted']) {
+    if (statusNameTooLong(statuses[name])) return 'A status name holds 255 characters at most.';
+  }
+
+  const options = record(body.options);
+  if (options.flakyAs !== undefined && !['pass', 'fail', 'flaky'].includes(String(options.flakyAs))) {
+    return 'Invalid flaky handling';
+  }
+  if (options.flakyAs === 'flaky' && !(typeof statuses.flaky === 'string' && statuses.flaky.trim())) {
+    return 'Name the status a flaky test is reported as.';
+  }
+  return null;
+}

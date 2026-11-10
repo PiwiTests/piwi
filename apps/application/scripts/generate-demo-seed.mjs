@@ -52,6 +52,12 @@ import {
   incidentUrl,
   incidentNavigationError,
 } from '../shared/demo/failure-stories.mjs';
+import {
+  DEMO_TEST_MANAGEMENT_CASES,
+  DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+} from '../shared/demo/demo-test-management.mjs';
 import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
@@ -5576,6 +5582,9 @@ const REBASE_SQL = [
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
+  `UPDATE integration_connections SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE project_test_management SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE test_management_cases SET fetched_at = fetched_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
@@ -6839,6 +6848,56 @@ const REUSED_RESULTS = [];
   }
 }
 
+// ── Test management (the checkout project's Zephyr Scale binding and catalog) ─────────────────────
+// The checkout project is bound to the demo's Zephyr Scale connection in dry run, and its catalog is the demo tool's
+// cases (`shared/demo/demo-test-management.mjs`). Both are written in ms and rebased with the rest. Settings mirror
+// `resolveTestManagementBinding({})`: a binding is nothing the demo sends.
+const TEST_MANAGEMENT_BOUND_AT_MS = ts('2025-04-20T09:00:00') * 1000;
+// The row the binding's foreign key needs. The demo lists its connections from memory and never reads this row; a dev
+// database loaded from the seed shows it as a connection nobody has entered a token for.
+const TEST_MANAGEMENT_CONNECTIONS = [
+  {
+    id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    provider: DEMO_TEST_MANAGEMENT_CONNECTION.provider,
+    name: DEMO_TEST_MANAGEMENT_CONNECTION.name,
+    base_url: DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl,
+    config: DEMO_TEST_MANAGEMENT_CONNECTION.config,
+    credentials: null,
+    status: 'unverified',
+    last_checked_at: null,
+    last_error: null,
+    managed_by: 'db',
+    created_at: TEST_MANAGEMENT_BOUND_AT_MS,
+    updated_at: TEST_MANAGEMENT_BOUND_AT_MS,
+  },
+];
+const PROJECT_TEST_MANAGEMENT = [
+  {
+    project_id: 1,
+    connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+    enabled: 1,
+    dry_run: 1,
+    provider_project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+    key_sources: { tags: true, externalId: false },
+    run_scope: { branches: [], defaultBranch: true, environments: [] },
+    run_policy: { mode: 'per-run', nameTemplate: 'Automation · {branch} · {environment} · Piwi #{runId}' },
+    statuses: { pass: 'Pass', fail: 'Fail', flaky: null, notExecuted: 'Not Executed' },
+    options: { flakyAs: 'pass', skippedAs: null, includeError: false, includeComment: true },
+    created_at: TEST_MANAGEMENT_BOUND_AT_MS,
+    updated_at: TEST_MANAGEMENT_BOUND_AT_MS,
+  },
+];
+const TEST_MANAGEMENT_CASES = DEMO_TEST_MANAGEMENT_CASES.map((c) => ({
+  connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+  key: c.key,
+  provider_id: c.providerId,
+  name: c.name,
+  status_name: c.status,
+  folder: c.folder,
+  fetched_at: ANCHOR_SEC * 1000 - 3 * 60 * 60 * 1000, // read by the daily task, three hours before the newest run
+}));
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -6877,6 +6936,11 @@ const lines = [
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
+  '',
+  "-- Test management: the checkout project's Zephyr Scale binding and the catalog of its project",
+  insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
+  insert('project_test_management', PROJECT_TEST_MANAGEMENT),
+  insert('test_management_cases', TEST_MANAGEMENT_CASES),
   '',
   '-- Project URL patterns (browser extension)',
   insert('project_url_patterns', PROJECT_URL_PATTERNS),

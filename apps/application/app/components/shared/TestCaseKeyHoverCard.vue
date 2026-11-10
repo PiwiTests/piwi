@@ -45,7 +45,7 @@ function onOpen(open: boolean): void {
           </a>
           <span v-else class="font-mono font-medium text-highlighted">{{ caseKey }}</span>
           <UBadge
-            v-if="state?.status === 'ready' && state.testCase"
+            v-if="state?.status === 'ready' && state.testCase?.status"
             color="neutral"
             variant="subtle"
             size="xs"

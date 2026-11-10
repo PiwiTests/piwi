@@ -3,11 +3,7 @@ import { requireProjectAccess, requireRouteId } from '../../../../utils/project-
 import { writeTestManagementBinding } from '../../../../utils/integrations/test-management/binding';
 import { getConnectionRow, listTestManagementConnections } from '../../../../utils/integrations/connections';
 import { isProviderOfKind } from '#shared/integrations/registry';
-import {
-  statusNameTooLong,
-  TEST_MANAGEMENT_PROJECT_KEY,
-  validateRunNameTemplate,
-} from '#shared/integrations/test-management-binding';
+import { testManagementBindingProblem } from '#shared/integrations/test-management-binding';
 
 defineRouteMeta({
   openAPI: {
@@ -19,10 +15,6 @@ defineRouteMeta({
     'x-required-permission': 'project:manage',
   },
 });
-
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
@@ -44,34 +36,8 @@ export default eventHandler(async (event) => {
     if (!isProviderOfKind(connection.provider, 'test-management')) {
       throw apiError({ statusCode: 400, message: 'A test management binding uses a test management connection only' });
     }
-    const key = body.providerProjectKey;
-    if (typeof key !== 'string' || !TEST_MANAGEMENT_PROJECT_KEY.test(key.trim())) {
-      throw apiError({ statusCode: 400, message: 'Choose a project of the test management tool' });
-    }
-
-    const policy = record(body.runPolicy);
-    if (policy.nameTemplate !== undefined) {
-      const check =
-        typeof policy.nameTemplate === 'string'
-          ? validateRunNameTemplate(policy.nameTemplate)
-          : { ok: false as const, message: 'Enter a name for the test run.' };
-      if (!check.ok) throw apiError({ statusCode: 400, message: check.message });
-    }
-
-    const statuses = record(body.statuses);
-    for (const name of ['pass', 'fail', 'flaky', 'notExecuted']) {
-      if (statusNameTooLong(statuses[name])) {
-        throw apiError({ statusCode: 400, message: 'A status name holds 255 characters at most.' });
-      }
-    }
-
-    const options = record(body.options);
-    if (options.flakyAs !== undefined && !['pass', 'fail', 'flaky'].includes(String(options.flakyAs))) {
-      throw apiError({ statusCode: 400, message: 'Invalid flaky handling' });
-    }
-    if (options.flakyAs === 'flaky' && !(typeof statuses.flaky === 'string' && statuses.flaky.trim())) {
-      throw apiError({ statusCode: 400, message: 'Name the status a flaky test is reported as.' });
-    }
+    const problem = testManagementBindingProblem(body);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
   }
 
   const binding = await writeTestManagementBinding(db, id, body);

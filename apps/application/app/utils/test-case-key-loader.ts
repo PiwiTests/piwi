@@ -7,14 +7,14 @@ export type TestCaseKeyState =
   | {
       status: 'ready';
       /** Null when the catalog holds no such case. */
-      testCase: { name: string; status: string; url: string | null } | null;
+      testCase: { name: string; status: string | null; url: string | null } | null;
       /** When the catalog was last read; null while it never was. */
       fetchedAt: string | null;
     };
 
 export interface CatalogCasesResponse {
   fetchedAt: string | null;
-  cases: Record<string, { name: string; status: string; url: string | null } | null>;
+  cases: Record<string, { name: string; status: string | null; url: string | null } | null>;
 }
 
 export interface TestCaseKeyLoader {

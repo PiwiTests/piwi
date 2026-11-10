@@ -1,10 +1,7 @@
-import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../../database';
-import { integrationConnections } from '../../../../database/schema';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
-import { readTestManagementBinding } from '../../../../utils/integrations/test-management/binding';
-import { readCatalogCases, readCatalogInfo } from '../../../../utils/integrations/test-management/catalog';
-import { isCatalogLookupKey, MAX_CATALOG_LOOKUP_KEYS } from '#shared/integrations/test-management-mapping';
+import { lookupCatalogCases } from '#shared/handlers/test-management-cases';
+import { CATALOG_LOOKUP_KEYS_MESSAGE, parseCatalogLookupKeys } from '#shared/integrations/test-management-mapping';
 import { zephyrCaseUrl } from '../../../../utils/integrations/test-management/zephyr-scale';
 
 defineRouteMeta({
@@ -26,38 +23,8 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, id);
   const db = await getDatabase();
 
-  const raw = getQuery(event).keys;
-  const keys = [...new Set((typeof raw === 'string' ? raw : '').split(',').map((key) => key.trim()))].filter(Boolean);
-  if (keys.length === 0 || keys.length > MAX_CATALOG_LOOKUP_KEYS || keys.some((key) => !isCatalogLookupKey(key))) {
-    throw apiError({
-      statusCode: 400,
-      message: `Name 1 to ${MAX_CATALOG_LOOKUP_KEYS} test case keys, separated by commas`,
-    });
-  }
+  const keys = parseCatalogLookupKeys(getQuery(event).keys);
+  if (!keys) throw apiError({ statusCode: 400, message: CATALOG_LOOKUP_KEYS_MESSAGE });
 
-  const binding = await readTestManagementBinding(db, id);
-  if (binding.connectionId === null || binding.providerProjectKey === null) {
-    return { bound: false, projectKey: null, fetchedAt: null, cases: {} };
-  }
-
-  const [connection] = await db
-    .select({ provider: integrationConnections.provider })
-    .from(integrationConnections)
-    .where(eq(integrationConnections.id, binding.connectionId));
-  const info = await readCatalogInfo(db, binding.connectionId, binding.providerProjectKey);
-  const found = new Map(
-    (await readCatalogCases(db, binding.connectionId, binding.providerProjectKey, keys)).map((c) => [c.key, c]),
-  );
-  const url = connection?.provider === 'zephyr-scale' ? zephyrCaseUrl() : null;
-  return {
-    bound: true,
-    projectKey: binding.providerProjectKey,
-    fetchedAt: info.fetchedAt ? info.fetchedAt.toISOString() : null,
-    cases: Object.fromEntries(
-      keys.map((key) => {
-        const hit = found.get(key);
-        return [key, hit ? { name: hit.name, status: hit.status, url } : null];
-      }),
-    ),
-  };
+  return await lookupCatalogCases(db, id, keys, (provider) => (provider === 'zephyr-scale' ? zephyrCaseUrl() : null));
 });

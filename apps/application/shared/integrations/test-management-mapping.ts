@@ -24,6 +24,16 @@ export function isCatalogLookupKey(key: string): boolean {
   return LOOKUP_KEY.test(key);
 }
 
+/** The keys of a `keys` query (comma separated), de-duplicated; null when none is named, too many are, or one is no key. */
+export function parseCatalogLookupKeys(raw: unknown): string[] | null {
+  const keys = [...new Set((typeof raw === 'string' ? raw : '').split(',').map((key) => key.trim()))].filter(Boolean);
+  if (keys.length === 0 || keys.length > MAX_CATALOG_LOOKUP_KEYS || !keys.every(isCatalogLookupKey)) return null;
+  return keys;
+}
+
+/** What a rejected `keys` query answers with. */
+export const CATALOG_LOOKUP_KEYS_MESSAGE = `Name 1 to ${MAX_CATALOG_LOOKUP_KEYS} test case keys, separated by commas`;
+
 /** A test as the mapping reads it. */
 export interface MappingTest {
   title: string;

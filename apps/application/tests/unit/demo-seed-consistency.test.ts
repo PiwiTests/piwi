@@ -32,6 +32,12 @@ import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
 import { overlappingTagKeys, validateTagKeyPattern } from '#shared/integrations/tag-keys';
+import {
+  DEMO_TEST_MANAGEMENT_CASES,
+  DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+  DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+  DEMO_UNKNOWN_TEST_CASE_KEY,
+} from '#shared/demo/demo-test-management.mjs';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -1513,7 +1519,8 @@ describe('keys in test tags', () => {
     const tagged = q('select distinct tags from test_cases where project_id = 1 and tags is not null');
     const tags = tagged.flatMap((row) => JSON.parse(String(row.tags)) as string[]);
     expect(tags.filter((tag) => new RegExp(patterns.issue).test(tag))).toEqual(['SHOP-1234']);
-    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123']);
+    // SHOP-T124 is a key the test management catalog does not hold: the mapping summary's unknown-key state.
+    expect(tags.filter((tag) => new RegExp(patterns.testCase).test(tag))).toEqual(['SHOP-T123', 'SHOP-T124']);
     expect(
       tagged.flatMap((row) =>
         overlappingTagKeys(JSON.parse(String(row.tags)) as string[], patterns.issue, patterns.testCase),
@@ -1523,6 +1530,45 @@ describe('keys in test tags', () => {
 
   test('the other projects leave them off', () => {
     expect(q('select id from projects where id <> 1 and tag_keys is not null')).toEqual([]);
+  });
+});
+
+describe('the test management binding of the checkout project', () => {
+  test('is bound to the canned Zephyr Scale connection, with the dry run on and tags as the key source', () => {
+    const rows = q('select * from project_test_management');
+    expect(rows).toHaveLength(1);
+    const [binding] = rows;
+    expect(binding).toMatchObject({
+      project_id: 1,
+      connection_id: DEMO_TEST_MANAGEMENT_CONNECTION_ID,
+      provider_project_key: DEMO_TEST_MANAGEMENT_PROJECT_KEY,
+      enabled: 1,
+      dry_run: 1,
+    });
+    expect(JSON.parse(String(binding!.key_sources))).toEqual({ tags: true, externalId: false });
+    // The binding's foreign key needs the row, though the demo lists its connections from memory. No token is stored.
+    expect(q('select id, provider, credentials from integration_connections')).toEqual([
+      { id: DEMO_TEST_MANAGEMENT_CONNECTION_ID, provider: 'zephyr-scale', credentials: null },
+    ]);
+  });
+
+  test('has a catalog whose key a seeded test carries, and a test key the catalog leaves out', () => {
+    const catalog = q('select key from test_management_cases order by key').map((row) => String(row.key));
+    expect(catalog).toEqual(DEMO_TEST_MANAGEMENT_CASES.map((c) => c.key).sort());
+    const tagged = q('select tags from test_cases where project_id = 1 and tags is not null').flatMap(
+      (row) => JSON.parse(String(row.tags)) as string[],
+    );
+    expect(tagged).toContain('SHOP-T123');
+    expect(catalog).toContain('SHOP-T123');
+    expect(tagged).toContain(DEMO_UNKNOWN_TEST_CASE_KEY);
+    expect(catalog).not.toContain(DEMO_UNKNOWN_TEST_CASE_KEY);
+  });
+
+  test('the catalog was read hours ago, inside the day after which the hourly task would read it again', () => {
+    const [info] = q('select min(fetched_at) as at, max(fetched_at) as latest from test_management_cases');
+    const ageMs = Date.now() - Number(info!.latest);
+    expect(ageMs).toBeGreaterThan(0);
+    expect(ageMs).toBeLessThan(24 * 60 * 60 * 1000);
   });
 });
 
