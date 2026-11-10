@@ -1869,6 +1869,20 @@ object Glue {
         return "${path?.fileName ?: stop.uri.orEmpty().substringAfterLast('/')}:${stop.line + 1}"
     }
 
+    /** How many Code Vision entries a line shows at most: one provider draws each (`PiwiCodeVisionProvider`). */
+    const val CODE_VISION_SLOTS = 8
+
+    /**
+     * The Code Vision entries the provider of `slot` draws: each line's entry at that place, in the service's order, of
+     * the file's line and the lines without a test status (a test's own line is drawn in the gutter), a blank title
+     * left out.
+     */
+    fun codeVisionSlot(summary: FileSummary, slot: Int): List<SummaryLine> =
+        (listOfNotNull(summary.file) + summary.lines.orEmpty().filter { it.status == null })
+            .filter { !it.title.isNullOrBlank() }
+            .groupBy { it.line }
+            .mapNotNull { (_, entries) -> entries.getOrNull(slot) }
+
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()

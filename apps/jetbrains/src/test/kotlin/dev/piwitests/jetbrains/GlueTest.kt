@@ -115,6 +115,29 @@ class GlueTest {
     }
 
     @Test
+    fun `every Code Vision entry of a line is drawn, one slot each, in the service's order`() {
+        fun entry(line: Int, title: String?, status: String? = null) = SummaryLine(line = line, title = title, status = status)
+        val summary = FileSummary(
+            file = entry(0, "3 tests in Piwi · 1 failing"),
+            lines = listOf(
+                entry(9, "✗ locator('#pay') was not found"),
+                entry(9, "Run this test"),
+                entry(9, "Screenshot"),
+                entry(9, "Trace"),
+                entry(4, "passed 44/48", status = "failing"),
+                entry(4, "Flaky · Flake Lab"),
+                entry(12, ""),
+            ),
+        )
+        val slots = (0 until Glue.CODE_VISION_SLOTS).map { slot -> Glue.codeVisionSlot(summary, slot).map { it.line to it.title } }
+        assertEquals(listOf(0 to "3 tests in Piwi · 1 failing", 9 to "✗ locator('#pay') was not found", 4 to "Flaky · Flake Lab"), slots[0])
+        assertEquals(listOf(9 to "Run this test"), slots[1])
+        assertEquals(listOf(9 to "Screenshot"), slots[2])
+        assertEquals(listOf(9 to "Trace"), slots[3])
+        assertEquals(emptyList<Pair<Int, String?>>(), slots[4])
+    }
+
+    @Test
     fun `when the instance does not answer, says so and reads it again on a click rather than Connect`() {
         val problem = "Could not reach http://piwi: fetch failed"
         val status = StatusResult(listOf(ContextStatus(root = "/w", problem = problem, problemKind = "unreachable")))

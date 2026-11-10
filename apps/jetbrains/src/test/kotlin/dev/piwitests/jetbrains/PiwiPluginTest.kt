@@ -30,6 +30,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(LspServerSupportProvider.EP_NAME.extensionList.any { it is PiwiLspServerSupportProvider })
         val codeVision = DaemonBoundCodeVisionProvider.extensionPoint.extensionList
         assertTrue(codeVision.map { it.javaClass.name }.toString(), codeVision.any { it is PiwiCodeVisionProvider })
+        // One provider per entry of a line, in one group the Code Vision settings name Piwi.
+        val slots = codeVision.filterIsInstance<PiwiCodeVisionProvider>()
+        assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), slots.map { it.id })
+        assertTrue(slots.all { it.groupId == PiwiCodeVisionProvider.GROUP_ID })
+        val group = com.intellij.codeInsight.codeVision.settings.CodeVisionGroupSettingProvider.EP.EXTENSION_POINT_NAME.extensionList
+            .single { it.groupId == PiwiCodeVisionProvider.GROUP_ID }
+        assertEquals("Piwi", group.groupName)
         assertTrue(StatusBarWidgetFactory.EP_NAME.extensionList.any { it is PiwiStatusBarWidgetFactory })
         assertTrue(
             com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
