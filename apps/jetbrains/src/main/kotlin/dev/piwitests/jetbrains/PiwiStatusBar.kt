@@ -173,7 +173,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             GoToRecordingAction()
         } else {
             when (view().action) {
-                Glue.StatusAction.REFRESH -> ReadRunAgainAction()
+                Glue.StatusAction.REFRESH -> manager.getAction("Piwi.RefreshRun")
                 Glue.StatusAction.RETRY -> manager.getAction("Piwi.Refresh")
                 Glue.StatusAction.CONNECT -> manager.getAction("Piwi.Connect")
                 Glue.StatusAction.NODE_SETTINGS -> NodeSettingsAction()
@@ -211,7 +211,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val editor = FileEditorManager.getInstance(project).selectedTextEditor
         val context = DataManager.getInstance().getDataContext(editor?.contentComponent ?: label)
         val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-            null,
+            "Piwi",
             actions(),
             context,
             JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
@@ -238,16 +238,6 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
         override fun actionPerformed(e: AnActionEvent) {
             runs()?.goTo(stop)
-        }
-    }
-
-    /** **Read the Latest Run Again**: `piwi/refreshRun`, then the status, the item saying so meanwhile. */
-    private inner class ReadRunAgainAction : DumbAwareAction("Read the Latest Run Again", null, AllIcons.Actions.Refresh) {
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            service().refreshRun()
-            update()
         }
     }
 

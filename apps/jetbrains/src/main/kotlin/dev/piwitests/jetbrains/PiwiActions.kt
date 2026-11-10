@@ -4,6 +4,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -32,6 +33,11 @@ private fun fileUri(file: VirtualFile): String? =
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    /** In the status bar item's popup, only while no Playwright config is connected; everywhere else, always. */
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.place != ActionPlaces.STATUS_BAR_PLACE || !piwiConnected(e.project)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -82,6 +88,22 @@ class RefreshAction : AnAction(), DumbAware {
         }
         // A Playwright config added since the project opened shows the tool window and starts the service.
         project.service<PiwiProjectService>().findPlaywright()
+    }
+}
+
+/**
+ * Piwi: Refresh the Latest Run — the latest run and its failures read again, not the indexes **Refresh** fetches
+ * (`PiwiProjectService.refreshRun`). Enabled while connected.
+ */
+class RefreshRunAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = piwiConnected(e.project)
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        e.project?.service<PiwiProjectService>()?.refreshRun()
     }
 }
 

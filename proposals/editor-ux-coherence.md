@@ -25,30 +25,35 @@ unreachable instance, no run, a desktop app to restart or no connection, and the
 for a connection, #1120; and [HM7](#hm7)'s '…' menu, Follow worded by its state, as two commands rather than one
 toggled, beside Connect, Open settings and Open the log, #1120), [Q16](#q16) in part (Piwi: Restart the editor service,
 and no toast for a failed request, #1120; [HM19](#hm19)'s status item saying 'Piwi: not running', with Restart and the
-log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [HM5](#hm5) of [Q8](#q8)
-(Open in Dashboard on the tool window's selection, #1120), the Paused Page and Worker tabs closing ([LR8](#lr8), #1120),
-[Q11](#q11) (a test's result said once on its line, its pass rate in words, every lens's tooltip saying what its click
-runs, and a local run's failure leading with 'Local failure:', #1121; the gutter mark's tooltip written by the service
-in the dashboard's words, under a drift test, naming the run its result is from when the latest run or the run in
-progress gives it, [TL10](#tl10); JetBrains shows it on the result icon alone, and the pass rate reads 'passed 44 of 48
-runs'), [Q12](#q12)'s [TL14](#tl14) (JetBrains tints a failing test's lines to the editor's edge, #1121), [Q20](#q20)
-(Run This Spec and the spec's lens run every test of the file by its path, #1121), [Q17](#q17) (VS Code's run items each
-named, read without their icon, naming no key, Resume alone at a held failure, which is marked in red, #1122),
-[LR6](#lr6) in VS Code (the lens row above a stop holds Resume, Step, Finish and Write code…, #1122; the line's own lens
-hiding meanwhile, JetBrains' inlay and the nightly width check of [M14](#m14) remain), [LR2](#lr2)'s icons (no spinner
-at a held stop, the error's icon at a held failure, #1122; the line the service composes for both clients, [M13](#m13),
-remains), [ST23](#st23) in part (the JetBrains plugin logs a failed request to idea.log, and every action says the one
-not-running sentence; its Log tab and Piwi.OpenLog of [M19](#m19) remain), [Q24](#q24) (one name per worker, #1213),
-with an unproven desktop app told apart from an unreachable one in both status items (#1213), [Q15](#q15) (the editor
-fixture answers each spec's own cases and the nightly suite holds the spec's count, [ST6](#st6); the JetBrains script
-writes no image whose status item lacks its failing icon and color, [HM20](#hm20); both sets of images and the recording
-video captured again, #1123; WebStorm 2026.3 drew the item with both, so why an earlier capture drew it gray stays
-unexplained), and every command, setting and action id of both editors registered in D25 and held to the manifests
-(#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
-#1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
-no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
-views, Watch a Worker's Test and local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's
-four items are built. It cites and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
+log; Restart in the unreachable tooltip and JetBrains' restart link in its empty text remain), [Q8](#q8) in part (Open
+in Dashboard on the tool window's selection, [HM5](#hm5), #1120; the tool window's tab named Failures, its icon dotted
+red while tests fail, [HM13](#hm13); each node's hover the service's, [HM9](#hm9); one Group By drop-down and a gear
+menu holding Connect…, Pair, the MCP copies, Refresh and Settings…, [HM6](#hm6); a registered `Piwi.RefreshRun`, Refresh
+the Latest Run, first in the toolbar and the titled status popup, which offers Connect… only while not connected,
+[HM3](#hm3), [AC10](#ac10); the one-line header of [HM12](#hm12), Reload Piwi and the popup's run section waiting for
+[M2](#m2) remain), the Paused Page and Worker tabs closing ([LR8](#lr8), #1120), [Q11](#q11) (a test's result said once
+on its line, its pass rate in words, every lens's tooltip saying what its click runs, and a local run's failure leading
+with 'Local failure:', #1121; the gutter mark's tooltip written by the service in the dashboard's words, under a drift
+test, naming the run its result is from when the latest run or the run in progress gives it, [TL10](#tl10); JetBrains
+shows it on the result icon alone, and the pass rate reads 'passed 44 of 48 runs'), [Q12](#q12)'s [TL14](#tl14)
+(JetBrains tints a failing test's lines to the editor's edge, #1121), [Q20](#q20) (Run This Spec and the spec's lens run
+every test of the file by its path, #1121), [Q17](#q17) (VS Code's run items each named, read without their icon, naming
+no key, Resume alone at a held failure, which is marked in red, #1122), [LR6](#lr6) in VS Code (the lens row above a
+stop holds Resume, Step, Finish and Write code…, #1122; the line's own lens hiding meanwhile, JetBrains' inlay and the
+nightly width check of [M14](#m14) remain), [LR2](#lr2)'s icons (no spinner at a held stop, the error's icon at a held
+failure, #1122; the line the service composes for both clients, [M13](#m13), remains), [ST23](#st23) in part (the
+JetBrains plugin logs a failed request to idea.log, and every action says the one not-running sentence; its Log tab and
+Piwi.OpenLog of [M19](#m19) remain), [Q24](#q24) (one name per worker, #1213), with an unproven desktop app told apart
+from an unreachable one in both status items (#1213), [Q15](#q15) (the editor fixture answers each spec's own cases and
+the nightly suite holds the spec's count, [ST6](#st6); the JetBrains script writes no image whose status item lacks its
+failing icon and color, [HM20](#hm20); both sets of images and the recording video captured again, #1123; WebStorm
+2026.3 drew the item with both, so why an earlier capture drew it gray stays unexplained), and every command, setting
+and action id of both editors registered in D25 and held to the manifests (#1124). Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to #1123 (§11). Rechecked on
+2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit: no finding was fixed then;
+the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker views, Watch a Worker's Test and
+local progress add [LR18](#lr18) and new cases of IC1, IC5, LR8, LR14 and HM8; #1122's four items are built. It cites
+and does not restate [editor-extensions-audit.md](../adr/editor-extensions-audit.md),
 [developer-loop-audit.md](developer-loop-audit.md) §8 (P1 to P15) and §9 (the vocabulary),
 [record-from-the-ide.md](record-from-the-ide.md), [real-editor-checks.md](real-editor-checks.md),
 [live-view-next.md](live-view-next.md) Part 6 and [extension-ux-audit.md](extension-ux-audit.md). The live-run study,

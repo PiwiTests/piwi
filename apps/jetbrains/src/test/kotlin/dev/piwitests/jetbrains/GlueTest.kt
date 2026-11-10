@@ -2467,7 +2467,8 @@ class GlueTest {
         url: String? = null,
         executionId: Int? = null,
         children: List<FailureTreeNode> = emptyList(),
-    ) = FailureTreeNode(key, kind, label, description, startTime, listOf(label), note, icon, expanded, url, executionId, children)
+        tooltip: List<String> = listOf(label),
+    ) = FailureTreeNode(key, kind, label, description, startTime, tooltip, note, icon, expanded, url, executionId, children)
 
     private val loginFailure = WorkspaceFailure(
         uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", headline = "not visible", executionId = 1,
@@ -2522,6 +2523,7 @@ class GlueTest {
                             node(
                                 "failure:1", "failure", "logs in", "failing", description = "tests/login.spec.ts:42 · chromium · new",
                                 url = "http://piwi/test-run-cases/1", executionId = 1,
+                                tooltip = listOf("logs in", "locator('#login') was not found", "Cluster: Login button", "Owner: @qa"),
                             ),
                         ),
                     ),
@@ -2553,6 +2555,12 @@ class GlueTest {
         assertEquals(editedFailure to "edited since your run #124", edited.failure to edited.note)
         assertEquals(loginFailure to null, failing.failure to failing.note)
         assertEquals("tests/login.spec.ts:42 · chromium · new", failing.description)
+        // Each node keeps the service's hover lines, drawn as the tree's tooltip.
+        assertEquals(listOf("logs in", "locator('#login') was not found", "Cluster: Login button", "Owner: @qa"), failing.tooltip)
+        assertEquals(
+            "<html>logs in<br>locator('#login') was not found<br>Cluster: Login button<br>Owner: @qa</html>",
+            Glue.htmlTooltip(failing.tooltip.joinToString("\n")),
+        )
     }
 
     @Test

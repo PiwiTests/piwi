@@ -18,6 +18,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -41,6 +42,7 @@ import javax.swing.Icon
 import javax.swing.JPanel
 import javax.swing.JTree
 import javax.swing.SwingUtilities
+import javax.swing.ToolTipManager
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
@@ -55,9 +57,11 @@ import javax.swing.tree.TreePath
  * (`piwi/failuresChanged`), keeping the expanded and selected nodes. Double-click or Enter opens a failure's line, where
  * the highlight carries the quick fixes, or a run's page; the right-click menu holds the failure's actions, and a
  * config's (Re-run the Failing Tests, Compare With…, Open in Dashboard, for that config); Next and Previous Occurrence
- * go from failure to failure. Above it, the connection and the run, and Connect, Refresh, Re-run the Failing Tests, the
- * dashboard links, the previous and next failure, expand and collapse all, the groupings and the settings in the
- * toolbar.
+ * go from failure to failure, and each node's hover says what the service says of it. Above it, the connection and the
+ * run, and in the toolbar Refresh the Latest Run, Re-run the Failing Tests, Open in Dashboard, Compare With…, the Group
+ * By menu, the previous and next failure, and expand and collapse all; Connect, Piwi Picker's pairing, the MCP
+ * configurations, Refresh and the settings are in the gear menu. The tab is Failures, and the tool window's icon has a
+ * red dot while tests fail.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -71,6 +75,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             showsRootHandles = true
             cellRenderer = FailureRenderer()
         }
+        // Each node's hover text, the service's (`FailureTreeNode.tooltip`), as VS Code shows it.
+        ToolTipManager.sharedInstance().registerComponent(tree)
         TreeSpeedSearch.installOn(tree, true) { path -> nodeOf(path.lastPathComponent)?.label ?: "" }
         val selected = { nodeOf(tree.lastSelectedPathComponent) }
         object : DoubleClickListener() {
@@ -158,6 +164,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             }
             val failing = result?.failing ?: 0
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
+            toolWindow.setIcon(if (failing == 0) PIWI_ICON else FAILING_ICON)
             val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
@@ -184,26 +191,19 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val expander = DefaultTreeExpander(tree)
         val group = DefaultActionGroup(
             listOfNotNull(
-                actions.getAction("Piwi.Connect"),
-                actions.getAction("Piwi.Refresh"),
+                actions.getAction("Piwi.RefreshRun"),
                 actions.getAction("Piwi.RerunFailing"),
                 actions.getAction("Piwi.OpenInDashboard"),
-                actions.getAction("Piwi.OpenLatestRun"),
                 actions.getAction("Piwi.CompareWith"),
+                groupByMenu(service),
                 Separator.getInstance(),
                 common.createPrevOccurenceAction(panel),
                 common.createNextOccurenceAction(panel),
                 common.createExpandAllAction(expander, tree),
                 common.createCollapseAllAction(expander, tree),
-                Separator.getInstance(),
-                GroupFailuresAction(service, "file", "Group by File", AllIcons.Actions.GroupByFile),
-                GroupFailuresAction(service, "cluster", "Group by Cluster", AllIcons.Actions.GroupBy),
-                GroupFailuresAction(service, "owner", "Group by Owner", AllIcons.General.User),
-                GroupFailuresAction(service, "flat", "Flat", AllIcons.Actions.ListFiles),
-                Separator.getInstance(),
-                actions.getAction("Piwi.OpenSettings"),
             ),
         )
+        toolWindow.setAdditionalGearActions(gearActions())
         val toolbar = actions.createActionToolbar("PiwiToolWindow", group, true)
         toolbar.targetComponent = panel
         panel.toolbar = toolbar.component
@@ -213,7 +213,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 add(JBScrollPane(tree), BorderLayout.CENTER)
             },
         )
-        val content = ContentFactory.getInstance().createContent(panel, "Latest run", false).apply { isCloseable = false }
+        val content = ContentFactory.getInstance().createContent(panel, TAB_NAME, false).apply { isCloseable = false }
         toolWindow.contentManager.addContent(content)
         service.onChange(content, render)
         render()
@@ -269,13 +269,39 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
     }
 
-    /** One way to group the failures, among the toolbar's toggles: selecting it keeps it for this project and reads them so grouped. */
+    /** **Group By**: the toolbar's one drop-down of the groupings, one of them checked. */
+    private fun groupByMenu(service: PiwiProjectService): DefaultActionGroup =
+        DefaultActionGroup("Group By", true).apply {
+            templatePresentation.icon = AllIcons.Actions.GroupBy
+            templatePresentation.description = "Group the failures by file, cluster or owner, or list them flat"
+            add(GroupFailuresAction(service, "file", "File"))
+            add(GroupFailuresAction(service, "cluster", "Cluster"))
+            add(GroupFailuresAction(service, "owner", "Owner"))
+            add(GroupFailuresAction(service, "flat", "Flat"))
+        }
+
+    /**
+     * The tool window's gear menu: the connection, Piwi Picker's pairing, the MCP configurations, and the reading and
+     * settings of Piwi itself.
+     */
+    private fun gearActions(): DefaultActionGroup {
+        val actions = ActionManager.getInstance()
+        fun registered(vararg ids: String) = ids.mapNotNull { actions.getAction(it) }
+        return DefaultActionGroup().apply {
+            addAll(registered("Piwi.Connect", "Piwi.Disconnect"))
+            addSeparator()
+            addAll(registered("Piwi.PairPicker", "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration"))
+            addSeparator()
+            addAll(registered("Piwi.Refresh", "Piwi.OpenSettings"))
+        }
+    }
+
+    /** One way to group the failures, in the Group By menu: selecting it keeps it for this project and reads them so grouped. */
     private class GroupFailuresAction(
         private val service: PiwiProjectService,
         private val grouping: String,
         text: String,
-        icon: Icon,
-    ) : ToggleAction(text, null, icon), DumbAware {
+    ) : ToggleAction(text), DumbAware {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun isSelected(e: AnActionEvent): Boolean = service.local().failuresGrouping == grouping
@@ -390,6 +416,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             hasFocus: Boolean,
         ) {
             val node = nodeOf(value) ?: return
+            toolTipText = node.tooltip.takeIf { it.isNotEmpty() }?.let { Glue.htmlTooltip(it.joinToString("\n")) }
             icon = when (node.icon) {
                 "context" -> AllIcons.Nodes.Module
                 "fixed", "passed" -> AllIcons.RunConfigurations.TestPassed
@@ -415,6 +442,14 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
 
     companion object {
         const val ID = "Piwi"
+
+        /** The tool window's tab, named as the status bar's Open the Failures and a run's notification name it. */
+        const val TAB_NAME = "Failures"
+
+        private val PIWI_ICON: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiFailuresToolWindowFactory::class.java)
+
+        /** The tool window's icon while tests fail: the Piwi mark with a red dot. */
+        private val FAILING_ICON: Icon = IconLoader.getIcon("/icons/piwi_failing.svg", PiwiFailuresToolWindowFactory::class.java)
 
         private fun nodeOf(value: Any?): Glue.FailureNode? = (value as? DefaultMutableTreeNode)?.userObject as? Glue.FailureNode
 

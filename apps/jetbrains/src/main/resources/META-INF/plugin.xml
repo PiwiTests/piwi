@@ -104,8 +104,11 @@
             <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
                     description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
             <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
+                    icon="AllIcons.Actions.ForceRefresh"
+                    description="Fetch the indexes and the latest run again, and start the editor service again when it stopped"/>
+            <action id="Piwi.RefreshRun" class="dev.piwitests.jetbrains.RefreshRunAction" text="Refresh the Latest Run"
                     icon="AllIcons.Actions.Refresh"
-                    description="Fetch the indexes and the latest run again"/>
+                    description="Read the latest run and its failures again, as a click on the status bar item does"/>
             <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                     text="Run the Tests That Reach This File" description="Run them in the Run tool window">
             </action>

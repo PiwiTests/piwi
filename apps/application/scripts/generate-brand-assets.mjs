@@ -130,6 +130,16 @@ function monoMark(color, size) {
   return svg(VIEW.markSmall, markSmall({ ink: c, check: c, perch: c }), { width: size, height: size });
 }
 
+/** The small mark in one color with a dot of `dot` at its lower right: a tool window icon saying tests fail. */
+function failingMark(color, dot, size) {
+  const c = color;
+  return svg(
+    VIEW.markSmall,
+    markSmall({ ink: c, check: c, perch: c }) + `<circle cx="214" cy="258" r="50" fill="${dot}"/>`,
+    { width: size, height: size, title: 'Piwi: tests failing' },
+  );
+}
+
 const LIGHT = { ink: NAVY, word: NAVY, check: MINT, node: VIOLET, tests: VIOLET };
 const DARK = { ink: INK_ON_DARK, word: INK_ON_DARK, check: MINT_ON_DARK, node: VIOLET_ON_DARK, tests: VIOLET_ON_DARK };
 
@@ -209,6 +219,9 @@ const SVG_FILES = {
   // Tool window and status widget icons, in the IntelliJ New UI icon greys.
   'apps/jetbrains/src/main/resources/icons/piwi.svg': monoMark('#6C707E', 13),
   'apps/jetbrains/src/main/resources/icons/piwi_dark.svg': monoMark('#CED0D6', 13),
+  // The tool window's icon while tests fail: the IntelliJ New UI error reds.
+  'apps/jetbrains/src/main/resources/icons/piwi_failing.svg': failingMark('#6C707E', '#DB3B4B', 13),
+  'apps/jetbrains/src/main/resources/icons/piwi_failing_dark.svg': failingMark('#CED0D6', '#DB5C5C', 13),
   // VS Code tints a view container icon with the theme's foreground.
   'apps/vscode/media/piwi.svg': monoMark('currentColor', 24),
 };
