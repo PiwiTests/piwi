@@ -1177,6 +1177,13 @@
       "when": 1794267445100,
       "tag": "0167_common_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1794304200101,
+      "tag": "0168_clean_vision",
+      "breakpoints": true
     }
   ]
 }
