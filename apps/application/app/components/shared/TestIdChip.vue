@@ -9,6 +9,7 @@
 import { externalIdLink } from '#shared/external-id-link';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 
+defineOptions({ inheritAttrs: false });
 const props = defineProps<{ externalId: string }>();
 
 const template = useExternalIdUrl();
@@ -20,6 +21,7 @@ const { copy, copied } = useCopy();
   <TestCaseKeyHoverCard kind="external-id" :value="props.externalId">
     <a
       v-if="href"
+      v-bind="$attrs"
       :href="href"
       target="_blank"
       rel="noopener noreferrer"
@@ -35,6 +37,7 @@ const { copy, copied } = useCopy();
     </a>
     <button
       v-else
+      v-bind="$attrs"
       type="button"
       class="inline-flex shrink-0 align-baseline"
       :title="copied ? 'Copied' : `External test ID ${props.externalId} · click to copy`"

@@ -165,6 +165,62 @@ test.describe('Zephyr Scale — binding and catalog', () => {
     await expect(card.getByTestId('test-case-key-status')).toHaveText('Approved');
   });
 
+  test('an external ID that is a case key keeps the chip spacing and shows its case on hover', async ({
+    page,
+    playwright,
+  }) => {
+    test.setTimeout(3 * 60_000);
+    const api = await playwright.request.newContext({ baseURL: server!.baseUrl });
+    const current = (await (await api.get(`/api/projects/${projectId}/test-management`)).json()) as {
+      binding: { keySources: { tags: boolean; externalId: boolean } };
+    };
+    const withIds = await api.put(`/api/projects/${projectId}/test-management`, {
+      data: { ...current.binding, keySources: { ...current.binding.keySources, externalId: true } },
+    });
+    expect(withIds.ok(), await withIds.text()).toBeTruthy();
+    const submit = await api.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT_NAME,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'pays with an ID',
+            status: 'passed',
+            duration: 900,
+            location: 'id.spec.ts:3:1',
+            externalId: 'SHOP-T1',
+          },
+        ],
+      },
+    });
+    expect(submit.ok(), await submit.text()).toBeTruthy();
+    const { runId } = (await submit.json()) as { runId: number };
+    const run = (await (await api.get(`/api/test-runs/${runId}`)).json()) as {
+      testCases: Array<{ testCaseId: number }>;
+    };
+
+    try {
+      await page.goto(`${server!.baseUrl}/test-cases/${run.testCases[0]!.testCaseId}`);
+      await waitForHydration(page);
+      const chip = page.getByRole('heading', { level: 1 }).getByTestId('test-id-chip');
+      await expect(chip).toHaveClass(/\bmr-2\b/);
+      await chip.hover();
+      await expect(page.getByTestId('test-case-key-card').getByTestId('test-case-key-name')).toHaveText(
+        'Checkout with a saved card',
+        { timeout: 30_000 },
+      );
+    } finally {
+      await api.put(`/api/projects/${projectId}/test-management`, { data: current.binding });
+      await api.dispose();
+    }
+  });
+
   test('saving the tracker binding leaves the test management binding in place', async ({ playwright }) => {
     const api = await playwright.request.newContext({ baseURL: server!.baseUrl });
     const put = await api.put(`/api/projects/${projectId}/integrations`, { data: { connectionId: null } });
