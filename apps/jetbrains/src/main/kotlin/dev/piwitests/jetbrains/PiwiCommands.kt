@@ -164,14 +164,18 @@ object PiwiCommands {
     }
 
     /**
-     * Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. With
-     * `quiet`, a command the service does not build is not said: the service says why it builds no debug run.
+     * Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows, and
+     * started as the person chose for every run of the project (`Glue.withRunStart`: Run Headed, Hold Failures from
+     * Each Run's Start). With `quiet`, a command the service does not build is not said: the service says why it builds
+     * no debug run.
      */
     fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
-            val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints.map { it.place })
+            val local = service.local()
+            val started = Glue.withRunStart(args, local.runHeaded, local.runHoldFailures)
+            val withBreakpoints = if (breakpoints.isEmpty()) started else started.copy(breakpoints = breakpoints.map { it.place })
             val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 if (!quiet) notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)

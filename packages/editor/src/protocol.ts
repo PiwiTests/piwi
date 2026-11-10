@@ -270,7 +270,6 @@ export interface EditorBreakpoint {
   line: number;
 }
 
-/** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
 /**
  * How a run starts, as the person chose it for every run of the window (kept, so **Run again** starts the same way):
  * headed (`headed`), and with **Hold failures** on or off from its start (`holdFailures`). Left out, the service
@@ -282,6 +281,7 @@ export interface RunStartOptions {
   holdFailures?: boolean;
 }
 
+/** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
 export interface RunTestsArgs extends RunStartOptions {
   /** Any file of the workspace the tests belong to, to pick the Playwright config when `root` does not name it. */
   uri: string;

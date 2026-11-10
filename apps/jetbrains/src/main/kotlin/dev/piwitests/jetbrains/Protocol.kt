@@ -134,9 +134,12 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
- * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed. `debug`
- * debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title names, headed, with
- * one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds no such test.
+ * retries (`--repeat-each=3 --retries=0`), headless unless `headed`, and the run's end says how many of those runs
+ * passed. `debug` debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title
+ * names, headed, with one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds
+ * no such test. `headed` and `holdFailures` start the run as the person chose for every run of the project
+ * (`RunStartOptions`): headed (`--headed`), and with **Hold failures** on or off from its start, over what its
+ * breakpoints decided; left out, the service decides. A repeated run takes `headed` alone.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -147,6 +150,8 @@ data class RunTestsArgs(
     val locations: List<String>? = null,
     val repeat: Int? = null,
     val debug: DebugRun? = null,
+    val headed: Boolean? = null,
+    val holdFailures: Boolean? = null,
 )
 
 /**
@@ -621,8 +626,17 @@ data class SelectionItem(val key: String = "", val name: String? = null, val cou
 
 data class SelectionsResult(val items: List<SelectionItem>? = null)
 
-/** `piwi/runSelection`: a saved selection to run, with the IDE's breakpoints as in `RunTestsArgs`. */
-data class RunSelectionParams(val uri: String, val key: String, val breakpoints: List<EditorBreakpoint>? = null)
+/**
+ * `piwi/runSelection`: a saved selection to run, with the IDE's breakpoints, and started as the person chose (`headed`,
+ * `holdFailures`), as in `RunTestsArgs`.
+ */
+data class RunSelectionParams(
+    val uri: String,
+    val key: String,
+    val breakpoints: List<EditorBreakpoint>? = null,
+    val headed: Boolean? = null,
+    val holdFailures: Boolean? = null,
+)
 
 /**
  * `piwi/applyPick`: the edit that puts a locator picked while a run was paused at a breakpoint in place of the locator

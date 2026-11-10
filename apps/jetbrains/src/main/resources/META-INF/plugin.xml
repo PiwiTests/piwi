@@ -116,13 +116,18 @@
             </action>
             <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                     text="Verify the Test at the Caret ×3"
-                    description="Run the test whose test(…) call holds the caret 3 times without retries, headless, and say how many runs passed">
+                    description="Run the test whose test(…) call holds the caret 3 times without retries, headless unless Run Headed is on, and say how many runs passed">
             </action>
             <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run This Spec"
                     description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
             </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
+            <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Run Headed"
+                    description="Run every test Piwi starts in this project headed, with its browser window shown"/>
+            <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
+                    text="Hold Failures from Each Run's Start…"
+                    description="Auto, On or Off: whether a failed test of each run Piwi starts waits at its line for an answer"/>
             <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
                     text="Re-run the Failing Tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
                     description="Run every test that still fails, or whose failing line changed since its run">

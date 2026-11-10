@@ -162,6 +162,13 @@ import {
   type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
+  HOLD_FAILURES_CHOICES,
+  type RunStartChoices,
+  runOptionPicks,
+  runOptionTarget,
+  runStartChoices,
+  runStartLine,
+  withRunStart,
   pickNotice,
   statusBarView,
   baselinePicks,
@@ -645,6 +652,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.workspace.onDidCloseTextDocument((d) => coverage.delete(d.uri.toString())),
   );
 
+  /** How every run of the window starts: `piwi.runHeaded` and `piwi.runHoldFailures`, read at each run. */
+  const runChoices = (): RunStartChoices => {
+    const settings = vscode.workspace.getConfiguration('piwi');
+    return runStartChoices(settings.get('runHeaded'), settings.get('runHoldFailures'));
+  };
+
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
@@ -708,7 +721,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const desktopChosen = !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN);
     const view = statusBarView(status, runs, desktopChosen, Date.now(), activeFile());
     statusItem.text = refreshing ? refreshingText(view.text) : view.text;
-    const tooltip = new vscode.MarkdownString(view.tooltip);
+    // How every run of the window starts, with the link that changes it, wherever a config is found.
+    const tooltip = new vscode.MarkdownString(
+      view.action === 'none' ? view.tooltip : `${view.tooltip}\n\n${runStartLine(runChoices())}`,
+    );
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
@@ -1018,14 +1034,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /**
-   * Run tests as the service's command for them says; the command started, or null when there is none, said unless
-   * `quiet`.
+   * Run tests as the service's command for them says, started as the person chose for every run of the window
+   * (`withRunStart`); the command started, or null when there is none, said unless `quiet`.
    */
   const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
+    const started = withRunStart(args, runChoices());
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
-      breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
+      breakpoints.length ? { ...started, breakpoints: placesOf(breakpoints) } : started,
     );
     if (!command) {
       if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
@@ -1325,12 +1342,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       );
       if (!picked) return;
       const breakpoints = breakpointsForRun();
-      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
-        uri,
-        key: picked.key,
-        ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
-      });
+      const command = await lc.sendRequest<RunCommand | null>(
+        RUN_SELECTION_REQUEST,
+        withRunStart(
+          { uri, key: picked.key, ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}) },
+          runChoices(),
+        ),
+      );
       if (command) await startRun(command, breakpoints);
+    }),
+    // Run headed, and Hold failures from each run's start, for every run of the window: written where the setting's
+    // value comes from, the workspace's settings when they hold one, else the user's.
+    vscode.commands.registerCommand('piwi.runOptions', async () => {
+      const settings = vscode.workspace.getConfiguration('piwi');
+      const choices = runChoices();
+      const picked = await vscode.window.showQuickPick(runOptionPicks(choices), {
+        placeHolder: 'How every test run of this window starts',
+      });
+      if (!picked) return;
+      const save = (key: string, value: unknown) =>
+        settings.update(
+          key,
+          value,
+          runOptionTarget(settings.inspect(key)) === 'workspace'
+            ? vscode.ConfigurationTarget.Workspace
+            : vscode.ConfigurationTarget.Global,
+        );
+      if (picked.option === 'headed') {
+        await save('runHeaded', !choices.headed);
+        return;
+      }
+      const hold = await vscode.window.showQuickPick(
+        HOLD_FAILURES_CHOICES.map((c) => ({
+          label: c.label,
+          description: c.choice === choices.holdFailures ? 'current' : undefined,
+          detail: c.detail,
+          choice: c.choice,
+        })),
+        { placeHolder: "Hold failures from each run's start" },
+      );
+      if (hold) await save('runHoldFailures', hold.choice);
     }),
     vscode.commands.registerCommand('piwi.openLiveRun', async () => {
       if (liveUrl) await vscode.env.openExternal(vscode.Uri.parse(liveUrl));
@@ -1418,6 +1469,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
       if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
+      if (e.affectsConfiguration('piwi.runHeaded') || e.affectsConfiguration('piwi.runHoldFailures')) render();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
