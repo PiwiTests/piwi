@@ -33,11 +33,12 @@ test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcut
 of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
-  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**). The
-  progress (`3 of 9`, and how many failed) comes from the run itself, so it counts offline and with the desktop app.
+  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**).
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and in the status bar item's
-  menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped, and `Piwi: 3 of 9` while the
-  run goes on.
+  menu, whose text starts `Piwi: paused · checkout.page.ts:12` while a test is stopped.
+
+The progress beside them comes from the run itself, so it counts offline and with the desktop app
+([Watch a run](./watch-a-run#how-far-it-is)).
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
@@ -53,9 +54,9 @@ line, and marks it:
 an arrow in the gutter, the debugger's execution point color, and above it the call, as Playwright names it, with the
 controls:
 
-`Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish  End test
+`Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish  End test
 
-`attempt 2` shows on a retry. In VS Code the line is a CodeLens, the marked line's hover holding the controls;
+It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. In VS Code the line is a CodeLens, the marked line's hover holding the controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.

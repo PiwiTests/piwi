@@ -590,7 +590,11 @@ test running Playwright itself) takes no worker's place.
 The run's own process (the reporter in Playwright's runner) keeps a connection of its own from its `onBegin` to its
 `onEnd` (`run-begin`, `RunSessions.attachMain`): how many tests the run holds, then each that ended for good
 (`run-progress`) and how the run ended with its first failure (`run-end`), which the session keeps as
-`RunSession.progress` (`HubSession.progress`): the status bars count from it. While it is connected the run goes on
+`RunSession.progress` (`HubSession.progress`): the status bars count from it. Its page on the instance (`run-page`, its
+number and address, once the reporter knows them) is kept as `RunSession.page` (`HubSession.page`), which every surface
+links as `#78 · Open`; the hub names each stop's line where it stands now in the editor (`lineNow`, through
+`RunLines`), and a run whose reporter connected is remembered (`heardFrom`) so a command that ends without reaching the
+instance says which of the two went wrong. While it is connected the run goes on
 between its workers, and once it closed with no worker left the run ends after the same 5 s. One such connection is
 taken per run; a reporter that predates it opens none, and its run has no progress.
 

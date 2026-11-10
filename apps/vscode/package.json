@@ -237,6 +237,18 @@
         "icon": "$(globe)"
       },
       {
+        "command": "piwi.openRunPage",
+        "title": "Open the run page",
+        "category": "Piwi",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "piwi.openLiveRun",
+        "title": "Open the run in progress",
+        "category": "Piwi",
+        "icon": "$(globe)"
+      },
+      {
         "command": "piwi.copyMcpConfiguration",
         "title": "Copy the MCP server configuration",
         "category": "Piwi"

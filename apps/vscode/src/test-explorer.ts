@@ -74,6 +74,8 @@ interface Followed {
   results: Map<number, LiveTestStatus>;
   /** The state each item was last shown in. */
   shown: Map<vscode.TestItem, string>;
+  /** The editor's own run: its tests show as running; another run's show their results alone. */
+  own: boolean;
 }
 
 /** A result the Testing view shows: a test's outcome, or an error a run gave a test it has no result of. */
@@ -384,7 +386,7 @@ export class TestExplorer implements vscode.Disposable {
       }
     }
     const run = profile?.run ?? this.controller.createTestRun(new vscode.TestRunRequest(), liveRunName(live), false);
-    const followed: Followed = { runId: live.runId, run, profile, results: new Map(), shown: new Map() };
+    const followed: Followed = { runId: live.runId, run, profile, results: new Map(), shown: new Map(), own: live.own };
     this.followed.set(root, followed);
     return followed;
   }
@@ -394,6 +396,8 @@ export class TestExplorer implements vscode.Disposable {
     for (const [id, status] of followed.results) {
       for (const item of this.byCase.get(id) ?? []) {
         if (followed.profile && !followed.profile.tests.has(item)) continue;
+        // Another run's test (a CI run's, a teammate's) is not shown running here: only its result.
+        if (!followed.own && status === 'running') continue;
         if (followed.shown.get(item) === status) continue;
         followed.shown.set(item, status);
         const outcome =

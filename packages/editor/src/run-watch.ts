@@ -75,7 +75,16 @@ function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveR
     startedAt: run.startTime,
     own,
     ...(ref ? { ref } : {}),
+    ...(!own && isCiRun(run) ? { ci: true } : {}),
   };
+}
+
+/** Whether a run is a CI run's: its origin says so, else, for a run that names none, the CI it names. */
+function isCiRun(run: RunDetails): boolean {
+  const origin = parseRunOrigin(run.metadata?.[RUN_ORIGIN_METADATA_KEY]);
+  if (origin) return origin.kind === 'ci' || origin.kind === 'ci-rerun';
+  const ci = run.metadata?.ci;
+  return !!ci && typeof ci === 'object';
 }
 
 const streamKey = (connection: PiwiConnection) => `${connection.serverUrl}\n${connection.apiKey ?? ''}`;
@@ -243,6 +252,8 @@ export interface RunWatchOptions {
   ownRunPollMs?: number;
   /** How long after a command ends its run may take to reach the instance. */
   commandEndWaitMs?: number;
+  /** Whether the run of a command's ref connected to the service: its reporter ran (`RunSessions.heardFrom`). */
+  reporterHeard?: (ref: string) => boolean;
 }
 
 /** A command built with a ref, and the runs carrying that ref the instance holds. */
@@ -440,11 +451,12 @@ export class RunWatch {
     if (!this.current(w)) return false;
     if (ended === null) {
       const code = exitCode === null || exitCode === undefined ? '' : ` (exit code ${exitCode})`;
-      this.options.notice({
-        root: context.root,
-        severity: 'warning',
-        message: `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`,
-      });
+      // A reporter that ran but sent nothing is told apart from a config without it.
+      const message = this.options.reporterHeard?.(w.ref)
+        ? `The run ended${code} but did not reach ${w.serverUrl}, though its Piwi reporter ran: its lines in the run's ` +
+          'output say why (its server address, its key, or an instance that refused it).'
+        : `The run ended${code} but did not reach ${w.serverUrl}: is the Piwi reporter in the Playwright config?`;
+      this.options.notice({ root: context.root, severity: 'warning', message });
     } else {
       w.known.add(ended);
     }

@@ -837,7 +837,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("breakpoint", "Fill \"one\" locator('input')", uri(spec), 1, 2, null, true, since)
             hear(RunSession("terminal-41-1", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("end"))), terminal = true))
             val renderer = sessions.shown().inlays.single().renderer as StopInlay
-            assertEquals("Paused · Fill \"one\" locator('input') · run in a terminal", renderer.text)
+            assertEquals("Stopped at a breakpoint · Fill \"one\" locator('input') · run in a terminal", renderer.text)
             assertEquals(Glue.StopControl.END, renderer.links.last())
             myFixture.openFileInEditor(spec)
             val actions = ActionManager.getInstance()

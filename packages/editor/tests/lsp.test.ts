@@ -2488,6 +2488,7 @@ describe('runs as they happen', () => {
       startedAt: startTime,
       own: true,
       ref: command.ref,
+      url: expect.stringMatching(/\/test-runs\/42$/),
     });
 
     // A test's end, then the counts of its batch.

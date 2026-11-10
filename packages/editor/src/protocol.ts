@@ -327,6 +327,11 @@ export interface DebugRun {
    * stopped page, outlined there and said (a `piwi/notice`, and the stopped line's `piwi/locatorAtCaret`).
    */
   execution?: number | null;
+  /**
+   * The name the dashboard gave the run (`ed-` then 8 to 32 hexadecimal digits), which its page follows the run by on
+   * the instance: the run takes it unless a run of this window holds it; absent or null, the service names it.
+   */
+  ref?: string | null;
 }
 
 export interface RunCommand {
@@ -663,6 +668,10 @@ export interface LiveRun {
   own: boolean;
   /** The ref of the command that started it (`RunCommand.ref`), on an own run the service keeps the command of. */
   ref?: string;
+  /** Its page on the instance (`/test-runs/:id`), which the status bar opens while it runs. */
+  url?: string;
+  /** A CI run's (its origin, else the CI it names): the clients say so, never as the person's own tests running. */
+  ci?: boolean;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -1379,6 +1388,20 @@ export type RunPlace = EditorBreakpoint;
 export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
 
 /**
+ * What a stop says of why its test stands there, by its reason, as every surface says it: the editors here (the
+ * JetBrains plugin's `Glue.RUN_STOP_WORDS` mirrors it), the run page, the desktop app and Piwi Picker
+ * (`apps/application/tests/unit/stop-words-drift.test.ts`). A failure says how it failed instead.
+ */
+export const RUN_STOP_WORDS: Record<Exclude<RunStopReason, 'failure'>, string> = {
+  breakpoint: 'Stopped at a breakpoint',
+  step: 'Stopped after a step',
+  pause: 'Paused',
+  'run-to': 'Stopped at the line it ran to',
+  'page-pause': 'Stopped at page.pause()',
+  other: 'Stopped',
+};
+
+/**
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
  * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
  * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
@@ -1546,6 +1569,17 @@ export interface RunSession {
   live?: RunLive;
   /** How far the run is, as its own process says; absent for a run whose reporter predates it. */
   progress?: RunProgress;
+  /**
+   * The run's page on the instance it reports to, its number there and its address, once its own process names it;
+   * absent before, for a run that reports to no instance, and for one whose reporter predates it.
+   */
+  page?: RunPage;
+}
+
+/** A run's page on an instance: its number there (`#78`) and its address. */
+export interface RunPage {
+  id: number;
+  url: string;
 }
 
 /**
@@ -1777,6 +1811,8 @@ export interface PickAtResult {
   ok: boolean;
   message: string;
   locator: string | null;
+  /** Whether an editor took the locator; absent when the run's reporter does not say. */
+  taken?: boolean;
 }
 
 export const PICK_AT_REQUEST = 'piwi/pickAt';

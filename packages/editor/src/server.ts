@@ -1490,7 +1490,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           failingTests: failing.size,
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
-          live: c.live ? { ...c.live } : null,
+          live: c.live ? { ...c.live, url: c.client!.runUrl(c.live.runId) } : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
           ...(c.liveTests.size
@@ -1582,6 +1582,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     },
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
+    // Created below, before any command can end.
+    reporterHeard: (ref) => runSessions.heardFrom(ref),
     runEnded: (ended) => {
       void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended);
       // The run may have recorded coverage: the files the client holds show it.
@@ -1751,6 +1753,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let clientPageView: ClientPageView | null = null;
   let clientLaneView: ClientLaneView | null = null;
   const runSessions = new RunSessions({
+    // The workers' lines name the editor (`Visual Studio Code`), as it named itself at `initialize`.
+    workerHost: () => clientName,
     notify: (session) => {
       clientPageView?.changed();
       clientLaneView?.changed();
@@ -2278,6 +2282,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       RunHub.open({
         sessions: runSessions,
         actions: stopActions,
+        lineNow: (ref, uri, line) => {
+          const file = uriToPath(uri);
+          if (!file) return null;
+          const open = !!openDocument(file);
+          const now = runLines.lineNow(ref, lineKey(file), line, open, open ? null : diskFile(file));
+          return 'line' in now ? now.line : null;
+        },
         runInfo: (ref, root) => {
           const context = root ? contextOfRoot(root) : null;
           return {
@@ -3312,7 +3323,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           : `${relative} cannot be passed on a command line, so Piwi runs nothing.`,
       );
     }
-    const ref = newRunRef();
+    // The dashboard follows the run by the name it gave it, unless a run of this window holds that name.
+    const ref = debug.ref && !runCommands.has(debug.ref) ? debug.ref : newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
@@ -3925,6 +3937,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             const file = uriToPath(params.textDocument.uri);
             const before = documents.get(params.textDocument.uri)?.getText() ?? null;
             if (file) runLines.changed(lineKey(file), before, params.contentChanges);
+            // A run stopped in this file is told again with the stop's line where it stands now.
+            for (const session of runSessions.current()) {
+              if (session.workers.some((w) => w.stop?.uri === params.textDocument.uri)) runHub?.push(session);
+            }
             return handler(params);
           });
       },

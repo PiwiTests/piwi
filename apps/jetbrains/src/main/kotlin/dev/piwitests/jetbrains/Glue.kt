@@ -212,16 +212,32 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+    /** A run in progress in the status bar: `Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the editor's own. */
     private fun liveText(live: LiveRun): String {
         val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
-        return "Piwi: ${live.done}/${live.total}$failing" + if (live.own) " · your run" else ""
+        val run = if (live.ci) "CI run" else "run"
+        return "Piwi: $run #${live.runId} · ${live.done}/${live.total}$failing" + if (live.own) " · yours" else ""
+    }
+
+    /**
+     * The run in progress the status bar counts for the context of `file`: that context's, else the editor's own run of
+     * another context, which stays in view whichever config the file belongs to; null while none runs.
+     */
+    fun liveRun(status: StatusResult?, runs: RunStatusResult?, file: String?): LiveRun? {
+        val shown = statusContext(status?.contexts.orEmpty(), file)
+        val own = runs?.contexts?.firstOrNull { it.root == shown?.root }?.live
+        return own ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
     /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
     private fun liveLine(live: LiveRun): String {
         val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
-        return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
+        val run = when {
+            live.own -> "Your run"
+            live.ci -> "CI run"
+            else -> "Run"
+        }
+        return "\n$run #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
     /** The status bar text while the latest run is read again (**Read the Latest Run Again**, in its popup). */
@@ -294,7 +310,8 @@ object Glue {
         val where = (shown.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
         val from = (shown.serverUrl?.let { url -> "\n$url, from ${sourceLabel(shown.source)}" } ?: "") + reporter + hint
-        val live = run?.live
+        // The editor's own run in progress stays in view whichever config the file belongs to.
+        val live = run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
         val liveFailing = (live?.failed ?: 0) > 0
         val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
@@ -1675,10 +1692,24 @@ object Glue {
             else -> " · run in a terminal"
         }
         if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
-        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
-        val by = if (stop.by == "agent") " by the agent" else ""
-        return "Paused$by · ${stop.title.orEmpty()}$attempt$where"
+        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching; else why it stopped.
+        val why = if (stop.by == "agent") {
+            "Paused by the agent"
+        } else {
+            stop.reason?.let { RUN_STOP_WORDS[it] } ?: RUN_STOP_WORDS.getValue("other")
+        }
+        return "$why · ${stop.title.orEmpty()}$attempt$where"
     }
+
+    /** What a stop says of why its test stands there, by its reason: the editor service's `RUN_STOP_WORDS`. */
+    val RUN_STOP_WORDS = mapOf(
+        "breakpoint" to "Stopped at a breakpoint",
+        "step" to "Stopped after a step",
+        "pause" to "Paused",
+        "run-to" to "Stopped at the line it ran to",
+        "page-pause" to "Stopped at page.pause()",
+        "other" to "Stopped",
+    )
 
     /** Whether a token kept for the runs' MCP server is one the editor service takes: 32 to 256 characters of base64url. */
     fun isAgentsToken(token: String): Boolean = Regex("^[A-Za-z0-9_-]{32,256}$").matches(token)
@@ -1724,11 +1755,25 @@ object Glue {
      * of how many they hold, and how many failed; null while no run says.
      */
     fun runProgressText(sessions: Map<String, RunSession>): String? {
-        val told = sessions.values.mapNotNull { it.progress }
+        val told = sessions.values.filter { it.progress != null }
         if (told.isEmpty()) return null
-        val failed = told.sumOf { it.failed }
-        return "Piwi: ${told.sumOf { it.done }} of ${told.sumOf { it.total }}" + if (failed > 0) " · $failed failed" else ""
+        val progress = told.mapNotNull { it.progress }
+        val failed = progress.sumOf { it.failed }
+        val number = told.singleOrNull()?.page?.let { "run #${it.id} · " }.orEmpty()
+        return "Piwi: $number${progress.sumOf { it.done }} of ${progress.sumOf { it.total }}" +
+            if (failed > 0) " · $failed failed" else ""
     }
+
+    /**
+     * A stop's or a share's status with how far the runs are after it, so neither hides the other:
+     * `Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9`.
+     */
+    fun withProgress(status: String, progress: String?): String =
+        if (progress == null) status else "$status · ${progress.removePrefix("Piwi: ")}"
+
+    /** The runs whose own process named their page on the instance, in their order: `Run #78` and the address. */
+    fun runPages(sessions: Map<String, RunSession>): List<Pair<String, RunPage>> =
+        sessions.values.mapNotNull { session -> session.page?.takeIf { it.id > 0 }?.let { (session.ref ?: "") to it } }
 
     /** A worker a Worker tab can watch while its test runs: its run, its worker and slot (`lane`), and its words. */
     data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
@@ -2279,12 +2324,21 @@ object Glue {
     /**
      * What a Debug in my editor request names beside the failing line: the test's spec as the run reported it, its title
      * after its describe blocks' (joined by ` › `), the Playwright project it failed in, and the failed execution whose
-     * suggested locator is outlined at the stop.
+     * suggested locator is outlined at the stop, and the name the dashboard gave the run, which its page follows it by.
      */
-    data class DebugRequest(val spec: String, val title: String, val project: String?, val execution: Int?)
+    data class DebugRequest(
+        val spec: String,
+        val title: String,
+        val project: String?,
+        val execution: Int?,
+        val ref: String? = null,
+    )
 
     /** The fields a debug request names, none of them twice. */
-    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution")
+    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution", "ref")
+
+    /** The name a dashboard gives a debug run, which the editor service checks again (`DEBUG_RUN_REF`). */
+    private val RUN_REF = Regex("^ed-[0-9a-f]{8,32}$")
 
     const val MAX_DEBUG_TITLE = 1000
     const val MAX_DEBUG_PROJECT = 200
@@ -2329,7 +2383,9 @@ object Glue {
         }
         val execution = one("execution")
         if (execution != null && positive(execution) == null) return "execution must be an id"
-        return DebugRequest(spec, title, project, execution?.let { positive(it) })
+        val ref = one("ref")?.trim()?.ifEmpty { null }
+        if (ref != null && !RUN_REF.matches(ref)) return "ref must be a run name the dashboard gives"
+        return DebugRequest(spec, title, project, execution?.let { positive(it) }, ref)
     }
 
     const val MAX_OPEN_PATH = 4096
@@ -2411,7 +2467,7 @@ object Glue {
     fun debugRunArgs(specUri: String, fileUri: String, line: Int, debug: DebugRequest): RunTestsArgs = RunTestsArgs(
         uri = specUri,
         testIds = emptyList(),
-        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution),
+        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution, debug.ref),
     )
 
     /** Whether a path, with forward slashes, is absolute: `/home/me/a.ts` or `C:/me/a.ts`. */

@@ -237,20 +237,20 @@ class GlueTest {
         fun live(run: RunInfo?, live: LiveRun?) =
             RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run, failingTests = 3, live = live)))
         val own = Glue.statusView(connected, live(failed, inProgress))
-        assertEquals("Piwi: 4/9 · 1 failing · your run", own.text)
+        assertEquals("Piwi: run #124 · 4/9 · 1 failing · yours", own.text)
         assertEquals(
             "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
                 "Your run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env",
             own.tooltip,
         )
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
-        assertEquals("Piwi: 4/9", other.text)
+        assertEquals("Piwi: run #124 · 4/9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4/9\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.
         val first = Glue.statusView(connected, live(null, inProgress.copy(done = 0, failed = 0)))
-        assertEquals("Piwi: 0/9 · your run", first.text)
+        assertEquals("Piwi: run #124 · 0/9 · yours", first.text)
         assertEquals(
             "No run of Acme on feature/pay yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env",
             first.tooltip,
@@ -715,7 +715,7 @@ class GlueTest {
         assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
         val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
         assertEquals(stops.single(), stopped.stop)
-        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+        assertEquals("Worker 2 · Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
     }
 
     @Test
@@ -746,8 +746,8 @@ class GlueTest {
 
     @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
         // A stop an agent asked for says so.
         assertEquals(
             "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon')",
@@ -760,7 +760,7 @@ class GlueTest {
         val stops = Glue.stopsOf(sessions)
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 
@@ -1234,7 +1234,7 @@ class GlueTest {
         val stop = Glue.stopsOf(sessions).single()
         assertTrue(stop.terminal)
         assertFalse(stop.runner)
-        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
+        assertEquals("Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
     }
 
     @Test
@@ -1246,7 +1246,7 @@ class GlueTest {
         assertTrue(stop.terminal)
         assertTrue(stop.runner)
         assertEquals(
-            "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+            "Stopped at a breakpoint · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
             Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
         )
         // Said of a run the IDE started, it says nothing.
@@ -1565,6 +1565,47 @@ class GlueTest {
             ) as Glue.OpenRequest.File).debug,
         )
         assertEquals(null, (Glue.parseOpenRequest(debugQuery("debug" to null)) as Glue.OpenRequest.File).debug)
+    }
+
+    @Test
+    fun `a debug request carries the name the dashboard gave the run, and refuses another`() {
+        val named = Glue.parseOpenRequest(debugQuery("ref" to "ed-0123456789abcdef")) as Glue.OpenRequest.File
+        assertEquals("ed-0123456789abcdef", named.debug?.ref)
+        assertEquals("ed-0123456789abcdef", Glue.debugRunArgs("file:///s", "file:///f", 5, named.debug!!).debug?.ref)
+        for (ref in listOf("ed-1", "terminal-1-2", "ed-0123456789ABCDEF")) {
+            val refused = Glue.parseOpenRequest(debugQuery("ref" to ref)) as Glue.OpenRequest.Refused
+            assertEquals(ref, "ref must be a run name the dashboard gives", refused.error)
+        }
+    }
+
+    @Test
+    fun `a run in progress names its number, a CI run says so, and the editor's own stays in view from another config`() {
+        val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 0, own = false, ci = true)
+        fun live(vararg contexts: RunStatus) = RunStatusResult(contexts.toList())
+        val ci = Glue.statusView(connected, live(RunStatus(root = "/w", branch = "main", live = inProgress)))
+        assertEquals("Piwi: CI run #124 · 4/9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 is running: 4/9"))
+        // Two configs: the file is in the second, the editor's own run in the first.
+        val two = StatusResult(listOf(connected.contexts!!.single(), connected.contexts!!.single().copy(root = "/w/admin")))
+        val own = inProgress.copy(own = true, ci = false, url = "http://piwi/test-runs/124")
+        val runs = live(RunStatus(root = "/w", live = own), RunStatus(root = "/w/admin"))
+        assertEquals("Piwi: run #124 · 4/9 · yours", Glue.statusView(two, runs, file = "/w/admin/tests/a.spec.ts").text)
+        assertEquals(own, Glue.liveRun(two, runs, "/w/admin/tests/a.spec.ts"))
+        val notOwn = live(RunStatus(root = "/w", live = own.copy(own = false)), RunStatus(root = "/w/admin"))
+        assertEquals(null, Glue.liveRun(two, notOwn, "/w/admin/tests/a.spec.ts"))
+    }
+
+    @Test
+    fun `the progress names the run's number, and a stop or a share keeps it beside them`() {
+        val page = RunPage(78, "https://piwi.example.com/test-runs/78")
+        val run = RunSession("ed-1", "/w", emptyList(), false, progress = RunProgress(total = 9, done = 3), page = page)
+        assertEquals("Piwi: run #78 · 3 of 9", Glue.runProgressText(mapOf("ed-1" to run)))
+        assertEquals(listOf("ed-1" to page), Glue.runPages(mapOf("ed-1" to run, "ed-2" to run.copy(ref = "ed-2", page = null))))
+        assertEquals(
+            "Piwi: paused · cart.spec.ts:12 · run #78 · 3 of 9",
+            Glue.withProgress("Piwi: paused · cart.spec.ts:12", Glue.runProgressText(mapOf("ed-1" to run))),
+        )
+        assertEquals("Piwi: shared live", Glue.withProgress("Piwi: shared live", null))
     }
 
     @Test

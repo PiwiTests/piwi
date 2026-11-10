@@ -62,6 +62,8 @@ export interface StatusBarView {
   action: 'refresh' | 'retry' | 'connect' | 'none';
   /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
+  /** The page of the run in progress the item counts, which `piwi.openLiveRun` opens; null while none runs. */
+  liveUrl: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
 }
@@ -70,6 +72,7 @@ const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
 /** The commands the status bar item's tooltip links to. */
 export const STATUS_TOOLTIP_COMMANDS = [
+  'piwi.openLiveRun',
   'piwi.openRun',
   'piwi.openInDashboard',
   'piwi.compareWith',
@@ -113,16 +116,31 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
   return desktopChosen ? 'The Piwi desktop app, chosen with Piwi: Connect, is not running.' : null;
 }
 
-/** A run in progress in the status bar: `$(sync~spin) Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+/**
+ * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4/9 · 1 failing`, and ` · yours` for the
+ * editor's own.
+ */
 function liveText(live: LiveRun): string {
   const failing = live.failed ? ` · ${live.failed} failing` : '';
-  return `$(sync~spin) Piwi: ${live.done}/${live.total}${failing}${live.own ? ' · your run' : ''}`;
+  const run = live.ci ? 'CI run' : 'run';
+  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${live.done}/${live.total}${failing}${live.own ? ' · yours' : ''}`;
 }
 
 /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
 function liveLine(live: LiveRun): string {
   const failing = live.failed ? ` · ${live.failed} failing` : '';
-  return `${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+  const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
+  return `${run} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+}
+
+/** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
+function liveLink(live: LiveRun | null): string | null {
+  return live?.url ? `[Open run #${live.runId} (running)](command:piwi.openLiveRun)` : null;
+}
+
+/** The links of the tooltip's last line, the run in progress first. */
+function linksLine(...links: Array<string | null>): string {
+  return links.filter((link): link is string => !!link).join(' · ');
 }
 
 /** When the latest run was read, and how the service learns of the next: `Updated 12 s ago · live`. */
@@ -194,7 +212,14 @@ export function statusBarView(
   const contexts = status?.contexts ?? [];
   const shown = statusContext(contexts, activeFile);
   if (!shown) {
-    return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
+    return {
+      text: '$(beaker) Piwi',
+      tooltip: 'No Playwright config found',
+      action: 'none',
+      url: null,
+      liveUrl: null,
+      error: false,
+    };
   }
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
@@ -211,6 +236,7 @@ export function statusBarView(
       ),
       action: 'retry',
       url: null,
+      liveUrl: null,
       error: false,
     };
   }
@@ -220,6 +246,7 @@ export function statusBarView(
       tooltip: lines(md(shown.problem ?? 'Not connected'), which, hint, connect),
       action: 'connect',
       url: null,
+      liveUrl: null,
       error: false,
     };
   }
@@ -233,14 +260,16 @@ export function statusBarView(
   const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
   const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
   const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
-  const live = run?.live ?? null;
+  // The editor's own run in progress stays in view whichever config the active file belongs to.
+  const live = run?.live ?? runs?.contexts.find((c) => c.live?.own)?.live ?? null;
+  const liveUrl = live?.url ?? null;
   const progress = live ? liveLine(live) : null;
   const updated = updatedLine(run, now);
   const baseline = run?.baseline ? md(baselineLine(run.baseline.label)!) : null;
   const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
   const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
-    const links = `${dashboard} · ${compare} · ${connect}`;
+    const links = linksLine(liveLink(live), dashboard, compare, connect);
     if (run?.overlays) {
       // A developer's own runs alone, with no baseline.
       const failing = run.failingTests ?? run.failures;
@@ -259,6 +288,7 @@ export function statusBarView(
         ),
         action: 'refresh',
         url: null,
+        liveUrl,
         error: !live && failing > 0,
       };
     }
@@ -267,6 +297,7 @@ export function statusBarView(
       tooltip: lines(`No run of ${where} yet`, which, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
+      liveUrl,
       error: false,
     };
   }
@@ -284,9 +315,15 @@ export function statusBarView(
     from,
     reporter,
     hint,
-    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${compare} · ${connect}`,
+    linksLine(
+      liveLink(live),
+      live?.runId === r.id ? null : `[Open run #${r.id}](command:piwi.openRun)`,
+      dashboard,
+      compare,
+      connect,
+    ),
   );
-  const view = { tooltip, action: 'refresh' as const, url: r.url, error: false };
+  const view = { tooltip, action: 'refresh' as const, url: r.url, liveUrl, error: false };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
@@ -1576,7 +1613,11 @@ export function unfollowedOutcome(
   };
 }
 
-/** The name of the test run that follows a run in progress. */
+/**
+ * The name of the test run that follows a run in progress: `Piwi: your run #124`, `Piwi: CI run #125 on this branch`,
+ * else `Piwi: run #126 on this branch`, whoever started it.
+ */
 export function liveRunName(live: LiveRun): string {
-  return `Piwi: ${live.own ? 'your ' : ''}run #${live.runId}`;
+  if (live.own) return `Piwi: your run #${live.runId}`;
+  return `Piwi: ${live.ci ? 'CI run' : 'run'} #${live.runId} on this branch`;
 }

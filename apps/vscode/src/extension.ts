@@ -623,6 +623,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
   let statusUrl: string | null = null;
+  /** The page of the run in progress the status bar item counts, which `piwi.openLiveRun` opens. */
+  let liveUrl: string | null = null;
   let lastServers = '';
   context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
 
@@ -670,6 +672,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
     statusItem.tooltip = tooltip;
     statusUrl = view.url;
+    liveUrl = view.liveUrl;
     statusItem.command = {
       refresh: 'piwi.refreshRun',
       retry: 'piwi.refresh',
@@ -1258,6 +1261,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
       });
       if (command) await startRun(command, breakpoints);
+    }),
+    vscode.commands.registerCommand('piwi.openLiveRun', async () => {
+      const url = liveUrl ?? statusUrl;
+      if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));

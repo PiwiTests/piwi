@@ -152,6 +152,7 @@ describe('statusBarView', () => {
       tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Connect](command:piwi.connect)`,
       action: 'retry',
       url: null,
+      liveUrl: null,
       error: false,
     });
     const refused = statusBarView(
@@ -167,6 +168,7 @@ describe('statusBarView', () => {
       tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
       url: 'http://piwi/test-runs/41',
+      liveUrl: null,
       error: false,
     });
   });
@@ -249,15 +251,38 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
     };
     expect(statusBarView(connected, live({}))).toMatchObject({
-      text: '$(sync~spin) Piwi: 4/9 · 1 failing · your run',
+      text: '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
       tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4/9 · 1 failing\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
+      liveUrl: null,
       error: false,
     });
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
-      text: '$(sync~spin) Piwi: 4/9',
+      text: '$(sync~spin) Piwi: run #124 · 4/9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4/9\n\n'),
     });
+    // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
+    const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));
+    expect(linked.liveUrl).toBe('http://piwi/test-runs/124');
+    expect(linked.url).toBe('http://piwi/test-runs/41');
+    expect(linked.tooltip).toContain(
+      '[Open run #124 (running)](command:piwi.openLiveRun) · [Open run #41](command:piwi.openRun) · ',
+    );
+    // The editor's own run shows whichever config the active file belongs to; another config's run does not.
+    const other: StatusResult = {
+      contexts: [connected.contexts[0]!, { ...connected.contexts[0]!, root: '/w/admin', label: 'admin' }],
+    };
+    const runs = live({ url: 'http://piwi/test-runs/124' });
+    const elsewhere: RunStatusResult = {
+      contexts: [runs.contexts[0]!, { ...runs.contexts[0]!, root: '/w/admin', live: null }],
+    };
+    expect(statusBarView(other, elsewhere, false, Date.now(), '/w/admin/tests/a.spec.ts').text).toBe(
+      '$(sync~spin) Piwi: run #124 · 4/9 · 1 failing · yours',
+    );
+    const notOwn: RunStatusResult = {
+      contexts: [{ ...elsewhere.contexts[0]!, live: { ...inProgress, own: false } }, elsewhere.contexts[1]!],
+    };
+    expect(statusBarView(other, notOwn, false, Date.now(), '/w/admin/tests/a.spec.ts').text).not.toContain('run #124');
     // Once it ended, the latest run again.
     expect(statusBarView(connected, live(null)).text).toBe('$(error) Piwi: 3 failing');
     // On a branch without a run yet.
@@ -265,7 +290,7 @@ describe('statusBarView', () => {
       contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
     };
     expect(statusBarView(connected, first)).toMatchObject({
-      text: '$(sync~spin) Piwi: 0/9 · your run',
+      text: '$(sync~spin) Piwi: run #124 · 0/9 · yours',
       tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
       action: 'refresh',
     });
@@ -1922,7 +1947,9 @@ describe('the Testing view', () => {
     expect(resultsRunName(runs())).toBe('Piwi: run #120 on main');
     expect(resultsRunName(null)).toBe('Piwi: the latest runs');
     expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
-    expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
+    expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125 on this branch');
+    // A CI run of the branch says so: it is not the person's tests running.
+    expect(liveRunName({ runId: 126, own: false, ci: true } as LiveRun)).toBe('Piwi: CI run #126 on this branch');
   });
 
   test('passes a test no run followed when every command exited with 0, and is an error otherwise', () => {

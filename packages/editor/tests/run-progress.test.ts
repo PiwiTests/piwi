@@ -103,6 +103,30 @@ describe('a run’s own connection, in the run sessions', () => {
     });
   });
 
+  test('names the run’s page on the instance once its process does, and keeps it to the end', async () => {
+    const { sent, main } = harness();
+    const run = main();
+    await waitFor(() => last(sent));
+    expect(last(sent)).not.toHaveProperty('page');
+    run.read({ type: 'run-page', id: 78, url: 'https://piwi.example.com/test-runs/78' });
+    expect(await waitFor(() => last(sent)?.page)).toEqual({ id: 78, url: 'https://piwi.example.com/test-runs/78' });
+    run.read({ type: 'run-end', status: 'passed', failure: null, done: 9, failed: 0, flaky: 0, skipped: 0 });
+    run.socket.destroy();
+    expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
+      page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
+    });
+  });
+
+  test('remembers that a run’s reporter connected, for a command that ends to say so', async () => {
+    const { sessions, main } = harness();
+    expect(sessions.heardFrom('ed-1')).toBe(false);
+    const run = main();
+    expect(sessions.heardFrom('ed-1')).toBe(true);
+    run.socket.destroy();
+    expect(sessions.heardFrom('ed-1')).toBe(true);
+    expect(sessions.heardFrom('ed-2')).toBe(false);
+  });
+
   test('goes on between its workers while its process is connected', async () => {
     const { sent, main, worker } = harness();
     const run = main();
@@ -198,6 +222,11 @@ describe('a run’s own connection, through the record channel', () => {
       expect(session.progress).toMatchObject({ total: 9, done: 0, status: 'running' });
       run.write(`${JSON.stringify({ type: 'run-progress', done: 4, failed: 0, flaky: 0, skipped: 1 })}\n`);
       await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.progress?.done === 4));
+      // Its page reaches the client too, an address that is not one left out.
+      run.write(`${JSON.stringify({ type: 'run-page', id: 5, url: 'javascript:alert(1)' })}\n`);
+      run.write(`${JSON.stringify({ type: 'run-page', id: 6, url: 'http://127.0.0.1:7494/test-runs/6' })}\n`);
+      const named = await waitFor(() => svc.sessions.find((s) => s.ref === ref && s.page));
+      expect(named.page).toEqual({ id: 6, url: 'http://127.0.0.1:7494/test-runs/6' });
     } finally {
       run.destroy();
     }

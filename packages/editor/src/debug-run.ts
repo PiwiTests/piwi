@@ -38,6 +38,9 @@ const MAX_DEBUG_RUNS = 50;
  */
 const PLAIN_TEXT = /^[^\p{Cc}[\]<>`\\]+$/u;
 
+/** The name a dashboard may give a debug run, as the service names its own (`newRunRef`), longer. */
+export const DEBUG_RUN_REF = /^ed-[0-9a-f]{8,32}$/;
+
 /** A debug run's fields as a client sent them, checked one by one; why not otherwise. */
 export function checkedDebugRun(value: unknown): DebugRun | string {
   const run = value as Partial<DebugRun> | null;
@@ -60,7 +63,11 @@ export function checkedDebugRun(value: unknown): DebugRun | string {
   if (execution !== null && (!Number.isSafeInteger(execution) || execution <= 0)) {
     return 'The failed execution is not an id Piwi takes.';
   }
-  return { stop: { uri: stop.uri, line: stop.line! }, title, project, execution };
+  const ref = run?.ref ?? null;
+  if (ref !== null && (typeof ref !== 'string' || !DEBUG_RUN_REF.test(ref))) {
+    return 'The name the dashboard gave the run is not one Piwi takes.';
+  }
+  return { stop: { uri: stop.uri, line: stop.line! }, title, project, execution, ref };
 }
 
 /**

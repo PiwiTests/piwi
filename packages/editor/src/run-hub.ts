@@ -95,6 +95,11 @@ export interface RunHubOptions {
   actions: Pick<StopActions, 'action' | 'requests'>;
   /** What the Runs page shows of a run beside its workers. */
   runInfo(ref: string, root: string | null): HubRunInfo;
+  /**
+   * Where a stop's 0-based `line` of the file `uri` stands now, after the edits made since the run `ref` started, as
+   * the editor shows it (`RunLines`); null keeps the run's line. Absent, every stop keeps the run's.
+   */
+  lineNow?(ref: string, uri: string, line: number): number | null;
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
   /**
@@ -634,7 +639,10 @@ export class RunHub {
         case 'pick-at': {
           const { ref, worker, since, x, y } = command;
           const picked = await sessions.pickAt({ ref, worker, since, x, y });
-          return reply(picked, { locator: picked.locator });
+          return reply(picked, {
+            locator: picked.locator,
+            ...(picked.taken !== undefined ? { taken: picked.taken } : {}),
+          });
         }
         case 'share':
           return reply(sessions.share({ ref: command.ref, on: command.on }));
@@ -672,6 +680,15 @@ export class RunHub {
       project: cut(info.project, MAX_HUB_PROJECT),
       workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
         ...worker,
+        // Each surface names the stop's line where it stands now, as the editor does.
+        ...(worker.stop
+          ? {
+              stop: {
+                ...worker.stop,
+                line: this.options.lineNow?.(session.ref, worker.stop.uri, worker.stop.line) ?? worker.stop.line,
+              },
+            }
+          : {}),
         ...(waiting ? { waiting: { ...waiting, title: cut(waiting.title, MAX_HUB_MESSAGE) ?? '' } } : {}),
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
@@ -688,6 +705,7 @@ export class RunHub {
           }
         : {}),
       ...(session.progress ? { progress: session.progress } : {}),
+      ...(session.page ? { page: session.page } : {}),
     };
   }
 
