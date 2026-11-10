@@ -49,9 +49,15 @@ open class PiwiCodeVisionProvider(private val slot: Int = 0) : DaemonBoundCodeVi
         return Glue.codeVisionSlot(summary, slot).mapNotNull { line ->
             if (line.line < 0 || line.line >= document.lineCount) return@mapNotNull null
             val range = TextRange(document.getLineStartOffset(line.line), document.getLineEndOffset(line.line))
-            val entry = ClickableTextCodeVisionEntry(line.title.orEmpty(), id, { _, _ ->
-                line.command?.let { PiwiCommands.execute(project, it.command, it.arguments.orEmpty()) }
-            })
+            // The command's title says what a click does, as the entry's tooltip.
+            val entry = ClickableTextCodeVisionEntry(
+                line.title.orEmpty(),
+                id,
+                { _, _ -> line.command?.let { PiwiCommands.execute(project, it.command, it.arguments.orEmpty()) } },
+                null,
+                line.title.orEmpty(),
+                line.command?.title.orEmpty(),
+            )
             range to entry
         }
     }

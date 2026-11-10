@@ -84,14 +84,20 @@ export function repeatArgs(args: unknown[], repeat: unknown): string[] | null {
 }
 
 /**
- * Whether `location` names a test as Playwright's location filter takes it: a spec's path relative to the Playwright
- * config's folder, with forward slashes, then the 1-based line of its `test(…)` call (`tests/checkout.spec.ts:42`).
+ * Whether `location` names tests as Playwright's location filter takes it: a spec's path relative to the Playwright
+ * config's folder, with forward slashes, then the 1-based line of its `test(…)` call (`tests/checkout.spec.ts:42`), or
+ * without a line for every test of the spec (`tests/checkout.spec.ts`).
  */
 export function isTestLocation(location: unknown): location is string {
   if (typeof location !== 'string') return false;
-  const match = /^([^:]+):[1-9]\d*$/.exec(location);
+  const match = /^([^:]+)(?::[1-9]\d*)?$/.exec(location);
   const file = match?.[1];
   return !!file && !file.startsWith('/') && !file.startsWith('-') && !file.split('/').includes('..');
+}
+
+/** The spec a location names, without its line (`tests/checkout.spec.ts:42` → `tests/checkout.spec.ts`). */
+export function locationSpec(location: string): string {
+  return location.replace(/:[1-9]\d*$/, '');
 }
 
 /** `npx playwright test` with `args`, or null when they are not {@link validPlaywrightArgs} or one cannot be quoted. */

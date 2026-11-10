@@ -135,7 +135,7 @@ class GlueTest {
                 entry(9, "Run this test"),
                 entry(9, "Screenshot"),
                 entry(9, "Trace"),
-                entry(4, "passed 44/48", status = "failing"),
+                entry(4, "passed 44 of 48 runs", status = "failing"),
                 entry(4, "Flaky · Flake Lab"),
                 entry(12, ""),
             ),
@@ -1903,6 +1903,14 @@ class GlueTest {
     }
 
     @Test
+    fun `a failing test's tint takes its lines' breaks, so it runs to the editor's edge`() {
+        // "a\nbc\n" (6 characters): the first line ends at 1, the second at 4, the empty last line at 6.
+        assertEquals(2, Glue.lineEndWithBreak(1, 6))
+        assertEquals(5, Glue.lineEndWithBreak(4, 6))
+        assertEquals(6, Glue.lineEndWithBreak(6, 6))
+    }
+
+    @Test
     fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
         val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
         assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
@@ -2761,7 +2769,7 @@ class GlueTest {
 
     @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
-        assertEquals("<html>Piwi: running · passed 4/4</html>", Glue.testResultTooltip("running", "passed 4/4"))
+        assertEquals("<html>Piwi: running · passed 4 of 4 runs</html>", Glue.testResultTooltip("running", "passed 4 of 4 runs"))
         // The service's text is shown as text, never as markup.
         assertEquals(
             "<html>Piwi: failing · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",

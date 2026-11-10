@@ -626,7 +626,7 @@
         },
         {
           "command": "piwi.runSpec",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.record",
@@ -861,7 +861,7 @@
         {
           "command": "piwi.runSpec",
           "group": "1_run@3",
-          "when": "piwi.active && resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
+          "when": "resourceFilename =~ /\\.(spec|test)\\.[cm]?[jt]sx?$/"
         },
         {
           "command": "piwi.runTestsForFile",

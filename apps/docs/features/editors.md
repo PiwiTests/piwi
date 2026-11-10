@@ -49,7 +49,7 @@ Lines above the code (CodeLens):
 
 | File | What it shows | Click |
 |---|---|---|
-| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover its pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | opens the test in the dashboard |
+| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover its pass rate, [flaky](/features/flaky-tests) score and root cause, quarantine and selections | runs those tests |
 | A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach); with [coverage](./editor-coverage), each function's too | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
@@ -114,7 +114,7 @@ VS Code's names; a JetBrains IDE has its own under **Tools → Piwi**, and no **
 | Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
-| Piwi: Run this spec | Run the tests of the spec Piwi knows |
+| Piwi: Run this spec | Run every test of the spec as it stands |
 | Piwi: Run the tests that reach this file | Run them in a terminal, as `piwi run` would |
 | Piwi: Re-run the failing tests | Run every test still failing: [Re-run the failing tests](./editor-runs#re-run-the-failing-tests) |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
