@@ -469,12 +469,15 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
   `PiwiCommands.run` and the IDE's Playwright runner). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun,
   Stop and Close) takes no other action.
 
-**Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause and Resume
-`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s; End the
-Test has none, the debugger having no action it stands for. They are enabled only while they apply, and from the
-keyboard only while no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`, `XDebuggerManager.debugSessions`), so the
-debugger keeps its keys. While a run is live, `PiwiRunActionPromoter` (an `ActionPromoter`) puts them first among the
-actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
+**Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause `Pause`'s
+(none in the default keymap), Resume `Resume`'s (`F9`), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish
+`StepOut`'s; End the Test has none, the debugger having no action it stands for. They are enabled only while they apply,
+and from the keyboard (`ActionPlaces.KEYBOARD_SHORTCUT`) only while the debugger does not take the key (`givesWayTo`,
+over `XDebuggerManager.debugSessions`): Resume, Step, Run to Caret and Finish give way to a suspended session, the only
+one the debugger's resume and step act on, Pause to a running one, the only one the debugger's Pause acts on, and Stop
+to any. Resume's key stays Piwi's for `Glue.RESUMED_MILLIS` after an answer, doing nothing without a stop, so a second
+press starts no debug session. While a run is live, `PiwiRunActionPromoter` (an `ActionPromoter`) puts them first among
+the actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
 `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
 
 **The Worker tab.** **Tools → Piwi → Watch a Worker's Test** (`WatchWorkerAction`) and **Pause and Watch a Worker's
@@ -741,20 +744,23 @@ unsigned requests** trust. The first page refused in a session is named in a not
 pooled thread once the configs are found, with each status, and when the connection is saved. So the I/O thread reads
 no `.env` file.
 
-**Finding the file.** The handler looks the run's path up under `root`, the Playwright config folders, the project
-folder and the content roots (`Glue.candidatePaths`), ranking first the projects connected to the `project` named.
+**Finding the file.** The handler looks the run's path up under `root` and the project's folders (`Glue.openRoots`:
+the service's config folders, the Playwright config folders, the folders searched for them, the project folder above
+Rider's `.idea` and the content roots; `Glue.candidatePaths`), ranking first the projects connected to the `project`
+named.
 It opens only a file inside an open project, and answers JSON with CORS, so the dashboard knows the file opened.
 
 **Debug in my editor.** With `debug=1`, the request also names the test's spec (`spec`), its title after its describe
 blocks' (`test`), its Playwright project (`playwrightProject`) and the failed execution (`execution`), each checked by
 `Glue.parseOpenRequest` (a positive whole line and execution, a title and a project of plain text, a project no shell
 expands, a path without `..`, no field twice). Both files are found as an open's file is, then checked by their
-canonical paths, every symbolic link followed (`Glue.debugFileRefusal`): in the project, under a Playwright config's
-folder, a script file and a spec. A refusal answers 400 with the reason and says it in a notification; otherwise the
-failing line opens and `PiwiDebugLink` asks in a notification, the answer saying `debug: "asked"`. Only **Debug**
-runs the test, through `PiwiCommands.runTests` (the IDE's breakpoints, the Playwright runner when it is on) with
-`RunTestsArgs.debug`; the service keeps the failing line as the run's own breakpoint until the stop, so the IDE's
-breakpoints are left as they are.
+canonical paths, every symbolic link followed (`Glue.debugFileRefusal`): in the same folders `Glue.openRoots` gives, so
+a spec Open in IDE opens beside a Rider solution may be debugged too, and under a Playwright config's folder, the check
+that bounds it, the config folders being among those folders; a script file and a spec. A refusal answers 400 with the
+reason and says it in a notification; otherwise the failing line opens and `PiwiDebugLink` asks in a notification, the
+answer saying `debug: "asked"`. Only **Debug** runs the test, through `PiwiCommands.runTests` (the IDE's breakpoints,
+the Playwright runner when it is on) with `RunTestsArgs.debug`; the service keeps the failing line as the run's own
+breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 ## Connect
 

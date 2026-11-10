@@ -85,9 +85,11 @@ The rest is native, and every action is under **Tools → Piwi**:
   app opens at its line, with nothing to set up.
 
 The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
-shortcuts of your keymap while they apply: in the default keymap `F9` pauses and resumes, `F8` steps, `Alt+F9` runs
-to the caret and `Shift+F8` finishes. Where your keymap gives one to another action too, Piwi's comes first while it
-applies. **Settings → Keymap** changes them (search `Piwi`).
+shortcuts of your keymap while they apply and the debugger does not take them ([the
+controls](./editor-run-control#the-controls)): in the default keymap `F9` resumes, `F8` steps, `Alt+F9` runs to the
+caret (`Alt+Shift+9` in the Linux default keymaps) and `Shift+F8` finishes, and Pause has none; in the Visual Studio
+keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap**
+changes them (search `Piwi`).
 
 ## Related
 

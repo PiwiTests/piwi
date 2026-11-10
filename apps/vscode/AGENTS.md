@@ -61,9 +61,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A default keybinding uses a chord that VS Code's default keymap leaves free, and the JetBrains plugin binds the
   same chord.** Today: `ctrl+shift+alt` (`cmd` on macOS) with `r`, `f` and `k`. The letters each editor's keymaps
   already take, and the JetBrains conflicts, are in [Keybindings](ARCHITECTURE.md#keybindings).
-- **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
-  runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
-  test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
+- **A run's controls are the exception: they take the debugger's keys, only while they apply and the debugger does
+  not take the key**: Stop on `!inDebugMode`, the others on `debugState != 'stopped'` (`contributes.keybindings`).
+  **Pause** has no default key: a key bound for as long as a test runs takes one from the workbench.
+  ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
   control, a code action, a press, key or pick on a page, never a pointer moving; never one only watched), or while no
   other held stop's file was opened and no Step or Run to the cursor from the editor waits, `RESERVED_MS` at most; any
