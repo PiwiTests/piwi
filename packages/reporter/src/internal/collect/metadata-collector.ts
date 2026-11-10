@@ -455,7 +455,9 @@ export class MetadataCollector {
         name: p.name,
         testDir: p.testDir,
         use: {
-          browserName: p.use?.browserName || p.name,
+          // The engine the project runs: a `devices` preset names it as `defaultBrowserType`, and Playwright runs
+          // Chromium for a project that names none.
+          browserName: p.use?.browserName ?? p.use?.defaultBrowserType ?? 'chromium',
           // The origin of `baseURL` is what the graph treats as the run's own
           // surface, so only requests to it become route nodes.
           baseURL: p.use?.baseURL,

@@ -611,6 +611,20 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     expect(projects[1].use.testIdAttribute).toBeUndefined();
   });
 
+  it("records each project's engine, never its name, whatever names it", () => {
+    const mc = new MetadataCollector();
+    const config = {
+      projects: [
+        { name: 'Desktop Firefox', testDir: 'tests', use: { browserName: 'firefox' } },
+        { name: 'Mobile Safari', testDir: 'tests', use: { defaultBrowserType: 'webkit', isMobile: true } },
+        { name: 'Polaris', testDir: 'tests', use: { browserName: 'firefox', defaultBrowserType: 'chromium' } },
+        { name: 'smoke', testDir: 'tests', use: {} },
+      ],
+    } as unknown as FullConfig;
+    const projects = (mc.collect(config, undefined as any, {}).htmlReport as any).projects;
+    expect(projects.map((p: any) => p.use.browserName)).toEqual(['firefox', 'webkit', 'firefox', 'chromium']);
+  });
+
   it('copies config.metadata through as playwrightConfig', () => {
     const mc = new MetadataCollector();
     const config = { ...fakeConfig(), metadata: { custom: true } } as unknown as FullConfig;
@@ -634,11 +648,7 @@ describe('MetadataCollector.collect — what pass reuse reads', () => {
     const plainFile = file('b.spec.ts');
     const anonymousSerial = { type: 'describe', title: '', _parallelMode: 'serial', parent: file('c.spec.ts') };
     const suite = {
-      allTests: () => [
-        test(serialFile, 'a.spec.ts'),
-        test(plainFile, 'b.spec.ts'),
-        test(anonymousSerial, 'c.spec.ts'),
-      ],
+      allTests: () => [test(serialFile, 'a.spec.ts'), test(plainFile, 'b.spec.ts'), test(anonymousSerial, 'c.spec.ts')],
     };
     const config = { ...fakeConfig(), configFile: `${root}/playwright.config.ts`, rootDir: `${root}/tests` };
     const metadata = new MetadataCollector().collect(config as FullConfig, suite as any, {});

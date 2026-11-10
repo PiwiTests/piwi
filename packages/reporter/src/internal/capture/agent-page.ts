@@ -17,6 +17,7 @@ import { resolveAriaRole } from '@piwitests/core/locator-generation';
 import { errorMessage } from '../support/errors.js';
 import { locatorOfRef } from './aria-ref.js';
 import { maskedImage } from './live-mask.js';
+import { holdBarFrom, newBarHoldToken } from './page-view.js';
 import { MAX_CHECKED, findsAlone, rankedCandidates } from './pick-at.js';
 import type { PickerProbe } from './pick-on-failure.js';
 
@@ -322,7 +323,8 @@ const PLAYED: Record<RunActAction, string> = {
 /**
  * Act on the element `ref` names, as trusted input (Playwright's own action, scrolled into view, waiting for the
  * element to take it, `ACT_MS` at most), with the element as it stood before, ranked, for the step it makes; why not
- * otherwise. The pause bar lets the action through to what it covers, and takes the pointer again after.
+ * otherwise. The pause bar lets the action through to what it covers, held inert so it leaves the action's keys
+ * (Escape among them) to the page, and is as it was after.
  */
 export async function actOnRef(
   page: Page,
@@ -340,13 +342,16 @@ export async function actOnRef(
   } finally {
     await handle.dispose().catch(() => undefined);
   }
+  const token = newBarHoldToken();
   try {
     await page.evaluate(barLetsThrough, true).catch(() => undefined);
+    await page.evaluate(holdBarFrom, { token, hold: true }).catch(() => undefined);
     await play(locatorOfRef(page, act.ref), act.action, act.value);
   } catch (error) {
     return { ok: false, message: failed(`${PLAYED[act.action]} ${act.ref} failed`, error), ...before };
   } finally {
     // A page the action navigated has no bar: the stop shows it again there.
+    await page.evaluate(holdBarFrom, { token, hold: false }).catch(() => undefined);
     await page.evaluate(barLetsThrough, false).catch(() => undefined);
   }
   return { ok: true, message: `${PLAYED[act.action]} ${act.ref}.`, ...before };
