@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -235,7 +236,7 @@ class OpenLatestRunAction : AnAction(), DumbAware {
 }
 
 /** Opens the page of a run started or followed here, on the instance it reports to: `Open Run #78`. */
-class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}"), DumbAware {
+class OpenRunPageAction(private val page: RunPage) : AnAction("Open Run #${page.id}", null, AllIcons.General.Web), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {

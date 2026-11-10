@@ -4,9 +4,10 @@ import com.intellij.icons.AllIcons
 import javax.swing.Icon
 
 /**
- * The glyphs the plugin draws outside `plugin.xml`, one per concept as the VS Code extension's are: the failed mark on
- * every surface, the stop's code actions in its popups (the same as their registered actions'), and the hand-offs from
- * a failure. A concept with no platform glyph has none until Piwi draws its own.
+ * The glyphs of a concept the plugin draws outside `plugin.xml`, one per concept as the VS Code extension's are: the
+ * failed mark on every surface, Open in Dashboard, the stop's code actions in its popups (the same as their registered
+ * actions') and the hand-offs from a failure. Each is a platform icon with a New UI glyph on 2024.1 and on the latest
+ * release, but Record's, the recording icon Record Here draws; a concept with none has no icon until Piwi draws its own.
  */
 object PiwiIcons {
     /** A failed test or run: the result icon, the status item, the tool window's nodes and a held failure. */
@@ -19,8 +20,6 @@ object PiwiIcons {
     val SCREENSHOT: Icon = AllIcons.FileTypes.Image
     val REPRODUCE: Icon = AllIcons.Nodes.Desktop
     val BISECT: Icon = AllIcons.Vcs.Branch
-    val SHOW_BROWSER: Icon = AllIcons.Nodes.PpWeb
-    val SHARE_WITH_PLAYWRIGHT: Icon = AllIcons.General.ExternalTools
 
     /** A stop's code actions, as `plugin.xml` draws `Piwi.PickAtStop` and the others; null where Piwi draws none yet. */
     fun stopAction(action: Glue.StopAction): Icon? = when (action) {

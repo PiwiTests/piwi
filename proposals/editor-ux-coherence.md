@@ -62,13 +62,16 @@ button by state, Stop recording, else Resume at a stop, else Record here, the ru
 in its '…' menu as the palette offers them, and the spec, the test at the cursor and Verify ×3 under its Run button,
 [AC5](#ac5), with the VS Code half of [LR3](#lr3)'s title; each button a glyph no other command has, Re-run failing
 taking the table's `$(run-errors)` and the recording's controls the table's recording glyphs), [Q9](#q9) in part (every
-command and action with its concept's platform glyph, checked on 2024.1, 2026.3 and VS Code 1.91's codicons, under a
-manifest test in each editor, the stop's code actions in both popups included, [IC1](#ic1); JetBrains' failed mark
-`TestError` on every surface, [IC3](#ic3); Open in Dashboard as an external link, [IC10](#ic10), the run pages keeping
-the globe until the run node's glyph is drawn; the hand-offs' glyphs at the JetBrains end, [IC11](#ic11); remaining: the
-glyphs Piwi draws, [M4](#m4): JetBrains' Disconnect, Pair, Assert a Region, Mock a Request and Share the Run Live,
-Pause and watch and Stop sharing in both, VS Code's Refresh and Run to the cursor, and JetBrains' Connect, which keeps
-the user icon), and every command, setting and action id of both editors registered in D25 and held to the manifests
+command and action but JetBrains' two toggles with its concept's platform glyph, one with a New UI glyph on 2024.1 and
+2026.3 and a codicon of VS Code 1.91, checked by hand, under a manifest test in each editor that fails on a bare one,
+the stop's code actions in both popups included, [IC1](#ic1); JetBrains' failed mark `TestError` on every surface,
+[IC3](#ic3); Open in Dashboard as an external link, [IC10](#ic10), the run pages keeping the globe until the run node's
+glyph is drawn; the hand-offs' glyphs at the JetBrains end, [IC11](#ic11); remaining, for [M4](#m4) or a platform icon
+found later: JetBrains' Disconnect, Pair, Assert a Region, Mock a Request, Share the Run Live, Run the Tests That Reach
+This File, Reset the Runs' MCP Server Token, Show the Stopped Test's Browser and Share with Playwright Tools, Pause and
+watch and Stop sharing in both, VS Code's Refresh and Run to the cursor, which have no Appendix A row, a glyph of its own
+for JetBrains' Refresh, which shares Refresh the Latest Run's, Record's glyph, `Ide.Macro.Recording_1` having no New UI
+glyph on 2024.1, and JetBrains' Connect, which keeps the user icon), and every command, setting and action id of both editors registered in D25 and held to the manifests
 (#1124). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The defects the audit confirmed are filed as #1115 to
 #1123 (§11). Rechecked on 2026-11-10 against `main` at v0.68.0 (`0e27d76f`), every line reference moved to that commit:
 no finding was fixed then; the live-run study's work built part of LR4, LR9, LR13, LR15 and LR17; v0.68.0's worker
