@@ -61,16 +61,20 @@ attempt with coverage naming its file versions. The working tree is diffed again
 pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
 executions, tagged `@no-reuse`, or in a spec file holding a serial group always runs. A run skips only the tests the plan names, in the Playwright projects
 their pass ran them in, so a new or renamed test runs. The run records the tests it skipped and did not execute as its
-reused results: the run page's **Reused** row lists them with the pass each one reuses, the pull-request comment
-counts them, and the `get_run` MCP tool returns their count. They count as passed for the run's verdict and the
-[CI gate](/reference/cli#gate), where `--max-reused` and `--require-executed` limit them, and nowhere else: flaky
-scores, pass rates, durations and fix verification read executions only.
+reused results: the run page's header counts them and lists them with the pass each one reuses, the pull-request
+comment counts them, and the `get_run` MCP tool returns their count. The run's own status, pass rate, flaky scores,
+durations and fix verification read executions only. In a run that passed with no run error, the
+[CI gate](/reference/cli#gate) counts a reused test as passed for its tag and selection rules, and `--max-reused` and
+`--require-executed` limit reuse. A run that claimed a plan it was not made for (another commit, a dirty checkout,
+another Playwright version, an expired plan) records no reuse and fails those two rules. A run whose shards' blob
+reports are merged by `merge-reports` claims no plan, so its reuse is not recorded.
 
 <figure>
   <img src="/screenshots/run-reused-tests.png" alt="Reused tests of a run: each test with its file and Playwright project, and a link to the earlier pass at its commit">
   <figcaption>A run whose plan skipped every test: each reused test with the pass that stood in for it.</figcaption>
-</figure> Commands:
-[`plan`](/reference/cli#plan). Design record: [pass reuse](https://github.com/PiwiTests/piwi/blob/main/proposals/pass-reuse.md).
+</figure>
+
+Commands: [`plan`](/reference/cli#plan). Design record: [pass reuse](https://github.com/PiwiTests/piwi/blob/main/proposals/pass-reuse.md).
 
 ## Related
 

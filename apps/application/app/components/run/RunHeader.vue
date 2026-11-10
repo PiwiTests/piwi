@@ -502,7 +502,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
       </template>
-      <template v-if="testRun?.reusedCount">
+      <template v-if="(testRun?.reusedCount ?? 0) > 0">
         <span class="text-dimmed">·</span>
         <button
           type="button"

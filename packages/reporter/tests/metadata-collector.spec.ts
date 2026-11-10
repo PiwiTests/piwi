@@ -9,6 +9,7 @@ import {
   resolveScmPrNumber,
   withoutCredentials,
 } from '../src/internal/collect/metadata-collector.js';
+import { readPlanStamp } from '../src/internal/support/selection-env.js';
 import { detectCi } from '../src/internal/support/ci.js';
 
 const CI_ENV_KEYS = [
@@ -655,10 +656,16 @@ describe('MetadataCollector.collect — the pass reuse plan', () => {
     else process.env.PIWI_PLAN = saved;
   });
 
-  it('records the plan piwi run set, and ignores a value that is not a plan id', () => {
+  it('reads the plan only with a plan id and the plan’s skip list passed to Playwright', () => {
+    const invert = ['test-list-invert'];
+    expect(readPlanStamp({ PIWI_PLAN: '9' }, invert)).toEqual({ id: 9 });
+    expect(readPlanStamp({ PIWI_PLAN: 'nine' }, invert)).toBeNull();
+    // A PIWI_PLAN left in a shell for a run that skipped nothing.
+    expect(readPlanStamp({ PIWI_PLAN: '9' }, [])).toBeNull();
+  });
+
+  it('records no plan for a run of this process, which passed Playwright no skip list', () => {
     process.env.PIWI_PLAN = '9';
-    expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).piwiPlan).toEqual({ id: 9 });
-    process.env.PIWI_PLAN = 'nine';
     expect(new MetadataCollector().collect(fakeConfig(), undefined as any, {}).piwiPlan).toBeUndefined();
   });
 });

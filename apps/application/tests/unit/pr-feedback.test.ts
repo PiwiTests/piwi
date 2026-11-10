@@ -95,7 +95,7 @@ describe('buildPrComment', () => {
 
   test('counts the tests reused from earlier passes beside the others, and in the commit status', () => {
     expect(buildPrComment(summary({ reusedTests: 3100 }))).toContain(
-      '**3100** reused (code unchanged since they passed)',
+      '**3100** tests reused (code unchanged since they passed)',
     );
     expect(buildPrComment(summary())).not.toContain('reused');
     expect(buildCommitStatus(summary({ reusedTests: 12 }), 'piwi').description).toContain('12 reused');

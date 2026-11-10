@@ -69,7 +69,7 @@ export const testRuns = sqliteTable(
     shardIndex: integer('shard_index'), // Reporting shard index (1-based) of the shard that created this run; null = not sharded
     shardsFinished: integer('shards_finished').notNull().default(0), // How many shards have finished
     isFullRun: integer('is_full_run').notNull().default(1), // 1 = full suite, 0 = partial/filtered (--grep, file filter, etc.)
-    reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`
+    reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`; -1 when the run claimed a plan whose reuse could not be recorded
     filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')

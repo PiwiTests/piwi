@@ -591,12 +591,19 @@ export async function getRunPlan(
   return { id: row.id, plan: row.plan as StoredRunPlan, commit: row.commit, expiresAt: row.expiresAt };
 }
 
+/** `test_runs.reused_count` of a run that claimed a plan whose reused tests could not be recorded. */
+export const REUSE_UNRECORDED = -1;
+
 /**
  * Record the tests a finished run skipped under its plan as its reused results,
  * and their count on the run. A test counts only when the run executed it in
- * none of the projects the plan skipped it in, and only when the run is at the
- * plan's commit: a run elsewhere, or a list Playwright did not apply, records
- * nothing. Idempotent: a run finalized again keeps one row per test.
+ * none of the projects the plan skipped it in. The run must be the plan's own:
+ * at its commit, with its Playwright version, started before it expired, and
+ * from a clean checkout unless the plan itself was made in a dirty one (a
+ * `piwi run --reuse` that planned and ran in one tree). A run that claims a plan
+ * and fails any of that, or whose rows cannot be written, gets
+ * `REUSE_UNRECORDED`, which the gate's reuse rules refuse. Idempotent: a run
+ * finalized again keeps one row per test it did not execute.
  */
 export async function attachRunPlan(
   db: DrizzleDB,
@@ -605,46 +612,88 @@ export async function attachRunPlan(
 ): Promise<number> {
   const planId = runPlanId(run.metadata);
   if (planId === null) return 0;
-  const [row] = await db
-    .select({ plan: runPlans.plan, commit: runPlans.commit })
-    .from(runPlans)
-    .where(and(eq(runPlans.id, planId), eq(runPlans.projectId, run.projectId)));
-  if (!row?.commit || row.commit !== runCommit(run.metadata)) return 0;
-  const plan = row.plan as StoredRunPlan;
-  if (plan.reused.length === 0) return 0;
+  const unrecorded = async () => {
+    await db.update(testRuns).set({ reusedCount: REUSE_UNRECORDED }).where(eq(testRuns.id, runId));
+    return REUSE_UNRECORDED;
+  };
+  try {
+    const [stored] = await db
+      .select({
+        startTime: testRuns.startTime,
+        playwrightVersion: testRuns.playwrightVersion,
+        metadata: testRuns.metadata,
+      })
+      .from(testRuns)
+      .where(eq(testRuns.id, runId));
+    const [row] = await db
+      .select({ plan: runPlans.plan, commit: runPlans.commit, expiresAt: runPlans.expiresAt })
+      .from(runPlans)
+      .where(and(eq(runPlans.id, planId), eq(runPlans.projectId, run.projectId)));
+    const metadata = stored?.metadata ?? run.metadata;
+    const meta = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
+    const scm = meta.scm && typeof meta.scm === 'object' ? (meta.scm as Record<string, unknown>) : {};
+    const plan = row?.plan as StoredRunPlan | undefined;
+    const ownRun =
+      !!stored &&
+      !!row?.commit &&
+      !!plan &&
+      row.commit === runCommit(metadata) &&
+      stored.startTime.getTime() <= row.expiresAt.getTime() &&
+      !!stored.playwrightVersion &&
+      stored.playwrightVersion === plan.fingerprint.playwrightVersion &&
+      (scm.worktree === 'clean' || plan.worktree === 'dirty');
+    if (!ownRun) return await unrecorded();
 
-  const executed = new Set(
-    (
+    const executedRows = await db
+      .selectDistinct({ testCaseId: testRunsCases.testCaseId, browserName: testRunsCases.browserName })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testRunId, runId));
+    const executed = new Set(executedRows.map((r) => `${r.testCaseId}\x00${r.browserName ?? ''}`));
+    const ranAtAll = new Set(executedRows.map((r) => r.testCaseId));
+    const planned = plan.reused.map((r) => r.testCaseId);
+    const existing = new Set<number>();
+    for (let i = 0; i < planned.length; i += ID_CHUNK) {
+      const found = await db
+        .select({ id: testCases.id })
+        .from(testCases)
+        .where(inArray(testCases.id, planned.slice(i, i + ID_CHUNK)));
+      for (const f of found) existing.add(f.id);
+    }
+    const skipped = plan.reused.filter(
+      (r) => existing.has(r.testCaseId) && !r.projects.some((project) => executed.has(`${r.testCaseId}\x00${project}`)),
+    );
+    // A row of an earlier finalization for a test the run has since executed no longer stands.
+    const stale = [...ranAtAll];
+    for (let i = 0; i < stale.length; i += ID_CHUNK) {
       await db
-        .selectDistinct({ testCaseId: testRunsCases.testCaseId, browserName: testRunsCases.browserName })
-        .from(testRunsCases)
-        .where(eq(testRunsCases.testRunId, runId))
-    ).map((r) => `${r.testCaseId}\x00${r.browserName ?? ''}`),
-  );
-  const skipped = plan.reused.filter(
-    (r) => !r.projects.some((project) => executed.has(`${r.testCaseId}\x00${project}`)),
-  );
-  for (let i = 0; i < skipped.length; i += ID_CHUNK) {
-    await db
-      .insert(reusedResults)
-      .values(
-        skipped.slice(i, i + ID_CHUNK).map((r) => ({
-          runId,
-          testCaseId: r.testCaseId,
-          projects: r.projects,
-          sourceRunId: r.sourceRunId,
-          sourceExecutionIds: r.sourceExecutionIds,
-          sourceCommit: r.sourceCommit,
-          planId,
-        })),
-      )
-      .onConflictDoNothing({ target: [reusedResults.runId, reusedResults.testCaseId] });
+        .delete(reusedResults)
+        .where(and(eq(reusedResults.runId, runId), inArray(reusedResults.testCaseId, stale.slice(i, i + ID_CHUNK))));
+    }
+    for (let i = 0; i < skipped.length; i += ID_CHUNK) {
+      await db
+        .insert(reusedResults)
+        .values(
+          skipped.slice(i, i + ID_CHUNK).map((r) => ({
+            runId,
+            testCaseId: r.testCaseId,
+            projects: r.projects,
+            sourceRunId: r.sourceRunId,
+            sourceExecutionIds: r.sourceExecutionIds,
+            sourceCommit: r.sourceCommit,
+            planId,
+          })),
+        )
+        .onConflictDoNothing({ target: [reusedResults.runId, reusedResults.testCaseId] });
+    }
+    const [counted] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(reusedResults)
+      .where(eq(reusedResults.runId, runId));
+    const count = Number(counted?.count ?? 0);
+    await db.update(testRuns).set({ reusedCount: count }).where(eq(testRuns.id, runId));
+    return count;
+  } catch (e) {
+    await unrecorded().catch(() => undefined);
+    throw e;
   }
-  const [counted] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(reusedResults)
-    .where(eq(reusedResults.runId, runId));
-  const count = Number(counted?.count ?? 0);
-  await db.update(testRuns).set({ reusedCount: count }).where(eq(testRuns.id, runId));
-  return count;
 }

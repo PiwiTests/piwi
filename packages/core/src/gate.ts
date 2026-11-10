@@ -109,9 +109,14 @@ export interface GateFacts {
    * environment under test, so no policy can say whether the change is good.
    */
   incident?: GateIncident;
-  /** The tests the run reused from earlier passes (pass reuse); absent when it reused none. */
+  /** The tests the run reused from earlier passes (pass reuse); absent when it claimed no plan. */
   reused?: {
+    /** Reused tests. */
     count: number;
+    /** Reused results, one per test and Playwright project it was skipped in: the unit of `totalTests`. */
+    results: number;
+    /** The run claimed a plan whose reused tests could not be recorded: no reuse rule can be checked. */
+    unrecorded?: boolean;
     /** Reused tests carrying each tag of `requireExecuted`, keyed by tag. */
     byRequiredTag: Record<string, Array<{ title: string; filePath: string }>>;
   };
@@ -144,7 +149,8 @@ interface GateViolation {
     | 'no-resource-report'
     | 'resources-declined'
     | 'max-reused'
-    | 'reused-required';
+    | 'reused-required'
+    | 'reuse-unrecorded';
   message: string;
   /** Observed value and the limit it exceeded, when the rule is a threshold. */
   actual?: number;
@@ -252,12 +258,22 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
   );
   if (quarantineViolation) violations.push(quarantineViolation);
 
+  const reuseRules =
+    policy.maxReused != null || policy.maxReusedPercent != null || (policy.requireExecuted?.length ?? 0) > 0;
+  if (reuseRules && facts.reused?.unrecorded) {
+    violations.push({
+      rule: 'reuse-unrecorded',
+      message:
+        'the run executed a pass reuse plan whose reused tests could not be recorded, so the reuse rules cannot be checked',
+    });
+  }
   const reused = facts.reused?.count ?? 0;
   const reusedViolation = overLimit('max-reused', ['reused test', 'reused tests'], reused, policy.maxReused);
   if (reusedViolation) violations.push(reusedViolation);
   if (policy.maxReusedPercent != null) {
-    const all = facts.totalTests + reused;
-    const percent = all > 0 ? Math.round((reused / all) * 1000) / 10 : 0;
+    const results = facts.reused?.results ?? 0;
+    const all = facts.totalTests + results;
+    const percent = all > 0 ? Math.round((results / all) * 1000) / 10 : 0;
     if (percent > policy.maxReusedPercent) {
       violations.push({
         rule: 'max-reused',

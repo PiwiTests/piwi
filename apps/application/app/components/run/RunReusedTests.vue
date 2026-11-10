@@ -19,7 +19,8 @@ const loading = computed(() => status.value === 'idle' || status.value === 'pend
   <div class="space-y-3" data-shot="run-reused-tests">
     <p class="text-sm text-highlighted leading-relaxed">
       An earlier pass ran the code of each of these tests, and the code had not changed since, so this run skipped them.
-      They count as passed in the run's verdict and the CI gate, and nowhere else.
+      The CI gate counts them as passed for its tag and selection rules when the run passed; the run's own status, pass
+      rate and flaky scores read executions only.
     </p>
     <LoadingState v-if="loading && !data" />
     <EmptyState v-else-if="!data || data.items.length === 0" icon="i-lucide-recycle" text="No reused test recorded." />

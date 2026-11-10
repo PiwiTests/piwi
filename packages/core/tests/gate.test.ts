@@ -308,7 +308,7 @@ describe('an environment incident', () => {
 
 describe('the pass reuse rules', () => {
   const reused = (count: number, byRequiredTag: Record<string, Array<{ title: string; filePath: string }>> = {}) => ({
-    reused: { count, byRequiredTag },
+    reused: { count, results: count, byRequiredTag },
   });
 
   test('caps the reused tests by count and by share of every test, executed or reused', () => {
@@ -326,6 +326,20 @@ describe('the pass reuse rules', () => {
       actual: 75,
     });
     expect(evaluateGatePolicy(facts(), { maxReusedPercent: 0 }).passed).toBe(true);
+  });
+
+  test('reads the share in results, one per Playwright project, as the run counts its own', () => {
+    // 100 executed results; 50 tests reused in 3 projects each: 150 of 250 results.
+    const result = evaluateGatePolicy(facts({ reused: { count: 50, results: 150, byRequiredTag: {} } }), {
+      maxReusedPercent: 50,
+    });
+    expect(result.violations[0]).toMatchObject({ rule: 'max-reused', actual: 60 });
+  });
+
+  test('fails every reuse rule on a run whose reuse could not be recorded, and no other rule', () => {
+    const unrecorded = facts({ reused: { count: 0, results: 0, unrecorded: true, byRequiredTag: {} } });
+    expect(evaluateGatePolicy(unrecorded, { maxReused: 10 }).violations[0]).toMatchObject({ rule: 'reuse-unrecorded' });
+    expect(evaluateGatePolicy(unrecorded, { maxFailed: 0 }).passed).toBe(true);
   });
 
   test('fails when a test of a required tag was reused instead of executed', () => {

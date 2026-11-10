@@ -25,12 +25,18 @@ a source's coverage blobs are not compared with its commit's, so an application 
 checkout goes unnoticed; and it ships before the safety loop of PR 4 and the recording of PR 3, so nothing yet measures
 a wrong reuse: the capability stays experimental until they land. Changes to documentation files never widen, as in
 impact. PR 3 is built but for carried coverage: `piwi run --plan` sets `PIWI_PLAN`, which
-the reporter records as `metadata.piwiPlan`; at finalization the run records each reused test it did not execute, at
-the plan's commit only, in `reused_results` with `test_runs.reused_count`; the run page's **Reused** row,
+the reporter records as `metadata.piwiPlan` only when the run passed Playwright the plan's skip list; at finalization a
+run that is the plan's own (its commit, its Playwright version, started before it expired, from a clean checkout unless
+the plan was made in a dirty one) records each reused test it did not execute in `reused_results` with
+`test_runs.reused_count`, and any other run that claims a plan gets `reused_count` -1. The run page's header,
 `GET /api/test-runs/:id/reused`, the pull-request comment and commit status, `get_run`, and the gate's `--max-reused`
-and `--require-executed` read them, and a reused test counts as passed for `--require-tag` and `--require-selection`.
-The plan id travels in the run's metadata rather than a `reuse` wire object, and the fingerprint is still the
-Playwright version alone. Carried coverage (D12) is not built. PRs 4 to 6 are not started. The contracts it would add are entry D66 of
+and `--require-executed` read them; a reused test counts as passed for `--require-tag` and `--require-selection` in a
+run that passed with no run error, and a run with unrecorded reuse fails the reuse rules. It departs from section 3:
+one row per reused test with its projects, not one per project; the source executions are an id list, not a foreign
+key; the run page names no "reason it held"; reuse never touches the run's status or counters (the verdict row of the
+table); and a run whose shards' blob reports are merged by `merge-reports` claims no plan. The plan id travels in the
+run's metadata rather than a `reuse` wire object, and the fingerprint is still the Playwright version alone. Carried
+coverage (D12) is not built. PRs 4 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.**

@@ -27,7 +27,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Evaluate a CI gate policy against a finished run',
     description:
-      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch), `maxReused` and `maxReusedPercent` (the tests the run reused from earlier passes under a pass reuse plan, by count or as a share of its executed and reused tests) and `requireExecuted` (tags whose tests must have executed, not been reused). A reused test counts as passed for `requireTags` and `requireSelection`, unless a `requireExecuted` tag names it. A leak rule on a run that sent no resource report, or of a project that declined the `resources` capability, is a violation: its leaks are not measured. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
+      'Applies a pass/fail policy to a run and returns every violation, so a pipeline can block a merge on the analysis rather than on the raw exit code of `playwright test`. Rules: `requireTags` (every test carrying the tag must pass), `maxFailed`, `maxNewRegressions`, `maxNewFlaky`, `failOnNewCluster`, `failOnFlaky` (any flaky test in the run), `requireSelection` (re-resolves a named selection and fails if any test it currently matches did not run, or ran and failed — catching a silently shrunk smoke job), `maxLeaks` (browsers, contexts, pages and API contexts the run left open past the scope that opened them, one per opening line, from the reporter’s resource report) and `maxNewLeaks` (those no earlier run of the base branch showed: the pull request’s target, else the default branch), `maxReused` and `maxReusedPercent` (the tests the run reused from earlier passes under a pass reuse plan, by count or as a share of its executed and reused tests) and `requireExecuted` (tags whose tests must have executed, not been reused). A reused test counts as passed for `requireTags` and `requireSelection` in a run that passed with no run error, unless a `requireExecuted` tag names it; a run that claimed a plan whose reused tests could not be recorded fails every reuse rule. A leak rule on a run that sent no resource report, or of a project that declined the `resources` capability, is a violation: its leaks are not measured. A required tag that matches no test in the run is itself a violation, so a typo cannot silently pass. A run flagged as an environment incident gets the verdict `inconclusive` (with `passed: false` and the incident under `facts.incident`), distinct from `passed` and `failed`, whatever the policy. `maxUncoveredChanges` is warn-only: it warns when more of the run’s changed files than the threshold are uncovered changes (counted files no test reached, in the run or the project’s last 30 runs, and no suite ran a changed line of; files outside the coverage scope, deleted or that nothing maps to a test are not counted), without changing the verdict. `minPatchCoverage` (a percentage), its line form, is warn-only too: it warns when fewer of the change’s added and modified lines ran, in the head commit’s combined coverage (the uploaded suites and the commit’s complete runs), or when that coverage counts none of them. Either warns when the run has no source control diff to count. Evaluation does not modify the run. Any reader of the project may evaluate a policy. An evaluation by a caller who holds `run:submit` or `run:control` on the project (the CI key `piwi gate` sends) is stored with its policy, verdict and pull request, so a later merge despite a failed gate is counted; with the project setting `gateStatus` on and pull-request feedback posting commit statuses, its verdict is also posted as the `<statusContext>/gate` commit status. Any other caller gets the verdict only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -177,6 +177,7 @@ export default eventHandler(async (event) => {
   const reusedRows = await db
     .select({
       testCaseId: reusedResults.testCaseId,
+      projects: reusedResults.projects,
       tags: testCases.tags,
       title: testCases.title,
       filePath: testCases.filePath,
@@ -186,7 +187,12 @@ export default eventHandler(async (event) => {
     .where(eq(reusedResults.runId, id));
   const tagsOf = (tags: unknown) =>
     Array.isArray(tags) ? (tags as unknown[]).filter((t): t is string => typeof t === 'string') : [];
-  const reusedIds = new Set(reusedRows.map((row) => row.testCaseId));
+  // Reuse stands for a pass only in a run that passed with no run error: a run whose global setup or web server
+  // failed executed nothing, and its reused tests vouch for nothing.
+  const reuseVouches =
+    run.status === 'passed' && !(Array.isArray(run.runErrors) && (run.runErrors as unknown[]).length > 0);
+  const vouching = reuseVouches ? reusedRows : [];
+  const reusedIds = new Set(vouching.map((row) => row.testCaseId));
   const mustExecute = new Set(
     reusedRows
       .filter((row) => tagsOf(row.tags).some((t) => policy.requireExecuted?.includes(t)))
@@ -198,7 +204,7 @@ export default eventHandler(async (event) => {
 
   for (const tag of policy.requireTags ?? []) {
     const tagged = caseRows.filter((row) => (Array.isArray(row.tags) ? (row.tags as string[]) : []).includes(tag));
-    const reusedTagged = reusedRows.some((row) => tagsOf(row.tags).includes(tag));
+    const reusedTagged = vouching.some((row) => tagsOf(row.tags).includes(tag));
     if (tagged.length === 0 && reusedTagged) {
       failingByTag[tag] = [];
       continue;
@@ -292,16 +298,24 @@ export default eventHandler(async (event) => {
     selection: selectionFacts,
     resources: resourceFacts,
   };
-  if (reusedRows.length > 0) {
+  if (reusedRows.length > 0 || run.reusedCount < 0) {
     const byRequiredTag: NonNullable<GateFacts['reused']>['byRequiredTag'] = {};
     for (const tag of policy.requireExecuted ?? []) {
       byRequiredTag[tag] = reusedRows
         .filter((row) => tagsOf(row.tags).includes(tag))
-        .slice(0, 50)
         .map((row) => ({ title: row.title, filePath: row.filePath }));
     }
-    facts.reused = { count: reusedRows.length, byRequiredTag };
+    facts.reused = {
+      count: reusedRows.length,
+      results: reusedRows.reduce(
+        (sum, row) => sum + Math.max(1, Array.isArray(row.projects) ? row.projects.length : 0),
+        0,
+      ),
+      ...(run.reusedCount < 0 ? { unrecorded: true } : {}),
+      byRequiredTag,
+    };
   }
+
   const incident = readRunIncident(run.metadata);
   if (incident) facts.incident = { rule: incident.rule, reason: incident.reason, host: incident.host };
 

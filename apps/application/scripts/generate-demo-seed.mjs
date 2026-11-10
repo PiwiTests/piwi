@@ -6815,14 +6815,23 @@ const REUSED_RESULTS = [];
         skipped_tests: 0,
         flaky_tests: 0,
         did_not_run_tests: 0,
+        avg_test_duration: null,
+        p90_test_duration: null,
         is_full_run: 0,
         reused_count: REUSED_RESULTS.length,
         label: 'Plan: full, every test reused',
+        created_at: startTime,
+        updated_at: startTime + 9,
         branch: 'feature/pass-reuse',
         metadata: {
           ...newest.metadata,
           scm: { ...newest.metadata?.scm, branch: 'feature/pass-reuse' },
           htmlReport: { ...newest.metadata?.htmlReport, projects: [] },
+          ci: newest.metadata?.ci && {
+            ...newest.metadata.ci,
+            buildNumber: `${newest.metadata.ci.buildNumber}-plan`,
+            buildUrl: undefined,
+          },
           piwiPlan: { id: PLAN_ID },
         },
       });

@@ -581,6 +581,10 @@ export interface TestRunDetails {
   shardTotal?: number | null;
   shardsFinished?: number;
   isFullRun?: boolean;
+  /** Tests a pass reuse plan skipped, recorded as reused results; -1 when the run claimed a plan whose reuse could not be recorded. */
+  reusedCount?: number;
+  /** The pass reuse plan the run executed, from its metadata. */
+  planId?: number | null;
   /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
   hasResources?: boolean;
   /** **Run on my machine** is on for the run's project (`machine-runs`): the instance turned it on, the project did not decline it. */

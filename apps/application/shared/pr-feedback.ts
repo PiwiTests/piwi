@@ -544,7 +544,9 @@ export function buildPrComment(input: PrSummaryInput): string {
     `**${input.passedTests}** passed`,
     `**${input.failedTests}** failed`,
     input.flakyTests > 0 ? `**${input.flakyTests}** flaky` : null,
-    input.reusedTests ? `**${input.reusedTests}** reused (code unchanged since they passed)` : null,
+    input.reusedTests
+      ? `**${input.reusedTests}** ${input.reusedTests === 1 ? 'test' : 'tests'} reused (code unchanged since they passed)`
+      : null,
     `${input.durationMs == null ? '—' : durationShort(input.durationMs)}`,
   ].filter(Boolean);
   sections.push(`${counters.join(' · ')} — [full run](${input.runUrl})`);

@@ -292,52 +292,56 @@ describe('pass reuse plans', () => {
       createdBy: null,
     });
     const cart = await idOf('adds to cart');
-    const metadata = (commit: string) => ({ scm: { commit }, piwiPlan: { id: planId }, piwiOrigin: { kind: 'ci' } });
+    const metadata = (commit: string, worktree = 'clean') => ({
+      scm: { commit, worktree },
+      piwiPlan: { id: planId },
+      piwiOrigin: { kind: 'ci' },
+    });
+    const addPlannedRun = async (
+      id: number,
+      opts: { commit?: string; worktree?: string; version?: string; startTime?: Date; cases?: unknown[] } = {},
+    ) => {
+      const meta = metadata(opts.commit ?? C1, opts.worktree);
+      await db.insert(schema.testRuns).values({
+        id,
+        projectId: 1,
+        status: 'passed',
+        startTime: opts.startTime ?? new Date(),
+        origin: 'ci',
+        commit: opts.commit ?? C1,
+        playwrightVersion: opts.version ?? PW,
+        metadata: meta,
+        totalTests: opts.cases?.length ?? 0,
+      });
+      if (opts.cases?.length) await persistRunCases(db as never, 1, id, opts.cases as never);
+      return reuse.attachRunPlan(db as never, id, { projectId: 1, metadata: meta });
+    };
+    const countOf = async (id: number) =>
+      (await db.select({ c: schema.testRuns.reusedCount }).from(schema.testRuns).where(eq(schema.testRuns.id, id)))[0]!
+        .c;
 
     // Run 10 at the plan's commit executed `logs in`, not the reused `adds to cart`.
-    await db.insert(schema.testRuns).values({
-      id: 10,
-      projectId: 1,
-      status: 'passed',
-      startTime: new Date(),
-      origin: 'ci',
-      commit: C1,
-      metadata: metadata(C1),
-      totalTests: 1,
-    });
-    await persistRunCases(db as never, 1, 10, [execution('logs in', { files: ['src/auth.ts'] })]);
-    expect(await reuse.attachRunPlan(db as never, 10, { projectId: 1, metadata: metadata(C1) })).toBe(1);
+    expect(await addPlannedRun(10, { cases: [execution('logs in', { files: ['src/auth.ts'] })] })).toBe(1);
     expect(await reuse.attachRunPlan(db as never, 10, { projectId: 1, metadata: metadata(C1) })).toBe(1);
     const rows = await db.select().from(schema.reusedResults).where(eq(schema.reusedResults.runId, 10));
     expect(rows).toEqual([
       expect.objectContaining({ testCaseId: cart, projects: ['chromium'], sourceCommit: C1, sourceRunId: 2, planId }),
     ]);
-    const [run] = await db
-      .select({ reusedCount: schema.testRuns.reusedCount })
-      .from(schema.testRuns)
-      .where(eq(schema.testRuns.id, 10));
-    expect(run!.reusedCount).toBe(1);
+    expect(await countOf(10)).toBe(1);
 
-    // Run 11 executed the reused test anyway, and run 12 is at another commit: neither records it.
-    for (const [id, commit, cases] of [
-      [11, C1, [execution('adds to cart', { files: ['src/cart.ts'] })]],
-      [12, C2, []],
-    ] as const) {
-      await db.insert(schema.testRuns).values({
-        id,
-        projectId: 1,
-        status: 'passed',
-        startTime: new Date(),
-        origin: 'ci',
-        commit,
-        metadata: metadata(commit),
-        totalTests: cases.length,
-      });
-      if (cases.length) await persistRunCases(db as never, 1, id, [...cases]);
-      expect(await reuse.attachRunPlan(db as never, id, { projectId: 1, metadata: metadata(commit) })).toBe(0);
-    }
-    // A run of another project cannot claim the plan.
-    expect(await reuse.attachRunPlan(db as never, 10, { projectId: 2, metadata: metadata(C1) })).toBe(0);
+    // Run 11 executed the reused test anyway: nothing recorded.
+    expect(await addPlannedRun(11, { cases: [execution('adds to cart', { files: ['src/cart.ts'] })] })).toBe(0);
+
+    // Run 10 finalized again after it executed the reused test: its row goes.
+    await persistRunCases(db as never, 1, 10, [execution('adds to cart', { files: ['src/cart.ts'] })]);
+    expect(await reuse.attachRunPlan(db as never, 10, { projectId: 1, metadata: metadata(C1) })).toBe(0);
+
+    // A run that is not the plan's own claims it and records nothing: the gate reads REUSE_UNRECORDED.
+    expect(await addPlannedRun(12, { commit: C2 })).toBe(reuse.REUSE_UNRECORDED);
+    expect(await addPlannedRun(13, { worktree: 'dirty' })).toBe(reuse.REUSE_UNRECORDED);
+    expect(await addPlannedRun(14, { version: '1.50.0' })).toBe(reuse.REUSE_UNRECORDED);
+    expect(await addPlannedRun(15, { startTime: new Date(Date.now() + 25 * HOUR) })).toBe(reuse.REUSE_UNRECORDED);
+    expect(await countOf(13)).toBe(reuse.REUSE_UNRECORDED);
   });
 
   test('an unknown selection is a 404', async () => {

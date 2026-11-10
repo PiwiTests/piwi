@@ -799,7 +799,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       flaky: run.flakyTests || null,
       skipped: run.skippedTests || null,
       didNotRun: run.didNotRunTests || null,
-      reused: run.reusedCount ? { count: run.reusedCount, planId: runPlanId(run.metadata) } : null,
+      reused:
+        run.reusedCount > 0
+          ? { count: run.reusedCount, planId: runPlanId(run.metadata) }
+          : run.reusedCount < 0
+            ? { unrecorded: true, planId: runPlanId(run.metadata) }
+            : null,
       env: run.environment || null,
       label: run.label || null,
       branch: meta?.scm?.branch || null,
