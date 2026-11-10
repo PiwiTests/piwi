@@ -303,9 +303,13 @@ reused per folder and environment.
 
 ### Running the test at the cursor
 
-Three commands, in the palette and in the **Piwi** submenu of the editor's context menu on a spec
+Three commands, in the palette, in the **Piwi** submenu of the editor's context menu on a spec
 (`piwi.editorContext` in `contributes.submenus`, the same sections in the same order as the JetBrains plugin's
-`Piwi.EditorPopup`: run, record, a recording's controls; `tests/menus.test.ts`):
+`Piwi.EditorPopup`: run, record, a recording's controls) and under the editor title's Run button
+(`editor/title/run`), the spec first. The title also holds one Piwi button by state (`editor/title`): Stop recording
+while a recording runs, else Resume at a stop, else Record here on a spec, and in its `…` menu the run's other
+controls and the recording's, each as the palette offers it. Each button has a glyph no other command has, but Record
+here, which Resume recording shares (`tests/menus.test.ts`, and the nightly suite on a spec):
 
 - **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`);
 - **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);
@@ -371,7 +375,9 @@ an information message. The commands show in the status bar beside the run's pro
 its own name (`Piwi: Resume`) and a screen reader's label from its tooltip without the icon (`accessibleLabel`), no
 tooltip naming a key, and a held failure offering Resume without Step or Finish (`ControlState.failed`); and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
-`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
+`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The editor title shows Resume at a stop while no
+recording runs, and its `…` menu every other control as the palette offers it ([Running the test at the
+cursor](#running-the-test-at-the-cursor)). The keys: [Keybindings](#keybindings).
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
 `OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the focus,

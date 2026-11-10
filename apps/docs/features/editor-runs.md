@@ -17,11 +17,11 @@ second of its end.
   [coverage](./editor-coverage#refresh-the-marks-with-a-local-run).
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose `test(…)`
   call holds the cursor, and **Piwi: Run this spec** every test of the spec; both in the editor's **Piwi** submenu
-  on a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code, **Run** in the hover
-  of a test's line runs that test, and so does [the Testing view](#the-testing-view-vs-code). A test the instance does
-  not know yet, such as one you just [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of
-  its `test(…)` call (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance. Both save the spec
-  first.
+  on a spec, and under VS Code's editor title Run button (**Run the Test at the Caret** and **Run This Spec** in a
+  JetBrains IDE). Both save the spec first. **Run** in VS Code's test hover runs it, as
+  [the Testing view](#the-testing-view-vs-code) does. A test the instance does not know yet, such as one you just
+  [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
+  (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times as a
   [verification](/guide/concepts#verification) ([When your run ends](#when-your-run-ends)).
 - **Piwi: Run the tests that reach this file** runs every test reaching the active file through
