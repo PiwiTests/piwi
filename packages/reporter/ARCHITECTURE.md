@@ -534,6 +534,12 @@ What the package does to a user's run, process by process.
   before) and as it ends, and an unref'd timer reads the new lines every 500 ms. The
   reporter sends each as `test-stopped` or `test-resumed` on the run's stream, whoever
   watches: the dashboard's stuck check reads them too.
+- **The files a killed run left.** A run killed before its end (`kill -9`, a cancelled CI
+  job) leaves its run log or stop notes file behind. Before either is named, the run
+  removes the files of its prefix that this user owns and that have not changed for a day
+  (`sweepStalePrivateFiles`, `internal/support/private-file.ts`), never through a link. A
+  run marks its own file as in use at each read (`keepPrivateFileLive`), so a stop held
+  longer than a day keeps it.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
   or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`
