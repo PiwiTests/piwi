@@ -1466,9 +1466,9 @@ export interface RunStop {
    */
   by?: 'agent';
   /**
-   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the surface whose
-   * person last acted on it (its input, a pick, an intent, or a hub's `drive`). A person's action takes it from an
-   * agent, and an agent's is refused while a person drives. Absent while nobody drives.
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the surface whose
+   * person took it (a click, a key or text on its view, a pick, an intent, or a hub's `drive`), which takes it from the
+   * agent. An agent's actions there are refused while a person drives. Absent while nobody drives.
    */
   driver?: RunPresence;
 }

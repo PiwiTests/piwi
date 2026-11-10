@@ -565,7 +565,7 @@ describe('who is present on a run, and who drives its stop', () => {
     // Another person's action is theirs to take, and a person's controls are never refused.
     expect(h.sessions.driveStop({ ref: 'ed-1', since }, desktop, true)).toEqual({
       ok: true,
-      message: 'You drive this stop: an agent waits until you give it back.',
+      message: 'You drive this stop: an agent would wait until you give it back.',
     });
     expect(h.sessions.driveStop({ ref: 'ed-1', since }, picker, false)).toEqual({
       ok: true,
@@ -598,7 +598,7 @@ describe('who is present on a run, and who drives its stop', () => {
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([{ kind: 'picker', name: 'Piwi Picker' }]);
     expect(paused).not.toBe(since);
     // A second Runs window, of the same name as one present, changes no view of the editor's, and is told all the same;
-    // closing it gives back the stop it took.
+    // closing it gives back the stop it took, which the agent hears.
     const second = viewer({ kind: 'picker', name: 'Piwi Picker' });
     const told2 = told.length;
     await new Promise((r) => setTimeout(r, 30));
@@ -609,11 +609,70 @@ describe('who is present on a run, and who drives its stop', () => {
     expect(h.sessions.driveStop({ ref: 'ed-1', since: paused }, second, true)).toMatchObject({ ok: true });
     h.sessions.presentOn(second, false);
     expect(h.sessions.presenceFor('ed-1', desktop)!.workers.get(0)!.driver).toBeNull();
-    expect(told.length).toBe(told2);
+    expect(told.slice(told2).map((t) => t.what)).toEqual([{ type: 'given-back' }]);
     // The surface that leaves is no longer present.
     h.sessions.unwatchAll(picker);
     expect(h.sessions.presenceFor('ed-1', desktop)!.presence).toEqual([]);
     expect(AGENT_VIEWER.who).toEqual({ kind: 'agent', name: 'an agent' });
+    h.sessions.dispose();
+  });
+
+  test('keeps one driver through a person’s steps, and lets no hover, hold or nameless tool move it', async () => {
+    const told: RunHeard[] = [];
+    const h = harness([...RUN_TAKES], { heard: (_ref, _worker, what) => void told.push(what) });
+    const picker = viewer({ kind: 'picker', name: 'Piwi Picker' });
+    const driverNow = () => h.sessions.presenceFor('ed-1', picker)!.workers.get(0)!.driver;
+    // The agent's Pause: it drives the stop it comes to.
+    h.sessions.followRun('ed-1');
+    h.sessions.control({ ref: 'ed-1', action: 'pause' }, 'agent');
+    const since = await h.stopAt(1);
+    expect(driverNow()).toEqual({ kind: 'agent', name: 'an agent' });
+    const watching = h.sessions.watch({ ref: 'ed-1', since, on: true }, picker);
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'The live view is on.' });
+    await watching;
+    // A pointer passing over the view takes nothing; a click takes the stop.
+    void h.sessions.input({ ref: 'ed-1', since }, picker, [{ type: 'mouse', action: 'move', x: 1, y: 1 }]);
+    expect(driverNow()).toEqual({ kind: 'agent', name: 'an agent' });
+    void h.sessions.input({ ref: 'ed-1', since }, picker, [
+      { type: 'mouse', action: 'click', x: 1, y: 1, button: 'left', clickCount: 1 },
+    ]);
+    expect(driverNow()).toEqual({ kind: 'picker', name: 'Piwi Picker', self: true });
+    expect(told.filter((w) => w.type === 'taken')).toHaveLength(1);
+    // The person's Step: they drive the stop it comes to, and the agent is refused there.
+    expect(h.sessions.control({ ref: 'ed-1', action: 'step', since })).toMatchObject({ ok: true });
+    h.read({ type: 'running', stop: 1 });
+    const next = await h.stopAt(2);
+    expect(driverNow()).toEqual({ kind: 'picker', name: 'Piwi Picker', self: true });
+    expect(h.sessions.control({ ref: 'ed-1', action: 'resume', since: next }, 'agent')).toMatchObject({ ok: false });
+    // Given back: the agent hears so. A tool nobody names drives nothing.
+    h.sessions.driveStop({ ref: 'ed-1', since: next }, picker, false);
+    expect(told.filter((w) => w.type === 'given-back')).toHaveLength(1);
+    expect(h.sessions.driveStop({ ref: 'ed-1', since: next }, viewer(), true)).toEqual({
+      ok: false,
+      message: 'Only a tool a person uses drives a stop.',
+    });
+    // A held failure a person drives stays held as an agent turns Hold failures off, and goes on as a person does.
+    h.read({ type: 'running', stop: 2 });
+    h.sessions.hold({ ref: 'ed-1', on: true }, 'person');
+    h.read({
+      type: 'stopped',
+      stop: 3,
+      reason: 'failure',
+      title: 'Click',
+      place: { file: 'tests/a.spec.ts', line: 4 },
+      locator: null,
+      bar: false,
+    });
+    const failed = await waitFor(() => {
+      const at = last(h.sent)?.workers[0]?.stop;
+      return at?.reason === 'failure' ? at.since : undefined;
+    });
+    expect(h.sessions.driveStop({ ref: 'ed-1', since: failed }, picker, true)).toMatchObject({ ok: true });
+    const resumes = () => h.heard().filter((m) => m.type === 'control' && 'stop' in m && m.stop === 3);
+    h.sessions.hold({ ref: 'ed-1', on: false }, 'agent');
+    expect(resumes()).toEqual([]);
+    h.sessions.hold({ ref: 'ed-1', on: false }, 'person');
+    expect(resumes()).toEqual([{ type: 'control', action: 'resume', stop: 3 }]);
     h.sessions.dispose();
   });
 });

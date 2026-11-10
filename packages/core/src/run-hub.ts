@@ -155,9 +155,10 @@ export interface HubStop {
   /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
   by?: 'agent';
   /**
-   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, else the tool whose
-   * person last acted on it (its input, a pick, an intent, or `drive`). A person's action takes it from an agent, and
-   * an agent's is refused while a person drives. Absent while nobody drives, and from a hub without `presence`.
+   * Who drives the stop now, one at a time: the agent that asked for it or acted on its page, or the tool whose person
+   * took it (a click, a key or text on its view, a pick, an intent, or `drive`), which takes it from the agent. An
+   * agent's actions there are refused while a person drives. Absent while nobody drives, and from a hub without
+   * `presence`.
    */
   driver?: HubPresence;
 }

@@ -822,14 +822,17 @@ naming its tool (`Viewer.who`): a hub's WebSocket is Piwi Picker, the desktop ap
 editor's `ClientPageView` and `ClientLaneView` the editor by the name it gave at `initialize`, and the agent
 `AGENT_VIEWER`.
 
-- **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window that `follow`s them, the
-  desktop app's window once it subscribes) and the agent while it follows the run.
+- **A run's `presence`**: the surfaces that have the runs open (`presentOn`: a Runs window, or the desktop app's window
+  while its tray shows them, that `follow`s them) and the agent while it follows the run, which acting on it does.
 - **A worker's `watchers`**: the viewers of its lane and of its stop's live view, each tool once.
 - **A stop's `driver`**: one at a time. The agent drives a stop it asked for, and one it acts on (`page_act`) while no
-  person drives it. A person's input, pick on the image, intent or `drive` takes it, and takes it from the agent,
-  which hears `taken` in `run_follow`; while a person drives, the agent's actions and its Resume, Step, Finish and End
-  there are refused, naming who drives. It is given back by `drive` off, by no longer watching the page, by leaving,
-  and the agent's by its no longer following the run. A person's controls are never refused.
+  person drives it. A person's click, key, text or wheel on the view (never a pointer passing over it), pick on the
+  image, intent or `drive` takes it, and takes it from the agent, which hears `taken` in `run_follow`; while a person
+  drives, the agent's actions, its Resume, Step, Finish and End there, and its turning Hold failures off for that stop
+  are refused or leave it held. The stop a person's Step or Run to comes to stays theirs (`carried`). It is given back
+  by `drive` off, by no longer watching the page, by leaving or no longer following the runs, which the agent hears
+  (`given-back`); the agent's goes as it stops following the run. A person's controls are never refused, and a tool
+  with no name drives nothing.
 
 The editor's client hears the editors' entries marked `self`; the hub marks each connection's own entries for it
 (`presenceFor`), as it does each stop's `intents`.

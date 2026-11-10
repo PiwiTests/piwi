@@ -566,8 +566,6 @@ export class RunHub {
           const live = sessions.current();
           const first = !connection.subscribed;
           connection.subscribed = true;
-          // A peer the host joined is its own window, which has the runs open while it hears them.
-          if (!connection.ws) sessions.presentOn(connection.viewer, true);
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
           for (const session of live) {
             this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });

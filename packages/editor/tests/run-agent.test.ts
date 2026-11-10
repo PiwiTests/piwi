@@ -459,8 +459,10 @@ describe("an agent's tools for the runs of the editor window", () => {
       expect((await call('run_control', { run, action: 'resume', stop: since, wait: 0 })).piwi).toMatchObject({
         ok: false,
       });
-      // The panel no longer watches it: the agent may act again.
+      // The panel no longer watches it: the agent hears it is given back, and may act again.
       await ide.client.sendRequest('piwi/pageView', { ...at, on: false });
+      const given = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });
+      expect(given.piwi.events).toContainEqual(expect.objectContaining({ kind: 'given-back', worker: 0 }));
       expect((await call('page_act', { run, stop: since, target: 'e2', action: 'click' })).piwi).toMatchObject({
         ok: true,
       });
