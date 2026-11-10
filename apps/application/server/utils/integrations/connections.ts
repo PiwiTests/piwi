@@ -37,7 +37,7 @@ import {
   type ZephyrClientOptions,
 } from './test-management/zephyr-scale';
 import { zephyrFailureHint } from './test-management/zephyr-check';
-import { limiterForConnection } from './test-management/limiter';
+import { INTERACTIVE_MAX_WAIT_MS, limiterForConnection, RequestLimiterBusyError } from './test-management/limiter';
 import type { TestManagementCredentials, TestManagementProvider } from './test-management/types';
 
 const ENV_JIRA_NAME = 'Jira (environment)';
@@ -384,20 +384,27 @@ export async function createTestManagement(db: DbClient, connectionId: number): 
   return testManagementForRow(row);
 }
 
+/** How a test management client spends its time; `maxWaitMs` caps how long a request queues behind the limiter. */
+export type TestManagementClientOptions = ZephyrClientOptions & { maxWaitMs?: number };
+
 /**
  * Build a test management client from an already-loaded connection row. It calls the host of the row's region from the
  * registry; the row's stored address is never used.
  */
 export function testManagementForRow(
   row: IntegrationConnection,
-  options: ZephyrClientOptions = {},
+  options: TestManagementClientOptions = {},
 ): TestManagementProvider | null {
   if (!isProviderOfKind(row.provider, 'test-management')) return null;
   const credentials = resolveTestManagementCredentials(row);
   if (!credentials) return null;
   const region = (row.config as Record<string, unknown> | null)?.region;
   // Every call of a saved connection goes through its limiter, whoever makes it.
-  const limited: ZephyrClientOptions = { beforeRequest: () => limiterForConnection(row.id).wait(), ...options };
+  const { maxWaitMs, ...clientOptions } = options;
+  const limited: ZephyrClientOptions = {
+    beforeRequest: () => limiterForConnection(row.id).wait({ maxWaitMs }),
+    ...clientOptions,
+  };
   return typeof region === 'string' ? ZephyrScaleClient.forRegion(region, credentials, limited) : null;
 }
 
@@ -581,7 +588,10 @@ export async function testConnection(db: DbClient, id: number): Promise<Connecti
  * {@link ZEPHYR_INTERACTIVE_TIMEOUT_MS}.
  */
 async function testTestManagementConnection(db: DbClient, row: IntegrationConnection): Promise<ConnectionTestResult> {
-  const client = testManagementForRow(row, { timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS });
+  const client = testManagementForRow(row, {
+    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+  });
   if (!client) {
     // A token the row holds but the client refuses to send is not the same as no token at all.
     return {
@@ -597,6 +607,7 @@ async function testTestManagementConnection(db: DbClient, row: IntegrationConnec
     return { ok: true, account };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof RequestLimiterBusyError) return { ok: false, error: message };
     await recordTest(db, row.id, { ok: false, error: message });
     return { ok: false, error: message, hint: zephyrFailureHint(err) };
   }

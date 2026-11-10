@@ -7,6 +7,7 @@ import {
   configuredRequestsPerMinute,
   createRequestLimiter,
   limiterForConnection,
+  RequestLimiterBusyError,
   resetLimitersForTests,
 } from '../../server/utils/integrations/test-management/limiter';
 import { testManagementForRow } from '../../server/utils/integrations/connections';
@@ -54,6 +55,55 @@ describe('createRequestLimiter', () => {
     let went = false;
     void limiter.wait().then(() => (went = true));
     await vi.advanceTimersByTimeAsync(0);
+    expect(went).toBe(true);
+  });
+});
+
+describe('a limiter with a longest wait', () => {
+  test('refuses a request whose turn is further away than the cap, without taking a turn', async () => {
+    const limiter = createRequestLimiter(10_000);
+    await limiter.wait();
+    let second = false;
+    void limiter.wait({ maxWaitMs: 15_000 }).then(() => (second = true));
+    const refused = await limiter.wait({ maxWaitMs: 15_000 }).catch((err) => err);
+    expect(refused).toBeInstanceOf(RequestLimiterBusyError);
+    expect(refused).toMatchObject({ status: 429, retryAfterMs: 5000 });
+    let third = false;
+    void limiter.wait().then(() => (third = true));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect([second, third]).toEqual([true, false]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(third).toBe(true);
+  });
+
+  test('a burst of capped requests never pushes the next turn past the cap', async () => {
+    const limiter = createRequestLimiter(3000);
+    let queued = 0;
+    let refused = 0;
+    for (let i = 0; i < 100; i++) {
+      void limiter.wait({ maxWaitMs: 15_000 }).then(
+        () => queued++,
+        () => refused++,
+      );
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refused).toBe(94);
+    await vi.advanceTimersByTimeAsync(3000);
+    let next: unknown = 'pending';
+    void limiter.wait({ maxWaitMs: 15_000 }).then(
+      () => (next = 'went'),
+      (err) => (next = err),
+    );
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(next).toBe('went');
+  });
+
+  test('a request without a cap waits however long its turn is away', async () => {
+    const limiter = createRequestLimiter(60_000);
+    await limiter.wait();
+    let went = false;
+    void limiter.wait().then(() => (went = true));
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(went).toBe(true);
   });
 });

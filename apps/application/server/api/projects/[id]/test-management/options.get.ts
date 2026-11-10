@@ -1,7 +1,11 @@
 import { getDatabase } from '../../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { failProviderCall, requireTestManagementClient } from '../../../../utils/integrations/test-management/endpoint';
-import { testManagementOptionsCache } from '../../../../utils/integrations/picker-cache';
+import {
+  testManagementOptionsCache,
+  testManagementOptionsFailureCache,
+} from '../../../../utils/integrations/picker-cache';
+import { INTERACTIVE_MAX_WAIT_MS } from '../../../../utils/integrations/test-management/limiter';
 import { folderOptions, type TestManagementPickerOptions } from '#shared/integrations/test-management-picker';
 import { TEST_MANAGEMENT_PROJECT_KEY } from '#shared/integrations/test-management-binding';
 
@@ -10,7 +14,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'List what the test management binding form offers',
     description:
-      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. Never returns the token. Requires `project:manage` (Project admin on the project).",
+      "Reads a test management connection for the binding form: its `projects` and, when `projectKey` is given, that project's result `statuses` and test cycle `folders`. Cached for five minutes per connection and project, and a failed read for thirty seconds; a provider that answers 401 marks the connection failed, and one that answers 429 pauses the connection: until the pause ends the answer is 429 with `Retry-After`, without a call. A connection with more requests queued than can start within fifteen seconds answers 429 with `Retry-After` too. Never returns the token. Requires `project:manage` (Project admin on the project).",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'connectionId', in: 'query', required: true, schema: { type: 'integer' } },
@@ -35,10 +39,14 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid project key' });
   }
 
-  const { client } = await requireTestManagementClient(event, db, connectionId);
+  const { client } = await requireTestManagementClient(event, db, connectionId, {
+    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+  });
   const cacheKey = `${connectionId}:${projectKey ?? ''}`;
   const cached = testManagementOptionsCache.get(cacheKey);
   if (cached) return cached;
+  const failed = testManagementOptionsFailureCache.get(cacheKey);
+  if (failed) throw apiError(failed);
 
   try {
     const projects = await client.listProjects();
@@ -56,6 +64,12 @@ export default eventHandler(async (event) => {
     testManagementOptionsCache.set(cacheKey, options);
     return options;
   } catch (err) {
-    return await failProviderCall(event, db, connectionId, err);
+    try {
+      return await failProviderCall(event, db, connectionId, err);
+    } catch (refusal) {
+      const { statusCode, message } = refusal as { statusCode: number; message: string };
+      if (statusCode === 502) testManagementOptionsFailureCache.set(cacheKey, { statusCode, message });
+      throw refusal;
+    }
   }
 });

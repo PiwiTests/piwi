@@ -8,8 +8,13 @@ import { apiError } from '../../api-error';
 import { IntegrationHttpError } from '../http-error';
 import { connectionPausedUntil, pauseConnectionById, RATE_LIMIT_PAUSE_MS } from '../actions';
 import { isProviderOfKind } from '#shared/integrations/registry';
-import { getConnectionRow, markConnectionFailed, testManagementForRow } from '../connections';
-import type { ZephyrClientOptions } from './zephyr-scale';
+import {
+  getConnectionRow,
+  markConnectionFailed,
+  testManagementForRow,
+  type TestManagementClientOptions,
+} from '../connections';
+import { RequestLimiterBusyError } from './limiter';
 import type { TestManagementProvider } from './types';
 import type { IntegrationConnection } from '../../../database/schema';
 
@@ -27,7 +32,7 @@ export async function requireTestManagementClient(
   event: H3Event,
   db: DbClient,
   connectionId: number,
-  options: ZephyrClientOptions = {},
+  options: TestManagementClientOptions = {},
 ): Promise<{ row: IntegrationConnection; client: TestManagementProvider }> {
   const row = await getConnectionRow(db, connectionId);
   if (!row) throw apiError({ statusCode: 404, message: 'Connection not found' });
@@ -45,9 +50,9 @@ export async function requireTestManagementClient(
 
 /**
  * Turn a failed provider call into the API's error. A 401 also marks the connection failed, so it shows as needing
- * attention; a 429 pauses the connection for as long as the tool asked and is passed on as 429 with that wait. The
- * browser never sees the provider's status as its own 401 (that would sign the person out), so any other failure is a
- * 502.
+ * attention; a 429 pauses the connection for as long as the tool asked and is passed on as 429 with that wait; a
+ * request that would queue longer than its caller waits is a 429 with the wait, and pauses nothing. The browser never
+ * sees the provider's status as its own 401 (that would sign the person out), so any other failure is a 502.
  */
 export async function failProviderCall(
   event: H3Event,
@@ -56,6 +61,7 @@ export async function failProviderCall(
   err: unknown,
 ): Promise<never> {
   if (err instanceof RangeError) throw apiError({ statusCode: 400, message: err.message });
+  if (err instanceof RequestLimiterBusyError) refuseRateLimited(event, err.retryAfterMs ?? 0, err.message);
   if (err instanceof IntegrationHttpError) {
     if (err.status === 401) await markConnectionFailed(db, connectionId, err.message);
     if (err.status === 429) {

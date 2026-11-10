@@ -81,8 +81,10 @@ const getSummary = route(await import('../../server/api/projects/[id]/test-manag
 const create = route(await import('../../server/api/integrations/connections/index.post'));
 const putTracker = route(await import('../../server/api/projects/[id]/integrations.put'));
 const { boundConnectionId } = await import('../../server/utils/integrations/bound-connection');
-const { testManagementOptionsCache } = await import('../../server/utils/integrations/picker-cache');
+const { testManagementOptionsCache, testManagementOptionsFailureCache } =
+  await import('../../server/utils/integrations/picker-cache');
 const { connectionPausedUntil } = await import('../../server/utils/integrations/actions');
+const { resetLimitersForTests } = await import('../../server/utils/integrations/test-management/limiter');
 
 const as = (
   id: number,
@@ -156,6 +158,7 @@ beforeEach(async () => {
   for (const name of Object.keys(headers)) delete headers[name];
   for (const id of [zephyrId, jiraId]) connectionPausedUntil(id, new Date(Date.now() + 1e10));
   testManagementOptionsCache.deleteWhere(() => true);
+  testManagementOptionsFailureCache.deleteWhere(() => true);
   await db.delete(schema.projectTestManagement);
   await db.delete(schema.projectIntegrations);
   await db.delete(schema.testManagementCases);
@@ -347,6 +350,39 @@ describe('GET options', () => {
     expect(sent).toHaveLength(calls);
     expect(Number(headers['Retry-After'])).toBeGreaterThan(0);
     expect(Number(headers['Retry-After'])).toBeLessThanOrEqual(30);
+  });
+
+  test('a failed read is answered from the cache for a while, without another call', async () => {
+    unauthorized = true;
+    const query = { connectionId: String(zephyrId) };
+    const first = await refusal(getOptions(at(10, undefined, query)));
+    const calls = sent.length;
+    unauthorized = false;
+    expect(await refusal(getOptions(at(10, undefined, query)))).toEqual(first);
+    expect(sent).toHaveLength(calls);
+    expect(
+      await getOptions(at(10, undefined, { connectionId: String(zephyrId), projectKey: 'WEB_APP' })),
+    ).toMatchObject({
+      projects: [{ key: 'WEB_APP', enabled: true }],
+    });
+  });
+
+  test('a queue longer than the form waits answers 429 with Retry-After, pauses nothing and is not cached', async () => {
+    process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '1';
+    resetLimitersForTests();
+    try {
+      await getOptions(at(10, undefined, { connectionId: String(zephyrId) }));
+      const calls = sent.length;
+      const query = { connectionId: String(zephyrId), projectKey: 'WEB_APP' };
+      expect(await refusal(getOptions(at(10, undefined, query)))).toMatchObject({ statusCode: 429 });
+      expect(Number(headers['Retry-After'])).toBeGreaterThan(30);
+      expect(sent).toHaveLength(calls);
+      expect(connectionPausedUntil(zephyrId, new Date())).toBeNull();
+      expect(testManagementOptionsFailureCache.size).toBe(0);
+    } finally {
+      process.env.PIWI_TEST_MANAGEMENT_REQUESTS_PER_MINUTE = '600';
+      resetLimitersForTests();
+    }
   });
 
   test('refuses a bad connection, a Jira connection and a bad key, before any call', async () => {

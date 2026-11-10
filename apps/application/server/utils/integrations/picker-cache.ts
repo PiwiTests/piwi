@@ -23,3 +23,5 @@ export const issuePickerCache = new TtlCache<TrackerIssueOption[]>(60 * 1000);
 export const iconCache = new TtlCache<{ bytes: Uint8Array; mime: string } | null>(60 * 60 * 1000, 300);
 /** What the binding form's pickers read from a test management tool, by connection and project key. */
 export const testManagementOptionsCache = new TtlCache<TestManagementPickerOptions>(TTL_MS);
+/** A failed read of those options, kept briefly so a form left open does not call the tool again at every keystroke. */
+export const testManagementOptionsFailureCache = new TtlCache<{ statusCode: number; message: string }>(30 * 1000);

@@ -5,23 +5,40 @@
  *
  * The check a person waits on before saving a connection has no connection yet and is not limited.
  */
+import { IntegrationHttpError } from '../http-error';
 import {
   DEFAULT_TEST_MANAGEMENT_REQUESTS_PER_MINUTE,
   resolveRequestsPerMinute,
 } from '#shared/integrations/test-management-limits';
 
+/** The longest a request a person waits on queues behind the connection's other requests. */
+export const INTERACTIVE_MAX_WAIT_MS = 15_000;
+
+/** A request refused because the connection's queue is longer than its caller will wait; nothing was reserved. */
+export class RequestLimiterBusyError extends IntegrationHttpError {
+  constructor(retryAfterMs: number) {
+    super(429, 'Too many requests to this connection are waiting; try again shortly', retryAfterMs);
+    this.name = 'RequestLimiterBusyError';
+  }
+}
+
 export interface RequestLimiter {
-  /** Resolves when the caller may send its request; calls are served in order, spaced by the limiter's interval. */
-  wait(): Promise<void>;
+  /**
+   * Resolves when the caller may send its request; calls are served in order, spaced by the limiter's interval. With
+   * `maxWaitMs`, a request whose turn is further away is refused with {@link RequestLimiterBusyError} and takes no turn.
+   */
+  wait(options?: { maxWaitMs?: number }): Promise<void>;
 }
 
 /** A limiter that lets a request start every `intervalMs`. */
 export function createRequestLimiter(intervalMs: number): RequestLimiter {
   let nextAt = 0;
   return {
-    async wait() {
+    async wait(options) {
       const now = Date.now();
       const at = Math.max(now, nextAt);
+      const maxWaitMs = options?.maxWaitMs;
+      if (maxWaitMs !== undefined && at - now > maxWaitMs) throw new RequestLimiterBusyError(at - now - maxWaitMs);
       nextAt = at + intervalMs;
       if (at > now) await new Promise<void>((resolve) => setTimeout(resolve, at - now));
     },
