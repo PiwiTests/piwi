@@ -173,7 +173,7 @@ class ResumeRecordingAction : AnAction(), DumbAware {
  * (`PiwiLocalSettings`).
  */
 object PiwiRecordFlow {
-    private const val NOT_RUNNING = "The Piwi editor service is not running in this project yet."
+    private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
 
     /**
      * Whether a recording can write into `file`: a script under one of the project's Playwright config folders, not

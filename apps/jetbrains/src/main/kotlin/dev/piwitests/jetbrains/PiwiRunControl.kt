@@ -1491,7 +1491,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
 
         /** What a control says when no editor service runs to send it to. */
-        private const val NOT_RUNNING = "The Piwi editor service is not running in this project."
+        private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L

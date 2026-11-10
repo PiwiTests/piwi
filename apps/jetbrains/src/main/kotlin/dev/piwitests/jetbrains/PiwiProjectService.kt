@@ -936,6 +936,9 @@ class PiwiStartupActivity : ProjectActivity {
  * The answer of a service request, or null when it failed or took too long. A task with progress stops waiting at its
  * Cancel button.
  */
+/** The log of the plugin's requests to the editor service, in idea.log under `#dev.piwitests.jetbrains`. */
+private val REQUESTS_LOG = com.intellij.openapi.diagnostic.Logger.getInstance("#dev.piwitests.jetbrains")
+
 fun <T> CompletableFuture<T>.orNull(): T? = awaitCancellably(TimeUnit.SECONDS.toMillis(PiwiProjectService.TIMEOUT_SECONDS))
 
 /**
@@ -950,8 +953,15 @@ fun <T> CompletableFuture<T>.awaitCancellably(timeoutMillis: Long): T? {
         try {
             return get(10, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            if (System.nanoTime() >= deadline) return null
-        } catch (_: Exception) {
+            if (System.nanoTime() >= deadline) {
+                REQUESTS_LOG.info("A request to the Piwi editor service took longer than $timeoutMillis ms")
+                return null
+            }
+        } catch (_: java.util.concurrent.CancellationException) {
+            return null
+        } catch (e: Exception) {
+            // In idea.log with its cause: the gutter, Code Vision or an action shows nothing of it.
+            REQUESTS_LOG.warn("A request to the Piwi editor service failed", (e as? java.util.concurrent.ExecutionException)?.cause ?: e)
             return null
         }
     }

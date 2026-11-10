@@ -561,7 +561,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
         )
         assertEquals(
-            "The picked locator was inserted at the caret: the Piwi editor service is not running in this project.",
+            "The picked locator was inserted at the caret. ${Glue.SERVICE_NOT_RUNNING}",
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
