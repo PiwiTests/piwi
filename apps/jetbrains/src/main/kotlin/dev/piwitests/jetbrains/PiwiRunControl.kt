@@ -1255,6 +1255,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 },
             )
         }
+        if (Glue.canShowBrowser(stop)) {
+            addSeparator()
+            add(
+                object : DumbAwareAction(SHOW_THE_BROWSER) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+                    override fun actionPerformed(e: AnActionEvent) = showBrowser(stop)
+                },
+            )
+        }
         if (Glue.canShare(stop)) {
             addSeparator()
             add(
@@ -1295,6 +1305,22 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     }
                 })
                 .notify(project)
+        }
+    }
+
+    /**
+     * Show the Browser: the stop's window comes to the front, off the event thread. Only a refusal is said: the window
+     * itself shows it worked.
+     */
+    fun showBrowser(stop: Glue.ShownStop) {
+        val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        if (shownStops.acted(stop)) draw()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = remote.action(StopActionParams(stop.ref, stop.worker, since, "front", null))
+            when {
+                result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                !result.ok -> PiwiCommands.notify(project, result.message ?: "The test did not take it.")
+            }
         }
     }
 
@@ -1489,6 +1515,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         const val PAUSED_PAGE = "Paused Page"
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
         const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
+        const val SHOW_THE_BROWSER = "Show the Browser"
 
         /** What a control says when no editor service runs to send it to. */
         private const val NOT_RUNNING = Glue.SERVICE_NOT_RUNNING
@@ -2339,6 +2366,19 @@ class StopSharingRunAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         sessions(e)?.shareLive(false)
+    }
+}
+
+/**
+ * **Show the Stopped Test's Browser**: the window of the stop at the caret's line among those it can show, else the
+ * only one, else the one chosen, comes to the front.
+ */
+class ShowBrowserAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.browserShowable
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShowBrowser) { sessions.showBrowser(it) }
     }
 }
 

@@ -67,6 +67,11 @@ the editors above the stopped line, the Runs window on the worker, and the termi
 The line names the editor that steers the run, or the desktop app. After you edit the file at a stop, the Runs window
 names the stopped line where it stands now, as the editor does.
 
+At a stop of a headed run, every tool offers **Show the browser**, which brings the test's window to the front, as far
+as your system lets a window come forward: **Piwi: Show the stopped test's browser** in VS Code and the stop's hover,
+**Tools → Piwi → Show the Stopped Test's Browser** in a JetBrains IDE, and a button in the Runs window and the desktop
+app's tray. A headless run has no window to show, and an older reporter offers none: update it.
+
 ## The terminal's lines
 
 A run prints one line for its page, and one when it follows an editor

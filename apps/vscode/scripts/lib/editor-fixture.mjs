@@ -569,7 +569,14 @@ export function startStub(commit, { testFunctions = [] } = {}) {
         builtAt: ago(130),
         truncated: false,
       });
-    if (p === `/api/projects/${PROJECT.id}/test-cases`) return json({ items: CASES });
+    if (p === `/api/projects/${PROJECT.id}/test-cases`) {
+      // The cases of the spec the service names (`file`), a page of the catalog (`offset`, `limit`) otherwise.
+      const file = u.searchParams.get('file');
+      const offset = Number(u.searchParams.get('offset') ?? 0);
+      const limit = Number(u.searchParams.get('limit') ?? CASES.length);
+      const items = file === null ? CASES : CASES.filter((c) => c.filePath === file);
+      return json({ items: items.slice(offset, offset + limit) });
+    }
     if (p === `/api/projects/${PROJECT.id}/locator-alternatives`)
       return json({
         items: [

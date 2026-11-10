@@ -138,9 +138,9 @@ tells the views, starts the service for the open files and offers the first-run 
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the details as its tooltip; its click runs what the line names (Open in Dashboard), and its
-  right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi** (`PiwiCommands.runTestAt`), at the line a range
-  marker follows through edits;
+- a gutter icon, with the summary the service writes as its tooltip (`Glue.testResultTooltip`); its click runs what
+  the line names (Open in Dashboard), and its right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**
+  (`PiwiCommands.runTestAt`), at the line a range marker follows through edits;
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with the reason as the tooltip. The test's background goes around that
   line, since two backgrounds on one line have no set order.
@@ -974,6 +974,10 @@ shown by the docs and the README. The Marketplace listing's images are uploaded 
 
 The keys a scene needs go through `scripts/xinput.py` (XTEST), through the shortcuts of a keymap the script writes
 where the IDE's actions have none (the Piwi tool window, the notifications). ImageMagick's `import` captures the screen.
+The config the script writes turns off the IDE's own lines above the code (code authors, usages), so the ones above the
+code are Piwi's. An image whose status bar does not draw Piwi's item with the fill of the dark theme's `TestFailed` icon and
+the error color of its label, which the fixture's failures call for, is not written: the capture goes to the temporary
+directory instead (`statusItemFailing`).
 
 **The license.** The IDE's config directory stays in `.ide/config` across runs, because the license lives there. On a
 machine without one, the IDE shows its license dialog:

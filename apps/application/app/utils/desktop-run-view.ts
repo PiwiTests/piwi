@@ -462,20 +462,21 @@ export function desktopStopError(stop: Pick<HubStop, 'error' | 'title'>): string
 }
 
 /**
- * The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, and End the test where the
- * stop takes it (`stop.intents`); Resume alone at a failure, which it ends as it failed. While a Pause waits for the
- * call the test runs, End the test there (`give-up`), where its worker takes it.
+ * The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, Show the browser (`front`)
+ * and End the test where the stop takes them (`stop.intents`); Resume alone at a failure, which it ends as it failed,
+ * with Show the browser. While a Pause waits for the call the test runs, End the test there (`give-up`), where its
+ * worker takes it.
  */
-export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'end' | 'give-up';
+export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'front' | 'end' | 'give-up';
 
 export function desktopSteering(worker: HubWorker): DesktopSteer[] {
   const stop = desktopRunStop(worker);
   if (!stop && worker.pausing) return worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : [];
   if (!stop) return worker.state === 'between' ? [] : ['pause'];
-  if (stop.reason === 'failure') return ['resume'];
-  const steering: DesktopSteer[] = ['resume', 'step', 'finish'];
-  if (stopIntents(worker, stop).includes('end')) steering.push('end');
-  return steering;
+  const intents = stopIntents(worker, stop);
+  const front: DesktopSteer[] = intents.includes('front') ? ['front'] : [];
+  if (stop.reason === 'failure') return ['resume', ...front];
+  return ['resume', 'step', 'finish', ...front, ...(intents.includes('end') ? (['end'] as const) : [])];
 }
 
 /**

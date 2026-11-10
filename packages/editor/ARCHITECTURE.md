@@ -386,6 +386,11 @@ The failures are placed again on the timer that analyzes an edited document, and
 On a spec, `piwi/fileSummary` gives each test's line:
 
 - its latest result (`status`), which the clients draw in the gutter;
+- its summary (`title`), the mark's tooltip after `Piwi:` in both clients: the latest result and the run it is from,
+  named as the failure's other lines name it (`testVerdict`: `running in your run #130`, `failing in run #124 on main`),
+  or the catalog's result, which names no run (`didn't run in its latest run`, `flaky in recent runs`, `never run`), in
+  the dashboard's words (`statusWords`, held to `formatStatusLabel` by
+  `apps/application/tests/unit/status-words-drift.test.ts`), then the pass rate, quarantine, flaky score and selections;
 - the test's id (`testCaseId`), which VS Code's gutter hover runs;
 - the line its call ends on (`endLine`, found with `callEndLine`), for the background the clients draw over a failing
   test.
@@ -650,6 +655,10 @@ the run's stop before it, so it names that stop alone.
   drops the Pause: a locator call that carries the end signal is given up at once, and after any other call the worker
   skips the test at its next locator call; the answer says which (`Ending the test: <call> is given up.`, `Ending the
   test as <call> returns.`).
+- `front` (Show the browser, `piwi/stopAction` and the hub's `front`) asks the worker stopped at `since` to bring its
+  page's window to the front (`RunSessions.front`), for a worker that lists `front` in its `features`
+  (`RunWorker.showsWindow`) at a stop its pause bar shows; the stop's `intents` list it there alone. It answers no stop
+  and takes no driving: the test stays where it stands.
 
 A worker's stop ends with its `running`, whoever ended it: the pause bar, the editor, or the test ending under it or
 closing its page, which the worker sends unanswered. A control naming that stop afterwards is refused the same way.

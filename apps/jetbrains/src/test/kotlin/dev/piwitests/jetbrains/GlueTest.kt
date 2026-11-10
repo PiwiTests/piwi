@@ -673,6 +673,15 @@ class GlueTest {
         assertEquals(true, Glue.runControls(sharing).shareable)
         assertTrue(Glue.canShare(Glue.stopsOf(sharing).single()))
         assertFalse(Glue.canShare(Glue.stopsOf(stopped).single()))
+        // A stop its pause bar shows can bring its window forward, when its reporter does; a headless one cannot.
+        val showing = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4), showsWindow = true)))
+        assertEquals(true, Glue.runControls(showing).browserShowable)
+        assertTrue(Glue.canShowBrowser(Glue.stopsOf(showing).single()))
+        assertFalse(Glue.canShowBrowser(Glue.stopsOf(stopped).single()))
+        val headless = mapOf(
+            "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4, bar = false), showsWindow = true)),
+        )
+        assertFalse(Glue.canShowBrowser(Glue.stopsOf(headless).single()))
         assertEquals(
             "Shared. Join it with: npx playwright cli attach piwi-ed-1-w0",
             Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
@@ -2804,12 +2813,16 @@ class GlueTest {
 
     @Test
     fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
-        assertEquals("<html>Piwi: running · passed 4 of 4 runs</html>", Glue.testResultTooltip("running", "passed 4 of 4 runs"))
+        assertEquals(
+            "<html>Piwi: running in your run #130 · passed 4 of 4 runs</html>",
+            Glue.testResultTooltip("running in your run #130 · passed 4 of 4 runs"),
+        )
         // The service's text is shown as text, never as markup.
         assertEquals(
-            "<html>Piwi: failing · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
-            Glue.testResultTooltip("failed", "<img src=x onerror=alert(1)> & more"),
+            "<html>Piwi: failing in run #124 · &lt;img src=x onerror=alert(1)&gt; &amp; more</html>",
+            Glue.testResultTooltip("failing in run #124 · <img src=x onerror=alert(1)> & more"),
         )
+        assertEquals("<html>Piwi</html>", Glue.testResultTooltip(null))
         val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
         val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1))))
         val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))

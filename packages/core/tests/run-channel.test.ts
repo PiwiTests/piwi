@@ -845,6 +845,20 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
     });
 
+    test('reads Show the browser at a stop, and its answer', () => {
+      const asked = { type: 'request', request: 7, what: 'front', stop: 2 } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, stop: 0 }))).toBeNull();
+      const answered = {
+        type: 'answer',
+        request: 7,
+        what: 'front',
+        value: { ok: true, message: "The test's window is in front." },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answered))).toEqual(answered);
+      expect(parseRunToHub(line({ ...answered, value: { ok: 'yes' } }))).toBeNull();
+    });
+
     test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {
       const attach = {
         type: 'run-attach',
@@ -860,7 +874,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up', 'front']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });

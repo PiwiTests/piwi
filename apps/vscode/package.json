@@ -500,6 +500,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.showBrowser",
+        "title": "Show the stopped test's browser",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.shareRunLive",
         "title": "Share the run live on the team instance",
         "category": "Piwi",
@@ -712,6 +717,10 @@
         {
           "command": "piwi.shareWithPlaywright",
           "when": "piwi.runCanShare"
+        },
+        {
+          "command": "piwi.showBrowser",
+          "when": "piwi.runCanShowBrowser"
         },
         {
           "command": "piwi.shareRunLive",

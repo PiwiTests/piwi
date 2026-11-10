@@ -150,6 +150,7 @@ import {
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { statusWords } from './status-words.js';
 import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
@@ -607,6 +608,39 @@ function fixedLabel(context: PiwiContext, r: BranchResolved): string {
   const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
   const run = `${isOwnRun(context, r.runId) ? 'your ' : ''}run #${r.runId}`;
   return `${where} in ${run} (failing in run #${context.failures?.run?.id ?? ''})`;
+}
+
+/**
+ * A test's latest result, as its line's summary leads with it, in the dashboard's words: in the run in progress while
+ * it follows the test (`running in your run #130`), else in the latest run the failures are read from, named as the
+ * failure's other lines name it (`failing in run #124 on main, its line edited since`, `fixed locally in your run #124
+ * (failing in run #120)`), else the catalog's, which names no run (`didn't run in its latest run`, `flaky in recent
+ * runs`, `never run`, `no recent result`).
+ */
+function testVerdict(
+  context: PiwiContext,
+  found: CatalogCase,
+  failed: BranchFailure | undefined,
+  fixed: BranchResolved | undefined,
+  failure: TestFailure | undefined,
+): string {
+  const live = context.liveTests.get(found.id);
+  if (live && context.live) {
+    const run = `${context.live.own ? 'your ' : ''}run #${context.live.runId}`;
+    return `${live === 'failed' ? 'failing' : statusWords(live)} in ${run}`;
+  }
+  if (failed) {
+    const otherBranch =
+      context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : '';
+    const edited = failure?.state === 'edited' ? ', its line edited since' : '';
+    return `failing in ${runLabel(context, failed)}${otherBranch}${edited}`;
+  }
+  if (fixed) return fixedLabel(context, fixed);
+  if (!found.status) return 'no recent result';
+  // The catalog calls a test flaky when one of its recent runs was.
+  if (found.status === 'flaky') return 'flaky in recent runs';
+  if (found.status === 'never-run') return statusWords(found.status);
+  return `${statusWords(found.status)} in its latest run`;
 }
 
 /** What a `piwi/failures` item says launched its run. */
@@ -2934,10 +2968,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const passed = found.passedRuns ?? 0;
         // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
         const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
-        // The client says the latest result in words (failing, flaky, no recent result) before this title.
+        const verdict = testVerdict(context, found, failed, fixed, failure);
+        // A test the catalog has no run of has no pass rate to give.
         const passRate =
-          runs > 0 ? `passed ${passed} of ${plural(runs, 'run')}` : 'no pass rate (no passed or failed run)';
-        const status = fixed ? ` · ${fixedLabel(context, fixed)}` : '';
+          runs > 0
+            ? ` · passed ${passed} of ${plural(runs, 'run')}`
+            : !found.status || found.status === 'never-run'
+              ? ''
+              : ' · no pass rate (no passed or failed run)';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
@@ -2961,7 +2999,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${verdict}${passRate}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',

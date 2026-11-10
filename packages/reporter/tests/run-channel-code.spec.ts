@@ -470,6 +470,7 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
       break;
     case 'fails headed':
+      said.push(await ask(connection, { what: 'front', ...at }));
       said.push(await ask(connection, { what: 'pick', ...at }));
       await waitFor(() => (picks.length ? true : undefined));
       await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
@@ -478,6 +479,7 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       said.push(await ask(connection, { what: 'assert', ...at }));
       said.push(await ask(connection, { what: 'requests', ...at }));
       said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
+      said.push(await ask(connection, { what: 'front', ...at }));
       break;
     case 'fails, its page acting during the hold':
       held = true;
@@ -1035,7 +1037,9 @@ describe('code from a stop, the worker’s part', () => {
       },
     ]);
     expect(bars).toContain(`Failed at headed.spec.cjs:${line}`);
+    // Show the browser brings the test's window to the front, then Pick runs there.
     expect(heard['fails headed']).toEqual([
+      { ok: true, message: "The test's window is in front." },
       { ok: true, message: "Pick an element in the test's window: the locator goes to the editor." },
     ]);
     expect(picks).toEqual([
@@ -1053,7 +1057,7 @@ describe('code from a stop, the worker’s part', () => {
         error: 'expect(locator).toBeVisible() failed',
       }),
     ]);
-    const [check, listed, counted] = heard['fails headless']!;
+    const [check, listed, counted, shown] = heard['fails headless']!;
     expect(check).toEqual({
       ok: false,
       message: "Assert needs the pause bar in the test's window, and this stop shows none: run the test headed.",
@@ -1061,6 +1065,11 @@ describe('code from a stop, the worker’s part', () => {
     expect(listed).toMatchObject({ ok: true, message: 'The test kept 3 responses.' });
     // A stop no pause bar shows: nothing is outlined.
     expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: false });
+    // A headless browser has no window to bring forward.
+    expect(shown).toEqual({
+      ok: false,
+      message: "The test's window cannot be shown: it runs headless, or its stop names no page. Run it headed.",
+    });
   });
 
   it('hides the credentials of the URL a failure names in its title and its error', () => {

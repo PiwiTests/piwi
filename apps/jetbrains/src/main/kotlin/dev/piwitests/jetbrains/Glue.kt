@@ -747,18 +747,9 @@ object Glue {
     /** A plain-text tooltip, one line per `\n`, as the HTML the IDE renders a tooltip as. */
     fun htmlTooltip(text: String): String = "<html>${escapeHtml(text).replace("\n", "<br>")}</html>"
 
-    /** A test's gutter tooltip: its latest result, then its history as the service sums it up, as HTML text. */
-    fun testResultTooltip(status: String?, title: String?): String {
-        val result = when (status) {
-            "failed" -> "failing"
-            "flaky" -> "flaky"
-            "passed" -> "passing"
-            "skipped" -> "skipped"
-            "running" -> "running"
-            else -> "no recent result"
-        }
-        return "<html>${escapeHtml(listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · "))}</html>"
-    }
+    /** A test's gutter tooltip: the summary the service writes, its latest result naming the run first, as HTML text. */
+    fun testResultTooltip(title: String?): String =
+        "<html>${escapeHtml(listOfNotNull("Piwi", title?.ifBlank { null }).joinToString(": "))}</html>"
 
     /**
      * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
@@ -1538,6 +1529,8 @@ object Glue {
         val terminal: Boolean = false,
         val runner: Boolean = false,
         val slot: Int = worker,
+        /** Its reporter brings the test's window to the front (`RunWorker.showsWindow`). */
+        val showsWindow: Boolean = false,
     )
 
     /** Every stopped worker of the sessions, in their order. */
@@ -1553,6 +1546,7 @@ object Glue {
                     session.terminal,
                     session.terminal && session.runner,
                     w.parallelIndex,
+                    w.showsWindow,
                 )
             }
         }
@@ -1846,6 +1840,12 @@ object Glue {
 
     /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
     fun canShare(stop: ShownStop): Boolean = "bind" in stop.takes
+
+    /**
+     * Whether a stop's window can come to the front (Show the Browser): its pause bar shows, so its browser has a
+     * window, and its reporter brings it forward.
+     */
+    fun canShowBrowser(stop: ShownStop): Boolean = stop.stop.bar && stop.showsWindow
 
     /** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
     const val SHARE_WARNING =
@@ -2143,6 +2143,8 @@ object Glue {
         val actions: Set<StopAction> = emptySet(),
         /** A stop's browser can be shared with Playwright's own tools. */
         val shareable: Boolean = false,
+        /** A stop's window can come to the front: Show the Browser. */
+        val browserShowable: Boolean = false,
         val stoppable: Boolean = active,
         val endable: Boolean = false,
         /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
@@ -2168,6 +2170,7 @@ object Glue {
             stopped = workers.any { it.state == "stopped" },
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
             shareable = stopsOf(sessions).any(::canShare),
+            browserShowable = stopsOf(sessions).any(::canShowBrowser),
             stoppable = sessions.values.any { !it.terminal },
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },

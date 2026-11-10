@@ -6627,6 +6627,12 @@
   "runs_pickTitle": {
     "message": "Elegir un locator en la ventana del test: reemplaza el de esta línea"
   },
+  "runs_front": {
+    "message": "Mostrar el navegador"
+  },
+  "runs_frontTitle": {
+    "message": "Traer al frente la ventana del navegador del test"
+  },
   "runs_record": {
     "message": "Grabar"
   },

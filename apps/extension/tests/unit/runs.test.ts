@@ -53,6 +53,8 @@ describe('the Runs window’s requests, as the worker reads them', () => {
     const command = { type: 'command', id: 3, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 2, since: 's4' };
     expect(parseRunsRequest({ ...command, what: 'step' })).toEqual({ ...command, what: 'step' });
     expect(parseRunsRequest({ ...command, what: 'end' })).toEqual({ ...command, what: 'end' });
+    // Show the browser, at the stop it names.
+    expect(parseRunsRequest({ ...command, what: 'front' })).toEqual({ ...command, what: 'front' });
     expect(parseRunsRequest({ ...command, worker: null, since: null, what: 'pause' })).toMatchObject({ worker: null });
     // End the test while a Pause waits for a call: its worker, and no stop.
     expect(parseRunsRequest({ ...command, since: null, what: 'give-up' })).toEqual({
@@ -82,6 +84,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       { ...command, since: null, what: 'resume' },
       { ...command, since: null, what: 'end' },
       { ...command, since: null, what: 'pick' },
+      { ...command, since: null, what: 'front' },
       { ...command, since: null, what: 'assert' },
       { ...command, since: null, what: 'requests' },
       // End the test while a Pause waits names its worker, and no stop.

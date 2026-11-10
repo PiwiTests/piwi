@@ -64,11 +64,11 @@ notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#prot
 **Each file's summary.** The extension asks `piwi/fileSummary` once per text version of a file and per drawing of the
 files (`summaryOf`), and draws it in two places:
 
-- A test's line goes to the gutter: an icon from `media/` and a hover with the test's details, **Run**
+- A test's line goes to the gutter: an icon from `media/` and a hover with the summary the service writes, **Run**
   (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
   `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
-  failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the hover
-  says so.
+  failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the
+  service's summary says so.
 - Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
 
 The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
@@ -823,7 +823,8 @@ the `ide` scope is what puts a line in it. The file is gitignored, and `.vscodei
 by the docs, the README and the Marketplace README. It:
 
 - opens the fixture project of `scripts/lib/editor-fixture.mjs` (a small shop's suite with one brittle locator, two CI
-  failures and a local run since) against the stub instance the same module serves;
+  failures and a local run since) against the stub instance the same module serves, which answers the cases of the
+  spec the service names (the nightly suite checks the spec's lens counts its own three tests);
 - runs the VS Code that `scripts/lib/vscode-window.mjs` downloads, at the release `VSCODE_VERSION` pins (moved on
   purpose, since the workbench's DOM changes between releases);
 - drives the window with Playwright's Electron support.

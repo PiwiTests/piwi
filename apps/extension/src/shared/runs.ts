@@ -11,6 +11,7 @@ import type {
   HubAction,
   HubCodeAction,
   HubCodeIntent,
+  HubWindowAction,
   HubControlAction,
   HubImage,
   HubIntent,
@@ -103,6 +104,7 @@ export type RunsWhat =
   | HubControlAction
   | HubIntent
   | HubCodeIntent
+  | HubWindowAction
   | 'requests'
   | 'mock'
   | 'image'
@@ -124,6 +126,7 @@ const WHATS: readonly string[] = [
   'record',
   'assert',
   'assert-region',
+  'front',
   'requests',
   'mock',
   'image',

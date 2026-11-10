@@ -190,6 +190,8 @@ export class StopActions {
         const { ok, message } = this.write(asked.stop, { action: 'mock', response: asked.answer.response });
         return { ok, message };
       }
+      case 'front':
+        return sessions.front(stop);
       default:
         return refuse(`Piwi does not know the action ${JSON.stringify((params as { action?: unknown }).action)}.`);
     }

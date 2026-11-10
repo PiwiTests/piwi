@@ -683,7 +683,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
             line: l.line,
             failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
             failingLine: l.failure?.line ?? null,
-            hover: testResultHover(l.status, l.title, l.failure?.state === 'edited'),
+            hover: testResultHover(l.title),
             dashboardUrl:
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
@@ -695,20 +695,9 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   );
 }
 
-/**
- * A test's hover: its latest result, whether the line it failed at changed since the run (`edited`), then its
- * history as the service sums it up.
- */
-export function testResultHover(status: TestLineStatus, title: string, edited = false): string {
-  const result = {
-    failed: 'failing',
-    flaky: 'flaky',
-    passed: 'passing',
-    skipped: 'skipped',
-    running: 'running',
-    unknown: 'no recent result',
-  }[status];
-  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', md(title)].filter(Boolean).join(' · ');
+/** A test's hover: the summary the service writes, its latest result naming the run first. */
+export function testResultHover(title: string): string {
+  return `**Piwi**: ${md(title)}`;
 }
 
 /** The coverage marks of a file, as whole lines: those the tests ran, the executable ones none runs, those changed since. */
