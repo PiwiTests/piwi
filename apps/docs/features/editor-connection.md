@@ -120,6 +120,10 @@ When the instance does not answer, or answers with an error, the status bar read
 twice as long each time, up to every five minutes. A click on the item, or **Piwi: Refresh**, reads it at once. A key
 the instance refuses still reads **Piwi: connect**, since only signing in again helps.
 
+When the desktop app answers but cannot prove it holds its token, which happens with a desktop app older than the
+editor or with another program on its port, the item reads **Piwi: restart the desktop app**: the editor does not
+send the app's token there. Restart or update the desktop app; the editor reads it again as soon as the app starts.
+
 **Piwi: Open settings** in VS Code opens the extension's settings.
 
 ## Related

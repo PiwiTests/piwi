@@ -1,5 +1,12 @@
+import { readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, test, expect } from 'vitest';
-import { parseShard, validateSelectionDefinition, validateSelectionKey } from '#shared/selection';
+import {
+  parseShard,
+  RESERVED_SELECTION_KEYS,
+  validateSelectionDefinition,
+  validateSelectionKey,
+} from '#shared/selection';
 
 describe('parseShard', () => {
   test('parses a valid i/n spec', () => {
@@ -25,6 +32,20 @@ describe('validateSelectionKey', () => {
   test('rejects bad slugs', () => {
     for (const key of ['Smoke', 'has space', 'under_score', '-leading', 'x'.repeat(65), '', 42]) {
       expect(validateSelectionKey(key as unknown).valid, String(key)).toBe(false);
+    }
+  });
+
+  test('reserves the name of every literal route beside the selection route', () => {
+    const folder = resolve(import.meta.dirname, '../../server/api/projects/[id]/selections');
+    const literal = new Set(
+      readdirSync(folder)
+        .filter((file) => !file.startsWith('['))
+        .map((file) => file.replace(/\.(get|post|patch|put|delete)\.ts$/, '')),
+    );
+    expect(literal.size).toBeGreaterThan(0);
+    expect([...RESERVED_SELECTION_KEYS].sort()).toEqual([...literal].sort());
+    for (const key of literal) {
+      expect(validateSelectionKey(key)).toMatchObject({ valid: false, error: expect.stringContaining(key) });
     }
   });
 });

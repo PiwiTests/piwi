@@ -2,7 +2,17 @@ import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PIWI_RUN_LOG_ENV } from '../config/env.js';
-import { appendPrivateFile, privateTempDir, readPrivateFile, writePrivateFile } from './private-file.js';
+import {
+  appendPrivateFile,
+  keepPrivateFileLive,
+  privateTempDir,
+  readPrivateFile,
+  sweepStalePrivateFiles,
+  writePrivateFile,
+} from './private-file.js';
+
+/** How the run's log files are named, a random part following. */
+const RUN_LOG_PREFIX = 'piwi-run-log-';
 
 /**
  * The run's log, for the lines a worker prints about itself. Playwright gives what a worker writes while a test runs
@@ -30,7 +40,8 @@ export function printRunLine(file: string | null, line: string): void {
  * in `env` for them, read every `READ_MS`. Returns what prints the lines left and removes the file.
  */
 export function relayRunLog(print: (line: string) => void, env: NodeJS.ProcessEnv = process.env): () => void {
-  const file = path.join(privateTempDir(), `piwi-run-log-${randomBytes(12).toString('hex')}.txt`);
+  sweepStalePrivateFiles(RUN_LOG_PREFIX);
+  const file = path.join(privateTempDir(), `${RUN_LOG_PREFIX}${randomBytes(12).toString('hex')}.txt`);
   writePrivateFile(file, '');
   env[PIWI_RUN_LOG_ENV] = file;
   let printed = 0;
@@ -40,6 +51,7 @@ export function relayRunLog(print: (line: string) => void, env: NodeJS.ProcessEn
       const found = readPrivateFile(file);
       if (!found || !('text' in found)) return;
       text = found.text;
+      keepPrivateFileLive(file);
     } catch {
       return;
     }

@@ -43,8 +43,9 @@ responsibilities.
    - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
      fixture's, any `playwright.request.newContext()`'s and `page.request`);
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
-     bar (made `inert` while a viewer's keys play, each input message holding it by its token in the bar's
-     `__piwiKeyHolds` and letting go as it ends, `keyMayPlay` in `run-channel.ts`), `PW_CODEGEN_NO_INSPECTOR`, the
+     bar (made `inert` while a viewer's keys play or an agent acts, each input message and action holding it by its
+     token in the bar's `__piwiKeyHolds` and letting go as it ends, `keyMayPlay` in `run-channel.ts`, `actOnRef`),
+     `PW_CODEGEN_NO_INSPECTOR`, the
      wrapped `Page.prototype.pause`, the runner internals it reads (`_onDidFinishTestFunctionCallbacks`,
      `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses` attachment and the locator posted to
      `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights

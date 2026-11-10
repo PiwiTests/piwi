@@ -105,14 +105,14 @@ while the event stream is connected, `· read every minute` without it).
 In VS Code, a click reads the latest run and its failures again (**Piwi: Refresh the latest run**), without the
 indexes **Piwi: Refresh** fetches, and the tooltip ends with **Open run #120**, **Open in dashboard**, **Compare
 with…** and **Connect**. When the extension is not connected, the item says why, and a click runs **Piwi: Connect**,
-or retries an [unreachable instance](./editor-connection#an-unreachable-instance).
+or retries an [unreachable instance](./editor-connection#an-unreachable-instance) or a desktop app to restart.
 
 In a JetBrains IDE, an icon before the text shows the state of the run the item counts (running, failing, passed) or
 of the connection, and the text takes the theme's error color while tests of that run fail, a run in progress
 included. A click opens a menu of the **Tools → Piwi** actions that apply, led by what the item calls for: **Read the
-Latest Run Again**, **Refresh** for an unreachable instance, **Connect…** while not connected, **Node.js Settings…**
-when Node.js is missing or too old, or **Go to the Recorded Lines** while a recording runs, with **Pause Recording**,
-**Resume Recording** and **Stop Recording**.
+Latest Run Again**, **Refresh** for an unreachable instance or a desktop app to restart, **Connect…** while not
+connected, **Node.js Settings…** when Node.js is missing or too old, or **Go to the Recorded Lines** while a recording
+runs, with **Pause Recording**, **Resume Recording** and **Stop Recording**.
 
 ## Related
 

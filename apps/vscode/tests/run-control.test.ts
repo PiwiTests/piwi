@@ -263,7 +263,7 @@ describe('what the controls offer', () => {
       endable: true,
     };
     const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
-    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, waiting });
+    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, slot: 0, waiting });
     expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
       {
         text: '$(loading~spin) Pausing… 1 min 5 s',
@@ -304,11 +304,14 @@ describe('what the controls offer', () => {
     );
     const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
     expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
+    // A worker Playwright started again in its slot is named by the slot, as the worker views name it.
+    const restarted = sessionsOf(session('ed-1', [worker(2, 'running', { pausing: true, waiting, parallelIndex: 0 })]));
+    expect(waitingWorkers(restarted)).toEqual([{ ref: 'ed-1', worker: 2, slot: 0, waiting }]);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
     // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
     expect(endChoice(waitingSessions, true, null)).toBe('stop');
-    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, slot: 0, waiting }]);
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
@@ -640,7 +643,7 @@ describe('a stop', () => {
     const stops = stopsOf(
       sessionsOf(
         session('ed-1', [worker(0, 'stopped', { stop: a }), worker(1, 'running')]),
-        session('ed-2', [worker(3, 'stopped', { stop: b })]),
+        session('ed-2', [worker(3, 'stopped', { stop: b, parallelIndex: 1 })]),
       ),
     );
     expect(stops.map((s) => [s.ref, s.worker, s.stop.line])).toEqual([
@@ -650,7 +653,7 @@ describe('a stop', () => {
     expect(new Set(stops.map(stopKey)).size).toBe(2);
     expect(stopPick(stops[1]!)).toEqual({
       label: '$(debug-pause) Stopped at a breakpoint · Fill "WELCOME10" getByLabel(\'Coupon\')',
-      description: 'checkout › pays · checkout.page.ts:9 · worker 3',
+      description: 'checkout › pays · checkout.page.ts:9 · Worker 2',
     });
   });
 });

@@ -164,7 +164,8 @@ type StatusContext = StatusResult['contexts'][number];
 
 /**
  * The context the status bar item speaks for: the one whose Playwright config folder holds the active file, the
- * deepest when several do; else the first connected one, else the first the instance did not answer, else the first.
+ * deepest when several do; else the first connected one, else the first the instance did not answer or the desktop app
+ * did not prove itself to, else the first.
  */
 export function statusContext(contexts: readonly StatusContext[], activeFile: string | null): StatusContext | null {
   const holding = activeFile
@@ -173,7 +174,7 @@ export function statusContext(contexts: readonly StatusContext[], activeFile: st
   return (
     holding ??
     contexts.find((c) => c.connected) ??
-    contexts.find((c) => c.problemKind === 'unreachable') ??
+    contexts.find((c) => c.problemKind === 'unreachable' || c.problemKind === 'desktop-unproven') ??
     contexts[0] ??
     null
   );
@@ -224,6 +225,21 @@ export function statusBarView(
   const hint = desktopHint(status, desktopChosen);
   const connect = '[Connect](command:piwi.connect)';
   const which = configLine(contexts, shown, activeFile);
+  if (!shown.connected && shown.problemKind === 'desktop-unproven') {
+    return {
+      text: '$(warning) Piwi: restart the desktop app',
+      tooltip: lines(
+        md(shown.problem ?? 'The desktop app did not prove it holds its token'),
+        which,
+        hint,
+        `[Retry](command:piwi.refresh) · ${connect}`,
+      ),
+      action: 'retry',
+      url: null,
+      liveUrl: null,
+      error: false,
+    };
+  }
   if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
       text: '$(debug-disconnect) Piwi: unreachable',

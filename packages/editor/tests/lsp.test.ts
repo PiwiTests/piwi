@@ -3683,6 +3683,50 @@ describe('what keeps a context from the instance’s data', () => {
     }
   });
 
+  test('a desktop app that does not prove its token is told apart from one that does not answer', async () => {
+    // The app's port answers every request, as an older app or another program there does, and proves nothing.
+    const other = http.createServer((_req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end('[]');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const otherUrl = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopService = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: otherUrl,
+        PIWI_API_KEY: 'pd_desktop',
+        PIWI_DESKTOP_KEY: '1',
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    client.listen();
+    try {
+      await client.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await client.sendNotification('initialized', {});
+      const context = await waitFor(async () => {
+        const status = (await client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.problemKind ? status.contexts[0] : undefined;
+      });
+      expect(context).toMatchObject({ connected: false, problemKind: 'desktop-unproven' });
+      expect(context.problem).toContain('Restart or update the desktop app');
+    } finally {
+      stopService();
+      client.dispose();
+      other.close();
+    }
+  });
+
   test('a quick fix waits for the instance a while at most, and asks again what failed', async () => {
     mode = 'up';
     healing = 'down';
