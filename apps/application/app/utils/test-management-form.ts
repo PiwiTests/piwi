@@ -4,6 +4,8 @@
  * normalizes and clamps the payload again.
  */
 import {
+  MAX_STATUS_NAME_LENGTH,
+  TEST_MANAGEMENT_PROJECT_KEY,
   validateRunNameTemplate,
   type FlakyAs,
   type ResolvedTestManagementBinding,
@@ -86,6 +88,37 @@ export function testManagementFromForm(form: TestManagementForm): Record<string,
       includeComment: form.includeComment,
     },
   };
+}
+
+/** The four result statuses the form names. */
+export type StatusField = keyof TestManagementForm['statuses'];
+
+/** A project key typed into the picker as the tool and the server read it: trimmed and upper-cased. Null for anything else. */
+export function typedProjectKey(raw: string): string | null {
+  const key = raw.trim().toUpperCase();
+  return TEST_MANAGEMENT_PROJECT_KEY.test(key) ? key : null;
+}
+
+/** A status name typed into a picker, as typed and trimmed. Null for an empty name or one the tool would not accept. */
+export function typedStatusName(raw: string): string | null {
+  const name = raw.trim();
+  return name && name.length <= MAX_STATUS_NAME_LENGTH ? name : null;
+}
+
+/** Take a project key typed into the picker; false, and the form untouched, when it is not a project key. */
+export function setTypedProject(form: TestManagementForm, raw: string): boolean {
+  const key = typedProjectKey(raw);
+  if (key === null) return false;
+  form.providerProjectKey = key;
+  return true;
+}
+
+/** Take a status name typed into one of the status pickers; false, and the form untouched, when it is not a name. */
+export function setTypedStatus(form: TestManagementForm, field: StatusField, raw: string): boolean {
+  const name = typedStatusName(raw);
+  if (name === null) return false;
+  form.statuses[field] = name;
+  return true;
 }
 
 export interface TestManagementFormProblems {

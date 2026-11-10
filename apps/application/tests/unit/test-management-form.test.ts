@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { emptyTestManagementBinding, resolveTestManagementBinding } from '#shared/integrations/test-management-binding';
 import {
   hasTestManagementProblem,
+  setTypedProject,
+  setTypedStatus,
   testManagementFromForm,
   testManagementProblems,
   testManagementToForm,
@@ -91,5 +93,54 @@ describe('testManagementProblems', () => {
     form.statuses.flaky = 'Flaky';
     form.keySources.tags = true;
     expect(hasTestManagementProblem(testManagementProblems(form))).toBe(false);
+  });
+});
+
+describe('a project key or status typed into a picker', () => {
+  test('a project key is trimmed and upper-cased, as the server reads it', () => {
+    const form = bound();
+    form.providerProjectKey = '';
+    expect(setTypedProject(form, '  shop ')).toBe(true);
+    expect(form.providerProjectKey).toBe('SHOP');
+    expect(testManagementProblems(form).project).toBeNull();
+    expect((testManagementFromForm(form) as { providerProjectKey: string }).providerProjectKey).toBe('SHOP');
+  });
+
+  test('a text that is not a project key leaves the form as it was', () => {
+    const form = bound();
+    for (const raw of ['', '  ', '1SHOP', 'SH OP', 'S', 'SHOP-1', 'SH/OP']) {
+      expect(setTypedProject(form, raw)).toBe(false);
+      expect(form.providerProjectKey).toBe('SHOP');
+    }
+  });
+
+  test('a status is kept as typed, trimmed, in the field it was typed into', () => {
+    const form = bound();
+    for (const field of ['pass', 'fail', 'flaky', 'notExecuted'] as const) {
+      expect(setTypedStatus(form, field, `  Custom ${field} `)).toBe(true);
+      expect(form.statuses[field]).toBe(`Custom ${field}`);
+    }
+    expect((testManagementFromForm(form) as { statuses: object }).statuses).toEqual({
+      pass: 'Custom pass',
+      fail: 'Custom fail',
+      flaky: 'Custom flaky',
+      notExecuted: 'Custom notExecuted',
+    });
+  });
+
+  test('a status can be typed before a project is chosen', () => {
+    const form = testManagementToForm(emptyTestManagementBinding());
+    form.connectionId = 4;
+    expect(setTypedStatus(form, 'pass', 'Passed')).toBe(true);
+    expect(form.providerProjectKey).toBe('');
+    expect(form.statuses.pass).toBe('Passed');
+  });
+
+  test('an empty status, or one over the tool’s limit, is refused', () => {
+    const form = bound();
+    expect(setTypedStatus(form, 'fail', '   ')).toBe(false);
+    expect(setTypedStatus(form, 'fail', 'x'.repeat(256))).toBe(false);
+    expect(form.statuses.fail).toBe('Fail');
+    expect(setTypedStatus(form, 'fail', 'x'.repeat(255))).toBe(true);
   });
 });

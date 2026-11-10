@@ -15,9 +15,12 @@ import type { TestManagementConnectionSummary } from '#shared/integrations/types
 import type { TestManagementPickerOptions } from '#shared/integrations/test-management-picker';
 import {
   hasTestManagementProblem,
+  setTypedProject,
+  setTypedStatus,
   testManagementFromForm,
   testManagementProblems,
   testManagementToForm,
+  type StatusField,
   type TestManagementForm,
 } from '~/utils/test-management-form';
 
@@ -38,9 +41,16 @@ const connectionItems = computed(() => [
   { label: 'None — unbound', value: 0 },
   ...connections.value.map((c) => ({ label: c.name, value: c.id })),
 ]);
-const projectItems = computed(() =>
-  options.value.projects.map((p) => ({ label: p.enabled ? p.key : `${p.key} — test management is off`, value: p.key })),
-);
+const projectItems = computed(() => [
+  ...options.value.projects.map((p) => ({
+    label: p.enabled ? p.key : `${p.key} — test management is off`,
+    value: p.key,
+  })),
+  // A key the tool does not list, typed or saved, stays visible once chosen.
+  ...(form.providerProjectKey && !options.value.projects.some((p) => p.key === form.providerProjectKey)
+    ? [{ label: form.providerProjectKey, value: form.providerProjectKey }]
+    : []),
+]);
 const folderItems = computed(() => [
   { label: 'None — the project’s root', value: '' },
   ...options.value.folders.map((f) => ({ label: f.path, value: f.id })),
@@ -59,6 +69,22 @@ const skippedItems = [
   { label: 'Leave it out', value: '' },
   { label: 'Report it as Not Executed', value: 'notExecuted' },
 ];
+
+function createProject(raw: string) {
+  if (!setTypedProject(form, raw)) {
+    toast.add({
+      title: 'Not a project key',
+      description: 'A project key starts with a letter and holds letters, digits and underscores, like SHOP.',
+      color: 'warning',
+    });
+  }
+}
+
+function createStatus(field: StatusField, raw: string) {
+  if (!setTypedStatus(form, field, raw) && raw.trim()) {
+    toast.add({ title: 'That status name is too long', color: 'warning' });
+  }
+}
 
 const problems = computed(() => testManagementProblems(form));
 const dirty = computed(() => JSON.stringify(testManagementFromForm(form)) !== savedJson.value);
@@ -216,7 +242,10 @@ onMounted(load);
               placeholder="Project key"
               class="w-full"
               data-testid="test-management-project"
-            />
+              @create="createProject"
+            >
+              <template #create-item-label="{ item }">Use {{ item.trim().toUpperCase() }}</template>
+            </USelectMenu>
           </UFormField>
         </div>
 
@@ -282,10 +311,24 @@ onMounted(load);
             <p class="text-sm font-semibold text-highlighted">Result statuses</p>
             <div class="grid gap-4 sm:grid-cols-2">
               <UFormField label="Pass">
-                <USelectMenu v-model="form.statuses.pass" :items="statusItems" searchable create-item class="w-full" />
+                <USelectMenu
+                  v-model="form.statuses.pass"
+                  :items="statusItems"
+                  searchable
+                  create-item
+                  class="w-full"
+                  @create="(name: string) => createStatus('pass', name)"
+                />
               </UFormField>
               <UFormField label="Fail">
-                <USelectMenu v-model="form.statuses.fail" :items="statusItems" searchable create-item class="w-full" />
+                <USelectMenu
+                  v-model="form.statuses.fail"
+                  :items="statusItems"
+                  searchable
+                  create-item
+                  class="w-full"
+                  @create="(name: string) => createStatus('fail', name)"
+                />
               </UFormField>
               <UFormField label="Flaky (optional)" :error="problems.flaky ?? undefined">
                 <USelectMenu
@@ -295,6 +338,7 @@ onMounted(load);
                   create-item
                   placeholder="None"
                   class="w-full"
+                  @create="(name: string) => createStatus('flaky', name)"
                 />
               </UFormField>
               <UFormField label="Not executed">
@@ -304,6 +348,7 @@ onMounted(load);
                   searchable
                   create-item
                   class="w-full"
+                  @create="(name: string) => createStatus('notExecuted', name)"
                 />
               </UFormField>
               <UFormField label="A flaky test is reported as" description="A test that passed only after a retry">
