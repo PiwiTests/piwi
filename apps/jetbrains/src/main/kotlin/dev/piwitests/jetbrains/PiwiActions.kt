@@ -34,9 +34,9 @@ private fun fileUri(file: VirtualFile): String? =
 class ConnectAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    /** In the status bar item's popup, only while no Playwright config is connected; everywhere else, always. */
+    /** In the status bar item's popup, only while a Playwright config is not connected; everywhere else, always. */
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabledAndVisible = e.place != ActionPlaces.STATUS_BAR_PLACE || !piwiConnected(e.project)
+        e.presentation.isEnabledAndVisible = e.place != ActionPlaces.STATUS_BAR_PLACE || !piwiAllConnected(e.project)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -167,6 +167,12 @@ val DASHBOARD_URL: DataKey<String> = DataKey.create("piwi.dashboardUrl")
 /** Whether a context of the project reads an instance: the actions that read it are enabled only then. */
 fun piwiConnected(project: Project?): Boolean =
     project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().any { it.connected }
+
+/** Whether every Playwright config of the project is connected, and there is at least one. */
+fun piwiAllConnected(project: Project?): Boolean =
+    project?.getServiceIfCreated(PiwiProjectService::class.java)?.status?.contexts.orEmpty().let { contexts ->
+        contexts.isNotEmpty() && contexts.all { it.connected }
+    }
 
 /**
  * Piwi: Open in dashboard — the page of what the Piwi tool window has selected, else this file's test, else the latest

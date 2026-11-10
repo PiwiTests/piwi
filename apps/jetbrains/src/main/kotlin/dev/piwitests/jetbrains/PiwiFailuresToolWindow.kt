@@ -66,6 +66,21 @@ import javax.swing.tree.TreePath
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
 
+    /**
+     * The stripe button, from the start and whether or not the tool window was opened: its title counts the failing tests
+     * (`Piwi (2)`), and its icon carries a red dot while tests fail.
+     */
+    override fun init(toolWindow: ToolWindow) {
+        val service = toolWindow.project.service<PiwiProjectService>()
+        val draw = {
+            val failing = service.failuresResult?.failing ?: 0
+            toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
+            toolWindow.setIcon(if (failing == 0) PIWI_ICON else FAILING_ICON)
+        }
+        service.onChange(toolWindow.disposable, draw)
+        draw()
+    }
+
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val service = project.service<PiwiProjectService>()
         val root = DefaultMutableTreeNode()
@@ -162,9 +177,6 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
                 remember(nodes)
             }
-            val failing = result?.failing ?: 0
-            toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
-            toolWindow.setIcon(if (failing == 0) PIWI_ICON else FAILING_ICON)
             val connection = Glue.connectionSummary(service.status, local.desktop, service.startProblem, service.trusted())
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
@@ -272,7 +284,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     /** **Group By**: the toolbar's one drop-down of the groupings, one of them checked. */
     private fun groupByMenu(service: PiwiProjectService): DefaultActionGroup =
         DefaultActionGroup("Group By", true).apply {
-            templatePresentation.icon = AllIcons.Actions.GroupBy
+            templatePresentation.icon = AllIcons.Actions.ShowAsTree
             templatePresentation.description = "Group the failures by file, cluster or owner, or list them flat"
             add(GroupFailuresAction(service, "file", "File"))
             add(GroupFailuresAction(service, "cluster", "Cluster"))

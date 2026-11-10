@@ -130,12 +130,15 @@ function monoMark(color, size) {
   return svg(VIEW.markSmall, markSmall({ ink: c, check: c, perch: c }), { width: size, height: size });
 }
 
-/** The small mark in one color with a dot of `dot` at its lower right: a tool window icon saying tests fail. */
+/**
+ * The small mark in one color with a dot of `dot` at its lower right, clear of the perch: a tool window icon saying
+ * tests fail. The view widens to the right to hold the dot.
+ */
 function failingMark(color, dot, size) {
   const c = color;
   return svg(
-    VIEW.markSmall,
-    markSmall({ ink: c, check: c, perch: c }) + `<circle cx="214" cy="258" r="50" fill="${dot}"/>`,
+    { ...VIEW.markSmall, w: VIEW.markSmall.w + 40 },
+    markSmall({ ink: c, check: c, perch: c }) + `<circle cx="252" cy="264" r="46" fill="${dot}"/>`,
     { width: size, height: size, title: 'Piwi: tests failing' },
   );
 }

@@ -239,7 +239,8 @@ links to the state's actions (`Glue.EmptyLink`: Connect…, Retry, Settings…, 
   and collapse all). The gear menu (`setAdditionalGearActions`) holds Connect… and Disconnect, Pair with Piwi Picker
   and the MCP configurations, Refresh and Settings….
 - **The tab** is Failures. The stripe title counts the failing tests (`Piwi (2)`), and the tool window's icon is
-  `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone.
+  `piwi_failing.svg`, the mark with a red dot, while tests fail: the new UI's stripe button shows the icon alone. Both
+  are set from the factory's `init`, so the stripe button says so before the tool window is first opened.
 - **Each node's tooltip** is the service's (`FailureTreeNode.tooltip`, kept in `Glue.FailureNode.tooltip`), one line
   each through `Glue.htmlTooltip`: a failure's title, headline, run, cluster and owner, a run's counts.
 - **The grouping** is chosen in the **Group By** drop-down, of `ToggleAction`s, and kept in `PiwiLocalSettings.failuresGrouping`. It is
@@ -331,7 +332,7 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect (in
-this popup only while no config is connected) and Settings. The popup is titled Piwi.
+this popup only while a config is not connected) and Settings. The popup is titled Piwi.
 
 **The tooltip** says the same as VS Code's, in plain text: the counts, the local runs, the run in progress and when the
 run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project installs.
