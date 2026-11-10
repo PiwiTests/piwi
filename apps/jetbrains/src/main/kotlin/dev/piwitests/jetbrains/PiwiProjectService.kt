@@ -7,6 +7,7 @@ import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.impl.isTrusted
+import com.intellij.ide.trustedProjects.TrustedProjectsListener
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -210,6 +211,29 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * and reads no `.env`: each of them runs what the repository says.
      */
     fun trusted(): Boolean = project.isTrusted()
+
+    /**
+     * Once the project is trusted, tell the listeners, so the status bar item, the tool window and the settings page
+     * stop waiting, start the editor service for the open files, and offer the first-run notification.
+     */
+    fun watchTrust() {
+        ApplicationManager.getApplication().messageBus.connect(this).subscribe(
+            TrustedProjectsListener.TOPIC,
+            object : TrustedProjectsListener {
+                override fun onProjectTrusted(project: Project) {
+                    if (project != this@PiwiProjectService.project) return
+                    changed()
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        if (gone.value(null)) return@executeOnPooledThread
+                        restartServer()
+                        val found = playwright ?: return@executeOnPooledThread
+                        val addresses = readKnownAddresses()
+                        offerFirstRun(found, addresses.own + addresses.everywhere + System.getenv("PIWI_DASHBOARD_URL"))
+                    }
+                }
+            },
+        )
+    }
 
     /** Say once that the editor service starts once the project is trusted. */
     fun waitForTrust() {
@@ -894,12 +918,16 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 }
 
-/** Searches the project for Playwright configs once it is open, off the event thread, then whenever one comes or goes. */
+/**
+ * Searches the project for Playwright configs once it is open, off the event thread, then whenever one comes or goes,
+ * and starts Piwi once the project is trusted.
+ */
 class PiwiStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         val service = project.service<PiwiProjectService>()
         service.findPlaywright()
         service.watchConfigs()
+        service.watchTrust()
         project.service<PiwiCoverageMarks>().start()
     }
 }

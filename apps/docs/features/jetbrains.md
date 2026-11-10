@@ -28,6 +28,8 @@ within four folders of the project's (in Rider, the solution's) or of its Git ro
 → Refresh**. It reads the connection the reporter already uses; otherwise, **Settings → Tools → Piwi** signs you in
 with the browser: [Editor connection](./editor-connection).
 
+In a project opened in safe mode, Piwi runs nothing and says it waits for your trust; trusting the project starts it.
+
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 

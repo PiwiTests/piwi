@@ -63,6 +63,12 @@ directory: `piwi-language-server.cjs`, and beside it `piwi-recorder-launcher.cjs
 `build.gradle.kts`). The tests start the language server from `dist/` (the `piwi.editor.server` system property) and
 need none of the others.
 
+**Settings search.** The release's `buildPlugin` builds the searchable options index (`searchableOptions=true`, set for
+every Gradle run of `reusable-publish-jetbrains.yml`, `buildSearchableOptions` in `build.gradle.kts`): it runs the IDE
+headless and lists the words of every label of **Settings → Tools → Piwi** and of every action, so Settings search and
+Find Action find them. The checks skip it, for the time it takes. `PiwiSearchableOptions` (`search.optionContributor`)
+adds the words the labels lack, such as Playwright, dashboard and token, in every build; `PiwiPluginTest` reads them.
+
 ## Starting the service
 
 The plugin starts the service through the platform's LSP API (`PiwiLspServerDescriptor`), with the project's Node.js
@@ -102,8 +108,11 @@ or when Node.js is the problem.
 
 In a project opened in safe mode (`PiwiProjectService.trusted`, the platform's `isTrusted`), the plugin starts no
 editor service, runs no command (`PiwiCommands.run`, `startRun`) and reads no `.env` for Open in IDE: each of them would
-run or believe what the repository holds. A supported file opened meanwhile says once that Piwi waits for the trust
-(`Glue.UNTRUSTED`); the next file opened once the project is trusted starts the service.
+run or believe what the repository holds. The status bar item reads `Piwi: waiting for trust`, with a warning
+icon, and its tooltip, the Piwi tool window and the settings page say why (`Glue.WAITING_FOR_TRUST`), and a supported
+file opened meanwhile says it once in a balloon (`Glue.UNTRUSTED`). Trusting the project starts Piwi:
+`PiwiProjectService.watchTrust` hears it on `TrustedProjectsListener.TOPIC` (experimental, not internal, in 2024.1),
+tells the views, starts the service for the open files and offers the first-run notification it held back.
 
 ## LSP integration
 
@@ -774,8 +783,12 @@ breakpoint until the stop, so the IDE's breakpoints are left as they are.
 
 An instance on this machine is tried on every loopback address (`Glue.loopbackAlternatives`), since a server started on
 `localhost` may listen on `::1` only. It is never reached through the IDE's proxy, and the address that answered is the
-one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and
-**Tools → Piwi**.
+one saved. Connect runs from **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools
+→ Piwi**. On the settings page it takes the URL typed there, Apply or not, and applies nothing: Connect and Disconnect
+save the connection themselves, then the page shows the connection rows as saved, and its other edits stay pending until
+Apply or Cancel. Disconnect is enabled only while something is saved to forget, and says so from **Tools → Piwi**
+otherwise (`Glue.NOTHING_SAVED`). A failure is said in words (`Glue.connectFailure`): a certificate the IDE does not
+trust names its host and **Settings → Tools → Server Certificates**, and a 404 says the address is not a Piwi instance.
 
 `PiwiProjectService.desktop()` asks the service (`piwi/desktop`). While the service has not started, it reads the app's
 discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`), so Connect finds the app before any

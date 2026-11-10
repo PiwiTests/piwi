@@ -143,7 +143,7 @@ object PiwiConnectFlow {
         }
         val typed = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
         if (desktop != null && typed == desktop.url) return useDesktop(project, desktop)
-        val reached = request(project, "Reaching $typed…") { PiwiInstance.reach(typed) } ?: return false
+        val reached = request(project, "Reaching $typed…", typed) { PiwiInstance.reach(typed) } ?: return false
         // The address that answered: on this machine, it may be another loopback address than the one typed.
         val url = reached.url
         if (desktop != null && url == desktop.url) return useDesktop(project, desktop)
@@ -228,7 +228,10 @@ object PiwiConnectFlow {
     fun disconnect(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         val settings = service.settings()
-        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: return false
+        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: run {
+            Messages.showInfoMessage(project, Glue.NOTHING_SAVED, "Piwi: Disconnect")
+            return false
+        }
         if (Messages.showYesNoDialog(project, question, "Piwi: Disconnect", null) != Messages.YES) return false
         service.disconnect()
         return true
@@ -328,13 +331,13 @@ object PiwiConnectFlow {
     }
 
     /** Run one request with modal progress; null when it was cancelled or failed, after saying why. */
-    private fun <T> request(project: Project, title: String, work: (ProgressIndicator) -> T): T? =
+    private fun <T> request(project: Project, title: String, url: String? = null, work: (ProgressIndicator) -> T): T? =
         try {
             ProgressManager.getInstance().run(task(project, title, work))
         } catch (_: ProcessCanceledException) {
             null
         } catch (e: Exception) {
-            failed(project, null, e)
+            failed(project, url, e)
         }
 
     private fun <T> task(project: Project, title: String, work: (ProgressIndicator) -> T) =
@@ -343,13 +346,7 @@ object PiwiConnectFlow {
         }
 
     private fun <T> failed(project: Project, url: String?, e: Exception): T? {
-        val reason = when {
-            e is PiwiInstance.HttpStatus && (e.status == 401 || e.status == 403) -> "the instance refused the key (${e.status})"
-            e is java.net.ConnectException -> "nothing answers there. Is the instance running, on that port?"
-            e is java.net.http.HttpConnectTimeoutException -> "no answer within 10 seconds"
-            e is java.net.UnknownHostException -> "unknown host ${e.message ?: ""}".trim()
-            else -> e.message ?: e.javaClass.simpleName
-        }
+        val reason = Glue.connectFailure(e, (e as? PiwiInstance.HttpStatus)?.status, url)
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)
         return null
     }

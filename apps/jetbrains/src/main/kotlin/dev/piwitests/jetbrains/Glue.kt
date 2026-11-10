@@ -289,7 +289,11 @@ object Glue {
         now: Long = System.currentTimeMillis(),
         startProblem: String? = null,
         file: String? = null,
+        trusted: Boolean = true,
     ): StatusView {
+        if (status == null && !trusted) {
+            return StatusView("Piwi: waiting for trust", WAITING_FOR_TRUST, null, StatusAction.NONE, StatusIcon.WARNING)
+        }
         if (status == null && startProblem != null) {
             return StatusView("Piwi: Node.js", "$startProblem\nClick for the Node.js settings.", null, StatusAction.NODE_SETTINGS, StatusIcon.WARNING)
         }
@@ -368,7 +372,11 @@ object Glue {
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project, then open one of its files."
+    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+
+    /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
+    const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
+        ".env. Trusting it starts Piwi."
 
     /** What the first-run notification says Piwi does. */
     const val FIRST_RUN = "Piwi shows the latest CI failures of your Playwright tests at the lines they failed at, " +
@@ -815,7 +823,8 @@ object Glue {
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null): String {
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false, startProblem: String? = null, trusted: Boolean = true): String {
+        if (status == null && !trusted) return WAITING_FOR_TRUST
         if (status == null) return startProblem ?: NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
@@ -843,6 +852,31 @@ object Glue {
         status.desktopUrl != null -> "The Piwi desktop app runs on this machine: Connect to use it."
         desktopChosen -> "The Piwi desktop app, chosen with Connect, is not running."
         else -> ""
+    }
+
+    /** What Disconnect says when nothing is saved to forget. */
+    const val NOTHING_SAVED = "Nothing is saved in the settings: the connection in use comes from elsewhere, or there is none."
+
+    /**
+     * Why Connect could not reach `url`, in words: `status` is the HTTP status the instance answered, if any. A
+     * certificate the IDE does not trust names the host and where to trust it, whatever exception carries it; any
+     * other TLS failure gives its own message.
+     */
+    fun connectFailure(e: Throwable, status: Int?, url: String?): String {
+        val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() } ?: "the instance"
+        val chain = generateSequence(e) { it.cause }.take(10).toList()
+        return when {
+            status == 401 || status == 403 -> "the instance refused the key ($status)"
+            status == 404 -> "not a Piwi instance: nothing answers Piwi's requests at this address (404)"
+            status != null -> "the instance answered $status"
+            chain.any { it is java.security.cert.CertificateException || it.message.orEmpty().contains("PKIX path") } ->
+                "the IDE does not trust the certificate of $host. Add it, or your company's root certificate, in " +
+                    "Settings → Tools → Server Certificates"
+            chain.any { it is java.net.http.HttpConnectTimeoutException } -> "no answer within 10 seconds"
+            chain.any { it is java.net.ConnectException } -> "nothing answers there. Is the instance running, on that port?"
+            chain.any { it is java.net.UnknownHostException } -> "unknown host ${chain.first { it is java.net.UnknownHostException }.message ?: host}"
+            else -> e.message ?: e.javaClass.simpleName
+        }
     }
 
     /** What Disconnect asks before forgetting the saved connection; null when nothing is saved. */

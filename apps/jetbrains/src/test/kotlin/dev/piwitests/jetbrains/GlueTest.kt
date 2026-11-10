@@ -36,6 +36,17 @@ class GlueTest {
     }
 
     @Test
+    fun `a project in safe mode says Piwi waits for its trust, wherever the connection shows`() {
+        val view = Glue.statusView(null, null, startProblem = "Node.js 18 is too old", trusted = false)
+        assertEquals("Piwi: waiting for trust", view.text)
+        assertEquals(Glue.WAITING_FOR_TRUST, view.tooltip)
+        assertEquals(Glue.StatusIcon.WARNING, view.icon)
+        assertEquals(Glue.StatusAction.NONE, view.action)
+        assertEquals(Glue.WAITING_FOR_TRUST, Glue.connectionSummary(null, trusted = false))
+        assertEquals(Glue.NOT_STARTED, Glue.connectionSummary(null, trusted = true))
+    }
+
+    @Test
     fun `without a Playwright config, says so`() {
         assertEquals("Piwi", Glue.statusView(StatusResult(emptyList()), null).text)
     }
@@ -1828,6 +1839,36 @@ class GlueTest {
             "Forget https://piwi.corp, the project, and the API key saved for it, and the choice of the desktop app?",
             Glue.disconnectQuestion("https://piwi.corp", "Shop", desktop = true),
         )
+    }
+
+    @Test
+    fun `connect says why it failed in words, a certificate naming its host and where to trust it`() {
+        val pkix = javax.net.ssl.SSLHandshakeException("PKIX path building failed: unable to find valid certification path")
+        val certificate = Glue.connectFailure(java.io.IOException("handshake", pkix), null, "https://piwi.corp:8443")
+        assertTrue(certificate, certificate.startsWith("the IDE does not trust the certificate of piwi.corp."))
+        assertTrue(certificate, certificate.endsWith("Settings → Tools → Server Certificates"))
+        assertFalse(certificate, certificate.contains("PKIX"))
+        assertEquals(
+            "not a Piwi instance: nothing answers Piwi's requests at this address (404)",
+            Glue.connectFailure(Exception("the instance answered 404"), 404, "https://example.com"),
+        )
+        assertEquals("the instance refused the key (401)", Glue.connectFailure(Exception(), 401, null))
+        assertEquals("the instance answered 502", Glue.connectFailure(Exception(), 502, null))
+        assertEquals(
+            "nothing answers there. Is the instance running, on that port?",
+            Glue.connectFailure(java.net.ConnectException("Connection refused"), null, "http://localhost:3000"),
+        )
+        // The JDK's connect timeout carries a ConnectException as its cause.
+        val timeout = java.net.http.HttpConnectTimeoutException("HTTP connect timed out")
+        timeout.initCause(java.net.ConnectException("HTTP connect timed out"))
+        assertEquals("no answer within 10 seconds", Glue.connectFailure(timeout, null, "https://piwi.corp"))
+        // A handshake that fails for another reason than the certificate gives its own message.
+        assertEquals(
+            "Remote host terminated the handshake",
+            Glue.connectFailure(javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake"), null, "https://piwi.corp"),
+        )
+        assertEquals("unknown host piwi.nowhere", Glue.connectFailure(java.net.UnknownHostException("piwi.nowhere"), null, null))
+        assertEquals("the reason it gives", Glue.connectFailure(Exception("the reason it gives"), null, null))
     }
 
     @Test
