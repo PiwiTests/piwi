@@ -3913,9 +3913,9 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoConnectionAccess(ctx, +m[1]!);
-      return demoAssignable();
+      return demoAssignable(query?.get('q') ?? '', query?.get('accountId')?.trim() ?? '');
     },
   },
   {

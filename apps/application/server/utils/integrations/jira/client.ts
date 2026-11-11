@@ -397,8 +397,11 @@ export class JiraClient implements IssueTracker {
     return fields;
   }
 
-  async searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]> {
-    const params = new URLSearchParams({ project: projectKey, query, maxResults: '20' });
+  async searchAssignable(projectKey: string, query: string, options?: { accountId?: string }): Promise<TrackerUser[]> {
+    const params = new URLSearchParams({ project: projectKey });
+    if (options?.accountId) params.set('accountId', options.accountId);
+    else params.set('query', query);
+    params.set('maxResults', '20');
     const data = await this.request<JiraUser[]>(`/rest/api/3/user/assignable/search?${params.toString()}`);
     return (data ?? [])
       .filter((u) => u.accountId)

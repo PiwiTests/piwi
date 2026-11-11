@@ -1614,6 +1614,12 @@ const JIRA_SCENE_ICONS = {
     '<rect width="16" height="16" rx="3" fill="#36b37e"/><path d="M4 11l3-6 2 4 1.5-2L12 11z" fill="#fff"/>',
 };
 const jiraSceneIcon = (name) => `/rest/api/3/universal_avatar/view/type/scene/avatar/${name}`;
+/** The sample people the scenes' fake site lets the connection assign. */
+const JIRA_SCENE_PEOPLE = [
+  { id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') },
+  { id: 'acct-2', displayName: 'Sam Ortiz', icon: jiraSceneIcon('person') },
+  { id: 'acct-3', displayName: 'Lee Park', icon: jiraSceneIcon('person') },
+];
 
 async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/icon*', (route) => {
@@ -1641,9 +1647,15 @@ async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
     route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS } }),
   );
-  await page.route('**/api/integrations/connections/*/assignable*', (route) =>
-    route.fulfill({ json: { users: [{ id: 'acct-1', displayName: 'Dana Reyes', icon: jiraSceneIcon('person') }] } }),
-  );
+  await page.route('**/api/integrations/connections/*/assignable*', (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const accountId = params.get('accountId');
+    const words = (params.get('q') ?? '').trim().toLowerCase();
+    const users = JIRA_SCENE_PEOPLE.filter((u) =>
+      accountId ? u.id === accountId : !words || u.displayName.toLowerCase().includes(words),
+    );
+    return route.fulfill({ json: { users } });
+  });
   await page.route('**/api/integrations/connections/*/issue-picker*', (route) =>
     route.fulfill({
       json: {
@@ -4262,7 +4274,7 @@ const SCENES = [
     out: 'docs',
     // A db-managed Jira connection makes the binding form appear; its base URL
     // points at a dead local port so no real Jira is contacted. The binding is
-    // answered as bound to CHK / Bug, with its sync policies and an owner route.
+    // answered as bound to CHK / Bug, with its sync policies, a default assignee and an owner route.
     prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
     viewport: { width: 1280, height: 2300 },
@@ -4280,6 +4292,7 @@ const SCENES = [
             projectKey: 'CHK',
             issueType: '10004',
             labels: ['piwi', 'e2e'],
+            defaultAssignee: 'acct-2',
             fieldDefaults: JIRA_FIELD_DEFAULTS,
             policies: {
               ...binding.policies,
