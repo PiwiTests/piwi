@@ -7,10 +7,12 @@ import {
   MAX_RUN_FAILURE_TEXT,
   RUN_CHANNEL_ENV,
   TERMINAL_REF_PREFIX,
+  parseHubToMain,
   readRunPage,
   type RunCounts,
   type RunMainToHub,
 } from '@piwitests/core/run-channel';
+import type { LiveAsk, LiveAskAnswer } from '@piwitests/core/live-view';
 import { runChannelRef, startedByTestRunner } from '../config/hub.js';
 
 /**
@@ -19,11 +21,12 @@ import { runChannelRef, startedByTestRunner } from '../config/hub.js';
  * before and between its workers: how many tests the run holds (`run-begin`), how many ended for good and how
  * (`run-progress`, four times a second at most, the latest counts alone), its page on the instance once it is known
  * (`run-page`, again when the stream opens another run than the global setup's), and how the run ended, with its first
- * failure's title and error line through `hideSecretsInText` (`run-end`). Each test counts once, by the outcome of its
- * latest attempt: a serial group's retry counts its tests again in place of their earlier outcome. It reads nothing
- * the hub says and never waits on it but `CLOSE_MS` at the end, the connection held open meanwhile so the run's process
- * does not exit inside `onEnd`: a connection that does not open, or closes (a hub that predates it closes it at its
- * first line), leaves the run as without it.
+ * failure's title and error line through `hideSecretsInText` (`run-end`), and a teammate's ask to watch the run
+ * (`run-ask`). Each test counts once, by the outcome of its latest attempt: a serial group's retry counts its tests
+ * again in place of their earlier outcome. Of what the hub says it reads the developer's answer to an ask
+ * (`ask-answer`, `onAskAnswer`) alone, and it never waits on the hub but `CLOSE_MS` at the end, the connection held open
+ * meanwhile so the run's process does not exit inside `onEnd`: a connection that does not open, or closes (a hub that
+ * predates it closes it at its first line), leaves the run as without it.
  */
 
 /** A test's outcome as counted: one of the counts, or `passed` for one that counts as done alone. */
@@ -43,6 +46,8 @@ export class RunHubLink {
   >();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sentAt = -Infinity;
+  /** Called with the developer's answer to an ask to watch, as the hub says it. */
+  onAskAnswer: ((answer: LiveAskAnswer) => void) | null = null;
   /** The page the hub last heard, and whether it heard how the run ended: nothing is sent after `run-end`. */
   private pageSent: string | null = null;
   private ended = false;
@@ -62,11 +67,14 @@ export class RunHubLink {
     socket.on('close', () => {
       if (link.socket === socket) link.socket = null;
     });
-    // Nothing the hub says is read: its lines are let go.
+    // Of what the hub says, the answer to an ask is read; the other lines are let go.
     socket.on(
       'data',
       lineReader(
-        () => {},
+        (line) => {
+          const message = parseHubToMain(line);
+          if (message) link.onAskAnswer?.({ id: message.id, answer: message.answer });
+        },
         () => socket.destroy(),
       ),
     );
@@ -133,6 +141,13 @@ export class RunHubLink {
     if (this.pageSent === key) return;
     this.pageSent = key;
     this.send({ type: 'run-page', ...page });
+  }
+
+  /** A teammate asks to watch the run: the hub's tool asks the developer. False when no hub hears it. */
+  ask(ask: LiveAsk): boolean {
+    if (this.ended || !this.socket || this.socket.destroyed) return false;
+    this.send({ type: 'run-ask', ...ask });
+    return true;
   }
 
   /** The run ended (`status`, Playwright's): the hub hears how, and the connection closes, `CLOSE_MS` at most. */
