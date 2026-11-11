@@ -199,8 +199,8 @@ interface RemovedLink {
 
 /**
  * Record that a person removed a cluster's keyed links, so the step that links the issues a cluster's tests name
- * does not add them back. The tracker's issue id is kept for a link from the tests or a created one, so the dismissal
- * holds after the issue moves to another key; a pinned link's id is not one Piwi read.
+ * does not add them back. A link from the tests or a created one keeps the tracker's issue id, and its dismissal holds
+ * after the issue moves to another key; a pinned link's dismissal keeps its key only.
  */
 async function recordLinkDismissals(db: DrizzleDB, removed: RemovedLink[], removedBy: number | null): Promise<void> {
   for (const link of removed) {

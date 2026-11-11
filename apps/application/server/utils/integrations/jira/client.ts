@@ -316,8 +316,7 @@ export class JiraClient implements IssueTracker {
 
   /**
    * Jira Cloud's bulk fetch: a key it does not find comes back among `issueErrors` and the others are still
-   * returned, where a JQL `key in (…)` fails the whole search on one unknown key. Each issue keeps the key Jira
-   * gives it, so a moved issue comes back under its new key.
+   * returned. Each issue keeps the key Jira gives it, so a moved issue comes back under its new key.
    */
   async getIssues(keys: string[], options: { signal?: AbortSignal } = {}): Promise<TrackerIssueBatch> {
     const asked = keys.slice(0, MAX_BULK_ISSUE_KEYS);

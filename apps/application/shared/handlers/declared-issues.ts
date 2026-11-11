@@ -1,14 +1,12 @@
 /**
- * The link step's core, shared by the server's finalize and the demo: the keys a run's failing executions name in
+ * The link step's core, shared by the server's finalize and the demo: the keys a run's failing tests name in
  * the bound Jira project, one bulk lookup, and the links it writes. The server's `linkDeclaredIssues`
  * (`server/utils/integrations/declared-issues.ts`) decides whether a run gets the step and supplies the connection;
  * the demo supplies a canned one.
  *
- * An annotation is run data any reporter token can send, while the issue is read through the connection's account,
- * so only issues of the bound Jira project are linked: a key in the issue-key shape whose project part is the
- * binding's `projectKey`, and a looked-up issue still in that project under the key the test named. Anything else
- * is dropped, never stored as a plain link (a plain link is unfurled, which would let a reporter token make the
- * server fetch a URL of its choosing).
+ * Only issues of the bound Jira project are linked: a key in the issue-key shape whose project part is the binding's
+ * `projectKey`, and a looked-up issue still in that project under the key the test named. Anything else is dropped,
+ * never stored as a plain link.
  */
 import { and, eq, gt, inArray, isNotNull, notInArray } from 'drizzle-orm';
 import { sanitizeTestMetadata } from '@piwitests/core/test-meta';
@@ -104,8 +102,7 @@ export async function linkNamedIssues(
   }
   if (deadline.aborted) return { ...result, failed: 'deadline' };
 
-  // An issue counts only under the key the test named and in the bound project: a moved issue comes back under its
-  // new key, or in another project.
+  // An issue counts only under the key the test named and in the bound project.
   const asked = new Set(keys);
   const byKey = new Map<string, TrackerIssue>();
   for (const issue of found) {
@@ -160,8 +157,7 @@ export async function linkNamedIssues(
       room--;
       result.linked.push({ clusterId, key });
     }
-    // The keys named and still not linked or dismissed, Jira's answer aside: left out at the cap, past the run's
-    // budget, or not found.
+    // The keys named and still not linked or dismissed: left out at the cap, past the run's budget, or not found.
     const more = state.candidates.filter((k) => !state.taken.has(k)).length;
     if (deadline.aborted) return stopped();
     await db.update(failureClusters).set({ declaredIssuesMore: more }).where(eq(failureClusters.id, clusterId));

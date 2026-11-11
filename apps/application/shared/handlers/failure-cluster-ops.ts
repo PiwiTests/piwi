@@ -604,8 +604,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .set({ failureClusterId: survivorId })
       .where(eq(testRunsCases.failureClusterId, victimId));
 
-    // One link per key remains, so the index on links from the tests never
-    // rejects the move, and a key the survivor dismissed is not brought back.
+    // One link per key remains, and a key the survivor dismissed is not brought back.
     await dropDuplicateDeclaredLinks(tx, survivorId, victimId);
 
     // The survivor inherits the victim's external links, so a ticket Piwi filed
