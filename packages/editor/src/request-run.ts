@@ -135,8 +135,8 @@ function displayArg(arg: string): string {
  * Check `folder`, the folder linked to the request's project on this machine (null when none is), against
  * `request`, and build the command. A failed check names its fix and leaves the command empty; a branch or a commit
  * other than the request's, or uncommitted changes, warns and selects the tests by title, since a line may have moved.
- * `runningIn` names the folders a requested run of this app is going in: one of them fails the check, and so does a
- * command past `REQUESTED_RUN_ARGS_MAX_CHARS`.
+ * `runningIn` names the folders a run of this app is going in, requested or the person's own: one of them fails the
+ * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`.
  */
 export async function planRequestedRun(
   request: RunRequest,
@@ -175,7 +175,7 @@ export async function planRequestedRun(
     checks.push({
       id: 'busy',
       level: 'fail',
-      message: 'Another requested run is going in this folder: run this one once it ends.',
+      message: 'Another run is going in this folder: this one can run once it ends.',
     });
   }
 

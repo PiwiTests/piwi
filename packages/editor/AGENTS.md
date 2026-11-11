@@ -82,7 +82,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   the parser refuses fields it does not know. ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
-  fails in a folder another approved request runs in (`busy`), and past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
+  fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
+  runs' folders in `PUT /local-runs` and `PUT /key`'s `localRuns`), and a request still asked about is checked again
+  whenever such a run starts or ends (`planWaiting`). It also fails past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
   argument plus one): the shell refuses both again (`run_target.rs`), and keeps its cap equal to this one.
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake

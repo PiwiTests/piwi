@@ -167,14 +167,17 @@ describe('planRequestedRun', () => {
     expect(failed.specs).toBe('Not in the folder: tests/missing.spec.ts, ../outside.spec.ts.');
   });
 
-  test('a folder another requested run is going in fails, by its real path', async () => {
+  test('a folder another run is going in fails, by its real path', async () => {
     const link = `${folder}-link`;
     fs.symlinkSync(folder, link);
     try {
       const plan = await planRequestedRun(request(), folder, [link]);
       expect(plan.runnable).toBe(false);
       expect(plan.args).toEqual([]);
-      expect(plan.checks.find((c) => c.id === 'busy')).toMatchObject({ level: 'fail', message: /once it ends/ });
+      expect(plan.checks.find((c) => c.id === 'busy')).toMatchObject({
+        level: 'fail',
+        message: 'Another run is going in this folder: this one can run once it ends.',
+      });
 
       const elsewhere = await planRequestedRun(request(), folder, [path.join(folder, 'tests'), '/nowhere']);
       expect(elsewhere.checks.some((c) => c.id === 'busy')).toBe(false);

@@ -352,10 +352,11 @@ fn log(app: &AppHandle, line: &str) {
     }
 }
 
-/// Hand the server the kept key of the connected instance, with its folders
-/// and the requested runs held (`running`): after each start of the server,
-/// and whenever the folders change. Nothing
-/// without a connected instance, so the keychain is read only then.
+/// Hand the server the kept key of the connected instance, with its folders,
+/// the requested runs held (`running`) and the folders the local runs are
+/// going in (`localRuns`): after each start of the server, and whenever the
+/// folders change. Nothing without a connected instance, so the keychain is
+/// read only then.
 pub(crate) fn hand_kept_key(app: &AppHandle) {
     let Some(instance) = connected_instance(app) else {
         return;
@@ -388,10 +389,44 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
         },
     };
     let running = app.try_state::<RequestedRuns>().map(|runs| runs.ids()).unwrap_or_default();
-    let body = json!({ "instance": instance, "key": key, "links": links_of(app, &instance), "running": running });
+    let body = json!({
+        "instance": instance,
+        "key": key,
+        "links": links_of(app, &instance),
+        "running": running,
+        "localRuns": local_runs(app),
+    });
     if let Err(e) = local_call(&server, "PUT", "/api/desktop/run-target/key", Some(&body)) {
         log(app, &format!("could not hand the key to the server: {e}"));
     }
+}
+
+/// The linked folders the local runs are going in, requested runs among them.
+fn local_runs(app: &AppHandle) -> Vec<String> {
+    let folders = app.try_state::<crate::runner::LocalRuns>().map(|runs| runs.folders()).unwrap_or_default();
+    folders.iter().map(|folder| folder.to_string_lossy().into_owned()).collect()
+}
+
+/// Tell the server the folders the local runs are going in, after a local run
+/// started or ended, so a request waiting for one of them is checked again
+/// once it frees up. On its own thread, one call at a time, each sending the
+/// folders as they are when it is made; nothing without a connected instance.
+pub(crate) fn hand_local_runs(app: &AppHandle) {
+    static SENDING: Mutex<()> = Mutex::new(());
+    if connected_instance(app).is_none() {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _sending = SENDING.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(server) = server_info(&app) else {
+            return;
+        };
+        let body = json!({ "folders": local_runs(&app) });
+        if let Err(e) = local_call(&server, "PUT", "/api/desktop/run-target/local-runs", Some(&body)) {
+            log(&app, &format!("could not tell the server the local runs: {e}"));
+        }
+    });
 }
 
 fn hand_links(app: &AppHandle, instance: &str) -> Result<(), String> {

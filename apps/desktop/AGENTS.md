@@ -92,7 +92,8 @@ shell and are feature-equivalent.
   (`src-tauri/src/run_target.rs`). The window names the request id alone; the shell takes the command **Run** approved,
   its folder and the request token once from `POST /api/desktop/run-target/requests/:id/launch` (shell-only,
   `isBrowserRequest`), refuses no arguments, a folder linked since, a folder another local or requested run is going in
-  (`runs_in`, `hold_folder`) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
+  (`runs_in`, `hold_folder`; the server hears those folders whenever a local run starts or ends, `hand_local_runs`, so
+  it checks a waiting request again) or arguments past 24,000 characters (`REQUEST_ARGS_MAX_CHARS`, the editor's cap), writes
   the token to a private file for the reporter (`PIWI_REQUEST_TOKEN_FILE`) and deletes it when the run ends. On quit,
   `shut_down` stops the local runs, then posts the end of every requested run still held (`end_requested_runs_on_quit`,
   2 s each) and deletes its folder before it stops the server. At startup each app removes its own leftover folders

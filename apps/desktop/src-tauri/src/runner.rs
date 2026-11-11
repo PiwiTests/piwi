@@ -148,6 +148,14 @@ impl LocalRuns {
         self.folders.lock().unwrap().insert(id, folder.to_path_buf());
     }
 
+    /// The linked folders the plain runs are going in, each once.
+    pub(crate) fn folders(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = self.folders.lock().unwrap().values().cloned().collect();
+        folders.sort();
+        folders.dedup();
+        folders
+    }
+
     /// Whether a plain run is going in `folder`, compared by real path.
     pub(crate) fn runs_in(&self, folder: &Path) -> bool {
         let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -773,6 +781,7 @@ pub(crate) async fn spawn_tests(
     state.label(id, run_label("tests", folder));
     state.track_folder(id, folder);
     state.children.lock().unwrap().insert(id, child);
+    crate::run_target::hand_local_runs(app);
 
     let emit_app = app.clone();
     let mut on_exit = Some(on_exit);
@@ -796,6 +805,7 @@ pub(crate) async fn spawn_tests(
                         stopped = runs.stopping.lock().unwrap().contains(&id);
                         runs.drop_child(id);
                     }
+                    crate::run_target::hand_local_runs(&emit_app);
                     if let Some(on_exit) = on_exit.take() {
                         on_exit(status.code, stopped);
                     }
@@ -914,8 +924,12 @@ mod tests {
         runs.forget_child(4);
         assert!(!runs.runs_in(&folder));
         runs.track_folder(5, &folder);
+        runs.track_folder(6, &folder.join("sub"));
+        runs.track_folder(7, &folder);
+        assert_eq!(runs.folders(), vec![folder.clone(), folder.join("sub")]);
         runs.kill_all();
         assert!(!runs.runs_in(&folder));
+        assert!(runs.folders().is_empty());
         let _ = std::fs::remove_dir_all(&folder);
     }
 

@@ -14,6 +14,7 @@ import {
   instanceUrlOf,
   isRequestId,
   keyToKeep,
+  localRunsOf,
   launchOf,
   linksOf,
   planAgain,
@@ -23,6 +24,7 @@ import {
   runTargetConnection,
   useKeptKey,
   useLinks,
+  useLocalRuns,
   waitingRunRequests,
 } from './run-target';
 
@@ -96,7 +98,10 @@ export const RUN_TARGET_ROUTES = {
     shellOnly: true,
     handle: () => ok({ code: mintSessionCode() }),
   },
-  /** The kept key, the linked folders and the requested runs the shell still holds, from the shell after each start. */
+  /**
+   * The kept key, the linked folders, the requested runs the shell still holds and the folders its local runs are
+   * going in, from the shell after each start.
+   */
   useKey: {
     method: 'PUT',
     path: '/key',
@@ -106,6 +111,7 @@ export const RUN_TARGET_ROUTES = {
       const instance = instanceUrlOf(body.instance);
       const links = linksOf(body.links ?? {});
       const running = body.running ?? [];
+      const localRuns = localRunsOf(body.localRuns ?? []);
       if (
         !instance ||
         typeof body.key !== 'string' ||
@@ -113,11 +119,12 @@ export const RUN_TARGET_ROUTES = {
         !links ||
         !Array.isArray(running) ||
         running.length > 200 ||
-        !running.every(isRequestId)
+        !running.every(isRequestId) ||
+        !localRuns
       ) {
         return refused(400, 'Invalid instance, key, links or runs');
       }
-      useKeptKey(instance, body.key, links, running);
+      useKeptKey(instance, body.key, links, running, { localRuns });
       return ok({ ok: true });
     },
   },
@@ -140,6 +147,18 @@ export const RUN_TARGET_ROUTES = {
       const links = linksOf(bodyOf(request).links);
       if (!links) return refused(400, 'Invalid links');
       useLinks(links);
+      return ok({ ok: true });
+    },
+  },
+  /** The folders the shell's local runs are going in, whenever they change. */
+  localRuns: {
+    method: 'PUT',
+    path: '/local-runs',
+    shellOnly: true,
+    handle: (request) => {
+      const folders = localRunsOf(bodyOf(request).folders);
+      if (!folders) return refused(400, 'Invalid folders');
+      useLocalRuns(folders);
       return ok({ ok: true });
     },
   },
