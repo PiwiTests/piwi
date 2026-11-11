@@ -1414,6 +1414,7 @@ const moreMenuItems = computed(() => {
               @toggle-status="handleFilterStatus"
               @label-updated="reloadRunAsked"
             />
+            <DesktopRunHome v-if="isDesktop && isLive && testRun" :run-id="testRun.id" :sessions="desktopSessions" />
           </template>
 
           <template #tab-test-cases>

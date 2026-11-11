@@ -2226,6 +2226,59 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
     Ok(label)
 }
 
+/// Label prefix of a worker's window ([`desktop_open_worker_window`]):
+/// `worker-<run>-<worker>`, one per worker.
+const WORKER_WINDOW_PREFIX: &str = "worker-";
+
+/// Whether `value` is a run's name on the hub (`PIWI_RUN_REF`): 1 to 64
+/// letters, digits, `_` and `-`, which a window label takes as it is.
+fn is_run_ref(value: &str) -> bool {
+    (1..=64).contains(&value.len())
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Open a worker of a run in a window of its own, kept above the others, and
+/// return its label: the dashboard's `/desktop/run-worker` page for the run
+/// named `run_ref` and Playwright's worker `worker`, its status, controls and
+/// live view. The page reads the runs' hub itself, behind the desktop guard as
+/// the dashboard window does: the window holds no IPC grant (the capabilities
+/// name the main window only) and stays on the sidecar's origin. A window
+/// already open on that worker comes forward instead.
+#[tauri::command]
+async fn desktop_open_worker_window(app: tauri::AppHandle, run_ref: String, worker: u32) -> Result<String, String> {
+    if !is_run_ref(&run_ref) {
+        return Err("invalid run".into());
+    }
+    let label = format!("{WORKER_WINDOW_PREFIX}{run_ref}-{worker}");
+    if let Some(window) = app.get_webview_window(&label) {
+        bring_to_front(&window);
+        return Ok(label);
+    }
+    let port = live_sidecar_port(&app).ok_or("the server is not running")?;
+    let url = tauri::Url::parse(&format!(
+        "{}/desktop/run-worker?ref={run_ref}&worker={worker}",
+        sidecar_origin(port)
+    ))
+    .map_err(|e| e.to_string())?;
+    let window = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+        .title(APP_NAME)
+        .inner_size(520.0, 680.0)
+        .always_on_top(true)
+        .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
+        .on_document_title_changed(|window, title| {
+            let _ = window.set_title(&title);
+        })
+        .on_navigation(move |url| is_sidecar_url(url, port))
+        .build()
+        .map_err(|e| e.to_string())?;
+    keep_window_if_live(live_sidecar_port(&app), port, || {
+        let _ = window.close();
+    })?;
+    Ok(label)
+}
+
 /// Close the run output windows opened under `name`
 /// ([`desktop_open_output_window`]).
 #[tauri::command]
@@ -3234,6 +3287,7 @@ pub fn run() {
             desktop_open_in_ide,
             desktop_open_window,
             desktop_open_output_window,
+            desktop_open_worker_window,
             desktop_close_output_window,
             desktop_bring_to_front,
             desktop_notify,
@@ -4389,6 +4443,17 @@ mod tests {
         ];
         let texts: Vec<String> = tray_run_entries(&runs).into_iter().map(|(_, text)| text).collect();
         assert_eq!(texts, ["Stop tests in R&&D", "Stop tests in R&&D (2)", "Stop tests in odd name"]);
+    }
+
+    #[test]
+    fn a_worker_window_names_a_run_by_its_hub_ref_alone() {
+        for ok in ["desktop-7", "terminal-41-1730000000000-unattended", "ed_1"] {
+            assert!(is_run_ref(ok), "{ok}");
+        }
+        let long = "x".repeat(65);
+        for bad in ["", "a/b", "a b", "a?worker=1", "x\u{0}", long.as_str()] {
+            assert!(!is_run_ref(bad), "{bad}");
+        }
     }
 
     #[test]

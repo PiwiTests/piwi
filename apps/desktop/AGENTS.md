@@ -32,6 +32,10 @@ shell and are feature-equivalent.
     over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
     IPC.
+  - A worker's window (`desktop_open_worker_window`, labeled `worker-<run ref>-<worker>`, the ref checked by
+    `is_run_ref`) shows the dashboard's `/desktop/run-worker` page, kept above the other windows, stays on the
+    sidecar's origin and holds no IPC grant: the page reads the runs' hub through the routes behind the desktop guard,
+    as the dashboard window does.
   - The IPC capability (`src-tauri/runtime-capabilities/remote.json`) is added at startup for that origin only, never
     for a port wildcard, and no capability under `src-tauri/capabilities/` grants remote content.
   - A command that turns webview input into a path or a process takes only known values: digits-only project ids,

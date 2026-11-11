@@ -62,6 +62,21 @@ const hub = useDesktopRunHub();
 const stop = computed(() => desktopRunStop(props.worker));
 const since = computed(() => stop.value?.since ?? null);
 const place = computed(() => (stop.value ? stopPlace(stop.value, props.session.root) : null));
+
+/** Open in a window: offered in the app's main window alone, whose tray shows the worker. */
+const windowable = ref(false);
+onMounted(() => {
+  windowable.value = !!tauriCore() && tauriWindowLabel() === 'main';
+});
+
+/** This worker in a window of its own, kept above the others, its status, controls and page live. */
+async function openWindow() {
+  try {
+    await tauriCore()?.invoke('desktop_open_worker_window', { runRef: props.session.ref, worker: props.worker.worker });
+  } catch {
+    emit('announce', 'The window could not open: the app’s server is not running.');
+  }
+}
 /** The stop's file in the run's linked folder, which opens in the editor; null for one outside it. */
 const placeFile = computed(() => {
   if (!stop.value || !props.session.root) return null;
@@ -420,6 +435,17 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-baseline gap-x-2.5">
         <p class="min-w-0 flex-auto text-sm font-semibold text-highlighted break-words">{{ testText }}</p>
         <p v-if="metaText" class="ml-auto max-w-full text-xs text-muted break-words">{{ metaText }}</p>
+        <UButton
+          v-if="windowable"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-picture-in-picture-2"
+          title="Open in a window, kept above the others"
+          aria-label="Open this worker in a window, kept above the others"
+          data-testid="desktop-worker-window"
+          @click="openWindow"
+        />
       </div>
       <p v-if="worker.test?.cannotPause" class="text-xs text-muted">
         This test never stops: {{ worker.test.cannotPause }}

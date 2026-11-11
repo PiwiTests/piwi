@@ -18,7 +18,7 @@
  * which runs their trays own on a `BroadcastChannel`, again every `CLAIM_BEAT_MS`; a claim not renewed for
  * `CLAIM_MS` lapses, as a window that closed without saying so. A stop from before the page loaded (`since`), heard
  * again after a reload, opens the tray but is not told again. A run's output window shows no runs of its own and holds
- * nothing.
+ * nothing; a worker's window holds the stream for its worker itself.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import {
@@ -46,7 +46,8 @@ const STOP_TITLES: Partial<Record<string, string>> = {
 
 export default defineNuxtPlugin(() => {
   const label = tauriWindowLabel();
-  if (!tauriCore() || label?.startsWith('output-')) return;
+  // A run's output window shows no runs; a worker's window holds the stream itself (`pages/desktop/run-worker.vue`).
+  if (!tauriCore() || label?.startsWith('output-') || label?.startsWith('worker-')) return;
   const loadedAt = Date.now();
   // Another window holds the stream for the runs it started itself alone.
   const main = label === null || label === 'main';

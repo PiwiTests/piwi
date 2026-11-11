@@ -18,6 +18,7 @@
     "allow-desktop-open-in-ide",
     "allow-desktop-open-window",
     "allow-desktop-open-output-window",
+    "allow-desktop-open-worker-window",
     "allow-desktop-close-output-window",
     "allow-desktop-bring-to-front",
     "allow-desktop-notify",
