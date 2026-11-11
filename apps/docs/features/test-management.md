@@ -42,8 +42,8 @@ wait.
 - **The test run's name** comes from the binding's [name template](/operate/zephyr-scale#the-test-run-name). Its
   description holds the run's address in Piwi, the branch, the short commit and the counts sent.
 
-Piwi never sends custom fields, and it never imports test cases, steps or results from Zephyr: the catalog it keeps
-holds only each case's key, name, status and folder.
+Piwi never imports test cases, steps or results from Zephyr: the catalog it keeps holds only each case's key, name,
+status and folder.
 
 ## On the run's page
 
