@@ -3902,9 +3902,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   // A pick on the image is the editor's person driving the stop.
-  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> =>
-    runSessions.pickAt(params, clientPageView?.viewer),
-  );
+  // A pick drives the stop as the view that watches it, its lane's panel included, which gives it back as it goes.
+  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => {
+    const at = { ref: params?.ref, worker: params?.worker ?? -1, since: params?.since, events: [] };
+    const view = [clientPageView, clientLaneView].find((v) => v?.takes(at)) ?? clientPageView;
+    return runSessions.pickAt(params, view?.viewer);
+  });
 
   connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
     answersStops
