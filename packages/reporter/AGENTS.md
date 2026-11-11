@@ -22,10 +22,14 @@ responsibilities.
      the `.env` in the Playwright config's folder, below the environment; the boolean ones `onBegin` writes as `true`
      or `false`, `normalizeBoolEnv`), and the ones `onBegin` sets for the workers: for a run started in a terminal or
      by an editor's test runner (`PW_TEST_REPORTER` naming a file), `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`
-     (`terminal-<pid>-<time>`) of the editor whose workspace holds it (`internal/config/editors.ts`: never under CI,
-     Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
-     `PIWI_EDITOR=on`), with one line saying so; and outside CI `PIWI_STOP_NOTES`, the private file each worker notes
-     its stops in for the run's stream (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
+     (`terminal-<pid>-<time>`) of its hub, the editor whose workspace holds it, else the desktop app whose linked folder
+     does (`internal/config/hub.ts`: never under CI, Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`), with
+     an editor's `PIWI_RECORD_CHANNEL`, and `PIWI_EDITOR_SEND` (the app's, or the pairing an editor's file names), unless
+     the run names its own, the ref ending in `-unattended` for a run with no terminal nor test runner unless
+     `PIWI_EDITOR=on` (such a run follows only an editor whose discovery file says `unattended`), with one line saying
+     so (`tests/terminal-run.spec.ts`); and
+     outside CI `PIWI_STOP_NOTES`, the private file each worker notes its stops in for the run's stream
+     (`internal/support/stop-notes.ts`, `tests/stop-text.spec.ts`);
    - the one read of each worker's first page per project, on `about:blank` before the test navigates, through
      `internalCall`, attached as `piwi-environment` (`internal/capture/browser-environment.ts`), and the two
      `GET /__piwi/environment` requests to each instrumented origin, as a test first reaches it and as the last test ends
@@ -132,8 +136,9 @@ responsibilities.
    (`maskedImage`), in every frame, none of a page zoomed in, and never sent as an element's
    (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
-   and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
-   `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
+   and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`), and for a run started in a
+   terminal its `runChannel`, `send`, `projects` and `hubSince` (`readDesktopHub`, `internal/config/hub.ts`)
+   ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
    release cycles, so a path or shape change must land in both, and a request that carries the token goes through the
    proof described in [`ARCHITECTURE.md`](ARCHITECTURE.md#the-desktop-apps-discovery-file).
 5. **The dogfooded capture modules.** The dashboard's E2E fixtures (`apps/application/tests/fixtures.ts`) import five

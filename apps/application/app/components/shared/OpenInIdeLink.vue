@@ -25,6 +25,8 @@ const props = withDefaults(
     projectKey?: string | number | null;
     /** Piwi project name — default IDE project name for the jetbrains:// URL. */
     projectName?: string | null;
+    /** The folder the path is relative to, when the caller knows it (a desktop run's linked folder). */
+    root?: string | null;
     /** Render the label in a monospace font (default true). */
     mono?: boolean;
     /**
@@ -34,7 +36,7 @@ const props = withDefaults(
      */
     inline?: boolean;
   }>(),
-  { mono: true, line: null, column: null, inline: false },
+  { mono: true, line: null, column: null, root: null, inline: false },
 );
 
 defineSlots<{
@@ -55,7 +57,7 @@ const parsed = computed(() => {
 const resolvedPath = computed(() => parsed.value.filePath);
 const resolvedLine = computed(() => parsed.value.line);
 const label = computed(() => (resolvedLine.value ? `${resolvedPath.value}:${resolvedLine.value}` : resolvedPath.value));
-const absPath = computed(() => resolveAbsPath(resolvedPath.value, props.projectKey));
+const absPath = computed(() => resolveAbsPath(resolvedPath.value, props.projectKey, props.root));
 
 const target = computed(() => ({
   filePath: resolvedPath.value,
@@ -63,6 +65,7 @@ const target = computed(() => ({
   column: parsed.value.column,
   projectKey: props.projectKey ?? null,
   projectName: props.projectName ?? null,
+  root: props.root,
 }));
 
 const open = ref(false);

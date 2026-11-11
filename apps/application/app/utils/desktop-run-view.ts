@@ -333,6 +333,34 @@ export function desktopSessionsOfRun(
   return sessions.filter((session) => entry.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
+/** The names of this machine's loopback interface, one server whatever name its address takes. */
+const LOOPBACK_NAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * Whether an editor's run reports to the run `runId` of the server at `origin`: its page (`HubSession.page`) is that
+ * run's on that server, under any name of the loopback interface, never a run of the same number on the team instance.
+ */
+export function desktopEditorRunOf(
+  session: Pick<HubSession, 'page' | 'ended'>,
+  runId: number,
+  origin: string,
+): boolean {
+  if (session.ended || session.page?.id !== runId) return false;
+  try {
+    const page = new URL(session.page.url);
+    const here = new URL(origin);
+    if (page.origin === here.origin) return true;
+    return (
+      page.protocol === here.protocol &&
+      page.port === here.port &&
+      LOOPBACK_NAMES.has(page.hostname) &&
+      LOOPBACK_NAMES.has(here.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** A running row of a run's page, as far as finding the worker that runs its test goes. */
 interface DesktopRunRow {
   status: string;

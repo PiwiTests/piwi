@@ -16,9 +16,11 @@
  * runs, and a red one asks for the user's attention; an editor's, a terminal's,
  * CI's, another window's run, or one from before a reload, never flashes. While a
  * test of the app's runs waits at a stop for the person (the hub's runs,
- * `runsAttention`), the shell says so first, amber (`paused`): `1 test waits for
- * you`, and the tray's menu offers Show the stopped test (`waiting`), which opens
- * the Local runs tray on the first of them (`firstWaiting`). The Windows
+ * `runsAttention`), or one of an editor's runs (`editor-runs`, which the server
+ * observes and never steers), the shell says so first, amber (`paused`): `1 test
+ * waits for you`, and, for the app's own, the tray's menu offers Show the stopped
+ * test (`waiting`), which opens the Local runs tray on the first of them
+ * (`firstWaiting`). The Windows
  * thumbnail's Stop stops this window's run started last (`thumbnailStopRun`).
  * A step of a job of the Local runs tray (a reproduction, a bisect, a Flake Lab
  * session, as the stream names it: `job`) shows as progress
@@ -36,6 +38,7 @@
  * build has no bridge and this no-ops.
  */
 import { firstWaiting, runsAttention } from '@piwitests/run-model/attention';
+import { desktopEditorRuns } from '#shared/desktop-runs';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,
@@ -117,6 +120,8 @@ export default defineNuxtPlugin(() => {
   const swept = new Map<number, number>();
   /** The tests of the app's runs that wait at a stop for the person, as the hub tells them (`runsAttention`). */
   let waiting = 0;
+  /** The tests of the editors' runs that wait at a stop, as the server observes them (`editor-runs`). */
+  let editorWaiting = 0;
   /** The runs of the Local runs tray: only theirs flash as they end. */
   let trayRuns: () => readonly LocalRunOwner[] = () => [];
 
@@ -157,7 +162,7 @@ export default defineNuxtPlugin(() => {
     }
     // A flash keeps its moment: the bar shows what stands once it ends.
     if (clearTimer) return;
-    const agg = aggregateRunProgress([...active.values()], waiting);
+    const agg = aggregateRunProgress([...active.values()], waiting + editorWaiting);
     if (agg.state === 'none') send('none', null, null);
     else send(agg.state, agg.fraction, agg.label, agg.failing);
   }
@@ -233,7 +238,19 @@ export default defineNuxtPlugin(() => {
 
   // The server resends a fresh snapshot on each (re)connection, which re-seeds
   // `active` without extra work here.
-  subscribeDesktopEvents((message) => handle(message as unknown as LiveRunMessage));
+  const editorRuns = useDesktopEditorRuns();
+  subscribeDesktopEvents((message) => {
+    if (message.type !== 'editor-runs') return handle(message as unknown as LiveRunMessage);
+    // An editor's test that waits at a stop shows on the bar and the dot, as the app's do; it opens in its editor. The
+    // run page shows where its own run's tests wait (`DesktopEditorRunNote`).
+    const runs = desktopEditorRuns(message.runs);
+    editorRuns.value = runs;
+    const now = runsAttention(runs.map((run) => run.session))?.waiting ?? 0;
+    if (now === editorWaiting) return;
+    editorWaiting = now;
+    // A flash keeps its moment: the bar counts them once it ends.
+    if (!clearTimer) pushUpdate();
+  });
 
   // A test of the app's runs that waits at a stop shows first: the hub's runs say which (`useDesktopRunHub`). The bar
   // is drawn from the first snapshot, never cleared as the window loads.

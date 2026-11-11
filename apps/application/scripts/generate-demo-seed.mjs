@@ -2809,6 +2809,24 @@ for (const shot of PASSING_SCREENSHOTS) {
   }
 }
 
+// A test attaches a named screenshot on every run that reaches it, so a named entry also rides
+// the older passing executions of its test, under the same name. They are attached last so the
+// ids of every other attachment don't depend on how many there are.
+for (const shot of PASSING_SCREENSHOTS) {
+  if (!shot.name) continue;
+  const newest = passingShotTrcs.get(shot.file);
+  const caseId = caseIdByKey.get(`${shot.projectId}\x00${shot.specFile}\x00${shot.title}`);
+  const older = TEST_RUNS_CASES.filter((t) => t.test_case_id === caseId && t.status === 'passed' && t !== newest);
+  for (const trc of older.sort((a, b) => b.id - a.id)) {
+    attach(trc, {
+      type: 'attachment',
+      subtype: shot.name,
+      label: 'image/png',
+      relPath: `demo/screenshots/${shot.file}`,
+    });
+  }
+}
+
 // ── Build failure_clusters rows ────────────────────────────────────────────
 
 // Runs are generated newest-first (index 0 is the newest, ids descend as time

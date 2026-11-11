@@ -135,9 +135,10 @@ What the package does to a user's run, process by process.
 - The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
   sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
   or bug report they were started for; its bundled server is their hub.
-- A run whose workers connect to a hub (`runChannelRef` in `internal/config/editors.ts`, which `openRunChannel` reads
+- A run whose workers connect to a hub (`runChannelRef` in `internal/config/hub.ts`, which `openRunChannel` reads
   too) says so in its metadata from `onBegin`: `piwiInteractive`, `{ client, ref }` (`runInteractive`), the hub's
-  client being the editor it follows by its discovery file's name, else the launcher `PIWI_ORIGIN` names. The
+  client being the editor it follows by its discovery file's name (`desktop` for the desktop app), else the launcher
+  `PIWI_ORIGIN` names. The
   dashboard sends no `test.stuck` for such a run.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
@@ -540,12 +541,14 @@ What the package does to a user's run, process by process.
   (`sweepStalePrivateFiles`, `internal/support/private-file.ts`), never through a link. A
   run marks its own file as in use at each read (`keepPrivateFileLive`), so a stop held
   longer than a day keeps it.
-- **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
-  no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
-  or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`
-  names a reporter's file, as a JetBrains IDE's Playwright runner does; else
-  `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, UI mode (`--ui`,
-  `--ui-host`, `--ui-port`) or with `PIWI_EDITOR=off`, `onBegin` reads the editors'
+- **A run started in a terminal** (`internal/config/hub.ts`, `followHub`). With
+  no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), never under CI, `PWDEBUG`,
+  `--debug`, UI mode (`--ui`, `--ui-host`, `--ui-port`) or with `PIWI_EDITOR=off`,
+  `onBegin` attaches it to its hub. It is attended when its output goes to a terminal
+  or an editor's test runner started it (`startedByTestRunner`: `PW_TEST_REPORTER`
+  names a reporter's file, as a JetBrains IDE's Playwright runner does) or with
+  `PIWI_EDITOR=on`; otherwise its ref ends in `-unattended`, and its hub holds none of
+  its failures and lets a stop nobody asked for go on. `onBegin` reads the editors'
   discovery files (`@piwitests/core/editor-discovery`, `~/.piwi/editors` or
   `PIWI_EDITORS_DIR`) from a folder this user owns that no other user can enter, only
   the files this user owns, of this machine, whose process runs as this user, written
@@ -553,10 +556,16 @@ What the package does to a user's run, process by process.
   channel is this user's socket in such a folder, deleting none. It follows the editor one of whose
   workspace folders holds the config's folder or the working directory, real paths
   compared (`editorForRun`: the most specific, then the latest started), and sets
-  `PIWI_RUN_CHANNEL` to its run channel and `PIWI_RUN_REF` to `terminal-<pid>-<time>`
-  for the workers, which connect as an editor's run's do, with one `[Piwi Dashboard]`
-  line naming the editor and `PIWI_EDITOR=off` (`tests/terminal-run.spec.ts`). A worker
-  of a run a test runner started says so in its `run-attach` (`runner`).
+  `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket and
+  `PIWI_RUN_REF` to `terminal-<pid>-<time>` for the workers, which connect as an editor's
+  run's do; a run nobody attends follows only an editor whose file says `unattended`, and
+  else runs alone. With no editor's workspace holding it, it attaches to the desktop app
+  whose linked folder holds it (`readDesktopHub`: the app's process this user's and alive,
+  its hub named since the machine started, `hubSince`, its `runChannel` this user's
+  socket in a private folder, as an editor's), with `PIWI_EDITOR_SEND` set to the app's
+  `send`. One `[Piwi Dashboard]` line names the hub, whether the run is
+  attended and `PIWI_EDITOR` (`tests/terminal-run.spec.ts`). A worker of a run a test
+  runner started says so in its `run-attach` (`runner`).
 - With server coverage on, it calls each origin's `/__piwi/coverage/collect` and
   `/__piwi/coverage/run`, and reads the covered files from the checkout for their blob
   ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
@@ -574,7 +583,7 @@ What the package does to a user's run, process by process.
   the token never goes unproven to whatever holds the port. The URL still comes from the pid-checked file, so an
   ordinary run makes no extra request.
 - **The editors' discovery files** (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor
-  service's: this package reads them for a run started in a terminal (`internal/config/editors.ts`), from a folder
+  service's: this package reads them for a run started in a terminal (`internal/config/hub.ts`), from a folder
   this user alone can enter, and never deletes one.
 
 ## Two processes, two paths

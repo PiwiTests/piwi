@@ -75,6 +75,16 @@ describe('the editors’ discovery files', () => {
       roots: ['/a'],
       client: null,
     });
+    // Where a run's picks go: a pairing on the loopback interface, else none.
+    const send = { url: 'http://127.0.0.1:41003/piwi/send', token: 'editor-picks-token-0123456789' };
+    expect(parseEditorDiscovery(text({ send }))).toMatchObject({ send });
+    expect(parseEditorDiscovery(text({ send: { ...send, url: 'http://evil.test:80/piwi/send' } }))).not.toHaveProperty(
+      'send',
+    );
+    expect(parseEditorDiscovery(text({ send: 'http://127.0.0.1:41003/piwi/send' }))).not.toHaveProperty('send');
+    // A service knows a run nobody attends only when it says so.
+    expect(parseEditorDiscovery(text({ unattended: true }))).toMatchObject({ unattended: true });
+    expect(parseEditorDiscovery(text({ unattended: 'yes' }))).not.toHaveProperty('unattended');
     for (const broken of ['{', '[]', text({ pid: 0 }), text({ pid: '4242' }), 'null']) {
       expect(parseEditorDiscovery(broken), broken).toBeNull();
     }

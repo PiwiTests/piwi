@@ -185,9 +185,10 @@ impl SessionWindows for AppHandle {
                     .unwrap_or_else(|| tauri::Url::parse("about:blank").expect("about:blank is a URL"));
                 let _ = window.navigate(splash);
             }
-            // The server's runs, and their stops, are gone with it.
+            // The server's runs, and their stops, are gone with it, as is its run channel.
             crate::refresh_tray_stop(&handle, 0);
         });
+        crate::withdraw_discovery_hub(self);
         show_splash_status(self, text, false);
     }
 
@@ -203,6 +204,8 @@ impl SessionWindows for AppHandle {
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.eval(&format!("window.location.replace('{bootstrap_url}')"));
                 }
+                // The server proved its token: the discovery file names it as the hub of a terminal's runs.
+                crate::publish_discovery_hub(&handle, holds.clone());
             });
         });
     }

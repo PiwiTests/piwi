@@ -13,20 +13,45 @@ import type {
   HubCodeMessage,
   HubLaneFrameMessage,
   HubLaneFrameRefusal,
+  HubSession,
   HubSessionMessage,
 } from '@piwitests/core/run-hub';
+import { UNATTENDED_REF_SUFFIX, isUnattendedRef } from '@piwitests/core/run-channel';
 import type { StopCode } from '@piwitests/editor/run-host';
 
 /**
  * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
  * lab job, a run in UI mode, or one that repeats each test (`--repeat-each` above 1) without stopping at its first
- * failure. The server holds no failure of such a run, whoever watches it.
+ * failure; the reporter ends so a run started in a terminal and piped elsewhere. The server holds no failure of such a
+ * run, whoever watches it.
  */
-export const UNATTENDED_RUN_SUFFIX = '-unattended';
+export const UNATTENDED_RUN_SUFFIX = UNATTENDED_REF_SUFFIX;
+
+/**
+ * A live run of an editor of this machine, as the server observes it (`editor-runs` on `/api/desktop/events`): the
+ * editor as it names itself, and the run as its hub tells it. The app shows it and steers none of it.
+ */
+export interface DesktopEditorRun {
+  client: string | null;
+  session: HubSession;
+}
+
+/** The editors' runs of an `editor-runs` message, each that reads as one; none for anything else. */
+export function desktopEditorRuns(value: unknown): DesktopEditorRun[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (run): run is DesktopEditorRun =>
+      !!run &&
+      typeof run === 'object' &&
+      (run.client === null || typeof run.client === 'string') &&
+      typeof run.session?.ref === 'string' &&
+      Array.isArray(run.session.workers),
+  );
+}
 
 /** Whether the run `ref` names is one nobody attends: none of its failures waits for an answer. */
 export function isUnattendedDesktopRun(ref: string): boolean {
-  return ref.endsWith(UNATTENDED_RUN_SUFFIX);
+  return isUnattendedRef(ref);
 }
 
 /** The most codes made at stops and locators picked the server keeps, the latest, for a window that opens later. */

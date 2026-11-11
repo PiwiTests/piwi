@@ -66,6 +66,8 @@ export type DesktopLaneFrame = Omit<HubLaneFrameMessage, 'type'> | Omit<HubLaneF
 interface HubState {
   /** The stream is open and the server named it (`hello`). */
   connected: boolean;
+  /** The stream has sent every run live as it opened (`listed`): a run it does not hold now has ended. */
+  listed: boolean;
   /** Each live run, by ref. */
   sessions: Record<string, HubSession>;
   /** The folder of each run heard since the window opened, for the place of its codes once it ended. */
@@ -104,6 +106,7 @@ const REOPEN_MS = 5000;
 
 const state = reactive<HubState>({
   connected: false,
+  listed: false,
   sessions: {},
   roots: {},
   outcomes: {},
@@ -171,6 +174,7 @@ function heard(text: string): void {
       // A stream of its own: the runs, the codes and the picks come again on it.
       viewer = value.viewer;
       state.connected = true;
+      state.listed = false;
       state.sessions = {};
       // A new viewer drives no stop: the one before gave its stops back, and Interact goes off with them.
       state.interacting = {};
@@ -195,6 +199,7 @@ function heard(text: string): void {
       return;
     }
     case 'listed': {
+      state.listed = true;
       // Every run live as the stream opened came before: a run the window kept that did not come ended meanwhile.
       const kept = [
         ...Object.keys(state.lanes),
@@ -309,6 +314,7 @@ function open(): void {
     if (source !== opened) return;
     // Every view and every run shown ended with that stream: the next one names itself again.
     state.connected = false;
+    state.listed = false;
     viewer = null;
     // A stream the server refused does not come back by itself: asked again a while later, while it is wanted.
     if (opened.readyState === EventSource.CLOSED) {
@@ -336,6 +342,7 @@ function close(): void {
   heardAt.clear();
   Object.assign(state, {
     connected: false,
+    listed: false,
     sessions: {},
     outcomes: {},
     epoch: state.epoch + 1,

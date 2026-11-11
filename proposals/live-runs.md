@@ -164,7 +164,26 @@ are named after what they run; VS Code's Testing view writes in a run's output e
 and each stop answered (E23); and the editors' status bar tooltips say what each worker runs now (E6). Then the desktop tray menu's **Show the stopped
 test**, first in the menu while a test of the app's runs waits at a stop for the person (**Show a stopped test (2 wait)**
 for more): it brings the window up with its Local runs tray open on the first of them (`firstWaiting`), from a page
-without the tray too. The later phases are
+without the tray too. Then P7, every local run has a hub, in part: a run started in a terminal or by an editor's test
+runner picks its hub in order (D9: the launcher's channel, the editor whose workspace holds it, the desktop app whose
+linked folder holds it, none; the reporter's `hub.ts`), and a run piped to a file or another program attaches
+unattended (its ref ending in `-unattended`: listed, paused, never stopped at a breakpoint nor holding a failure) unless
+`PIWI_EDITOR=on`, its start line saying so (open question 3, F9 in part). `desktop.json` names the app's server as a hub
+(`runChannel`, `send`, `hub`, contract 4, both sides) once its session loaded, so the app steers a terminal's run in a
+linked folder (DK11, IO5 in part), its picks coming to the window; an editor's channel is its record channel too, so
+**Record here** and **Assert** work in a terminal's run. The desktop server observes the editors' runs (`EditorRuns`:
+the editor's hub takes a process of this machine with no `Origin` after its token, and a `subscribe` with `observe`
+answers no stop), and their tests that wait count on the taskbar, Dock, title and tray dot. The tray's stop place opens
+in the IDE (DK16), a worker opens in a window of its own kept above the others (**Open in a window**, DK6), and the run's
+page shows the run of the app while it goes on (**On your machine**: Stop, Hold failures, the workers and the output,
+DK5 in part). DK22 is done: the desktop page documents the taskbar, Dock, title, tray dot and thumbnail buttons. Then
+**Pick a locator** in a terminal's run an editor follows: the editor's discovery file names where a run's picks go
+(`send`, the client's Send to editor pairing, from `InitializationOptions.runPairing` and `piwi/setRunPairing`), which
+the reporter hands the run (`PIWI_EDITOR_SEND`); and the desktop app's run page says where an editor's run that reports
+to it waits (**In Visual Studio Code**, read only, DK12), from the editors' runs the server observes. Left of P7: a
+reproduction the desktop app launches for an editor on that editor's channel (IO6), whose jobs run in a throwaway
+worktree at the failing commit, outside the editor's workspace, so where its stop shows and where its code goes is to
+be decided; and the tray as a compact list. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

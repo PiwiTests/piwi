@@ -70,6 +70,11 @@ export interface OpenTarget {
   projectKey?: string | number | null;
   /** Piwi project name — default IDE project name for the jetbrains:// URL. */
   projectName?: string | null;
+  /**
+   * The folder `filePath` is relative to, when the caller knows it: the desktop app's linked folder a run runs in. It
+   * comes before the workspace roots set in the preferences.
+   */
+  root?: string | null;
   /** Per-call method override from the chooser; omit to use the stored default. */
   method?: IdeMethod;
 }
@@ -175,9 +180,9 @@ export function useOpenInIde() {
     return (perProject || projectName || '').trim();
   }
 
-  /** Absolute path for a repo-relative file, or null when no root is configured. */
-  function resolveAbsPath(filePath: string, projectKey?: string | number | null): string | null {
-    const root = resolveRoot(projectKey);
+  /** Absolute path for a repo-relative file, or null when no root is configured nor `known`, the caller's own. */
+  function resolveAbsPath(filePath: string, projectKey?: string | number | null, known?: string | null): string | null {
+    const root = known || resolveRoot(projectKey);
     return root ? joinWorkspacePath(root, filePath) : null;
   }
 
@@ -321,7 +326,7 @@ export function useOpenInIde() {
     const column = target.column ?? null;
     // Desktop shell: a project's linked folder stands in for an unconfigured
     // workspace root, so IDE links work with zero setup.
-    let root = resolveRoot(target.projectKey);
+    let root = target.root || resolveRoot(target.projectKey);
     if (!root) {
       const linked = await getDesktopProjectLink(target.projectKey);
       if (linked?.exists) root = linked.path;

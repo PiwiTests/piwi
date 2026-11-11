@@ -940,6 +940,13 @@ data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreak
  */
 data class SetBreakpointsParams(val places: List<EditorBreakpoint>)
 
+/**
+ * `piwi/setRunPairing`: where a run's picks go (`PIWI_EDITOR_SEND`, `<url>#<token>`), which the service names in its
+ * discovery file for a run started in a terminal; null for none. The plugin gives it in the initialization options
+ * (`runPairing`) as the service starts while a token is kept, and with this once it mints one.
+ */
+data class SetRunPairingParams(val address: String?)
+
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
 data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
 
@@ -1277,4 +1284,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setBreakpoints")
     fun setBreakpoints(params: SetBreakpointsParams)
+
+    @JsonNotification("piwi/setRunPairing")
+    fun setRunPairing(params: SetRunPairingParams)
 }

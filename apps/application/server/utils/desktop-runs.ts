@@ -46,7 +46,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import { runTargetConnection } from '@piwitests/editor/run-target';
-import type { RunIntent } from '@piwitests/core/run-channel';
+import { TERMINAL_REF_PREFIX, type RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
   RecordChannel,
@@ -73,6 +73,7 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { desktopPicksToken } from './desktop-access';
+import { EditorRuns, type EditorRun } from './desktop-editor-runs';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -194,8 +195,10 @@ export interface DesktopRunsOptions {
   log?(message: string): void;
   keepaliveMs?: number;
   helloMs?: number;
-  /** The editors' discovery folder the hub names its peers from; `editorsDir()` by default. */
+  /** The editors' discovery folder the hub names its peers from, and whose runs it observes; `editorsDir()` by default. */
   editorsDir?: string;
+  /** Whether the server observes the editors' runs (`EditorRuns`); on by default. */
+  observeEditors?: boolean;
   peersMs?: number;
   lingerMs?: number;
   requestMs?: number;
@@ -233,6 +236,25 @@ function real(file: string): string {
 /** Two paths compared as the file system does: without regard to case on Windows and macOS. */
 function samePath(a: string, b: string): boolean {
   return process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase();
+}
+
+/** The linked folder, of `links`, that is `cwd` or holds it, the most specific when several do; null for none. */
+export function linkHolding(links: readonly DesktopLink[], cwd: string): string | null {
+  const at = real(cwd);
+  const holding = links.filter((link) => samePath(real(link.path), at) || insideFolder(link.path, cwd));
+  holding.sort((a, b) => real(b.path).length - real(a.path).length);
+  return holding[0]?.path ?? null;
+}
+
+/**
+ * `cwd` as the linked folder holding it spells it: the link's path, then the rest of `cwd` below it; null outside every
+ * linked folder. A session's root names its run's working directory, in the spelling the window opens files under.
+ */
+export function linkedSpelling(links: readonly DesktopLink[], cwd: string): string | null {
+  const link = linkHolding(links, cwd);
+  if (link === null) return null;
+  const rest = path.relative(real(link), real(cwd));
+  return rest ? path.join(link, rest) : link;
 }
 
 /** Whether `file` is inside `folder`, both resolved through their links. */
@@ -287,6 +309,9 @@ export class DesktopRuns {
   private readonly startedAt = new Date().toISOString();
   private readonly liveCountListeners = new Set<(live: number) => void>();
   private liveCount = 0;
+  /** The editors' runs, observed for the app's own surfaces and steered by none of them (`EditorRuns`). */
+  private editors: EditorRuns | null = null;
+  private readonly editorRunsListeners = new Set<(runs: EditorRun[]) => void>();
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
@@ -300,13 +325,17 @@ export class DesktopRuns {
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
-      rootOf: (cwd) => this.links().find((link) => samePath(real(link.path), real(cwd)))?.path ?? null,
+      // The run's folder as its linked folder spells it: a run the shell starts runs in the linked folder, one
+      // started in a terminal there or below.
+      rootOf: (cwd) => linkedSpelling(this.links(), cwd),
       writesCode: () => true,
       onRegion: (stop, region) =>
         'refused' in region
           ? this.actions.regionRefused(stop, region.refused)
           : this.actions.region(stop, region.locator, region.snapshot),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
+      // A run started in a terminal in a linked folder attaches under a ref of its own (the reporter's `hub.ts`).
+      terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX),
       // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
@@ -380,11 +409,10 @@ export class DesktopRuns {
       RunHub.open({
         sessions: runs.sessions,
         actions: runs.actions,
-        runInfo: (_ref, root) => ({
-          command: null,
-          label: root ? path.basename(root) : null,
-          project: root ? runs.project(root) : null,
-        }),
+        runInfo: (_ref, root) => {
+          const link = root ? linkHolding(runs.links(), root) : null;
+          return { command: null, label: link ? path.basename(link) : null, project: link ? runs.project(link) : null };
+        },
         welcome: () => ({
           pid: process.pid,
           version: options.version,
@@ -403,6 +431,16 @@ export class DesktopRuns {
     ]);
     runs.channel = channel;
     runs.hub = hub;
+    if (options.observeEditors !== false) {
+      runs.editors = new EditorRuns({
+        live: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        changed: () => {
+          const now = runs.editorRuns();
+          for (const listener of runs.editorRunsListeners) listener(now);
+        },
+      });
+      runs.editors.start();
+    }
     if (!channel) options.log?.('[desktop-runs] The run channel could not listen: runs start without a hub.');
     if (!hub) options.log?.('[desktop-runs] The hub could not listen: Piwi Picker and the window see no run.');
     return runs;
@@ -439,6 +477,17 @@ export class DesktopRuns {
     return () => this.liveCountListeners.delete(listener);
   }
 
+  /** The editors' live runs, as their hubs tell them (`EditorRuns`): none while the server does not observe them. */
+  editorRuns(): EditorRun[] {
+    return this.editors?.runs() ?? [];
+  }
+
+  /** Hears the editors' live runs each time they change; returns the unsubscribe. */
+  onEditorRuns(listener: (runs: EditorRun[]) => void): () => void {
+    this.editorRunsListeners.add(listener);
+    return () => this.editorRunsListeners.delete(listener);
+  }
+
   /** The hub as `GET /api/desktop/live` names it, in the shape an editor's `GET …/live` gives (`LiveAnswer`). */
   live(): LiveHub[] {
     if (!this.hub) return [];
@@ -459,10 +508,13 @@ export class DesktopRuns {
   /**
    * Stops the run `ref` as another tool asks through the hub (`stop`): every window's stream hears it (`stop-run`), and
    * the window that holds the run stops it as its own Stop does, the shell's process with it. Refused for a run that
-   * ended, and while no window is open to stop it.
+   * ended, one started in a terminal, whose process is the terminal's, and while no window is open to stop it.
    */
   stopRun(ref: string): RunControlResult {
     const session = this.sessions.current().find((s) => s.ref === ref);
+    if (session?.terminal && !session.ended) {
+      return { ok: false, message: 'The run was started in a terminal: stop it there.' };
+    }
     if (!session || !canStopRun(session)) return { ok: false, message: 'The run has ended.' };
     if (this.windows.size === 0) {
       return { ok: false, message: "No window of the desktop app is open: open the app's window to stop the run." };
@@ -546,6 +598,8 @@ export class DesktopRuns {
 
   /** The server stops: the hub and the channel close, every worker's connection with them, and every window stream. */
   close(): void {
+    this.editors?.close();
+    this.editors = null;
     this.agent.dispose();
     this.hub?.close();
     this.hub = null;

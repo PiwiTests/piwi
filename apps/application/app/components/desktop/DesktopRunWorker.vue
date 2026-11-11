@@ -26,7 +26,15 @@ import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-
 import { CONTROLS, JOINED, STEERING, controlTitle, controlsOf, type Control } from '@piwitests/run-model/controls';
 import { driverOf, watchersLine } from '@piwitests/run-model/presence';
 import { workerStatus } from '@piwitests/run-model/status';
-import { heldUntilWatched, laneWatchOf, stopError, stopIntents, stopPlace, testName } from '@piwitests/run-model/stop';
+import {
+  heldUntilWatched,
+  laneWatchOf,
+  runFile,
+  stopError,
+  stopIntents,
+  stopPlace,
+  testName,
+} from '@piwitests/run-model/stop';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
@@ -54,6 +62,45 @@ const hub = useDesktopRunHub();
 const stop = computed(() => desktopRunStop(props.worker));
 const since = computed(() => stop.value?.since ?? null);
 const place = computed(() => (stop.value ? stopPlace(stop.value, props.session.root) : null));
+
+/**
+ * The window that shows the worker: the app's main window, which alone holds the shell's commands (Open in a window,
+ * the editor's launcher), or a worker's window, which holds none. Outside the shell (no window), the main window's.
+ */
+const mainWindow = ref(true);
+/** Open in a window: offered in the app's main window alone, whose tray shows the worker. */
+const windowable = ref(false);
+onMounted(() => {
+  const label = tauriWindowLabel();
+  mainWindow.value = label === null || label === 'main';
+  windowable.value = !!tauriCore() && label === 'main';
+});
+
+const toast = useToast();
+/** This worker in a window of its own, kept above the others, its status, controls and page live; by its lane. */
+async function openWindow() {
+  try {
+    await tauriCore()?.invoke('desktop_open_worker_window', {
+      runRef: props.session.ref,
+      lane: props.worker.parallelIndex,
+    });
+  } catch (error) {
+    toast.add({ title: 'The window could not open', description: errorMessage(error), color: 'error' });
+  }
+}
+/**
+ * The stop's file in the run's folder, which opens in the editor, relative to it; null for one outside it. The folder
+ * is the file's as it spells it, but for a Windows path, whose case the file system ignores.
+ */
+const placeFile = computed(() => {
+  const root = props.session.root;
+  if (!stop.value || !root || !stop.value.uri.startsWith('file:')) return null;
+  const whole = runFile(stop.value.uri, null);
+  const file = runFile(stop.value.uri, root);
+  if (file === whole) return null;
+  const base = whole.slice(0, whole.length - file.length - 1);
+  return /^[A-Za-z]:/.test(base) || base === root.replace(/\\/g, '/').replace(/\/+$/, '') ? file : null;
+});
 const takes = computed(() => (stop.value ? stopIntents(props.worker, stop.value) : []));
 const failed = computed(() => stop.value?.reason === 'failure');
 
@@ -406,6 +453,17 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap items-baseline gap-x-2.5">
         <p class="min-w-0 flex-auto text-sm font-semibold text-highlighted break-words">{{ testText }}</p>
         <p v-if="metaText" class="ml-auto max-w-full text-xs text-muted break-words">{{ metaText }}</p>
+        <UButton
+          v-if="windowable"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-picture-in-picture-2"
+          title="Open in a window, kept above the others"
+          aria-label="Open this worker in a window, kept above the others"
+          data-testid="desktop-worker-window"
+          @click="openWindow"
+        />
       </div>
       <p v-if="worker.test?.cannotPause" class="text-xs text-muted">
         This test never stops: {{ worker.test.cannotPause }}
@@ -435,7 +493,16 @@ onBeforeUnmount(() => {
         <dt class="text-muted">{{ desktopSay('runs_nextLabel') }}</dt>
         <dd class="font-mono break-words text-highlighted">{{ stop.title }}</dd>
         <dt class="text-muted">{{ desktopSay('runs_whereLabel') }}</dt>
-        <dd class="font-mono break-all text-highlighted">{{ place }}</dd>
+        <dd class="min-w-0 text-highlighted">
+          <OpenInIdeLink
+            v-if="placeFile && mainWindow"
+            :file-path="placeFile"
+            :line="stop.line + 1"
+            :root="session.root"
+            inline
+          />
+          <span v-else class="font-mono break-all">{{ place }}</span>
+        </dd>
       </dl>
     </div>
 

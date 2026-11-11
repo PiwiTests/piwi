@@ -46,9 +46,10 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX, isUnattendedRef } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
+import { parsePairing, type EditorPairing } from '@piwitests/core/editor-send';
 import { editorsDir, readLiveHubs } from './discovery.js';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
@@ -223,6 +224,7 @@ import {
   RUN_ARGS_REQUEST,
   FOLLOW_COMMAND_REQUEST,
   SET_BASELINE_NOTIFICATION,
+  SET_RUN_PAIRING_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
   STATUS_NOTIFICATION,
@@ -319,6 +321,7 @@ import {
   type RunStatus,
   type RunStatusResult,
   type SetBaselineParams,
+  type SetRunPairingParams,
   type RunSelectionParams,
   type RunStartOptions,
   type ScreenshotParams,
@@ -1798,6 +1801,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
   let clientName: string | null = null;
+  /** Where a run's picks go, as the client names it (`InitializationOptions.runPairing`, `piwi/setRunPairing`). */
+  let runPairing: EditorPairing | null = null;
+  /** The discovery file as the service last wrote it, without `send`: null until it listens. */
+  let discovered: EditorDiscovery | null = null;
+  /** Write the discovery file again, naming where a run's picks go as the client last said. */
+  const publishDiscovery = () => {
+    if (discovered) options.publish?.(runPairing ? { ...discovered, send: runPairing } : discovered);
+  };
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
   let runHub: RunHub | null = null;
   /** The loopback ports the client forwards to the hub from the browser's machine (`piwi/hub`). */
@@ -1859,7 +1870,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
-    holdsFailures: (ref) => !unattendedRuns.has(ref),
+    // A run nobody attends: one the service built so, and one started in a terminal piped elsewhere.
+    holdsFailures: (ref) => !unattendedRuns.has(ref) && !isUnattendedRef(ref),
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -2334,6 +2346,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     writesCode = init?.stopCode === true;
     stopsRuns = init?.stopsRuns === true;
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
+    runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
@@ -2433,7 +2446,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runHub = hub;
       if (!channel && !hub) return;
       const bundle = path.join(distDir, 'record-ide.js');
-      options.publish?.({
+      discovered = {
         pid: process.pid,
         host: os.hostname(),
         version: SERVICE_VERSION,
@@ -2443,7 +2456,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         hub: hub && { url: hub.url, token: hub.token },
         runChannel: channel && { path: channel.path, token: channel.token },
         recorderBundle: fs.existsSync(bundle) ? bundle : null,
-      });
+        unattended: true,
+      };
+      publishDiscovery();
     });
   });
 
@@ -4127,6 +4142,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     desktopJobs.share(params.jobId),
   );
 
+  connection.onNotification(SET_RUN_PAIRING_NOTIFICATION, (params: SetRunPairingParams) => {
+    const next = typeof params?.address === 'string' ? parsePairing(params.address) : null;
+    if (next?.url === runPairing?.url && next?.token === runPairing?.token) return;
+    runPairing = next;
+    publishDiscovery();
+  });
+
   connection.onNotification(SET_BASELINE_NOTIFICATION, async (params: SetBaselineParams) => {
     const context = typeof params?.root === 'string' ? contextOfRoot(params.root) : null;
     const choice = parseBaselineChoice(params?.choice);
@@ -4162,6 +4184,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     agentServer = null;
     runAgent.dispose();
     runSessions.dispose();
+    // Gone with the service: a pairing named after this writes no file again.
+    discovered = null;
     if (open) options.publish?.(null);
   };
   connection.onShutdown(() => {

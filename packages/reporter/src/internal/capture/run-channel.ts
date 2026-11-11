@@ -42,7 +42,7 @@ import {
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
-import { runChannelRef, startedByTestRunner } from '../config/editors.js';
+import { runChannelRef, startedByTestRunner } from '../config/hub.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { playwrightVersionAtLeast } from '../support/playwright-version.js';
@@ -287,9 +287,9 @@ const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does no
 
 /**
  * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
- * (`PIWI_EDITOR_SEND`), Record here and Assert only where it names a record channel (`PIWI_RECORD_CHANNEL`), neither of
- * which a run started in a terminal carries, and Pick on the image only on a Playwright (`playwright`, when known)
- * whose snapshots give each element's box (1.60).
+ * (`PIWI_EDITOR_SEND`, which a run started in a terminal carries when its hub names one), Record here and Assert only
+ * where it names a record channel (`PIWI_RECORD_CHANNEL`, an editor's), and Pick on the image only on a Playwright
+ * (`playwright`, when known) whose snapshots give each element's box (1.60).
  */
 export function workerTakes(env: NodeJS.ProcessEnv = process.env, playwright?: string): RunTake[] {
   const pairing = !!env[PIWI_LOCAL_DEBUG_ENV.editorSend];

@@ -78,12 +78,12 @@ app's tray. A headless run has no window to show, and an older reporter offers n
 
 ## The terminal's lines
 
-A run prints one line for its page, and one when it follows an editor
-([runs started outside Piwi](./terminal-runs)). A run whose output goes to a file or a pipe follows no editor and
-says so, once, when an editor's workspace holds it:
+A run prints one line for its page, and one when it follows an editor or the desktop app
+([runs started outside Piwi](./terminal-runs)). A run whose output goes to a file or a pipe follows it unattended and
+says so:
 
 ```text
-[Piwi Dashboard] Not following this run in Visual Studio Code (pid 41230): its output goes to no terminal. PIWI_EDITOR=on follows it.
+[Piwi Dashboard] Following this run in Visual Studio Code (pid 41230), unattended: its output goes to no terminal, so no failure waits and only a Pause stops it. PIWI_EDITOR=on attends it, PIWI_EDITOR=off runs it alone.
 ```
 
 The other lines of a run's start (its project and Playwright version, its shard, the stream opening on time) are

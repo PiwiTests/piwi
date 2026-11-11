@@ -112,6 +112,27 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('takes a run started in a terminal and piped elsewhere unattended: no breakpoint, and an unasked stop goes on', async () => {
+    const discovery = await waitFor(() => last(svc.published) ?? undefined);
+    const channel = discovery.runChannel!;
+    await svc.client.sendNotification('piwi/setBreakpoints', { places: [{ uri: uri('tests/cart.spec.ts'), line: 2 }] });
+    // Once the service read it.
+    await control({ ref: 'none', action: 'pause' });
+    const ref = 'terminal-4244-1730000000002-unattended';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, terminal: true });
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [], host: 'Test Editor' });
+      worker.begin();
+      // A breakpoint the run still met, nobody asked it to stop there: it goes on.
+      worker.stopAt(1, 3);
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      expect(worker.heard.filter((m) => m.type === 'breakpoints')).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
   test('stops at a statement broken over lines, by a breakpoint or Run to cursor on its first line', async () => {
     fs.writeFileSync(
       path.join(dir, 'tests/wrapped.spec.ts'),
