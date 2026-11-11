@@ -977,4 +977,23 @@ describe('Sync again in the demo', () => {
     await seedRun();
     expect((await refusal(sendDemoRunSync(db as never, RUN_ID))).statusCode).toBe(409);
   });
+
+  test.each([
+    ['is turned off', { enabled: false }],
+    ['is a dry run', { dryRun: true }],
+    ['names another project', { providerProjectKey: 'OPS' }],
+    ['is gone', { connectionId: null }],
+  ])('a binding that %s is refused with the server’s 409, and the sync stays failed', async (_case, change) => {
+    await seedRun();
+    await fillCatalog();
+    await bind();
+    zephyr.upload = () => json({ message: 'bad' }, 422);
+    await runTestManagementSync(db, RUN_ID);
+    await bind(change);
+    const server = await refusal(syncAgain(at(RUN_ID)));
+    expect(server.statusCode).toBe(409);
+    expect(await refusal(sendDemoRunSync(db as never, RUN_ID))).toEqual(server);
+    expect((await syncRow()).status).toBe('failed');
+    expect(await testRunLinks()).toEqual([]);
+  });
 });
