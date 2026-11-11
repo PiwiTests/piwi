@@ -68,12 +68,10 @@ function what(request: RunRequestView): string {
     v-if="shown"
     icon="i-lucide-monitor-play"
     title="Your runs on my machine"
+    help="settings.run-requests"
     data-shot="account-run-requests"
+    data-tour="account-run-requests"
   >
-    <p class="text-sm text-muted mb-4">
-      The runs you asked your own apps for, from a run or a test page. Each one reports here, and only you see it.
-    </p>
-
     <LoadingState v-if="!loaded" />
     <div v-else-if="requests.length" class="space-y-2" data-testid="run-requests-list">
       <div
