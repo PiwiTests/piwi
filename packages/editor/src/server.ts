@@ -46,7 +46,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { canStopRun, forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { editorsDir, readLiveHubs } from './discovery.js';
@@ -145,6 +145,7 @@ import {
   isTestLocation,
   locationSpec,
   playwrightArgsOf,
+  followableCommand,
   playwrightTestCommand,
   repeatArgs,
   verificationCommand,
@@ -220,6 +221,7 @@ import {
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
+  FOLLOW_COMMAND_REQUEST,
   SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
@@ -772,6 +774,7 @@ export function flakeLabLines(
               cwd: commandFolder(context),
               command: withServerUrl(a.command, serverUrl, context.root, env),
               env: editorRunEnv(),
+              follow: true,
             } satisfies RunCommandArgs,
           ],
         },
@@ -1812,6 +1815,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * hold their failures, by ref.
    */
   const watchedRuns = new Set<string>();
+  /** The runs the service built for nobody to attend (`unattended`), by ref, the latest `MAX_RUN_COMMANDS` of them. */
+  const unattendedRuns = new Set<string>();
   /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
   const runLines = new RunLines();
   /** A file as `RunLines` names it: its absolute path, in lower case on Windows, as `samePath` compares them. */
@@ -1854,6 +1859,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
+    holdsFailures: (ref) => !unattendedRuns.has(ref),
     // A run started in a terminal names itself so, by no command the service built.
     terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -2640,7 +2646,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               title: 'Run the verification',
               command: 'piwi.runCommand',
               arguments: [
-                { cwd: commandFolder(owner), command: verification, env: editorRunEnv() } satisfies RunCommandArgs,
+                {
+                  cwd: commandFolder(owner),
+                  command: verification,
+                  env: editorRunEnv(),
+                  follow: true,
+                } satisfies RunCommandArgs,
               ],
             },
           });
@@ -3386,18 +3397,42 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
       env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
-    if (run.ref) {
-      runCommands.delete(run.ref);
-      runCommands.set(run.ref, run.command);
-      for (const oldest of runCommands.keys()) {
-        if (runCommands.size <= MAX_RUN_COMMANDS) break;
-        runCommands.delete(oldest);
-      }
-      if (pauses) watchedRuns.add(run.ref);
-      for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
-      runLines.started(run.ref, unsavedFiles);
+    if (run.ref && pauses) watchedRuns.add(run.ref);
+    return registered(run);
+  };
+
+  /**
+   * A run the service built on the run channel, kept by its ref: its command line, which the hub names to Piwi Picker,
+   * and its code as it starts. The oldest are forgotten past `MAX_RUN_COMMANDS`, with what was kept of them.
+   */
+  const registered = (run: RunCommand): RunCommand => {
+    if (!run.ref) return run;
+    runCommands.delete(run.ref);
+    runCommands.set(run.ref, run.command);
+    for (const oldest of runCommands.keys()) {
+      if (runCommands.size <= MAX_RUN_COMMANDS) break;
+      runCommands.delete(oldest);
     }
+    for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+    runLines.started(run.ref, unsavedFiles);
     return run;
+  };
+
+  /**
+   * A run nobody attends (Verify ×3, a fix plan's verification, a Flake Lab command): its workers keep their run
+   * connection, so it is listed, paused and stopped as any run of the editor, but it holds no failure (`holdsFailures`)
+   * and turns headed for no `page.pause()`. Unchanged while the run channel does not listen.
+   */
+  const unattended = (command: RunCommand): RunCommand => {
+    if (!recordChannel || !command.ref) return command;
+    // Kept apart from the command lines, which a long run may outlive: it stays one nobody attends.
+    unattendedRuns.delete(command.ref);
+    unattendedRuns.add(command.ref);
+    for (const oldest of unattendedRuns) {
+      if (unattendedRuns.size <= MAX_RUN_COMMANDS) break;
+      unattendedRuns.delete(oldest);
+    }
+    return registered({ ...command, env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value } });
   };
 
   /**
@@ -3521,8 +3556,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
     }
-    // A repeated run runs headless unless asked: it holds no failure, having no run channel.
-    return withStartOptions(run, { headed: params.headed });
+    // A repeated run runs headless unless asked, and nobody attends it: it holds no failure.
+    return withStartOptions(unattended(run), { headed: params.headed });
+  });
+
+  connection.onRequest(FOLLOW_COMMAND_REQUEST, (params: RunCommandArgs): RunCommand | null => {
+    const context = contexts.find((c) => commandFolder(c) === params?.cwd);
+    if (!context || !followableCommand(params?.command) || !recordChannel) return null;
+    const env = Object.fromEntries(
+      Object.entries(params.env ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    // Named on the run channel alone: a command of several runs (a Flake Lab line's batches) is not the editor's own
+    // run on the instance, as it was not before it was followed.
+    const ref = newRunRef();
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      command: params.command,
+      args: playwrightArgsOf(params.command) ?? [],
+      env: { ...env, [RUN_REF_ENV]: ref },
+      ref,
+    };
+    return unattended(run);
   });
 
   // An answer is what the client holds from then on: a change is pushed against it, so a client that read the state

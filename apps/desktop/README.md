@@ -47,7 +47,11 @@ channel, so a per-user install pulls a per-user update.
    by `watch_local_runs`). A Stop goes to the dashboard window as
    `piwi:tray-stop`, which stops the run as its own Stop does (`stopRun`, so a
    run of several steps ends as stopped); a process no window run owns is
-   stopped by the shell directly.
+   stopped by the shell directly. While a test of the app's runs waits at a
+   stop for the person, **Show the stopped test** comes first in the menu
+   (`refresh_tray_stop`, from the `waiting` count the dashboard sends with its
+   progress): it brings the window up and goes to it as `piwi:tray-show-stop`,
+   which opens the Local runs tray on the first test that waits.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,

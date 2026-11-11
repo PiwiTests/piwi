@@ -13,8 +13,8 @@
  *   `failurePageScreenshot`). The Screen tab adds every other screenshot the
  *   execution attached, and says so when none of several is known to be it.
  *   Each opens full-screen in the shared lightbox, whose details name the
- *   test, the failing step and, beside the page at the failure, the error
- *   raised on it.
+ *   test, the name an attached screenshot was given, the failing step and,
+ *   beside the page at the failure, the error raised on it.
  * - DOM: the trace's DOM snapshot of the moment the screenshot at the failure
  *   shows (the failing action's after-phase, its before-phase when that is the
  *   only screenshot), else the failure-time snapshot, rendered as the page.
@@ -34,7 +34,7 @@
 import type { AttachmentInfo } from '~~/types/api';
 import type { EvidenceState } from '#shared/evidence-state';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
-import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
+import { attachmentOwnName, type LightboxImage, type LightboxSubject } from '~/utils/lightbox';
 import { isImageFile } from '~/utils/text-format';
 import { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
 import { failurePageFirst, failurePageScreenshot } from '#shared/file-classify';
@@ -122,14 +122,14 @@ const failureImage = computed(() =>
 // Playwright names each of its screenshots `screenshot`: the file name tells them apart.
 function shotName(att: AttachmentInfo): string {
   if (att.name === FAILURE_SCREENSHOT_ATTACHMENT) return 'Page the test failed on';
-  if (att.name && att.name !== 'screenshot') return att.name;
-  return att.path.split('/').pop() || att.path;
+  return attachmentOwnName(att.name, att.path) ?? (att.path.split('/').pop() || att.path);
 }
 const attachedShots = computed<Shot[]>(() =>
   failurePageFirst(attachedImages.value, (att) => att.name, { failed: props.failed }).map((att) => ({
     src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
     name: shotName(att),
     failed: false,
+    attachmentName: attachmentOwnName(att.name, att.path),
   })),
 );
 // Several screenshots, none known to show the page the test failed on.

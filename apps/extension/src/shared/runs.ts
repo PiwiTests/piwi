@@ -7,18 +7,19 @@
  * alone, never stored.
  */
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
-import type {
-  HubCodeAction,
-  HubCodeIntent,
-  HubWindowAction,
-  HubControlAction,
-  HubImage,
-  HubIntent,
-  HubKeptRequest,
-  HubSession,
-  HubWorker,
+import {
+  type HubCodeAction,
+  type HubCodeIntent,
+  type HubWindowAction,
+  type HubControlAction,
+  type HubImage,
+  type HubIntent,
+  type HubKeptRequest,
+  type HubSession,
+  type HubWorker,
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
+import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
 
 /** The name of the Runs window's port to the worker. */
@@ -83,6 +84,8 @@ export interface RunsHub {
 export interface RunsRun {
   hub: string;
   session: HubSession;
+  /** An ended run that failed or timed out while no Runs window had the focus, until one takes it. */
+  unseen?: boolean;
 }
 
 export interface RunsState {
@@ -351,7 +354,8 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
 export function stateForViewer(state: RunsState, watches: (view: RunsView, lane: number | null) => boolean): RunsState {
   return {
     ...state,
-    runs: state.runs.map(({ hub, session }) => ({
+    runs: state.runs.map(({ hub, session, ...run }) => ({
+      ...run,
       hub,
       session: {
         ...session,
@@ -381,6 +385,26 @@ export function viewKey(view: RunsView): string {
 /** The live runs of a state. */
 export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
+}
+
+/** The runs of the hubs whose connection answers now: a lost hub's runs, as last heard, are left out. */
+export function answeringRuns(state: Pick<RunsState, 'runs' | 'hubs'>): RunsRun[] {
+  return state.runs.filter((run) => state.hubs.some((hub) => hub.id === run.hub && hub.connected));
+}
+
+/**
+ * What the runs whose hub answers ask of the person now (`runsAttention`), and the failed tests of the runs that ended
+ * `unseen` (a run that failed with no test failed counts as one): the toolbar's badge, the popup's Runs tile and the
+ * Runs window's title say it.
+ */
+export function attentionOf(state: Pick<RunsState, 'runs' | 'hubs'>): RunAttention | null {
+  const live = runsAttention(answeringRuns(state).map((run) => run.session));
+  const missed = state.runs
+    .filter((run) => run.unseen)
+    .reduce((sum, run) => sum + Math.max(1, run.session.progress?.failed ?? 0), 0);
+  if (missed === 0) return live;
+  const { waiting = 0, heldFailures = 0, failed = 0 } = live ?? {};
+  return { state: waiting > 0 ? 'waiting' : 'failing', waiting, heldFailures, failed: failed + missed };
 }
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */

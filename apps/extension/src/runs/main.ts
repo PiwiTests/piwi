@@ -47,6 +47,7 @@ import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  attentionOf,
   pageHintOf,
   shareRefusalOf,
   readRunsBounds,
@@ -1489,9 +1490,25 @@ function runName(session: HubSession): string {
 /** The worker whose watched lane stopped since the last drawing: brought into view once drawn. */
 let toView: string | null = null;
 
+/**
+ * The window's title, which the browser's window bar and the system's window list show: what the runs ask of the
+ * person first (the tests that wait for them, else the tests that failed, `attentionOf`), then the window's name.
+ */
+function showTitle(current: RunsState): void {
+  const attention = attentionOf(current);
+  const title = t('runs_title');
+  document.title =
+    attention?.state === 'waiting'
+      ? tn('runs_titleWaiting', attention.waiting, { title })
+      : attention?.state === 'failing'
+        ? tn('runs_titleFailed', attention.failed, { title })
+        : title;
+}
+
 function render(): void {
   if (!state) return;
   const current = state;
+  showTitle(current);
   used = new Set();
   resumeLanes(current);
   renderHubs(current);

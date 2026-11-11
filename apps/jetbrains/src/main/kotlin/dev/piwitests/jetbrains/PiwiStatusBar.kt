@@ -111,7 +111,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
      * Draws the item again: the recording in progress, where a run started here is stopped or that it is pausing, that
      * it is shared live and how many watch it, how far it is, `Piwi: refreshing…` while the latest run is read again,
      * else the view of the selected file's context, with its icon and, while its tests fail, the error color. A run's
-     * tooltip says who else has it open. On the event thread.
+     * tooltip says what each worker runs now (`Glue.workersNowText`) and who else has it open. On the event thread.
      */
     fun update() {
         val recording = recording()
@@ -119,8 +119,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val shared = runs()?.let { Glue.liveStatus(it.controls()) }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         val progress = runs()?.let { Glue.runProgressText(it.sessions) }
-        // Who else has the runs open, said in the tooltip of a run's state.
-        val present = runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
+        // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
+        val workers = runs()?.let { Glue.workersNowText(it.sessions) }?.let { "\n$it" }.orEmpty()
+        val present = workers + runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
         val refreshing = service().refreshing
         val view = view()
         label.text = when {

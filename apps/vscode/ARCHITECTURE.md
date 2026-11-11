@@ -296,8 +296,9 @@ second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the 
 A test run carries its own ref (`RunCommand.ref`, also in its environment). It runs as a VS Code task (`runAsTask`):
 
 - a `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`);
-- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments
-  (`runTaskName` in `src/glue.ts`);
+- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments, or,
+  for a command whose arguments the service did not give, the command (`runTaskName` in `src/glue.ts`: a chain of
+  `playwright test` whole, any other up to its first option, `piwi flake verify 12`);
 - it runs in a dedicated terminal, shown and cleared.
 
 Its start sends `piwi/commandStarted`, and `tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on
@@ -305,8 +306,10 @@ every VS Code version and in every shell. **Tasks: Rerun Last Task** runs the sa
 `tasks.onDidStartTaskProcess` sends `piwi/commandStarted` for it, and the service follows it as a rerun of a ref it
 knows.
 
-A command without a ref (`piwi.runCommand`: the Flake Lab, a trace viewer) runs in a terminal instead (`runInTerminal`),
-reused per folder and environment.
+A command the service follows (`piwi.runCommand` with `RunCommandArgs.follow`: a Flake Lab line, a fix plan's
+verification) is asked of `piwi/followCommand` and runs as a test run's task. A command without a ref (a trace viewer,
+an install, a followed command the service did not answer) runs in a terminal instead (`runInTerminal`), reused per
+folder and environment.
 
 ### Running the test at the cursor
 
@@ -763,6 +766,11 @@ A run that ended before it was followed is read from `piwi/runEnded` by its ref.
 a test no run gave a result for passes when every command exited with 0, and is an error otherwise
 (`unfollowedOutcome`). **Cancel** terminates the commands' tasks and ends the test run; the tests it showed no result
 for are skipped.
+
+**A test run's output** says what the run of this window it follows does, from its run sessions (`sessionChanged`, fed
+each `piwi/runSessionChanged`): the test each worker starts, each stop and why (`pausedText`, with the stop's place as
+its location), and each stop answered (`sessionLines` in `src/run-control.ts`), each line placed on the test it is of.
+The run is the one a profile run's command started, by its ref, or the editor's own run in progress (`LiveRun.ref`).
 
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view

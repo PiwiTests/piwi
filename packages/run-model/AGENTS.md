@@ -2,9 +2,9 @@
 
 Rules for working inside `packages/run-model/` (`@piwitests/run-model`): the decisions Piwi Picker's Runs window
 (`apps/extension/src/runs/main.ts`) and the desktop app's Local runs tray (`apps/application/app/components/desktop/`)
-share about a run they follow. Its modules: `stop` (what a stop takes, its place, its error), `status` (a worker's
-status and tab), `controls`, `presence` (who has a run open, watches or drives), `tabs` (the worker shown),
-`view-input` (the live view's input, also the VS Code paused page's) and `words`. Read
+share about a run they follow. Its modules: `attention` (what the runs ask of the person), `stop` (what a stop takes,
+its place, its error), `status` (a worker's status and tab), `controls`, `presence` (who has a run open, watches or
+drives), `tabs` (the worker shown), `view-input` (the live view's input, also the VS Code paused page's) and `words`. Read
 [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Rules

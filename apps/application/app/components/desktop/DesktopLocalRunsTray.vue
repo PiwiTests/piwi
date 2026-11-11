@@ -17,7 +17,8 @@
  * window (`DesktopRunSession`). A worker's **Watch** shows its page as its test
  * runs, and at each stop (`DesktopRunLaneView`). The tray also
  * opens on the worker the run page's **Show its page** names (`showWorker`),
- * its run expanded, its tab shown and the focus on that worker. A running
+ * and on the first test that waits at the system tray menu's **Show the
+ * stopped test**, its run expanded, its tab shown and the focus on that worker. A running
  * run's **Hold failures** switch, off by default and on from the start for a
  * reproduction,
  * makes a failure no pause bar shows wait at its line (`hold` for its live
@@ -138,9 +139,11 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-// A worker the window was asked to show (the run page's Show its page): its run expands, its tab shows, and the focus
-// moves to the worker once it is drawn.
-watch(shownWorker, async (shown) => {
+/**
+ * A worker the window was asked to show (the run page's Show its page, the system tray's Show the stopped test): its run
+ * expands, its tab shows, and the focus moves to the worker once it is drawn.
+ */
+async function showAsked(shown: { ref: string; worker: number } | null) {
   if (!shown) return;
   shownWorker.value = null;
   const session = hub.state.sessions[shown.ref];
@@ -150,7 +153,10 @@ watch(shownWorker, async (shown) => {
   if (lane !== undefined) hub.chooseTab(shown.ref, lane);
   await nextTick();
   document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
-});
+}
+watch(shownWorker, (shown) => void showAsked(shown));
+// One asked before this tray was mounted, as the page changed to one that holds it.
+onMounted(() => void showAsked(shownWorker.value));
 
 /** The runs whose output shows in a separate window instead of the tray. */
 const separateByKey = ref<Record<number, boolean>>({});

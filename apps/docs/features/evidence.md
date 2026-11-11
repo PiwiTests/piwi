@@ -6,7 +6,7 @@ lang: en-US
 
 # Failure evidence
 
-Everything Piwi captured about a failing attempt lands on one screen: what each tab holds and what a trace adds.
+Everything Piwi captured about a failing attempt lands on one screen.
 
 Two pages, told apart in [Core concepts](/guide/concepts#execution):
 
@@ -40,7 +40,8 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded (field values
   with passwords masked, scroll, dialogs, shadow DOM, focus, the mouse), with the action's target outlined. **Open in picker** finds a
-  locator on that DOM.
+  locator on that DOM. Enlarged, a screenshot's details give its attached name in full, `| Expected:` on its own
+  line.
 - **Source**: the test source as a call stack (the line that threw, with [Debug in my editor](./debug-in-editor), plus its callers), deepened
   [with a trace](#trace-powered-deep-views), then, with [coverage](./code-reach#on-the-execution-page), what the test
   ran.
@@ -67,7 +68,7 @@ how **Most likely** picks among them and what the AI diagnosis receives.
 
 ### Attempts
 
-When a test passed on retry, the **Attempts** tab lists every attempt (status and duration), then **what differed** between the failing attempt and the passing one, most diagnostic first:
+When a test passed on retry, the **Attempts** tab lists every attempt (status and duration), then **what differed** between the failing and passing attempts, most diagnostic first:
 
 - the **error** present on the failing attempt and gone on the pass;
 - a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
@@ -151,7 +152,7 @@ server, with or without [authentication](/operate/authentication). The hosted
 
 ## The test case page
 
-`/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total [runs](/guide/concepts#test-case), [pass rate](/guide/concepts#pass-rate), average duration
+`/test-cases/:id` covers the test's whole life: total [runs](/guide/concepts#test-case), [pass rate](/guide/concepts#pass-rate), average duration
 and last run, a duration trend, a status-history strip, and the recent executions, each linking back to its execution.
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 

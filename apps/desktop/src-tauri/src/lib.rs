@@ -571,6 +571,8 @@ fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
 /// `fraction`, a `label` and whether any of them is `failing`, which turns the
 /// status dot red. `state = "none"` clears the bar and restores the resting
 /// title; run progress leaves the tooltip while the unread count (if any) stays.
+/// `waiting` counts the tests of the app's runs that wait at a stop for the
+/// person, which the tray's menu offers to show (`refresh_tray_stop`).
 #[tauri::command]
 fn desktop_set_run_progress(
     app: tauri::AppHandle,
@@ -578,9 +580,11 @@ fn desktop_set_run_progress(
     fraction: Option<f64>,
     label: Option<String>,
     failing: Option<bool>,
+    waiting: Option<u32>,
 ) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        refresh_tray_stop(&handle, waiting.unwrap_or(0));
         let status = progress_bar_status(&state);
         let active = status.is_some();
         let glyph = status_dot_color(&state, fraction, failing.unwrap_or(false));
@@ -1514,12 +1518,14 @@ fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
     menu_id.strip_prefix(TRAY_STOP_RUN_PREFIX)?.parse().ok()
 }
 
-/// The tray's menu, which the runs watcher adds the Stop items to.
+/// The tray's menu, which the runs watcher adds the Stop items to, and the
+/// window's progress Show the stopped test.
 struct TrayMenu(tauri::menu::Menu<tauri::Wry>);
 
-/// The items the runs watcher keeps in the tray's menu, under Open: a Stop
+/// The items kept in the tray's menu: the runs watcher's under Open, a Stop
 /// item per running run, with the id and text it was made with, then a
-/// separator while there is any.
+/// separator while there is any; and, above Open, Show the stopped test while
+/// a test waits (`refresh_tray_stop`).
 #[derive(Default)]
 struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
@@ -1527,6 +1533,67 @@ struct TrayRunItems(Mutex<TrayRunItemsInner>);
 struct TrayRunItemsInner {
     stops: Vec<(String, String, tauri::menu::MenuItem<tauri::Wry>)>,
     separator: Option<tauri::menu::PredefinedMenuItem<tauri::Wry>>,
+    /// Show the stopped test, first in the menu while a test waits, with its text.
+    show: Option<(String, tauri::menu::MenuItem<tauri::Wry>)>,
+}
+
+impl TrayRunItemsInner {
+    /// Where Open stands in the menu: under Show the stopped test while it shows.
+    fn open_at(&self) -> usize {
+        usize::from(self.show.is_some())
+    }
+}
+
+/// Id of the tray's Show the stopped test.
+const TRAY_SHOW_STOP_ID: &str = "show-stop";
+
+/// Event the shell emits to the dashboard window as the tray's Show the
+/// stopped test is chosen: the window opens its Local runs tray on the first
+/// test that waits (`firstWaiting`).
+const TRAY_SHOW_STOP_EVENT: &str = "piwi:tray-show-stop";
+
+/// The text of the tray's Show the stopped test for the tests of the app's
+/// runs that wait at a stop for the person, which shows the first of them;
+/// `None` while none waits.
+fn tray_show_stop_text(waiting: u32) -> Option<String> {
+    match waiting {
+        0 => None,
+        1 => Some("Show the stopped test".to_string()),
+        count => Some(format!("Show a stopped test ({count} wait)")),
+    }
+}
+
+/// Keep Show the stopped test first in the tray's menu while a test of the
+/// app's runs waits at a stop for the person, its text saying how many wait;
+/// none once the window leaves the server (`session::leave_server`). On the
+/// main thread.
+pub(crate) fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
+    let (Some(menu), Some(items)) = (app.try_state::<TrayMenu>(), app.try_state::<TrayRunItems>()) else {
+        return;
+    };
+    let mut items = items.0.lock().unwrap();
+    match (tray_show_stop_text(waiting), items.show.take()) {
+        (None, Some((text, item))) => {
+            // Kept while it stands in the menu, so the Stop items' places still count it.
+            if menu.0.remove(&item).is_err() {
+                items.show = Some((text, item));
+            }
+        }
+        (None, None) => {}
+        (Some(text), Some((shown, item))) => {
+            if shown != text {
+                let _ = item.set_text(&text);
+            }
+            items.show = Some((text, item));
+        }
+        (Some(text), None) => {
+            if let Ok(item) = MenuItemBuilder::with_id(TRAY_SHOW_STOP_ID, text.as_str()).build(app) {
+                if menu.0.insert(&item, 0).is_ok() {
+                    items.show = Some((text, item));
+                }
+            }
+        }
+    }
 }
 
 /// Keep a Stop item per running run in the tray's menu, under Open. The items
@@ -1538,6 +1605,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         return;
     };
     let mut items = items.0.lock().unwrap();
+    let first = items.open_at() + 1;
     let wanted = tray_run_entries(runs);
     items.stops.retain(|(id, text, item)| {
         let keep = wanted.iter().any(|(w_id, w_text)| w_id == id && w_text == text);
@@ -1552,7 +1620,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
             continue;
         }
         if let Ok(item) = MenuItemBuilder::with_id(id.as_str(), text.as_str()).build(app) {
-            let _ = menu.0.insert(&item, 1 + index);
+            let _ = menu.0.insert(&item, first + index);
             items.stops.insert(index, (id.clone(), text.clone(), item));
         }
     }
@@ -1563,7 +1631,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         }
         (None, false) => {
             if let Ok(separator) = PredefinedMenuItem::separator(app) {
-                let _ = menu.0.insert(&separator, 1 + items.stops.len());
+                let _ = menu.0.insert(&separator, first + items.stops.len());
                 items.separator = Some(separator);
             }
         }
@@ -3431,6 +3499,12 @@ pub fn run() {
                         let _ = login_i.set_checked(!enabled);
                     }
                     "quit" => quit_after_confirming(app, DESKTOP_APP_NAME),
+                    TRAY_SHOW_STOP_ID => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            bring_to_front(&w);
+                        }
+                        let _ = app.emit_to("main", TRAY_SHOW_STOP_EVENT, ());
+                    }
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
                             let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
@@ -3626,7 +3700,8 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_stop_run_id, window_state_key,
+        app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_show_stop_text, tray_stop_run_id,
+        window_state_key, TRAY_SHOW_STOP_ID,
         AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
         args_to_act_on, bootstrap_url, link_page, LinkedPage,
@@ -4164,7 +4239,7 @@ mod tests {
         assert_eq!(app_menu_action("app-menu-issue"), Some(AppMenuAction::OpenUrl(NEW_ISSUE_URL)));
         assert_eq!(app_menu_action("app-menu-logs"), Some(AppMenuAction::ShowLogs));
         // The tray's items are its own handler's.
-        for id in ["quit", "show_logs", "open", "run_bg"] {
+        for id in ["quit", "show_logs", "open", "run_bg", TRAY_SHOW_STOP_ID] {
             assert_eq!(app_menu_action(id), None, "{id}");
         }
         // Help opens the docs site.
@@ -4180,6 +4255,15 @@ mod tests {
         ];
         let texts: Vec<String> = tray_run_entries(&runs).into_iter().map(|(_, text)| text).collect();
         assert_eq!(texts, ["Stop tests in R&&D", "Stop tests in R&&D (2)", "Stop tests in odd name"]);
+    }
+
+    #[test]
+    fn the_tray_offers_to_show_the_tests_that_wait_while_any_does() {
+        assert_eq!(tray_show_stop_text(0), None);
+        assert_eq!(tray_show_stop_text(1).as_deref(), Some("Show the stopped test"));
+        assert_eq!(tray_show_stop_text(3).as_deref(), Some("Show a stopped test (3 wait)"));
+        // Its id is no Stop item's, nor the app menu's.
+        assert_eq!(tray_stop_run_id(TRAY_SHOW_STOP_ID), None);
     }
 
     #[test]
