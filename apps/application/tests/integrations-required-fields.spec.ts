@@ -511,6 +511,32 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       .toEqual({ value: { id: '10101' }, label: 'Major' });
   });
 
+  test('the project settings pick the default assignee by name and show it by name again', async ({
+    page,
+    request,
+  }) => {
+    const savedAssignee = async () =>
+      (await (await request.get(`/api/projects/${projectId}/integrations`)).json()).defaultAssignee ?? null;
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
+    const picker = page.getByTestId('binding-default-assignee');
+    await expect(picker.locator('button').first()).toBeEnabled({ timeout: 30_000 });
+    await picker.locator('button').first().click();
+    await page.getByRole('option', { name: 'Assignee' }).click();
+    const save = page.locator('[data-shot="project-integration-binding"]').getByRole('button', { name: 'Save' });
+    await save.click();
+    await expect.poll(savedAssignee).toBe('acct-2');
+
+    // A saved account id is looked up, so it reads as the person's name.
+    await page.reload();
+    await expect(picker).toContainText('Assignee', { timeout: 30_000 });
+    await expect(picker).not.toContainText('acct-2');
+
+    await picker.locator('[data-slot="trailingClear"]').click();
+    await expect(picker).toContainText('Unassigned');
+    await save.click();
+    await expect.poll(savedAssignee).toBeNull();
+  });
+
   test('the create dialog asks for what is still required and files the issue with it', async ({ page }) => {
     mock.requireTags = true;
     try {
