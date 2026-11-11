@@ -243,3 +243,101 @@ describe('a run’s own connection, through the record channel', () => {
     }
   });
 });
+
+describe('this window’s runs shared live, and a teammate’s ask to watch', () => {
+  function writingSocket() {
+    const written: string[] = [];
+    const socket = Object.assign(fakeSocket(), {
+      write: (line: string) => {
+        written.push(line);
+        return true;
+      },
+    });
+    return { socket, written };
+  }
+
+  function window() {
+    const notices: string[] = [];
+    const asks: unknown[] = [];
+    const windowShared: boolean[] = [];
+    const sessions = new RunSessions({
+      notify: () => {},
+      answersStops: () => true,
+      notice: (_root, _severity, message) => void notices.push(message),
+      rootOf: () => '/work/shop',
+      instances: () => ['https://piwi.example.com'],
+      askedToWatch: (ask) => void asks.push(ask),
+      shareWindowChanged: (on) => void windowShared.push(on),
+      paceMs: 5,
+      burstMs: 0,
+      lingerMs: 50,
+    });
+    const main = (ref: string, run: number) => {
+      const { socket, written } = writingSocket();
+      const reader = sessions.attachMain(socket as unknown as net.Socket, { ...BEGIN, ref });
+      reader(JSON.stringify({ type: 'run-page', id: run, url: `https://piwi.example.com/test-runs/${run}` }));
+      return { socket, written, read: (message: unknown) => reader(JSON.stringify(message)) };
+    };
+    const worker = (ref: string) => {
+      const { socket, written } = writingSocket();
+      const reader = sessions.attach(socket as unknown as net.Socket, {
+        type: 'run-attach',
+        token: 't',
+        ref,
+        cwd: '/work/shop',
+        workerIndex: 0,
+        parallelIndex: 0,
+        pid: 2,
+        playwright: '1.64.1',
+        reporter: '0.70.0',
+        takes: [...RUN_TAKES],
+      });
+      const live = (on: boolean) =>
+        reader(
+          JSON.stringify({
+            type: 'live',
+            can: true,
+            on,
+            viewers: 0,
+            page: 'https://piwi.example.com/test-runs/1',
+            why: null,
+          }),
+        );
+      return { written, live, shares: () => written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share') };
+    };
+    return { sessions, notices, asks, windowShared, main, worker };
+  }
+
+  test('shares each run the window starts until stopped, each saying so and continuing the one before', () => {
+    const { sessions, notices, windowShared, main, worker } = window();
+    expect(sessions.share({ on: true, scope: 'window' })).toMatchObject({ ok: true });
+    expect(windowShared).toEqual([true]);
+    main('ed-1', 77);
+    const first = worker('ed-1');
+    expect(first.shares()).toEqual([{ type: 'share', on: true }]);
+    first.live(true);
+    expect(notices).toEqual([
+      "Run #77 is shared live on piwi.example.com, as this window's runs are until you stop sharing them.",
+    ]);
+    // The next run continues the one before on the instance.
+    main('ed-2', 78);
+    const second = worker('ed-2');
+    expect(second.shares()).toEqual([{ type: 'share', on: true, after: 77 }]);
+    // Stopped, every run of the window stops sharing, and the next one is not shared.
+    expect(sessions.share({ on: false, scope: 'window' })).toMatchObject({ ok: true });
+    expect(windowShared).toEqual([true, false]);
+    expect(second.shares()[second.shares().length - 1]).toEqual({ type: 'share', on: false });
+    main('ed-3', 79);
+    expect(worker('ed-3').shares()).toEqual([]);
+  });
+
+  test('asks the developer as a teammate asks to watch, and sends Not now back through the run', () => {
+    const { sessions, asks, main } = window();
+    const run = main('ed-1', 77);
+    run.read({ type: 'run-ask', id: 'a1', by: 'Dana' });
+    expect(asks).toEqual([{ ref: 'ed-1', id: 'a1', by: 'Dana', run: 77 }]);
+    expect(sessions.answerAsk({ ref: 'ed-1', id: 'a1', answer: 'not-now' })).toMatchObject({ ok: true });
+    expect(run.written.map((line) => JSON.parse(line))).toEqual([{ type: 'ask-answer', id: 'a1', answer: 'not-now' }]);
+    expect(sessions.answerAsk({ ref: 'ed-9', id: 'a1', answer: 'not-now' })).toMatchObject({ ok: false });
+  });
+});
