@@ -778,6 +778,26 @@ class GlueTest {
     }
 
     @Test
+    fun `what each worker runs now is said by its lane, each run named when several run`() {
+        val one = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5)),
+            RunWorker(0, 0, "running", runTest()),
+            RunWorker(2, 2, "between"),
+        )
+        assertEquals(
+            "Worker 1 · checkout › pays\nWorker 2 · checkout › pays · stopped\nWorker 3 · between tests",
+            Glue.workersNowText(mapOf("ed-1" to one)),
+        )
+        val two = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest())), "ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))
+        assertEquals(
+            "Run in shop (ed-1) · Worker 1 · checkout › pays\nRun in shop (ed-2) · Worker 1 · checkout › pays",
+            Glue.workersNowText(two),
+        )
+        assertNull(Glue.workersNowText(mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest()), ended = true))))
+    }
+
+    @Test
     fun `who else is on a run, a worker's page and a stop is said, this IDE as you or left out`() {
         val picker = RunPresence("picker", "Piwi Picker")
         val desktop = RunPresence("desktop", "the desktop app")

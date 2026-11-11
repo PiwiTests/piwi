@@ -1714,7 +1714,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
     }),
     // A run started here: a worker started or ended a test, stopped or went on.
-    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),
+    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => {
+      runControl.heard(session);
+      explorer?.sessionChanged(session);
+    }),
     // The code made at a stop, from here or Piwi Picker: written above the stopped line.
     lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.

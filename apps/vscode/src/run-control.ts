@@ -533,6 +533,42 @@ export function pausedText(stop: RunStop, test: RunTest | null, terminal = false
   return `${why} · ${stop.title}${attempt}${where}`;
 }
 
+/** A line the Testing view writes in the output of the test run that follows a run (`sessionLines`). */
+export interface SessionLine {
+  /** The line, without its line break. */
+  text: string;
+  /** The test it is of: its spec and the 0-based line of its `test(…)` call. */
+  test: { uri: string; line: number } | null;
+  /** Where the stop it tells of stands; null for any other line. */
+  at: { uri: string; line: number } | null;
+}
+
+/**
+ * What a run's change writes in the output of the Testing view's test run that follows it, each line naming the
+ * worker's lane: a test a worker starts (`Worker 2 · cart › adds a mug · attempt 2`), a stop and why (`pausedText`),
+ * and a stop answered (`Worker 2 · goes on`). Nothing for a session it already wrote.
+ */
+export function sessionLines(before: RunSession | undefined, now: RunSession): SessionLine[] {
+  const lines: SessionLine[] = [];
+  for (const worker of now.workers) {
+    const was = before?.workers.find((w) => w.worker === worker.worker);
+    const who = workerName(worker.parallelIndex);
+    const test = worker.test ? { uri: worker.test.uri, line: worker.test.line } : null;
+    const started = worker.test && (worker.test.id !== was?.test?.id || worker.test.retry !== was?.test?.retry);
+    if (started) {
+      const attempt = worker.test!.retry > 0 ? ` · attempt ${worker.test!.retry + 1}` : '';
+      lines.push({ text: `${who} · ${worker.test!.title.join(' › ')}${attempt}`, test, at: null });
+    }
+    if (worker.stop && worker.stop.since !== was?.stop?.since) {
+      const text = `${who} · ${pausedText(worker.stop, worker.test, !!now.terminal, !!now.runner)}`;
+      lines.push({ text, test, at: { uri: worker.stop.uri, line: worker.stop.line } });
+    } else if (!worker.stop && was?.stop && !started) {
+      lines.push({ text: `${who} · goes on`, test, at: null });
+    }
+  }
+  return lines;
+}
+
 /**
  * Whether a stop's window can come to the front (**Show the browser**): its pause bar shows, so the browser has a
  * window, and its reporter brings it forward.
@@ -894,10 +930,29 @@ export function liveText(live: RunLive): string {
 }
 
 /**
+ * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
+ * stopped there (`· stopped`), or between tests; each run's name before them when several run.
+ */
+export function workersNow(sessions: Sessions): string[] {
+  const live = [...sessions.values()].filter((s) => !s.ended && s.workers.length > 0);
+  return live.flatMap((s) =>
+    [...s.workers]
+      .sort((a, b) => a.parallelIndex - b.parallelIndex)
+      .map((w) => {
+        const run = live.length > 1 ? `${runLabel(s)} · ` : '';
+        const what = w.test
+          ? `${w.test.title.join(' › ')}${w.state === 'stopped' ? ' · stopped' : ''}`
+          : 'between tests';
+        return `${run}${workerName(w.parallelIndex)} · ${what}`;
+      }),
+  );
+}
+
+/**
  * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
  * many they hold, and how many of them failed, for every run kept that says so (none from a reporter that predates
- * it), with the run's number on the instance once one run names it. Its tooltip links to the runs' pages and to a
- * worker's test, and says who else has each run open; a click watches a worker while one can be, else opens the run's
+ * it), with the run's number on the instance once one run names it. Its tooltip says what each worker runs now
+ * (`workersNow`), links to the runs' pages and to a worker's test, and says who else has each run open; a click watches a worker while one can be, else opens the run's
  * page. None while no run says.
  */
 export function progressItem(sessions: Sessions): ControlItem | null {
@@ -932,6 +987,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
       `${name}${holdText(s.hold)} · [Turn ${s.hold.on ? 'off' : 'on'}](command:${RUN_COMMANDS.holdFailures}?${arg})`,
     ];
   });
+  const workers = workersNow(sessions).map(escapedMarkdown);
   // Who else has each run open.
   const kept = [...sessions.values()];
   const present = kept.flatMap((s) => {
@@ -943,7 +999,8 @@ export function progressItem(sessions: Sessions): ControlItem | null {
     text: `$(beaker) ${one ? `#${one.id} · ` : ''}${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
     tooltip:
       `Piwi: ${one ? `run #${one.id}` : told.length === 1 ? 'the run' : `${told.length} runs`} ran ` +
-      `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.${links.length ? `\n\n${links.join(' · ')}` : ''}` +
+      `${done} of ${total} ${tests}${outcomes ? `: ${outcomes}` : ''}.` +
+      `${workers.length ? `\n\n${workers.join('\n\n')}` : ''}${links.length ? `\n\n${links.join(' · ')}` : ''}` +
       `${holds.length ? `\n\n${holds.join('\n\n')}` : ''}` +
       `${present.length ? `\n\n${present.join('\n\n')}` : ''}`,
     markdown: true,

@@ -119,8 +119,9 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val shared = runs()?.let { Glue.liveStatus(it.controls()) }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         val progress = runs()?.let { Glue.runProgressText(it.sessions) }
-        // Who else has the runs open, said in the tooltip of a run's state.
-        val present = runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
+        // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
+        val workers = runs()?.let { Glue.workersNowText(it.sessions) }?.let { "\n$it" }.orEmpty()
+        val present = workers + runs()?.let { Glue.runsPresenceText(it.sessions) }?.let { "\n$it" }.orEmpty()
         val refreshing = service().refreshing
         val view = view()
         label.text = when {

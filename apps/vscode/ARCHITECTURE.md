@@ -766,6 +766,11 @@ a test no run gave a result for passes when every command exited with 0, and is 
 (`unfollowedOutcome`). **Cancel** terminates the commands' tasks and ends the test run; the tests it showed no result
 for are skipped.
 
+**A test run's output** says what the run of this window it follows does, from its run sessions (`sessionChanged`, fed
+each `piwi/runSessionChanged`): the test each worker starts, each stop and why (`pausedText`, with the stop's place as
+its location), and each stop answered (`sessionLines` in `src/run-control.ts`), each line placed on the test it is of.
+The run is the one a profile run's command started, by its ref, or the editor's own run in progress (`LiveRun.ref`).
+
 The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
 tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The view
 has no flaky result (`testOutcome` shows one as passed), so a flaky test's item says `flaky` beside its title and

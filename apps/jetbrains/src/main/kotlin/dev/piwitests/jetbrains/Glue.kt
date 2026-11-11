@@ -2125,6 +2125,24 @@ object Glue {
     fun workerName(lane: Int): String = "Worker ${lane + 1}"
 
     /**
+     * What each worker of the live runs runs now, one line each, by its lane: its test (`Worker 2 · cart › adds a mug`),
+     * stopped there (`· stopped`), or between tests; each run's name before them when several run. Null while no worker
+     * runs, as the VS Code extension's `workersNow` says it.
+     */
+    fun workersNowText(sessions: Map<String, RunSession>): String? {
+        val live = sessions.values.filter { !it.ended && !it.workers.isNullOrEmpty() }
+        val lines = live.flatMap { session ->
+            session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val run = if (live.size > 1) "${runLabel(session)} · " else ""
+                val test = w.test?.title?.joinToString(" › ")
+                val what = if (test == null) "between tests" else if (w.state == "stopped") "$test · stopped" else test
+                "$run${workerName(w.parallelIndex)} · $what"
+            }
+        }
+        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /**
      * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
      * their order; `pausable` keeps those a Pause can stop now (Pause and Watch).
      */
