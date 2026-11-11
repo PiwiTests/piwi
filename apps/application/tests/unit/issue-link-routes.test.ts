@@ -33,14 +33,30 @@ vi.mock('../../server/utils/safe-fetch', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   safeFetch: async () => new Response('', { status: 404 }),
 }));
+vi.mock('../../server/utils/rate-limit', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  checkRateLimit: () => true,
+  rateLimitClientIp: () => '127.0.0.1',
+}));
 
 interface FakeEvent {
   body?: unknown;
+  params?: Record<string, string>;
 }
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
+vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
 vi.stubGlobal('apiError', apiError);
+
+// Each Jira site's issues carry a numeric id beside their key, as Jira's do: PAY-7 is 20007.
+const ISSUE_PREFIXES = ['WEB', 'PAY'];
+const issueId = (key: string) => {
+  const [prefix, n] = key.split('-');
+  return String((ISSUE_PREFIXES.indexOf(prefix!) + 1) * 10000 + Number(n));
+};
+const keyOfIssue = (ref: string) =>
+  /^\d+$/.test(ref) ? `${ISSUE_PREFIXES[Math.floor(Number(ref) / 10000) - 1]}-${Number(ref) % 10000}` : ref;
 
 // Each Jira site, told apart by host: every request it was sent.
 const sent: { host: string; method: string; path: string }[] = [];
@@ -52,15 +68,17 @@ vi.stubGlobal(
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
     sent.push({ host: url.host, method, path: url.pathname });
-    const [, key, action] = /^\/rest\/api\/3\/issue\/([A-Z]+-\d+)(\/comment|\/transitions)?$/.exec(url.pathname) ?? [];
-    if (!key) return json({ errorMessages: ['Not found'] }, 404);
+    const [, ref, action] =
+      /^\/rest\/api\/3\/issue\/([A-Z]+-\d+|\d+)(\/comment|\/transitions)?$/.exec(url.pathname) ?? [];
+    if (!ref) return json({ errorMessages: ['Not found'] }, 404);
+    const key = keyOfIssue(ref);
     if (action === '/comment') return json({ id: '1' }, 201);
     if (action === '/transitions' && method === 'POST') return new Response(null, { status: 204 });
     if (action === '/transitions') {
       return json({ transitions: [{ id: '31', name: 'Done', to: { name: 'Done', statusCategory: { key: 'done' } } }] });
     }
     return json({
-      id: key,
+      id: issueId(key),
       key,
       fields: {
         summary: `Summary of ${key}`,
@@ -74,11 +92,11 @@ const BILLING_HOST = 'billing.atlassian.net';
 /** The requests one site was sent, as `METHOD path`. */
 const sentTo = (host: string) => sent.filter((r) => r.host === host).map((r) => `${r.method} ${r.path}`);
 
-const { createConnection } = await import('../../server/utils/integrations/connections');
+const { createConnection, setWebhookToken } = await import('../../server/utils/integrations/connections');
 const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { enqueueBugLooksFixedPolicies, enqueueFixPolicies, enqueueMergePolicies } =
   await import('../../server/utils/integrations/policies');
-const { refreshLinkByExternalId, syncTrackerLinks } = await import('../../server/utils/integrations/sync');
+const { refreshLinksForIssue, syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { enqueueAction, runActionNow } = await import('../../server/utils/integrations/actions');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 
@@ -87,6 +105,8 @@ const createLink = underRoutePermission(
   state,
   (await import('../../server/api/links/index.post')).default as unknown as Handler,
 );
+const jiraWebhook = (await import('../../server/api/integrations/jira/webhook/[token].post'))
+  .default as unknown as Handler;
 const linkIssue = MCP_TOOLS.find((t) => t.name === 'link_issue')!.handler;
 
 const WEB = 10;
@@ -213,9 +233,13 @@ async function pinThrough(
   return link!;
 }
 
-async function linkTitle(id: number): Promise<string | null> {
+async function storedLink(id: number) {
   const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.id, id));
-  return link!.title;
+  return link!;
+}
+
+async function linkTitle(id: number): Promise<string | null> {
+  return (await storedLink(id)).title;
 }
 
 describe('POST /api/links', () => {
@@ -242,7 +266,7 @@ describe('POST /api/links', () => {
     const { link } = await createLink({ body: { entityType: 'failure_cluster', entityId: CLUSTER[WEB], url: WEB_5 } });
     expect(link).toMatchObject({
       connectionId: webJira,
-      externalId: 'WEB-5',
+      externalId: issueId('WEB-5'),
       title: 'Summary of WEB-5',
       statusText: 'In Progress',
     });
@@ -295,6 +319,11 @@ describe('the link_issue MCP tool', () => {
       ctx,
     );
     expect(result).toMatchObject({ key: 'WEB-5', title: 'Summary of WEB-5', statusText: 'In Progress' });
+    const [stored] = await db
+      .select()
+      .from(schema.entityLinks)
+      .where(eq(schema.entityLinks.failureClusterId, CLUSTER[WEB]));
+    expect(stored).toMatchObject({ connectionId: webJira, externalId: issueId('WEB-5') });
     expect(sentTo(WEB_HOST)).toEqual(['GET /rest/api/3/issue/WEB-5']);
   });
 });
@@ -374,11 +403,50 @@ describe('the status sync and the webhook', () => {
     expect(await linkTitle(billing.id)).toBe('Summary of PAY-7');
     expect(await linkTitle(foreign.id)).toBeNull();
 
+    // The sweep stored the issue's id on the links it read, and only on those.
+    expect((await storedLink(billing.id)).externalId).toBe(issueId('PAY-7'));
+    expect((await storedLink(foreign.id)).externalId).toBe('PAY-7');
+
     // Billing's webhook names PAY-7: billing's link is read again, web's is not.
     sent.length = 0;
-    expect(await refreshLinkByExternalId(db as never, billingJira, 'PAY-7')).toBe(true);
-    expect(sentTo(BILLING_HOST)).toEqual(['GET /rest/api/3/issue/PAY-7']);
+    expect(await refreshLinksForIssue(db as never, billingJira, { id: issueId('PAY-7'), key: 'PAY-7' })).toBe(true);
+    expect(sentTo(BILLING_HOST)).toEqual([`GET /rest/api/3/issue/${issueId('PAY-7')}`]);
     expect(await linkTitle(foreign.id)).toBeNull();
+  });
+
+  test('the webhook refreshes a link pinned by its key, and the link keeps the issue id', async () => {
+    const pinned = await pinThrough(billingJira, 'PAY-7', { failureClusterId: CLUSTER[BILLING] });
+
+    expect(await refreshLinksForIssue(db as never, billingJira, { id: issueId('PAY-7'), key: 'PAY-7' })).toBe(true);
+    expect(sentTo(BILLING_HOST)).toEqual(['GET /rest/api/3/issue/PAY-7']);
+    expect(await storedLink(pinned.id)).toMatchObject({ title: 'Summary of PAY-7', externalId: issueId('PAY-7') });
+
+    // The next event finds it by its id alone.
+    sent.length = 0;
+    expect(await refreshLinksForIssue(db as never, billingJira, { id: issueId('PAY-7') })).toBe(true);
+    expect(sentTo(BILLING_HOST)).toEqual([`GET /rest/api/3/issue/${issueId('PAY-7')}`]);
+  });
+
+  test('the webhook route matches the issue by its key, its id, or both, and refreshes nothing without either', async () => {
+    const token = (await setWebhookToken(db as never, billingJira))!;
+    const pinned = await pinThrough(billingJira, 'PAY-7', { failureClusterId: CLUSTER[BILLING] });
+    const post = (issue: unknown) =>
+      jiraWebhook({ params: { token }, body: { webhookEvent: 'jira:issue_updated', issue } });
+
+    expect(await post({ key: 'PAY-7' })).toEqual({ ok: true, refreshed: true });
+    expect((await storedLink(pinned.id)).externalId).toBe(issueId('PAY-7'));
+    expect(await post({ id: Number(issueId('PAY-7')) })).toEqual({ ok: true, refreshed: true });
+    expect(await post({ id: issueId('PAY-7'), key: 'PAY-7' })).toEqual({ ok: true, refreshed: true });
+    expect(sentTo(BILLING_HOST)).toHaveLength(3);
+
+    sent.length = 0;
+    expect(await post({})).toEqual({ ok: true });
+    expect(await post({ id: '', key: '' })).toEqual({ ok: true });
+    expect(await jiraWebhook({ params: { token }, body: null })).toEqual({ ok: true });
+    // Another issue's event refreshes no link, and a wrong token reads nothing.
+    expect(await post({ id: issueId('PAY-8'), key: 'PAY-8' })).toEqual({ ok: true, refreshed: false });
+    expect(await jiraWebhook({ params: { token: 'wrong' }, body: { issue: { key: 'PAY-7' } } })).toEqual({ ok: true });
+    expect(sent).toEqual([]);
   });
 
   test("read a run's, an execution's and a test's links through their project's connection alone", async () => {

@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../../database';
 import { connectionByWebhookToken } from '../../../../utils/integrations/connections';
-import { refreshLinkByExternalId } from '../../../../utils/integrations/sync';
+import { refreshLinksForIssue, type IssueRef } from '../../../../utils/integrations/sync';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../../../utils/rate-limit';
 
 defineRouteMeta({
@@ -8,19 +8,20 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Jira inbound webhook',
     description:
-      'Refresh one tracked issue from a Jira "issue updated" webhook. The secret token in the path selects the connection; the handler only ever refreshes the links to that issue of the projects bound to that connection and applies the resolve/reopen policies — it can never create or transition anything. Public and rate-limited.',
+      'Refresh one tracked issue from a Jira "issue updated" webhook. The secret token in the path selects the connection; the issue id and key in the payload name the issue, and the handler only ever refreshes the links to that issue (matched by either) of the projects bound to that connection and applies the resolve/reopen policies — it can never create or transition anything. Public and rate-limited.',
     parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
     security: [],
   },
 });
 
-/** Pull the Jira issue's stable id out of a webhook payload. */
-function issueIdFromBody(body: unknown): string | null {
-  const issue = (body as { issue?: { id?: unknown } } | null)?.issue;
-  const id = issue?.id;
-  if (typeof id === 'string' && id) return id;
-  if (typeof id === 'number') return String(id);
-  return null;
+/** Pull the Jira issue's stable id and key out of a webhook payload; null when it names neither. */
+function issueFromBody(body: unknown): IssueRef | null {
+  const issue = (body as { issue?: { id?: unknown; key?: unknown } } | null)?.issue;
+  let id: string | null = null;
+  if (typeof issue?.id === 'string' && issue.id) id = issue.id;
+  else if (typeof issue?.id === 'number' && Number.isFinite(issue.id)) id = String(issue.id);
+  const key = typeof issue?.key === 'string' && issue.key ? issue.key : null;
+  return id || key ? { id, key } : null;
 }
 
 export default eventHandler(async (event) => {
@@ -36,9 +37,9 @@ export default eventHandler(async (event) => {
   if (!connection) return { ok: true };
 
   const body = await readBody(event).catch(() => null);
-  const issueId = issueIdFromBody(body);
-  if (!issueId) return { ok: true };
+  const issue = issueFromBody(body);
+  if (!issue) return { ok: true };
 
-  const refreshed = await refreshLinkByExternalId(db, connection.id, issueId).catch(() => false);
+  const refreshed = await refreshLinksForIssue(db, connection.id, issue).catch(() => false);
   return { ok: true, refreshed };
 });
