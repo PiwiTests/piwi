@@ -74,7 +74,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
     private val drives = CopyOnWriteArrayList<DriveStopParams>()
-    /** The page's input and the stops given back as they reach `RunRemote`, each input answered `inputMillis` after. */
+    /**
+     * The page's watches, its input and the stops given back as they reach `RunRemote`, each input answered
+     * `inputMillis` after.
+     */
     private val pageSends = CopyOnWriteArrayList<String>()
     private var inputMillis = 0L
     private val binds = CopyOnWriteArrayList<StopBindParams>()
@@ -115,7 +118,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 return PausedPageResult(image)
             }
 
-            override fun pageView(params: PageViewParams) = RunControlResult(true, "Watching.")
+            override fun pageView(params: PageViewParams): RunControlResult {
+                pageSends += if (params.on) "view on" else "view off"
+                return RunControlResult(true, "Watching.")
+            }
 
             override fun pageInput(params: PageInputParams): RunControlResult {
                 pageSends += if (params.release) "release" else params.events.joinToString { listOfNotNull(it.type, it.action, it.key).joinToString(" ") }
@@ -945,7 +951,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             boxes.single { it.text == "Watch live" }.doClick()
             waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
             interact.doClick()
-            waitFor("Interact's release") { pageSends.takeIf { it == listOf("release") } }
+            waitFor("Interact's release") { pageSends.takeIf { it == listOf("view on", "release") } }
             pageSends.clear()
             val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
             // A click the panel holds back for a second one, then Escape, then Interact on again and a key at once.
@@ -958,6 +964,62 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             waitFor("the give-back and the key") { pageSends.takeIf { sent -> "give back" in sent && sent.any { it.endsWith("Enter") } } }
             assertEquals(listOf("mouse click", "release", "give back", "key press Enter"), pageSends)
             assertEquals(DriveStopParams("ed-10", 0, since, false), drives.single())
+        } finally {
+            inputMillis = 0
+            sessions.inSight = { it.isShowing }
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Watch live turned off, or the tab hidden, with Interact on: the input queued goes first, a key on its way, the
+     * click held back for a second one and the release, then the stop is given back, then the watch ends.
+     */
+    fun testTheWatchEndsAfterTheInputAndTheGiveBack() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        sessions.inSight = { true }
+        inputMillis = 100
+        try {
+            val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(1280, 800, BufferedImage.TYPE_INT_RGB), "jpg", it) }
+            image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()), 1280, 800)
+            val pageObject = file("tests/pages/order.page.ts", page)
+            val since = "2026-10-28T11:00:00.000Z"
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
+            hear(RunSession("ed-11", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
+            waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val live = boxes.single { it.text == "Watch live" }
+            val interact = boxes.single { it.text == "Interact" }
+            val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
+            fun interacting() {
+                live.doClick()
+                waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
+                interact.doClick()
+                waitFor("Interact's release") { pageSends.takeIf { it == listOf("view on", "release") } }
+                pageSends.clear()
+            }
+            fun click() {
+                picture.mouseListeners.forEach { it.mousePressed(MouseEvent(picture, MouseEvent.MOUSE_PRESSED, 1L, 0, 100, 100, 1, false, MouseEvent.BUTTON1)) }
+                picture.mouseListeners.forEach { it.mouseReleased(MouseEvent(picture, MouseEvent.MOUSE_RELEASED, 1L, 0, 100, 100, 1, false, MouseEvent.BUTTON1)) }
+            }
+            interacting()
+            picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED)) }
+            waitFor("the key on its way") { pageSends.takeIf { it.isNotEmpty() } }
+            click()
+            live.doClick()
+            assertFalse(panel.interacting)
+            waitFor("the watch ended") { pageSends.takeIf { "view off" in it } }
+            assertEquals(listOf("key press Enter", "mouse click", "release", "give back", "view off"), pageSends)
+            pageSends.clear()
+            // Hidden, the tab sends what it holds and gives the stop back before its watch ends too.
+            interacting()
+            click()
+            panel.visibilityChanged?.invoke(false)
+            assertFalse(panel.interacting)
+            waitFor("the watch ended") { pageSends.takeIf { "view off" in it } }
+            assertEquals(listOf("mouse click", "release", "give back", "view off"), pageSends)
+            assertEquals(List(2) { DriveStopParams("ed-11", 0, since, false) }, drives)
         } finally {
             inputMillis = 0
             sessions.inSight = { it.isShowing }

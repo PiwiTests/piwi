@@ -199,7 +199,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         sessions.isNotEmpty() && now - answeredAt < Glue.RESUMED_MILLIS
     /** The watch the service accepted: Interact is offered only then. On the event thread. */
     private var acceptedPage: PageViewParams? = null
-    private var viewCalls = CompletableFuture.completedFuture(Unit)
+    /** The Worker tab's watches, each sent once the one before was answered. */
+    private var laneCalls = CompletableFuture.completedFuture(Unit)
     private val pendingPageFrame = AtomicReference<PageFrame?>(null)
     private val drawingPageFrame = AtomicBoolean(false)
     /**
@@ -212,7 +213,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The keys and buttons held are let go, after the events queued and before a stop given back after them. */
     private var pageRelease = false
     private val pageInputAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
-    /** The Paused Page tab's input and the stops it gives back, each sent once the one before was answered. */
+    /**
+     * The Paused Page tab's calls, each sent once the one before was answered: its watches, its input and the stops it
+     * gives back.
+     */
     private var pageCalls = CompletableFuture.completedFuture(Unit)
 
     /**
@@ -748,6 +752,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * `select` is false (the Worker tab is in sight, and keeps the place). On the event thread.
      */
     fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
+        // The same slot's next stop keeps Interact while Watch live stays on; another slot's, or one taking no input,
+        // turns it off before the watch ends.
+        val before = livePage()?.component as? PausedPagePanel
+        val keep = before != null && Glue.keepsInteract(before.interacting, pageSlot, stop, before.liveWanted)
+        if (!keep) before?.letGo()
         stopPageView()
         val key = Glue.stopKey(stop)
         pageStop = key
@@ -760,7 +769,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 // Closed, the tab stops watching its stop's page and Interact goes off; the next stop opens it again.
                 setDisposer {
                     if (page === this) {
-                        (component as? PausedPagePanel)?.stopInteracting()
+                        (component as? PausedPagePanel)?.letGo()
                         stopPageView()
                     }
                 }
@@ -774,8 +783,6 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             window.show(null)
         }
         val panel = content.component as PausedPagePanel
-        // The same slot's next stop keeps Interact while Watch live stays on; another slot's, or one taking no input, turns it off.
-        val keep = Glue.keepsInteract(panel.interacting, pageSlot, stop, panel.liveWanted)
         pageSlot = stop.ref to stop.slot
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks"), keep) { on -> watchPage(stop, on) }
         // Interact going off gives back the stop it was last on for: this one, from now on.
@@ -792,8 +799,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }
         }
         panel.visibilityChanged = { visible ->
-            if (!visible) { stopPageView(); panel.watching(false) }
-            else if (panel.liveWanted && watchingPage == null) watchPage(stop, true)
+            if (!visible) {
+                panel.letGo()
+                stopPageView()
+                panel.watching(false)
+            } else if (panel.liveWanted && watchingPage == null) watchPage(stop, true)
         }
         pageCaption = Glue.stopCaption(stop, sessions)
         panel.show("$pageCaption · asking the test for its page…", null)
@@ -838,26 +848,29 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
-    @Synchronized private fun requestPageView(params: PageViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
-        viewCalls = viewCalls.handle { _, _ -> Unit }.thenApplyAsync({
+    /** `piwi/pageView` on the tab's calls, after what the tab sent before it; `answered` on the event thread. */
+    private fun requestPageView(params: PageViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
+        pageCall {
             val result = runCatching { remote.pageView(params) }.getOrNull()
             if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
-            Unit
-        }, AppExecutorUtil.getAppExecutorService())
+        }
     }
 
+    /**
+     * The Paused Page tab's watch ends after what was queued for it, in order on the tab's calls: its events, its
+     * release and the stops given back, then `piwi/pageView` off. On the event thread.
+     */
     private fun stopPageView() {
         val previous = watchingPage
         watchingPage = null
         acceptedPage = null
         pendingPageFrame.set(null)
         pageInputAlarm.cancelAllRequests()
-        val givenBack = pageInputs.filterIsInstance<Glue.ShownStop>()
+        if (previous != null) while (pageInputs.isNotEmpty() || pageRelease) sendQueued(previous)
+        pageInputs.filterIsInstance<Glue.ShownStop>().forEach(::sendGiveBack)
         pageInputs.clear()
         pageInputBusy = false
         pageRelease = false
-        // The events dropped with the watch reach no page: the stops queued after them go now, after a send in flight.
-        givenBack.forEach(::sendGiveBack)
         if (previous != null) requestPageView(previous.copy(on = false))
     }
 
@@ -875,6 +888,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 acceptedPage = params
                 panel.watching(true)
             } else {
+                panel.letGo()
                 stopPageView()
                 panel.watching(false)
                 panel.note(result?.message ?: "The editor service did not answer.")
@@ -990,7 +1004,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     @Synchronized private fun requestLaneView(params: LaneViewParams, answered: ((RunControlResult?) -> Unit)? = null) {
-        viewCalls = viewCalls.handle { _, _ -> Unit }.thenApplyAsync({
+        laneCalls = laneCalls.handle { _, _ -> Unit }.thenApplyAsync({
             val result = runCatching { remote.laneView(params) }.getOrNull()
             if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(result) }, gone)
             Unit
@@ -1101,30 +1115,37 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         pageInputBusy = true
         pageInputAlarm.addRequest({
             if (watchingPage !== own) return@addRequest
-            // A stop given back goes once the events and the release asked before it were answered.
-            while (!pageRelease && pageInputs.firstOrNull() is Glue.ShownStop) sendGiveBack(pageInputs.removeFirst() as Glue.ShownStop)
-            val batch = buildList { while (pageInputs.firstOrNull() is PageInput) add(pageInputs.removeFirst() as PageInput) }
-            // The events queued before a release go first, and the release with the next request.
-            val release = batch.isEmpty() && pageRelease
-            if (release) pageRelease = false
-            if (batch.isEmpty() && !release) {
+            val sent = sendQueued(own) { release, result ->
+                if (watchingPage !== own) return@sendQueued
                 pageInputBusy = false
-                return@addRequest
+                if (result?.ok != true) {
+                    (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
+                    pageInputs.removeAll { it is PageInput }
+                    if (!release) pageRelease = true
+                }
+                if (pageInputs.isNotEmpty() || pageRelease) pageInput(stop, emptyList())
             }
-            pageCall {
-                val result = runCatching { remote.pageInput(PageInputParams(own.ref, own.worker, own.since, batch, release)) }.getOrNull()
-                ApplicationManager.getApplication().invokeLater({
-                    if (watchingPage !== own) return@invokeLater
-                    pageInputBusy = false
-                    if (result?.ok != true) {
-                        (livePage()?.component as? PausedPagePanel)?.note(result?.message ?: "The editor service did not answer.")
-                        pageInputs.removeAll { it is PageInput }
-                        if (!release) pageRelease = true
-                    }
-                    if (pageInputs.isNotEmpty() || pageRelease) pageInput(stop, emptyList())
-                }, gone)
-            }
+            if (!sent) pageInputBusy = false
         }, 50)
+    }
+
+    /**
+     * The queue's next send for the watch `own`, put on the tab's calls: the stops given back at its head, once the
+     * events and the release asked before them went, then the events up to the next stop given back, or the release
+     * once they went. `answered` hears whether it was the release and what it came to, on the event thread. Whether
+     * events or a release were put. On the event thread.
+     */
+    private fun sendQueued(own: PageViewParams, answered: ((Boolean, RunControlResult?) -> Unit)? = null): Boolean {
+        while (!pageRelease && pageInputs.firstOrNull() is Glue.ShownStop) sendGiveBack(pageInputs.removeFirst() as Glue.ShownStop)
+        val batch = buildList { while (pageInputs.firstOrNull() is PageInput) add(pageInputs.removeFirst() as PageInput) }
+        val release = batch.isEmpty() && pageRelease
+        if (release) pageRelease = false
+        if (batch.isEmpty() && !release) return false
+        pageCall {
+            val result = runCatching { remote.pageInput(PageInputParams(own.ref, own.worker, own.since, batch, release)) }.getOrNull()
+            if (answered != null) ApplicationManager.getApplication().invokeLater({ answered(release, result) }, gone)
+        }
+        return true
     }
 
     /**
@@ -1817,10 +1838,19 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         interactOff?.invoke()
     }
 
-    /** Interact goes off, its stop given back: its run ended or went away, or the tab closed. */
+    /** Interact goes off, its stop given back: its run ended or went away. */
     fun stopInteracting() {
         turnInteractOff()
         drawPick()
+    }
+
+    /**
+     * Interact goes off as its watch ends (the tab hidden or closed, a watch refused, another slot's stop): the click
+     * held back and the keys and buttons held are let go first, then its stop is given back.
+     */
+    fun letGo() {
+        if (active()) release()
+        stopInteracting()
     }
 
     /** The hint and the crosshair show where a click picks: everywhere but while interacting. */
@@ -1898,7 +1928,12 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     val picks: Boolean get() = pick != null
 
     init {
-        live.addActionListener { release(); changedLive?.invoke(liveWanted) }
+        live.addActionListener {
+            release()
+            // Watch live off turns Interact off before the watch ends: the stop is given back after the input let go.
+            if (!live.isSelected) stopInteracting()
+            changedLive?.invoke(liveWanted)
+        }
         interact.addActionListener {
             release()
             drawPick()

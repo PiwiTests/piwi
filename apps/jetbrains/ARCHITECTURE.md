@@ -569,12 +569,15 @@ shortcuts for the page (a shortcut set registered on it, which the IDE runs befo
 only routes the input: the person's first click, key, text, wheel or pick drives the stop, in the service. Interact
 going off, whatever turns it off, gives back the stop it was last on for (`PausedPagePanel.interactOff`,
 `PiwiRunSessions.giveBack`: `piwi/driveStop` with `on: false`, `RunRemote.driveStop`); the plugin never sends
-`on: true`. The give-back goes from the input queue (`pageInputs`, sent in order on `pageCalls`): once the input
-queued before it, the click held back and the release included, was sent and answered, and before the input queued
-after it, so that input drives the stop no more; a watch ending drops its input and sends the give-backs queued
-behind it. Escape while Interact is on lets go of the input held, then turns Interact off and focuses its checkbox.
-Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another worker's new stop does
-not.
+`on: true`. Every call of the tab, its watches included, goes on one serial chain (`pageCalls`), each once the one
+before was answered. The give-back goes from the input queue (`pageInputs`): once the input queued before it, the
+click held back and the release included, was sent and answered, and before the input queued after it, so that input
+drives the stop no more. A watch ending sends what was queued for it, in order, then `piwi/pageView` off
+(`stopPageView`); where Interact is on as it ends (Watch live off, the tab hidden or closed, a watch refused, another
+slot's stop), Interact goes off first (`PausedPagePanel.letGo`), so the input held, the give-back and the watch-off
+reach the service in that order. Escape while Interact is on lets go of the input held, then turns Interact off and
+focuses its checkbox. Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another
+worker's new stop does not.
 Watch live is remembered within the tab. Interact stays selected for the next stop of the same worker slot shown while
 Watch live stays on (`Glue.keepsInteract`, `PiwiRunSessions.pageSlot`), disabled until that stop's watch is accepted
 and taking input then. It goes off as it is unchecked or Escape is pressed, as Watch live is turned off or refused, as

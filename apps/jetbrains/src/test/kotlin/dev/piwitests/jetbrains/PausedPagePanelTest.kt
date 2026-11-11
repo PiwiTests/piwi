@@ -114,6 +114,42 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals(listOf("given back"), heard)
     }
 
+    /**
+     * Watch live turned off with Interact on, and Interact going off as its watch ends (`letGo`), send the click held
+     * back for a second one, then the release, then give the stop back: Watch live's change is told last.
+     */
+    fun testTheInputHeldGoesBeforeTheGiveBackAndTheEndOfTheWatch() {
+        val heard = mutableListOf<String>()
+        val panel = PausedPagePanel()
+        panel.configureLive(true, true, false) { heard += "watch $it" }
+        panel.input = { events -> heard += events.joinToString { "${it.type} ${it.action}" } }
+        panel.releaseInput = { heard += "released" }
+        panel.interactOff = { heard += "given back" }
+        panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
+        panel.viewport = PausedImage("image/jpeg", null, 800, 600)
+        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch live" }
+        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
+        fun clickHeldBack() {
+            live.doClick()
+            panel.watching(true)
+            interact.doClick()
+            heard.clear()
+            picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1)) }
+            picture.mouseListeners.forEach { it.mouseReleased(press(picture, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1)) }
+            assertEmpty(heard)
+        }
+        clickHeldBack()
+        live.doClick()
+        assertEquals(listOf("mouse click", "released", "given back", "watch false"), heard)
+        assertFalse(panel.interacting)
+        panel.watching(false)
+        clickHeldBack()
+        panel.letGo()
+        assertEquals(listOf("mouse click", "released", "given back"), heard)
+        assertFalse(panel.interacting)
+    }
+
     fun testMouseInputUsesViewportCoordinatesAndReleasesItsClickCountAndModifiers() {
         val panel = PausedPagePanel()
         panel.configureLive(true, true, true) {}

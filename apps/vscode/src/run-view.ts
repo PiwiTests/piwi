@@ -604,10 +604,11 @@ export function registerRunControl(
    */
   const openPage = async (stop: ShownStop) => {
     const key = stopKey(stop);
-    stopPageView();
-    // Another slot's stop, or one that takes no input, turns Interact off; the same slot's keeps it.
+    // Another slot's stop, or one that takes no input, turns Interact off before the watch ends; the same slot's keeps
+    // it.
     if (keepsInteract(interactOn, stop)) interactOn = stop;
     else interactOff();
+    stopPageView();
     pageStop = key;
     pageShows = stop;
     stopsShown.view(stop);

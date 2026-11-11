@@ -438,19 +438,24 @@ the caption. A click on an image the view no longer shows picks nothing.
 When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
 `piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
 `dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
-replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
-and typing, batched through the Runs window's input helper. It is offered, and its input sent, only once the service
+replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling and
+typing, batched through the Runs window's input helper. It is offered, and its input sent, only once the service
 accepted the watch (`acceptedPage`; with Watch live on, the view's `live.input` follows it). Turning it on only routes
 the input: the person's first click, key, text, wheel or pick drives the stop, in the service. Interact going off,
 whatever turns it off, gives back the stop it was last on for (`interactOff`: `piwi/driveStop` with `on: false`,
-`giveBackParams`); the extension never sends `on: true`. Escape while Interact is on lets go of the input held, then
-turns Interact off and focuses its checkbox; Shift+click still picks. Help is collapsed. Hiding, closing, showing
-another stop or resuming ends the watch; another worker's new stop does not. The panel remembers Watch live until
-closed. Interact stays on for the worker slot of the stop it was last on for (`interactOn`): the slot's next stop
-shown while Watch live stays on keeps it (`keepsInteract`), checked again and taking input once that stop's watch is
-accepted. It goes off as it is unchecked or Escape is pressed, as Watch live is turned off or refused, as the panel
-hides or closes, at another slot's stop, at a stop that takes no input and as its run ends or goes away (`changed`),
-so a rerun under the ref starts with it off.
+`giveBackParams`); the extension never sends `on: true`. As Interact or Watch live changes, the script sends the input
+before it first, a click held back for a second one included (`ViewInputBatcher.finish`), then the release, then the
+change, each change's message in the order they were made and the checkboxes left as the person set them meanwhile
+(`toggle`); input made after a change waits for its message. Watch live off, the panel hiding or closing and another
+slot's stop give the stop back before the watch ends (`piwi/pageView` off), so the service hears the input, the
+give-back and the watch's end in that order; a click held back as the panel hides goes with its document. Escape while
+Interact is on turns Interact off the same way and focuses its checkbox; Shift+click still picks. Help is collapsed.
+Hiding, closing, showing another stop or resuming ends the watch; another worker's new stop does not. The panel
+remembers Watch live until closed. Interact stays on for the worker slot of the stop it was last on for (`interactOn`):
+the slot's next stop shown while Watch live stays on keeps it (`keepsInteract`), checked again and taking input once
+that stop's watch is accepted. It goes off as it is unchecked or Escape is pressed, as Watch live is turned off or
+refused, as the panel hides or closes, at another slot's stop, at a stop that takes no input and as its run ends or goes
+away (`changed`), so a rerun under the ref starts with it off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
 (`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
