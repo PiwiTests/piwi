@@ -37,8 +37,11 @@ interface TrayRun {
 async function plugin() {
   const shown: Shown[] = [];
   const waits: number[] = [];
-  const listeners = new Map<string, (event: { payload: unknown }) => void>();
-  const shownWorkers: Array<{ ref: string; worker: number }> = [];
+  const listeners = new Map<string, (event: { payload: unknown }) => unknown>();
+  const shownWorkers: Array<{ ref: string; worker: number; mounts: number }> = [];
+  /** The pages the plugin went to, and how many Local runs trays the page shown holds. */
+  const visited: string[] = [];
+  const trayMounts = ref(1);
   let emit: (message: Record<string, unknown>) => void = () => {};
   const ended = new Set<(run: TrayRun) => void>();
   const runs = ref<TrayRun[]>([]);
@@ -46,6 +49,10 @@ async function plugin() {
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   vi.stubGlobal('useDesktopRunHub', () => hub);
   vi.stubGlobal('watch', watch);
+  vi.stubGlobal('navigateTo', async (to: string) => {
+    visited.push(to);
+    trayMounts.value = 1;
+  });
   vi.stubGlobal('tauriCore', () => ({
     invoke: async (cmd: string, args: Shown & { waiting: number }) => {
       if (cmd !== 'desktop_set_run_progress') return;
@@ -55,7 +62,7 @@ async function plugin() {
     },
   }));
   vi.stubGlobal('tauriEvent', () => ({
-    listen: async (name: string, listener: (event: { payload: unknown }) => void) => {
+    listen: async (name: string, listener: (event: { payload: unknown }) => unknown) => {
       listeners.set(name, listener);
       return () => {};
     },
@@ -67,7 +74,8 @@ async function plugin() {
   vi.stubGlobal('useDesktopLocalRuns', () => ({
     runs,
     stopRun: async () => {},
-    showWorker: (ref: string, worker: number) => shownWorkers.push({ ref, worker }),
+    showWorker: (ref: string, worker: number) => shownWorkers.push({ ref, worker, mounts: trayMounts.value }),
+    trayMounts,
     onRunEnded: (listener: (run: TrayRun) => void) => {
       ended.add(listener);
       return () => ended.delete(listener);
@@ -79,10 +87,14 @@ async function plugin() {
     shown,
     waits,
     shownWorkers,
+    visited,
+    trayMounts,
     runs,
     hub,
-    /** The shell emits `name` to the window. */
-    hear: (name: string, payload?: unknown) => listeners.get(name)?.({ payload }),
+    /** The shell emits `name` to the window; resolves once the window answered it. */
+    hear: async (name: string, payload?: unknown) => {
+      await listeners.get(name)?.({ payload });
+    },
     emit: (message: Record<string, unknown>) => emit(message),
     /** The store says the run ended, with these fields set. */
     end: (run: TrayRun, over: Partial<TrayRun>) => {
@@ -263,11 +275,11 @@ describe('the OS progress of a job of the Local runs tray', () => {
   test('tells the shell how many tests wait, during a flash too; its Show the stopped test opens the tray on the first', async () => {
     vi.useFakeTimers();
     try {
-      const { shown, waits, shownWorkers, runs, hub, emit, hear } = await plugin();
+      const { shown, waits, shownWorkers, visited, trayMounts, runs, hub, emit, hear } = await plugin();
       emit({ type: 'snapshot', runs: [] });
       expect(waits).toEqual([0]);
       // Nothing waits: Show the stopped test opens nothing.
-      hear('piwi:tray-show-stop');
+      await hear('piwi:tray-show-stop');
       expect(shownWorkers).toEqual([]);
       const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
       runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
@@ -294,8 +306,9 @@ describe('the OS progress of a job of the Local runs tray', () => {
       await nextTick();
       expect(shown.at(-1)).toEqual(flash);
       expect(waits.at(-1)).toBe(2);
-      hear('piwi:tray-show-stop');
-      expect(shownWorkers).toEqual([{ ref: 'desktop-8', worker: 3 }]);
+      await hear('piwi:tray-show-stop');
+      expect(shownWorkers).toEqual([{ ref: 'desktop-8', worker: 3, mounts: 1 }]);
+      expect(visited).toEqual([]);
       // Its moment over, the bar says the tests wait.
       await vi.runAllTimersAsync();
       expect(shown.at(-1)).toMatchObject({ state: 'paused' });
@@ -304,8 +317,13 @@ describe('the OS progress of a job of the Local runs tray', () => {
       hub.state.sessions = stopped({ kind: 'agent' });
       await nextTick();
       expect(waits.at(-1)).toBe(1);
-      hear('piwi:tray-show-stop');
-      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1 });
+      await hear('piwi:tray-show-stop');
+      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1, mounts: 1 });
+      // A page that holds no tray (TV mode): the home page, which holds one, shows it.
+      trayMounts.value = 0;
+      await hear('piwi:tray-show-stop');
+      expect(visited).toEqual(['/']);
+      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1, mounts: 1 });
     } finally {
       vi.useRealTimers();
     }

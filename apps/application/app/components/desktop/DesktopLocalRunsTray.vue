@@ -139,9 +139,11 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-// A worker the window was asked to show (the run page's Show its page): its run expands, its tab shows, and the focus
-// moves to the worker once it is drawn.
-watch(shownWorker, async (shown) => {
+/**
+ * A worker the window was asked to show (the run page's Show its page, the system tray's Show the stopped test): its run
+ * expands, its tab shows, and the focus moves to the worker once it is drawn.
+ */
+async function showAsked(shown: { ref: string; worker: number } | null) {
   if (!shown) return;
   shownWorker.value = null;
   const session = hub.state.sessions[shown.ref];
@@ -151,7 +153,10 @@ watch(shownWorker, async (shown) => {
   if (lane !== undefined) hub.chooseTab(shown.ref, lane);
   await nextTick();
   document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
-});
+}
+watch(shownWorker, (shown) => void showAsked(shown));
+// One asked before this tray was mounted, as the page changed to one that holds it.
+onMounted(() => void showAsked(shownWorker.value));
 
 /** The runs whose output shows in a separate window instead of the tray. */
 const separateByKey = ref<Record<number, boolean>>({});

@@ -185,6 +185,8 @@ impl SessionWindows for AppHandle {
                     .unwrap_or_else(|| tauri::Url::parse("about:blank").expect("about:blank is a URL"));
                 let _ = window.navigate(splash);
             }
+            // The server's runs, and their stops, are gone with it.
+            crate::refresh_tray_stop(&handle, 0);
         });
         show_splash_status(self, text, false);
     }

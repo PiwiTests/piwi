@@ -1518,12 +1518,14 @@ fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
     menu_id.strip_prefix(TRAY_STOP_RUN_PREFIX)?.parse().ok()
 }
 
-/// The tray's menu, which the runs watcher adds the Stop items to.
+/// The tray's menu, which the runs watcher adds the Stop items to, and the
+/// window's progress Show the stopped test.
 struct TrayMenu(tauri::menu::Menu<tauri::Wry>);
 
-/// The items the runs watcher keeps in the tray's menu, under Open: a Stop
+/// The items kept in the tray's menu: the runs watcher's under Open, a Stop
 /// item per running run, with the id and text it was made with, then a
-/// separator while there is any.
+/// separator while there is any; and, above Open, Show the stopped test while
+/// a test waits (`refresh_tray_stop`).
 #[derive(Default)]
 struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
@@ -1551,26 +1553,31 @@ const TRAY_SHOW_STOP_ID: &str = "show-stop";
 const TRAY_SHOW_STOP_EVENT: &str = "piwi:tray-show-stop";
 
 /// The text of the tray's Show the stopped test for the tests of the app's
-/// runs that wait at a stop for the person; `None` while none waits.
+/// runs that wait at a stop for the person, which shows the first of them;
+/// `None` while none waits.
 fn tray_show_stop_text(waiting: u32) -> Option<String> {
     match waiting {
         0 => None,
         1 => Some("Show the stopped test".to_string()),
-        count => Some(format!("Show the {count} stopped tests")),
+        count => Some(format!("Show a stopped test ({count} wait)")),
     }
 }
 
 /// Keep Show the stopped test first in the tray's menu while a test of the
-/// app's runs waits at a stop for the person, its text saying how many wait.
-/// On the main thread.
-fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
+/// app's runs waits at a stop for the person, its text saying how many wait;
+/// none once the window leaves the server (`session::leave_server`). On the
+/// main thread.
+pub(crate) fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
     let (Some(menu), Some(items)) = (app.try_state::<TrayMenu>(), app.try_state::<TrayRunItems>()) else {
         return;
     };
     let mut items = items.0.lock().unwrap();
     match (tray_show_stop_text(waiting), items.show.take()) {
-        (None, Some((_, item))) => {
-            let _ = menu.0.remove(&item);
+        (None, Some((text, item))) => {
+            // Kept while it stands in the menu, so the Stop items' places still count it.
+            if menu.0.remove(&item).is_err() {
+                items.show = Some((text, item));
+            }
         }
         (None, None) => {}
         (Some(text), Some((shown, item))) => {
@@ -4249,7 +4256,7 @@ mod tests {
     fn the_tray_offers_to_show_the_tests_that_wait_while_any_does() {
         assert_eq!(tray_show_stop_text(0), None);
         assert_eq!(tray_show_stop_text(1).as_deref(), Some("Show the stopped test"));
-        assert_eq!(tray_show_stop_text(3).as_deref(), Some("Show the 3 stopped tests"));
+        assert_eq!(tray_show_stop_text(3).as_deref(), Some("Show a stopped test (3 wait)"));
         // Its id is no Stop item's, nor the app menu's.
         assert_eq!(tray_stop_run_id(TRAY_SHOW_STOP_ID), None);
     }

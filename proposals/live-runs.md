@@ -162,8 +162,9 @@ runs: Verify ×3, a fix plan's verification and the Flake Lab lines run on the r
 listed, paused and stopped as the editor's others, holding no failure (`piwi/followCommand`, E12); JetBrains Run tabs
 are named after what they run; VS Code's Testing view writes in a run's output each test a worker starts, each stop
 and each stop answered (E23); and the editors' status bar tooltips say what each worker runs now (E6). Then the desktop tray menu's **Show the stopped
-test**, first in the menu while a test of the app's runs waits at a stop for the person (**Show the 2 stopped tests**
-for more): it brings the window up with its Local runs tray open on the first of them (`firstWaiting`). The later phases are
+test**, first in the menu while a test of the app's runs waits at a stop for the person (**Show a stopped test (2 wait)**
+for more): it brings the window up with its Local runs tray open on the first of them (`firstWaiting`), from a page
+without the tray too. The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and

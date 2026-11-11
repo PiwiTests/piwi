@@ -250,15 +250,17 @@ export default defineNuxtPlugin(() => {
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {
-    const { runs, stopRun, onRunEnded, showWorker } = useDesktopLocalRuns();
+    const { runs, stopRun, onRunEnded, showWorker, trayMounts } = useDesktopLocalRuns();
     trayRuns = () => runs.value;
 
     // The tray's Show the stopped test brings the window up and reaches the dashboard as this event: the Local runs
-    // tray opens on the first test that waits.
+    // tray opens on the first test that waits, on the home page when the page shown holds no tray (TV mode, an error).
     tauriEvent()
-      ?.listen('piwi:tray-show-stop', () => {
+      ?.listen('piwi:tray-show-stop', async () => {
         const first = firstWaiting(Object.values(hub.state.sessions));
-        if (first) showWorker(first.run.ref, first.worker.worker);
+        if (!first) return;
+        if (trayMounts.value === 0) await navigateTo('/');
+        showWorker(first.run.ref, first.worker.worker);
       })
       .catch(() => {});
 
