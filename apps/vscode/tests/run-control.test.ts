@@ -72,6 +72,7 @@ import {
   runStarted,
   runTargetArg,
   shareLiveWarning,
+  askToWatchText,
   sharedText,
   sizeText,
   spelledSession,
@@ -1966,5 +1967,22 @@ describe('a run another tool asks the extension to stop', () => {
       ok: false,
       message: 'The run was not started in this VS Code window: stop it where it was started.',
     });
+  });
+});
+
+describe("this window's runs shared live, and a teammate's ask", () => {
+  test('says the window is shared, with or without a run, and stops it on a click', () => {
+    expect(liveItem(new Map(), true)).toMatchObject({
+      text: '$(broadcast) Live · this window',
+      command: 'piwi.stopSharingWindowLive',
+    });
+    expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
+      /^Share this window's runs live, each run you start from now on until you stop or close the window, on piwi\.example\.com\?/,
+    );
+  });
+
+  test('names who asks and the run', () => {
+    expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
+    expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
   });
 });

@@ -18,6 +18,7 @@ import type {
   RunControlAction,
   RunControlResult,
   RunLive,
+  AskToWatchParams,
   RunPresence,
   RunSession,
   RunStop,
@@ -632,6 +633,8 @@ export const RUN_COMMANDS = {
   share: 'piwi.shareWithPlaywright',
   shareLive: 'piwi.shareRunLive',
   stopSharing: 'piwi.stopSharingRun',
+  shareWindow: 'piwi.shareWindowLive',
+  stopSharingWindow: 'piwi.stopSharingWindowLive',
   openPage: 'piwi.openRunPage',
   holdFailures: 'piwi.holdFailures',
 } as const;
@@ -908,11 +911,17 @@ export function liveInstance(live: Pick<RunLive, 'page'>): string | null {
   }
 }
 
-/** What Share live sends, and who sees it, asked before the window shares a run for the first time. */
-export function shareLiveWarning(live: Pick<RunLive, 'page'> | null | undefined): string {
+/**
+ * What Share live sends, and who sees it, asked before the window shares a run for the first time: the run, or this
+ * window's runs until the person stops (`window`).
+ */
+export function shareLiveWarning(live: Pick<RunLive, 'page'> | null | undefined, window = false): string {
   const instance = (live && liveInstance(live)) ?? 'the Piwi instance it reports to';
+  const what = window
+    ? "Share this window's runs live, each run you start from now on until you stop or close the window,"
+    : 'Share this run live';
   return (
-    `Share this run live on ${instance}? While it is shared, anyone with its page open there sees each stop of its ` +
+    `${what} on ${instance}? While it is shared, anyone with its page open there sees each stop of its ` +
     "tests: the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
     "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can open " +
     'the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is ' +
@@ -1025,9 +1034,21 @@ export function progressItem(sessions: Sessions): ControlItem | null {
  * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
  * stopped though nobody asked. None while no run can be shared: the command says why.
  */
-export function liveItem(sessions: Sessions): ControlItem | null {
+export function liveItem(sessions: Sessions, windowShared = false): ControlItem | null {
   const runs = liveRunsOf(sessions);
   const shared = runs.filter((r) => r.live.shared);
+  // While this window's runs are shared, the item says so, with or without a run, and stops it on a click.
+  if (windowShared) {
+    const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
+    return {
+      name: 'Piwi: Share live',
+      text: viewers > 0 ? `$(broadcast) Live · this window · ${viewsText(viewers)}` : '$(broadcast) Live · this window',
+      tooltip:
+        "Piwi: this window's runs are shared live, each run you start, until you stop or close the window" +
+        `${viewers > 0 ? ` (${viewsText(viewers)} open)` : ''}. Click to stop sharing them.`,
+      command: RUN_COMMANDS.stopSharingWindow,
+    };
+  }
   if (shared.length) {
     const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
     const what =
@@ -1894,4 +1915,9 @@ export function accessibleLabel(item: ControlItem): string {
     ? first.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\\([\\`*_[\]<>|])/g, '$1')
     : first;
   return plain.replace(/\$\([a-z0-9-~]+\)\s*/g, '').trim();
+}
+
+/** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
+export function askToWatchText(ask: Pick<AskToWatchParams, 'by' | 'run'>): string {
+  return `${ask.by} asks to watch ${ask.run === null ? 'this run' : `run #${ask.run}`} live.`;
 }
