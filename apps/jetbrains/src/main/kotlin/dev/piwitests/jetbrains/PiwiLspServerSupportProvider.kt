@@ -167,6 +167,8 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             "agents" to service.agentsOptions(),
         )
         PiwiSendHandler.keptRunPairing()?.let { options["runPairing"] = it }
+        // A service started again shares the project's runs as the person left them: the project has not closed.
+        if (project.getServiceIfCreated(PiwiRunSessions::class.java)?.windowShared == true) options["shareWindow"] = true
         return options
     }
 

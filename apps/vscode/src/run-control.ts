@@ -918,7 +918,7 @@ export function liveInstance(live: Pick<RunLive, 'page'>): string | null {
 export function shareLiveWarning(live: Pick<RunLive, 'page'> | null | undefined, window = false): string {
   const instance = (live && liveInstance(live)) ?? 'the Piwi instance it reports to';
   const what = window
-    ? "Share this window's runs live, each run you start from now on until you stop or close the window,"
+    ? "Share this window's runs live, each run this window follows from now on (those you start here, and those of a terminal it follows) until you stop or close the window,"
     : 'Share this run live';
   return (
     `${what} on ${instance}? While it is shared, anyone with its page open there sees each stop of its ` +

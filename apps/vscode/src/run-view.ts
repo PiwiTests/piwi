@@ -303,6 +303,8 @@ export function registerRunControl(
   let liveWarned = false;
   /** This window's runs are shared live, as the service says (`piwi/shareWindowChanged`). */
   let windowShared = false;
+  /** The person said yes to what sharing the window's runs sends, once in the window. */
+  let windowWarned = false;
 
   /** Where the edits are mapped from for a run: its start, else when it was first heard. */
   const sinceOf = (ref: string) => runs.get(ref)?.since ?? edits.now();
@@ -1026,10 +1028,7 @@ export function registerRunControl(
         yes,
         all,
       );
-      if (picked === all) {
-        liveWarned = true;
-        return shareWindow(ref, true);
-      }
+      if (picked === all) return shareWindow(ref, true);
       if (picked !== yes) return;
       liveWarned = true;
     }
@@ -1052,7 +1051,7 @@ export function registerRunControl(
    * named, or stop sharing them all: the first share of the window says what goes out and waits for a yes.
    */
   const shareWindow = async (ref: string | null, on: boolean) => {
-    if (on && !liveWarned) {
+    if (on && !windowWarned) {
       const yes = "Share this window's runs";
       const live = ref ? sessions.get(ref)?.live : undefined;
       const picked = await vscode.window.showWarningMessage(
@@ -1061,7 +1060,7 @@ export function registerRunControl(
         yes,
       );
       if (picked !== yes) return;
-      liveWarned = true;
+      windowWarned = true;
     }
     const params: ShareRunParams = { on, scope: 'window', ...(ref ? { ref } : {}) };
     const answer = await lc.sendRequest<RunControlResult>(SHARE_RUN_REQUEST, params).catch(() => null);

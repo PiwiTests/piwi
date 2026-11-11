@@ -2369,6 +2369,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     writesCode = init?.stopCode === true;
     stopsRuns = init?.stopsRuns === true;
     startsRuns = init?.startsRuns === true;
+    if (init?.shareWindow === true) runSessions.share({ on: true, scope: 'window' });
     agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     runPairing = typeof init?.runPairing === 'string' ? parsePairing(init.runPairing) : null;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;

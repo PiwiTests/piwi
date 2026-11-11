@@ -617,6 +617,11 @@ export interface InitializationOptions {
    * there. `piwi/setRunPairing` names it later, or again.
    */
   runPairing?: string;
+  /**
+   * The window's runs are shared live (`piwi/shareRun` with `scope: 'window'`): a service started again while the window
+   * is open shares them as the person left them.
+   */
+  shareWindow?: boolean;
 }
 
 /**

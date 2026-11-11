@@ -2107,7 +2107,8 @@ object Glue {
     fun shareLiveWarning(page: String?, window: Boolean = false): String {
         val instance = liveInstance(page) ?: "the Piwi instance it reports to"
         val what = if (window) {
-            "Each run of this project from now on is shared until you stop or close the project. While a run"
+            "Each run this project follows from now on (those you start here, and those of a terminal it follows) is " +
+                "shared until you stop or close the project. While a run"
         } else {
             "While this run"
         }
@@ -2498,7 +2499,10 @@ object Glue {
     private fun clipped(title: String): String =
         if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
-    /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
+    /**
+     * The status bar's text while a run is shared live and none is stopped: the views open of the shared runs; while the
+     * project's runs are shared (`windowShared`), that they are, with or without a run.
+     */
     fun liveStatus(controls: RunControls, windowShared: Boolean = false): String? = when {
         windowShared -> "Piwi: this project's runs ${liveCount(controls.liveViewers ?: 0)}"
         else -> controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
@@ -2506,7 +2510,6 @@ object Glue {
 
     /** What the developer reads as a teammate asks to watch a run that is not shared live (`piwi/askToWatch`). */
     fun askToWatchText(by: String, run: Int?): String = "$by asks to watch ${run?.let { "run #$it" } ?: "this run"} live."
-
 
     private fun liveCount(viewers: Int): String = if (viewers > 0) "shared live · ${views(viewers)}" else "shared live"
 

@@ -69,6 +69,7 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindowManager
@@ -310,6 +311,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /** This project's runs are shared live, as the service says (`piwi/shareWindowChanged`). */
     @Volatile internal var windowShared = false
+
+    /** The person said yes to what sharing the project's runs sends, once since the project opened. */
+    @Volatile internal var windowWarned = false
 
     /** How Mock a Request has the response to mock chosen among those a stop lists: a popup, which the tests replace. */
     internal var chooseRequest: (List<StopRequest>, (StopRequest) -> Unit) -> Unit = { requests, chosen ->
@@ -1232,8 +1236,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 .cancelText("Cancel")
                 .show(project)
             if (picked == Messages.CANCEL) return
-            liveWarned = true
             if (picked == Messages.NO) return shareWindow(true, ref)
+            liveWarned = true
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.shareRun(ShareRunParams(ref, on))
@@ -1258,13 +1262,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * event thread.
      */
     fun shareWindow(on: Boolean, ref: String? = null) {
-        if (on && !liveWarned) {
+        if (on && !windowWarned) {
             val yes = MessageDialogBuilder.yesNo("Share This Project's Runs Live?", Glue.shareLiveWarning(ref?.let { sessions[it]?.live?.page }, window = true))
                 .yesText("Share This Project's Runs")
                 .noText("Cancel")
                 .ask(project)
             if (!yes) return
-            liveWarned = true
+            windowWarned = true
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.shareRun(ShareRunParams(ref, on, "window"))
@@ -1282,7 +1286,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     fun askedToWatch(ask: AskToWatchParams) {
         val ref = ask.ref ?: return
         val id = ask.id ?: return
-        PiwiNotifier.create(PiwiNotice.REQUEST, Glue.askToWatchText(ask.by.orEmpty(), ask.run))
+        PiwiNotifier.create(PiwiNotice.REQUEST, StringUtil.escapeXmlEntities(Glue.askToWatchText(ask.by.orEmpty(), ask.run)))
             .addAction(NotificationAction.createSimpleExpiring("Share Live") { shareLive(true, ref) })
             .addAction(NotificationAction.createSimpleExpiring("Not Now") {
                 ApplicationManager.getApplication().executeOnPooledThread {

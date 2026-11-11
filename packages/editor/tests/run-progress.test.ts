@@ -301,8 +301,10 @@ describe('this window’s runs shared live, and a teammate’s ask to watch', ()
       burstMs: 0,
       lingerMs: 50,
     });
+    const mains = new Map<string, ReturnType<typeof writingSocket>['socket']>();
     const main = (ref: string, run: number) => {
       const { socket, written } = writingSocket();
+      mains.set(ref, socket);
       const reader = sessions.attachMain(socket as unknown as net.Socket, { ...BEGIN, ref });
       reader(JSON.stringify({ type: 'run-page', id: run, url: `https://piwi.example.com/test-runs/${run}` }));
       return { socket, written, read: (message: unknown) => reader(JSON.stringify(message)) };
@@ -332,12 +334,22 @@ describe('this window’s runs shared live, and a teammate’s ask to watch', ()
             why: null,
           }),
         );
-      return { written, live, shares: () => written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share') };
+      // The run's process and its worker leave: the run ends.
+      const end = () => {
+        socket.destroy();
+        mains.get(ref)?.destroy();
+      };
+      return {
+        written,
+        live,
+        end,
+        shares: () => written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share'),
+      };
     };
     return { sessions, notices, asks, windowShared, main, worker };
   }
 
-  test('shares each run the window starts until stopped, each saying so and continuing the one before', () => {
+  test('shares each run the window starts until stopped, each saying so and continuing the one before', async () => {
     const { sessions, notices, windowShared, main, worker } = window();
     expect(sessions.share({ on: true, scope: 'window' })).toMatchObject({ ok: true });
     expect(windowShared).toEqual([true]);
@@ -348,7 +360,12 @@ describe('this window’s runs shared live, and a teammate’s ask to watch', ()
     expect(notices).toEqual([
       "Run #77 is shared live on piwi.example.com, as this window's runs are until you stop sharing them.",
     ]);
-    // The next run continues the one before on the instance.
+    // A run that starts while it runs continues nothing: it is no rerun of it.
+    main('ed-5', 80);
+    expect(worker('ed-5').shares()).toEqual([{ type: 'share', on: true }]);
+    // Once it ended having streamed, the next run continues it on the instance.
+    first.end();
+    await waitFor(() => (sessions.current().some((s) => s.ref === 'ed-1') ? undefined : true));
     main('ed-2', 78);
     const second = worker('ed-2');
     expect(second.shares()).toEqual([{ type: 'share', on: true, after: 77 }]);

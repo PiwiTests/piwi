@@ -1983,7 +1983,7 @@ describe("this window's runs shared live, and a teammate's ask", () => {
       command: 'piwi.stopSharingWindowLive',
     });
     expect(shareLiveWarning({ page: 'https://piwi.example.com/test-runs/77' }, true)).toMatch(
-      /^Share this window's runs live, each run you start from now on until you stop or close the window, on piwi\.example\.com\?/,
+      /^Share this window's runs live, each run this window follows from now on \(those you start here, and those of a terminal it follows\) until you stop or close the window, on piwi\.example\.com\?/,
     );
   });
 

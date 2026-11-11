@@ -59,6 +59,7 @@ import {
   type RunToHub,
   type SnapshotAnswer,
 } from '@piwitests/core/run-channel';
+import { parseLiveAskAnswer } from '@piwitests/core/live-view';
 import { isViewPoint, type ViewInput } from '@piwitests/core/run-view';
 import type {
   HoldRunParams,
@@ -472,9 +473,13 @@ interface Session {
    * streaming worker stopped though nobody asked, `stopped` saying why.
    */
   share: boolean | null;
-  /** Shared as one of this window's runs (`scope: 'window'`), said to the person once it is (`announced`). */
+  /**
+   * Shared as one of this window's runs (`scope: 'window'`), said to the person once it is (`announced`); `streamed`
+   * once a worker of it streamed to the instance.
+   */
   byWindow: boolean;
   announced: boolean;
+  streamed: boolean;
   /** The run on the instance this one continues, as the window shared it before; undefined until known. */
   after?: number | null;
   stopped: string | null;
@@ -593,8 +598,11 @@ export class RunSessions {
   private readonly endedCommands = new Set<string>();
   /** This window's runs are shared live (`share` with `scope: 'window'`), until the person stops or the window closes. */
   private shareAll = false;
-  /** The run on the instance the window's latest shared run is, which the next one continues. */
-  private lastShared: number | null = null;
+  /**
+   * The window's latest shared run that ended having streamed, by its instance's origin: the run on that instance the
+   * window's next shared run continues.
+   */
+  private readonly lastShared = new Map<string, number>();
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
   private readonly followedRuns = new Set<string>();
   /** The surfaces that have the runs open (`presentOn`). */
@@ -661,6 +669,7 @@ export class RunSessions {
       share: this.shareAll ? true : null,
       byWindow: this.shareAll,
       announced: false,
+      streamed: false,
       stopped: null,
       live: null,
       lanes: new Map(),
@@ -721,7 +730,6 @@ export class RunSessions {
         const { type: _page, ...page } = message;
         if (!isPageOfInstance(page.url, this.options.instances?.() ?? [])) return;
         session.page = page;
-        this.noteShared(session);
         return this.changed(session, true);
       }
       if (message.type === 'run-ask') {
@@ -1084,7 +1092,6 @@ export class RunSessions {
     session.share = params.on;
     session.stopped = null;
     for (const worker of workers) this.send(worker, this.shareMessage(session));
-    this.noteShared(session);
     this.changed(session, true);
     return {
       ok: true,
@@ -1099,18 +1106,17 @@ export class RunSessions {
    * of `ref` too when one is named; stopping stops every run of the window that is shared.
    */
   private shareWindow(params: ShareRunParams): RunControlResult {
-    const changed = this.shareAll !== params.on;
     this.shareAll = params.on;
+    // Said whether it changed or not, so a client that holds it otherwise hears how it stands.
+    this.options.shareWindowChanged?.(params.on);
     if (!params.on) {
       for (const session of this.sessions.values()) {
         session.byWindow = false;
         if (session.share) this.share({ ref: session.ref, on: false });
       }
-      this.lastShared = null;
-      if (changed) this.options.shareWindowChanged?.(false);
+      this.lastShared.clear();
       return { ok: true, message: "Stopped sharing this window's runs live." };
     }
-    if (changed) this.options.shareWindowChanged?.(true);
     const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     if (session && !session.ended) {
       session.byWindow = true;
@@ -1131,31 +1137,42 @@ export class RunSessions {
     return this.shareAll;
   }
 
-  /** The share message a worker of `session` hears: the earlier run of the window it continues, while one is known. */
+  /**
+   * The share message a worker of `session` hears: with the run on its instance it continues, the window's latest
+   * shared run there that ended, fixed for the run once its page is known; none before.
+   */
   private shareMessage(session: Session): HubToRun {
     const on = session.share === true;
-    const after = on && session.byWindow ? (session.after === undefined ? this.lastShared : session.after) : null;
-    return after !== null && after !== session.page?.id ? { type: 'share', on, after } : { type: 'share', on };
+    if (on && session.byWindow && session.page && session.after === undefined) {
+      const before = this.lastShared.get(pageOrigin(session.page.url));
+      session.after = before !== undefined && before < session.page.id ? before : null;
+    }
+    const after = on && session.byWindow ? (session.after ?? null) : null;
+    return after !== null ? { type: 'share', on, after } : { type: 'share', on };
   }
 
-  /**
-   * A run of the window shared with its page known continues the one shared before it, and is the one the window's
-   * next run continues.
-   */
+  /** A run of the window that ended having streamed is the one the window's next shared run continues. */
   private noteShared(session: Session): void {
-    if (!session.byWindow || session.share !== true || !session.page) return;
-    if (session.after === undefined) session.after = this.lastShared !== session.page.id ? this.lastShared : null;
-    this.lastShared = session.page.id;
+    if (!session.byWindow || !session.streamed || !session.page) return;
+    const origin = pageOrigin(session.page.url);
+    this.lastShared.delete(origin);
+    this.lastShared.set(origin, session.page.id);
+    for (const oldest of this.lastShared.keys()) {
+      if (this.lastShared.size <= MAX_KEPT_RUNS) break;
+      this.lastShared.delete(oldest);
+    }
   }
 
   /** `piwi/answerAsk`: the developer's **Not now** goes back to the teammate through the run's own process. */
   answerAsk(params: AnswerAskParams): RunControlResult {
-    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    const answer = parseLiveAskAnswer(params);
+    if (!answer) return { ok: false, message: 'Not an answer to an ask to watch.' };
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     const main = session?.main;
-    if (!main || main.destroyed || typeof params.id !== 'string' || params.answer !== 'not-now') {
+    if (!main || main.destroyed) {
       return { ok: false, message: 'The run no longer reaches the instance: its teammate sees no answer.' };
     }
-    const line: HubToMain = { type: 'ask-answer', id: params.id, answer: 'not-now' };
+    const line: HubToMain = { type: 'ask-answer', ...answer };
     main.write(`${JSON.stringify(line)}\n`);
     return { ok: true, message: 'They see “Not now”.' };
   }
@@ -2154,6 +2171,7 @@ export class RunSessions {
           session.stopped = state.why;
           this.options.notice(session.root ?? worker.cwd, 'warning', state.why);
         }
+        if (state.on) session.streamed = true;
         // A run of the window's shared runs says so as it is shared.
         if (session.byWindow && state.on && !session.announced) {
           session.announced = true;
@@ -2236,6 +2254,7 @@ export class RunSessions {
   private end(session: Session): void {
     if (session.ended) return;
     session.ended = true;
+    this.noteShared(session);
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     const workers = [...session.workers.values()];
@@ -2373,5 +2392,14 @@ export class RunSessions {
     const absolute = path.resolve(worker.cwd, file);
     const relative = root ? relativeTo(worker.cwd, absolute) : null;
     return pathToFileURL(relative ? path.join(root!, relative) : absolute).href;
+  }
+}
+
+/** The origin of a run's page on its instance, which names the instance: its URL as given when it does not read. */
+function pageOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
   }
 }

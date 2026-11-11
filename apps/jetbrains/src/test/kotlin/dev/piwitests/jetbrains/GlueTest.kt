@@ -744,7 +744,9 @@ class GlueTest {
         assertEquals("Piwi: this project's runs shared live · 2 views", Glue.liveStatus(controls, windowShared = true))
         assertTrue(
             Glue.shareLiveWarning(page, window = true)
-                .startsWith("Each run of this project from now on is shared until you stop or close the project. While a run is shared on piwi.example.com, "),
+                .startsWith(
+                    "Each run this project follows from now on (those you start here, and those of a terminal it follows) is shared until you stop or close the project. While a run is shared on piwi.example.com, ",
+                ),
         )
         assertEquals("Dana asks to watch run #77 live.", Glue.askToWatchText("Dana", 77))
         assertEquals("Dana asks to watch this run live.", Glue.askToWatchText("Dana", null))
