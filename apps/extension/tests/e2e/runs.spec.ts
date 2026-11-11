@@ -1459,6 +1459,17 @@ test.describe('the live view', () => {
         ]);
         await expect(live).toBeFocused();
 
+        // While a pick runs in the test's window, Escape is the page's: it goes there, and Interact stays on.
+        const escaped = input.events.length;
+        run.worker.send({ type: 'acting', stop: 1, what: 'pick' });
+        await expect(live).toHaveAttribute('data-acting', '');
+        await runs.keyboard.press('Escape');
+        await expect.poll(() => input.events.slice(escaped)).toEqual([{ type: 'key', action: 'press', key: 'Escape' }]);
+        await expect(interact).toHaveAttribute('aria-pressed', 'true');
+        await expect(live).toBeFocused();
+        run.worker.send({ type: 'acting', stop: 1, what: null });
+        await expect(live).not.toHaveAttribute('data-acting');
+
         // Escape turns Interact off, on Interact, the view watched still: Tab moves on past Pick on the image and the
         // view, which takes nothing now.
         const sent = input.events.length;

@@ -416,6 +416,30 @@ describe('a stopped page’s live view, in the run sessions', () => {
     sessions.dispose();
   });
 
+  test('says which action runs in the test’s window at a stop, until it ends or the stop does', async () => {
+    const { sessions, sent, read, stopAt } = harness();
+    await stopAt(1);
+    const acting = () => last(sent)?.workers[0]?.stop?.acting ?? null;
+    read({ type: 'acting', stop: 1, what: 'pick' });
+    expect(await waitFor(() => acting() ?? undefined)).toBe('pick');
+    read({ type: 'acting', stop: 1, what: null });
+    await waitFor(() => (acting() === null ? true : undefined));
+    expect(last(sent)?.workers[0]?.stop).not.toHaveProperty('acting');
+    // The stop ends with an action running: it goes with the stop.
+    read({ type: 'acting', stop: 1, what: 'assert' });
+    await waitFor(() => (acting() === 'assert' ? true : undefined));
+    read({ type: 'running', stop: 1 });
+    await waitFor(() => (last(sent)?.workers[0]?.stop === null ? true : undefined));
+    // An action said for a stop the worker no longer stands at changes nothing.
+    await stopAt(2);
+    const heard = sent.length;
+    read({ type: 'acting', stop: 1, what: 'pick' });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(sent.length).toBe(heard);
+    expect(acting()).toBeNull();
+    sessions.dispose();
+  });
+
   test('offers the actions in the window at a stop the pause bar shows, and the input to its viewers alone', async () => {
     const { sessions, stopAt } = harness();
     await stopAt(1, true);

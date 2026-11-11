@@ -142,6 +142,15 @@ export const MAX_WAITING_TITLE = 500;
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
 
 /**
+ * The actions in the test's window that take Escape as their own, which a worker says run (`acting`): a pick, a check
+ * and a region's pick end on it. A recording does not: it records Escape as a step of the test.
+ */
+export type RunActing = Exclude<RunIntent, 'record'>;
+
+/** Every action a worker says runs in the test's window. */
+export const RUN_ACTING: readonly RunActing[] = ['pick', 'assert', 'assert-region'];
+
+/**
  * Everything a worker takes, as its `run-attach` lists it: a worker of an older reporter lists fewer, or none. An
  * editor service released before `agent` reads a list of more than 16 entries as none, so this one holds 16 at most:
  * a new capability joins an entry (as the agent's requests share `agent`) rather than growing the list past it.
@@ -499,6 +508,12 @@ export type RunToHub =
    */
   | { type: 'region'; stop: number; locator: string; snapshot: string }
   | { type: 'region'; stop: number; refused: string }
+  /**
+   * At the stop `stop`, an action that takes Escape as its own runs in the test's window (`what`, `RUN_ACTING`): a pick,
+   * a check or a region's pick, started from the pause bar or as an intent; null once it ended. A viewer's view sends
+   * Escape there while one runs. A worker of a reporter that predates it says none.
+   */
+  | { type: 'acting'; stop: number; what: RunActing | null }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
   | { type: 'notice'; message: string }
   /**
@@ -1055,6 +1070,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (!isInt(stop, 1) || !isLocatorText(locator)) return null;
       if (typeof snapshot !== 'string' || !snapshot.trim() || snapshot.length > MAX_REGION_SNAPSHOT) return null;
       return { type: 'region', stop, locator, snapshot };
+    }
+    case 'acting': {
+      const { stop, what } = value;
+      if (!isInt(stop, 1)) return null;
+      if (what === null) return { type: 'acting', stop, what: null };
+      return RUN_ACTING.includes(what as RunActing) ? { type: 'acting', stop, what: what as RunActing } : null;
     }
     case 'notice':
       return typeof value.message === 'string' ? { type: 'notice', message: value.message.slice(0, 500) } : null;

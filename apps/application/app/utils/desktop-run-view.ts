@@ -189,12 +189,16 @@ export interface DesktopLaneAt {
   since: string | null;
 }
 
-/** Where the clicks and keys on a live image go: a stop of a worker, and whether its input carries click counts. */
+/**
+ * Where the clicks and keys on a live image go: a stop of a worker, whether its input carries click counts, and whether
+ * an action runs in the test's window there (`acting`), whose Escape is the page's.
+ */
 export interface DesktopRunInputTarget {
   ref: string;
   worker: number;
   since: string;
   clickCounts: boolean;
+  acting: boolean;
 }
 
 /** The image of a live view as its component exposes it (`DesktopRunLiveImage`). */

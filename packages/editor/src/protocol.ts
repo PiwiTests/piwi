@@ -1525,6 +1525,12 @@ export interface RunStop {
    * agent. An agent's actions there are refused while a person drives. Absent while nobody drives.
    */
   driver?: RunPresence;
+  /**
+   * An action that takes Escape as its own runs in the test's window at this stop: a pick, a check or a region's pick,
+   * started from the pause bar or as an intent. A view sends Escape there while one runs. Absent while none runs, and
+   * from a reporter that predates it.
+   */
+  acting?: 'pick' | 'assert' | 'assert-region';
 }
 
 /**

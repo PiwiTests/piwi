@@ -145,9 +145,10 @@ each rule below ends with the section to read there.
   input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,
   `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
   connection per hub")
-- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
-  leaves it unless a click took the keyboard** (`keyOnView`, `packages/run-model/tests/view-input.test.ts`). The view takes input only while
-  Interact is on, and Escape on it turns Interact off and gives the stop back, in the Runs window and the desktop tray
+- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, Escape
+  but while an action runs in the test's window there (the stop's `acting`), and Tab leaves it unless a click took the
+  keyboard** (`keyOnView`, `packages/run-model/tests/view-input.test.ts`). The view takes input only while Interact is
+  on, and Escape on it otherwise turns Interact off and gives the stop back, in the Runs window and the desktop tray
   alike. (see "The Runs window")
 - **What the Runs window shares with the desktop app's Local runs tray lives in `@piwitests/run-model`** (what a stop
   takes, its place, a worker's status, controls and tab, who is present, the live view's input): change it there, never

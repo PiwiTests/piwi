@@ -9,7 +9,7 @@
  * and marked as running, until a frame of the page as it is now comes (`laneFrameNow`): across a Step, a Resume and
  * between two tests, as the tray opens again or the window shows again (a frame of an earlier view of the lane), and
  * while the lane says why it sends none. At a stop of a test, the stop takes the clicks, the keys (with **Interact**
- * on, `interact`, which Escape on the image turns off) and **Pick on the image** on the image as it does on a stop
+ * on, `interact`, which Escape on the image turns off, but while a pick or a check runs in the page, which takes it) and **Pick on the image** on the image as it does on a stop
  * watched live: the window watches the stop through the lane. Turned off, Watch live and Interact go off for the worker
  * too. Who watches the page shows in the card's head, and who drives the stop at its foot (`foot`).
  */
@@ -153,6 +153,7 @@ const inputTarget = computed(() => {
         worker: props.worker.worker,
         since: at.since,
         clickCounts: takes.value.includes('input-clicks'),
+        acting: !!at.acting,
       }
     : null;
 });

@@ -8266,8 +8266,8 @@
     "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
   },
   "runs_liveHint": {
-    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back; Shift+click picks a locator.",
-    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
+    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc turns Interact off and gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks a locator.",
+    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; a pick or a check running on the page takes Esc itself (the picker skips on it). Shift+click a click with Shift held."
   },
   "runs_watch": {
     "message": "Watch",

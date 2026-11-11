@@ -615,8 +615,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             pageStop = null
             (shownPage.component as PausedPagePanel).ended("The test went on.")
         } else if (shownPage != null && pageStop != null) {
-            // Who drives the stop and who watches its page, as they change.
+            // Who drives the stop and who watches its page, as they change, and whether an action runs in its window.
             val panel = shownPage.component as PausedPagePanel
+            panel.acting = byKey[pageStop]?.stop?.acting != null
             val caption = byKey[pageStop]?.let { Glue.stopCaption(it, sessions) } ?: pageCaption
             val shown = panel.caption
             if (caption != pageCaption && shown != null && shown.startsWith(pageCaption)) {
@@ -787,6 +788,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks"), keep) { on -> watchPage(stop, on) }
         // Interact going off gives back the stop it was last on for: this one, from now on.
         panel.interactOff = { giveBack(stop) }
+        panel.acting = stop.stop.acting != null
         panel.viewport = null
         panel.input = { events ->
             if (Glue.actsOnPage(events) && shownStops.acted(stop)) draw()
@@ -1719,9 +1721,14 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     var visibilityChanged: ((Boolean) -> Unit)? = null
     /** Interact went off, whatever turned it off: the stop it was last on for is given back. */
     var interactOff: (() -> Unit)? = null
+    /**
+     * An action runs in the test's window at the stop shown (a pick, a check: the stop's `acting`): Escape
+     * on the image goes to the page, whose Escape it is, rather than giving the stop back.
+     */
+    var acting = false
     private var changedLive: ((Boolean) -> Unit)? = null
     private val live = JCheckBox("Watch live").apply { toolTipText = "Update this page while the test is paused. Nothing is stored or shared." }
-    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back; Shift+click picks."; isEnabled = false }
+    private val interact = JCheckBox("Interact").apply { toolTipText = "Send clicks, scrolling and typing to the page; the first drives the stop. Stays on at the worker's next stops; Escape gives the stop back, but goes to the page while a pick or a check runs there; Shift+click picks."; isEnabled = false }
     var liveWanted: Boolean
         get() = live.isSelected
         set(value) { live.isSelected = value }
@@ -2036,6 +2043,11 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             override fun keyPressed(e: KeyEvent) {
                 if (e.keyCode == KeyEvent.VK_TAB && (!active() || !captured)) { if (e.isShiftDown) picture.transferFocusBackward() else picture.transferFocus(); e.consume(); return }
                 if (!active()) return
+                if (e.keyCode == KeyEvent.VK_ESCAPE && acting) {
+                    pressOnPage("Escape")
+                    e.consume()
+                    return
+                }
                 if (e.keyCode == KeyEvent.VK_ESCAPE) {
                     // Escape lets go of the input held, then turns Interact off, which gives the stop back.
                     release()

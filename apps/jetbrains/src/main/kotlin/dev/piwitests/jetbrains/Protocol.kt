@@ -740,6 +740,11 @@ data class RunStop(
      * person last acted on it. A person's action takes it from the agent. Null while nobody drives.
      */
     val driver: RunPresence? = null,
+    /**
+     * An action that runs in the test's window at this stop (`pick`, `record`, `assert`, `assert-region`), started from
+     * the pause bar or as an intent: Escape on the view goes to the page, whose Escape it is. Null while none runs.
+     */
+    val acting: String? = null,
 )
 
 /**

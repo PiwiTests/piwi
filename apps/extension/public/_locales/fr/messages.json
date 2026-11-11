@@ -6951,7 +6951,7 @@
     "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
   },
   "runs_liveHint": {
-    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap désactive Interagir et rend l’arrêt ; Maj+clic choisit un locator."
+    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap désactive Interagir et rend l’arrêt, mais va à la page tant qu’un choix ou une vérification s’y déroule ; Maj+clic choisit un locator."
   },
   "runs_watch": {
     "message": "Regarder"

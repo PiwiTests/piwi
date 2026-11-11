@@ -1658,6 +1658,11 @@ export interface PausedPageView {
   lane?: boolean;
   /** The image shows what the worker did before: a test or a stop it left, until the next image comes. */
   stale?: boolean;
+  /**
+   * An action runs in the test's window at the stop shown (a pick, a check: the stop's `acting`): Escape
+   * on the view goes to the page, whose Escape it is, rather than giving the stop back.
+   */
+  acting?: boolean;
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -1785,8 +1790,8 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.lane
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live

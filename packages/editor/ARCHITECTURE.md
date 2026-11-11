@@ -891,7 +891,10 @@ view is on asks the worker again, which sends the frame it sent last again: a st
   each connection (`MAX_VIEW_EVENT_RATE`), and is refused to any other.
 - **Intents.** At a stop no pause bar shows, Pick, Record, Assert and Assert a region start for a connection that
   watches its view alone, which drives them through it. A connection that starts or stops watching hears the run
-  again, with what its stops take now.
+  again, with what its stops take now. While a pick, a check or a region's pick runs in the test's window, from the
+  bar or as an intent, the worker says so (`acting`), and the stop carries it (`RunStop.acting`, `HubStop.acting`)
+  until it ends or the stop does: a view sends Escape to the page then, where the action takes it as its own. A
+  recording is never said: it records Escape as a step.
 
 A hub connection also watches a lane while its tests run (`watch`, with the lane, the worker's `parallelIndex`, and
 `on`; `RunSessions.watchLane`), at a hub whose `welcome` lists `lanes`. The lane's worker starts its lane view

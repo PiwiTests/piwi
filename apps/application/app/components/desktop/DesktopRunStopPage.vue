@@ -6,7 +6,8 @@
  * the image's place (`DesktopRunLiveImage`) and stays on for the worker's next stops until it is turned off (the run
  * page's **Pause and watch** turns it on too, through `useDesktopRunHub`); **Interact** beside it, where the stop takes
  * the window's input, which sends the pointer, the wheel and the keys on the view to the page, stays on for the next
- * stops too, and goes off with Watch live or Escape on the view, giving the stop back as the run model says
+ * stops too, and goes off with Watch live or Escape on the view (Escape goes to the page instead while a pick or a
+ * check runs there), giving the stop back as the run model says
  * (`givesBack`); **Pick on the image**, or a Shift+click on the image or the view, names the element under the
  * pointer. The view ends with the stop, as the window hides, and when it is turned off. Who watches the page shows in
  * the card's head, why the hub would not show the worker's lane under the image, and who drives the stop at its foot
@@ -186,6 +187,7 @@ const inputTarget = computed(() =>
         worker: props.worker,
         since: props.stop.since,
         clickCounts: props.takes.includes('input-clicks'),
+        acting: !!props.stop.acting,
       }
     : null,
 );

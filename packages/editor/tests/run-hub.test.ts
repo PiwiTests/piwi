@@ -314,6 +314,12 @@ describe('the commands', () => {
         bar: true,
       });
 
+      // A pick that runs in the test's window there: the connection hears it on the stop, and its end.
+      worker.send({ type: 'acting', stop: 1, what: 'pick' });
+      expect(await waitFor(() => client.session(ref)?.workers[0]?.stop?.acting)).toBe('pick');
+      worker.send({ type: 'acting', stop: 1, what: null });
+      await waitFor(() => (client.session(ref)?.workers[0]?.stop?.acting === undefined ? true : undefined));
+
       // The image of the stopped page.
       client.send({ type: 'pausedPage', id: 3, ref, worker: 0 });
       const asked = await worker.next('request');

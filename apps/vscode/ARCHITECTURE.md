@@ -449,7 +449,8 @@ change, each change's message in the order they were made and the checkboxes lef
 (`toggle`); input made after a change waits for its message. Watch live off, the panel hiding or closing and another
 slot's stop give the stop back before the watch ends (`piwi/pageView` off), so the service hears the input, the
 give-back and the watch's end in that order; a click held back as the panel hides goes with its document. Escape while
-Interact is on turns Interact off the same way and focuses its checkbox; Shift+click still picks. Help is collapsed.
+Interact is on turns Interact off the same way and focuses its checkbox, but goes to the page while an action runs in
+the test's window there (the view's `acting`, from the stop's); Shift+click still picks. Help is collapsed.
 Hiding, closing, showing another stop or resuming ends the watch; another worker's new stop does not. The panel
 remembers Watch live until closed. Interact stays on for the worker slot of the stop it was last on for (`interactOn`):
 the slot's next stop shown while Watch live stays on keeps it (`keepsInteract`), checked again and taking input once

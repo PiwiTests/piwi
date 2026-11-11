@@ -386,6 +386,16 @@ describe('the hub’s WebSocket', () => {
       json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, by: 'me' } }] } }),
     ) as { session: HubSession };
     expect(byOther.session.workers[0]!.stop).not.toHaveProperty('by');
+    // An action that runs in the test's window at the stop says which; anything else is left out.
+    const acting = { ...session, workers: [{ ...worker, stop: { ...worker.stop!, acting: 'pick' as const } }] };
+    expect(parseHubMessage(json({ type: 'session', session: acting }))).toEqual({ type: 'session', session: acting });
+    const actingOther = parseHubMessage(
+      json({
+        type: 'session',
+        session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, acting: 'dance' } }] },
+      }),
+    ) as { session: HubSession };
+    expect(actingOther.session.workers[0]!.stop).not.toHaveProperty('acting');
     expect(
       parseHubMessage(
         json({

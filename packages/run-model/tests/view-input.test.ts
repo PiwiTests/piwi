@@ -74,6 +74,14 @@ describe('a key press on the live view', () => {
     expect(keyOnView(key({ key: 'Tab', shiftKey: true }), { ...pc, captured: true })).toEqual(press('Shift+Tab'));
   });
 
+  it('sends Escape to the page while an action runs in the test’s window, whose Escape it is', () => {
+    expect(keyOnView(key({ key: 'Escape' }), { ...pc, captured: true, acting: true })).toEqual(press('Escape'));
+    expect(keyOnView(key({ key: 'Escape' }), { ...pc, captured: false, acting: true })).toEqual(press('Escape'));
+    expect(keyOnView(key({ key: 'Escape' }), { ...pc, captured: true, acting: false })).toBe('leave');
+    // An input method composing keeps its Escape.
+    expect(keyOnView(key({ key: 'Escape', isComposing: true }), { ...pc, acting: true })).toBe('none');
+  });
+
   it('sends nothing for a control character a key names', () => {
     expect(keyOnView(key({ key: '\x1b' }), pc)).toBe('none');
     expect(keyOnView(key({ key: '\x7f' }), pc)).toBe('none');

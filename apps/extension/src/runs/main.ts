@@ -97,7 +97,8 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * and the keys on it to the page, and the first of them drives the stop: the left and right buttons with the click
  * count the system gave them where the stop takes it (`input-clicks`), Control, Alt and Meta held around a click. Tab
  * moves the focus on unless a click into the view took the keyboard; Escape turns Interact off and gives the stop
- * back, and the browser's shortcuts stay the window's. Pick on the image, or a Shift+click on the image or the view,
+ * back (but goes to the page while a pick or a check runs there, the stop's `acting`), and the browser's shortcuts
+ * stay the window's. Pick on the image, or a Shift+click on the image or the view,
  * names the element under the pointer.
  *
  * Watch, at a hub that shows a lane while it runs and for a worker whose reporter does, watches the worker's lane
@@ -1179,6 +1180,11 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
   );
   img.addEventListener('keydown', (event) => {
     if (!view.input) return;
+    const shown = target();
+    const at = shown ? stoppedAt(shown.key) : null;
+    // An action runs in the test's window at the stop shown (a pick, a check): its Escape is the page's, unless Pick on
+    // the image waits, which Escape stops.
+    const acting = !!at?.stop.acting && at.stop.since === shown?.since && !picking.has(shown.key);
     const decided = keyOnView(
       {
         key: event.key,
@@ -1189,17 +1195,15 @@ function liveImage(view: ViewSurface, focus: string, target: () => ViewTarget): 
         altGraph: event.getModifierState?.('AltGraph') ?? false,
         isComposing: event.isComposing,
       },
-      { mac: MAC, captured: view.captured },
+      { mac: MAC, captured: view.captured, acting },
     );
     if (decided === 'leave') {
       // Interact goes off, the stop this window drives given back, and the focus goes to Interact; else to the toggle
       // that started the view. Pick on the image, waiting, stops too.
       event.preventDefault();
       view.captured = false;
-      const shown = target();
       if (!shown) return;
       if (picking.delete(shown.key)) render();
-      const at = stoppedAt(shown.key);
       const slot = at ? slotKey(at.run.hub, at.run.session.ref, at.worker.parallelIndex) : null;
       const toggle = at && slot && interacting.has(slot) ? 'interact' : shown.toggle;
       if (at && toggle === 'interact') void setInteract(at.run, at.worker, at.stop, false);
@@ -2877,6 +2881,8 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
       view.img.alt = t(view.inputOn ? 'runs_liveAltInput' : 'runs_liveAlt');
       if (view.inputOn) view.img.tabIndex = 0;
       else view.img.removeAttribute('tabindex');
+      // An action runs in the test's window there: Escape on the view goes to the page (`keyOnView`).
+      view.img.toggleAttribute('data-acting', !!stop.acting);
     }
     place(box, framed ? [shown, part(`${key}|badge`, null, liveBadge)] : [shown]);
     children.push(box);
@@ -3099,6 +3105,7 @@ function renderLanePage(
       lane.img.alt = t(now ? (lane.inputOn ? 'runs_liveAltInput' : 'runs_liveAlt') : 'runs_laneAltLast');
       if (lane.inputOn) lane.img.tabIndex = 0;
       else lane.img.removeAttribute('tabindex');
+      lane.img.toggleAttribute('data-acting', now && !!stop?.acting);
       if (now) badge = part(`${key}|badge`, null, liveBadge);
       else if (!stop) badge = part(`${key}|running`, null, runningBadge);
     }

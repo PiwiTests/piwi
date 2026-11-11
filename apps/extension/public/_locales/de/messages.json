@@ -6951,7 +6951,7 @@
     "message": "Die Verbindung zum Editor ging verloren: Die Live-Ansicht startet erneut, sobald sie zurück ist."
   },
   "runs_liveHint": {
-    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc schaltet Interagieren aus und gibt den Halt zurück; Umschalt+Klick wählt einen Locator."
+    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc schaltet Interagieren aus und gibt den Halt zurück, geht aber an die Seite, solange dort eine Auswahl oder eine Prüfung läuft; Umschalt+Klick wählt einen Locator."
   },
   "runs_watch": {
     "message": "Ansehen"
