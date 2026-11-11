@@ -101,7 +101,7 @@ run live](./share-live#from-the-desktop-app).
 ## From Piwi Picker
 
 Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s-runs) follows and steers these runs
-too, and the code it makes at their stops comes to this tray.
+too, and the code it starts at their stops comes to this tray.
 
 ## For agents
 

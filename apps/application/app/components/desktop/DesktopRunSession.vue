@@ -9,9 +9,12 @@
  * A run of several workers shows one at a time, as Piwi Picker's Runs window does: a tab each (`role="tablist"`),
  * named by its lane and marked with its state's icon and tone (`tabStatus`), the arrow keys, Home and End moving
  * between them (one tab stop), and a `tabpanel` each, named by its tab. Which one shows is the hub's to follow
- * (`useDesktopRunHub`, `desktopTabsAfter`); the person's choice holds until a stop is answered there. The workers not
- * shown stay drawn, hidden, so their views, answers and lists stay as they were. Above them, **Resume all** and
- * **Pause all** (`runLevelControls`), their buttons and the workers' waiting while one is on its way.
+ * (`useDesktopRunHub`, `tabsAfter`); the person's choice holds until a stop is answered there, or, while that worker
+ * runs and nobody watches it, until a new stop comes. The workers not shown stay drawn, hidden, so their views, answers
+ * and lists stay as they were, and a run that goes from several workers to one, or back, keeps each worker drawn. When
+ * the tabs move on from the worker the keyboard was in, it goes to the same control of the worker shown, else to its
+ * tab. Above them, **Resume all** and **Pause all** (`runLevelControls`), their buttons and the workers' waiting while
+ * one is on its way, and waiting themselves while a worker they name has a command of its own on its way.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
 import { runLevelControls } from '@piwitests/run-model/controls';
@@ -87,6 +90,23 @@ const level = computed(() => runLevelControls(props.session));
 const levelShown = computed(() => hub.state.connected && (level.value.pauseAll || level.value.resumeAll.length > 0));
 /** Pause all or Resume all is on its way: its buttons and the workers' wait for the answers. */
 const runBusy = ref(false);
+/** The workers with a command of their own on its way, by `worker`. */
+const busyWorkers = ref(new Set<number>());
+
+function workerBusy(worker: number, on: boolean): void {
+  const next = new Set(busyWorkers.value);
+  if (on) next.add(worker);
+  else next.delete(worker);
+  busyWorkers.value = next;
+}
+
+/** Resume all waits while a worker it resumes has a command on its way, Pause all while any worker of the run has. */
+const resumeAllBusy = computed(
+  () => runBusy.value || level.value.resumeAll.some((c) => c.worker !== null && busyWorkers.value.has(c.worker)),
+);
+const pauseAllBusy = computed(
+  () => runBusy.value || props.session.workers.some((worker) => busyWorkers.value.has(worker.worker)),
+);
 
 async function runControl(commands: ReadonlyArray<{ worker: number | null; since: string | null }>, action: string) {
   if (runBusy.value) return;
@@ -102,12 +122,52 @@ async function runControl(commands: ReadonlyArray<{ worker: number | null; since
 }
 
 function resumeAll(): void {
-  void runControl(level.value.resumeAll, 'resume');
+  if (!resumeAllBusy.value) void runControl(level.value.resumeAll, 'resume');
 }
 
 function pauseAll(): void {
-  void runControl([{ worker: null, since: null }], 'pause');
+  if (!pauseAllBusy.value) void runControl([{ worker: null, since: null }], 'pause');
 }
+
+// ── Focus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const root = ref<HTMLElement | null>(null);
+/** The control of a worker the keyboard is on (its `data-focus`), until the focus goes elsewhere. */
+let lastFocus: string | null = null;
+
+function heardFocus(event: FocusEvent): void {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  lastFocus = target && root.value?.contains(target) ? (target.dataset.focus ?? null) : null;
+}
+
+/** A press anywhere but on a worker's control: the person put the focus there themselves. */
+function heardPress(event: PointerEvent): void {
+  if (!(event.target instanceof Element) || !event.target.closest('[data-focus]')) lastFocus = null;
+}
+
+onMounted(() => {
+  document.addEventListener('focusin', heardFocus);
+  document.addEventListener('pointerdown', heardPress, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('focusin', heardFocus);
+  document.removeEventListener('pointerdown', heardPress, true);
+});
+
+/**
+ * The tabs moved on while the keyboard was on a control of the worker now hidden: it goes to the same control of the
+ * worker shown (Resume, at its stop), else to that worker's tab.
+ */
+watch(shown, async (lane, before) => {
+  if (lane === null || before === null || lane === before || lastFocus === null) return;
+  const key = lastFocus;
+  await nextTick();
+  const active = document.activeElement;
+  const hidden = active instanceof HTMLElement && active.closest('[role="tabpanel"]')?.id === panelId(before);
+  if (active && active !== document.body && !hidden) return;
+  const same = document.getElementById(panelId(lane))?.querySelector<HTMLElement>(`[data-focus="${key}"]`);
+  (same ?? document.getElementById(tabId(lane)))?.focus();
+});
 </script>
 
 <template>
@@ -129,8 +189,8 @@ function pauseAll(): void {
         variant="outline"
         icon="i-lucide-play"
         :title="desktopSay('runs_resumeAllTitle')"
-        :aria-disabled="runBusy || undefined"
-        @click="!runBusy && resumeAll()"
+        :aria-disabled="resumeAllBusy || undefined"
+        @click="resumeAll()"
       >
         {{ desktopSay('runs_resumeAll') }}
       </UButton>
@@ -141,73 +201,70 @@ function pauseAll(): void {
         variant="outline"
         icon="i-lucide-pause"
         :title="desktopSay('runs_pauseAllTitle')"
-        :aria-disabled="runBusy || undefined"
-        @click="!runBusy && pauseAll()"
+        :aria-disabled="pauseAllBusy || undefined"
+        @click="pauseAll()"
       >
         {{ desktopSay('runs_pauseAll') }}
       </UButton>
     </div>
     <DesktopRunShare :session="session" @announce="emit('announce', $event)" />
     <p v-if="workers.length === 0" class="text-xs text-muted">Starting a worker…</p>
-    <div v-else class="overflow-hidden rounded-md border border-default">
-      <template v-if="tabs">
-        <div
-          role="tablist"
-          :aria-label="desktopSay('runs_workerTabs')"
-          class="flex gap-0.5 overflow-x-auto px-2 pt-1.5 shadow-[inset_0_-1px_0_var(--ui-border)]"
+    <div v-else ref="root" class="overflow-hidden rounded-md border border-default">
+      <div
+        v-if="tabs"
+        role="tablist"
+        :aria-label="desktopSay('runs_workerTabs')"
+        class="flex gap-0.5 overflow-x-auto px-2 pt-1.5 shadow-[inset_0_-1px_0_var(--ui-border)]"
+      >
+        <button
+          v-for="(tab, index) in tabList"
+          :id="tabId(tab.lane)"
+          :key="tab.lane"
+          type="button"
+          role="tab"
+          class="desktop-run-tab inline-flex shrink-0 items-center gap-1.5 rounded-t-md px-2.5 py-1.5 text-xs focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+          :class="
+            tab.lane === shown
+              ? 'font-semibold text-highlighted shadow-[inset_0_-2px_0_var(--ui-text-highlighted)]'
+              : 'text-muted hover:bg-elevated hover:text-highlighted'
+          "
+          :style="tab.style"
+          :title="tab.words"
+          :aria-selected="tab.lane === shown"
+          :aria-controls="panelId(tab.lane)"
+          :tabindex="tab.lane === shown ? 0 : -1"
+          :data-lane="tab.lane"
+          :data-status="tab.tone"
+          @click="choose(tab.lane)"
+          @keydown="onTabKey($event, index)"
         >
-          <button
-            v-for="(tab, index) in tabList"
-            :id="tabId(tab.lane)"
-            :key="tab.lane"
-            type="button"
-            role="tab"
-            class="desktop-run-tab inline-flex shrink-0 items-center gap-1.5 rounded-t-md px-2.5 py-1.5 text-xs focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
-            :class="
-              tab.lane === shown
-                ? 'font-semibold text-highlighted shadow-[inset_0_-2px_0_var(--ui-text-highlighted)]'
-                : 'text-muted hover:bg-elevated hover:text-highlighted'
-            "
-            :style="tab.style"
-            :title="tab.words"
-            :aria-selected="tab.lane === shown"
-            :aria-controls="panelId(tab.lane)"
-            :tabindex="tab.lane === shown ? 0 : -1"
-            :data-lane="tab.lane"
-            :data-status="tab.tone"
-            @click="choose(tab.lane)"
-            @keydown="onTabKey($event, index)"
-          >
-            <UIcon :name="tab.icon" class="size-3.5 shrink-0" aria-hidden="true" />
-            {{ tab.name }}
-          </button>
-        </div>
+          <UIcon :name="tab.icon" class="size-3.5 shrink-0" aria-hidden="true" />
+          {{ tab.name }}
+        </button>
+      </div>
+      <div
+        :role="tabs ? undefined : 'list'"
+        :aria-label="tabs ? undefined : `The workers of ${desktopRunName(session)}`"
+        :class="{ 'divide-y divide-default': !tabs }"
+      >
         <div
           v-for="worker in workers"
-          v-show="worker.parallelIndex === shown"
-          :id="panelId(worker.parallelIndex)"
+          v-show="!tabs || worker.parallelIndex === shown"
+          :id="tabs ? panelId(worker.parallelIndex) : undefined"
           :key="worker.worker"
-          role="tabpanel"
-          :aria-labelledby="tabId(worker.parallelIndex)"
+          :role="tabs ? 'tabpanel' : 'listitem'"
+          :aria-labelledby="tabs ? tabId(worker.parallelIndex) : undefined"
+          :data-lane="worker.parallelIndex"
         >
           <DesktopRunWorker
             :session="session"
             :worker="worker"
             :run-busy="runBusy"
             @announce="emit('announce', $event)"
+            @busy="workerBusy(worker.worker, $event)"
           />
         </div>
-      </template>
-      <ul v-else class="divide-y divide-default" :aria-label="`The workers of ${desktopRunName(session)}`">
-        <li v-for="worker in workers" :key="worker.worker">
-          <DesktopRunWorker
-            :session="session"
-            :worker="worker"
-            :run-busy="runBusy"
-            @announce="emit('announce', $event)"
-          />
-        </li>
-      </ul>
+      </div>
     </div>
   </div>
 </template>

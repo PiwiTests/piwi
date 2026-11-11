@@ -17,7 +17,7 @@
  *
  * Every control but Pause and End the test while a Pause waits names the stop it was drawn for (`since`), so a click
  * made twice never answers the next stop, and while one is on its way, or a command of the run's (`runBusy`), the
- * buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the keyboard to Pause
+ * buttons are `aria-disabled`, keeping the focus; the run's Resume all and Pause all wait for its own (`busy`). A control that goes as the worker runs on gives the keyboard to Pause
  * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. Resume or End the test
  * at the worker a run's tabs show moves them to the next stopped test (`advanceTab`). Everything the hub sends is shown
  * as text.
@@ -47,7 +47,7 @@ const props = defineProps<{
   /** A command of the whole run (Pause all, Resume all) is on its way: the buttons wait for it too. */
   runBusy?: boolean;
 }>();
-const emit = defineEmits<{ announce: [text: string] }>();
+const emit = defineEmits<{ announce: [text: string]; busy: [on: boolean] }>();
 
 const hub = useDesktopRunHub();
 
@@ -159,8 +159,9 @@ function look(what: Control) {
   };
 }
 
-/** A command is on its way for this worker: the buttons wait for its answer. */
+/** A command is on its way for this worker: the buttons wait for its answer, and so do the run's (`busy`). */
 const busy = ref(false);
+watch(busy, (on) => emit('busy', on));
 /** A command of this worker's, or of its run's, is on its way. */
 const waiting = computed(() => busy.value || !!props.runBusy);
 
@@ -386,6 +387,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('focusin', heardFocus);
   document.removeEventListener('pointerdown', heardPress, true);
+  if (busy.value) emit('busy', false);
 });
 </script>
 

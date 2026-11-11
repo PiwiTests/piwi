@@ -1,20 +1,18 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
  * tray a hub session is (`desktopRunRef`, `desktopRunOf`), which live runs report a run's page and which worker runs
- * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), the worker tabs of a run of several workers
- * (`desktopTabsAfter`), where a stop stands, and what a code made at a stop or a locator picked reads as, to copy. The
- * hub's shapes are `@piwitests/core/run-hub`'s. What a worker says, the controls it takes, who is present and which
- * frame is the page now are the run model's, which the tray shares with Piwi Picker's Runs window
- * (`@piwitests/run-model`), said in its English words (`desktopSay`), its icons mapped once to the app's
- * (`DESKTOP_RUN_ICONS`).
+ * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), where a stop stands, and what a code made at a
+ * stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s. What a worker says,
+ * the controls it takes, who is present, the worker a run's tabs show and which frame is the page now are the run
+ * model's, which the tray shares with Piwi Picker's Runs window (`@piwitests/run-model`), said in its English words
+ * (`desktopSay`), its icons mapped once to the app's (`DESKTOP_RUN_ICONS`).
  */
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import type { HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import type { ControlIcon } from '@piwitests/run-model/controls';
 import type { WorkerIcon, WorkerTone } from '@piwitests/run-model/status';
-import { pagePoint, runFile, stopPlace, testName } from '@piwitests/run-model/stop';
-import { shownLaneOf } from '@piwitests/run-model/tabs';
+import { pagePoint, runFile, runName, stopSaid } from '@piwitests/run-model/stop';
 import { englishRunSpeaker, type RunWordArgs, type RunWordKey } from '@piwitests/run-model/words';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import { parseLocation } from '#shared/parse-location';
@@ -280,39 +278,6 @@ export const DESKTOP_TONE_COLORS: Record<WorkerTone, string> = {
 };
 
 /**
- * The worker tabs of a live run of several workers, kept by run: the lane shown (Playwright's `parallelIndex`), the
- * stops that stood as they were last followed (`known`, by `since`), and the stop the person resumed or ended there
- * (`advance`).
- */
-export interface DesktopRunTabs {
-  shown: number | null;
-  known: readonly string[];
-  advance: string | null;
-}
-
-/**
- * A run's tabs as its workers stand now (`shownLaneOf`): the worker shown stays while it stands at a stop or is
- * `watched`; once the person resumed or ended its test there and it left that stop, the next stopped test takes the
- * tab; else a stop not `known` takes it, once. Null for a run of fewer than two workers, which shows no tabs.
- */
-export function desktopTabsAfter(
-  tabs: DesktopRunTabs | null | undefined,
-  workers: readonly HubWorker[],
-  watched: (worker: HubWorker) => boolean,
-): DesktopRunTabs | null {
-  if (workers.length < 2) return null;
-  const sorted = [...workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
-  const { shown = null, known = [], advance = null } = tabs ?? {};
-  const before = sorted.find((worker) => worker.parallelIndex === shown);
-  const advanced = advance !== null && (before?.state !== 'stopped' || before.stop?.since !== advance);
-  return {
-    shown: shownLaneOf(sorted, { before: shown, watched, known: new Set(known), advance: advanced }),
-    known: sorted.flatMap((worker) => (worker.state === 'stopped' && worker.stop ? [worker.stop.since] : [])),
-    advance: advanced ? null : advance,
-  };
-}
-
-/**
  * How long the call a Pause waits in has run at `now` (`for 12 s`, `for 2 min 5 s`); null while no Pause waits in a
  * call, or its worker cannot tell when the call began.
  */
@@ -418,16 +383,14 @@ export function desktopStopLink(
   return /^(?:\/|[a-z][a-z\d+.-]*:)/i.test(file) ? null : { file, line: stop.line + 1 };
 }
 
-/** What the window says of a stop it hears: the test, and where it failed or stopped. */
+/** What the window says of a stop it hears: the test, and where it failed or stopped (`stopSaid`). */
 export function desktopStopSaid(session: HubSession, worker: HubWorker, stop: HubStop): string {
-  const test = worker.test ? testName(worker.test) : desktopRunName(session);
-  const place = stopPlace(stop, session.root);
-  return desktopSay(stop.reason === 'failure' ? 'runs_announceFailed' : 'runs_announceStopped', { test, place });
+  return stopSaid(session, worker, stop, englishRunSpeaker);
 }
 
-/** A run's name: its Piwi project, else its folder. */
+/** A run's name: its Piwi project, else its folder (`runName`). */
 export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): string {
-  return session.project ?? session.label ?? 'Run';
+  return runName(session, englishRunSpeaker);
 }
 
 /**

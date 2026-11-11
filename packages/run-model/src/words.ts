@@ -1,5 +1,6 @@
 /**
- * The words of the run model. Each key the model's functions return or use is a key of Piwi Picker's catalogs
+ * The words of the run model: those its functions return or use, and the words of the interface the surfaces share
+ * (a stop's card, its page, its controls). Each key is a key of Piwi Picker's catalogs
  * (`apps/extension/public/_locales/<code>/messages.json`), and a surface says it through its own `RunSpeaker`: the
  * Runs window through its catalogs, in the interface language, and an English surface through `englishRunSpeaker`.
  * `RUN_WORDS_EN` holds the English catalog's message of each key, with its `$name$` placeholders; the extension's
@@ -86,6 +87,7 @@ export const RUN_WORDS_EN = {
   runs_requestsNoMatch: 'No request matches the filter.',
   runs_requestNoSize: 'size unknown',
   runs_requestAt: 'at $time$',
+  runs_run: 'Run',
   runs_announceStopped: '$test$ stopped at $place$.',
   runs_announceFailed: '$test$ failed at $place$.',
   // The test's page: its card, its tools, its image and its live view.
@@ -120,7 +122,7 @@ export const RUN_WORDS_EN = {
   runs_giveBackTitle: 'Give this stop back: an agent may act on it again',
 } as const;
 
-/** A key of the catalogs that the run model's functions return or use. */
+/** A key of the catalogs that the run model's functions return or use, or a word of the interface the surfaces share. */
 export type RunWordKey = keyof typeof RUN_WORDS_EN;
 
 /** The values of a message's placeholders, by name. */

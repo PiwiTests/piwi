@@ -1305,17 +1305,41 @@ test.describe('Desktop run live view', () => {
     await expect(tab1).toHaveAttribute('data-status', 'stopped');
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
     await expect(controls.getByRole('button')).toHaveText(['Resume all']);
-    // Resume there: once it goes on, the next stopped test takes the tab.
-    await panel('worker 2').getByRole('button', { name: 'Resume' }).click();
+    // Resume there, from the keyboard: once it goes on, the next stopped test takes the tab, and the keyboard follows
+    // to its Resume.
+    await panel('worker 2').getByRole('button', { name: 'Resume' }).focus();
+    await page.keyboard.press('Enter');
     await expect
       .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
       .toMatchObject({ worker: 1, action: 'resume', since: 's1' });
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
     await send(sessionOf([firstAt('s2'), second]));
     await expect(tab1).toHaveAttribute('aria-selected', 'true');
+    await expect(panel('worker 1').getByRole('button', { name: 'Resume' })).toBeFocused();
     await send(sessionOf([firstAt('s2'), secondAt('s3')]));
     await expect(tab1).toHaveAttribute('aria-selected', 'true');
-    await controls.getByRole('button', { name: 'Resume all' }).click();
+    // Step on its way at the worker shown: Resume all waits for its answer, and sends nothing meanwhile.
+    let held = false;
+    let release = () => {};
+    await page.route('**/api/desktop/runs/commands', async (route: Route) => {
+      if ((route.request().postDataJSON() as Command).action === 'step') {
+        await new Promise<void>((done) => {
+          release = done;
+          held = true;
+        });
+      }
+      await route.fallback();
+    });
+    const sent = commands.length;
+    await panel('worker 1').getByRole('button', { name: 'Step' }).click();
+    await expect.poll(() => held).toBe(true);
+    const resumeAll = controls.getByRole('button', { name: 'Resume all' });
+    await expect(resumeAll).toHaveAttribute('aria-disabled', 'true');
+    await resumeAll.click({ force: true });
+    release();
+    await expect(resumeAll).not.toHaveAttribute('aria-disabled');
+    await expect.poll(() => commands.slice(sent).map((c) => c.action)).toEqual(['step']);
+    await resumeAll.click();
     await expect
       .poll(() => commands.filter((c) => c.type === 'runControl').slice(-2))
       .toEqual(
@@ -1337,6 +1361,18 @@ test.describe('Desktop run live view', () => {
     await send(sessionOf([firstAt('s2'), secondAt('s5')]));
     await expect(tray(page)).toBeVisible();
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
+
+    // The run goes down to one worker, and back as Playwright starts another: the worker stays drawn as it was, the
+    // tabs gone, then back.
+    const kept = tray(page).locator('div[data-lane="1"]');
+    await kept.evaluate((element) => element.setAttribute('data-kept', ''));
+    await send(sessionOf([secondAt('s5')]));
+    await expect(tabs).toHaveCount(0);
+    await expect(tray(page).getByRole('listitem')).toContainText('checkout › refunds');
+    await expect(tray(page).locator('[data-kept]')).toHaveCount(1);
+    await send(sessionOf([first, secondAt('s5')]));
+    await expect(tab2).toHaveAttribute('aria-selected', 'true');
+    await expect(panel('worker 2').locator('xpath=self::*[@data-kept]')).toHaveCount(1);
 
     // The run reports to this app, its second worker on the refunds test: the run page's Show its page shows that
     // worker's tab, the focus on it.

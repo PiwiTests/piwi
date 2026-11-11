@@ -28,7 +28,6 @@ import {
   desktopShareOffered,
   desktopShareWarning,
   desktopShownRefs,
-  desktopTabsAfter,
   desktopWaitedFor,
   desktopStopLink,
   desktopStopSaid,
@@ -240,52 +239,6 @@ describe('the run model’s words, icons and tones in the window', () => {
       expect(DESKTOP_RUN_ICONS[name as keyof typeof DESKTOP_RUN_ICONS], name).toMatch(/^i-lucide-/);
     // Each tone a color of the app's tokens, never one written here.
     for (const color of Object.values(DESKTOP_TONE_COLORS)) expect(color).toMatch(/^var\(--(?:ui|color-status)-/);
-  });
-});
-
-describe('the worker tabs of a run', () => {
-  const stopped = (w: number, since: string) =>
-    workerOf({ worker: w, parallelIndex: w, state: 'stopped', stop: stopOf({ since }) });
-  const running = (w: number) => workerOf({ worker: w, parallelIndex: w });
-  const none = () => false;
-
-  test('are none for a run of one worker, and show the first stopped one as they come', () => {
-    expect(desktopTabsAfter(null, [stopped(0, 's1')], none)).toBeNull();
-    expect(desktopTabsAfter(null, [running(1), stopped(0, 's1')], none)).toEqual({
-      shown: 0,
-      known: ['s1'],
-      advance: null,
-    });
-    expect(desktopTabsAfter(null, [running(0), running(1)], none)).toEqual({ shown: 0, known: [], advance: null });
-  });
-
-  test('let a new stop take the tab from a worker that is neither stopped nor watched, once', () => {
-    const first = desktopTabsAfter(null, [running(0), running(1)], none)!;
-    const stoppedNow = desktopTabsAfter(first, [running(0), stopped(1, 's1')], none)!;
-    expect(stoppedNow.shown).toBe(1);
-    // The person goes back to the running one: the stop, known, takes it no more.
-    const chosen = { ...stoppedNow, shown: 0 };
-    expect(desktopTabsAfter(chosen, [running(0), stopped(1, 's1')], none)!.shown).toBe(0);
-    // A worker watched keeps its tab, as one at a stop does.
-    expect(desktopTabsAfter(first, [running(0), stopped(1, 's2')], (w) => w.worker === 0)!.shown).toBe(0);
-    const answering = desktopTabsAfter(null, [stopped(0, 's0'), running(1)], none)!;
-    expect(desktopTabsAfter(answering, [stopped(0, 's0'), stopped(1, 's3')], none)!.shown).toBe(0);
-  });
-
-  test('move to the next stopped test once the one shown was resumed or ended there and left its stop', () => {
-    const both = desktopTabsAfter(null, [stopped(0, 's0'), stopped(1, 's1')], none)!;
-    expect(both.shown).toBe(0);
-    const resumed = { ...both, advance: 's0' };
-    // Still at that stop: the tab stays, waiting.
-    expect(desktopTabsAfter(resumed, [stopped(0, 's0'), stopped(1, 's1')], none)).toEqual(resumed);
-    // Gone on: the next stopped test takes the tab, and the advance is spent.
-    expect(desktopTabsAfter(resumed, [running(0), stopped(1, 's1')], none)).toEqual({
-      shown: 1,
-      known: ['s1'],
-      advance: null,
-    });
-    // None stopped: the tab stays where it was.
-    expect(desktopTabsAfter({ shown: 1, known: [], advance: 's1' }, [running(0), running(1)], none)!.shown).toBe(1);
   });
 });
 
@@ -657,11 +610,17 @@ describe('the window’s stream of its runs', () => {
     runs.chooseTab('desktop-7', 0);
     run(running(0), stopped(1, 's1'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
-    // A worker watched keeps its tab when another stops.
+    // A worker whose lane is watched keeps its tab when another stops; its Watch live, which shows nothing while it
+    // runs, does not.
     runs.setWatchLive('desktop-7', 0, true);
+    run(running(0), stopped(1, 's4'));
+    expect(runs.tabsOf('desktop-7')?.shown).toBe(1);
+    runs.setWatchLive('desktop-7', 0, false);
+    runs.chooseTab('desktop-7', 0);
+    await runs.setLaneWatch('desktop-7', 0, true);
     run(running(0), stopped(1, 's2'));
     expect(runs.tabsOf('desktop-7')?.shown).toBe(0);
-    runs.setWatchLive('desktop-7', 0, false);
+    await runs.setLaneWatch('desktop-7', 0, false);
     // Resumed where it is shown, the next stopped test takes the tab once it goes on; elsewhere, nothing moves.
     run(stopped(0, 's3'), stopped(1, 's2'));
     runs.advanceTab('desktop-7', 1, 's3');
