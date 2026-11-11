@@ -106,6 +106,7 @@ export type RunUse =
   | 'notifications'
   | 'stuck-notifications'
   | 'tracker'
+  | 'test-management'
   | 'cluster-occurrences'
   | 'run-health'
   | 'pass-reuse';
@@ -255,6 +256,17 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
     excludesHistoricalImports: false,
+  },
+  /**
+   * The test run Piwi writes to a test management tool: a run of the whole suite that finished, from CI. A partial run
+   * (a filter, a selection, a rerun of the failed tests) would read in the tool as a suite that ran, and a developer's
+   * own run is not the suite's state.
+   */
+  'test-management': {
+    excludes: [...NO_TEAM_USE, ...DEVELOPER_MACHINE_RUN_ORIGINS],
+    excludesIncidents: true,
+    completeOnly: true,
+    excludesHistoricalImports: true,
   },
   /**
    * A failure cluster's occurrences: their count, the runs the cluster was first
