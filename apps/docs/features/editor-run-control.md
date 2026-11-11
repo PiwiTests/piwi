@@ -90,16 +90,16 @@ opens it at any stop.
   <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
 </figure>
 
-Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: the locator replaces
-the one on the stopped line, and the tab shows the result or refusal.
+Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: it replaces the
+stopped line's, and the tab shows the result or refusal.
 
-**Watch live** updates the paused page in the same tab. Choose [**Interact**](./watch-running-test#interact)
-separately to click, scroll or type on the page; it goes off when you hide or close the tab or it shows another
-worker's stop. Watching stops when you hide or close the tab, resume the test or switch stops. The caption names who
+**Watch live** updates the paused page until you hide or close the tab, resume the test or switch stops. Choose
+[**Interact**](./watch-running-test#interact) to click, scroll or type on it; your first one drives the stop.
+Interact stays on through the worker's stops, and goes off, giving the stop back, on Escape, another worker's stop, a
+stop without input, **Watch live** off or refused, the tab hidden or closed, or the run's end. The caption names who
 drives and watches the stop ([driving a stop](/guide/concepts#presence-driving-a-stop)).
-The preview needs no Picker installation, pairing, project live-view setting or extra port forwarding: it uses the
-editor's connection. Reporters without live-view support keep the still image. To watch a test while it runs, before
-it stops: [Watch a running test](./watch-running-test).
+The preview uses the editor's connection: no Picker, pairing, live-view setting or port forwarding. Older reporters
+keep the still image. To watch the test before it stops: [Watch a running test](./watch-running-test).
 
 ## Breakpoints while the run goes on
 

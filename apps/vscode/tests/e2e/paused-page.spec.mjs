@@ -101,16 +101,16 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   await state();
   await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeFocused();
   await expect(page.getByRole('status')).toHaveText('Live');
+  // Checking Watch live and Interact posted releases of their own: only what follows Escape counts.
+  const before = await page.evaluate(() => window.messages.length);
   await page.keyboard.press('Escape');
-  // Escape lets go of the input held, turns Interact off and gives the stop back.
+  // Escape lets go of the input held, then turns Interact off, which gives the stop back.
   await expect(page.getByLabel('Interact', { exact: true })).toBeFocused();
   await expect(page.getByLabel('Interact', { exact: true })).not.toBeChecked();
-  const messages = await page.evaluate(() => window.messages);
-  expect(messages).toContainEqual({ type: 'release', shown: 7 });
-  expect(messages).toContainEqual({ type: 'interact', shown: 7, on: false });
-  expect(messages.findIndex((m) => m.type === 'interact' && !m.on)).toBeGreaterThan(
-    messages.findIndex((m) => m.type === 'release'),
-  );
+  const escaped = (await page.evaluate(() => window.messages)).slice(before).filter((m) => m.type !== 'input');
+  expect(escaped[0]).toEqual({ type: 'release', shown: 7 });
+  expect(escaped.filter((m) => m.type === 'interact')).toEqual([{ type: 'interact', shown: 7, on: false }]);
+  expect(escaped.findIndex((m) => m.type === 'interact')).toBeGreaterThan(0);
   await page.keyboard.down('Shift');
   await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 40, y: 30 } });
   await page.keyboard.up('Shift');

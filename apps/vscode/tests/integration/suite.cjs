@@ -1014,27 +1014,29 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
-  async 'Interact on the paused page takes control of the stop, and stays on for the next stop of its worker'() {
+  async 'Interact on the paused page routes input, the first click drives the stop, and it stays on for the worker’s next stop'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const run = api.lastRun();
     const ref = 'ed-0000c0d6';
-    const worker = runWorker(run.env.PIWI_RUN_CHANNEL, ref, ['pick', 'locator', 'view', 'input', 'pick-at']);
-    const { send, heardOne, answers } = worker;
-    answers.image = { mime: 'image/jpeg', data: '/9j/4AAQ', width: 1280, height: 800 };
-    answers.view = { ok: true, message: 'The live view is on.' };
-    answers.input = { ok: true, message: 'Played.' };
-    send({
-      type: 'test-begin',
-      testId: 't5',
-      title: ['applies a coupon'],
-      file: 'tests/coupon.spec.ts',
-      line: 3,
-      project: 'chromium',
-      retry: 0,
-      cannotPause: null,
-    });
-    const stopped = (stop, line, locator, title) =>
-      send({
+    const attach = () => {
+      const attached = runWorker(run.env.PIWI_RUN_CHANNEL, ref, ['pick', 'locator', 'view', 'input', 'pick-at']);
+      attached.answers.image = { mime: 'image/jpeg', data: '/9j/4AAQ', width: 1280, height: 800 };
+      attached.answers.view = { ok: true, message: 'The live view is on.' };
+      attached.answers.input = { ok: true, message: 'Played.' };
+      attached.send({
+        type: 'test-begin',
+        testId: 't5',
+        title: ['applies a coupon'],
+        file: 'tests/coupon.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      });
+      return attached;
+    };
+    const stopped = (to, stop, line, locator, title) =>
+      to.send({
         type: 'stopped',
         stop,
         reason: 'pause',
@@ -1043,7 +1045,10 @@ const tests = {
         locator,
         bar: false,
       });
-    stopped(1, 5, "getByLabel('Coupon code')", 'Fill "MORNING10"');
+    const driven = () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop?.driver?.self;
+    const click = { type: 'mouse', action: 'click', x: 6, y: 6, button: 'left', clickCount: 1 };
+    let worker = attach();
+    stopped(worker, 1, 5, "getByLabel('Coupon code')", 'Fill "MORNING10"');
     try {
       await waitFor(() => api.pausedPage()?.image, 'the paused page');
       // The stop's file opened in the page's group: Show the paused page brings it beside the editor.
@@ -1056,37 +1061,66 @@ const tests = {
         () => (api.pausedPage()?.image ? api.pausedPage() : null),
         'the paused page in sight',
       );
-      // Watch live, then Interact: the person takes control of the stop.
+      // Watch live, then Interact: the input goes to the page, and a pointer moving drives nothing.
       await api.pageMessage({ type: 'view', on: true, shown: first.live.shown });
-      await waitFor(() => api.pausedPage()?.live?.on, 'the live view');
+      await worker.heardOne('the watch', (m) => m.type === 'request' && m.what === 'view' && m.on === true);
       await api.pageMessage({ type: 'interact', on: true, shown: first.live.shown });
       assert.equal(api.pausedPage().live.interacting, true);
-      await waitFor(
-        () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop?.driver?.self,
-        'the stop driven from the paused page',
-      );
+      await api.pageMessage({
+        type: 'input',
+        id: 1,
+        shown: first.live.shown,
+        events: [{ type: 'mouse', action: 'move', x: 5, y: 5 }],
+      });
+      await worker.heardOne('the pointer moving', (m) => m.type === 'request' && m.what === 'input' && m.stop === 1);
+      assert.ok(!driven(), 'Interact and a pointer moving drive no stop');
+      // The first click drives the stop.
+      await api.pageMessage({ type: 'input', id: 2, shown: first.live.shown, events: [click] });
+      await waitFor(driven, 'the stop driven from the paused page');
       // The worker goes on and stops again: Interact stays on, and the next stop takes the input once watched.
-      send({ type: 'running', stop: 1 });
-      stopped(2, 6, "getByRole('button', { name: 'Apply' })", 'Click');
+      worker.send({ type: 'running', stop: 1 });
+      stopped(worker, 2, 6, "getByRole('button', { name: 'Apply' })", 'Click');
       const next = await waitFor(() => {
         const view = api.pausedPage();
         return view?.caption.includes('Apply') && view.live?.interacting ? view : null;
       }, 'the next stop with Interact on');
       assert.equal(next.live.on, true);
-      await api.pageMessage({
-        type: 'input',
-        id: 1,
-        shown: next.live.shown,
-        events: [{ type: 'mouse', action: 'move', x: 6, y: 6 }],
-      });
-      await heardOne('the input at the next stop', (m) => m.type === 'request' && m.what === 'input' && m.stop === 2);
-      // Escape turns Interact off, as the page's script posts it.
+      assert.ok(!driven(), 'the next stop is nobody’s until the person acts on it');
+      await api.pageMessage({ type: 'input', id: 3, shown: next.live.shown, events: [click] });
+      await worker.heardOne(
+        'the click at the next stop',
+        (m) => m.type === 'request' && m.what === 'input' && m.stop === 2,
+      );
+      await waitFor(driven, 'the next stop driven from the paused page');
+      // Escape turns Interact off, as the page's script posts it, and gives the stop back.
       await api.pageMessage({ type: 'interact', on: false, shown: next.live.shown });
       assert.equal(api.pausedPage().live.interacting, false);
+      await waitFor(() => !driven(), 'the stop given back');
+      // Interact on as the run ends: it goes off with the run.
+      await api.pageMessage({ type: 'interact', on: true, shown: next.live.shown });
+      assert.equal(api.pausedPage().live.interacting, true);
     } finally {
       worker.socket.destroy();
     }
     await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+    // A rerun under the same ref starts with Interact off, Watch live still on.
+    worker = attach();
+    stopped(worker, 1, 5, "getByLabel('Coupon code')", 'Fill "MORNING10"');
+    try {
+      await waitFor(() => api.pausedPage()?.image, 'the rerun’s paused page');
+      await vscode.commands.executeCommand('piwi.showPausedPage');
+      await waitFor(() => api.pausedPage()?.live?.on, 'the rerun’s watch');
+      await worker.heardOne(
+        'the rerun’s watch asked',
+        (m) => m.type === 'request' && m.what === 'view' && m.on === true,
+      );
+      // Past the watch's answer, which would turn a kept Interact on.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      assert.equal(api.pausedPage().live.interacting, false);
+    } finally {
+      worker.socket.destroy();
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the rerun');
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
@@ -1158,20 +1192,20 @@ const tests = {
       );
       const { shown } = api.workerView().live;
       assert.equal(api.workerView().pick?.shown, shown, 'a click on the image picks at the stop');
-      // Interact takes control of the stop, then input goes to it, through the lane the panel watches.
+      const driven = () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop?.driver?.self;
+      // Interact, then input: it goes to the stop, through the lane the panel watches, and a pointer moving drives
+      // nothing.
       await api.workerMessage({ type: 'interact', on: true, shown });
       assert.equal(api.workerView().live.interacting, true);
-      await waitFor(
-        () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop?.driver?.self,
-        'the stop driven from the panel',
-      );
       await api.workerMessage({ type: 'input', id: 1, shown, events: [{ type: 'mouse', action: 'move', x: 5, y: 5 }] });
       await heardOne('the input at the stop', (m) => m.type === 'request' && m.what === 'input' && m.stop === 1);
-      // A pick on the image: the point in CSS pixels of the page, the answer under the caption.
+      assert.ok(!driven(), 'Interact and a pointer moving drive no stop');
+      // A pick on the image: the point in CSS pixels of the page, the answer under the caption, the stop driven.
       await api.workerMessage({ type: 'pick', shown, x: 320, y: 100, width: 640, height: 400 });
       const pick = await heardOne('the pick on the image', (m) => m.type === 'request' && m.what === 'pick-at');
       assert.deepEqual([pick.stop, pick.x, pick.y], [1, 640, 200]);
       assert.equal(api.workerView().note, 'Picked on the page.');
+      await waitFor(driven, 'the stop driven from the panel');
       // No paused page of its own: the image was never asked.
       assert.equal(api.pausedPage(), null);
       assert.equal(worker.heard.filter((m) => m.what === 'image').length, 0);
@@ -1196,21 +1230,99 @@ const tests = {
         'the next stop in the worker panel',
       );
       assert.equal(next.live.interacting, true);
+      assert.ok(!driven(), 'the next stop is nobody’s until the person acts on it');
+      // The first click at the next stop drives it.
       await api.workerMessage({
         type: 'input',
         id: 2,
         shown: next.live.shown,
-        events: [{ type: 'mouse', action: 'move', x: 6, y: 6 }],
+        events: [{ type: 'mouse', action: 'click', x: 6, y: 6, button: 'left', clickCount: 1 }],
       });
       await heardOne('the input at the next stop', (m) => m.type === 'request' && m.what === 'input' && m.stop === 2);
+      await waitFor(driven, 'the next stop driven from the panel');
       // Interact turned off gives the stop back.
       await api.workerMessage({ type: 'interact', on: false, shown: next.live.shown });
       assert.equal(api.workerView().live.interacting, false);
+      await waitFor(() => !driven(), 'the stop given back');
+      // Interact on as the run ends: it goes off with the run.
+      await api.workerMessage({ type: 'interact', on: true, shown: next.live.shown });
+      assert.equal(api.workerView().live.interacting, true);
     } finally {
       worker.socket.destroy();
     }
     await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
     assert.equal(api.workerView()?.caption, 'Worker 1 · the run ended.');
+    assert.equal(api.workerView().live.interacting, false);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
+  async 'the worker panel offers Interact, and sends input, only once the service accepts its watch'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const run = api.lastRun();
+    const ref = 'ed-0000c0d7';
+    const worker = runWorker(
+      run.env.PIWI_RUN_CHANNEL,
+      ref,
+      ['pick', 'locator', 'view', 'input', 'pick-at'],
+      ['view-lane'],
+    );
+    const { send, heardOne, answers } = worker;
+    answers.input = { ok: true, message: 'Played.' };
+    send({
+      type: 'test-begin',
+      testId: 't6',
+      title: ['applies a coupon'],
+      file: 'tests/coupon.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    });
+    send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'pause',
+      title: 'Fill "MORNING10" getByLabel(\'Coupon code\')',
+      place: { file: 'tests/coupon.spec.ts', line: 5, column: 34 },
+      locator: "getByLabel('Coupon code')",
+      bar: false,
+    });
+    try {
+      await waitFor(() => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop, 'the stop');
+      // The lane view is asked and left unanswered: the panel watches, and its stop takes no Interact yet.
+      const opening = vscode.commands.executeCommand('piwi.watchWorker', { ref });
+      const asked = await heardOne(
+        'the lane view asked',
+        (m) => m.type === 'request' && m.what === 'view-lane' && m.on === true,
+      );
+      const view = await waitFor(
+        () => (api.workerView()?.caption.includes('Coupon code') ? api.workerView() : null),
+        'the stop in the worker panel',
+      );
+      assert.equal(view.live.on, true);
+      assert.equal(view.live.input, false);
+      await api.workerMessage({ type: 'interact', on: true, shown: view.live.shown });
+      assert.equal(api.workerView().live.interacting, false);
+      await api.workerMessage({
+        type: 'input',
+        id: 1,
+        shown: view.live.shown,
+        events: [{ type: 'mouse', action: 'click', x: 6, y: 6, button: 'left', clickCount: 1 }],
+      });
+      // Accepted, the watch offers Interact.
+      send({
+        type: 'answer',
+        request: asked.request,
+        what: 'view-lane',
+        value: { ok: true, message: 'The live view is on.' },
+      });
+      await opening;
+      await waitFor(() => api.workerView()?.live.input, 'Interact offered once the watch is accepted');
+      assert.equal(worker.heard.filter((m) => m.what === 'input').length, 0, 'no input reached the stop before');
+    } finally {
+      worker.socket.destroy();
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 

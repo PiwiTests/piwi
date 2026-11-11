@@ -2173,14 +2173,14 @@ object Glue {
 
     /**
      * Who drives a stop now (`RunStop.driver`), in words: `You drive this stop`, `Piwi Picker drives this stop`, `An
-     * agent drives this stop`; with `interact` (the stop takes input), the agent's says that Interact takes control.
+     * agent drives this stop`; with `interact` (the stop takes input), the agent's says that the person's input takes control.
      * Null while nobody drives it.
      */
     fun driverText(stop: RunStop, interact: Boolean = false): String? {
         val driver = stop.driver ?: return null
         if (driver.self) return "You drive this stop"
         val text = "${driver.name.replaceFirstChar { it.uppercaseChar() }} drives this stop"
-        return if (driver.kind == "agent" && interact) "$text: Interact takes control" else text
+        return if (driver.kind == "agent" && interact) "$text: your input takes control" else text
     }
 
     /** Who drives a stop and who else watches its worker's page, in words; null when nobody does. */

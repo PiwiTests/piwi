@@ -86,7 +86,7 @@ import {
   accessibleLabel,
   controlItems,
   controlState,
-  driveStopParams,
+  giveBackParams,
   heardSession,
   imageClickOf,
   keepsInteract,
@@ -128,7 +128,6 @@ import {
   workerName,
   writtenLines,
   type CaretShown,
-  type InteractSlot,
   type PausedPageView,
   type RunBreakpoint,
   type RunBreakpoints,
@@ -279,10 +278,11 @@ export function registerRunControl(
   let wantLive = false;
   let watchingPage: PageViewParams | null = null;
   /**
-   * The worker slot Interact is on for: the paused page keeps it on for the slot's next stops while Watch live stays
-   * on, and their input goes to each once its watch is accepted. Null while Interact is off.
+   * The stop Interact was last on for, while it is on: the paused page keeps it on for the next stops of that stop's
+   * worker slot while Watch live stays on and the run goes on, and their input goes to each once its watch is
+   * accepted. Null while Interact is off.
    */
-  let interactSlot: InteractSlot | null = null;
+  let interactOn: ShownStop | null = null;
 
   const stopPageView = () => {
     const previous = watchingPage;
@@ -503,8 +503,8 @@ export function registerRunControl(
   };
 
   const watchPage = async (on: boolean) => {
+    if (!on) interactOff();
     stopPageView();
-    if (!on) interactSlot = null;
     const stop = pageShows;
     const current = page;
     if (!stop || !current?.live || !panel?.visible) return;
@@ -516,32 +516,34 @@ export function registerRunControl(
     const answer = await lc.sendRequest<RunControlResult>(PAGE_VIEW_REQUEST, params).catch(() => null);
     if (page?.live?.shown !== shown || watchingPage !== params) return;
     if (!answer?.ok) {
-      // Interact turned on while the watch was asked gives the stop back.
-      if (page.live.interacting)
-        void lc.sendRequest(DRIVE_STOP_REQUEST, driveStopParams(stop, false)).catch(() => undefined);
-      interactSlot = null;
+      interactOff();
       stopPageView();
       showPage({
         ...page,
         live: { ...page.live, on: false, interacting: false },
         note: answer?.message ?? 'The editor service did not answer.',
       });
-    } else if (!page.live.interacting && keepsInteract(interactSlot, stop)) {
+    } else if (!page.live.interacting && keepsInteract(interactOn, stop)) {
       // Interact stays on for the slot: the new stop's input goes to its page at once.
       showPage({ ...page, live: { ...page.live, interacting: true } });
     }
   };
 
   /**
-   * The person takes the stop the paused page shows (Interact turned on) or gives it back (Interact turned off,
-   * `Esc`); a refusal is said under the caption.
+   * Interact goes off: when it was on, the stop it was last on for is given back (`piwi/driveStop`, `on: false`), a
+   * refusal said under the caption while the page shows that stop.
    */
-  const driveStop = async (stop: ShownStop, on: boolean) => {
-    const answer = await lc
-      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, driveStopParams(stop, on))
-      .catch(() => null);
-    if (answer?.ok || !page || pageStop !== stopKey(stop)) return;
-    showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
+  const interactOff = () => {
+    const stop = interactOn;
+    interactOn = null;
+    if (!stop) return;
+    void lc
+      .sendRequest<RunControlResult>(DRIVE_STOP_REQUEST, giveBackParams(stop))
+      .catch(() => null)
+      .then((answer) => {
+        if (answer?.ok || !page || pageStop !== stopKey(stop)) return;
+        showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
+      });
   };
 
   const pageMessage = async (message: unknown) => {
@@ -556,8 +558,9 @@ export function registerRunControl(
       const stop = pageShows;
       const on = m.on && page.live.input && !!stop;
       showPage({ ...page, live: { ...page.live, interacting: on } });
-      interactSlot = on && stop ? { ref: stop.ref, slot: stop.slot } : null;
-      if (stop && on === m.on) void driveStop(stop, on);
+      // Interact on only routes the page's input: the person's first click, key, wheel or pick drives the stop.
+      if (on) interactOn = stop;
+      else interactOff();
       return;
     }
     if (m.type === 'pick') return pickOnPage(message);
@@ -590,7 +593,8 @@ export function registerRunControl(
     const key = stopKey(stop);
     stopPageView();
     // Another slot's stop, or one that takes no input, turns Interact off; the same slot's keeps it.
-    if (!keepsInteract(interactSlot, stop)) interactSlot = null;
+    if (keepsInteract(interactOn, stop)) interactOn = stop;
+    else interactOff();
     pageStop = key;
     pageShows = stop;
     stopsShown.view(stop);
@@ -608,15 +612,15 @@ export function registerRunControl(
         const change = pausedPageViewChange(visible, panel.visible, wantLive);
         visible = panel.visible;
         if (change === 'end') {
+          interactOff();
           stopPageView();
-          interactSlot = null;
           if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
         } else if (change === 'watch') void watchPage(true);
       });
       panel.onDidDispose(() => {
+        interactOff();
         stopPageView();
         wantLive = false;
-        interactSlot = null;
         panel = null;
         page = null;
         pageStop = null;
@@ -719,6 +723,8 @@ export function registerRunControl(
    * shows the stops of the slot it watches.
    */
   const changed = () => {
+    // The run Interact was on for ended or went away: a rerun under its ref starts with Interact off.
+    if (interactOn && !sessions.has(interactOn.ref)) interactOff();
     const now = stops();
     const keys = new Set(now.map(stopKey));
     drawControls();

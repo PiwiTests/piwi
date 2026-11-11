@@ -849,10 +849,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Interact takes control of the stop the Paused Page tab shows and Escape gives it back; Interact stays selected for
-     * the next stop of the same worker slot while Watch live stays on, and goes off at another slot's.
+     * Interact on the Paused Page tab only routes the input, and going off gives back the stop it was last on for: with
+     * Escape, at another slot's stop and at the run's end. It stays selected for the next stop of the same worker slot
+     * while Watch live stays on, and a rerun under the same ref starts with it off.
      */
-    fun testInteractTakesTheStopAndStaysOnForTheSlotsNextStop() {
+    fun testInteractTakesNoStopAndGivesItBackAsItGoesOff() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         try {
             val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(1280, 800, BufferedImage.TYPE_INT_RGB), "jpg", it) }
@@ -869,7 +870,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             panel.liveWanted = true
             panel.watching(true)
             interact.doClick()
-            assertEquals(DriveStopParams("ed-9", 0, first, true), waitFor("Interact taking the stop") { drives.lastOrNull() })
+            assertTrue(panel.interacting)
             // The worker goes on and stops again: Interact stays selected, unusable until the next watch is accepted.
             hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "running", test()))))
             val second = "2026-10-28T10:00:02.000Z"
@@ -877,21 +878,36 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             waitFor("the next stop's page") { sessions.shown().takeIf { it.pageImage != null && it.pageCaption?.contains("drive.page.ts:5") == true } }
             assertTrue(panel.interacting)
             assertFalse(interact.isEnabled)
-            assertEquals(1, drives.size)
             // Escape, once watched, gives the stop back and turns Interact off.
             panel.watching(true)
             val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
             picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
             assertFalse(panel.interacting)
-            assertEquals(DriveStopParams("ed-9", 0, second, false), waitFor("Escape giving the stop back") { drives.getOrNull(1) })
-            // Another slot's stop turns it off.
+            assertEquals(DriveStopParams("ed-9", 0, second, false), waitFor("Escape giving the stop back") { drives.firstOrNull() })
+            // Another slot's stop turns it off, giving back the stop it was on for.
             interact.doClick()
-            waitFor("Interact taking the stop again") { drives.getOrNull(2) }
             val third = "2026-10-28T10:00:03.000Z"
             hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "running", test()), RunWorker(1, 1, "stopped", test(), at(third), takes = live))))
             waitFor("the other slot's page") { pages.lastOrNull()?.takeIf { it.worker == 1 } }
             assertFalse(panel.interacting)
+            assertEquals(DriveStopParams("ed-9", 0, second, false), waitFor("the other slot's stop giving it back") { drives.getOrNull(1) })
+            // The run ends with Interact on: it goes off, giving its stop back.
+            panel.watching(true)
+            interact.doClick()
             hear(RunSession("ed-9", ended = true))
+            assertFalse(panel.interacting)
+            assertEquals(DriveStopParams("ed-9", 1, third, false), waitFor("the run's end giving the stop back") { drives.getOrNull(2) })
+            // A rerun under the same ref, at the same slot with Watch live on, starts with Interact off.
+            val fourth = "2026-10-28T10:00:04.000Z"
+            hear(RunSession("ed-9", base.path, listOf(RunWorker(1, 1, "stopped", test(), at(fourth), takes = live))))
+            waitFor("the rerun's page") { sessions.shown().takeIf { it.pageImage != null && it.pageCaption?.contains("drive.page.ts:4") == true } }
+            assertTrue(panel.liveWanted)
+            panel.watching(true)
+            assertFalse(panel.interacting)
+            hear(RunSession("ed-9", ended = true))
+            // Interact turned on took no stop: every request sent gave one back.
+            assertEquals(3, drives.size)
+            assertTrue(drives.none { it.on })
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

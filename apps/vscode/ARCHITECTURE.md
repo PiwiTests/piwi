@@ -439,15 +439,16 @@ When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pag
 `piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
 `dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
 replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
-and typing, batched through the Runs window's input helper. Turning it on takes control of the stop
-(`piwi/driveStop`, `on: true`, `driveStopParams`) and turning it off gives it back (`on: false`). Escape while
-Interact is on lets go of the input held, turns Interact off, gives the stop back and focuses the Interact checkbox;
-Shift+click still picks. Help is collapsed. Hiding, closing, showing another stop or resuming ends the watch; another
-worker's new stop does not. The panel remembers Watch live until closed. Interact stays on for the worker slot it was
-turned on at (`interactSlot`): the slot's next stop shown while Watch live stays on keeps it (`keepsInteract`), checked
-again and taking input once that stop's watch is accepted, with no `piwi/driveStop` of its own. It goes off as Watch
-live is turned off or refused, as the panel hides or closes, at another slot's stop and at a stop that takes no
-input; a watch ended so gives the stop back in the service.
+and typing, batched through the Runs window's input helper. Turning it on only routes the input: the person's first
+click, key, text, wheel or pick drives the stop, in the service. Interact going off, whatever turns it off, gives back
+the stop it was last on for (`interactOff`: `piwi/driveStop` with `on: false`, `giveBackParams`); the extension never
+sends `on: true`. Escape while Interact is on lets go of the input held, then turns Interact off and focuses its
+checkbox; Shift+click still picks. Help is collapsed. Hiding, closing, showing another stop or resuming ends the watch;
+another worker's new stop does not. The panel remembers Watch live until closed. Interact stays on for the worker slot
+of the stop it was last on for (`interactOn`): the slot's next stop shown while Watch live stays on keeps it
+(`keepsInteract`), checked again and taking input once that stop's watch is accepted. It goes off as it is unchecked
+or Escape is pressed, as Watch live is turned off or refused, as the panel hides or closes, at another slot's stop, at
+a stop that takes no input and as its run ends or goes away (`changed`), so a rerun under the ref starts with it off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
 (`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
@@ -455,14 +456,17 @@ input; a watch ended so gives the stop back in the service.
 `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
 HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
 not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is drawn
-anew (`shown`), so a message of the view before reaches nothing; at a stop, Interact, `piwi/driveStop` and the pick on
-a click name that stop, as on the paused page. Interact stays on through the stops of the slot and the stretches
-between them (`laneKeepsInteract`), and goes off at a stop that takes no input. A headless stop of the slot the panel watches, in sight, opens no
-paused page, and no stop's file opens over the panel. A press, a key, text, the wheel or a pick there make the slot the
-person's; hiding or closing the panel, or its watch ending (Watch off, a refused watch), shows the stops again
-(`WorkerPanelHooks`), a held headless stop it showed offered to the paused page as a new stop is, the view closed or
-not. Each watch starts with Interact off, and Interact goes off with the watch (Watch off, a refused watch, the run's
-end); the watch ends while the panel is hidden and starts again as it shows (`pausedPageViewChange`).
+anew (`shown`), so a message of the view before reaches nothing; at a stop, Interact's input and the pick on a click
+name that stop, as on the paused page. Interact is offered, and its input sent, only once the service accepted the
+watch (`accepted`, which the view's `live.input` follows). It stays on through the stops of the slot and the
+stretches between them (`laneKeepsInteract`), and going off gives back the stop it was last on for (`interactAt`), as
+on the paused page. A headless stop of the slot the panel watches, in sight, opens no paused page, and no stop's file
+opens over the panel. A press, a key, text, the wheel or a pick there make the slot the person's; hiding or closing
+the panel, or its watch ending (Watch off, a refused watch), shows the stops again (`WorkerPanelHooks`), a held
+headless stop it showed offered to the paused page as a new stop is, the view closed or not. Each watch starts with
+Interact off, and Interact goes off with the watch (Watch off, a refused watch, the panel hidden or closed, the run's
+end), at another slot's view and at a stop that takes no input; the watch ends while the panel is hidden and starts
+again as it shows (`pausedPageViewChange`).
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
@@ -477,11 +481,11 @@ among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Pau
 
 **Who else is there.** The paused page's caption (`stopCaption`), the worker panel's (`laneShown`) and a stop's hover
 (`stopPresence`) add who drives the stop (`driverText`, from `RunStop.driver`: `You drive this stop`, `An agent drives
-this stop: Interact takes control` where the stop takes input) and who else watches its page (`watchersText`, from
+this stop: your input takes control` where the stop takes input) and who else watches its page (`watchersText`, from
 `RunWorker.watchers`, the editor itself named `you` and left out when alone); the paused page's caption follows them as
 they change. The progress item's tooltip names the other tools that have each run open (`presenceText`, from
-`RunSession.presence`). Interact turned on takes a stop from the agent, as Interact's input or a pick does; Interact
-turned off, or Escape, gives it back.
+`RunSession.presence`). A click, key or wheel through Interact, or a pick, takes a stop from the agent; Interact going
+off, Escape included, gives it back.
 
 **Share with Playwright tools.** At a stop whose worker takes `bind` (`canShare`, the `piwi.runCanShare` context key),
 the hover and the palette offer **Piwi: Share the stopped test's browser with Playwright tools**

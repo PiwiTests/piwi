@@ -815,13 +815,13 @@ class GlueTest {
         assertEquals("You drive this stop", Glue.driverText(stop.copy(driver = me), interact = true))
         assertEquals("Piwi Picker drives this stop", Glue.driverText(stop.copy(driver = picker), interact = true))
         assertEquals("An agent drives this stop", Glue.driverText(stop.copy(driver = agent)))
-        assertEquals("An agent drives this stop: Interact takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
+        assertEquals("An agent drives this stop: your input takes control", Glue.driverText(stop.copy(driver = agent), interact = true))
         // The Paused Page tab's and the Worker tab's captions.
         val stopped = RunWorker(5, 1, "stopped", runTest(), stop.copy(by = "agent", driver = agent), takes = listOf("input"), watchers = listOf(picker, me))
         val sessions = mapOf("ed-1" to session("ed-1", stopped))
         val shown = Glue.stopsOf(sessions).single()
         val said = "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6"
-        val present = "An agent drives this stop: Interact takes control · Watched by Piwi Picker and you"
+        val present = "An agent drives this stop: your input takes control · Watched by Piwi Picker and you"
         assertEquals(present, Glue.stopPresence(shown, sessions))
         assertEquals("$said · $present", Glue.stopCaption(shown, sessions))
         assertEquals("Worker 2 · $said · $present", Glue.laneShown(sessions["ed-1"], 1, listOf(shown)).caption)

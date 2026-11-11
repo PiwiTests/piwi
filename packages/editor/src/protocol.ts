@@ -1885,10 +1885,11 @@ export const PAGE_VIEW_REQUEST = 'piwi/pageView';
 export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
 
 /**
- * `piwi/driveStop`: the editor's person takes the stop `since` names (`on`, as **Interact** turns on: an agent's actions
- * there are refused until it is given back) or gives it back (`Esc`, or **Interact** turned off), as the editor's view
- * that shows the stop (its paused page, else its lane's panel). Answered with `RunControlResult`; giving back a stop the
- * editor did not drive changes nothing.
+ * `piwi/driveStop`: the editor's person gives back the stop `since` names (`on: false`, as **Interact** goes off: `Esc`,
+ * unchecked, the watch off or refused, the view hidden or closed), whichever of the client's views drove it, or takes
+ * it (`on: true`: an agent's actions there are refused until it is given back) as the view of the client that watches
+ * it, refused while none does. Answered with `RunControlResult`; giving back a stop the editor did not drive changes
+ * nothing.
  */
 export interface DriveStopParams {
   ref: string;

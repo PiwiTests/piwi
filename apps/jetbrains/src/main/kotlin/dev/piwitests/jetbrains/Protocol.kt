@@ -954,10 +954,11 @@ data class PageInput(
 data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
 
 /**
- * `piwi/driveStop`: the IDE's person takes the stop `since` names (`on`, as **Interact** turns on: an agent's actions
- * there are refused until it is given back) or gives it back (Escape, or **Interact** turned off), as the IDE's view
- * that shows the stop (its paused page, else its lane's panel). Answered with `RunControlResult`; giving back a stop the
- * IDE did not drive changes nothing.
+ * `piwi/driveStop`: the IDE's person takes the stop `since` names (`on`: an agent's actions there are refused until it
+ * is given back), refused unless one of the IDE's views watches it, or gives it back (`on: false`, as **Interact**
+ * goes off), whichever of the IDE's views drove it. The plugin sends only `on: false`: the person's first click, key,
+ * wheel or pick on a view drives the stop. Answered with `RunControlResult`; giving back a stop the IDE did not drive
+ * changes nothing.
  */
 data class DriveStopParams(val ref: String, val worker: Int, val since: String, val on: Boolean)
 

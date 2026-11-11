@@ -681,7 +681,7 @@ export function watchersText(watchers: readonly RunPresence[] | undefined): stri
 
 /**
  * Who drives a stop now (`RunStop.driver`), in words: `You drive this stop`, `Piwi Picker drives this stop`, `An agent
- * drives this stop`; with `interact` (the stop takes input), the agent's says that Interact takes control. Null while
+ * drives this stop`; with `interact` (the stop takes input), the agent's says that the person's input takes control. Null while
  * nobody drives it.
  */
 export function driverText(stop: RunStop, interact = false): string | null {
@@ -689,7 +689,7 @@ export function driverText(stop: RunStop, interact = false): string | null {
   if (!driver) return null;
   if (driver.self) return 'You drive this stop';
   const text = `${capitalized(driver.name)} drives this stop`;
-  return driver.kind === 'agent' && interact ? `${text}: Interact takes control` : text;
+  return driver.kind === 'agent' && interact ? `${text}: your input takes control` : text;
 }
 
 /** Who drives a stop and who else watches its worker's page, in words, or nothing; each part led by ` · `. */
@@ -1724,8 +1724,8 @@ export interface InteractSlot {
 
 /**
  * Whether the paused page keeps Interact on as it shows `stop`: Interact is on for the stops of its worker slot
- * (`on`), and the new stop takes input on a live view. Interact goes off with Watch live, so the caller keeps `on` only
- * while Watch live is on.
+ * (`on`), and the new stop takes input on a live view. Interact goes off with Watch live and with its run, so the
+ * caller keeps `on` only while both go on.
  */
 export function keepsInteract(on: InteractSlot | null, stop: ShownStop): boolean {
   return (
@@ -1742,11 +1742,11 @@ export function laneKeepsInteract(interacting: boolean, stop: ShownStop | null):
 }
 
 /**
- * `piwi/driveStop` for the stop a view shows: the person takes it (`on`, as Interact turns on) or gives it back
- * (Interact turned off, `Esc`).
+ * `piwi/driveStop` as Interact goes off: the stop it was last on for given back (`on: false`), whichever of the
+ * editor's views drove it. Interact itself takes no stop: the person's first click, key, wheel or pick does.
  */
-export function driveStopParams(stop: ShownStop, on: boolean): DriveStopParams {
-  return { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on };
+export function giveBackParams(stop: ShownStop): DriveStopParams {
+  return { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on: false };
 }
 
 /**
@@ -1785,8 +1785,8 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.lane
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page and takes control of the stop; it stays on through the worker's next stops while Watch is on. Escape turns it off and gives the stop back; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page and takes control of the stop; it stays on through this worker's next stops while Watch live is on. Escape turns it off and gives the stop back; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch live is on; Escape turns it off and gives the stop back. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live

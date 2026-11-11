@@ -13,7 +13,7 @@ import javax.swing.JLabel
 
 /**
  * The native preview keeps watching and interaction separate, releases the keys held with a click, keeps Interact for
- * the next watch only when asked, and gives the stop back with Escape.
+ * the next watch only when asked, and gives the stop back whenever Interact goes off, Escape included.
  */
 class PausedPagePanelTest : BasePlatformTestCase() {
     fun testWatchingAndInteractionAreOptInAndAnOlderReporterShowsNeither() {
@@ -30,11 +30,12 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.watching(true)
         assertTrue(interact.isEnabled)
         assertFalse(interact.isSelected)
-        val driven = mutableListOf<Boolean>()
-        panel.interactChanged = { driven += it }
+        var givenBack = 0
+        panel.interactOff = { givenBack++ }
+        // Turned on, Interact only routes the input: it takes no stop.
         interact.doClick()
-        assertEquals(listOf(true), driven)
         assertTrue(panel.interacting)
+        assertEquals(0, givenBack)
         // The stop went on: Interact stays selected for the next stop of the slot, unusable until its watch is accepted.
         panel.ended("The test went on.")
         assertFalse(live.isVisible)
@@ -42,51 +43,75 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertTrue(panel.liveWanted)
         assertTrue(interact.isSelected)
         panel.configureLive(true, true, true, keepInteract = true) { asked += it }
-        panel.interactChanged = { driven += it }
         assertTrue(live.isVisible)
         assertTrue(interact.isSelected)
         assertFalse(interact.isEnabled)
         panel.watching(true)
         assertTrue(interact.isEnabled)
         assertTrue(interact.isSelected)
-        // Another slot's stop, or one that takes no input, turns it off.
+        assertEquals(0, givenBack)
+        // Another slot's stop, or one that takes no input, turns it off and gives the stop back.
         panel.configureLive(true, true, true) { asked += it }
         assertFalse(interact.isSelected)
+        assertEquals(1, givenBack)
         panel.watching(true)
         interact.doClick()
         panel.configureLive(true, false, true, keepInteract = true) { asked += it }
         assertFalse(interact.isSelected)
-        assertEquals(listOf(true, true), driven)
+        assertEquals(2, givenBack)
+        // Between two stops, hiding the tab turns it off and gives the stop back too.
+        panel.configureLive(true, true, true) { asked += it }
+        panel.watching(true)
+        interact.doClick()
+        panel.ended("The test went on.")
+        assertTrue(interact.isSelected)
+        panel.visibilityChanged?.invoke(false)
+        assertFalse(interact.isSelected)
+        assertEquals(3, givenBack)
+        // The run ended or the tab closed: it goes off, once.
+        panel.configureLive(true, true, true) { asked += it }
+        panel.watching(true)
+        interact.doClick()
+        panel.stopInteracting()
+        panel.stopInteracting()
+        assertFalse(interact.isSelected)
+        assertEquals(4, givenBack)
         panel.configureLive(false, false, false) {}
         assertFalse(live.isVisible)
         assertFalse(interact.isVisible)
     }
 
-    fun testUncheckingInteractOrEscapeGivesTheStopBack() {
+    fun testInteractGoingOffGivesTheStopBackAndTurningItOnTakesNone() {
         val (panel, picture, sent) = interacting(clickCounts = true)
         val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
-        val driven = mutableListOf<Boolean>()
-        var released = 0
-        panel.interactChanged = { driven += it }
-        panel.releaseInput = { released++ }
+        val heard = mutableListOf<String>()
+        panel.interactOff = { heard += "given back" }
+        panel.releaseInput = { heard += "released" }
         interact.doClick()
-        assertEquals(listOf(false), driven)
+        assertEquals(listOf("released", "given back"), heard)
         assertFalse(panel.interacting)
+        heard.clear()
         interact.doClick()
-        assertEquals(listOf(false, true), driven)
-        // Escape lets go of the input held, turns Interact off and gives the stop back.
+        assertEquals(listOf("released"), heard)
+        // Escape lets go of the input held, then turns Interact off, which gives the stop back.
         picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1)) }
-        released = 0
+        heard.clear()
         picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
-        assertEquals(1, released)
+        assertEquals(listOf("released", "given back"), heard)
         assertFalse(interact.isSelected)
-        assertEquals(listOf(false, true, false), driven)
         // Escape while Interact is off sends nothing.
         sent.clear()
+        heard.clear()
         picture.keyListeners.forEach { it.keyPressed(KeyEvent(picture, KeyEvent.KEY_PRESSED, 1L, 0, KeyEvent.VK_ESCAPE, KeyEvent.CHAR_UNDEFINED)) }
-        assertEquals(listOf(false, true, false), driven)
+        assertEmpty(heard)
         assertEmpty(sent)
+        // Watch live off, or a watch refused, turns Interact off and gives the stop back; off already, nothing more.
+        interact.doClick()
+        heard.clear()
         panel.watching(false)
+        assertEquals(listOf("given back"), heard)
+        panel.watching(false)
+        assertEquals(listOf("given back"), heard)
     }
 
     fun testMouseInputUsesViewportCoordinatesAndReleasesItsClickCountAndModifiers() {
