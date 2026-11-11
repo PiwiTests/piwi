@@ -45,6 +45,7 @@ const SEVERITY = 'customfield_10050';
 const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
 const TAGS = 'customfield_10070';
+const REVIEWER = 'customfield_10090';
 const FOUND_IN = 'customfield_10080';
 
 /**
@@ -97,6 +98,12 @@ const BUG_SCREEN = [
     name: 'Tags',
     required: false,
     schema: { type: 'array', items: 'string', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:labels' },
+  },
+  {
+    fieldId: REVIEWER,
+    name: 'Reviewer',
+    required: false,
+    schema: { type: 'user', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:userpicker' },
   },
 ];
 
@@ -222,13 +229,22 @@ function startMockJira(port: number): MockJira {
       return send({ startAt: 0, maxResults: 100, total: BUG_SCREEN.length, fields: BUG_SCREEN });
     }
     if (path === '/rest/api/3/user/assignable/search') {
-      return send([
+      const people = [
         {
           accountId: 'acct-2',
           displayName: 'Assignee',
+          emailAddress: 'pat.lee@example.com',
           avatarUrls: { '24x24': `http://127.0.0.1:${port}${USER_AVATAR_PATH}` },
         },
-      ]);
+      ];
+      // Jira answers a lookup by account id with that one person, or no one, and matches words to a name or an email.
+      const accountId = url.searchParams.get('accountId');
+      const query = (url.searchParams.get('query') ?? '').toLowerCase();
+      return send(
+        accountId
+          ? people.filter((person) => person.accountId === accountId)
+          : people.filter((person) => `${person.displayName} ${person.emailAddress}`.toLowerCase().includes(query)),
+      );
     }
     if (`${path}${url.search}` === USER_AVATAR_PATH) {
       res.setHeader('Content-Type', 'image/svg+xml');
@@ -511,6 +527,52 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
       .toEqual({ value: { id: '10101' }, label: 'Major' });
   });
 
+  test('the project settings pick the default assignee by name and show it by name again', async ({
+    page,
+    request,
+  }) => {
+    const savedAssignee = async () =>
+      (await (await request.get(`/api/projects/${projectId}/integrations`)).json()).defaultAssignee ?? null;
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
+    const picker = page.getByTestId('binding-default-assignee');
+    await expect(picker.locator('button').first()).toBeEnabled({ timeout: 30_000 });
+    await picker.locator('button').first().click();
+    await page.getByRole('option', { name: 'Assignee' }).click();
+    const save = page.locator('[data-shot="project-integration-binding"]').getByRole('button', { name: 'Save' });
+    await save.click();
+    await expect.poll(savedAssignee).toBe('acct-2');
+
+    // A saved account id is looked up, so it reads as the person's name.
+    await page.reload();
+    await expect(picker).toContainText('Assignee', { timeout: 30_000 });
+    await expect(picker).not.toContainText('acct-2');
+
+    await picker.locator('[data-slot="trailingClear"]').click();
+    await expect(picker).toContainText('Unassigned');
+    await save.click();
+    await expect.poll(savedAssignee).toBeNull();
+  });
+
+  test('a search Jira refuses says why under the assignee picker, and what to grant', async ({ page }) => {
+    await page.route(/\/api\/integrations\/connections\/\d+\/assignable\?/, (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          statusCode: 502,
+          message: 'Jira request failed (403 Forbidden): You do not have the permission to browse users.',
+          data: { errorCode: 'TRACKER_SEARCH_FAILED', providerStatus: 403 },
+        }),
+      }),
+    );
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
+    const picker = page.getByTestId('binding-default-assignee');
+    await expect(picker.locator('button').first()).toBeEnabled({ timeout: 30_000 });
+    await picker.locator('button').first().click();
+    await expect(picker).toContainText('You do not have the permission to browse users.');
+    await expect(picker).toContainText('Browse users and groups');
+  });
+
   test('the create dialog asks for what is still required and files the issue with it', async ({ page }) => {
     mock.requireTags = true;
     try {
@@ -609,6 +671,29 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     } finally {
       mock.requireParent = false;
     }
+  });
+
+  test('a people field finds a person by the email Jira matched', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusters.refused}`);
+    await waitForHydration(page);
+    const open = page.locator('[data-shot="issue-line-create"]').first();
+    await expect(open).toBeVisible({ timeout: 30_000 });
+    await open.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('[data-shot="create-issue-fields"]')).toBeVisible({ timeout: 15_000 });
+
+    await dialog.getByText('Add a field').click();
+    await expect(page.getByPlaceholder('Search fields…')).toBeFocused();
+    await page.keyboard.type('Rev');
+    await page.getByRole('option', { name: 'Reviewer', exact: true }).click();
+    const reviewer = dialog.locator(`[data-shot="create-issue-added-fields"] [data-field-id="${REVIEWER}"]`);
+    await reviewer.getByText('Search a person').click();
+    await expect(page.getByPlaceholder('Search…')).toBeFocused();
+    // The name does not hold the words: the person is listed because Jira matched their email.
+    await page.keyboard.type('pat.lee@');
+    await page.getByRole('option', { name: 'Assignee' }).click();
+    await expect(reviewer).toContainText('Assignee');
+    await page.keyboard.press('Escape');
   });
 
   test('a field added for one issue type is not sent once the type changes', async ({ page }) => {

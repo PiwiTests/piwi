@@ -60,7 +60,7 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Edit Issues | `EDIT_ISSUES` | [Description updates](/features/issue-automation#comments-and-description-updates). |
-| Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
+| Assign Issues | `ASSIGN_ISSUES` | Pick and set the assignee of a created issue. |
 | Create Attachments | `CREATE_ATTACHMENTS` | Attach a bug report's screenshots to the issue filed from it. |
 
 For the **full integration**, grant all seven on each bound project. You can drop the ones whose feature you do not
@@ -68,8 +68,8 @@ use: `CREATE_ATTACHMENTS` without bug reports, `ASSIGN_ISSUES` without assignees
 and `EDIT_ISSUES` while the [write-back policies](/features/issue-tracking#keep-the-ticket-honest) stay off.
 `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
 
-The assignable-user picker (`GET /rest/api/3/user/assignable/search`) is satisfied by `ASSIGN_ISSUES` on the
-project, or by the **Browse users and groups** global permission (`USER_PICKER`).
+Assignee pickers (`GET /rest/api/3/user/assignable/search`) need `ASSIGN_ISSUES` on the project or the
+**Browse users and groups** global permission (`USER_PICKER`). A refused search shows Jira's message and the fix.
 
 The [inbound webhook](#registering-the-inbound-webhook) does **not** use this token. A Jira admin registers it in
 Jira, and it can only ever refresh a link, so it needs no permission from the Piwi account.
