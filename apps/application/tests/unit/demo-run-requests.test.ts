@@ -98,6 +98,26 @@ describe('the demo app answering a run request', () => {
     ]);
   });
 
+  test("a requested run's executions are settled final attempts, with the history the reporter stores", async () => {
+    const created = await requestAt(after(30_000));
+    const { runId } = await readAt(created.id, after(46_000));
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId!));
+    const executions = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, runId!));
+    const startedAt = run!.startTime.getTime();
+    expect(executions).toEqual([
+      expect.objectContaining({
+        testCaseId: 1,
+        status: 'passed',
+        retries: 0,
+        repeatEachIndex: 0,
+        finalAttempt: true,
+        passedAfterFailure: false,
+        startedAt,
+        attempts: [{ retry: 0, status: 'passed', duration: executions[0]!.duration, startedAt }],
+      }),
+    ]);
+  });
+
   test('a request first read once it ended still gets its run', async () => {
     const created = await requestAt(after(60_000));
     const ended = await readAt(created.id, after(120_000));

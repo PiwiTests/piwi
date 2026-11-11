@@ -24,6 +24,7 @@ import {
   type RunRequestSourceInput,
 } from '#shared/handlers/run-requests';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
+import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { isVisibleRun, runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
 import type { AccessSummary } from '#shared/permissions';
 import { getDemoDb } from '../db.client';
@@ -101,8 +102,10 @@ async function endRequestedRun(db: DemoDb, runId: number, row: HeldRequest, pass
       ),
     );
   const each = Math.round(duration / Math.max(1, tests.length));
-  const executions = tests.flatMap((test) => {
+  // Each test passed on its first attempt, one after the other, stored as the reporter stores such an attempt.
+  const executions = tests.flatMap((test, i) => {
     const found = known.find((c) => c.filePath === test.filePath && c.title === test.title);
+    const startedAt = run.startTime.getTime() + i * each;
     return found
       ? [
           {
@@ -110,13 +113,22 @@ async function endRequestedRun(db: DemoDb, runId: number, row: HeldRequest, pass
             testCaseId: found.id,
             status: 'passed',
             duration: each,
+            retries: 0,
+            repeatEachIndex: 0,
+            attempts: [{ retry: 0, status: 'passed', duration: each, startedAt }],
+            startedAt,
             line: test.line,
             browserName: test.projectName,
           },
         ]
       : [];
   });
-  if (executions.length > 0) await db.insert(testRunsCases).values(executions);
+  if (executions.length > 0) {
+    // As every write of executions does: their verdicts before the insert, their final attempts after it.
+    const withoutHistory = await fillAttemptHistories(db, runId, executions);
+    await db.insert(testRunsCases).values(executions);
+    await settleFinalAttempts(db, runId, executions, withoutHistory);
+  }
   await db
     .update(testRuns)
     .set({
