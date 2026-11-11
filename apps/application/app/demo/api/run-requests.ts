@@ -2,11 +2,18 @@
  * Run on my machine in the demo (`server/api/run-requests/`): the requester's routes, kept in the in-browser database
  * through the server's shared handler. The demo has no app to claim a request, so the requester's own seeded desktop
  * app answers it as it is read: claimed after 2 seconds, **Run** clicked after 5, running from 7 and passed at 15; a
- * stop ends it 2 seconds later. A persona with no app of their own sees their request expire, as on a server.
+ * stop ends it 2 seconds later. From 7 seconds the request has its run, private to its requester, whose tests pass at
+ * 15. A persona with no app of their own sees their request expire, as on a server.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { parseRunRequestOptions, RUN_REQUEST_ID, type RunRequestState } from '@piwitests/core/run-request';
-import { runRequests, runTargets, testRuns, testRunsCases } from '../../../server/database/schema';
+import {
+  parseRunRequestOptions,
+  RUN_REQUEST_ID,
+  type RunRequestSource,
+  type RunRequestState,
+  type RunRequestTest,
+} from '@piwitests/core/run-request';
+import { runRequests, runTargets, testCases, testRuns, testRunsCases } from '../../../server/database/schema';
 import {
   createRunRequest,
   findOwnRequest,
@@ -17,7 +24,8 @@ import {
   type RunRequestSourceInput,
 } from '#shared/handlers/run-requests';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
-import { isVisibleRun } from '#shared/run-eligibility';
+import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
+import { isVisibleRun, runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility';
 import type { AccessSummary } from '#shared/permissions';
 import { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
@@ -45,6 +53,95 @@ function simulatedState(age: number): RunRequestState {
   return 'ended';
 }
 
+type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
+type HeldRequest = typeof runRequests.$inferSelect;
+
+/** The run a request's tests started: private to its requester, as a requested run is, and running. */
+async function startRequestedRun(db: DemoDb, row: HeldRequest, startTime: Date): Promise<number> {
+  const source = row.source as RunRequestSource;
+  const scm = { ...(source.branch && { branch: source.branch }), ...(source.commit && { commit: source.commit }) };
+  const metadata = withRequestOrigin(Object.keys(scm).length > 0 ? { scm } : null, row.id);
+  const [run] = await db
+    .insert(testRuns)
+    .values({
+      projectId: row.projectId,
+      status: 'running',
+      startTime,
+      totalTests: (row.tests as RunRequestTest[]).length,
+      branch: source.branch ?? null,
+      metadata,
+      origin: runOrigin(metadata),
+      commit: runCommit(metadata),
+      requesterId: row.requesterId,
+      isFullRun: 0,
+    })
+    .returning({ id: testRuns.id });
+  return run!.id;
+}
+
+/** End a request's run: its tests passed, each as the test it reran, or it was stopped while they ran. */
+async function endRequestedRun(db: DemoDb, runId: number, row: HeldRequest, passed: boolean, endedAt: Date) {
+  const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+  if (!run || run.status !== 'running') return;
+  const duration = Math.max(0, endedAt.getTime() - run.startTime.getTime());
+  if (!passed) {
+    await db
+      .update(testRuns)
+      .set({ status: 'interrupted', duration, updatedAt: endedAt })
+      .where(eq(testRuns.id, runId));
+    return;
+  }
+  const tests = row.tests as RunRequestTest[];
+  const known = await db
+    .select({ id: testCases.id, filePath: testCases.filePath, title: testCases.title })
+    .from(testCases)
+    .where(
+      and(
+        eq(testCases.projectId, row.projectId),
+        inArray(testCases.filePath, [...new Set(tests.map((t) => t.filePath))]),
+      ),
+    );
+  const each = Math.round(duration / Math.max(1, tests.length));
+  // Each test passed on its first attempt, one after the other, stored as the reporter stores such an attempt.
+  const executions = tests.flatMap((test, i) => {
+    const found = known.find((c) => c.filePath === test.filePath && c.title === test.title);
+    const startedAt = run.startTime.getTime() + i * each;
+    return found
+      ? [
+          {
+            testRunId: runId,
+            testCaseId: found.id,
+            status: 'passed',
+            duration: each,
+            retries: 0,
+            repeatEachIndex: 0,
+            attempts: [{ retry: 0, status: 'passed', duration: each, startedAt }],
+            startedAt,
+            line: test.line,
+            browserName: test.projectName,
+          },
+        ]
+      : [];
+  });
+  if (executions.length > 0) {
+    // As every write of executions does: their verdicts before the insert, their final attempts after it.
+    const withoutHistory = await fillAttemptHistories(db, runId, executions);
+    await db.insert(testRunsCases).values(executions);
+    await settleFinalAttempts(db, runId, executions, withoutHistory);
+  }
+  await db
+    .update(testRuns)
+    .set({
+      status: 'passed',
+      duration,
+      totalTests: executions.length,
+      passedTests: executions.length,
+      avgTestDuration: executions.length > 0 ? each : null,
+      updatedAt: endedAt,
+    })
+    .where(eq(testRuns.id, runId));
+}
+
 /** Move the requester's requests on as their seeded app would. */
 async function answerAsTheApp(requesterId: number, now = new Date()): Promise<void> {
   const db = await getDemoDb();
@@ -67,12 +164,26 @@ async function answerAsTheApp(requesterId: number, now = new Date()): Promise<vo
       state = stopped ? 'ended' : 'stopping';
       outcome = stopped ? 'stopped' : null;
     }
-    if (state === row.state) continue;
+    // The run started when the app would have started it, unless a stop came first.
+    const ranAt = new Date(row.createdAt.getTime() + RUNNING_AFTER_MS);
+    const ran =
+      now.getTime() >= ranAt.getTime() && (!row.stopRequestedAt || row.stopRequestedAt.getTime() > ranAt.getTime());
+    if (state === row.state && (!ran || row.runId != null)) continue;
+    let runId = row.runId;
+    if (ran && runId == null) runId = await startRequestedRun(db, row, ranAt);
+    if (runId != null && state === 'ended') {
+      const endedAt =
+        outcome === 'stopped'
+          ? new Date(row.stopRequestedAt!.getTime() + STOPPED_AFTER_MS)
+          : new Date(row.createdAt.getTime() + ENDED_AFTER_MS);
+      await endRequestedRun(db, runId, row, outcome === 'passed', endedAt);
+    }
     await db
       .update(runRequests)
       .set({
         state,
         outcome,
+        runId,
         targetId: state === 'waiting' ? row.targetId : app.id,
         claimedAt: state === 'waiting' ? row.claimedAt : (row.claimedAt ?? claimedAt),
         answeredAt: ['waiting', 'claimed'].includes(state) ? row.answeredAt : (row.answeredAt ?? answeredAt),
