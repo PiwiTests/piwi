@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { runAttention, runsAttention } from '../src/attention';
+import { firstWaiting, runAttention, runsAttention } from '../src/attention';
 
 describe('what a run asks of the person', () => {
   const running = { state: 'running', stop: null };
@@ -45,5 +45,16 @@ describe('what a run asks of the person', () => {
     expect(runsAttention([ended])).toBeNull();
     expect(runsAttention([failing, ended])).toEqual({ state: 'failing', waiting: 0, heldFailures: 0, failed: 1 });
     expect(runsAttention([failing, waiting])).toEqual({ state: 'waiting', waiting: 1, heldFailures: 1, failed: 1 });
+  });
+
+  test('finds the first test that waits for the person, in the order of the runs and their workers', () => {
+    const agents = { ended: false, workers: [at('pause', { kind: 'agent' })] };
+    const ended = { ended: true, workers: [at('pause')] };
+    const second = at('failure');
+    const third = at('breakpoint');
+    const waiting = { ended: false, workers: [running, second, third] };
+    expect(firstWaiting([])).toBeNull();
+    expect(firstWaiting([agents, ended, { ended: false, workers: [running] }])).toBeNull();
+    expect(firstWaiting([agents, ended, waiting])).toEqual({ run: waiting, worker: second });
   });
 });

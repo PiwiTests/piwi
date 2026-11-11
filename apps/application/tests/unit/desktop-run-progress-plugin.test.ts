@@ -4,8 +4,9 @@ import { nextTick, reactive, ref, watch } from 'vue';
 /**
  * The desktop shell's OS progress (`plugins/desktop-run-progress.client.ts`), driven as the window drives it: the
  * messages of the desktop event stream, and the Local runs tray's runs as the store says each one ends
- * (`onRunEnded`). What it asks the shell to show is each `desktop_set_run_progress` it sends; a red `error` without
- * `failing` is the failed end the shell asks for the user's attention on.
+ * (`onRunEnded`). What it asks the shell to show is each `desktop_set_run_progress` it sends, with the count of the
+ * tests that wait apart (`waits`); a red `error` without `failing` is the failed end the shell asks for the user's
+ * attention on. The shell's events reach the listeners the plugin gave `tauriEvent` (`hear`).
  */
 
 interface Shown {
@@ -35,6 +36,9 @@ interface TrayRun {
 
 async function plugin() {
   const shown: Shown[] = [];
+  const waits: number[] = [];
+  const listeners = new Map<string, (event: { payload: unknown }) => void>();
+  const shownWorkers: Array<{ ref: string; worker: number }> = [];
   let emit: (message: Record<string, unknown>) => void = () => {};
   const ended = new Set<(run: TrayRun) => void>();
   const runs = ref<TrayRun[]>([]);
@@ -43,11 +47,19 @@ async function plugin() {
   vi.stubGlobal('useDesktopRunHub', () => hub);
   vi.stubGlobal('watch', watch);
   vi.stubGlobal('tauriCore', () => ({
-    invoke: async (cmd: string, args: Shown) => {
-      if (cmd === 'desktop_set_run_progress') shown.push(args);
+    invoke: async (cmd: string, args: Shown & { waiting: number }) => {
+      if (cmd !== 'desktop_set_run_progress') return;
+      const { waiting, ...rest } = args;
+      shown.push(rest);
+      waits.push(waiting);
     },
   }));
-  vi.stubGlobal('tauriEvent', () => ({ listen: async () => () => {} }));
+  vi.stubGlobal('tauriEvent', () => ({
+    listen: async (name: string, listener: (event: { payload: unknown }) => void) => {
+      listeners.set(name, listener);
+      return () => {};
+    },
+  }));
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
     return () => {};
@@ -55,6 +67,7 @@ async function plugin() {
   vi.stubGlobal('useDesktopLocalRuns', () => ({
     runs,
     stopRun: async () => {},
+    showWorker: (ref: string, worker: number) => shownWorkers.push({ ref, worker }),
     onRunEnded: (listener: (run: TrayRun) => void) => {
       ended.add(listener);
       return () => ended.delete(listener);
@@ -64,8 +77,12 @@ async function plugin() {
   setup();
   return {
     shown,
+    waits,
+    shownWorkers,
     runs,
     hub,
+    /** The shell emits `name` to the window. */
+    hear: (name: string, payload?: unknown) => listeners.get(name)?.({ payload }),
     emit: (message: Record<string, unknown>) => emit(message),
     /** The store says the run ended, with these fields set. */
     end: (run: TrayRun, over: Partial<TrayRun>) => {
@@ -241,6 +258,57 @@ describe('the OS progress of a job of the Local runs tray', () => {
     hub.state.sessions = { 'desktop-7': { ended: false, workers: [{ state: 'running', stop: null }] } };
     await nextTick();
     expect(shown.at(-1)?.label).toBe('Running 3/10…');
+  });
+
+  test('tells the shell how many tests wait, during a flash too; its Show the stopped test opens the tray on the first', async () => {
+    vi.useFakeTimers();
+    try {
+      const { shown, waits, shownWorkers, runs, hub, emit, hear } = await plugin();
+      emit({ type: 'snapshot', runs: [] });
+      expect(waits).toEqual([0]);
+      // Nothing waits: Show the stopped test opens nothing.
+      hear('piwi:tray-show-stop');
+      expect(shownWorkers).toEqual([]);
+      const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+      runs.value = [trayRun({ key: 1, hubRefs: ['desktop-7'] })];
+      emit({ type: 'run-started', runId: 12, ...own });
+      emit({ type: 'run-finished', runId: 12, status: 'passed', ...own });
+      const flash = shown.at(-1);
+      // Two tests stop while the run's end flashes: the flash keeps its moment, and the shell hears the count at once.
+      const stopped = (driver: { kind: string } | null) => ({
+        'desktop-8': {
+          ref: 'desktop-8',
+          ended: false,
+          workers: [
+            { worker: 0, state: 'running', stop: null },
+            { worker: 3, state: 'stopped', stop: { reason: 'pause', driver } },
+          ],
+        },
+        'desktop-9': {
+          ref: 'desktop-9',
+          ended: false,
+          workers: [{ worker: 1, state: 'stopped', stop: { reason: 'failure' } }],
+        },
+      });
+      hub.state.sessions = stopped(null);
+      await nextTick();
+      expect(shown.at(-1)).toEqual(flash);
+      expect(waits.at(-1)).toBe(2);
+      hear('piwi:tray-show-stop');
+      expect(shownWorkers).toEqual([{ ref: 'desktop-8', worker: 3 }]);
+      // Its moment over, the bar says the tests wait.
+      await vi.runAllTimersAsync();
+      expect(shown.at(-1)).toMatchObject({ state: 'paused' });
+      expect(shown.at(-1)?.label).toContain('2 tests wait for you');
+      // An agent drives the first: the next one is shown.
+      hub.state.sessions = stopped({ kind: 'agent' });
+      await nextTick();
+      expect(waits.at(-1)).toBe(1);
+      hear('piwi:tray-show-stop');
+      expect(shownWorkers.at(-1)).toEqual({ ref: 'desktop-9', worker: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {

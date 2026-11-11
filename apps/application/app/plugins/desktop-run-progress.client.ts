@@ -17,9 +17,11 @@
  * CI's, another window's run, or one from before a reload, never flashes. While a
  * test of the app's runs waits at a stop for the person (the hub's runs,
  * `runsAttention`), the shell says so first, amber (`paused`): `1 test waits for
- * you`. The Windows thumbnail's Stop stops this window's run started last
- * (`thumbnailStopRun`). A step of a job of the Local runs tray (a reproduction, a
- * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
+ * you`, and the tray's menu offers Show the stopped test (`waiting`), which opens
+ * the Local runs tray on the first of them (`firstWaiting`). The Windows
+ * thumbnail's Stop stops this window's run started last (`thumbnailStopRun`).
+ * A step of a job of the Local runs tray (a reproduction, a bisect, a Flake Lab
+ * session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
  * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
  * launched it. A local run stopped from the app, and a job (a Flake Lab session
@@ -33,7 +35,7 @@
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
-import { runsAttention } from '@piwitests/run-model/attention';
+import { firstWaiting, runsAttention } from '@piwitests/run-model/attention';
 import {
   ACTIVE_RUN_STATUSES,
   NO_LIVE_RUN_FACTS,
@@ -127,13 +129,17 @@ export default defineNuxtPlugin(() => {
     return false;
   }
 
+  /** What the shell shows now: a change of the tests that wait sends it again, with their count, during a flash too. */
+  let showing: Parameters<typeof send> = ['none', null, null];
+
   function send(state: RunProgressState, fraction: number | null, label: string | null, failing = false) {
+    showing = [state, fraction, label, failing];
     // Collapse identical updates — progress events are frequent but the shell
     // only needs the changes.
-    const key = `${state}|${fraction ?? ''}|${label ?? ''}|${failing}`;
+    const key = `${state}|${fraction ?? ''}|${label ?? ''}|${failing}|${waiting}`;
     if (key === lastSent) return;
     lastSent = key;
-    core!.invoke('desktop_set_run_progress', { state, fraction, label, failing }).catch(() => {});
+    core!.invoke('desktop_set_run_progress', { state, fraction, label, failing, waiting }).catch(() => {});
   }
 
   function pushUpdate() {
@@ -236,15 +242,25 @@ export default defineNuxtPlugin(() => {
   waiting = waitingNow();
   watch(waitingNow, (now) => {
     waiting = now;
-    pushUpdate();
+    if (clearTimer) send(...showing);
+    else pushUpdate();
   });
 
   // Local ("Run locally") runs are driven from the app, so they are the only
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {
-    const { runs, stopRun, onRunEnded } = useDesktopLocalRuns();
+    const { runs, stopRun, onRunEnded, showWorker } = useDesktopLocalRuns();
     trayRuns = () => runs.value;
+
+    // The tray's Show the stopped test brings the window up and reaches the dashboard as this event: the Local runs
+    // tray opens on the first test that waits.
+    tauriEvent()
+      ?.listen('piwi:tray-show-stop', () => {
+        const first = firstWaiting(Object.values(hub.state.sessions));
+        if (first) showWorker(first.run.ref, first.worker.worker);
+      })
+      .catch(() => {});
 
     // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
     // dashboard as this event: it stops one run, the one started last.

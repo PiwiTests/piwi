@@ -39,6 +39,7 @@ Where its data lives, and how to back it up: [the desktop app's data](/operate/b
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches it
 hidden in the tray. The windows open where you left them. The app has its own
 [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app). The tray lists the tests running from the app, each with Stop, and the machine stays awake while they run.
+While a test waits at a stop for you, the tray menu's **Show the stopped test** opens the window on it.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button
 or the Dock icon and in the window's title (`Running 3/9`), and a dot on the tray icon (and the taskbar button, on
 Windows) says how it stands: blue while it runs, red once a test failed, amber while a test of the app's runs waits at a

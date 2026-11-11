@@ -27,12 +27,15 @@ export interface AttentionRun {
   progress?: { failed: number } | null;
 }
 
+/** Whether a worker waits at a stop for the person: stopped there, at a stop no agent drives. */
+function waitsForPerson(worker: AttentionRun['workers'][number]): boolean {
+  return worker.state === 'stopped' && !!worker.stop && worker.stop.driver?.kind !== 'agent';
+}
+
 /** What a run asks of the person now (`RunAttention`); null once it ended. */
 export function runAttention(run: AttentionRun): RunAttention | null {
   if (run.ended) return null;
-  const stops = run.workers.flatMap((worker) =>
-    worker.state === 'stopped' && worker.stop && worker.stop.driver?.kind !== 'agent' ? [worker.stop] : [],
-  );
+  const stops = run.workers.flatMap((worker) => (waitsForPerson(worker) && worker.stop ? [worker.stop] : []));
   const failed = run.progress?.failed ?? 0;
   return {
     state: stops.length > 0 ? 'waiting' : failed > 0 ? 'failing' : 'running',
@@ -58,4 +61,19 @@ export function runsAttention(runs: readonly AttentionRun[]): RunAttention | nul
     heldFailures: sum((a) => a.heldFailures),
     failed,
   };
+}
+
+/**
+ * The first test of the live runs that waits at a stop for the person, as `runAttention` counts them: its run and its
+ * worker, in the order of the runs, then of their workers; null while none waits.
+ */
+export function firstWaiting<R extends AttentionRun>(
+  runs: readonly R[],
+): { run: R; worker: R['workers'][number] } | null {
+  for (const run of runs) {
+    if (run.ended) continue;
+    const worker = run.workers.find(waitsForPerson);
+    if (worker) return { run, worker };
+  }
+  return null;
 }

@@ -17,7 +17,8 @@
  * window (`DesktopRunSession`). A worker's **Watch** shows its page as its test
  * runs, and at each stop (`DesktopRunLaneView`). The tray also
  * opens on the worker the run page's **Show its page** names (`showWorker`),
- * its run expanded, its tab shown and the focus on that worker. A running
+ * and on the first test that waits at the system tray menu's **Show the
+ * stopped test**, its run expanded, its tab shown and the focus on that worker. A running
  * run's **Hold failures** switch, off by default and on from the start for a
  * reproduction,
  * makes a failure no pause bar shows wait at its line (`hold` for its live

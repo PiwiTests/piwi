@@ -157,11 +157,13 @@ toolbar badge, Runs tile and Runs window title say (amber for the tests waiting,
 failed while no Runs window had the focus counted until one takes it), as do the desktop app's taskbar or Dock, title
 and tray dot (`1 test waits for you`, the dot amber); only a run the window started from its tray flashes its end, as
 it ends (DK8), and the Windows thumbnail's Stop stops the window's run started last. The editors' status bars say the same of their own runs. Remaining
-of attention: the tray menu's **Show the stopped test**, and a teammate asking to watch. Then the editors' unattended
+of attention: a teammate asking to watch, which P9's **Ask to watch** builds. Then the editors' unattended
 runs: Verify ×3, a fix plan's verification and the Flake Lab lines run on the run channel as runs nobody attends,
 listed, paused and stopped as the editor's others, holding no failure (`piwi/followCommand`, E12); JetBrains Run tabs
 are named after what they run; VS Code's Testing view writes in a run's output each test a worker starts, each stop
-and each stop answered (E23); and the editors' status bar tooltips say what each worker runs now (E6). The later phases are
+and each stop answered (E23); and the editors' status bar tooltips say what each worker runs now (E6). Then the desktop tray menu's **Show the stopped
+test**, first in the menu while a test of the app's runs waits at a stop for the person (**Show the 2 stopped tests**
+for more): it brings the window up with its Local runs tray open on the first of them (`firstWaiting`). The later phases are
 proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
